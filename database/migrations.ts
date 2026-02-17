@@ -31,5 +31,19 @@ export default schemaMigrations({
         }),
       ],
     },
+    {
+      toVersion: 8,
+      steps: [
+        createTable({
+          name: 'feature_permissions',
+          columns: [
+            { name: 'feature_key', type: 'string', isIndexed: true },
+            { name: 'status', type: 'string' },
+            { name: 'created_at', type: 'number' },
+            { name: 'updated_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
   ],
 });

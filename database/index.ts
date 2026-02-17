@@ -89,6 +89,7 @@ To fix:
       models.EmergencyContact,
       models.HealthDetails,
       models.Proxy,
+      models.FeaturePermission,
     ],
   });
 

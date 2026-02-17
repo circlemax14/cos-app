@@ -4,9 +4,13 @@ import React from 'react';
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
+  const { isVisible } = useFeaturePermissions();
+
+  const canShow = (featureKey: string) => isVisible(featureKey);
 
   return (
     <Tabs
@@ -14,47 +18,69 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
       }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="inbox"
-        options={{
-          title: 'Inbox',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="tray.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="appointments"
-        options={{
-          title: 'Appointments',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="plan"
-        options={{
-          title: 'Plan',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          title: 'Reports',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />,
-        }}
-      />
+      {canShow('home') && (
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />
+            ),
+          }}
+        />
+      )}
+      {canShow('inbox') && (
+        <Tabs.Screen
+          name="inbox"
+          options={{
+            title: 'Inbox',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="tray.fill" color={color} />
+            ),
+          }}
+        />
+      )}
+      {canShow('appointments') && (
+        <Tabs.Screen
+          name="appointments"
+          options={{
+            title: 'Appointments',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+            ),
+          }}
+        />
+      )}
+      {canShow('plan') && (
+        <Tabs.Screen
+          name="plan"
+          options={{
+            title: 'Plan',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+            ),
+          }}
+        />
+      )}
+      {canShow('reports') && (
+        <Tabs.Screen
+          name="reports"
+          options={{
+            title: 'Reports',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
         name="today-schedule"
         options={{
           title: "Today's Schedule",
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />,
-          href: null
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+          ),
+          href: null,
         }}
       />
       <Tabs.Screen
