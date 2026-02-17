@@ -5,10 +5,12 @@ import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useSettings } from '@/stores/settings-store';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
   const { isVisible } = useFeaturePermissions();
+  const { settings } = useSettings();
 
   const canShow = (featureKey: string) => isVisible(featureKey);
 
@@ -51,17 +53,28 @@ export default function TabLayout() {
           }}
         />
       )}
-      {canShow('plan') && (
-        <Tabs.Screen
-          name="plan"
-          options={{
-            title: 'Plan',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
-            ),
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="health-chat"
+        options={{
+          title: 'Health Chat',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="message.fill" color={color} />
+          ),
+          href: settings.isHealthChatEnabled ? undefined : null,
+          tabBarItemStyle: !settings.isHealthChatEnabled ? { display: 'none' } : undefined
+        }}
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{
+          title: 'Plan',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+          ),
+          href: !settings.isHealthChatEnabled ? undefined : null,
+          tabBarItemStyle: settings.isHealthChatEnabled ? { display: 'none' } : undefined
+        }}
+      />
       {canShow('reports') && (
         <Tabs.Screen
           name="reports"
@@ -122,6 +135,12 @@ export default function TabLayout() {
         name="proxy-management"
         options={{
           title: 'Proxy Management',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="services"
+        options={{
           href: null,
         }}
       />

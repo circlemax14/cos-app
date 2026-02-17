@@ -36,6 +36,7 @@ const MAPPING = {
   'slider.horizontal.3': 'tune',
   'slider.vertical.3': 'equalizer',
   'tray.fill': 'inbox',
+  'message.fill': 'chat',
 } as IconMapping;
 
 /**

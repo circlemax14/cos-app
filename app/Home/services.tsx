@@ -1,11 +1,11 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useSettings } from '@/stores/settings-store';
 
 type ServiceDefinition = {
   id: string;
@@ -13,11 +13,13 @@ type ServiceDefinition = {
   description: string;
   featureKey: string;
   priceLabel?: string;
+  isToggle?: boolean;
 };
 
 const SERVICES: ServiceDefinition[] = [
   {
     id: 'care-manager',
+    // ... (rest of services)
     title: 'Care Manager Support',
     description: 'Get 1:1 help from a care manager to coordinate your appointments and records.',
     featureKey: 'service_care_manager',
@@ -41,6 +43,7 @@ const SERVICES: ServiceDefinition[] = [
 
 export default function ServicesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const { settings: appSettings, toggleHealthChat } = useSettings();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { getStatus, isVisible, isUnlocked, isPurchasable } = useFeaturePermissions();
 
@@ -83,6 +86,28 @@ export default function ServicesScreen() {
         >
           View and manage the services available on your account.
         </Text>
+
+        {/* Feature Toggles Section */}
+        <View style={[styles.section, { borderBottomColor: colors.text + '20' }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: getScaledFontSize(18) }]}>
+            App Features
+          </Text>
+          <View style={[styles.toggleRow, { backgroundColor: colors.background }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.toggleLabel, { color: colors.text, fontSize: getScaledFontSize(16) }]}>Health Chat</Text>
+              <Text style={[styles.toggleDescription, { color: colors.text + '80', fontSize: getScaledFontSize(14) }]}>
+                Enable the AI Health Chat assistant in your navigation bar.
+              </Text>
+            </View>
+            <Switch
+              value={appSettings.isHealthChatEnabled}
+              onValueChange={toggleHealthChat}
+              trackColor={{ false: '#767577', true: colors.tint || '#008080' }}
+              thumbColor={appSettings.isHealthChatEnabled ? '#ffffff' : '#f4f3f4'}
+            />
+          </View>
+        </View>
+
 
         {visibleServices.map((service) => {
           const unlocked = isUnlocked(service.featureKey);
@@ -249,6 +274,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 24,
     paddingTop: 16,
+  },
+  section: {
+    marginBottom: 24,
+    borderBottomWidth: 1,
+    paddingBottom: 16,
+  },
+  sectionTitle: {
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+  },
+  toggleLabel: {
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  toggleDescription: {
+    fontWeight: '400',
   },
   title: {
     marginBottom: 4,
