@@ -4,9 +4,15 @@ import React from 'react';
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useSettings } from '@/stores/settings-store';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
+  const { isVisible } = useFeaturePermissions();
+  const { settings } = useSettings();
+
+  const canShow = (featureKey: string) => isVisible(featureKey);
 
   return (
     <Tabs
@@ -14,47 +20,80 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
       }}>
+      {canShow('home') && (
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />
+            ),
+          }}
+        />
+      )}
+      {canShow('inbox') && (
+        <Tabs.Screen
+          name="inbox"
+          options={{
+            title: 'Inbox',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="tray.fill" color={color} />
+            ),
+          }}
+        />
+      )}
+      {canShow('appointments') && (
+        <Tabs.Screen
+          name="appointments"
+          options={{
+            title: 'Appointments',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
-        name="index"
+        name="health-chat"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="inbox"
-        options={{
-          title: 'Inbox',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="tray.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="appointments"
-        options={{
-          title: 'Appointments',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />,
+          title: 'Health Chat',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="message.fill" color={color} />
+          ),
+          href: settings.isHealthChatEnabled ? undefined : null,
+          tabBarItemStyle: !settings.isHealthChatEnabled ? { display: 'none' } : undefined
         }}
       />
       <Tabs.Screen
         name="plan"
         options={{
           title: 'Plan',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+          ),
+          href: !settings.isHealthChatEnabled ? undefined : null,
+          tabBarItemStyle: settings.isHealthChatEnabled ? { display: 'none' } : undefined
         }}
       />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          title: 'Reports',
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />,
-        }}
-      />
+      {canShow('reports') && (
+        <Tabs.Screen
+          name="reports"
+          options={{
+            title: 'Reports',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
         name="today-schedule"
         options={{
           title: "Today's Schedule",
-          tabBarIcon: ({ color }) => <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />,
-          href: null
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+          ),
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -96,6 +135,12 @@ export default function TabLayout() {
         name="proxy-management"
         options={{
           title: 'Proxy Management',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="services"
+        options={{
           href: null,
         }}
       />

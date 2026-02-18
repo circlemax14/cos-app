@@ -23,18 +23,26 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
 
   const shouldDistributeEvenly = containerWidth > 0 && contentWidth > 0 && contentWidth <= containerWidth;
 
-  // Filter out routes that should be hidden (href: null)
+  // Filter out routes that should be hidden
   const visibleRoutes = state.routes.filter((route) => {
     const { options } = descriptors[route.key];
-    // href is an expo-router specific property, not in standard BottomTabNavigationOptions
+
+    // Check local Expo href option
     const href = (options as any).href;
-    // Hide route if href is explicitly null, or if href is undefined but we want to check route name
-    // For expo-router, href: null means hide the tab
     if (href === null) {
       return false;
     }
+
+    // Check standard tabBarItemStyle display none
+    // Cast to any because tabBarItemStyle type might be generic
+    const itemStyle = (options as any).tabBarItemStyle;
+    if (itemStyle && itemStyle.display === 'none') {
+      return false;
+    }
+
     // Also hide specific routes explicitly as a fallback
-    if (route.name === 'today-schedule' || route.name === 'profile' || route.name === 'connected-ehrs' || route.name === 'emergency-contact' || route.name === 'health-details' || route.name === 'doctor-detail' || route.name === 'proxy-management') {
+    // ... existing blacklist ...
+    if (route.name === 'today-schedule' || route.name === 'profile' || route.name === 'connected-ehrs' || route.name === 'emergency-contact' || route.name === 'health-details' || route.name === 'doctor-detail' || route.name === 'proxy-management' || route.name === 'services') {
       return false;
     }
     return true;
@@ -45,8 +53,8 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     const label = options.tabBarLabel !== undefined
       ? options.tabBarLabel
       : options.title !== undefined
-      ? options.title
-      : route.name;
+        ? options.title
+        : route.name;
 
     // Check if this route is focused by comparing with the current route key
     const isFocused = state.routes[state.index]?.key === route.key;
@@ -79,10 +87,10 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     const iconColor = isFocused ? '#008080' : '#000000';
     const icon = options.tabBarIcon
       ? options.tabBarIcon({
-          focused: isFocused,
-          color: iconColor,
-          size: getScaledFontSize(24),
-        })
+        focused: isFocused,
+        color: iconColor,
+        size: getScaledFontSize(24),
+      })
       : null;
 
     return (
@@ -101,6 +109,7 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         <View style={styles.tabContent}>
           {icon && <View style={styles.iconContainer}>{icon}</View>}
           <Text
+            numberOfLines={1}
             style={[
               styles.tabLabel,
               {
@@ -116,7 +125,7 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
   };
 
   return (
-    <View 
+    <View
       style={[styles.tabBarContainer, { paddingBottom: insets.bottom }]}
       onLayout={handleContainerLayout}>
       <ScrollView
@@ -129,7 +138,7 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         style={styles.scrollView}
         bounces={false}
         scrollEnabled={!shouldDistributeEvenly}>
-        <View 
+        <View
           style={[
             styles.tabsContainer,
             shouldDistributeEvenly && styles.tabsContainerDistributed
@@ -175,7 +184,6 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   tabButtonDistributed: {
-    flex: 1,
     paddingHorizontal: 8,
   },
   tabContent: {

@@ -33,6 +33,7 @@ interface ProfileContentProps {
   onConnectedEhrPress?: () => void;
   onEmergencyContactPress?: () => void;
   onHealthDetailsPress?: () => void;
+  onServicesPress?: () => void;
   showEhrTitle?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
 }
@@ -50,6 +51,7 @@ export function ProfileContent({
   onConnectedEhrPress,
   onEmergencyContactPress,
   onHealthDetailsPress,
+  onServicesPress,
   showEhrTitle = true,
   containerStyle,
 }: ProfileContentProps) {
@@ -104,6 +106,22 @@ export function ProfileContent({
               left={(props) => <Icon {...props} source="account" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
               onPress={() => router.push('/(personal-info)')}
+            />
+          </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Services</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>View and manage your services</Text>}
+              left={(props) => <Icon {...props} source="bag-personal" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => {
+                if (onServicesPress) {
+                  onServicesPress();
+                } else {
+                  router.push('/Home/services');
+                }
+              }}
             />
           </Card>
 

@@ -93,7 +93,6 @@ export function AppWrapper({
     router.push('/(auth)/provider-selection');
   };
 
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       {/* Header */}
@@ -187,6 +186,10 @@ export function AppWrapper({
                 onHealthDetailsPress={() => {
                   closeDrawerMenu();
                   router.push('/Home/health-details');
+                }}
+                onServicesPress={() => {
+                  closeDrawerMenu();
+                  router.push('/Home/services');
                 }}
                 connectedHospitals={connectedHospitals}
                 isLoadingClinics={isLoadingClinics}

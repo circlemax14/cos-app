@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 7, // Incremented to add proxies table
+  version: 8, // Incremented to add feature_permissions table
   tables: [
     tableSchema({
       name: 'appointments',
@@ -182,6 +182,15 @@ export const schema = appSchema({
         { name: 'consent_given', type: 'boolean' },
         { name: 'consent_date', type: 'string', isOptional: true },
         { name: 'patient_id', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
+    tableSchema({
+      name: 'feature_permissions',
+      columns: [
+        { name: 'feature_key', type: 'string' },
+        { name: 'status', type: 'string' },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],

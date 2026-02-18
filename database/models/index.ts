@@ -9,3 +9,4 @@ export { default as SelectedProvider } from './SelectedProvider';
 export { default as EmergencyContact } from './EmergencyContact';
 export { default as HealthDetails } from './HealthDetails';
 export { default as Proxy } from './Proxy';
+export { default as FeaturePermission } from './FeaturePermission';
