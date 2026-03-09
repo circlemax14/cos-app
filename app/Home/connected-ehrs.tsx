@@ -4,19 +4,16 @@ import { Colors } from '@/constants/theme';
 import { useConnectedEhrs } from '@/hooks/use-connected-ehrs';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
-import React, { useMemo } from 'react';
+import React from 'react';
 import { StyleSheet, Text, View, ScrollView } from 'react-native';
 
 export default function ConnectedEhrsScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { connectedHospitals, isLoadingClinics } = useConnectedEhrs();
-  
-  // Filter to show only actually connected hospitals (limit to 1 for now)
-  // TODO: Add proper connection status tracking in the database
-  const actualConnectedHospitals = useMemo(() => {
-    return connectedHospitals.slice(0, 1);
-  }, [connectedHospitals]);
+
+  // Show all connected hospitals (both EHR and Integrative)
+  const actualConnectedHospitals = connectedHospitals;
 
   return (
     <AppWrapper>

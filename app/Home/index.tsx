@@ -6,15 +6,21 @@ import { SUPPORT_CATEGORIES, getSubCategoriesByCategoryId, getCategoryById, getS
 import { useAccessibility } from '@/stores/accessibility-store';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { Image } from 'expo-image';
+import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Avatar, Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getFastenPractitioners, getFastenPractitionersByDepartment, Provider as FastenProvider, getFastenPatient, transformFastenHealthData, Appointment as FastenAppointment } from '@/services/fasten-health';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
+import {
+  getNonEhrProviders,
+  processAndStoreFiles,
+  type NonEhrProvider,
+} from '@/services/non-ehr-processor';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -25,29 +31,29 @@ const isTablet = () => {
 // Helper function to format provider name for display (filters out credentials/titles)
 const formatProviderDisplayName = (fullName: string): string => {
   if (!fullName) return '';
-  
+
   // Common titles and credentials to filter out
   const titlesAndCredentials = ['Dr.', 'Dr', 'MD', 'DO', 'RN', 'NP', 'PA', 'PA-C', 'DDS', 'DMD', 'PharmD', 'PhD', 'DNP', 'FNP', 'CNP'];
-  
+
   // Split name into parts
   const parts = fullName.trim().split(/\s+/);
-  
+
   // Filter out titles and credentials
   const nameParts = parts.filter(part => {
     const normalizedPart = part.replace(/[.,]/g, ''); // Remove punctuation
     return !titlesAndCredentials.includes(normalizedPart);
   });
-  
+
   // If no name parts left after filtering, return original (fallback)
   if (nameParts.length === 0) {
     return fullName;
   }
-  
+
   // Get first name (first part) and last initial (first character of last part)
   const firstName = nameParts[0];
   const lastName = nameParts[nameParts.length - 1];
   const lastInitial = lastName?.[0] || '';
-  
+
   // Return formatted as "FirstName L" (e.g., "Subhash M" for "Subhash Mishra")
   return `${firstName} ${lastInitial}`.trim();
 };
@@ -80,7 +86,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
-  
+
   // Original fixed values
   const containerWidth = 384;
   const containerHeight = 320;
@@ -93,9 +99,9 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
   const orbitItems: OrbitItem[] = isCircleComplete
     ? providers
     : [
-        ...providers,
-        { id: 'add-provider', isPlaceholder: true },
-      ];
+      ...providers,
+      { id: 'add-provider', isPlaceholder: true },
+    ];
 
   return (
     <View style={[styles.circleContainer, { width: containerWidth, height: containerHeight, alignItems: 'center', justifyContent: 'center' }]}>
@@ -118,7 +124,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           zIndex: 0,
         }} />
       <View style={styles.centerAvatarWrapper}>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => {
             try {
               console.log('Navigating to today-schedule...');
@@ -147,10 +153,10 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
         ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        <Button 
-          mode="contained" 
+        <Button
+          mode="contained"
           buttonColor="#008080"
-          onPress={() => router.push('/modal')} 
+          onPress={() => router.push('/modal')}
           style={styles.moreDoctorsButton}>
           More
         </Button>
@@ -194,7 +200,10 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   onAddProviderPress();
                   return;
                 }
-                if (!item.isManual) {
+                const isIntegrative = item.category === 'Integrative';
+                if (isIntegrative) {
+                  router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
+                } else if (!item.isManual) {
                   router.push(`/Home/doctor-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}&qualifications=${encodeURIComponent(item.qualifications || '')}&specialty=${encodeURIComponent(item.specialty || '')}`);
                 }
               }}
@@ -210,7 +219,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                     size={getScaledFontSize(avatarSize)}
                     image={doctorPhotos.get(item.id) ? { uri: doctorPhotos.get(item.id)! } : undefined}
                   />
-                  <Text 
+                  <Text
                     numberOfLines={2}
                     style={[
                       styles.orbitAvatarText,
@@ -230,7 +239,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           </React.Fragment>
         );
       })}
-    </View>
+    </View >
   );
 }
 
@@ -245,54 +254,54 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   const horizontalPadding = 24;
   // Maximum available width for the circle container
   const maxAvailableWidth = screenWidth - horizontalPadding;
-  
+
   // Base width for iPhone (375 is typical iPhone width)
   const baseWidth = 375;
   // Calculate scale factor, but cap it for very large screens (max 2.2x for iPad)
   const scaleFactor = Math.min(screenWidth / baseWidth, 2.2);
-  
+
   // Base radius for orbit - original design value
   const baseRadius = 144 * 1.1; // ~158.4
-  
+
   // Avatar container size - scale proportionally
   const baseAvatarContainerSize = 120;
   const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.5);
   const containerPadding = 1;
-  
+
   // Calculate maximum radius that fits within available width
   // Increased containerPadding to allow more space between center and orbiting circles
   const adjustedContainerPadding = containerPadding * 1.5;
   const maxRadius = (maxAvailableWidth - avatarContainerSize - (adjustedContainerPadding * 2)) / 2;
-  
+
   // Avatar sizes - scale less aggressively than the circle (calculate early for radius calculation)
   const centerAvatarSize = 80 * Math.min(scaleFactor, 1.5);
-  
+
   // Adaptive multiplier based on screen width - larger screens get more spacing
   // 11-inch iPad: ~834px width, 13-inch iPad: ~1024px width
   // Use a progressive multiplier that scales with screen size
   const screenWidthRatio = screenWidth / 834; // Normalize to 11-inch iPad
   const adaptiveMultiplier = Math.min(2.5 + (screenWidthRatio - 1) * 0.1, 2.592); // Range from 2.5 to 2.592
-  
+
   // Calculate minimum radius to prevent overlapping with center avatar
   // Need enough space for center avatar + orbiting avatar + padding
   const maxContainerSize = avatarContainerSize;
   const minRadiusFromCenter = (centerAvatarSize / 2) + (maxContainerSize / 2) + 80; // 80px padding between center and orbit
-  
+
   // Calculate minimum radius to prevent overlapping between orbiting doctors
   // Each doctor needs space around the circle: we need enough circumference for all doctors
   const orbitItems: OrbitItem[] = isCircleComplete
     ? providers
     : [
-        ...providers,
-        { id: 'add-provider', isPlaceholder: true },
-      ];
+      ...providers,
+      { id: 'add-provider', isPlaceholder: true },
+    ];
   const minRadiusForSpacing = (maxContainerSize * orbitItems.length * 1.5) / (2 * Math.PI);
-  
+
   // Scale radius more aggressively for larger screens - increased multiplier for more spacing
   const desiredRadius = baseRadius * scaleFactor * adaptiveMultiplier;
   // Use the larger of: desired radius, minimum from center, or minimum for spacing
   const radius = Math.min(Math.max(desiredRadius, minRadiusFromCenter, minRadiusForSpacing), maxRadius);
-  
+
   // Calculate container size based on actual radius
   const containerWidth = (radius * 2) + avatarContainerSize + (adjustedContainerPadding * 2);
   const containerHeight = containerWidth; // Keep it square
@@ -321,7 +330,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           zIndex: 0,
         }} />
       <View style={styles.centerAvatarWrapper}>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => {
             try {
               console.log('Navigating to today-schedule...');
@@ -350,15 +359,15 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
         ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        <Button 
-          labelStyle={{ 
-            fontSize: getScaledFontSize(12), 
-            fontWeight: getScaledFontWeight(500) as any, 
-            lineHeight: getScaledFontSize(16) 
-          }} 
-          mode="contained" 
+        <Button
+          labelStyle={{
+            fontSize: getScaledFontSize(12),
+            fontWeight: getScaledFontWeight(500) as any,
+            lineHeight: getScaledFontSize(16)
+          }}
+          mode="contained"
           buttonColor="#008080"
-          onPress={() => router.push('/modal')} 
+          onPress={() => router.push('/modal')}
           style={[
             styles.moreDoctorsButton,
             {
@@ -409,7 +418,10 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   onAddProviderPress();
                   return;
                 }
-                if (!item.isManual) {
+                const isIntegrative = item.category === 'Integrative';
+                if (isIntegrative) {
+                  router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
+                } else if (!item.isManual) {
                   router.push(`/Home/doctor-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}&qualifications=${encodeURIComponent(item.qualifications || '')}&specialty=${encodeURIComponent(item.specialty || '')}`);
                 }
               }}
@@ -425,7 +437,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     size={getScaledFontSize(avatarSize)}
                     image={doctorPhotos.get(item.id) ? { uri: doctorPhotos.get(item.id)! } : undefined}
                   />
-                  <Text 
+                  <Text
                     style={[
                       styles.orbitAvatarText,
                       {
@@ -443,7 +455,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           </React.Fragment>
         );
       })}
-    </View>
+    </View >
   );
 }
 
@@ -499,7 +511,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
-  
+
   // Calculate max height to push appointments to bottom of screen
   const screenHeight = Dimensions.get('window').height;
   const maxListHeight = hasUpcomingAppointments ? Math.min(screenHeight * 0.65, 600) : undefined;
@@ -574,14 +586,19 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
                   paddingHorizontal: getScaledFontSize(16),
                 }
               ]}
-              onPress={provider.isManual ? undefined : () => {
-                router.push(`/Home/doctor-detail?id=${encodeURIComponent(provider.id)}&name=${encodeURIComponent(provider.name)}&qualifications=${encodeURIComponent(provider.qualifications || '')}&specialty=${encodeURIComponent(provider.specialty || '')}`);
+              onPress={() => {
+                const isIntegrative = provider.category === 'Integrative';
+                if (isIntegrative) {
+                  router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(provider.id)}`);
+                } else if (!provider.isManual) {
+                  router.push(`/Home/doctor-detail?id=${encodeURIComponent(provider.id)}&name=${encodeURIComponent(provider.name)}&qualifications=${encodeURIComponent(provider.qualifications || '')}&specialty=${encodeURIComponent(provider.specialty || '')}`);
+                }
               }}
               activeOpacity={provider.isManual ? 1 : 0.7}
             >
-              <InitialsAvatar 
-                name={provider.name} 
-                size={getScaledFontSize(56)} 
+              <InitialsAvatar
+                name={provider.name}
+                size={getScaledFontSize(56)}
                 style={styles.listAvatar}
                 image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : undefined}
               />
@@ -621,14 +638,14 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
           }
         ]}>
           {isCircleComplete && (
-            <Button 
-              mode="contained" 
+            <Button
+              mode="contained"
               buttonColor="#008080"
-              onPress={() => router.push('/modal')} 
+              onPress={() => router.push('/modal')}
               style={styles.moreDoctorsButton}
-              labelStyle={{ 
-                fontSize: getScaledFontSize(14), 
-                fontWeight: getScaledFontWeight(500) as any, 
+              labelStyle={{
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(500) as any,
               }}
             >
               More
@@ -671,7 +688,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
   const [lastVisitedFilter, setLastVisitedFilter] = useState<string | null>(null);
   const [manualMembersBySubCategory, setManualMembersBySubCategory] = useState<Record<string, ManualMember[]>>({});
   const [showAddMemberForm, setShowAddMemberForm] = useState(false);
-  
+
   // Collect all provider IDs from all subcategories to load photos
   const allProviderIds = React.useMemo(() => {
     const ids: string[] = [];
@@ -684,7 +701,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
     });
     return ids;
   }, [providersBySubCategory]);
-  
+
   // Load doctor photos for all providers
   const doctorPhotos = useDoctorPhotos(allProviderIds);
   const [manualName, setManualName] = useState('');
@@ -696,6 +713,24 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
   const [subCategorySearchQuery, setSubCategorySearchQuery] = useState('');
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
   const [agencySearchQuery, setAgencySearchQuery] = useState('');
+  const [integrativeSearchQuery, setIntegrativeSearchQuery] = useState('');
+  // Non-EHR (Integrative) providers
+  const [nonEhrProviders, setNonEhrProviders] = useState<NonEhrProvider[]>([]);
+  const [nonEhrProviderCount, setNonEhrProviderCount] = useState(0);
+  const [isUploadingIntegrative, setIsUploadingIntegrative] = useState(false);
+
+  // Load non-EHR providers on mount and whenever the providers level changes
+  const loadNonEhrProviders = React.useCallback(async () => {
+    try {
+      const all = await getNonEhrProviders();
+      setNonEhrProviders(all);
+      setNonEhrProviderCount(all.length);
+    } catch { /* ignore */ }
+  }, []);
+
+  React.useEffect(() => {
+    loadNonEhrProviders();
+  }, [currentLevel, loadNonEhrProviders]);
 
   const addManualMember = (categoryId: string, fallbackSubCategoryId?: string) => {
     const targetSubCategoryId = manualSubCategoryId || fallbackSubCategoryId;
@@ -766,7 +801,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       try {
         const providers = await getFastenPractitioners();
         const categorizedProviders = new Map<string, FastenProvider[]>();
-        
+
         // Categorize each provider (can belong to multiple subcategories)
         providers.forEach(provider => {
           const matches = matchProviderToSubCategory(
@@ -774,7 +809,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
             provider.specialty,
             provider.qualifications
           );
-          
+
           if (matches && matches.length > 0) {
             // Add provider to ALL applicable subcategories
             matches.forEach(match => {
@@ -786,13 +821,13 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
             });
           }
         });
-        
+
         // Sort providers in each subcategory by lastVisited in descending order
         categorizedProviders.forEach((providerList, key) => {
           const sorted = [...providerList].sort((a, b) => {
             const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
             const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-            
+
             // If both have dates, sort by date descending
             if (dateA > 0 && dateB > 0) {
               return dateB - dateA; // Descending order (most recent first)
@@ -800,13 +835,13 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
             // If only one has a date, prioritize it
             if (dateA > 0 && dateB === 0) return -1;
             if (dateB > 0 && dateA === 0) return 1;
-            
+
             // If neither has a date, maintain original order
             return 0;
           });
           categorizedProviders.set(key, sorted);
         });
-        
+
         setProvidersBySubCategory(categorizedProviders);
         console.log(`Categorized ${providers.length} providers into ${categorizedProviders.size} sub-categories`);
       } catch (error) {
@@ -815,16 +850,20 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
         setIsLoadingProviders(false);
       }
     };
-    
+
     loadAndCategorizeProviders();
   }, []);
 
   const handleCategoryPress = (categoryId: string) => {
     setSelectedCategoryId(categoryId);
-    // Care Manager category has no subcategories, go directly to providers (agencies)
+    // Care Manager and Integrative categories have no subcategories, go directly to providers
     if (categoryId === 'care-manager') {
       setCurrentLevel('providers');
       setAgencySearchQuery(''); // Reset search when navigating to agencies
+    } else if (categoryId === 'integrative') {
+      setCurrentLevel('providers');
+      setIntegrativeSearchQuery('');
+      loadNonEhrProviders(); // Refresh providers list
     } else {
       setCurrentLevel('sub-categories');
       setSubCategorySearchQuery(''); // Reset search when navigating to subcategories
@@ -840,11 +879,12 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
   const handleBack = () => {
     if (currentLevel === 'providers') {
-      // Care Manager category has no subcategories, so go directly back to categories
-      if (selectedCategoryId === 'care-manager') {
+      // Care Manager and Integrative categories have no subcategories, go directly back to categories
+      if (selectedCategoryId === 'care-manager' || selectedCategoryId === 'integrative') {
         setCurrentLevel('categories');
         setSelectedCategoryId(undefined);
-        setAgencySearchQuery(''); // Reset agency search when going back
+        setAgencySearchQuery('');
+        setIntegrativeSearchQuery('');
       } else {
         setCurrentLevel('sub-categories');
         setSelectedSubCategoryId(undefined);
@@ -876,12 +916,12 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       isManual: true,
       relationship: member.relationship,
     }));
-    
+
     // Sort by lastVisited in descending order (most recently visited first)
     const sortedProviders = [...providers, ...manualProviders].sort((a, b) => {
       const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
       const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-      
+
       // If both have dates, sort by date descending
       if (dateA > 0 && dateB > 0) {
         return dateB - dateA; // Descending order (most recent first)
@@ -889,7 +929,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       // If only one has a date, prioritize it
       if (dateA > 0 && dateB === 0) return -1;
       if (dateB > 0 && dateA === 0) return 1;
-      
+
       // If neither has a date, maintain original order
       return 0;
     });
@@ -933,13 +973,19 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       </TouchableOpacity>
       {SUPPORT_CATEGORIES.map((category) => {
         // Count providers in this category
-        const categoryProviderCount = category.subCategories.reduce((sum, subCategory) => {
-          const key = `${category.id}-${subCategory.id}`;
-          const providers = providersBySubCategory.get(key) || [];
-          const manualMembers = manualMembersBySubCategory[key] || [];
-          return sum + providers.length + manualMembers.length;
-        }, 0);
-        
+        let categoryProviderCount: number;
+        if (category.id === 'integrative') {
+          // Integrative providers come from the non-EHR storage
+          categoryProviderCount = nonEhrProviderCount;
+        } else {
+          categoryProviderCount = category.subCategories.reduce((sum, subCategory) => {
+            const key = `${category.id}-${subCategory.id}`;
+            const providers = providersBySubCategory.get(key) || [];
+            const manualMembers = manualMembersBySubCategory[key] || [];
+            return sum + providers.length + manualMembers.length;
+          }, 0);
+        }
+
         return (
           <TouchableOpacity
             key={`category-${category.id}`}
@@ -1014,7 +1060,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
     // Filter subcategories based on search query
     if (subCategorySearchQuery.trim()) {
       const query = subCategorySearchQuery.toLowerCase().trim();
-      subCategoriesToShow = subCategoriesToShow.filter(subCategory => 
+      subCategoriesToShow = subCategoriesToShow.filter(subCategory =>
         subCategory.name.toLowerCase().includes(query)
       );
     }
@@ -1188,7 +1234,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
               relationship: member.relationship,
             }))]
           ).length;
-          
+
           return (
             <TouchableOpacity
               key={`subcategory-${subCategory.id}`}
@@ -1247,18 +1293,187 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
     );
   };
 
+  // ── Integrative file upload handler ──────────
+  const handleIntegrativeUpload = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        multiple: true,
+        copyToCacheDirectory: true,
+        type: ['application/pdf', 'text/plain', 'application/json', '*/*'],
+      });
+      if (result.canceled) return;
+      const { assets } = result;
+      if (!assets || assets.length === 0) return;
+      if (assets.length > 10) {
+        Alert.alert('Too many files', 'You can upload a maximum of 10 files at a time.');
+        return;
+      }
+      setIsUploadingIntegrative(true);
+      const filesToProcess = assets.map((asset: DocumentPicker.DocumentPickerAsset) => ({
+        name: asset.name,
+        uri: asset.uri,
+        mimeType: asset.mimeType ?? 'application/octet-stream',
+        size: asset.size ?? 0,
+      }));
+      const results = await processAndStoreFiles(filesToProcess, 10);
+      const addedCount = results.filter(r => r.added).length;
+      const dupCount = results.filter(r => r.isDuplicate).length;
+      let message = `${addedCount} provider${addedCount !== 1 ? 's' : ''} added.`;
+      if (dupCount > 0) message += ` ${dupCount} duplicate${dupCount !== 1 ? 's' : ''} skipped.`;
+      Alert.alert('Upload Complete', message);
+      await loadNonEhrProviders();
+    } catch (err: any) {
+      console.error('[ListView] Integrative upload error:', err);
+      Alert.alert('Upload Failed', err?.message ?? 'An unexpected error occurred.');
+    } finally {
+      setIsUploadingIntegrative(false);
+    }
+  };
+
   const renderProviders = () => {
     const category = selectedCategoryId ? getCategoryById(selectedCategoryId) : undefined;
-    
+
+    // Handle Integrative category — show non-EHR providers
+    if (selectedCategoryId === 'integrative') {
+      let filteredIntegrative = nonEhrProviders;
+      if (integrativeSearchQuery.trim()) {
+        const q = integrativeSearchQuery.toLowerCase().trim();
+        filteredIntegrative = nonEhrProviders.filter(p =>
+          p.providerName.toLowerCase().includes(q) ||
+          p.clinicName.toLowerCase().includes(q) ||
+          (p.specialty && p.specialty.toLowerCase().includes(q))
+        );
+      }
+
+      return (
+        <>
+          <View style={[
+            styles.detailsListHeader,
+            {
+              borderBottomColor: colors.text + '20',
+              paddingHorizontal: getScaledFontSize(16),
+              paddingVertical: getScaledFontSize(12),
+              marginBottom: getScaledFontSize(8),
+            }
+          ]}>
+            <TouchableOpacity onPress={handleBack} style={{ padding: getScaledFontSize(4) }}>
+              <IconSymbol name="chevron.right" size={getScaledFontSize(24)} color={colors.text} style={{ transform: [{ rotate: '180deg' }] }} />
+            </TouchableOpacity>
+            <Text style={[
+              styles.detailsListTitle,
+              {
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(600) as any,
+                color: colors.text,
+                flex: 1,
+                marginLeft: getScaledFontSize(8),
+              }
+            ]}>
+              Integrative
+            </Text>
+            <TouchableOpacity
+              onPress={handleIntegrativeUpload}
+              disabled={isUploadingIntegrative}
+              style={{ padding: getScaledFontSize(4) }}
+            >
+              {isUploadingIntegrative ? (
+                <ActivityIndicator size="small" color={colors.tint || '#008080'} />
+              ) : (
+                <IconSymbol name="plus" size={getScaledFontSize(22)} color={colors.tint || '#008080'} />
+              )}
+            </TouchableOpacity>
+          </View>
+          <View style={{ paddingHorizontal: getScaledFontSize(16), paddingBottom: getScaledFontSize(12) }}>
+            <PaperTextInput
+              label="Search providers"
+              value={integrativeSearchQuery}
+              onChangeText={setIntegrativeSearchQuery}
+              mode="outlined"
+              left={<PaperTextInput.Icon icon={() => <MaterialIcons name="search" size={getScaledFontSize(20)} color={colors.text + '80'} />} />}
+              style={{ backgroundColor: colors.background }}
+              textColor={colors.text}
+              activeOutlineColor={colors.tint}
+            />
+          </View>
+          {filteredIntegrative.length === 0 ? (
+            <View style={[styles.listItem, { paddingVertical: getScaledFontSize(16), paddingHorizontal: getScaledFontSize(16) }]}>
+              <Text style={[{ fontSize: getScaledFontSize(14), color: colors.text + '80' }]}>
+                {nonEhrProviders.length === 0 ? 'No providers yet — tap + to upload files' : 'No providers found'}
+              </Text>
+            </View>
+          ) : (
+            filteredIntegrative.map((provider) => (
+              <TouchableOpacity
+                key={provider.id}
+                style={[
+                  styles.listItem,
+                  {
+                    borderBottomColor: colors.text + '20',
+                    paddingVertical: getScaledFontSize(16),
+                    paddingHorizontal: getScaledFontSize(16),
+                  }
+                ]}
+                onPress={() => router.push({ pathname: '/Home/non-ehr-provider-detail', params: { id: provider.id } })}
+                activeOpacity={0.7}
+              >
+                <InitialsAvatar
+                  name={provider.providerName}
+                  size={getScaledFontSize(56)}
+                  style={styles.listAvatar}
+                />
+                <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
+                  <Text style={[
+                    styles.listItemName,
+                    {
+                      fontSize: getScaledFontSize(16),
+                      fontWeight: getScaledFontWeight(600) as any,
+                      color: colors.text,
+                      marginBottom: getScaledFontSize(4),
+                    }
+                  ]}>
+                    {provider.providerName}
+                  </Text>
+                  <Text style={[
+                    styles.listItemRole,
+                    {
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(400) as any,
+                      color: colors.text + '80',
+                    }
+                  ]}>
+                    {provider.clinicName}
+                  </Text>
+                  {provider.specialty && (
+                    <Text style={[
+                      styles.listItemRole,
+                      {
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(400) as any,
+                        color: (colors.tint || '#008080'),
+                        marginTop: getScaledFontSize(2),
+                      }
+                    ]}>
+                      {provider.specialty}
+                    </Text>
+                  )}
+                </View>
+                <IconSymbol name="chevron.right" size={getScaledFontSize(20)} color={colors.text + '60'} />
+              </TouchableOpacity>
+            ))
+          )}
+        </>
+      );
+    }
+
     // Handle Care Manager category specially - show agencies
     if (selectedCategoryId === 'care-manager') {
       let agencies = getAllCareManagerAgencies();
-      
+
       // Filter agencies based on search query
       if (agencySearchQuery.trim()) {
         agencies = searchCareManagerAgencies(agencySearchQuery);
       }
-      
+
       return (
         <>
           <View style={[
@@ -1381,11 +1596,11 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
         </>
       );
     }
-    
+
     // Regular providers rendering for other categories
     let providers = getCurrentProviders();
-    const subCategory = selectedCategoryId && selectedSubCategoryId 
-      ? getSubCategoryById(selectedCategoryId, selectedSubCategoryId) 
+    const subCategory = selectedCategoryId && selectedSubCategoryId
+      ? getSubCategoryById(selectedCategoryId, selectedSubCategoryId)
       : undefined;
     const isNonMedicalCategory = Boolean(selectedCategoryId && selectedCategoryId !== 'medical');
     const canAddMember = isNonMedicalCategory && Boolean(selectedSubCategoryId);
@@ -1400,7 +1615,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
     let filteredProviders = providers;
     if (providerSearchQuery.trim()) {
       const query = providerSearchQuery.toLowerCase().trim();
-      filteredProviders = providers.filter(provider => 
+      filteredProviders = providers.filter(provider =>
         provider.name.toLowerCase().includes(query) ||
         (provider.qualifications && provider.qualifications.toLowerCase().includes(query)) ||
         (provider.specialty && provider.specialty.toLowerCase().includes(query)) ||
@@ -1581,73 +1796,73 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
             const canAdd = !isSelected && !isCircleFull;
             const showAction = isSelected || !isCircleFull;
             return (
-            <TouchableOpacity
-              key={provider.id}
-              style={[
-                styles.listItem,
-                {
-                  borderBottomColor: colors.text + '20',
-                  paddingVertical: getScaledFontSize(16),
-                  paddingHorizontal: getScaledFontSize(16),
-                  backgroundColor: isSelected ? (colors.tint || '#008080') + '15' : 'transparent',
-                }
-              ]}
-              onPress={provider.isManual ? undefined : () => {
-                router.push(`/Home/doctor-detail?id=${encodeURIComponent(provider.id)}&name=${encodeURIComponent(provider.name)}&qualifications=${encodeURIComponent(provider.qualifications || '')}&specialty=${encodeURIComponent(provider.specialty || '')}`);
-              }}
-              activeOpacity={provider.isManual ? 1 : 0.7}
-            >
-              <InitialsAvatar 
-                name={provider.name} 
-                size={getScaledFontSize(56)} 
-                style={styles.listAvatar}
-                image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : undefined}
-              />
-              <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
-                <Text style={[
-                  styles.listItemName,
+              <TouchableOpacity
+                key={provider.id}
+                style={[
+                  styles.listItem,
                   {
-                    fontSize: getScaledFontSize(16),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    color: colors.text,
-                    marginBottom: getScaledFontSize(4),
+                    borderBottomColor: colors.text + '20',
+                    paddingVertical: getScaledFontSize(16),
+                    paddingHorizontal: getScaledFontSize(16),
+                    backgroundColor: isSelected ? (colors.tint || '#008080') + '15' : 'transparent',
                   }
-                ]}>
-                  {provider.name}
-                </Text>
-                <Text style={[
-                  styles.listItemRole,
-                  {
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(400) as any,
-                    color: colors.text + '80',
-                  }
-                ]}>
-                  {provider.isManual
-                    ? (provider.relationship || provider.qualifications || 'Member')
-                    : (provider.qualifications || provider.specialty || 'Healthcare Provider')}
-                </Text>
-              </View>
-              {showAction && (
-                <TouchableOpacity
-                  style={[
-                    styles.providerActionButton,
-                    { opacity: canAdd || isSelected ? 1 : 0.4 }
-                  ]}
-                  onPress={(event) => {
-                    event?.stopPropagation?.();
-                    if (isSelected) {
-                      onRemoveProvider(provider.id);
-                    } else if (canAdd) {
-                      onAddProvider(provider);
+                ]}
+                onPress={provider.isManual ? undefined : () => {
+                  router.push(`/Home/doctor-detail?id=${encodeURIComponent(provider.id)}&name=${encodeURIComponent(provider.name)}&qualifications=${encodeURIComponent(provider.qualifications || '')}&specialty=${encodeURIComponent(provider.specialty || '')}`);
+                }}
+                activeOpacity={provider.isManual ? 1 : 0.7}
+              >
+                <InitialsAvatar
+                  name={provider.name}
+                  size={getScaledFontSize(56)}
+                  style={styles.listAvatar}
+                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : undefined}
+                />
+                <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
+                  <Text style={[
+                    styles.listItemName,
+                    {
+                      fontSize: getScaledFontSize(16),
+                      fontWeight: getScaledFontWeight(600) as any,
+                      color: colors.text,
+                      marginBottom: getScaledFontSize(4),
                     }
-                  }}
-                  disabled={!canAdd && !isSelected}
-                >
-                  <IconSymbol name={isSelected ? 'minus' : 'plus'} size={getScaledFontSize(18)} color={colors.tint || '#008080'} />
-                </TouchableOpacity>
-              )}
-            </TouchableOpacity>
+                  ]}>
+                    {provider.name}
+                  </Text>
+                  <Text style={[
+                    styles.listItemRole,
+                    {
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(400) as any,
+                      color: colors.text + '80',
+                    }
+                  ]}>
+                    {provider.isManual
+                      ? (provider.relationship || provider.qualifications || 'Member')
+                      : (provider.qualifications || provider.specialty || 'Healthcare Provider')}
+                  </Text>
+                </View>
+                {showAction && (
+                  <TouchableOpacity
+                    style={[
+                      styles.providerActionButton,
+                      { opacity: canAdd || isSelected ? 1 : 0.4 }
+                    ]}
+                    onPress={(event) => {
+                      event?.stopPropagation?.();
+                      if (isSelected) {
+                        onRemoveProvider(provider.id);
+                      } else if (canAdd) {
+                        onAddProvider(provider);
+                      }
+                    }}
+                    disabled={!canAdd && !isSelected}
+                  >
+                    <IconSymbol name={isSelected ? 'minus' : 'plus'} size={getScaledFontSize(18)} color={colors.tint || '#008080'} />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
             );
           })
         )}
@@ -1694,14 +1909,14 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
   // Calculate max height to push appointments to bottom of screen
   const screenHeight = Dimensions.get('window').height;
   const maxListHeight = hasUpcomingAppointments ? Math.min(screenHeight * 0.65, 600) : undefined;
-  
+
   const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
-  
+
   // Load doctor photos for all providers in the list
   const providerIds = fastenProviders.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
-  
+
   // Load Fasten Health providers
   React.useEffect(() => {
     const loadProviders = async () => {
@@ -1716,7 +1931,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
             const sortedDoctors = [...department.doctors].sort((a, b) => {
               const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
               const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-              
+
               // If both have dates, sort by date descending
               if (dateA > 0 && dateB > 0) {
                 return dateB - dateA; // Descending order (most recent first)
@@ -1724,7 +1939,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
               // If only one has a date, prioritize it
               if (dateA > 0 && dateB === 0) return -1;
               if (dateB > 0 && dateA === 0) return 1;
-              
+
               // If neither has a date, maintain original order
               return 0;
             });
@@ -1745,7 +1960,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
         setIsLoadingProviders(false);
       }
     };
-    
+
     loadProviders();
   }, [departmentId]);
 
@@ -1757,7 +1972,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
       const sortedProviders = [...fastenProviders].sort((a, b) => {
         const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
         const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-        
+
         // If both have dates, sort by date descending
         if (dateA > 0 && dateB > 0) {
           return dateB - dateA; // Descending order (most recent first)
@@ -1765,11 +1980,11 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
         // If only one has a date, prioritize it
         if (dateA > 0 && dateB === 0) return -1;
         if (dateB > 0 && dateA === 0) return 1;
-        
+
         // If neither has a date, maintain original order
         return 0;
       });
-      
+
       return sortedProviders.map(provider => ({
         id: provider.id,
         name: provider.name,
@@ -1778,7 +1993,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
         image: require('@/assets/images/dummy.jpg'), // Use default image
       }));
     }
-    
+
     // Fallback to default departments
     const providers: Array<{ id: string; name: string; qualifications: string; image: any }> = [];
     if (departmentId) {
@@ -1858,9 +2073,9 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
             }}
             activeOpacity={0.7}
           >
-            <InitialsAvatar 
+            <InitialsAvatar
               name={doc.name}
-              size={getScaledFontSize(56)} 
+              size={getScaledFontSize(56)}
               style={styles.listAvatar}
               image={doctorPhotos.get(doc.id) ? { uri: doctorPhotos.get(doc.id)! } : undefined}
             />
@@ -1900,7 +2115,7 @@ export default function HomeScreen() {
   const isTabletDevice = isTablet();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [viewMode, setViewMode] = React.useState<'circle' | 'list' | 'circle-providers'>('circle');
-  
+
   // Load Fasten Health providers for circle view
   const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
@@ -1918,14 +2133,14 @@ export default function HomeScreen() {
     [circleProviders]
   );
   const isCircleComplete = circleProviders.length >= MAX_SELECTED_PROVIDERS;
-  
+
   // Helper function to get first name from full name
   const getFirstName = (fullName: string): string => {
     if (!fullName) return 'Jenny';
     const parts = fullName.trim().split(/\s+/);
     return parts[0] || 'Jenny';
   };
-  
+
   useEffect(() => {
     const loadProviders = async () => {
       setIsLoadingProviders(true);
@@ -1933,7 +2148,7 @@ export default function HomeScreen() {
         const providers = await getFastenPractitioners();
         setFastenProviders(providers);
         console.log(`Loaded ${providers.length} providers from Fasten Health for home screen`);
-        
+
         // Validate and clean selected providers when data changes
         await validateAndCleanProviders();
       } catch (error) {
@@ -1942,7 +2157,7 @@ export default function HomeScreen() {
         setIsLoadingProviders(false);
       }
     };
-    
+
     const loadPatient = async () => {
       try {
         const patient = await getFastenPatient();
@@ -1954,7 +2169,7 @@ export default function HomeScreen() {
         console.error('Error loading patient data:', error);
       }
     };
-    
+
     loadProviders();
     loadPatient();
   }, [validateAndCleanProviders]);
@@ -2005,7 +2220,7 @@ export default function HomeScreen() {
 
     loadUpcomingAppointments();
   }, []);
-  
+
   // Cycle through views: circle -> circle-providers -> list -> circle
   const toggleViewMode = () => {
     if (viewMode === 'circle') {
@@ -2016,7 +2231,7 @@ export default function HomeScreen() {
       setViewMode('circle');
     }
   };
-  
+
   // Get icon based on current view (shows what you'll switch to)
   const getToggleIcon = () => {
     if (viewMode === 'circle') {
@@ -2030,7 +2245,7 @@ export default function HomeScreen() {
   const [showProviderDetails, setShowProviderDetails] = React.useState(false);
   const [selectedDepartmentId, setSelectedDepartmentId] = React.useState<string | undefined>(undefined);
   const [selectedDepartmentName, setSelectedDepartmentName] = React.useState<string | undefined>(undefined);
-  
+
   // Animation values for sliding between main list and details list
   const screenWidth = Dimensions.get('window').width;
   const mainListSlide = React.useRef(new Animated.Value(0)).current;
@@ -2092,7 +2307,7 @@ export default function HomeScreen() {
 
   return (
     <AppWrapper notificationCount={3}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -2100,10 +2315,10 @@ export default function HomeScreen() {
         <View style={styles.circleSection}>
           <View style={styles.titleRow}>
             <Text style={[
-              styles.sectionTitle, 
-              { 
-                fontSize: getScaledFontSize(24), 
-                fontWeight: getScaledFontWeight(600) as any, 
+              styles.sectionTitle,
+              {
+                fontSize: getScaledFontSize(24),
+                fontWeight: getScaledFontWeight(600) as any,
                 color: colors.text,
                 paddingBottom: 50,
                 flex: 1,
@@ -2124,16 +2339,16 @@ export default function HomeScreen() {
               ]}
               activeOpacity={0.7}
             >
-              <IconSymbol 
-                name={getToggleIcon()} 
-                size={getScaledFontSize(24)} 
-                color={colors.tint || '#008080'} 
+              <IconSymbol
+                name={getToggleIcon()}
+                size={getScaledFontSize(24)}
+                color={colors.tint || '#008080'}
               />
             </TouchableOpacity>
           </View>
           {viewMode === 'circle' ? (
             isTabletDevice ? (
-              <TabletCircleView 
+              <TabletCircleView
                 providers={circleProviders}
                 userImg={userImg}
                 colors={colors}
@@ -2144,7 +2359,7 @@ export default function HomeScreen() {
                 isCircleComplete={isCircleComplete}
               />
             ) : (
-              <PhoneCircleView 
+              <PhoneCircleView
                 providers={circleProviders}
                 userImg={userImg}
                 colors={colors}
@@ -2224,7 +2439,7 @@ export default function HomeScreen() {
             />
           )}
         </View>
-        
+
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text style={[
@@ -2517,6 +2732,7 @@ const styles = StyleSheet.create({
     // Styles applied inline
   },
   listContainer: {
+    flex: 1,
     width: '100%',
     paddingHorizontal: 0,
   },
@@ -2567,11 +2783,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   listViewContainer: {
+    flex: 1,
     width: '100%',
     position: 'relative',
     overflow: 'hidden',
   },
   listViewWrapper: {
+    flex: 1,
     width: '100%',
   },
   detailsListWrapper: {

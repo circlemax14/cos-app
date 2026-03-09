@@ -2,6 +2,7 @@ import { useDatabaseSafe, useDatabaseReady } from '@/database/DatabaseProvider';
 import { useCallback, useEffect, useState } from 'react';
 import { Clinic } from '@/database/models';
 import { ProcessedClinic } from '@/services/fasten-health-processor';
+import { getNonEhrClinics } from '@/services/non-ehr-processor';
 
 export interface ConnectedHospital {
   id: string;
@@ -31,7 +32,7 @@ export function useConnectedEhrs() {
     try {
       console.log('🔄 Starting to load clinics...');
       console.log(`📊 Database ready: ${isDatabaseReady}, Database available: ${!!database}`);
-      
+
       let clinics: Clinic[] = [];
 
       // Try to load from database first (if database is ready)
@@ -57,13 +58,13 @@ export function useConnectedEhrs() {
           const processedData = await processFastenHealthDataFromFile();
           console.log(`✅ Processed data: ${processedData.clinics.length} clinics found`);
           processedClinics = processedData.clinics;
-          
+
           if (processedClinics.length === 0) {
             console.warn('⚠️ No clinics found in processed data!');
           } else {
             console.log(`📋 Clinic names from file: ${processedClinics.map(c => c.name).join(', ')}`);
           }
-          
+
           // Try to sync to database for future use (if database is ready)
           if (isDatabaseReady && database) {
             try {
@@ -83,15 +84,15 @@ export function useConnectedEhrs() {
       // Transform clinics to ConnectedHospital format
       // Use database clinics if available, otherwise use processed clinics
       const clinicsToUse = clinics.length > 0 ? clinics : processedClinics;
-      
+
       console.log(`🔄 Transforming ${clinicsToUse.length} clinics to ConnectedHospital format...`);
-      
+
       if (clinicsToUse.length === 0) {
         console.warn('⚠️ No clinics available to transform!');
         console.warn(`   - Database clinics: ${clinics.length}`);
         console.warn(`   - Processed clinics: ${processedClinics.length}`);
       }
-      
+
       const hospitals: ConnectedHospital[] = clinicsToUse.map((clinic: Clinic | ProcessedClinic, index) => {
         const connectionDate = new Date();
         connectionDate.setMonth(connectionDate.getMonth() - (index * 2));
@@ -102,7 +103,7 @@ export function useConnectedEhrs() {
         // Handle both database Clinic model and ProcessedClinic format
         const isDatabaseModel = 'addressLine' in clinic;
         const addressParts = [];
-        
+
         if (isDatabaseModel) {
           // Database Clinic model
           const dbClinic = clinic as Clinic;
@@ -122,8 +123,8 @@ export function useConnectedEhrs() {
           // ProcessedClinic format
           const procClinic = clinic as ProcessedClinic;
           if (procClinic.address?.line) {
-            const line = Array.isArray(procClinic.address.line) 
-              ? procClinic.address.line.join(', ') 
+            const line = Array.isArray(procClinic.address.line)
+              ? procClinic.address.line.join(', ')
               : procClinic.address.line;
             if (line) addressParts.push(line);
           }
@@ -137,7 +138,7 @@ export function useConnectedEhrs() {
             addressParts.push(procClinic.address.zip);
           }
         }
-        
+
         const fullAddress = addressParts.join(', ');
 
         return {
@@ -146,10 +147,10 @@ export function useConnectedEhrs() {
           provider: provider,
           connectedDate: connectionDate.toISOString().split('T')[0],
           address: fullAddress || undefined,
-          city: isDatabaseModel 
+          city: isDatabaseModel
             ? (clinic as Clinic).city || undefined
             : (clinic as ProcessedClinic).address?.city || undefined,
-          state: isDatabaseModel 
+          state: isDatabaseModel
             ? (clinic as Clinic).state || undefined
             : (clinic as ProcessedClinic).address?.state || undefined,
           phone: clinic.phone || undefined,
@@ -157,11 +158,30 @@ export function useConnectedEhrs() {
         };
       });
 
-      setConnectedHospitals(hospitals);
-      console.log(`✅ Loaded ${hospitals.length} connected clinics`);
-      if (hospitals.length > 0) {
-        console.log(`📋 Clinic names: ${hospitals.map(h => h.name).join(', ')}`);
+      // ── Load integrative (non-EHR) clinics in parallel, set state ONCE ────
+      // Using a single setState avoids duplicate-append bugs when loadClinics
+      // fires more than once (e.g. DB becomes ready after initial mount).
+      let integrativeHospitals: ConnectedHospital[] = [];
+      try {
+        const nonEhrClinics = await getNonEhrClinics();
+        integrativeHospitals = nonEhrClinics.map(clinic => ({
+          id: clinic.id,
+          name: clinic.name,
+          provider: 'Integrative',
+          connectedDate: clinic.createdAt?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+          address: clinic.address,
+          phone: clinic.phone,
+          email: clinic.email,
+        }));
+        console.log(`📋 Found ${nonEhrClinics.length} Integrative clinic(s)`);
+      } catch (nonEhrError) {
+        console.warn('⚠️ Failed to load Integrative clinics:', nonEhrError);
       }
+
+      // Single setState — no stale-prev race condition
+      const combined = [...hospitals, ...integrativeHospitals];
+      setConnectedHospitals(combined);
+      console.log(`✅ Total clinics set: ${combined.length} (${hospitals.length} EHR + ${integrativeHospitals.length} Integrative)`);
     } catch (error) {
       console.error('Error loading clinics:', error);
       setConnectedHospitals([]);
