@@ -144,6 +144,19 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="non-ehr-provider-detail"
+        options={{
+          title: 'Provider Detail',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="integrative-screen"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
