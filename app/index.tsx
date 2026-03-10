@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { checkSession } from '@/services/auth';
 import { Colors } from '@/constants/theme';
@@ -10,40 +10,83 @@ import { useAccessibility } from '@/stores/accessibility-store';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+type GateState = 'loading' | 'no-internet' | 'done';
+
 export default function SplashGate() {
-  const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
+  const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      try {
-        // const ok = await checkSession();
-        // if (!isMounted) return;
-        // if (ok) {
-        //   router.replace('/(tabs)');
-        // } else {
-        //   router.replace('/(auth)/sign-in' as any);
-        // }
-        setTimeout(() => {
-          router.replace('/(auth)/provider-selection');
-        }, 3000);
-      } catch (e) {
-        if (!isMounted) return;
-        router.replace('/(auth)/provider-selection' as any);
-      } finally {
-        SplashScreen.hideAsync().catch(() => {});
+  const [state, setState] = useState<GateState>('loading');
+  const [retryKey, setRetryKey] = useState(0);
+
+  const run = useCallback(async () => {
+    setState('loading');
+    try {
+      const result = await checkSession();
+
+      if (!result.authenticated || !result.user) {
+        router.replace('/(auth)/sign-in' as never);
+        return;
       }
-    })();
-    return () => {
-      isMounted = false;
-    };
+
+      const { termsAccepted, fastenConnected } = result.user;
+
+      if (!termsAccepted) {
+        router.replace('/(onboarding)/terms' as never);
+        return;
+      }
+
+      if (!fastenConnected) {
+        router.replace('/(onboarding)/fasten-connect' as never);
+        return;
+      }
+
+      router.replace('/Home' as never);
+    } catch (err: unknown) {
+      const isNetworkError =
+        err instanceof Error && (err as Error & { code?: string }).code === 'NETWORK_ERROR';
+      if (isNetworkError) {
+        setState('no-internet');
+      } else {
+        // Unknown error → go to sign-in
+        router.replace('/(auth)/sign-in' as never);
+      }
+    } finally {
+      SplashScreen.hideAsync().catch(() => {});
+    }
   }, []);
+
+  useEffect(() => {
+    run();
+  }, [run, retryKey]);
+
+  if (state === 'no-internet') {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={[styles.offlineIcon]}>📵</Text>
+        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20) }]}>
+          No Internet Connection
+        </Text>
+        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+          Check your connection and try again.
+        </Text>
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.primary }]}
+          onPress={() => setRetryKey((k) => k + 1)}
+        >
+          <Text style={[styles.retryText, { fontSize: getScaledFontSize(16) }]}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(140), height: getScaledFontSize(140) }]} contentFit="contain" />
-      <ActivityIndicator size="large" />
+      <Image
+        source={require('@/assets/images/logo.png')}
+        style={{ width: getScaledFontSize(140), height: getScaledFontSize(140) }}
+        contentFit="contain"
+      />
+      <ActivityIndicator size="large" color={colors.primary} />
     </View>
   );
 }
@@ -56,6 +99,14 @@ const styles = StyleSheet.create({
     gap: 24,
     paddingHorizontal: 24,
   },
+  offlineIcon: { fontSize: 56 },
+  title: { fontWeight: '700', textAlign: 'center' },
+  subtitle: { textAlign: 'center', marginTop: -12 },
+  retryButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  retryText: { color: '#fff', fontWeight: '600' },
 });
-
-
