@@ -113,6 +113,9 @@ export default function FastenConnectScreen() {
           style={[styles.primaryButton, { backgroundColor: colors.primary }]}
           onPress={handleConnect}
           disabled={state === 'initiating' || state === 'syncing'}
+          accessibilityLabel="Connect with Fasten Health"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: state === 'initiating' || state === 'syncing', busy: state === 'initiating' || state === 'syncing' }}
         >
           {state === 'initiating' || state === 'syncing' ? (
             <View style={styles.loadingRow}>
@@ -128,7 +131,12 @@ export default function FastenConnectScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={handleSkip} disabled={state === 'syncing'}>
+        <TouchableOpacity
+          onPress={handleSkip}
+          disabled={state === 'syncing'}
+          accessibilityLabel="Skip health records connection for now"
+          accessibilityRole="button"
+        >
           <Text style={[styles.skipText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
             Skip for now
           </Text>

@@ -1,10 +1,12 @@
 import { Colors } from '@/constants/theme';
 import { getFastenPatient } from '@/services/fasten-health';
+import { signOut } from '@/services/auth';
+import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Button, Card, Icon, List } from 'react-native-paper';
 
@@ -262,7 +264,27 @@ export function ProfileContent({
 
       {showSignOut && (
         <View style={styles.footer}>
-          <Button mode="outlined" onPress={() => {}} style={styles.signOutButton}>
+          <Button
+            mode="outlined"
+            onPress={() => {
+              Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign Out',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await signOut();
+                    // Clear all cached PHI from React Query memory
+                    queryClient.clear();
+                    router.replace('/(auth)/sign-in' as never);
+                  },
+                },
+              ]);
+            }}
+            style={styles.signOutButton}
+            accessibilityLabel="Sign out of your account"
+            accessibilityRole="button"
+          >
             <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
               Sign Out
             </Text>

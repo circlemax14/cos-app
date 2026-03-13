@@ -6,6 +6,7 @@
  */
 
 import { HealthSummary, MedicalReport, Appointment, DoctorDiagnosis, Medication } from './openai';
+export type { Appointment } from './openai';
 
 // FHIR Resource Types
 interface FHIRDiagnosticReport {
@@ -225,6 +226,12 @@ interface FHIREncounter {
     start?: string;
     end?: string;
   };
+  participant?: Array<{
+    individual?: {
+      reference?: string;
+      display?: string;
+    };
+  }>;
 }
 
 interface FHIRMedicationStatement {
@@ -348,7 +355,7 @@ function transformDiagnosticReport(report: FHIRDiagnosticReport, observations: M
     const loincJson = require('../data/loinc-map.json');
     if (loincJson && report.code?.coding) {
       for (const c of report.code.coding) {
-        const code = (c as any).code;
+        const code = c.code;
         if (code && loincJson[code]) {
           const li = loincJson[code];
           reportName = li.shortName || li.component || reportName;
@@ -369,14 +376,18 @@ function transformDiagnosticReport(report: FHIRDiagnosticReport, observations: M
         const observation = observations.get(obsId);
         if (observation) {
           // Helper: try to get a LOINC label for an observation or component
-          const getLoincLabel = (obsOrComp: any) => {
+          interface LoincableResource {
+            code?: { coding?: Array<{ code?: string; system?: string; display?: string }> };
+            coding?: Array<{ code?: string; system?: string; display?: string }>;
+          }
+          const getLoincLabel = (obsOrComp: LoincableResource) => {
             try {
               // eslint-disable-next-line @typescript-eslint/no-var-requires
               const loincJson = require('../data/loinc-map.json');
               if (!loincJson) return undefined;
               const codings = obsOrComp.code?.coding || obsOrComp.coding || [];
               for (const coding of codings) {
-                const code = (coding as any).code;
+                const code = coding.code;
                 if (code && loincJson[code]) {
                   const li = loincJson[code];
                   return li.shortName || li.component || undefined;
@@ -448,7 +459,7 @@ export async function transformFastenHealthData(): Promise<HealthSummary> {
   const encounters: Map<string, FHIREncounter> = new Map();
   const medications: FHIRMedicationStatement[] = [];
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     switch (resource.resourceType) {
       case 'DiagnosticReport':
         diagnosticReports.push(resource as FHIRDiagnosticReport);
@@ -686,7 +697,7 @@ function transformDiagnosticReportToReport(
     const loincJson = require('../data/loinc-map.json');
     if (loincJson && report.code?.coding) {
       for (const c of report.code.coding) {
-        const code = (c as any).code;
+        const code = c.code;
         if (code && loincJson[code]) {
           const li = loincJson[code];
           title = li.shortName || li.component || title;
@@ -725,8 +736,8 @@ function transformDiagnosticReportToReport(
   // Get accession number from identifier
   let accessionNumber: string | undefined;
   if (report.identifier && report.identifier.length > 0) {
-    const fillerId = report.identifier.find((id: any) => 
-      id.type?.coding?.[0]?.code === 'FILL' || 
+    const fillerId = report.identifier.find((id) =>
+      id.type?.coding?.[0]?.code === 'FILL' ||
       id.system?.includes('accession-number')
     );
     if (fillerId?.value) {
@@ -737,7 +748,7 @@ function transformDiagnosticReportToReport(
   // Get order number from identifier
   let orderNumber: string | undefined;
   if (report.identifier && report.identifier.length > 0) {
-    const placerId = report.identifier.find((id: any) => 
+    const placerId = report.identifier.find((id) =>
       id.type?.coding?.[0]?.code === 'PLAC'
     );
     if (placerId?.value) {
@@ -856,7 +867,7 @@ export async function getFastenDiagnosticReports(): Promise<Report[]> {
   const practitioners: Map<string, FHIRPractitioner> = new Map();
   const encounters: Map<string, FHIREncounter> = new Map();
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     switch (resource.resourceType) {
       case 'DiagnosticReport':
         diagnosticReports.push(resource as FHIRDiagnosticReport);
@@ -869,7 +880,7 @@ export async function getFastenDiagnosticReports(): Promise<Report[]> {
         break;
     }
   });
-  
+
   // Sort by date (most recent first)
   diagnosticReports.sort((a, b) => {
     const dateA = a.effectiveDateTime || a.issued || '';
@@ -891,7 +902,7 @@ export interface Provider {
   name: string;
   qualifications?: string;
   specialty?: string;
-  image?: any; // For React Native image require (currently not available in FHIR data)
+  image?: number | { uri: string }; // For React Native image require or URI (currently not available in FHIR data)
   photoUrl?: string; // URL to profile photo if available
   phone?: string;
   email?: string;
@@ -937,7 +948,7 @@ export async function getFastenPractitioners(): Promise<Provider[]> {
   const diagnosticReports: FHIRDiagnosticReport[] = [];
   const encounters: Map<string, FHIREncounter> = new Map();
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     switch (resource.resourceType) {
       case 'Practitioner':
         practitioners.push(resource as FHIRPractitioner);
@@ -1007,8 +1018,8 @@ export async function getFastenPractitioners(): Promise<Provider[]> {
     const encounterDateObj = encounterDate ? new Date(encounterDate) : null;
     
     // Check if encounter has participant references to practitioners
-    if ((encounter as any).participant) {
-      (encounter as any).participant.forEach((participant: any) => {
+    if (encounter.participant) {
+      encounter.participant.forEach((participant) => {
         if (participant.individual?.reference) {
           const practitionerId = participant.individual.reference.split('/')[1];
           if (practitionerId) {
@@ -1102,8 +1113,8 @@ export async function getFastenPractitioners(): Promise<Provider[]> {
     if (dateB > 0 && dateA === 0) return 1;
     
     // If neither has a date, fall back to engagement count
-    const countA = (a as any).engagementCount || 0;
-    const countB = (b as any).engagementCount || 0;
+    const countA = a.engagementCount || 0;
+    const countB = b.engagementCount || 0;
     return countB - countA; // Descending order
   });
 }
@@ -1114,7 +1125,7 @@ export async function getFastenPractitioners(): Promise<Provider[]> {
 export async function getFastenPractitionerById(practitionerId: string): Promise<Provider | null> {
   const resources = await loadFastenHealthData();
   
-  const practitioner = resources.find((r: any) => 
+  const practitioner = resources.find((r) =>
     r.resourceType === 'Practitioner' && r.id === practitionerId
   ) as FHIRPractitioner | undefined;
   
@@ -1259,7 +1270,7 @@ export async function getFastenPatient(): Promise<Patient | null> {
   const resources = await loadFastenHealthData();
   
   // Find patient resource
-  const patientResource = resources.find((r: any) => r.resourceType === 'Patient') as FHIRPatient | undefined;
+  const patientResource = resources.find((r) => r.resourceType === 'Patient') as FHIRPatient | undefined;
   
   if (!patientResource) {
     return null;
@@ -1382,7 +1393,7 @@ export async function getProviderDiagnosesAndTreatmentPlans(practitionerId: stri
   const practitioners: Map<string, FHIRPractitioner> = new Map();
   const medications: FHIRMedicationStatement[] = [];
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     switch (resource.resourceType) {
       case 'DiagnosticReport':
         diagnosticReports.push(resource as FHIRDiagnosticReport);
@@ -1395,7 +1406,7 @@ export async function getProviderDiagnosesAndTreatmentPlans(practitionerId: stri
         break;
     }
   });
-  
+
   // Filter reports by practitioner
   const providerReports = diagnosticReports.filter(report => {
     if (report.performer && report.performer.length > 0) {
@@ -1438,7 +1449,7 @@ export async function getProviderDiagnosesAndTreatmentPlans(practitionerId: stri
       const loincJson = require('../data/loinc-map.json');
       if (loincJson && report.code?.coding) {
         for (const c of report.code.coding) {
-          const code = (c as any).code;
+          const code = c.code;
           if (code && loincJson[code]) {
             const li = loincJson[code];
             // prefer shortName, then component, then property
@@ -1515,7 +1526,7 @@ export async function getProviderProgressNotes(practitionerId: string): Promise<
   const diagnosticReports: FHIRDiagnosticReport[] = [];
   const practitioners: Map<string, FHIRPractitioner> = new Map();
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     switch (resource.resourceType) {
       case 'DiagnosticReport':
         diagnosticReports.push(resource as FHIRDiagnosticReport);
@@ -1525,7 +1536,7 @@ export async function getProviderProgressNotes(practitionerId: string): Promise<
         break;
     }
   });
-  
+
   // Get practitioner name
   const practitioner = practitioners.get(practitionerId);
   const practitionerName = practitioner?.name?.[0]?.text || 
@@ -1579,7 +1590,7 @@ export async function getProviderProgressNotes(practitionerId: string): Promise<
       const loincJson = require('../data/loinc-map.json');
       if (loincJson && report.code?.coding) {
         for (const c of report.code.coding) {
-          const code = (c as any).code;
+          const code = c.code;
           if (code && loincJson[code]) {
             const li = loincJson[code];
             const mapped = li.shortName || li.component || li.property;
@@ -1616,7 +1627,7 @@ export async function getProviderAppointments(practitionerId: string): Promise<P
   const diagnosticReports: FHIRDiagnosticReport[] = [];
   const encounters: Map<string, FHIREncounter> = new Map();
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     switch (resource.resourceType) {
       case 'DiagnosticReport':
         diagnosticReports.push(resource as FHIRDiagnosticReport);
@@ -1626,7 +1637,7 @@ export async function getProviderAppointments(practitionerId: string): Promise<P
         break;
     }
   });
-  
+
   // Filter reports by practitioner and get linked encounters
   const providerAppointments: ProviderAppointment[] = [];
   
@@ -1703,7 +1714,7 @@ export async function getFastenMedications(): Promise<Medication[]> {
   
   const medications: FHIRMedicationStatement[] = [];
   
-  resources.forEach((resource: any) => {
+  resources.forEach((resource) => {
     if (resource.resourceType === 'MedicationStatement') {
       medications.push(resource as FHIRMedicationStatement);
     }

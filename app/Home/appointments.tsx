@@ -4,6 +4,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import React, { useMemo, useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
+import type { MarkedDates } from 'react-native-calendars/src/types';
 import { Card } from 'react-native-paper';
 import { transformFastenHealthData, Appointment as FastenAppointment } from '@/services/fasten-health';
 
@@ -105,7 +106,7 @@ export default function AppointmentsScreen() {
 
   // Create marked dates for calendar with multi-dot marking
   const markedDates = useMemo(() => {
-    const marked: any = {};
+    const marked: MarkedDates = {};
     
     appointments.forEach(appointment => {
       const dateString = appointment.date.toISOString().split('T')[0];

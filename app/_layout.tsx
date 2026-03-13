@@ -11,6 +11,14 @@ import { DatabaseProvider } from '@/database/DatabaseProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
 
+// Suppress console output in production to avoid leaking PHI into device logs.
+if (!__DEV__) {
+  console.log = () => {};
+  console.warn = () => {};
+  console.debug = () => {};
+  // Keep console.error for crash reporting tools that may hook into it
+}
+
 export const unstable_settings = {
   anchor: '(tabs)',
 };

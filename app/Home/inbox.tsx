@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Text, ScrollView, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { GiftedChat, IMessage, User, InputToolbar, Bubble, Send } from 'react-native-gifted-chat';
+import type { InputToolbarProps } from 'react-native-gifted-chat/lib/InputToolbar';
+import type { BubbleProps } from 'react-native-gifted-chat/lib/Bubble/types';
+import type { SendProps } from 'react-native-gifted-chat/lib/Send';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppWrapper } from '@/components/app-wrapper';
@@ -19,14 +22,14 @@ import {
   leavePresence,
 } from '@/services/ably-chat';
 
-function ChatInputToolbar({ 
-  props, 
-  colors, 
+function ChatInputToolbar({
+  props,
+  colors,
   getScaledFontSize,
-  insets 
-}: { 
-  props: any; 
-  colors: any; 
+  insets
+}: {
+  props: InputToolbarProps<IMessage>;
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   insets: { bottom: number };
 }) {
@@ -212,7 +215,7 @@ export default function InboxScreen() {
     setMessages([]);
   };
 
-  const renderInputToolbar = useCallback((props: any) => {
+  const renderInputToolbar = useCallback((props: InputToolbarProps<IMessage>) => {
     return (
       <ChatInputToolbar 
         props={props}
@@ -223,7 +226,7 @@ export default function InboxScreen() {
     );
   }, [colors, getScaledFontSize, insets]);
 
-  const renderBubble = (props: any) => {
+  const renderBubble = (props: BubbleProps<IMessage>) => {
     return (
       <Bubble
         {...props}
@@ -261,7 +264,7 @@ export default function InboxScreen() {
     );
   };
 
-  const renderSend = (props: any) => {
+  const renderSend = (props: SendProps<IMessage>) => {
     return (
       <Send
         {...props}

@@ -624,7 +624,7 @@ export default function ModalScreen() {
                                 id={provider.id}
                                 name={provider.providerName}
                                 qualifications={provider.specialty || 'Integrative Health'}
-                                image={undefined}
+                                image={null}
                                 onPress={() => {
                                   router.back();
                                   setTimeout(() => {
@@ -943,7 +943,7 @@ export default function ModalScreen() {
                                           qualifications={provider.isManual
                                             ? (provider.relationship || provider.qualifications || 'Member')
                                             : (provider.qualifications || 'Healthcare Provider')}
-                                          image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || undefined)}
+                                          image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
                                           onPress={provider.isManual ? undefined : () => {
                                             router.back();
                                             setTimeout(() => {
@@ -1013,7 +1013,7 @@ export default function ModalScreen() {
                                   id={provider.id}
                                   name={provider.name}
                                   qualifications={provider.qualifications || 'Healthcare Provider'}
-                                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || undefined)}
+                                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
                                   onPress={() => {
                                     router.back();
                                     setTimeout(() => {

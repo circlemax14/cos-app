@@ -122,6 +122,9 @@ export default function TermsScreen() {
           style={[styles.checkboxRow, !scrolledToBottom && styles.disabled]}
           onPress={() => scrolledToBottom && setAgreed(!agreed)}
           disabled={!scrolledToBottom}
+          accessibilityLabel="I have read and agree to the Terms and Conditions"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: agreed, disabled: !scrolledToBottom }}
         >
           <Checkbox
             value={agreed}
@@ -130,7 +133,7 @@ export default function TermsScreen() {
             color={agreed ? colors.primary : undefined}
           />
           <Text style={[styles.checkboxLabel, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
-            I have read and agree to the Terms & Conditions
+            I have read and agree to the Terms &amp; Conditions
           </Text>
         </TouchableOpacity>
 
@@ -147,6 +150,9 @@ export default function TermsScreen() {
           ]}
           onPress={handleAccept}
           disabled={!agreed || accepting}
+          accessibilityLabel={agreed ? 'Accept terms and continue' : 'Accept terms to continue (scroll to bottom first)'}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !agreed || accepting }}
         >
           {accepting ? (
             <ActivityIndicator color="#fff" />

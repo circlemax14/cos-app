@@ -94,7 +94,7 @@ export function unsubscribeFromChannel(channelName: string): void {
  */
 export async function publishMessage(
   channelName: string,
-  message: any
+  message: Record<string, unknown>
 ): Promise<void> {
   if (!ablyClient) {
     console.error('Ably client not initialized. Call initializeAbly() first.');
@@ -120,7 +120,7 @@ export function getChannelPresence(channelName: string): Ably.RealtimePresence |
 /**
  * Enter presence on a channel
  */
-export async function enterPresence(channelName: string, data?: any): Promise<void> {
+export async function enterPresence(channelName: string, data?: Record<string, unknown>): Promise<void> {
   if (!ablyClient) {
     return;
   }

@@ -6,6 +6,27 @@ import type {
   HealthValue,
 } from 'react-native-health';
 
+/**
+ * Interface for the extended HealthKit API surface that react-native-health
+ * bridges at runtime but does not always expose in its TypeScript types.
+ */
+interface HealthKitExtended {
+  initHealthKit: (permissions: HealthKitPermissions, callback: (error: string) => void) => void;
+  getAuthStatus: (permissions: HealthKitPermissions, callback: (error: string, results: { permissions: { read: number[] } }) => void) => void;
+  getStepCount: (options: HealthInputOptions, callback: (error: string | Error, results: HealthValue) => void) => void;
+  getHeartRateSamples: (options: HealthInputOptions, callback: (error: string | Error, results: HealthValue[]) => void) => void;
+  getSleepSamples: (options: HealthInputOptions, callback: (error: string | Error, results: HealthValue[]) => void) => void;
+  getActiveEnergyBurned: (options: HealthInputOptions, callback: (error: string | Error, results: HealthValue[] | HealthValue) => void) => void;
+  Constants: {
+    Permissions: {
+      StepCount: string;
+      HeartRate: string;
+      SleepAnalysis: string;
+      ActiveEnergyBurned: string;
+    };
+  };
+}
+
 export interface HealthMetrics {
   steps: number;
   heartRate: number | null;
@@ -44,17 +65,17 @@ const getHealthKitModule = () => {
   if (AppleHealthKit) {
     // Check if JS wrapper has the methods we need
     const hasAllMethods = 
-      typeof (AppleHealthKit as any).getStepCount === 'function' &&
-      typeof (AppleHealthKit as any).getHeartRateSamples === 'function' &&
-      typeof (AppleHealthKit as any).getSleepSamples === 'function' &&
-      typeof (AppleHealthKit as any).getActiveEnergyBurned === 'function';
+      typeof (AppleHealthKit as unknown as HealthKitExtended).getStepCount === 'function' &&
+      typeof (AppleHealthKit as unknown as HealthKitExtended).getHeartRateSamples === 'function' &&
+      typeof (AppleHealthKit as unknown as HealthKitExtended).getSleepSamples === 'function' &&
+      typeof (AppleHealthKit as unknown as HealthKitExtended).getActiveEnergyBurned === 'function';
     
     if (hasAllMethods) {
       console.log('✅ Using JS wrapper (all methods available)');
       return AppleHealthKit;
     } else {
       console.warn('⚠️ JS wrapper exists but missing methods');
-      console.log('📋 Available methods:', Object.keys(AppleHealthKit).filter(key => typeof (AppleHealthKit as any)[key] === 'function'));
+      console.log('📋 Available methods:', Object.keys(AppleHealthKit).filter(key => typeof (AppleHealthKit as unknown as HealthKitExtended)[key] === 'function'));
     }
   }
   
@@ -95,7 +116,7 @@ const isHealthKitAvailable = (): boolean => {
   }
 
   // Check JS wrapper
-  if (AppleHealthKit && typeof (AppleHealthKit as any).initHealthKit === 'function') {
+  if (AppleHealthKit && typeof (AppleHealthKit as unknown as HealthKitExtended).initHealthKit === 'function') {
     return true;
   }
 
@@ -121,14 +142,14 @@ export const initializeHealthKit = (): Promise<boolean> => {
 
     // Try native module first (most reliable)
     const nativeModule = NativeModules.AppleHealthKit || NativeModules.RNAppleHealthKit;
-    let initMethod: any = null;
-    let Constants: any = null;
+    let initMethod: ((permissions: HealthKitPermissions, callback: (error: string) => void) => void) | null = null;
+    let Constants: { Permissions: { StepCount: string; HeartRate: string; SleepAnalysis: string; ActiveEnergyBurned: string } } | null = null;
 
     if (nativeModule && typeof nativeModule.initHealthKit === 'function') {
       console.log('✅ Using native module for initHealthKit');
       initMethod = nativeModule.initHealthKit;
       // Get Constants from JS wrapper if available, otherwise use fallback
-      Constants = (AppleHealthKit as any)?.Constants || {
+      Constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants || {
         Permissions: {
           StepCount: 'StepCount',
           HeartRate: 'HeartRate',
@@ -138,10 +159,10 @@ export const initializeHealthKit = (): Promise<boolean> => {
       };
     } 
     // Fallback to JS wrapper
-    else if (AppleHealthKit && typeof (AppleHealthKit as any).initHealthKit === 'function') {
+    else if (AppleHealthKit && typeof (AppleHealthKit as unknown as HealthKitExtended).initHealthKit === 'function') {
       console.log('✅ Using JS wrapper for initHealthKit');
-      initMethod = (AppleHealthKit as any).initHealthKit;
-      Constants = (AppleHealthKit as any).Constants || {
+      initMethod = (AppleHealthKit as unknown as HealthKitExtended).initHealthKit;
+      Constants = (AppleHealthKit as unknown as HealthKitExtended).Constants || {
         Permissions: {
           StepCount: 'StepCount',
           HeartRate: 'HeartRate',
@@ -153,10 +174,10 @@ export const initializeHealthKit = (): Promise<boolean> => {
     // Last resort - try getHealthKitModule
     else {
       const module = getHealthKitModule();
-      if (module && typeof (module as any).initHealthKit === 'function') {
+      if (module && typeof (module as unknown as HealthKitExtended).initHealthKit === 'function') {
         console.log('✅ Using getHealthKitModule for initHealthKit');
-        initMethod = (module as any).initHealthKit;
-        Constants = (module as any).Constants || (AppleHealthKit as any)?.Constants || {
+        initMethod = (module as unknown as HealthKitExtended).initHealthKit;
+        Constants = (module as unknown as HealthKitExtended).Constants || (AppleHealthKit as unknown as HealthKitExtended)?.Constants || {
           Permissions: {
             StepCount: 'StepCount',
             HeartRate: 'HeartRate',
@@ -173,7 +194,7 @@ export const initializeHealthKit = (): Promise<boolean> => {
       console.log('📋 Native module exists:', !!nativeModule);
       console.log('📋 Native module has initHealthKit:', nativeModule ? typeof nativeModule.initHealthKit : 'N/A');
       console.log('📋 JS wrapper exists:', !!AppleHealthKit);
-      console.log('📋 JS wrapper has initHealthKit:', AppleHealthKit ? typeof (AppleHealthKit as any).initHealthKit : 'N/A');
+      console.log('📋 JS wrapper has initHealthKit:', AppleHealthKit ? typeof (AppleHealthKit as unknown as HealthKitExtended).initHealthKit : 'N/A');
       reject(new Error(errorMessage));
       return;
     }
@@ -230,8 +251,8 @@ export const initializeHealthKit = (): Promise<boolean> => {
 const handleInitSuccess = (resolve: (value: boolean) => void) => {
   // Try to check auth status if available
   const healthKit = AppleHealthKit || getHealthKitModule();
-  if (healthKit && typeof (healthKit as any).getAuthStatus === 'function') {
-    const Constants = (AppleHealthKit as any)?.Constants || {
+  if (healthKit && typeof (healthKit as unknown as HealthKitExtended).getAuthStatus === 'function') {
+    const Constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants || {
       Permissions: {
         StepCount: 'StepCount',
         HeartRate: 'HeartRate',
@@ -252,7 +273,7 @@ const handleInitSuccess = (resolve: (value: boolean) => void) => {
       },
     };
     
-    (healthKit as any).getAuthStatus(permissions, (authError: string, authResults: any) => {
+    (healthKit as unknown as HealthKitExtended).getAuthStatus(permissions, (authError: string, authResults: { permissions: { read: number[] } }) => {
       if (authError) {
         console.warn('⚠️ Could not check auth status:', authError);
         console.log('✅ HealthKit initialized (auth status check failed)');
@@ -318,8 +339,8 @@ export const getTodayStepCount = (): Promise<number> => {
     
     // Get the method - try JS wrapper first, then native module
     const getStepCountMethod = 
-      (healthKit && typeof (healthKit as any).getStepCount === 'function') 
-        ? (healthKit as any).getStepCount
+      (healthKit && typeof (healthKit as unknown as HealthKitExtended).getStepCount === 'function') 
+        ? (healthKit as unknown as HealthKitExtended).getStepCount
         : (nativeModule && typeof nativeModule.getStepCount === 'function')
           ? nativeModule.getStepCount
           : null;
@@ -328,7 +349,7 @@ export const getTodayStepCount = (): Promise<number> => {
       const errorMsg = `HealthKit getStepCount method not available. This usually means the app needs to be rebuilt. Run: npx expo run:ios --clean`;
       console.error('❌', errorMsg);
       console.log('📋 Available native methods:', nativeModule ? Object.keys(nativeModule).filter(k => typeof nativeModule[k] === 'function') : 'No native module');
-      console.log('📋 Available JS wrapper methods:', healthKit ? Object.keys(healthKit).filter(k => typeof (healthKit as any)[k] === 'function') : 'No JS wrapper');
+      console.log('📋 Available JS wrapper methods:', healthKit ? Object.keys(healthKit).filter(k => typeof (healthKit as unknown as HealthKitExtended)[k] === 'function') : 'No JS wrapper');
       reject(new Error(errorMsg));
       return;
     }
@@ -337,7 +358,7 @@ export const getTodayStepCount = (): Promise<number> => {
 
     console.log('👣 Fetching step count with options:', options);
 
-    getStepCountMethod(options, (error: string | any, results: HealthValue) => {
+    getStepCountMethod(options, (error: string | Error, results: HealthValue) => {
       if (error) {
         // Handle authorization errors specifically
         const errorObj = typeof error === 'string' ? { message: error } : error;
@@ -376,8 +397,8 @@ export const getTodayHeartRate = (): Promise<number | null> => {
     const healthKit = getHealthKitModule();
     
     const getHeartRateMethod = 
-      (healthKit && typeof (healthKit as any).getHeartRateSamples === 'function')
-        ? (healthKit as any).getHeartRateSamples
+      (healthKit && typeof (healthKit as unknown as HealthKitExtended).getHeartRateSamples === 'function')
+        ? (healthKit as unknown as HealthKitExtended).getHeartRateSamples
         : (nativeModule && typeof nativeModule.getHeartRateSamples === 'function')
           ? nativeModule.getHeartRateSamples
           : null;
@@ -404,7 +425,7 @@ export const getTodayHeartRate = (): Promise<number | null> => {
 
     getHeartRateMethod(
       todayOptions,
-      (error: string | any, results: HealthValue[]) => {
+      (error: string | Error, results: HealthValue[]) => {
         if (error) {
           const errorObj = typeof error === 'string' ? { message: error } : error;
           const errorMessage = errorObj?.message || String(error);
@@ -457,7 +478,7 @@ export const getTodayHeartRate = (): Promise<number | null> => {
 
         getHeartRateMethod(
           latestOptions,
-          (error2: string | any, results2: HealthValue[]) => {
+          (error2: string | Error, results2: HealthValue[]) => {
             if (error2) {
               console.error('❌ Error fetching latest heart rate:', error2);
               // If we can't get latest data either, return null
@@ -498,8 +519,8 @@ export const getTodaySleepHours = (): Promise<number> => {
     const healthKit = getHealthKitModule();
     
     const getSleepMethod = 
-      (healthKit && typeof (healthKit as any).getSleepSamples === 'function')
-        ? (healthKit as any).getSleepSamples
+      (healthKit && typeof (healthKit as unknown as HealthKitExtended).getSleepSamples === 'function')
+        ? (healthKit as unknown as HealthKitExtended).getSleepSamples
         : (nativeModule && typeof nativeModule.getSleepSamples === 'function')
           ? nativeModule.getSleepSamples
           : null;
@@ -526,7 +547,7 @@ export const getTodaySleepHours = (): Promise<number> => {
 
     getSleepMethod(
       todayOptions,
-      (error: string | any, results: HealthValue[]) => {
+      (error: string | Error, results: HealthValue[]) => {
         if (error) {
           const errorObj = typeof error === 'string' ? { message: error } : error;
           const errorMessage = errorObj?.message || String(error);
@@ -585,7 +606,7 @@ export const getTodaySleepHours = (): Promise<number> => {
 
         getSleepMethod(
           latestOptions,
-          (error2: string | any, results2: HealthValue[]) => {
+          (error2: string | Error, results2: HealthValue[]) => {
             if (error2) {
               console.error('❌ Error fetching latest sleep data:', error2);
               // If we can't get latest data either, return 0
@@ -660,8 +681,8 @@ export const getTodayCaloriesBurned = (): Promise<number> => {
     const healthKit = getHealthKitModule();
     
     const getCaloriesMethod = 
-      (healthKit && typeof (healthKit as any).getActiveEnergyBurned === 'function')
-        ? (healthKit as any).getActiveEnergyBurned
+      (healthKit && typeof (healthKit as unknown as HealthKitExtended).getActiveEnergyBurned === 'function')
+        ? (healthKit as unknown as HealthKitExtended).getActiveEnergyBurned
         : (nativeModule && typeof nativeModule.getActiveEnergyBurned === 'function')
           ? nativeModule.getActiveEnergyBurned
           : null;
@@ -688,7 +709,7 @@ export const getTodayCaloriesBurned = (): Promise<number> => {
 
     getCaloriesMethod(
       todayOptions,
-      (error: string | any, results: HealthValue[] | HealthValue) => {
+      (error: string | Error, results: HealthValue[] | HealthValue) => {
         if (error) {
           const errorObj = typeof error === 'string' ? { message: error } : error;
           const errorMessage = errorObj?.message || String(error);
@@ -745,7 +766,7 @@ export const getTodayCaloriesBurned = (): Promise<number> => {
 
         getCaloriesMethod(
           latestOptions,
-          (error2: string | any, results2: HealthValue[] | HealthValue) => {
+          (error2: string | Error, results2: HealthValue[] | HealthValue) => {
             if (error2) {
               console.error('❌ Error fetching latest calories:', error2);
               // If we can't get latest data either, return 0
@@ -849,7 +870,7 @@ export const getTodayHealthMetrics = async (): Promise<HealthMetrics> => {
         console.log('📊 Fetching all metrics in parallel...');
 
         // Helper to check if error is permission-related
-        const isPermissionError = (err: any): boolean => {
+        const isPermissionError = (err: Error | string | unknown): boolean => {
           const errorMessage = err?.message || String(err) || '';
           const errorLower = errorMessage.toLowerCase();
           return (

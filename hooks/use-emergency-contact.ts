@@ -2,6 +2,7 @@ import { useDatabaseSafe, useDatabaseReady } from '@/database/DatabaseProvider';
 import { useCallback, useEffect, useState } from 'react';
 import { EmergencyContact } from '@/database/models';
 import { processFastenHealthDataFromFile } from '@/services/fasten-health-processor';
+import type { Database } from '@nozbe/watermelondb';
 
 export interface EmergencyContactData {
   id: string;
@@ -122,7 +123,7 @@ async function syncEmergencyContactsToDatabase(
     clinicName: string;
     patientId: string;
   }>,
-  database: any
+  database: Database
 ): Promise<void> {
   try {
     // Delete all existing emergency contacts

@@ -6,20 +6,40 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "buildConfiguration": "Debug"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-dev.joinabrightfuture.com"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging.joinabrightfuture.com"
+      }
     },
     "production": {
       "distribution": "store",
       "autoIncrement": true,
+      "ios": {
+        "buildConfiguration": "Release"
+      },
       "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.joinabrightfuture.com",
         "EXPO_PUBLIC_USE_MOCK_DATA": "false"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleTeamId": "74MH6L4MZA"
+      }
+    }
   }
 }

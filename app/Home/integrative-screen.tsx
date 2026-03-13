@@ -85,7 +85,7 @@ interface ManualEntryData {
 
 interface ManualEntryModalProps {
     visible: boolean;
-    colors: any;
+    colors: typeof Colors['light'];
     getScaledFontSize: (n: number) => number;
     fileName: string;
     /** Initial values pre-filled from parsing (may be "Unknown Clinic" / filename) */
@@ -247,7 +247,7 @@ const mStyles = StyleSheet.create({
 
 interface IntegrativeScreenProps {
     onBack?: () => void;
-    colors: any;
+    colors: typeof Colors['light'];
     getScaledFontSize: (size: number) => number;
     getScaledFontWeight: (weight: number) => string | number;
 }
@@ -386,9 +386,9 @@ export function IntegrativeScreen({
                 });
                 setManualEntryVisible(true);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('[IntegrativeScreen] Upload error:', err);
-            Alert.alert('Upload Failed', err?.message ?? 'An unexpected error occurred during upload.');
+            Alert.alert('Upload Failed', (err instanceof Error ? err.message : null) ?? 'An unexpected error occurred during upload.');
         } finally {
             setIsUploading(false);
         }

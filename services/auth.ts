@@ -70,6 +70,32 @@ export async function signOut(): Promise<void> {
 }
 
 /**
+ * Sign in with Apple — sends the Apple identity token to the backend,
+ * which verifies it, creates or finds the Cognito user, and returns Cognito tokens.
+ * The tokens are stored securely so all subsequent API calls are authenticated.
+ */
+export async function signInWithApple(
+  identityToken: string,
+): Promise<{ success: boolean; user?: UserProfile; message?: string }> {
+  try {
+    const res = await apiClient.post<{
+      success: boolean;
+      data: UserProfile & { accessToken: string; idToken: string; refreshToken: string };
+    }>('/v1/auth/apple-sign-in', { identityToken });
+
+    const { accessToken, idToken, refreshToken, ...userProfile } = res.data.data;
+    await storeTokens(accessToken, refreshToken, idToken);
+    // Apple users have a synthetic Cognito username derived from their Apple sub
+    await SecureStore.setItemAsync('cos_username', `apple_${userProfile.sub}`);
+
+    return { success: true, user: userProfile as UserProfile };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Apple sign in failed';
+    return { success: false, message: msg };
+  }
+}
+
+/**
  * Sign up — calls backend which creates the Cognito user.
  * (Cognito sign-up can also be done client-side if preferred.)
  */

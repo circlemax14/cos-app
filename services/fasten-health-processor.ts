@@ -18,6 +18,14 @@
 // Type Definitions
 // ============================================================================
 
+/** Shape of a LOINC map entry loaded from loinc-map.json */
+interface LoincEntry {
+  shortName?: string;
+  component?: string;
+  property?: string;
+  [key: string]: string | undefined;
+}
+
 export interface ProcessedClinic {
   id: string;
   name: string;
@@ -215,7 +223,7 @@ export interface ProcessedHealthData {
 interface FHIRResource {
   resourceType: string;
   id: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface FHIRPatient extends FHIRResource {
@@ -509,7 +517,7 @@ interface FHIRDevice extends FHIRResource {
  * @param rawFhirData - Array of FHIR resources
  * @returns Processed health data structured by clinic and patient
  */
-export function processFastenHealthData(rawFhirData: FHIRResource[], loincMap?: Map<string, any>): ProcessedHealthData {
+export function processFastenHealthData(rawFhirData: FHIRResource[], loincMap?: Map<string, LoincEntry>): ProcessedHealthData {
   // Separate resources by type
   const patients: FHIRPatient[] = [];
   const practitioners: FHIRPractitioner[] = [];
@@ -521,7 +529,7 @@ export function processFastenHealthData(rawFhirData: FHIRResource[], loincMap?: 
   const conditions: FHIRCondition[] = [];
   const devices: FHIRDevice[] = [];
 
-  rawFhirData.forEach((resource: any) => {
+  rawFhirData.forEach((resource) => {
     switch (resource.resourceType) {
       case 'Patient':
         patients.push(resource as FHIRPatient);
@@ -734,7 +742,7 @@ function processOrganizations(
   });
 
   // Extract organizations from patient managing organizations
-  allResources.forEach((resource: any) => {
+  allResources.forEach((resource) => {
     if (resource.resourceType === 'Patient' && resource.managingOrganization) {
       const orgRef = resource.managingOrganization.reference;
       if (orgRef) {
@@ -795,7 +803,7 @@ function processPatients(
 
     const email = patient.telecom?.find(t => t.system === 'email')?.value || '';
 
-    const addressObj = patient.address?.find((a: any) => a.use === 'home') || patient.address?.[0];
+    const addressObj = patient.address?.find((a) => a.use === 'home') || patient.address?.[0];
     const address = addressObj ? {
       line: addressObj.line?.[0],
       city: addressObj.city,
@@ -1057,7 +1065,7 @@ function processMedicalReports(
   encounters: FHIREncounter[],
   patients: ProcessedPatient[],
   clinics: ProcessedClinic[]
-  , loincMap?: Map<string, any>
+  , loincMap?: Map<string, LoincEntry>
 ): ProcessedMedicalReport[] {
   const practitionerMap = new Map(practitioners.map(p => [p.id, p]));
   const patientMap = new Map(patients.map(p => [p.id, p]));
@@ -1121,9 +1129,9 @@ function processMedicalReports(
       let title = report.code?.text || report.code?.coding?.[0]?.display || 'Medical Report';
       if (loincMap && report.code?.coding && report.code.coding.length > 0) {
         for (const c of report.code.coding) {
-          const code = (c as any).code;
+          const code = c.code;
           if (code && loincMap.has(code)) {
-            const li = loincMap.get(code) as any;
+            const li = loincMap.get(code);
             if (li && li.shortName) {
               title = li.shortName;
               break;
@@ -1428,7 +1436,7 @@ function processHealthDetails(
   conditions: FHIRCondition[],
   devices: FHIRDevice[],
   patients: ProcessedPatient[]
-  , loincMap?: Map<string, any>
+  , loincMap?: Map<string, LoincEntry>
 ): ProcessedHealthDetails | null {
   if (patients.length === 0) {
     return null;
@@ -1635,7 +1643,7 @@ const originalFastenData = require('../data/fasten-health-data.json');
  * IMPORTANT: This function is intended for Node scripts or backend use. Do not
  * call it from performance-sensitive UI code in the simulator.
  */
-export async function buildLoincMapFromIncludedPdfs(): Promise<Map<string, any>> {
+export async function buildLoincMapFromIncludedPdfs(): Promise<Map<string, LoincEntry>> {
   const pdfFiles = [
     'LOINC-Mapping-Guide-Allergy-Version-1.0.pdf',
     'LOINC-Mapping-Guide-Cell-Markers-Version-1.0.pdf',
@@ -1712,7 +1720,7 @@ export async function processFastenHealthDataFromFile(
     console.log(`✅ Processing ${rawData.length} FHIR resources from ${dataSourceName} data`);
     // First, try loading a static JSON LOINC map (preferred for RN).
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    let loincMap: Map<string, any> = new Map();
+    let loincMap: Map<string, LoincEntry> = new Map();
     try {
       // static JSON mapping produced by scripts/generate-loinc-map.js
       // This allows the RN app to load mappings without Node native modules.

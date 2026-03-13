@@ -82,8 +82,36 @@ interface AiExtractionResult {
 /** Maximum timeout for AI requests (2 minutes) to allow for large PDF processing */
 const NETWORK_TIMEOUT_MS = 120 * 1024;
 
+/** OpenAI message content block types */
+interface OpenAITextBlock {
+    type: 'text';
+    text: string;
+}
+interface OpenAIImageUrlBlock {
+    type: 'image_url';
+    image_url: { url: string };
+}
+interface OpenAIFileBlock {
+    type: 'file';
+    file: { filename: string; file_data: string };
+}
+type OpenAIContentBlock = OpenAITextBlock | OpenAIImageUrlBlock | OpenAIFileBlock;
+
+interface OpenAIMessage {
+    role: 'system' | 'user' | 'assistant';
+    content: string | OpenAIContentBlock[];
+}
+
+/** Shape of the fetch options passed to fetchWithRetry */
+interface FetchOptions {
+    method: string;
+    headers: Record<string, string>;
+    body: string;
+    signal?: AbortSignal;
+}
+
 /** Helper to perform fetch with a timeout and a single retry for 429s */
-async function fetchWithRetry(url: string, options: any, timeoutMs = NETWORK_TIMEOUT_MS): Promise<Response> {
+async function fetchWithRetry(url: string, options: FetchOptions, timeoutMs = NETWORK_TIMEOUT_MS): Promise<Response> {
     const execute = async () => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -213,7 +241,7 @@ export async function extractProviderInfoWithAI(
         // Build the message payload.
         // We use the 'file' block which works for PDF/Images in some GPT-4o configs,
         // but for images, image_url is the most standard for Vision.
-        const contentBlock: any[] = [
+        const contentBlock: OpenAIContentBlock[] = [
             { type: 'text', text: USER_PROMPT(fileName) }
         ];
 
@@ -232,7 +260,7 @@ export async function extractProviderInfoWithAI(
             });
         }
 
-        const messages: any[] = [
+        const messages: OpenAIMessage[] = [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: contentBlock },
         ];
@@ -363,7 +391,7 @@ export async function summarizeTreatmentFromFiles(
 
     try {
         // Build content blocks — include up to 5 files to avoid token overload
-        const contentBlocks: any[] = [
+        const contentBlocks: OpenAIContentBlock[] = [
             {
                 type: 'text',
                 text: `Summarize the treatment information from the following ${files.length} document(s) related to provider "${providerName}" at "${clinicName}".`,
@@ -399,7 +427,7 @@ export async function summarizeTreatmentFromFiles(
             return null;
         }
 
-        const messages = [
+        const messages: OpenAIMessage[] = [
             { role: 'system', content: TREATMENT_SUMMARY_SYSTEM_PROMPT },
             { role: 'user', content: contentBlocks },
         ];

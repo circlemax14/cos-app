@@ -3,10 +3,16 @@ import { getDatabase } from '@/database';
 import { Doctor } from '@/database/models';
 import { Q } from '@nozbe/watermelondb';
 import { Platform, PermissionsAndroid } from 'react-native';
+import type { ImagePickerResponse, ImageLibraryOptions } from 'react-native-image-picker';
+
+/** Minimal interface for the dynamically-loaded react-native-image-picker module */
+interface ImagePickerModule {
+  launchImageLibrary: (options: ImageLibraryOptions, callback: (response: ImagePickerResponse) => void) => void;
+}
 
 // Use react-native-image-picker as alternative to expo-image-picker
 // This library is more reliable and doesn't depend on Expo's module system
-let ImagePicker: any = null;
+let ImagePicker: ImagePickerModule | null = null;
 
 const loadImagePicker = async () => {
   if (ImagePicker) return ImagePicker;
@@ -191,7 +197,7 @@ export function useDoctor(providerId: string) {
           selectionLimit: 1,
         };
 
-        picker.launchImageLibrary(options, (response: any) => {
+        picker.launchImageLibrary(options, (response: ImagePickerResponse) => {
           console.log('📸 Image picker response:', {
             didCancel: response.didCancel,
             errorMessage: response.errorMessage,

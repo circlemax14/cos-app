@@ -5,10 +5,13 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Avatar } from 'react-native-paper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+
+/** Image source type for React Native: either a local require() number or a URI object */
+type ImageSource = number | { uri: string };
 
 /**
  * Get initials from a name
@@ -63,8 +66,8 @@ export function getAvatarColor(name: string): string {
 interface InitialsAvatarProps {
   name: string;
   size: number;
-  style?: any;
-  image?: any; // Optional fallback image
+  style?: StyleProp<ViewStyle>;
+  image?: ImageSource; // Optional fallback image
   backgroundColor?: string;
 }
 
@@ -145,7 +148,7 @@ export function InitialsAvatar({
 /**
  * Get avatar source - returns image if available, otherwise null for initials
  */
-export function getAvatarSource(image?: any): any {
+export function getAvatarSource(image?: ImageSource): ImageSource | null {
   return image || null;
 }
 

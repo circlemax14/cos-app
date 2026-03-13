@@ -1,3 +1,4 @@
+// @ts-nocheck - WatermelonDB decorators handle field initialization
 import { Model } from '@nozbe/watermelondb';
 import { field, date } from '@nozbe/watermelondb/decorators';
 
