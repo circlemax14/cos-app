@@ -1,29 +1,41 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Switch } from 'react-native';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Card, Icon, Button } from 'react-native-paper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useHealthDetails } from '@/hooks/use-health-details';
+import { useHealthDetails, useUpdateHealthDetails } from '@/hooks/use-health-details';
 import { AppWrapper } from '@/components/app-wrapper';
 
 export default function HealthDetailsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const { healthDetails, isLoading, updateHealthDetails } = useHealthDetails();
+  const { data: healthDetails, isLoading, isError, refetch } = useHealthDetails();
+  const updateMutation = useUpdateHealthDetails();
 
   const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [editedData, setEditedData] = useState({
-    height: healthDetails?.height || '',
-    weight: healthDetails?.weight || '',
-    bloodType: healthDetails?.bloodType || '',
-    bloodPressureSystolic: healthDetails?.bloodPressureSystolic || '',
-    bloodPressureDiastolic: healthDetails?.bloodPressureDiastolic || '',
-    usesCpap: healthDetails?.usesCpap || false,
-    chronicConditions: healthDetails?.chronicConditions || [],
+    height: '',
+    weight: '',
+    bloodType: '',
+    bloodPressureSystolic: '',
+    bloodPressureDiastolic: '',
+    usesCpap: false,
+    chronicConditions: [] as string[],
+    allergies: [] as string[],
+    notes: '',
   });
 
   const [newCondition, setNewCondition] = useState('');
+  const [newAllergy, setNewAllergy] = useState('');
 
   React.useEffect(() => {
     if (healthDetails) {
@@ -31,39 +43,35 @@ export default function HealthDetailsScreen() {
         height: healthDetails.height || '',
         weight: healthDetails.weight || '',
         bloodType: healthDetails.bloodType || '',
-        bloodPressureSystolic: healthDetails.bloodPressureSystolic || '',
-        bloodPressureDiastolic: healthDetails.bloodPressureDiastolic || '',
+        bloodPressureSystolic: '',
+        bloodPressureDiastolic: '',
         usesCpap: healthDetails.usesCpap || false,
         chronicConditions: healthDetails.chronicConditions || [],
+        allergies: healthDetails.allergies || [],
+        notes: healthDetails.notes || '',
       });
     }
   }, [healthDetails]);
 
-  const handleSave = async () => {
-    try {
-      setIsSaving(true);
-      // Prepare data for saving - convert empty strings to undefined so they're saved as null
-      const dataToSave = {
-        height: editedData.height.trim() || undefined,
-        weight: editedData.weight.trim() || undefined,
-        bloodType: editedData.bloodType.trim() || undefined,
-        bloodPressureSystolic: editedData.bloodPressureSystolic.trim() || undefined,
-        bloodPressureDiastolic: editedData.bloodPressureDiastolic.trim() || undefined,
-        usesCpap: editedData.usesCpap,
-        chronicConditions: editedData.chronicConditions,
-      };
-      
-      await updateHealthDetails(dataToSave);
-      setIsEditing(false);
-      // Show success feedback (you can add a toast notification here if needed)
-      console.log('✅ Health details saved successfully');
-    } catch (error) {
-      console.error('❌ Error saving health details:', error);
-      // You can add error toast notification here
-      alert('Failed to save health details. Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
+  const handleSave = () => {
+    const dataToSave = {
+      height: editedData.height.trim() || undefined,
+      weight: editedData.weight.trim() || undefined,
+      bloodType: editedData.bloodType.trim() || undefined,
+      usesCpap: editedData.usesCpap,
+      chronicConditions: editedData.chronicConditions,
+      allergies: editedData.allergies,
+      notes: editedData.notes.trim() || undefined,
+    };
+
+    updateMutation.mutate(dataToSave, {
+      onSuccess: () => {
+        setIsEditing(false);
+      },
+      onError: () => {
+        alert('Failed to save health details. Please try again.');
+      },
+    });
   };
 
   const handleCancel = () => {
@@ -72,10 +80,12 @@ export default function HealthDetailsScreen() {
         height: healthDetails.height || '',
         weight: healthDetails.weight || '',
         bloodType: healthDetails.bloodType || '',
-        bloodPressureSystolic: healthDetails.bloodPressureSystolic || '',
-        bloodPressureDiastolic: healthDetails.bloodPressureDiastolic || '',
+        bloodPressureSystolic: '',
+        bloodPressureDiastolic: '',
         usesCpap: healthDetails.usesCpap || false,
         chronicConditions: healthDetails.chronicConditions || [],
+        allergies: healthDetails.allergies || [],
+        notes: healthDetails.notes || '',
       });
     }
     setIsEditing(false);
@@ -98,13 +108,64 @@ export default function HealthDetailsScreen() {
     });
   };
 
+  const addAllergy = () => {
+    if (newAllergy.trim()) {
+      setEditedData({
+        ...editedData,
+        allergies: [...editedData.allergies, newAllergy.trim()],
+      });
+      setNewAllergy('');
+    }
+  };
+
+  const removeAllergy = (index: number) => {
+    setEditedData({
+      ...editedData,
+      allergies: editedData.allergies.filter((_, i) => i !== index),
+    });
+  };
+
   if (isLoading) {
     return (
       <AppWrapper>
         <View style={styles.loadingContainer}>
-          <Text style={[styles.loadingText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any }]}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text
+            style={[
+              styles.loadingText,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(16),
+                fontWeight: getScaledFontWeight(400) as any,
+              },
+            ]}
+          >
             Loading health details...
           </Text>
+        </View>
+      </AppWrapper>
+    );
+  }
+
+  if (isError) {
+    return (
+      <AppWrapper>
+        <View style={styles.loadingContainer}>
+          <Text
+            style={[
+              styles.loadingText,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(16),
+                fontWeight: getScaledFontWeight(400) as any,
+              },
+            ]}
+          >
+            Failed to load health details.
+          </Text>
+          <TouchableOpacity onPress={() => refetch()} style={[styles.retryButton, { borderColor: colors.tint }]}>
+            <Text style={[styles.retryText, { color: colors.tint, fontSize: getScaledFontSize(16) }]}>Retry</Text>
+          </TouchableOpacity>
         </View>
       </AppWrapper>
     );
@@ -115,7 +176,12 @@ export default function HealthDetailsScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Title Section */}
         <View style={styles.titleSection}>
-          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>
+          <Text
+            style={[
+              styles.title,
+              { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any },
+            ]}
+          >
             Health Details
           </Text>
           {!isEditing && (
@@ -124,10 +190,16 @@ export default function HealthDetailsScreen() {
             </TouchableOpacity>
           )}
         </View>
+
         {/* Height */}
         <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
           <Card.Content>
-            <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+            <Text
+              style={[
+                styles.label,
+                { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+              ]}
+            >
               Height
             </Text>
             {isEditing ? (
@@ -139,7 +211,12 @@ export default function HealthDetailsScreen() {
                 placeholderTextColor={colors.text + '60'}
               />
             ) : (
-              <Text style={[styles.value, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any }]}>
+              <Text
+                style={[
+                  styles.value,
+                  { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any },
+                ]}
+              >
                 {healthDetails?.height || 'Not set'}
               </Text>
             )}
@@ -149,7 +226,12 @@ export default function HealthDetailsScreen() {
         {/* Weight */}
         <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
           <Card.Content>
-            <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+            <Text
+              style={[
+                styles.label,
+                { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+              ]}
+            >
               Weight
             </Text>
             {isEditing ? (
@@ -161,7 +243,12 @@ export default function HealthDetailsScreen() {
                 placeholderTextColor={colors.text + '60'}
               />
             ) : (
-              <Text style={[styles.value, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any }]}>
+              <Text
+                style={[
+                  styles.value,
+                  { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any },
+                ]}
+              >
                 {healthDetails?.weight || 'Not set'}
               </Text>
             )}
@@ -171,7 +258,12 @@ export default function HealthDetailsScreen() {
         {/* Blood Type */}
         <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
           <Card.Content>
-            <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+            <Text
+              style={[
+                styles.label,
+                { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+              ]}
+            >
               Blood Type
             </Text>
             {isEditing ? (
@@ -183,45 +275,13 @@ export default function HealthDetailsScreen() {
                 placeholderTextColor={colors.text + '60'}
               />
             ) : (
-              <Text style={[styles.value, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any }]}>
+              <Text
+                style={[
+                  styles.value,
+                  { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any },
+                ]}
+              >
                 {healthDetails?.bloodType || 'Not set'}
-              </Text>
-            )}
-          </Card.Content>
-        </Card>
-
-        {/* Blood Pressure */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
-          <Card.Content>
-            <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-              Blood Pressure
-            </Text>
-            {isEditing ? (
-              <View style={styles.bpContainer}>
-                <TextInput
-                  style={[styles.bpInput, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
-                  value={editedData.bloodPressureSystolic}
-                  onChangeText={(text) => setEditedData({ ...editedData, bloodPressureSystolic: text })}
-                  placeholder="Systolic"
-                  placeholderTextColor={colors.text + '60'}
-                  keyboardType="numeric"
-                />
-                <Text style={[styles.bpSeparator, { color: colors.text, fontSize: getScaledFontSize(16) }]}>/</Text>
-                <TextInput
-                  style={[styles.bpInput, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
-                  value={editedData.bloodPressureDiastolic}
-                  onChangeText={(text) => setEditedData({ ...editedData, bloodPressureDiastolic: text })}
-                  placeholder="Diastolic"
-                  placeholderTextColor={colors.text + '60'}
-                  keyboardType="numeric"
-                />
-                <Text style={[styles.bpUnit, { color: colors.text, fontSize: getScaledFontSize(14) }]}>mm Hg</Text>
-              </View>
-            ) : (
-              <Text style={[styles.value, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any }]}>
-                {healthDetails?.bloodPressureSystolic && healthDetails?.bloodPressureDiastolic
-                  ? `${healthDetails.bloodPressureSystolic}/${healthDetails.bloodPressureDiastolic} mm Hg`
-                  : 'Not set'}
               </Text>
             )}
           </Card.Content>
@@ -232,10 +292,24 @@ export default function HealthDetailsScreen() {
           <Card.Content>
             <View style={styles.switchContainer}>
               <View style={styles.switchLabelContainer}>
-                <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+                <Text
+                  style={[
+                    styles.label,
+                    { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+                  ]}
+                >
                   Uses CPAP
                 </Text>
-                <Text style={[styles.switchDescription, { color: colors.text + '80', fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
+                <Text
+                  style={[
+                    styles.switchDescription,
+                    {
+                      color: colors.text + '80',
+                      fontSize: getScaledFontSize(12),
+                      fontWeight: getScaledFontWeight(400) as any,
+                    },
+                  ]}
+                >
                   Continuous Positive Airway Pressure device
                 </Text>
               </View>
@@ -253,14 +327,22 @@ export default function HealthDetailsScreen() {
         {/* Chronic Conditions */}
         <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
           <Card.Content>
-            <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+            <Text
+              style={[
+                styles.label,
+                { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+              ]}
+            >
               Chronic Medical Conditions
             </Text>
             {isEditing ? (
               <View style={styles.conditionsContainer}>
                 <View style={styles.addConditionContainer}>
                   <TextInput
-                    style={[styles.conditionInput, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(14) }]}
+                    style={[
+                      styles.conditionInput,
+                      { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(14) },
+                    ]}
                     value={newCondition}
                     onChangeText={setNewCondition}
                     placeholder="Add condition (e.g., Diabetes, Asthma)"
@@ -273,7 +355,16 @@ export default function HealthDetailsScreen() {
                 </View>
                 {editedData.chronicConditions.map((condition, index) => (
                   <View key={index} style={[styles.conditionTag, { backgroundColor: colors.tint + '20' }]}>
-                    <Text style={[styles.conditionText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+                    <Text
+                      style={[
+                        styles.conditionText,
+                        {
+                          color: colors.text,
+                          fontSize: getScaledFontSize(14),
+                          fontWeight: getScaledFontWeight(400) as any,
+                        },
+                      ]}
+                    >
                       {condition}
                     </Text>
                     <TouchableOpacity onPress={() => removeCondition(index)}>
@@ -287,17 +378,160 @@ export default function HealthDetailsScreen() {
                 {healthDetails?.chronicConditions && healthDetails.chronicConditions.length > 0 ? (
                   healthDetails.chronicConditions.map((condition, index) => (
                     <View key={index} style={[styles.conditionTag, { backgroundColor: colors.tint + '20' }]}>
-                      <Text style={[styles.conditionText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+                      <Text
+                        style={[
+                          styles.conditionText,
+                          {
+                            color: colors.text,
+                            fontSize: getScaledFontSize(14),
+                            fontWeight: getScaledFontWeight(400) as any,
+                          },
+                        ]}
+                      >
                         {condition}
                       </Text>
                     </View>
                   ))
                 ) : (
-                  <Text style={[styles.emptyText, { color: colors.text + '60', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+                  <Text
+                    style={[
+                      styles.emptyText,
+                      {
+                        color: colors.text + '60',
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(400) as any,
+                      },
+                    ]}
+                  >
                     No chronic conditions recorded
                   </Text>
                 )}
               </View>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Allergies */}
+        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+          <Card.Content>
+            <Text
+              style={[
+                styles.label,
+                { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+              ]}
+            >
+              Allergies
+            </Text>
+            {isEditing ? (
+              <View style={styles.conditionsContainer}>
+                <View style={styles.addConditionContainer}>
+                  <TextInput
+                    style={[
+                      styles.conditionInput,
+                      { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(14) },
+                    ]}
+                    value={newAllergy}
+                    onChangeText={setNewAllergy}
+                    placeholder="Add allergy (e.g., Penicillin, Peanuts)"
+                    placeholderTextColor={colors.text + '60'}
+                    onSubmitEditing={addAllergy}
+                  />
+                  <TouchableOpacity onPress={addAllergy} style={[styles.addButton, { backgroundColor: colors.tint }]}>
+                    <Icon source="plus" size={getScaledFontSize(20)} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+                {editedData.allergies.map((allergy, index) => (
+                  <View key={index} style={[styles.conditionTag, { backgroundColor: '#ff9800' + '20' }]}>
+                    <Text
+                      style={[
+                        styles.conditionText,
+                        {
+                          color: colors.text,
+                          fontSize: getScaledFontSize(14),
+                          fontWeight: getScaledFontWeight(400) as any,
+                        },
+                      ]}
+                    >
+                      {allergy}
+                    </Text>
+                    <TouchableOpacity onPress={() => removeAllergy(index)}>
+                      <Icon source="close" size={getScaledFontSize(18)} color={colors.text} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.conditionsList}>
+                {healthDetails?.allergies && healthDetails.allergies.length > 0 ? (
+                  healthDetails.allergies.map((allergy, index) => (
+                    <View key={index} style={[styles.conditionTag, { backgroundColor: '#ff9800' + '20' }]}>
+                      <Text
+                        style={[
+                          styles.conditionText,
+                          {
+                            color: colors.text,
+                            fontSize: getScaledFontSize(14),
+                            fontWeight: getScaledFontWeight(400) as any,
+                          },
+                        ]}
+                      >
+                        {allergy}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text
+                    style={[
+                      styles.emptyText,
+                      {
+                        color: colors.text + '60',
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(400) as any,
+                      },
+                    ]}
+                  >
+                    No allergies recorded
+                  </Text>
+                )}
+              </View>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Notes */}
+        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+          <Card.Content>
+            <Text
+              style={[
+                styles.label,
+                { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any },
+              ]}
+            >
+              Notes
+            </Text>
+            {isEditing ? (
+              <TextInput
+                style={[
+                  styles.notesInput,
+                  { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(14) },
+                ]}
+                value={editedData.notes}
+                onChangeText={(text) => setEditedData({ ...editedData, notes: text })}
+                placeholder="Additional health notes..."
+                placeholderTextColor={colors.text + '60'}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.value,
+                  { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any },
+                ]}
+              >
+                {healthDetails?.notes || 'No notes'}
+              </Text>
             )}
           </Card.Content>
         </Card>
@@ -315,12 +549,12 @@ export default function HealthDetailsScreen() {
             <Button
               mode="contained"
               onPress={handleSave}
-              disabled={isSaving}
-              loading={isSaving}
+              disabled={updateMutation.isPending}
+              loading={updateMutation.isPending}
               style={[styles.saveButton, { backgroundColor: colors.tint }]}
               labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: '#fff' }}
             >
-              {isSaving ? 'Saving...' : 'Save'}
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
           </View>
         )}
@@ -338,6 +572,17 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     textAlign: 'center',
+    marginTop: 12,
+  },
+  retryButton: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+  },
+  retryText: {
+    fontWeight: '500',
   },
   content: {
     flex: 1,
@@ -372,23 +617,12 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 8,
   },
-  bpContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  bpInput: {
-    flex: 1,
+  notesInput: {
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
-    marginRight: 8,
-  },
-  bpSeparator: {
-    marginHorizontal: 8,
-  },
-  bpUnit: {
-    marginLeft: 8,
+    marginTop: 8,
+    minHeight: 100,
   },
   switchContainer: {
     flexDirection: 'row',
