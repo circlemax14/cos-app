@@ -1,134 +1,50 @@
-import { useDatabaseSafe, useDatabaseReady } from '@/database/DatabaseProvider';
-import { useCallback, useEffect, useState } from 'react';
-import { Proxy } from '@/database/models';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 
-export interface ProxyData {
-  id: string;
-  email: string;
-  status: 'pending' | 'active' | 'revoked';
-  consentGiven: boolean;
-  consentDate: string | null;
-  patientId: string | null;
+export type ProxyScope = 'view_appointments' | 'view_records' | 'view_medications' | 'view_labs' | 'manage_appointments' | 'view_care_plan'
+export type ProxyStatus = 'pending' | 'active' | 'revoked'
+
+export interface Proxy { id: string; email: string; name: string; status: ProxyStatus; scopes: ProxyScope[]; invitedAt: string; acceptedAt?: string }
+
+export function useProxies() {
+  return useQuery({
+    queryKey: ['proxies'],
+    queryFn: async () => {
+      const res = await apiClient.get('/patients/me/proxies')
+      return res.data.data.proxies as Proxy[]
+    },
+    staleTime: 5 * 60 * 1000,
+  })
 }
 
-/**
- * Hook to manage proxy data
- * Loads all proxies from database
- */
-export function useProxies() {
-  const isDatabaseReady = useDatabaseReady();
-  const database = useDatabaseSafe();
-  const [proxies, setProxies] = useState<ProxyData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export function useCreateProxy() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { email: string; name: string; scopes: ProxyScope[] }) => {
+      const res = await apiClient.post('/patients/me/proxies', input)
+      return res.data.data.proxy as Proxy
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['proxies'] }),
+  })
+}
 
-  const loadProxies = useCallback(async () => {
-    if (!isDatabaseReady || !database) {
-      console.log('📊 Database not ready, skipping proxy load...');
-      setIsLoading(false);
-      return;
-    }
+export function useUpdateProxy() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, scopes }: { id: string; scopes: ProxyScope[] }) => {
+      const res = await apiClient.put(`/patients/me/proxies/${id}`, { scopes })
+      return res.data.data.proxy as Proxy
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['proxies'] }),
+  })
+}
 
-    try {
-      const dbProxies = await database
-        .get<Proxy>('proxies')
-        .query()
-        .fetch();
-
-      const proxyData: ProxyData[] = dbProxies.map(proxy => ({
-        id: proxy.id,
-        email: proxy.email,
-        status: proxy.status as 'pending' | 'active' | 'revoked',
-        consentGiven: proxy.consentGiven,
-        consentDate: proxy.consentDate,
-        patientId: proxy.patientId,
-      }));
-      
-      setProxies(proxyData);
-      console.log(`✅ Loaded ${proxyData.length} proxies from database`);
-    } catch (error) {
-      console.error('❌ Error loading proxies:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isDatabaseReady, database]);
-
-  const addProxy = useCallback(async (email: string, patientId?: string) => {
-    if (!isDatabaseReady || !database) {
-      throw new Error('Database not ready');
-    }
-
-    try {
-      await database.write(async () => {
-        await database.get<Proxy>('proxies').create(record => {
-          record.email = email;
-          record.status = 'pending';
-          record.consentGiven = true;
-          record.consentDate = new Date().toISOString();
-          record.patientId = patientId || null;
-          record.createdAt = new Date();
-          record.updatedAt = new Date();
-        });
-      });
-      
-      await loadProxies();
-      console.log(`✅ Added proxy: ${email}`);
-    } catch (error) {
-      console.error('❌ Error adding proxy:', error);
-      throw error;
-    }
-  }, [isDatabaseReady, database, loadProxies]);
-
-  const removeProxy = useCallback(async (proxyId: string) => {
-    if (!isDatabaseReady || !database) {
-      throw new Error('Database not ready');
-    }
-
-    try {
-      const proxy = await database.get<Proxy>('proxies').find(proxyId);
-      await database.write(async () => {
-        await proxy.markAsDeleted();
-      });
-      
-      await loadProxies();
-      console.log(`✅ Removed proxy: ${proxyId}`);
-    } catch (error) {
-      console.error('❌ Error removing proxy:', error);
-      throw error;
-    }
-  }, [isDatabaseReady, database, loadProxies]);
-
-  const updateProxyStatus = useCallback(async (proxyId: string, status: 'pending' | 'active' | 'revoked') => {
-    if (!isDatabaseReady || !database) {
-      throw new Error('Database not ready');
-    }
-
-    try {
-      const proxy = await database.get<Proxy>('proxies').find(proxyId);
-      await database.write(async () => {
-        proxy.update(record => {
-          record.status = status;
-          record.updatedAt = new Date();
-        });
-      });
-      
-      await loadProxies();
-      console.log(`✅ Updated proxy status: ${proxyId} -> ${status}`);
-    } catch (error) {
-      console.error('❌ Error updating proxy status:', error);
-      throw error;
-    }
-  }, [isDatabaseReady, database, loadProxies]);
-
-  useEffect(() => {
-    loadProxies();
-  }, [loadProxies]);
-
-  return {
-    proxies,
-    isLoading,
-    addProxy,
-    removeProxy,
-    updateProxyStatus,
-    refreshProxies: loadProxies,
-  };
+export function useRevokeProxy() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/patients/me/proxies/${id}`)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['proxies'] }),
+  })
 }
