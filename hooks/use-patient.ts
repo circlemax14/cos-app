@@ -166,3 +166,27 @@ export function useFastenStatus() {
     },
   });
 }
+
+// ─── Profile hooks ───────────────────────────────────────────────────────────
+
+export function useProfile() {
+  return useQuery({
+    queryKey: ['profile'],
+    queryFn: async () => {
+      const res = await apiClient.get('/patients/me/profile')
+      return res.data.data.profile
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { firstName?: string; lastName?: string; phone?: string; email?: string; address?: object }) => {
+      const res = await apiClient.put('/patients/me/profile', input)
+      return res.data.data.profile
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  })
+}
