@@ -62,7 +62,7 @@ export default function AppointmentsScreen() {
         marked[dateString] = { dots: [] };
       }
 
-      marked[dateString].dots.push({
+      marked[dateString]!.dots!.push({
         color: appointment.color,
         selectedDotColor: appointment.color,
       });

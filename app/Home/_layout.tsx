@@ -11,11 +11,12 @@ import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
-  const { isVisible } = useFeaturePermissions();
+  const { data: permissions } = useFeaturePermissions();
   const { settings } = useSettings();
   const { panHandlers } = useInactivityTimeout();
 
-  const canShow = (featureKey: string) => isVisible(featureKey);
+  // Default to true (visible) while permissions are loading
+  const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
 
   return (
     <View style={{ flex: 1 }} {...panHandlers}>
