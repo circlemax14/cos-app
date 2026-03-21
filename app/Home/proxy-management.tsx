@@ -418,7 +418,7 @@ export default function ProxyManagementScreen() {
                 </Text>
 
                 <Text style={[styles.consentDescription, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
-                  By selecting "Yes", you agree to share your health information with this proxy to allow them to view and manage your medical records on your behalf.
+                  By selecting &quot;Yes&quot;, you agree to share your health information with this proxy to allow them to view and manage your medical records on your behalf.
                 </Text>
 
                 {pendingScopes.length > 0 && (
