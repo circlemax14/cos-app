@@ -28,19 +28,7 @@ export default function SplashGate() {
         return;
       }
 
-      const { termsAccepted, fastenConnected } = result.user;
-
-      if (!termsAccepted) {
-        router.replace('/(onboarding)/terms' as never);
-        return;
-      }
-
-      if (!fastenConnected) {
-        router.replace('/(onboarding)/fasten-connect' as never);
-        return;
-      }
-
-      router.replace('/Home' as never);
+      router.replace('/(onboarding)/fasten-connect' as never);
     } catch (err: unknown) {
       const isNetworkError =
         err instanceof Error && (err as Error & { code?: string }).code === 'NETWORK_ERROR';

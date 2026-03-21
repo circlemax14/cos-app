@@ -7,7 +7,6 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AccessibilityProvider } from '@/stores/accessibility-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
-import { DatabaseProvider } from '@/database/DatabaseProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
 
@@ -28,49 +27,47 @@ export default function RootLayout() {
 
   return (
     <QueryProvider>
-      <DatabaseProvider>
-        <AccessibilityProvider>
-          <ProviderSelectionProvider>
-            <SettingsProvider>
-              <PaperProvider>
-                <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                  {/* ... Stack and other children ... */}
-                  <Stack>
-                    <Stack.Screen name="index" options={{ headerShown: false }} />
-                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                    <Stack.Screen name="Home" options={{ headerShown: false }} />
-                    <Stack.Screen
-                      name="modal"
-                      options={{
-                        presentation: 'modal',
-                        title: 'Doctors',
-                        headerShown: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="appointments-modal"
-                      options={{
-                        presentation: 'modal',
-                        title: 'All Appointments',
-                        headerShown: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="today-schedule"
-                      options={{
-                        title: "Today's Schedule",
-                        headerShown: false,
-                        autoHideHomeIndicator: true,
-                      }}
-                    />
-                  </Stack>
-                  <StatusBar style="auto" />
-                </ThemeProvider>
-              </PaperProvider>
-            </SettingsProvider>
-          </ProviderSelectionProvider>
-        </AccessibilityProvider>
-      </DatabaseProvider>
+      <AccessibilityProvider>
+        <ProviderSelectionProvider>
+          <SettingsProvider>
+            <PaperProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                {/* ... Stack and other children ... */}
+                <Stack>
+                  <Stack.Screen name="index" options={{ headerShown: false }} />
+                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                  <Stack.Screen name="Home" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="modal"
+                    options={{
+                      presentation: 'modal',
+                      title: 'Doctors',
+                      headerShown: false,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="appointments-modal"
+                    options={{
+                      presentation: 'modal',
+                      title: 'All Appointments',
+                      headerShown: false,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="today-schedule"
+                    options={{
+                      title: "Today's Schedule",
+                      headerShown: false,
+                      autoHideHomeIndicator: true,
+                    }}
+                  />
+                </Stack>
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </PaperProvider>
+          </SettingsProvider>
+        </ProviderSelectionProvider>
+      </AccessibilityProvider>
     </QueryProvider>
   );
 }

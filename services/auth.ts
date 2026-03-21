@@ -1,16 +1,15 @@
 import * as SecureStore from 'expo-secure-store';
-import { cognitoSignIn, cognitoSignOut } from '@/lib/cognito';
+import { AxiosError } from 'axios';
+import { cognitoSignOut } from '@/lib/cognito';
 import { storeTokens, clearTokens, hasStoredSession } from '@/lib/auth-tokens';
 import { apiClient } from '@/lib/api-client';
 
 export type SignInPayload = { username: string; password: string };
 export type SignUpPayload = {
-  puid: string;
-  name: string;
   email: string;
-  phone: string;
   password: string;
   confirmPassword: string;
+  role?: string;
 };
 
 export interface UserProfile {
@@ -21,23 +20,46 @@ export interface UserProfile {
   termsAccepted: boolean;
   fastenConnected: boolean;
   dataReady: boolean;
+  ehiExportPending: boolean;
 }
 
 /**
- * Sign in via Cognito, store tokens securely, return user profile.
+ * Sign in via backend API, store tokens securely, return user profile.
  */
 export async function signIn(
   payload: SignInPayload,
-): Promise<{ success: boolean; user?: UserProfile; message?: string }> {
+): Promise<{ success: boolean; user?: UserProfile; message?: string; notConfirmed?: boolean }> {
   try {
-    const tokens = await cognitoSignIn(payload.username, payload.password);
-    await storeTokens(tokens.accessToken, tokens.refreshToken, tokens.idToken);
-    // Store username for token refresh
+    const loginRes = await apiClient.post<{
+      success: boolean;
+      data: {
+        sub: string;
+        accessToken: string;
+        idToken: string;
+        refreshToken: string;
+        termsAccepted: boolean;
+        fastenConnected: boolean;
+        dataReady: boolean;
+      };
+    }>('/v1/auth/login', { email: payload.username, password: payload.password });
+
+    const { accessToken, idToken, refreshToken } = loginRes.data.data;
+    await storeTokens(accessToken, refreshToken, idToken);
     await SecureStore.setItemAsync('cos_username', payload.username);
 
-    const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
-    return { success: true, user: res.data.data };
+    const meRes = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
+    return { success: true, user: meRes.data.data };
   } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      // TODO: remove before production
+      console.warn('[DEBUG signIn] status:', err.response?.status, 'data:', JSON.stringify(err.response?.data));
+      const code: string | undefined = err.response?.data?.code;
+      if (code === 'EMAIL_NOT_VERIFIED') {
+        return { success: false, notConfirmed: true, message: 'Please verify your email before signing in.' };
+      }
+      const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
     const msg = err instanceof Error ? err.message : 'Sign in failed';
     return { success: false, message: msg };
   }
@@ -70,43 +92,63 @@ export async function signOut(): Promise<void> {
 }
 
 /**
- * Sign in with Apple — sends the Apple identity token to the backend,
- * which verifies it, creates or finds the Cognito user, and returns Cognito tokens.
- * The tokens are stored securely so all subsequent API calls are authenticated.
- */
-export async function signInWithApple(
-  identityToken: string,
-): Promise<{ success: boolean; user?: UserProfile; message?: string }> {
-  try {
-    const res = await apiClient.post<{
-      success: boolean;
-      data: UserProfile & { accessToken: string; idToken: string; refreshToken: string };
-    }>('/v1/auth/apple-sign-in', { identityToken });
-
-    const { accessToken, idToken, refreshToken, ...userProfile } = res.data.data;
-    await storeTokens(accessToken, refreshToken, idToken);
-    // Apple users have a synthetic Cognito username derived from their Apple sub
-    await SecureStore.setItemAsync('cos_username', `apple_${userProfile.sub}`);
-
-    return { success: true, user: userProfile as UserProfile };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Apple sign in failed';
-    return { success: false, message: msg };
-  }
-}
-
-/**
- * Sign up — calls backend which creates the Cognito user.
- * (Cognito sign-up can also be done client-side if preferred.)
+ * Sign up — registers a new user. Cognito sends a verification code to the email.
  */
 export async function signUp(
   payload: SignUpPayload,
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    await apiClient.post('/v1/auth/sign-up', payload);
+    await apiClient.post('/v1/auth/signup', payload);
     return { success: true };
   } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      const code: string | undefined = err.response?.data?.code ?? err.response?.data?.error;
+      if (code === 'UsernameExistsException' || code?.includes('UsernameExists')) {
+        return { success: false, message: 'An account with this email already exists. Please sign in instead.' };
+      }
+      const apiMsg: string | undefined = err.response?.data?.message ?? err.response?.data?.error;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
     const msg = err instanceof Error ? err.message : 'Sign up failed';
+    return { success: false, message: msg };
+  }
+}
+
+/**
+ * Confirm sign up — verifies the email address using the code sent by Cognito.
+ */
+export async function confirmSignUp(
+  email: string,
+  code: string,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    await apiClient.post('/v1/auth/confirm-signup', { email, code });
+    return { success: true };
+  } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
+    const msg = err instanceof Error ? err.message : 'Verification failed';
+    return { success: false, message: msg };
+  }
+}
+
+/**
+ * Resend the email verification code to an unconfirmed user.
+ */
+export async function resendCode(
+  email: string,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    await apiClient.post('/v1/auth/resend-code', { email });
+    return { success: true };
+  } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
+    const msg = err instanceof Error ? err.message : 'Failed to resend code';
     return { success: false, message: msg };
   }
 }

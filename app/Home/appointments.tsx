@@ -82,26 +82,8 @@ export default function AppointmentsScreen() {
       });
     }
     
-    // Fallback to sample appointments if no Fasten Health data
-    const today = new Date();
-    const sampleAppointments: Appointment[] = [];
-
-    // Generate some sample appointments for the current month
-    for (let i = 0; i < 15; i++) {
-      const randomDay = Math.floor(Math.random() * 28) + 1;
-      const randomHour = Math.floor(Math.random() * 8) + 9; // 9 AM to 5 PM
-      const appointmentDate = new Date(today.getFullYear(), today.getMonth(), randomDay);
-      
-      sampleAppointments.push({
-        id: `appointment-${i}`,
-        title: `Appointment ${i + 1}`,
-        date: appointmentDate,
-        color: appointmentColors[Math.floor(Math.random() * appointmentColors.length)],
-        time: `${randomHour}:00`
-      });
-    }
-
-    return sampleAppointments;
+    // No appointments available yet
+    return [];
   }, [fastenAppointments]);
 
   // Create marked dates for calendar with multi-dot marking

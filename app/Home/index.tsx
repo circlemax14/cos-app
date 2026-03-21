@@ -713,11 +713,23 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
   const [subCategorySearchQuery, setSubCategorySearchQuery] = useState('');
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
   const [agencySearchQuery, setAgencySearchQuery] = useState('');
+  const [agencies, setAgencies] = useState<CareManagerAgency[]>([]);
   const [integrativeSearchQuery, setIntegrativeSearchQuery] = useState('');
   // Non-EHR (Integrative) providers
   const [nonEhrProviders, setNonEhrProviders] = useState<NonEhrProvider[]>([]);
   const [nonEhrProviderCount, setNonEhrProviderCount] = useState(0);
   const [isUploadingIntegrative, setIsUploadingIntegrative] = useState(false);
+
+  // Load care manager agencies from API
+  useEffect(() => {
+    const loadAgencies = async () => {
+      const data = agencySearchQuery.trim()
+        ? await searchCareManagerAgencies(agencySearchQuery)
+        : await getAllCareManagerAgencies();
+      setAgencies(data);
+    };
+    loadAgencies();
+  }, [agencySearchQuery]);
 
   // Load non-EHR providers on mount and whenever the providers level changes
   const loadNonEhrProviders = React.useCallback(async () => {
@@ -1467,13 +1479,6 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
     // Handle Care Manager category specially - show agencies
     if (selectedCategoryId === 'care-manager') {
-      let agencies = getAllCareManagerAgencies();
-
-      // Filter agencies based on search query
-      if (agencySearchQuery.trim()) {
-        agencies = searchCareManagerAgencies(agencySearchQuery);
-      }
-
       return (
         <>
           <View style={[

@@ -12,132 +12,6 @@ import { TreatmentProgress, TreatmentGoal } from '@/components/ui/treatment-prog
 import { initializeHealthKit, getTodayHealthMetrics, HealthMetrics } from '@/services/health';
 import { transformFastenHealthData } from '@/services/fasten-health';
 
-// Mock health data - Fallback if Fasten Health data is not available
-const getMockHealthData = (): HealthSummary => ({
-  treatmentPlan: {
-    plan: 'Diabetes management and cardiovascular health monitoring',
-    duration: '12 months',
-    goals: ['Maintain blood sugar levels', 'Reduce cardiovascular risk', 'Improve overall wellness'],
-  },
-  medicalReports: [
-    {
-      date: '2024-09-01',
-      type: 'Blood Test',
-      summary: 'HbA1c at 7.2%, cholesterol levels elevated',
-      findings: ['HbA1c: 7.2%', 'Total Cholesterol: 220 mg/dL', 'HDL: 45 mg/dL'],
-    },
-    {
-      date: '2024-10-01',
-      type: 'Blood Test',
-      summary: 'HbA1c improving, cholesterol levels improving',
-      findings: ['HbA1c: 7.0%', 'Total Cholesterol: 200 mg/dL', 'HDL: 48 mg/dL'],
-    },
-    {
-      date: '2024-11-01',
-      type: 'Cardiovascular Screening',
-      summary: 'Blood pressure well controlled, no concerning findings',
-      findings: ['Blood Pressure: 128/78 mmHg', 'Heart Rate: 72 bpm'],
-    },
-    {
-      date: '2024-11-15',
-      type: 'Blood Test',
-      summary: 'HbA1c at 6.8%, cholesterol levels within acceptable range',
-      findings: ['HbA1c: 6.8%', 'Total Cholesterol: 185 mg/dL', 'HDL: 52 mg/dL'],
-    },
-  ],
-  medications: [
-    {
-      name: 'Metformin',
-      dosage: '500mg',
-      frequency: 'Twice daily with meals',
-      purpose: 'Diabetes management',
-    },
-    {
-      name: 'Lisinopril',
-      dosage: '10mg',
-      frequency: 'Once daily in the morning',
-      purpose: 'Blood pressure control',
-    },
-    {
-      name: 'Aspirin',
-      dosage: '81mg',
-      frequency: 'Once daily',
-      purpose: 'Cardiovascular protection',
-    },
-  ],
-  appointments: [
-    {
-      id: '1',
-      date: '2024-11-20',
-      time: '10:00 AM',
-      type: 'Follow-up',
-      status: 'Completed',
-      doctorName: 'Dr. Sarah Johnson',
-      doctorSpecialty: 'Cardiologist',
-      diagnosis: 'Type 2 Diabetes with controlled blood pressure',
-      notes: 'Patient showing good progress with medication adherence. Blood pressure readings are stable.',
-    },
-    {
-      id: '2',
-      date: '2024-11-25',
-      time: '2:30 PM',
-      type: 'Routine Check-up',
-      status: 'Completed',
-      doctorName: 'Dr. Michael Chen',
-      doctorSpecialty: 'Endocrinologist',
-      diagnosis: 'Diabetes management - HbA1c improving',
-      notes: 'HbA1c levels have decreased from 7.2% to 6.8%. Continue current medication regimen.',
-    },
-    {
-      id: '3',
-      date: '2024-12-05',
-      time: '11:00 AM',
-      type: 'Follow-up',
-      status: 'Scheduled',
-      doctorName: 'Dr. Sarah Johnson',
-      doctorSpecialty: 'Cardiologist',
-    },
-  ],
-  doctorDiagnoses: [
-    {
-      doctorName: 'Dr. Sarah Johnson',
-      doctorSpecialty: 'Cardiologist',
-      date: '2024-11-20',
-      diagnosis: 'Type 2 Diabetes with controlled hypertension',
-      notes: 'Patient has well-controlled blood pressure with current medication. Cardiovascular risk factors are being managed effectively.',
-      treatmentRecommendations: [
-        'Continue Lisinopril 10mg daily',
-        'Maintain low-sodium diet',
-        'Regular blood pressure monitoring',
-      ],
-    },
-    {
-      doctorName: 'Dr. Michael Chen',
-      doctorSpecialty: 'Endocrinologist',
-      date: '2024-11-25',
-      diagnosis: 'Type 2 Diabetes - Well controlled',
-      notes: 'HbA1c levels showing significant improvement. Patient is responding well to Metformin therapy.',
-      treatmentRecommendations: [
-        'Continue Metformin 500mg twice daily',
-        'Monitor blood sugar levels regularly',
-        'Maintain current dietary modifications',
-      ],
-    },
-    {
-      doctorName: 'Dr. Emily Davis',
-      doctorSpecialty: 'Primary Care Physician',
-      date: '2024-10-15',
-      diagnosis: 'Overall health status - Stable',
-      notes: 'Comprehensive health assessment completed. All systems functioning within normal parameters for age.',
-      treatmentRecommendations: [
-        'Continue daily Aspirin 81mg for cardiovascular protection',
-        'Regular exercise as tolerated',
-        'Annual comprehensive health screening',
-      ],
-    },
-  ],
-});
-
 // Helper function to extract numeric value from findings
 const extractValue = (finding: string, pattern: RegExp): number | null => {
   const match = finding.match(pattern);
@@ -363,21 +237,21 @@ export default function PlanScreen() {
         metricsToUse = await askAboutHealthData();
       }
       
-      // Try to load Fasten Health data, fallback to mock data
+      // Load health data from Fasten Health API
       let healthDataToUse: HealthSummary;
       try {
         healthDataToUse = await transformFastenHealthData();
-        // If Fasten Health data is empty or incomplete, use mock data
         if (!healthDataToUse.medicalReports || healthDataToUse.medicalReports.length === 0) {
-          console.log('Fasten Health data is empty, using mock data');
-          healthDataToUse = getMockHealthData();
+          console.log('Fasten Health data is empty — no medical reports available yet');
         } else {
           console.log(`Loaded ${healthDataToUse.medicalReports.length} medical reports from Fasten Health`);
         }
       } catch (error) {
         console.error('Error loading Fasten Health data:', error);
-        console.log('Falling back to mock data');
-        healthDataToUse = getMockHealthData();
+        setError('Unable to load your health data. Please try again later.');
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
       }
       
       setHealthData(healthDataToUse);

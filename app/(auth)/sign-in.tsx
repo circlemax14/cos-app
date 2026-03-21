@@ -2,10 +2,11 @@ import { Checkbox } from 'expo-checkbox';
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signIn } from '@/services/auth';
 
 import { Colors } from '@/constants/theme';
@@ -16,18 +17,13 @@ export default function SignInScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [accepted, setAccepted] = useState(false);
 
-  const handleRoute = (user: { termsAccepted: boolean; fastenConnected: boolean }) => {
-    if (!user.termsAccepted) {
-      router.replace('/(onboarding)/terms' as never);
-    } else if (!user.fastenConnected) {
-      router.replace('/(onboarding)/fasten-connect' as never);
-    } else {
-      router.replace('/Home' as never);
-    }
+  const handleRoute = () => {
+    router.replace('/(onboarding)/fasten-connect' as never);
   };
 
   const onSubmit = async () => {
@@ -41,7 +37,9 @@ export default function SignInScreen() {
     const res = await signIn({ username: username.trim(), password });
     setLoading(false);
     if (res.success && res.user) {
-      handleRoute(res.user);
+      handleRoute();
+    } else if (res.notConfirmed) {
+      router.push({ pathname: '/(auth)/verify-email', params: { email: username.trim() } } as never);
     } else {
       setError(res.message ?? 'Sign in failed. Please check your credentials.');
     }
@@ -49,11 +47,16 @@ export default function SignInScreen() {
 
 
   return (
-    <AppWrapper showBellIcon={false} showLogo={false}>
+    <AppWrapper showBellIcon={false} showLogo={false} showHamburgerIcon={false} showAccessibilityIcon={false}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <ScrollView
         contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <View style={styles.container}>
           <Image
@@ -90,12 +93,24 @@ export default function SignInScreen() {
               label="Password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               textContentType="password"
               accessibilityLabel="Password"
               style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
               textColor={colors.text}
               outlineStyle={styles.inputOutline}
+              right={
+                <TextInput.Icon
+                  icon={() => (
+                    <IconSymbol
+                      name={showPassword ? 'eye.slash' : 'eye'}
+                      size={getScaledFontSize(22)}
+                      color={colors.text}
+                    />
+                  )}
+                  onPress={() => setShowPassword(v => !v)}
+                />
+              }
             />
 
             <View style={styles.termsRow}>
@@ -163,11 +178,15 @@ export default function SignInScreen() {
           </View>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </AppWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: {
+    flex: 1,
+  },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',

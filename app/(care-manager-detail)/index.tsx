@@ -6,6 +6,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, M
 import { Card, Button } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getCareManagerAgencyById, type CareManagerAgency } from '@/services/care-manager-agencies';
+import { apiClient } from '@/lib/api-client';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function CareManagerDetailScreen() {
@@ -20,21 +21,23 @@ export default function CareManagerDetailScreen() {
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
   
-  // Load agency data
+  // Load agency data from API
   React.useEffect(() => {
-    if (agencyId) {
-      const agencyData = getCareManagerAgencyById(agencyId);
-      if (agencyData) {
-        setAgency(agencyData);
-      } else {
-        // Fallback to basic data from params
-        setAgency({
-          id: agencyId,
-          name: agencyName,
-          description: 'Care management agency',
-        });
+    const loadAgency = async () => {
+      if (agencyId) {
+        const agencyData = await getCareManagerAgencyById(agencyId);
+        if (agencyData) {
+          setAgency(agencyData);
+        } else {
+          setAgency({
+            id: agencyId,
+            name: agencyName,
+            description: '',
+          });
+        }
       }
-    }
+    };
+    loadAgency();
   }, [agencyId, agencyName]);
 
   const handleRequestCareManager = () => {
@@ -46,8 +49,7 @@ export default function CareManagerDetailScreen() {
     setShowConsentModal(false);
     setIsRequesting(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await apiClient.post('/v1/care-managers/request', { agencyId });
       Alert.alert(
         'Request Submitted',
         'Your request for a care manager has been submitted successfully. You will be contacted within 24-48 hours.',

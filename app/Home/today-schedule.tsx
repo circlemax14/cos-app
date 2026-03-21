@@ -23,9 +23,7 @@ interface Task {
 export default function TodayScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const userImg = require('@/assets/images/dummy.jpg');
-  
-  const [patientName, setPatientName] = useState('Jenny Wilson');
+  const [patientName, setPatientName] = useState('');
   const [medications, setMedications] = useState<Medication[]>([]);
   const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
     steps: 0,
@@ -44,7 +42,7 @@ export default function TodayScheduleScreen() {
       try {
         const patient = await getFastenPatient();
         if (patient) {
-          setPatientName(patient.name || 'Jenny Wilson');
+          setPatientName(patient.name || '');
           console.log('Loaded patient data for today schedule:', patient.name);
         }
       } catch (error) {
@@ -70,53 +68,7 @@ export default function TodayScheduleScreen() {
     loadMedications();
   }, []);
 
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: 1,
-      time: '09:00 AM',
-      title: 'Morning Medication',
-      description: 'Take prescribed vitamins and supplements',
-      type: 'medication',
-      icon: 'pill',
-      completed: true,
-    },
-    {
-      id: 2,
-      time: '10:00 AM',
-      title: 'Therapy Session',
-      description: 'Video call with Dr. Sarah Johnson',
-      type: 'appointment',
-      icon: 'video',
-      completed: false,
-    },
-    {
-      id: 3,
-      time: '02:00 PM',
-      title: 'Check-in with Care Team',
-      description: 'Review weekly progress report',
-      type: 'check-in',
-      icon: 'account-group',
-      completed: false,
-    },
-    {
-      id: 4,
-      time: '06:00 PM',
-      title: 'Evening Medication',
-      description: 'Take prescribed medication',
-      type: 'medication',
-      icon: 'pill',
-      completed: false,
-    },
-    {
-      id: 5,
-      time: '08:00 PM',
-      title: 'Daily Reflection',
-      description: 'Log mood and activity levels',
-      type: 'self-care',
-      icon: 'heart',
-      completed: false,
-    },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   // Fetch health data function
   const fetchHealthData = async (showLoading = true): Promise<void> => {
