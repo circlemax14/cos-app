@@ -45,8 +45,7 @@ export function closeAbly(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Deprecated helpers — kept for inbox.tsx compatibility during migration.
-// TODO: Remove once inbox.tsx is updated to the new token-based API.
+// Deprecated helpers — kept for backward compatibility.
 // ---------------------------------------------------------------------------
 
 /** @deprecated Use the unsubscribe function returned by subscribeToChannel instead. */

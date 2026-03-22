@@ -49,12 +49,10 @@ export function useNotifications() {
         router.push('/Home' as never);
       } else if (data?.type === 'APPOINTMENT_REMINDER') {
         router.push('/Home/appointments' as never);
-      } else if (data?.type === 'NEW_MESSAGE') {
-        router.push('/Home/inbox' as never);
       } else if (data?.type === 'CARE_PLAN_UPDATE') {
         router.push('/Home/plan' as never);
       } else {
-        router.push('/Home/inbox' as never);
+        router.push('/Home' as never);
       }
     });
 
