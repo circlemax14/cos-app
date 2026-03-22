@@ -23,7 +23,7 @@ interface GuidelineSection {
 interface GuidelinesResponse {
   success: boolean;
   data: {
-    version: string;
+    currentVersion: string;
     updatedAt: string;
     sections: GuidelineSection[];
   };
@@ -73,15 +73,10 @@ export default function UsageGuidelinesScreen() {
     setAccepting(true);
     setError(null);
     try {
-      await apiClient.post('/v1/auth/accept-terms', { version: guidelines.version });
+      await apiClient.post('/v1/auth/accept-terms', { version: guidelines.currentVersion });
       router.replace('/(onboarding)/fasten-connect' as never);
-    } catch (err: unknown) {
-      // If forceSignOut already redirected to sign-in, don't show an error
-      const isAuthError =
-        err instanceof Error && (err as Error & { code?: string }).code === 'NETWORK_ERROR';
-      if (!isAuthError) {
-        setError('Failed to accept guidelines. Please try again.');
-      }
+    } catch {
+      setError('Failed to accept guidelines. Please try again.');
       setAccepting(false);
     }
   };
@@ -128,7 +123,7 @@ export default function UsageGuidelinesScreen() {
           Usage Guidelines
         </Text>
         <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-          Version {guidelines.version} — Last updated {guidelines.updatedAt}
+          Version {guidelines.currentVersion} — Last updated {guidelines.updatedAt}
         </Text>
         <Text style={[styles.instruction, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
           Please read the following guidelines carefully. Scroll to the bottom to accept.
