@@ -14,11 +14,20 @@ export const apiClient = axios.create({
 /**
  * Clear all auth state and redirect to sign-in.
  * Called when token refresh fails — the session is unrecoverable.
+ * Guarded against re-entry to prevent navigation loops.
  */
+let isSigningOut = false;
 async function forceSignOut(): Promise<void> {
+  if (isSigningOut) return;
+  isSigningOut = true;
   await clearTokens();
   await SecureStore.deleteItemAsync('cos_username');
-  router.replace('/(auth)/sign-in' as never);
+  try {
+    router.replace('/(auth)/sign-in' as never);
+  } finally {
+    // Reset after a short delay to allow navigation to settle
+    setTimeout(() => { isSigningOut = false; }, 2000);
+  }
 }
 
 // ─── Request interceptor: attach stored access token ───────────────────────

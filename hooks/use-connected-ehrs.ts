@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchConnectedClinics } from '@/services/api/clinics';
 import { getNonEhrClinics } from '@/services/non-ehr-processor';
+import { hasStoredSession } from '@/lib/auth-tokens';
 
 export interface ConnectedHospital {
   id: string;
@@ -19,6 +20,10 @@ export function useConnectedEhrs() {
   const [isLoadingClinics, setIsLoadingClinics] = useState(false);
 
   const loadClinics = useCallback(async () => {
+    // Skip API calls if user is not authenticated (e.g., on sign-in screen)
+    const hasSession = await hasStoredSession();
+    if (!hasSession) return;
+
     setIsLoadingClinics(true);
     try {
       const clinics = await fetchConnectedClinics();
