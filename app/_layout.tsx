@@ -5,6 +5,7 @@ import { PaperProvider } from 'react-native-paper';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useNotifications } from '@/hooks/use-notifications';
 import { AccessibilityProvider } from '@/stores/accessibility-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
@@ -24,6 +25,7 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  useNotifications();
 
   return (
     <QueryProvider>
@@ -36,6 +38,7 @@ export default function RootLayout() {
                 <Stack>
                   <Stack.Screen name="index" options={{ headerShown: false }} />
                   <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                  <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
                   <Stack.Screen name="Home" options={{ headerShown: false }} />
                   <Stack.Screen
                     name="modal"

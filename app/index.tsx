@@ -4,13 +4,24 @@ import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { checkSession } from '@/services/auth';
+import { checkSession, UserProfile } from '@/services/auth';
+import { hasStoredSession } from '@/lib/auth-tokens';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 type GateState = 'loading' | 'no-internet' | 'done';
+
+/**
+ * Determine the correct destination based on user onboarding state.
+ */
+function getDestination(user: UserProfile): string {
+  if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
+  if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
+  if (!user.dataReady && user.ehiExportPending) return '/(onboarding)/data-processing';
+  return '/Home';
+}
 
 export default function SplashGate() {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -21,21 +32,29 @@ export default function SplashGate() {
   const run = useCallback(async () => {
     setState('loading');
     try {
-      const result = await checkSession();
+      // Step 1: Check if we have stored tokens
+      const hasSession = await hasStoredSession();
+      if (!hasSession) {
+        router.replace('/(auth)/sign-in' as never);
+        return;
+      }
 
+      // Step 2: Validate session with backend (token refresh happens automatically via interceptor)
+      const result = await checkSession();
       if (!result.authenticated || !result.user) {
         router.replace('/(auth)/sign-in' as never);
         return;
       }
 
-      router.replace('/(onboarding)/fasten-connect' as never);
+      // Step 3: Route to the correct screen based on onboarding state
+      const destination = getDestination(result.user);
+      router.replace(destination as never);
     } catch (err: unknown) {
       const isNetworkError =
         err instanceof Error && (err as Error & { code?: string }).code === 'NETWORK_ERROR';
       if (isNetworkError) {
         setState('no-internet');
       } else {
-        // Unknown error → go to sign-in
         router.replace('/(auth)/sign-in' as never);
       }
     } finally {

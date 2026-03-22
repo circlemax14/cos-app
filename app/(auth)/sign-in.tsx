@@ -1,13 +1,12 @@
-import { Checkbox } from 'expo-checkbox';
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { signIn } from '@/services/auth';
+import { signIn, UserProfile } from '@/services/auth';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -20,14 +19,20 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [accepted, setAccepted] = useState(false);
 
-  const handleRoute = () => {
-    router.replace('/(onboarding)/fasten-connect' as never);
+  const handleRoute = (user: UserProfile) => {
+    if (!user.termsAccepted) {
+      router.replace('/(onboarding)/usage-guidelines' as never);
+    } else if (!user.fastenConnected) {
+      router.replace('/(onboarding)/fasten-connect' as never);
+    } else if (!user.dataReady && user.ehiExportPending) {
+      router.replace('/(onboarding)/data-processing' as never);
+    } else {
+      router.replace('/Home' as never);
+    }
   };
 
   const onSubmit = async () => {
-    if (!accepted) return;
     if (!username.trim() || !password) {
       setError('Please enter your email and password.');
       return;
@@ -37,7 +42,7 @@ export default function SignInScreen() {
     const res = await signIn({ username: username.trim(), password });
     setLoading(false);
     if (res.success && res.user) {
-      handleRoute();
+      handleRoute(res.user);
     } else if (res.notConfirmed) {
       router.push({ pathname: '/(auth)/verify-email', params: { email: username.trim() } } as never);
     } else {
@@ -113,34 +118,6 @@ export default function SignInScreen() {
               }
             />
 
-            <View style={styles.termsRow}>
-              <Checkbox
-                value={accepted}
-                onValueChange={setAccepted}
-                color="#0a7ea4"
-                style={styles.checkbox}
-                accessibilityLabel="I agree to Terms and Privacy Policy"
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: accepted }}
-              />
-              <TouchableOpacity
-                onPress={() => setAccepted((v) => !v)}
-                accessibilityLabel="Toggle terms agreement"
-              >
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }}>
-                  I agree to{' '}
-                  <Text
-                    style={{ color: '#0a7ea4', textDecorationLine: 'underline' }}
-                    onPress={() => router.push('/(auth)/privacy-policy' as never)}
-                    accessibilityRole="link"
-                    accessibilityLabel="View Terms and Privacy Policy"
-                  >
-                    Terms &amp; Privacy Policy
-                  </Text>
-                </Text>
-              </TouchableOpacity>
-            </View>
-
             {error ? (
               <Text style={[styles.error, { fontSize: getScaledFontSize(14) }]} accessibilityRole="alert">
                 {error}
@@ -149,10 +126,10 @@ export default function SignInScreen() {
 
             <Button
               mode="contained"
-              buttonColor={loading || !accepted ? '#9ca3af' : '#2563eb'}
+              buttonColor={loading ? '#9ca3af' : '#2563eb'}
               onPress={onSubmit}
               loading={loading}
-              disabled={loading || !accepted}
+              disabled={loading}
               style={styles.submit}
               contentStyle={styles.submitContent}
               labelStyle={styles.submitLabel}
@@ -226,14 +203,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
     fontSize: 16,
-  },
-  termsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  checkbox: {
-    margin: 4,
   },
   switchRow: {
     flexDirection: 'row',
