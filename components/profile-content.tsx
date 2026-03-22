@@ -1,5 +1,5 @@
 import { Colors } from '@/constants/theme';
-import { getFastenPatient } from '@/services/fasten-health';
+import { fetchPatientInfo } from '@/services/api/patient';
 import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -60,16 +60,16 @@ export function ProfileContent({
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const [patientName, setPatientName] = useState('Jenny Wilson');
-  const [patientEmail, setPatientEmail] = useState('jenny.wilson@email.com');
+  const [patientName, setPatientName] = useState('User');
+  const [patientEmail, setPatientEmail] = useState('');
 
   useEffect(() => {
     const loadPatientData = async () => {
       try {
-        const patient = await getFastenPatient();
+        const patient = await fetchPatientInfo();
         if (patient) {
-          setPatientName(patient.name || 'Jenny Wilson');
-          setPatientEmail(patient.email || 'jenny.wilson@email.com');
+          setPatientName(patient.name || 'User');
+          setPatientEmail(patient.email || '');
         }
       } catch (error) {
         console.error('Error loading patient data:', error);

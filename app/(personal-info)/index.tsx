@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import React, { useState, useEffect } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Avatar, Button, Card, Icon, TextInput as PaperTextInput } from 'react-native-paper';
-import { getFastenPatient } from '@/services/fasten-health';
+import { fetchPatientInfo } from '@/services/api/patient';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 
 export default function PersonalInfoScreen() {
@@ -31,7 +31,7 @@ export default function PersonalInfoScreen() {
     const loadPatientData = async () => {
       setIsLoadingPatient(true);
       try {
-        const patient = await getFastenPatient();
+        const patient = await fetchPatientInfo();
         if (patient) {
           setFormData({
             name: patient.name || '',
