@@ -62,6 +62,7 @@ export function ProfileContent({
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
     const loadPatientData = async () => {
@@ -71,8 +72,10 @@ export function ProfileContent({
           setPatientName(patient.name || 'User');
           setPatientEmail(patient.email || '');
         }
-      } catch (error) {
-        console.error('Error loading patient data:', error);
+      } catch {
+        // Patient data failed to load — keep defaults
+      } finally {
+        setIsLoadingProfile(false);
       }
     };
 
@@ -93,9 +96,15 @@ export function ProfileContent({
     >
       {showProfileHeader && (
         <View style={styles.header}>
-          <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
-          <Text style={[styles.name, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>{patientName}</Text>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{patientEmail}</Text>
+          {isLoadingProfile ? (
+            <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 24 }} />
+          ) : (
+            <>
+              <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
+              <Text style={[styles.name, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>{patientName}</Text>
+              <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{patientEmail}</Text>
+            </>
+          )}
         </View>
       )}
 

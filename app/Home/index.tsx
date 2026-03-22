@@ -2078,6 +2078,7 @@ export default function HomeScreen() {
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const { selectedProviders, addProvider, removeProvider, validateAndCleanProviders } = useProviderSelection();
   const [patientName, setPatientName] = useState('');
+  const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
 
@@ -2120,10 +2121,11 @@ export default function HomeScreen() {
         const patient = await fetchPatientInfo();
         if (patient) {
           setPatientName(patient.name || '');
-          console.log('Loaded patient name for home screen:', patient.name);
         }
-      } catch (error) {
-        console.error('Error loading patient data:', error);
+      } catch {
+        // Patient data failed to load
+      } finally {
+        setIsLoadingPatient(false);
       }
     };
 
@@ -2287,7 +2289,7 @@ export default function HomeScreen() {
                 flex: 1,
               }
             ]}>
-              {getFirstName(patientName)}'s Circle of Support
+              {isLoadingPatient ? 'Loading...' : `${getFirstName(patientName)}'s Circle of Support`}
             </Text>
             <TouchableOpacity
               onPress={toggleViewMode}

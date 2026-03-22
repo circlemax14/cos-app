@@ -3,7 +3,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
 import { Avatar, Card, IconButton, List, Button } from 'react-native-paper';
 import { getTodayHealthMetrics, HealthMetrics } from '@/services/health';
 import { fetchPatientInfo, fetchMedications } from '@/services/api/patient';
@@ -24,6 +24,7 @@ export default function TodayScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [patientName, setPatientName] = useState('');
+  const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
     steps: 0,
@@ -46,6 +47,8 @@ export default function TodayScheduleScreen() {
         }
       } catch {
         // Patient data failed to load
+      } finally {
+        setIsLoadingPatient(false);
       }
     };
 
@@ -294,6 +297,10 @@ export default function TodayScheduleScreen() {
         {/* Profile Summary */}
         <Card style={[styles.profileCard, { backgroundColor: colors.background }]}>
           <View style={styles.profileContent}>
+            {isLoadingPatient ? (
+              <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 16 }} />
+            ) : (
+            <>
             <InitialsAvatar name={patientName} size={getScaledFontSize(80)} />
             <View style={styles.profileInfo}>
               <Text style={[
@@ -317,6 +324,8 @@ export default function TodayScheduleScreen() {
                 Patient
               </Text>
             </View>
+            </>
+            )}
           </View>
         </Card>
 
