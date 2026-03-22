@@ -162,6 +162,20 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="connect-clinics"
+        options={{
+          title: 'Connect Clinics',
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
