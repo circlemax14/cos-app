@@ -12,14 +12,13 @@ const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 export default function FastenConnectScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  // Prevent processing twice if multiple success events fire
-  const processing = useRef(false);
+  // Prevent double navigation when widget closes
+  const navigating = useRef(false);
+  const [connectedCount, setConnectedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleEvent = useCallback(async (event: unknown) => {
-    if (processing.current) return;
-
     // The event may arrive as a parsed object or as a wrapper with a stringified payload
     let parsed: { event_type?: string; api_mode?: string; data?: Record<string, unknown> } | null = null;
 
@@ -40,31 +39,28 @@ export default function FastenConnectScreen() {
 
     const eventType = parsed.event_type;
 
-    if (
-      eventType === 'widget.complete' ||
-      eventType === 'widget.close' ||
-      eventType === 'patient.connection_success'
-    ) {
-      processing.current = true;
-      setIsLoading(true);
+    if (eventType === 'patient.connection_success') {
+      // Record connection silently — keep the widget open so user can add more EHRs
       setError(null);
-
       try {
-        // Send connection data to backend to store and trigger Bulk Records export
         await apiClient.post('/v1/fasten/connection', {
           api_mode: parsed.api_mode ?? 'test',
           event_type: eventType,
           data: parsed.data ?? {},
         });
-
-        // Navigate to data-processing screen (shows waiting message)
-        router.replace('/(onboarding)/data-processing' as never);
+        setConnectedCount(c => c + 1);
       } catch (err) {
-        console.warn('[FastenConnect] Failed to process connection event:', err);
-        setError('Failed to initiate health data export. Please try again.');
-        processing.current = false;
-        setIsLoading(false);
+        console.warn('[FastenConnect] Failed to record connection:', err);
+        setError('Failed to save this connection. Please try again.');
       }
+      return;
+    }
+
+    if (eventType === 'widget.complete' || eventType === 'widget.close') {
+      if (navigating.current) return;
+      navigating.current = true;
+      setIsLoading(true);
+      router.replace('/(onboarding)/data-processing' as never);
     }
   }, []);
 
@@ -97,6 +93,13 @@ export default function FastenConnectScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {connectedCount > 0 && (
+        <View style={styles.successBanner}>
+          <Text style={[styles.successBannerText, { fontSize: getScaledFontSize(14) }]}>
+            ✓ {connectedCount} provider{connectedCount > 1 ? 's' : ''} connected — you can add more
+          </Text>
+        </View>
+      )}
       {error && (
         <View style={[styles.errorBanner, { backgroundColor: colors.card }]}>
           <Text style={[styles.errorBannerText, { color: '#D32F2F', fontSize: getScaledFontSize(14) }]}>
@@ -162,5 +165,18 @@ const styles = StyleSheet.create({
   },
   errorBannerText: {
     textAlign: 'center',
+  },
+  successBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+    backgroundColor: '#E8F5E9',
+  },
+  successBannerText: {
+    textAlign: 'center',
+    color: '#2E7D32',
+    fontWeight: '600',
   },
 });
