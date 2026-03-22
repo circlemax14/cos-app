@@ -46,16 +46,66 @@ function mapToPatient(r: FhirPatientResource): Patient {
   };
 }
 
+/**
+ * Fetch patient info. Tries HealthLake first (/patients/me), then falls back
+ * to patientDetails from DynamoDB via /auth/me (populated by the webhook).
+ */
 export async function fetchPatientInfo(): Promise<Patient | null> {
+  // Try HealthLake FHIR Patient first
   try {
     const res = await apiClient.get<{ success: boolean; data: FhirPatientResource }>('/v1/patients/me');
     return mapToPatient(res.data.data);
+  } catch {
+    // HealthLake may be unavailable (403/permissions) — fall back to DynamoDB
+  }
+
+  // Fallback: read patientDetails from the /auth/me response
+  try {
+    const meRes = await apiClient.get<{
+      success: boolean;
+      data: {
+        sub: string;
+        email?: string;
+        patientDetails?: {
+          fullName?: string;
+          firstName?: string;
+          lastName?: string;
+          dateOfBirth?: string;
+          gender?: string;
+          phone?: string;
+          email?: string;
+          address?: string;
+          city?: string;
+          state?: string;
+          postalCode?: string;
+        };
+      };
+    }>('/v1/auth/me');
+
+    const pd = meRes.data.data.patientDetails;
+    if (!pd) return null;
+
+    return {
+      id: meRes.data.data.sub,
+      name: pd.fullName ?? ([pd.firstName, pd.lastName].filter(Boolean).join(' ') || ''),
+      firstName: pd.firstName,
+      lastName: pd.lastName,
+      email: pd.email ?? meRes.data.data.email,
+      phone: pd.phone,
+      dateOfBirth: pd.dateOfBirth,
+      gender: pd.gender,
+      address: pd.address,
+      city: pd.city,
+      state: pd.state,
+      zipCode: pd.postalCode,
+    };
   } catch {
     return null;
   }
 }
 
 export async function fetchMedications(): Promise<Medication[]> {
+  try {
   const res = await apiClient.get<{
     success: boolean;
     data: {
@@ -84,4 +134,7 @@ export async function fetchMedications(): Promise<Medication[]> {
       purpose: m.reasonCode?.[0]?.text ?? '',
     };
   });
+  } catch {
+    return [];
+  }
 }
