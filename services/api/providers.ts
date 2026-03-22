@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { categorizeProvider } from '@/services/provider-categorization';
 import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment } from './types';
 
 interface FhirName {
@@ -48,13 +49,22 @@ function extractContact(practitioner: FhirPractitioner, system: string): string 
 }
 
 function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractitionerRole): Provider {
+  const name = buildName(practitioner.name);
+  const qualifications = extractQualifications(practitioner);
+  const specialty = extractSpecialty(role);
+
+  const cat = categorizeProvider({ name, qualifications, specialty });
+
   return {
     id: practitioner.id,
-    name: buildName(practitioner.name),
-    qualifications: extractQualifications(practitioner),
-    specialty: extractSpecialty(role),
+    name,
+    qualifications,
+    specialty,
     phone: extractContact(practitioner, 'phone'),
     email: extractContact(practitioner, 'email'),
+    category: cat.category.toLowerCase(),
+    subCategory: cat.subCategory,
+    subCategories: cat.subCategories,
   };
 }
 
