@@ -5,7 +5,7 @@ let ablyClient: Ably.Realtime | null = null
 let currentChannelId: string | null = null
 
 async function fetchToken(type: 'ai' | 'care_manager' = 'ai'): Promise<{ token: string; channelId: string }> {
-  const res = await apiClient.get(`/patients/me/chat/token?type=${type}`)
+  const res = await apiClient.get(`/v1/patients/me/chat/token?type=${type}`)
   return res.data.data
 }
 

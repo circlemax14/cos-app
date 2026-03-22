@@ -10,7 +10,7 @@ export function useInbox(type?: 'system' | 'care_manager') {
       const params = new URLSearchParams({ limit: '20' })
       if (pageParam) params.set('cursor', pageParam)
       if (type) params.set('type', type)
-      const res = await apiClient.get(`/patients/me/inbox?${params.toString()}`)
+      const res = await apiClient.get(`/v1/patients/me/inbox?${params.toString()}`)
       return res.data.data as { messages: InboxMessage[]; nextCursor: string | null }
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
@@ -22,7 +22,7 @@ export function useInbox(type?: 'system' | 'care_manager') {
 export function useMarkMessageRead() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => apiClient.put(`/patients/me/inbox/${id}/read`),
+    mutationFn: async (id: string) => apiClient.put(`/v1/patients/me/inbox/${id}/read`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inbox'] }),
   })
 }
@@ -30,7 +30,7 @@ export function useMarkMessageRead() {
 export function useDismissMessage() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => apiClient.delete(`/patients/me/inbox/${id}`),
+    mutationFn: async (id: string) => apiClient.delete(`/v1/patients/me/inbox/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inbox'] }),
   })
 }

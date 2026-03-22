@@ -17,7 +17,7 @@ export function useAppointments(filters?: AppointmentFilters) {
       if (filters?.from) params.set('from', filters.from)
       if (filters?.to) params.set('to', filters.to)
       if (filters?.type) params.set('type', filters.type)
-      const res = await apiClient.get(`/patients/me/appointments?${params.toString()}`)
+      const res = await apiClient.get(`/v1/patients/me/appointments?${params.toString()}`)
       return res.data.data.appointments as Appointment[]
     },
     staleTime: 5 * 60 * 1000,
@@ -28,7 +28,7 @@ export function useAppointment(id: string) {
   return useQuery({
     queryKey: ['appointments', id],
     queryFn: async () => {
-      const res = await apiClient.get(`/patients/me/appointments/${id}`)
+      const res = await apiClient.get(`/v1/patients/me/appointments/${id}`)
       return res.data.data.appointment as Appointment
     },
     enabled: !!id,
