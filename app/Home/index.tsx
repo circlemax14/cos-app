@@ -224,7 +224,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                     image={doctorPhotos.get(item.id) ? { uri: doctorPhotos.get(item.id)! } : undefined}
                   />
                   <Text
-                    numberOfLines={2}
+                    numberOfLines={3}
                     style={[
                       styles.orbitAvatarText,
                       {
@@ -1546,7 +1546,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                       fontWeight: getScaledFontWeight(400) as any,
                       color: colors.text + '80',
                     }
-                  ]} numberOfLines={2}>
+                  ]} numberOfLines={3}>
                     {agency.description}
                   </Text>
                   {agency.city && agency.state && (
@@ -2420,7 +2420,7 @@ export default function HomeScreen() {
               style={[
                 styles.deckContainer,
                 {
-                  height: Math.max(
+                  minHeight: Math.max(
                     56,
                     getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
                   ),
@@ -2447,7 +2447,7 @@ export default function HomeScreen() {
                       styles.appointmentCard,
                       cardStyle,
                       {
-                        height: Math.max(
+                        minHeight: Math.max(
                           56,
                           getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
                         ),
@@ -2550,7 +2550,7 @@ const styles = StyleSheet.create({
   orbitAvatar: {
     position: 'absolute',
     width: 56,
-    height: 80,
+    minHeight: 80,
   },
   addProviderAvatar: {
     borderWidth: 2,
@@ -2609,13 +2609,13 @@ const styles = StyleSheet.create({
   },
   deckContainer: {
     position: 'relative',
-    height: 56,
+    minHeight: 56,
   },
   appointmentCard: {
     borderRadius: 16,
     position: 'absolute',
     width: '100%',
-    height: 56,
+    minHeight: 56,
   },
   firstCard: {
     zIndex: 3,
@@ -2678,7 +2678,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    height: 56,
+    minHeight: 56,
   },
   listItemContent: {
     flex: 1,

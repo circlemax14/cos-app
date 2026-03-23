@@ -616,6 +616,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     marginTop: 8,
+    minHeight: 44,
   },
   notesInput: {
     borderWidth: 1,
@@ -651,8 +652,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   addButton: {
-    width: 44,
-    height: 44,
+    minWidth: 44,
+    minHeight: 44,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',

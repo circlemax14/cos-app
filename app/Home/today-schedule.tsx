@@ -701,22 +701,22 @@ export default function TodayScheduleScreen() {
                     ]}>
                       {task.time}
                     </Text>
-                    <Text 
-                      numberOfLines={2}
+                    <Text
+                      numberOfLines={3}
                       style={[
                         styles.taskTitle,
                         {
                           fontSize: getScaledFontSize(16),
-                          fontWeight: task.completed 
-                            ? settings.isBoldTextEnabled ? '700' : '600' 
+                          fontWeight: task.completed
+                            ? settings.isBoldTextEnabled ? '700' : '600'
                             : '600',
                           textDecorationLine: task.completed ? 'line-through' : 'none',
                         }
                       ]}>
                       {task.title}
                     </Text>
-                    <Text 
-                      numberOfLines={3}
+                    <Text
+                      numberOfLines={4}
                       style={[
                         styles.taskDescription,
                         {
@@ -769,8 +769,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
+    minWidth: 40,
+    minHeight: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -850,7 +850,7 @@ const styles = StyleSheet.create({
   },
   taskContent: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     padding: 12,
   },
@@ -923,12 +923,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '48%',
+    minWidth: 140,
     padding: 12,
     borderRadius: 12,
     backgroundColor: 'rgba(10, 126, 164, 0.1)',
   },
   healthMetricIconContainer: {
     marginRight: 12,
+    flexShrink: 0,
   },
   healthMetricContent: {
     flex: 1,
@@ -960,6 +962,7 @@ const styles = StyleSheet.create({
   medicationIconContainer: {
     marginRight: 12,
     marginTop: 2,
+    flexShrink: 0,
   },
   medicationContent: {
     flex: 1,

@@ -69,8 +69,8 @@ export default function PersonalInfoScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+      <View style={[styles.header, { backgroundColor: colors.background, paddingHorizontal: getScaledFontSize(24) }]}>
+        <TouchableOpacity onPress={() => router.back()} style={{ flexShrink: 0 }}>
           <Icon source="arrow-left" size={getScaledFontSize(32)} color={colors.text} />
         </TouchableOpacity>
         <Text style={[
@@ -81,7 +81,7 @@ export default function PersonalInfoScreen() {
             fontWeight: getScaledFontWeight(600) as any,
           }
         ]}>Personal Information</Text>
-        <View style={{ width: getScaledFontSize(32) }} />
+        <View style={{ width: getScaledFontSize(32), flexShrink: 0 }} />
       </View>
 
       {isLoadingPatient ? (
@@ -371,6 +371,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 20,
+    flexWrap: 'wrap',
   },
   headerTitle: {
     flex: 1,
@@ -424,7 +425,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   inputContent: {
-    height: 48,
+    minHeight: 48,
+    paddingVertical: 8,
   },
   inputOutline: {
     borderColor: '#e0e0e0',

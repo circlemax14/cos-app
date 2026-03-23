@@ -156,7 +156,7 @@ export default function AppointmentsScreen() {
 
         {/* Selected Date Appointments */}
         <Card style={styles.appointmentsListCard}>
-          <Text style={[styles.sectionTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>
+          <Text style={[styles.sectionTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, paddingHorizontal: getScaledFontSize(16) }]}>
             Appointments for {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', {
               weekday: 'long',
               year: 'numeric',
@@ -166,8 +166,8 @@ export default function AppointmentsScreen() {
           </Text>
           {selectedDateAppointments.length > 0 ? (
             selectedDateAppointments.map((appointment) => (
-              <View key={appointment.id} style={styles.appointmentItem}>
-                <View style={[styles.appointmentColor, { backgroundColor: appointment.color }]} />
+              <View key={appointment.id} style={[styles.appointmentItem, { paddingHorizontal: getScaledFontSize(16), paddingVertical: getScaledFontSize(12) }]}>
+                <View style={[styles.appointmentColor, { backgroundColor: appointment.color, flexShrink: 0 }]} />
                 <View style={styles.appointmentDetails}>
                   <Text style={[styles.appointmentTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>{appointment.title}</Text>
                   <Text style={[styles.appointmentDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
@@ -241,15 +241,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 16,
-    paddingHorizontal: 16,
     paddingTop: 16,
     color: '#333',
   },
   appointmentItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: 'flex-start',
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
@@ -273,8 +270,8 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   noAppointmentsContainer: {
-    paddingHorizontal: 16,
     paddingVertical: 24,
+    paddingHorizontal: 16,
     alignItems: 'center',
   },
   noAppointmentsText: {

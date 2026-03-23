@@ -22,7 +22,7 @@ export function HealthSummaryCard() {
       <View
         style={[
           styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          { backgroundColor: colors.card, borderColor: colors.border, padding: getScaledFontSize(16) },
         ]}
       >
         <ActivityIndicator size="small" color={colors.primary} />
@@ -46,7 +46,7 @@ export function HealthSummaryCard() {
       <View
         style={[
           styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          { backgroundColor: colors.card, borderColor: colors.border, padding: getScaledFontSize(16) },
         ]}
       >
         <Text
@@ -81,7 +81,7 @@ export function HealthSummaryCard() {
     <View
       style={[
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        { backgroundColor: colors.card, borderColor: colors.border, padding: getScaledFontSize(16) },
       ]}
     >
       <Text
@@ -101,6 +101,7 @@ export function HealthSummaryCard() {
           {
             color: colors.text,
             fontSize: getScaledFontSize(14),
+            lineHeight: getScaledFontSize(20),
           },
         ]}
       >
@@ -128,6 +129,7 @@ export function HealthSummaryCard() {
                   {
                     color: colors.subtext,
                     fontSize: getScaledFontSize(13),
+                    lineHeight: getScaledFontSize(20),
                   },
                 ]}
               >
@@ -154,6 +156,7 @@ export function HealthSummaryCard() {
                   {
                     color: colors.subtext,
                     fontSize: getScaledFontSize(13),
+                    lineHeight: getScaledFontSize(20),
                   },
                 ]}
               >
@@ -180,6 +183,7 @@ export function HealthSummaryCard() {
                   {
                     color: colors.subtext,
                     fontSize: getScaledFontSize(13),
+                    lineHeight: getScaledFontSize(20),
                   },
                 ]}
               >
@@ -206,6 +210,7 @@ export function HealthSummaryCard() {
                   {
                     color: colors.subtext,
                     fontSize: getScaledFontSize(13),
+                    lineHeight: getScaledFontSize(20),
                   },
                 ]}
               >
@@ -219,6 +224,7 @@ export function HealthSummaryCard() {
               {
                 color: colors.subtext,
                 fontSize: getScaledFontSize(11),
+                lineHeight: getScaledFontSize(16),
               },
             ]}
           >
@@ -250,7 +256,6 @@ export function HealthSummaryCard() {
 
 const styles = StyleSheet.create({
   card: {
-    padding: 16,
     borderRadius: 12,
     borderWidth: 1,
     gap: 8,
@@ -261,7 +266,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   overview: {
-    lineHeight: 20,
   },
   loadingText: {
     textAlign: 'center',
@@ -285,13 +289,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   sectionBody: {
-    lineHeight: 20,
   },
   disclaimer: {
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 8,
-    lineHeight: 16,
   },
   toggleButton: {
     alignItems: 'center',

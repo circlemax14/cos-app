@@ -60,7 +60,7 @@ export function DoctorCard({
             />
           )}
           <View style={styles.textContainer}>
-            <Text 
+            <Text
               style={[
                 styles.title,
                 {
@@ -69,11 +69,11 @@ export function DoctorCard({
                   marginBottom: getScaledFontSize(4),
                 }
               ]}
-              numberOfLines={2}
+              numberOfLines={3}
             >
               {name}
             </Text>
-            <Text 
+            <Text
               style={[
                 styles.subtitle,
                 {
@@ -81,7 +81,7 @@ export function DoctorCard({
                   fontWeight: getScaledFontWeight(500) as any,
                 }
               ]}
-              numberOfLines={2}
+              numberOfLines={3}
             >
               {qualifications}
             </Text>
@@ -159,6 +159,7 @@ const styles = StyleSheet.create({
     borderColor: '#008080',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   actionButtonDisabled: {
     opacity: 0.4,

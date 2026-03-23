@@ -136,16 +136,17 @@ export function FilterMenu({
   );
 }
 
-const MENU_WIDTH = 220;
+const MENU_MIN_WIDTH = 220;
 
 const getMenuPosition = (anchor: { x: number; y: number; height: number } | null) => {
   const { width } = Dimensions.get('window');
+  const menuWidth = Math.min(Math.max(MENU_MIN_WIDTH, width * 0.55), width - 16);
   const top = (anchor?.y ?? 0) + (anchor?.height ?? 0) + 8;
   const left = Math.min(
-    Math.max(8, (anchor?.x ?? width - MENU_WIDTH - 8)),
-    width - MENU_WIDTH - 8
+    Math.max(8, (anchor?.x ?? width - menuWidth - 8)),
+    width - menuWidth - 8
   );
-  return { top, left };
+  return { top, left, width: menuWidth };
 };
 
 const styles = StyleSheet.create({
@@ -158,7 +159,7 @@ const styles = StyleSheet.create({
   },
   menuContainer: {
     position: 'absolute',
-    width: MENU_WIDTH,
+    minWidth: MENU_MIN_WIDTH,
     borderRadius: 12,
     borderWidth: 1,
     paddingVertical: 6,
@@ -179,5 +180,6 @@ const styles = StyleSheet.create({
   menuItemText: {
     fontSize: 14,
     fontWeight: '500',
+    flexWrap: 'wrap',
   },
 });

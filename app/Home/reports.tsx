@@ -431,9 +431,9 @@ export default function Reports() {
             <Card.Content>
               <View style={styles.reportHeader}>
                 <View style={styles.reportTitleContainer}>
-                  <Text 
+                  <Text
                     style={[styles.reportTitle, {  fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}
-                    numberOfLines={2}
+                    numberOfLines={3}
                     ellipsizeMode="tail"
                   >
                     {report.title}
@@ -481,9 +481,9 @@ export default function Reports() {
               </View>
               
               {report.description && (
-                <Text 
+                <Text
                   style={[styles.reportDescription, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(24) }]}
-                  numberOfLines={3}
+                  numberOfLines={4}
                   ellipsizeMode="tail"
                 >
                   {report.description}
@@ -986,6 +986,7 @@ const styles = StyleSheet.create({
   },
   filterButtonsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   filterButton: {
@@ -1026,7 +1027,7 @@ const styles = StyleSheet.create({
   },
   checkboxRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 16,
     borderBottomWidth: 1,
     gap: 12,
@@ -1080,8 +1081,9 @@ const styles = StyleSheet.create({
   planHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
+    gap: 8,
   },
   planTitle: {
     fontSize: 18,
@@ -1194,6 +1196,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
     gap: 8,
+    flexWrap: 'wrap',
   },
   reportTitle: {
     fontSize: 18,
@@ -1262,7 +1265,7 @@ const styles = StyleSheet.create({
   reportModalHeaderTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   reportModalTitle: {
