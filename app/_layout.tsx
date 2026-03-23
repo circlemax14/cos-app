@@ -7,7 +7,6 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AccessibilityProvider } from '@/stores/accessibility-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
-import { DatabaseProvider } from '@/database/DatabaseProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
 
@@ -20,7 +19,6 @@ export default function RootLayout() {
 
   return (
     <QueryProvider>
-      <DatabaseProvider>
         <AccessibilityProvider>
           <ProviderSelectionProvider>
             <SettingsProvider>
@@ -62,7 +60,6 @@ export default function RootLayout() {
             </SettingsProvider>
           </ProviderSelectionProvider>
         </AccessibilityProvider>
-      </DatabaseProvider>
     </QueryProvider>
   );
 }
