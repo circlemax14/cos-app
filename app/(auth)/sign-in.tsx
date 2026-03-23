@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   submitContent: {
-    height: 48,
+    minHeight: 48,
   },
   submitLabel: {
     color: 'white',
