@@ -104,12 +104,18 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         onLongPress={onLongPress}
         style={[
           styles.tabButton,
+          {
+            paddingHorizontal: getScaledFontSize(16),
+            minWidth: getScaledFontSize(80),
+          },
           shouldDistributeEvenly && styles.tabButtonDistributed
         ]}>
         <View style={styles.tabContent}>
           {icon && <View style={styles.iconContainer}>{icon}</View>}
           <Text
             numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
             style={[
               styles.tabLabel,
               {
@@ -178,10 +184,8 @@ const styles = StyleSheet.create({
   },
   tabButton: {
     paddingVertical: 12,
-    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 80,
   },
   tabButtonDistributed: {
     paddingHorizontal: 8,

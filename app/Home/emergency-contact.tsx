@@ -389,6 +389,7 @@ const styles = StyleSheet.create({
   ehrBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 4,
     marginBottom: 12,
     paddingBottom: 10,
@@ -478,7 +479,6 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     padding: 20,
-    maxHeight: 380,
   },
   fieldLabel: {
     marginBottom: 6,
@@ -488,7 +488,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    minHeight: 44,
     backgroundColor: 'transparent',
   },
   modalActions: {

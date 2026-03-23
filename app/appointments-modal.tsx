@@ -120,11 +120,12 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
+    gap: 12,
   },
   scrollContainer: {
     padding: 16,
@@ -152,13 +153,14 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   cardSpacing: {
-    height: 8,
+    minHeight: 8,
   },
   typeBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
     alignSelf: 'center',
+    flexShrink: 0,
   },
   typeText: {
     textTransform: 'capitalize',

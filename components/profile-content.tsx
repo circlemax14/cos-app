@@ -310,7 +310,7 @@ export function ProfileContent({
                 },
               ]);
             }}
-            style={styles.signOutButton}
+            style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12) }]}
             accessibilityLabel="Sign out of your account"
             accessibilityRole="button"
           >
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
   menuCard: {
     borderRadius: 16,
     marginBottom: 12,
-    paddingLeft: 16,
+    paddingLeft: 8,
   },
   ehrSection: {
     marginBottom: 16,
@@ -377,7 +377,5 @@ const styles = StyleSheet.create({
   },
   signOutButton: {
     borderColor: '#ff4444',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
   },
 });

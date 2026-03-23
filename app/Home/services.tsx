@@ -271,10 +271,11 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     padding: 12,
     borderRadius: 12,
+    gap: 12,
   },
   toggleLabel: {
     fontWeight: '600',
@@ -300,6 +301,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 8,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   cardTitleRow: {
     flexDirection: 'row',
@@ -323,6 +326,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
+    flexShrink: 0,
   },
   statusText: {},
   ctaButton: {

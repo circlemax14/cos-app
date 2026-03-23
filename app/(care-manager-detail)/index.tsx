@@ -402,6 +402,8 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -420,11 +422,12 @@ const styles = StyleSheet.create({
   },
   agencyHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
   agencyIcon: {
     marginRight: 16,
+    flexShrink: 0,
   },
   agencyTitleContainer: {
     flex: 1,
@@ -450,7 +453,7 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
     gap: 8,
   },
@@ -498,7 +501,7 @@ const styles = StyleSheet.create({
   },
   specialtyItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
     gap: 12,
   },
@@ -508,7 +511,7 @@ const styles = StyleSheet.create({
   },
   serviceItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
     gap: 12,
   },

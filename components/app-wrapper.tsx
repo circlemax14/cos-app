@@ -163,12 +163,12 @@ export function AppWrapper({
             ]}
           >
             <SafeAreaView style={styles.drawerSafeArea} edges={['top', 'bottom', 'left', 'right']}>
-              <View style={[styles.drawerHeader, { borderBottomColor: colors.text + '20' }]}>
-                <Text style={[styles.drawerTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>
+              <View style={[styles.drawerHeader, { borderBottomColor: colors.text + '20', paddingHorizontal: getScaledFontSize(16), paddingVertical: getScaledFontSize(12) }]}>
+                <Text style={[styles.drawerTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, flex: 1 }]}>
                   Profile
                 </Text>
-                <TouchableOpacity onPress={closeDrawerMenu}>
-                  <IconSymbol name="xmark" size={22} color={colors.text} />
+                <TouchableOpacity onPress={closeDrawerMenu} style={{ flexShrink: 0 }}>
+                  <IconSymbol name="xmark" size={getScaledFontSize(22)} color={colors.text} />
                 </TouchableOpacity>
               </View>
               <ProfileContent
@@ -207,10 +207,10 @@ export function AppWrapper({
         onRequestClose={closeAccessibilityModal}
       >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>Accessibility Options</Text>
-            <TouchableOpacity onPress={closeAccessibilityModal}>
-              <IconSymbol name="xmark" size={24} color={colors.text} />
+          <View style={[styles.modalHeader, { paddingHorizontal: getScaledFontSize(20), paddingVertical: getScaledFontSize(16) }]}>
+            <Text style={[styles.modalTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any, flex: 1 }]}>Accessibility Options</Text>
+            <TouchableOpacity onPress={closeAccessibilityModal} style={{ flexShrink: 0 }}>
+              <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
             </TouchableOpacity>
           </View>
           
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   headerContent: {
     flexDirection: 'row',
