@@ -7,37 +7,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
 import { generateHistorySummaries, HistorySummary, PatientHistoryData, generateReportSummary, ReportSummary } from '@/services/openai';
-import { getFastenDiagnosticReports, Report as FastenReport } from '@/services/fasten-health';
-
-interface Report {
-  id: number;
-  title: string;
-  category: string;
-  provider: string;
-  date: string;
-  status: 'Available' | 'Pending' | 'Completed';
-  description?: string;
-  fileType?: string;
-  // Detailed report information
-  exam?: string;
-  clinicalHistory?: string;
-  technique?: string;
-  findings?: string;
-  impression?: string;
-  interpretedBy?: string;
-  signedBy?: string;
-  signedOn?: string;
-  accessionNumber?: string;
-  orderNumber?: string;
-  performingFacility?: {
-    name: string;
-    address: string;
-    city: string;
-    state: string;
-    zip: string;
-    phone?: string;
-  };
-}
+import { fetchReports } from '@/services/api/reports';
+import type { Report } from '@/services/api/types';
 
 export default function Reports() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -71,22 +42,20 @@ export default function Reports() {
   const [fastenReports, setFastenReports] = useState<Report[]>([]);
   const [isLoadingFastenReports, setIsLoadingFastenReports] = useState(false);
   
-  // Load Fasten Health reports on mount
+  // Load reports on mount
   useEffect(() => {
-    const loadFastenReports = async () => {
+    const loadReports = async () => {
       setIsLoadingFastenReports(true);
       try {
-        const reports = await getFastenDiagnosticReports();
+        const reports = await fetchReports();
         setFastenReports(reports);
-        console.log(`Loaded ${reports.length} reports from Fasten Health`);
-      } catch (error) {
-        console.error('Error loading Fasten Health reports:', error);
+      } catch {
+        setFastenReports([]);
       } finally {
         setIsLoadingFastenReports(false);
       }
     };
-    
-    loadFastenReports();
+    loadReports();
   }, []);
 
   const tabs = [
@@ -105,183 +74,8 @@ export default function Reports() {
     'Radiology',
   ];
 
-  const allReports: Report[] = [
-    {
-      id: 1,
-      title: 'Complete Blood Count (CBC)',
-      category: 'Lab Reports',
-      provider: 'City Hospital',
-      date: 'Nov 20, 2024',
-      status: 'Available',
-      description: 'Complete blood count with differential',
-      fileType: 'PDF',
-      exam: 'Complete Blood Count (CBC) with Differential',
-      clinicalHistory: 'Routine health screening',
-      technique: 'Automated hematology analyzer',
-      findings: 'White blood cell count: 7.2 x 10^3/μL (normal range: 4.0-11.0). Red blood cell count: 4.8 x 10^6/μL (normal range: 4.5-5.5). Hemoglobin: 14.2 g/dL (normal range: 13.5-17.5). Hematocrit: 42.5% (normal range: 40-50%). Platelet count: 250 x 10^3/μL (normal range: 150-450). Differential shows normal distribution of white blood cells.',
-      impression: 'Complete blood count is within normal limits. No abnormalities detected.',
-      interpretedBy: 'Dr. Sarah Johnson, M.D.',
-      signedBy: 'Dr. Sarah Johnson, M.D.',
-      signedOn: '2024-11-20 10:30 AM',
-      accessionNumber: '80051608CBC',
-      orderNumber: '2073447967',
-      performingFacility: {
-        name: 'City Hospital Laboratory',
-        address: '123 Medical Center Dr',
-        city: 'San Francisco',
-        state: 'California',
-        zip: '94102',
-        phone: '415-555-0100',
-      },
-    },
-    {
-      id: 2,
-      title: 'Chest X-Ray',
-      category: 'Imaging',
-      provider: 'Metro Medical Center',
-      date: 'Nov 18, 2024',
-      status: 'Available',
-      description: 'Chest X-ray frontal and lateral views',
-      fileType: 'DICOM',
-      exam: 'Chest X-Ray (PA and Lateral)',
-      clinicalHistory: 'Evaluation for chest pain and shortness of breath',
-      technique: 'Frontal (PA) and lateral chest radiographs',
-      findings: 'The heart is normal in size and configuration. The mediastinal contours are within normal limits. The lungs are clear bilaterally without evidence of acute infiltrates, consolidation, or pleural effusion. The bony structures are intact. No acute cardiopulmonary abnormalities.',
-      impression: 'Normal chest X-ray. No acute abnormalities identified.',
-      interpretedBy: 'Dr. Michael Chen, M.D.',
-      signedBy: 'Dr. Michael Chen, M.D.',
-      signedOn: '2024-11-18 2:15 PM',
-      accessionNumber: '80051608CXR',
-      orderNumber: '2073447968',
-      performingFacility: {
-        name: 'Metro Medical Center Radiology',
-        address: '456 Health Parkway',
-        city: 'San Francisco',
-        state: 'California',
-        zip: '94103',
-        phone: '415-555-0200',
-      },
-    },
-    {
-      id: 3,
-      title: 'MRI Brain',
-      category: 'Imaging',
-      provider: 'Imaging Associates',
-      date: 'Nov 15, 2024',
-      status: 'Available',
-      description: 'MRI brain with contrast',
-      fileType: 'DICOM',
-      exam: 'MRI Brain with and without Contrast',
-      clinicalHistory: 'Evaluation for headaches and dizziness',
-      technique: 'Sagittal, axial, and coronal T1-weighted, T2-weighted, FLAIR, and post-contrast T1-weighted sequences',
-      findings: 'The brain parenchyma demonstrates normal signal intensity. No evidence of mass effect, hemorrhage, or acute infarction. The ventricles and sulci are normal in size and configuration. The posterior fossa structures are unremarkable. No abnormal enhancement is identified following contrast administration. The visualized skull base and calvarium are intact.',
-      impression: 'Normal MRI brain with contrast. No acute intracranial abnormalities.',
-      interpretedBy: 'Dr. Emily Davis, M.D.',
-      signedBy: 'Dr. Emily Davis, M.D.',
-      signedOn: '2024-11-15 11:45 AM',
-      accessionNumber: '80051608MRI',
-      orderNumber: '2073447969',
-      performingFacility: {
-        name: 'Imaging Associates',
-        address: '789 Diagnostic Blvd',
-        city: 'San Francisco',
-        state: 'California',
-        zip: '94104',
-        phone: '415-555-0300',
-      },
-    },
-    {
-      id: 4,
-      title: 'Lipid Panel',
-      category: 'Lab Reports',
-      provider: 'Regional Lab',
-      date: 'Nov 12, 2024',
-      status: 'Available',
-      description: 'Cholesterol and triglyceride levels',
-      fileType: 'PDF',
-      exam: 'Lipid Panel (Complete)',
-      clinicalHistory: 'Routine cholesterol screening',
-      technique: 'Enzymatic colorimetric assay',
-      findings: 'Total Cholesterol: 185 mg/dL (normal range: <200). HDL Cholesterol: 55 mg/dL (normal range: >40). LDL Cholesterol: 110 mg/dL (normal range: <100). Triglycerides: 150 mg/dL (normal range: <150). Cholesterol/HDL Ratio: 3.4 (normal range: <5.0).',
-      impression: 'Lipid panel shows mildly elevated LDL cholesterol. HDL cholesterol is within normal limits. Overall cardiovascular risk is low.',
-      interpretedBy: 'Dr. James Wilson, M.D.',
-      signedBy: 'Dr. James Wilson, M.D.',
-      signedOn: '2024-11-12 9:15 AM',
-      accessionNumber: '80051608LIP',
-      orderNumber: '2073447970',
-      performingFacility: {
-        name: 'Regional Lab',
-        address: '321 Laboratory Way',
-        city: 'San Francisco',
-        state: 'California',
-        zip: '94105',
-        phone: '415-555-0400',
-      },
-    },
-    {
-      id: 5,
-      title: 'Biopsy Report',
-      category: 'Pathology',
-      provider: 'Pathology Lab',
-      date: 'Nov 10, 2024',
-      status: 'Available',
-      description: 'Tissue biopsy analysis',
-      fileType: 'PDF',
-    },
-    {
-      id: 6,
-      title: 'CT Scan Abdomen',
-      category: 'Imaging',
-      provider: 'Metro Medical Center',
-      date: 'Nov 8, 2024',
-      status: 'Available',
-      description: 'CT scan of abdomen and pelvis',
-      fileType: 'DICOM',
-    },
-    {
-      id: 7,
-      title: 'Blood Glucose Test',
-      category: 'Lab Reports',
-      provider: 'City Hospital',
-      date: 'Nov 5, 2024',
-      status: 'Available',
-      description: 'Fasting blood glucose levels',
-      fileType: 'PDF',
-    },
-    {
-      id: 8,
-      title: 'Medical History Summary',
-      category: 'Medical Records',
-      provider: 'City Hospital',
-      date: 'Nov 1, 2024',
-      status: 'Available',
-      description: 'Complete medical history documentation',
-      fileType: 'PDF',
-    },
-    {
-      id: 9,
-      title: 'Ultrasound Abdomen',
-      category: 'Imaging',
-      provider: 'Imaging Associates',
-      date: 'Oct 28, 2024',
-      status: 'Available',
-      description: 'Abdominal ultrasound examination',
-      fileType: 'DICOM',
-    },
-    {
-      id: 10,
-      title: 'Thyroid Function Test',
-      category: 'Lab Reports',
-      provider: 'Regional Lab',
-      date: 'Oct 25, 2024',
-      status: 'Available',
-      description: 'TSH, T3, T4 levels',
-      fileType: 'PDF',
-    },
-  ];
-
   const providers = useMemo(() => {
-    const reportsToUse = fastenReports.length > 0 ? fastenReports : allReports;
+    const reportsToUse = fastenReports;
     return Array.from(
       new Set(
         reportsToUse
@@ -365,9 +159,7 @@ export default function Reports() {
   );
 
   const getFilteredReports = () => {
-    // Use Fasten Health reports if available, otherwise fall back to mock data
-    const reportsToUse = fastenReports.length > 0 ? fastenReports : allReports;
-    let filtered = reportsToUse;
+    let filtered = fastenReports;
 
     // Filter by active tab category
     if (activeTab !== 'all') {
@@ -511,7 +303,7 @@ export default function Reports() {
             purpose: 'Pain management',
           },
         ],
-        reports: allReports.map(report => ({
+        reports: fastenReports.map(report => ({
           title: report.title,
           category: report.category,
           date: report.date,
@@ -606,7 +398,7 @@ export default function Reports() {
       setIsLoadingHistory(false);
       setIsRefreshingHistory(false);
     }
-  }, [allReports]);
+  }, [fastenReports]);
 
   // Load history when main tab changes to history
   useEffect(() => {

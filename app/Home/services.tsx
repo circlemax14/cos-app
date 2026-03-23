@@ -1,45 +1,14 @@
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { fetchAvailableServices } from '@/services/api/services';
+import type { ServiceDefinition } from '@/services/api/types';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSettings } from '@/stores/settings-store';
-
-type ServiceDefinition = {
-  id: string;
-  title: string;
-  description: string;
-  featureKey: string;
-  priceLabel?: string;
-  isToggle?: boolean;
-};
-
-const SERVICES: ServiceDefinition[] = [
-  {
-    id: 'care-manager',
-    // ... (rest of services)
-    title: 'Care Manager Support',
-    description: 'Get 1:1 help from a care manager to coordinate your appointments and records.',
-    featureKey: 'service_care_manager',
-    priceLabel: '$19 / month',
-  },
-  {
-    id: 'ai-plan',
-    title: 'Enhanced AI Health Plan',
-    description: 'Unlock deeper AI-powered insights and proactive health reminders.',
-    featureKey: 'service_ai_plan',
-    priceLabel: '$9 / month',
-  },
-  {
-    id: 'priority-inbox',
-    title: 'Priority Inbox',
-    description: 'Get faster responses from your care team with priority routing.',
-    featureKey: 'service_priority_inbox',
-    priceLabel: '$4 / month',
-  },
-];
 
 export default function ServicesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -47,13 +16,23 @@ export default function ServicesScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { data: permissionsData } = useFeaturePermissions();
 
+  const [services, setServices] = useState<ServiceDefinition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAvailableServices()
+      .then(setServices)
+      .catch(() => setServices([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
   // Default to visible/enabled while permissions are loading
   const isVisible = (featureKey: string) => permissionsData?.[featureKey as keyof typeof permissionsData]?.enabled ?? true
   const isUnlocked = (_featureKey: string) => true // TODO: wire to purchase/subscription status
   const isPurchasable = (_featureKey: string) => true // TODO: wire to purchase/subscription status
   const getStatus = (_featureKey: string) => 'active' // TODO: wire to subscription status
 
-  const visibleServices = SERVICES.filter((svc) => isVisible(svc.featureKey));
+  const visibleServices = services.filter((svc) => isVisible(svc.featureKey));
 
   const handlePurchase = (service: ServiceDefinition) => {
     // TODO: Integrate with real purchase / billing flow.

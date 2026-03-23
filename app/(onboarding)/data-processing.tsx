@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
+import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
@@ -21,6 +22,28 @@ export default function DataProcessingScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const requestPermissionsAndNavigate = useCallback(async () => {
+    try {
+      // Request notification permissions silently
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status === 'granted') {
+        try {
+          const tokenData = await Notifications.getExpoPushTokenAsync();
+          await apiClient.post('/v1/notifications/register-token', {
+            token: tokenData.data,
+            platform: Platform.OS === 'ios' ? 'ios' : 'android',
+          });
+        } catch {
+          // Non-critical — registration failure doesn't block navigation
+        }
+      }
+    } catch {
+      // Non-critical — permission request failure doesn't block navigation
+    }
+    // Navigate to Home regardless of permission status
+    router.replace('/Home' as never);
+  }, []);
+
   const checkDataReady = useCallback(async () => {
     try {
       const res = await apiClient.get<{
@@ -29,17 +52,17 @@ export default function DataProcessingScreen() {
       }>('/v1/fasten/status');
 
       if (res.data.data.dataReady) {
-        // Data is ready — stop polling and proceed to permissions
+        // Data is ready — stop polling and request permissions before navigating to Home
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
         }
-        router.replace('/(onboarding)/permissions' as never);
+        await requestPermissionsAndNavigate();
       }
     } catch {
       // Silently retry on next interval — network errors are transient
     }
-  }, []);
+  }, [requestPermissionsAndNavigate]);
 
   useEffect(() => {
     // Start polling for data readiness

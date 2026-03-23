@@ -3,11 +3,11 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
 import { Avatar, Card, IconButton, List, Button } from 'react-native-paper';
 import { getTodayHealthMetrics, HealthMetrics } from '@/services/health';
-import { Medication } from '@/services/openai';
-import { getFastenPatient, getFastenMedications } from '@/services/fasten-health';
+import { fetchPatientInfo, fetchMedications } from '@/services/api/patient';
+import type { Medication } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 
 interface Task {
@@ -24,6 +24,7 @@ export default function TodayScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [patientName, setPatientName] = useState('');
+  const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
     steps: 0,
@@ -36,34 +37,32 @@ export default function TodayScheduleScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const appState = useRef(AppState.currentState);
   
-  // Load patient data and medications from Fasten Health
+  // Load patient data and medications
   useEffect(() => {
     const loadPatientData = async () => {
       try {
-        const patient = await getFastenPatient();
+        const patient = await fetchPatientInfo();
         if (patient) {
           setPatientName(patient.name || '');
-          console.log('Loaded patient data for today schedule:', patient.name);
         }
-      } catch (error) {
-        console.error('Error loading patient data:', error);
+      } catch {
+        // Patient data failed to load
+      } finally {
+        setIsLoadingPatient(false);
       }
     };
-    
+
     const loadMedications = async () => {
       try {
-        const meds = await getFastenMedications();
+        const meds = await fetchMedications();
         if (meds && meds.length > 0) {
           setMedications(meds);
-          console.log(`Loaded ${meds.length} medications from Fasten Health`);
-        } else {
-          console.log('No medications found in Fasten Health data');
         }
-      } catch (error) {
-        console.error('Error loading medications:', error);
+      } catch {
+        // Medications failed to load
       }
     };
-    
+
     loadPatientData();
     loadMedications();
   }, []);
@@ -298,6 +297,10 @@ export default function TodayScheduleScreen() {
         {/* Profile Summary */}
         <Card style={[styles.profileCard, { backgroundColor: colors.background }]}>
           <View style={styles.profileContent}>
+            {isLoadingPatient ? (
+              <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 16 }} />
+            ) : (
+            <>
             <InitialsAvatar name={patientName} size={getScaledFontSize(80)} />
             <View style={styles.profileInfo}>
               <Text style={[
@@ -321,6 +324,8 @@ export default function TodayScheduleScreen() {
                 Patient
               </Text>
             </View>
+            </>
+            )}
           </View>
         </Card>
 

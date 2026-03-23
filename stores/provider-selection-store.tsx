@@ -4,7 +4,7 @@
  * TODO: wire addProvider/removeProvider to the backend provider-selection endpoints.
  */
 import React, { createContext, ReactNode, useContext, useState } from 'react';
-import type { Provider } from '@/services/fasten-health';
+import type { Provider } from '@/services/api/types';
 
 export const MAX_SELECTED_PROVIDERS = 8;
 

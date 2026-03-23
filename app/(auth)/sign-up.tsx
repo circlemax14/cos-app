@@ -35,7 +35,7 @@ export default function SignUpScreen() {
     const res = await signUp({ email, password, confirmPassword });
     setLoading(false);
     if (res.success) {
-      router.replace({ pathname: '/(auth)/verify-email', params: { email } } as never);
+      router.replace({ pathname: '/(auth)/verify-email', params: { email, password } } as never);
     } else {
       setError(res.message ?? 'Sign up failed');
     }

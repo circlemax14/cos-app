@@ -36,17 +36,13 @@ export default function TabLayout() {
           }}
         />
       )}
-      {canShow('inbox') && (
-        <Tabs.Screen
-          name="inbox"
-          options={{
-            title: 'Inbox',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="tray.fill" color={color} />
-            ),
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          title: 'Inbox',
+          href: null,
+        }}
+      />
       {canShow('appointments') && (
         <Tabs.Screen
           name="appointments"
@@ -159,6 +155,20 @@ export default function TabLayout() {
       <Tabs.Screen
         name="integrative-screen"
         options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="connect-clinics"
+        options={{
+          title: 'Connect Clinics',
           href: null,
         }}
       />

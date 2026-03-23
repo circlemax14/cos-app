@@ -87,10 +87,8 @@ export function AppWrapper({
   };
 
   const handleConnectEHR = () => {
-    // TODO: Implement EHR connection flow
     closeDrawerMenu();
-    // Navigate to provider selection or EHR connection screen
-    router.push('/(auth)/provider-selection');
+    router.push('/Home/connect-clinics');
   };
 
   return (

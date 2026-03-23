@@ -33,7 +33,7 @@ export default function ConnectedEhrsScreen() {
           showEhrTitle={false}
           connectedHospitals={actualConnectedHospitals}
           isLoadingClinics={isLoadingClinics}
-          onConnectEhr={() => router.push('/(auth)/provider-selection')}
+          onConnectEhr={() => router.push('/Home/connect-clinics')}
           containerStyle={styles.profileContentContainer}
         />
       </ScrollView>

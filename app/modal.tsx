@@ -8,7 +8,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } fro
 import { Button, Menu, Portal, Text, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs, TabScreen, TabsProvider } from 'react-native-paper-tabs';
-import { getFastenPractitioners, Provider } from '@/services/fasten-health';
+import { fetchProviders } from '@/services/api/providers';
+import type { Provider } from '@/services/api/types';
 import { getAllCategories, getAllMedicalSubcategories, groupProvidersByCategory, getProvidersByCategory, getProvidersByMedicalSubcategory } from '@/services/provider-categorization';
 import { SUPPORT_CATEGORIES, getCategoryById, matchProviderToSubCategory } from '@/constants/categories';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
@@ -182,7 +183,7 @@ export default function ModalScreen() {
     const loadAndCategorizeProviders = async () => {
       setIsLoading(true);
       try {
-        const providers = await getFastenPractitioners();
+        const providers = await fetchProviders();
 
         // Use the same categorization logic as ListView for consistency
         const categorizedProviders = new Map<string, Provider[]>();
