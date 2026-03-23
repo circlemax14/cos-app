@@ -28,9 +28,9 @@ export default function DoctorDetailScreen() {
   
   // Get provider data from params or load by ID
   const providerId = params.id as string | undefined;
-  const providerName = params.name as string || 'Dr. Max K.';
-  const providerQualifications = params.qualifications as string || 'MD, Physical Medicine & Rehabilitation';
-  const providerSpecialty = params.specialty as string || 'General';
+  const providerName = params.name as string || '';
+  const providerQualifications = params.qualifications as string || '';
+  const providerSpecialty = params.specialty as string || '';
   
   // Load doctor data from database
   const { doctor: doctorData, updateDoctor, pickImage, isLoading: isLoadingDoctor } = useDoctor(providerId || '');
@@ -38,8 +38,8 @@ export default function DoctorDetailScreen() {
   // Use database data if available, otherwise fall back to provider/params
   const doctorName = doctorData?.name || provider?.name || providerName;
   const doctorImage = doctorData?.photoUrl 
-    ? { uri: doctorData.photoUrl } 
-    : require('@/assets/images/dummy.jpg');
+    ? { uri: doctorData.photoUrl }
+    : null;
   
   // Edit form state
   const [editedData, setEditedData] = useState({

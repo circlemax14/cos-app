@@ -1,124 +1,70 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import React, { useMemo, useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useAppointments } from '@/hooks/use-appointments';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
+import type { MarkedDates } from 'react-native-calendars/src/types';
 import { Card } from 'react-native-paper';
-import { transformFastenHealthData, Appointment as FastenAppointment } from '@/services/fasten-health';
 
-interface Appointment {
-  id: string;
-  title: string;
-  date: Date;
-  color: string;
-  time: string;
-}
+const APPOINTMENT_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
 
 export default function AppointmentsScreen() {
-  console.log('AppointmentsScreen rendering - Calendar should be visible');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [fastenAppointments, setFastenAppointments] = useState<FastenAppointment[]>([]);
-  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
 
-  // Load Fasten Health appointments
-  useEffect(() => {
-    const loadAppointments = async () => {
-      setIsLoadingAppointments(true);
-      try {
-        const healthData = await transformFastenHealthData();
-        if (healthData.appointments && healthData.appointments.length > 0) {
-          setFastenAppointments(healthData.appointments);
-          console.log(`Loaded ${healthData.appointments.length} appointments from Fasten Health`);
+  const { data, isLoading, isError, refetch } = useAppointments();
+  const appointments = data ?? [];
+
+  // Map API appointments to display-friendly objects with parsed dates and colors
+  const displayAppointments = useMemo(() => {
+    return appointments.map((apt, index) => {
+      const dateObj = new Date(apt.date);
+      // Parse time from apt.time (format: "10:00 AM")
+      const timeMatch = apt.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      let hour = 9;
+      let minute = 0;
+      if (timeMatch) {
+        hour = parseInt(timeMatch[1], 10);
+        minute = parseInt(timeMatch[2], 10);
+        if (timeMatch[3].toUpperCase() === 'PM' && hour !== 12) {
+          hour += 12;
+        } else if (timeMatch[3].toUpperCase() === 'AM' && hour === 12) {
+          hour = 0;
         }
-      } catch (error) {
-        console.error('Error loading Fasten Health appointments:', error);
-      } finally {
-        setIsLoadingAppointments(false);
       }
-    };
-    
-    loadAppointments();
-  }, []);
+      dateObj.setHours(hour, minute, 0, 0);
 
-  // Transform Fasten Health appointments to display format
-  const appointments: Appointment[] = useMemo(() => {
-    const appointmentColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
-    
-    // Use Fasten Health appointments if available
-    if (fastenAppointments.length > 0) {
-      return fastenAppointments.map((apt, index) => {
-        const appointmentDate = new Date(apt.date);
-        // Parse time from apt.time (format: "10:00 AM")
-        const timeMatch = apt.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-        let hour = 9;
-        let minute = 0;
-        if (timeMatch) {
-          hour = parseInt(timeMatch[1], 10);
-          minute = parseInt(timeMatch[2], 10);
-          if (timeMatch[3].toUpperCase() === 'PM' && hour !== 12) {
-            hour += 12;
-          } else if (timeMatch[3].toUpperCase() === 'AM' && hour === 12) {
-            hour = 0;
-          }
-        }
-        appointmentDate.setHours(hour, minute, 0, 0);
-        
-        // Create title from appointment details
-        const title = apt.doctorName 
-          ? `${apt.type || 'Appointment'} - ${apt.doctorName}`
-          : apt.type || 'Appointment';
-        
-        return {
-          id: apt.id,
-          title,
-          date: appointmentDate,
-          color: appointmentColors[index % appointmentColors.length],
-          time: apt.time || '9:00 AM',
-        };
-      });
-    }
-    
-    // Fallback to sample appointments if no Fasten Health data
-    const today = new Date();
-    const sampleAppointments: Appointment[] = [];
+      const title = apt.doctorName
+        ? `${apt.type || 'Appointment'} - ${apt.doctorName}`
+        : apt.type || 'Appointment';
 
-    // Generate some sample appointments for the current month
-    for (let i = 0; i < 15; i++) {
-      const randomDay = Math.floor(Math.random() * 28) + 1;
-      const randomHour = Math.floor(Math.random() * 8) + 9; // 9 AM to 5 PM
-      const appointmentDate = new Date(today.getFullYear(), today.getMonth(), randomDay);
-      
-      sampleAppointments.push({
-        id: `appointment-${i}`,
-        title: `Appointment ${i + 1}`,
-        date: appointmentDate,
-        color: appointmentColors[Math.floor(Math.random() * appointmentColors.length)],
-        time: `${randomHour}:00`
-      });
-    }
-
-    return sampleAppointments;
-  }, [fastenAppointments]);
+      return {
+        id: apt.id,
+        title,
+        date: dateObj,
+        color: APPOINTMENT_COLORS[index % APPOINTMENT_COLORS.length],
+        time: apt.time || '9:00 AM',
+      };
+    });
+  }, [appointments]);
 
   // Create marked dates for calendar with multi-dot marking
   const markedDates = useMemo(() => {
-    const marked: any = {};
-    
-    appointments.forEach(appointment => {
+    const marked: MarkedDates = {};
+
+    displayAppointments.forEach(appointment => {
       const dateString = appointment.date.toISOString().split('T')[0];
-      
+
       if (!marked[dateString]) {
-        marked[dateString] = {
-          dots: []
-        };
+        marked[dateString] = { dots: [] };
       }
-      
-      marked[dateString].dots.push({
+
+      marked[dateString]!.dots!.push({
         color: appointment.color,
-        selectedDotColor: appointment.color
+        selectedDotColor: appointment.color,
       });
     });
 
@@ -127,33 +73,53 @@ export default function AppointmentsScreen() {
       marked[selectedDate] = {
         ...marked[selectedDate],
         selected: true,
-        selectedColor: '#1976D2'
+        selectedColor: '#1976D2',
       };
     }
 
     return marked;
-  }, [appointments, selectedDate]);
+  }, [displayAppointments, selectedDate]);
 
   // Get appointments for selected date
   const selectedDateAppointments = useMemo(() => {
     if (!selectedDate) return [];
-    
-    return appointments.filter(appointment => {
-      const appointmentDateString = appointment.date.toISOString().split('T')[0];
-      return appointmentDateString === selectedDate;
-    }).sort((a, b) => a.time.localeCompare(b.time));
-  }, [appointments, selectedDate]);
+    return displayAppointments
+      .filter(apt => apt.date.toISOString().split('T')[0] === selectedDate)
+      .sort((a, b) => a.time.localeCompare(b.time));
+  }, [displayAppointments, selectedDate]);
 
   const onDayPress = (day: DateData) => {
     setSelectedDate(day.dateString);
   };
 
+  if (isLoading) {
+    return (
+      <AppWrapper>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#1976D2" />
+        </View>
+      </AppWrapper>
+    );
+  }
+
+  if (isError) {
+    return (
+      <AppWrapper>
+        <View style={styles.centered}>
+          <Text style={[styles.errorText, { color: colors.text }]}>Failed to load appointments</Text>
+          <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </AppWrapper>
+    );
+  }
 
   return (
     <AppWrapper>
       <ScrollView style={styles.container}>
         <Text style={[styles.title, { fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>Appointments Calendar</Text>
-        
+
         {/* Calendar */}
         <Card style={styles.calendarCard}>
           <Calendar
@@ -191,11 +157,11 @@ export default function AppointmentsScreen() {
         {/* Selected Date Appointments */}
         <Card style={styles.appointmentsListCard}>
           <Text style={[styles.sectionTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>
-            Appointments for {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
+            Appointments for {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
             }) : 'Selected Date'}
           </Text>
           {selectedDateAppointments.length > 0 ? (
@@ -205,7 +171,7 @@ export default function AppointmentsScreen() {
                 <View style={styles.appointmentDetails}>
                   <Text style={[styles.appointmentTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>{appointment.title}</Text>
                   <Text style={[styles.appointmentDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                    {appointment.time}  
+                    {appointment.time}
                   </Text>
                 </View>
               </View>
@@ -225,6 +191,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    backgroundColor: '#1976D2',
+    borderRadius: 8,
+  },
+  retryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   title: {
     fontSize: 28,

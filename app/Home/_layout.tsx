@@ -1,20 +1,25 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useSettings } from '@/stores/settings-store';
+import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
-  const { isVisible } = useFeaturePermissions();
+  const { data: permissions } = useFeaturePermissions();
   const { settings } = useSettings();
+  const { panHandlers } = useInactivityTimeout();
 
-  const canShow = (featureKey: string) => isVisible(featureKey);
+  // Default to true (visible) while permissions are loading
+  const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
 
   return (
+    <View style={{ flex: 1 }} {...panHandlers}>
     <Tabs
       tabBar={(props) => <CustomScrollableTabBar {...props} />}
       screenOptions={{
@@ -158,5 +163,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </View>
   );
 }

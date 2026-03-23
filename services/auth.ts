@@ -1,77 +1,154 @@
+import * as SecureStore from 'expo-secure-store';
+import { AxiosError } from 'axios';
+import { cognitoSignOut } from '@/lib/cognito';
+import { storeTokens, clearTokens, hasStoredSession } from '@/lib/auth-tokens';
+import { apiClient } from '@/lib/api-client';
+
 export type SignInPayload = { username: string; password: string };
 export type SignUpPayload = {
-  puid: string;
-  name: string;
   email: string;
-  phone: string;
   password: string;
   confirmPassword: string;
+  role?: string;
 };
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL;
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export interface UserProfile {
+  sub: string;
+  email: string;
+  role: string;
+  allowedServices: string[];
+  termsAccepted: boolean;
+  fastenConnected: boolean;
+  dataReady: boolean;
+  ehiExportPending: boolean;
 }
 
-export async function checkSession(): Promise<boolean> {
-  if (!API_BASE) {
-    await delay(8000);
-    return false; // default unauthenticated in mock mode
-  }
+/**
+ * Sign in via backend API, store tokens securely, return user profile.
+ */
+export async function signIn(
+  payload: SignInPayload,
+): Promise<{ success: boolean; user?: UserProfile; message?: string; notConfirmed?: boolean }> {
   try {
-    const res = await fetch(`${API_BASE}/auth/session`, {
-      credentials: 'include',
-    });
-    await delay(8000);
-    if (!res.ok) return false;
-    const data = await res.json().catch(() => ({}));
-    return Boolean(data?.authenticated ?? true);
+    const loginRes = await apiClient.post<{
+      success: boolean;
+      data: {
+        sub: string;
+        accessToken: string;
+        idToken: string;
+        refreshToken: string;
+        termsAccepted: boolean;
+        fastenConnected: boolean;
+        dataReady: boolean;
+      };
+    }>('/v1/auth/login', { email: payload.username, password: payload.password });
+
+    const { accessToken, idToken, refreshToken } = loginRes.data.data;
+    await storeTokens(accessToken, refreshToken, idToken);
+    await SecureStore.setItemAsync('cos_username', payload.username);
+
+    const meRes = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
+    return { success: true, user: meRes.data.data };
+  } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      // TODO: remove before production
+      console.warn('[DEBUG signIn] status:', err.response?.status, 'data:', JSON.stringify(err.response?.data));
+      const code: string | undefined = err.response?.data?.code;
+      if (code === 'EMAIL_NOT_VERIFIED') {
+        return { success: false, notConfirmed: true, message: 'Please verify your email before signing in.' };
+      }
+      const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
+    const msg = err instanceof Error ? err.message : 'Sign in failed';
+    return { success: false, message: msg };
+  }
+}
+
+/**
+ * Check if the user has a valid stored session.
+ * Returns the user profile if session is valid, null otherwise.
+ */
+export async function checkSession(): Promise<{ authenticated: boolean; user?: UserProfile }> {
+  const hasSession = await hasStoredSession();
+  if (!hasSession) return { authenticated: false };
+
+  try {
+    const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
+    return { authenticated: true, user: res.data.data };
   } catch {
-    await delay(8000);
-    return false;
+    await clearTokens();
+    return { authenticated: false };
   }
 }
 
-export async function signIn(payload: SignInPayload): Promise<{ success: boolean; message?: string }>
-{
-  if (!API_BASE) {
-    await delay(600);
-    return { success: payload.username.length > 0 && payload.password.length > 0 };
-  }
+/**
+ * Sign out: clear tokens and Cognito session.
+ */
+export async function signOut(): Promise<void> {
+  cognitoSignOut();
+  await clearTokens();
+  await SecureStore.deleteItemAsync('cos_username');
+}
+
+/**
+ * Sign up — registers a new user. Cognito sends a verification code to the email.
+ */
+export async function signUp(
+  payload: SignUpPayload,
+): Promise<{ success: boolean; message?: string }> {
   try {
-    const res = await fetch(`${API_BASE}/auth/sign-in`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return { success: false, message: 'Invalid credentials' };
+    await apiClient.post('/v1/auth/signup', payload);
     return { success: true };
-  } catch (e) {
-    return { success: false, message: 'Network error' };
+  } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      const code: string | undefined = err.response?.data?.code ?? err.response?.data?.error;
+      if (code === 'UsernameExistsException' || code?.includes('UsernameExists')) {
+        return { success: false, message: 'An account with this email already exists. Please sign in instead.' };
+      }
+      const apiMsg: string | undefined = err.response?.data?.message ?? err.response?.data?.error;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
+    const msg = err instanceof Error ? err.message : 'Sign up failed';
+    return { success: false, message: msg };
   }
 }
 
-export async function signUp(payload: SignUpPayload): Promise<{ success: boolean; message?: string }>
-{
-  if (!API_BASE) {
-    await delay(800);
-    const valid =
-      payload.password.length >= 6 && payload.password === payload.confirmPassword;
-    return { success: valid, message: valid ? undefined : 'Password mismatch' };
-  }
+/**
+ * Confirm sign up — verifies the email address using the code sent by Cognito.
+ */
+export async function confirmSignUp(
+  email: string,
+  code: string,
+): Promise<{ success: boolean; message?: string }> {
   try {
-    const res = await fetch(`${API_BASE}/auth/sign-up`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return { success: false, message: 'Sign up failed' };
+    await apiClient.post('/v1/auth/confirm-signup', { email, code });
     return { success: true };
-  } catch (e) {
-    return { success: false, message: 'Network error' };
+  } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
+    const msg = err instanceof Error ? err.message : 'Verification failed';
+    return { success: false, message: msg };
   }
 }
 
-
+/**
+ * Resend the email verification code to an unconfirmed user.
+ */
+export async function resendCode(
+  email: string,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    await apiClient.post('/v1/auth/resend-code', { email });
+    return { success: true };
+  } catch (err: unknown) {
+    if (err instanceof AxiosError) {
+      const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
+      if (apiMsg) return { success: false, message: apiMsg };
+    }
+    const msg = err instanceof Error ? err.message : 'Failed to resend code';
+    return { success: false, message: msg };
+  }
+}

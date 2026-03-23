@@ -2,10 +2,12 @@ import { Checkbox } from 'expo-checkbox';
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { signIn } from '@/services/auth';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -15,38 +17,63 @@ export default function SignInScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [accepted, setAccepted] = useState(true);
+  const [accepted, setAccepted] = useState(false);
 
-  const onSubmit = async () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      router.replace('/Home');
-    }, 2000);
-    // setLoading(true);
-    // setError(undefined);
-    // const res = await signIn({ username, password });
-    // setLoading(false);
-    // if (res.success) {
-    //   router.replace('/(tabs)');
-    // } else {
-    //   setError(res.message ?? 'Sign in failed');
-    // }
+  const handleRoute = () => {
+    router.replace('/(onboarding)/fasten-connect' as never);
   };
 
+  const onSubmit = async () => {
+    if (!accepted) return;
+    if (!username.trim() || !password) {
+      setError('Please enter your email and password.');
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    const res = await signIn({ username: username.trim(), password });
+    setLoading(false);
+    if (res.success && res.user) {
+      handleRoute();
+    } else if (res.notConfirmed) {
+      router.push({ pathname: '/(auth)/verify-email', params: { email: username.trim() } } as never);
+    } else {
+      setError(res.message ?? 'Sign in failed. Please check your credentials.');
+    }
+  };
+
+
   return (
-    <AppWrapper showBellIcon={false} showLogo={false}>
-      <ScrollView 
+    <AppWrapper showBellIcon={false} showLogo={false} showHamburgerIcon={false} showAccessibilityIcon={false}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView
         contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <View style={styles.container}>
-          <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(140), height: getScaledFontSize(140) }]} contentFit="contain" />
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={{ width: getScaledFontSize(140), height: getScaledFontSize(140) }}
+            contentFit="contain"
+            accessibilityLabel="App logo"
+          />
+
           <View style={styles.form}>
-            <Text variant="headlineSmall" style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>Sign In</Text>
+            <Text
+              variant="headlineSmall"
+              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}
+            >
+              Sign In
+            </Text>
+
             <TextInput
               mode="flat"
               label="Email Address"
@@ -55,6 +82,8 @@ export default function SignInScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
+              textContentType="emailAddress"
+              accessibilityLabel="Email address"
               style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
               outlineStyle={styles.inputOutline}
               textColor={colors.text}
@@ -64,47 +93,100 @@ export default function SignInScreen() {
               label="Password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
+              textContentType="password"
+              accessibilityLabel="Password"
               style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
               textColor={colors.text}
               outlineStyle={styles.inputOutline}
+              right={
+                <TextInput.Icon
+                  icon={() => (
+                    <IconSymbol
+                      name={showPassword ? 'eye.slash' : 'eye'}
+                      size={getScaledFontSize(22)}
+                      color={colors.text}
+                    />
+                  )}
+                  onPress={() => setShowPassword(v => !v)}
+                />
+              }
             />
+
             <View style={styles.termsRow}>
-              <Checkbox 
+              <Checkbox
                 value={accepted}
                 onValueChange={setAccepted}
-                color={'#0a7ea4'}
+                color="#0a7ea4"
                 style={styles.checkbox}
+                accessibilityLabel="I agree to Terms and Privacy Policy"
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: accepted }}
               />
-              <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>I agree to Terms & Privacy</Text>
+              <TouchableOpacity
+                onPress={() => setAccepted((v) => !v)}
+                accessibilityLabel="Toggle terms agreement"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }}>
+                  I agree to{' '}
+                  <Text
+                    style={{ color: '#0a7ea4', textDecorationLine: 'underline' }}
+                    onPress={() => router.push('/(auth)/privacy-policy' as never)}
+                    accessibilityRole="link"
+                    accessibilityLabel="View Terms and Privacy Policy"
+                  >
+                    Terms &amp; Privacy Policy
+                  </Text>
+                </Text>
+              </TouchableOpacity>
             </View>
-            {error ? <Text style={[styles.error, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{error}</Text> : null}
+
+            {error ? (
+              <Text style={[styles.error, { fontSize: getScaledFontSize(14) }]} accessibilityRole="alert">
+                {error}
+              </Text>
+            ) : null}
+
             <Button
               mode="contained"
-              buttonColor={loading || !accepted ? "#9ca3af" : "#2563eb"}
+              buttonColor={loading || !accepted ? '#9ca3af' : '#2563eb'}
               onPress={onSubmit}
               loading={loading}
               disabled={loading || !accepted}
               style={styles.submit}
               contentStyle={styles.submitContent}
               labelStyle={styles.submitLabel}
+              accessibilityLabel="Sign in with email and password"
             >
               Sign In
             </Button>
+
             <View style={styles.switchRow}>
-              <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Don&apos;t have an account? </Text>
+              <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+                Don&apos;t have an account?{' '}
+              </Text>
               <Link href="/(auth)/sign-up" asChild>
-                <Button mode="text" labelStyle={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>Sign Up</Button>
+                <Button
+                  mode="text"
+                  labelStyle={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(22) }}
+                  accessibilityLabel="Go to sign up"
+                >
+                  Sign Up
+                </Button>
               </Link>
             </View>
           </View>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </AppWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: {
+    flex: 1,
+  },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -117,10 +199,6 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     gap: 24,
     minHeight: '100%',
-  },
-  logo: {
-    width: 120,
-    height: 120,
   },
   form: {
     width: '100%',
@@ -141,10 +219,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 24,
   },
+  submitContent: {
+    height: 48,
+  },
+  submitLabel: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 16,
+  },
   termsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
   checkbox: {
     margin: 4,
@@ -162,14 +248,4 @@ const styles = StyleSheet.create({
   error: {
     color: 'crimson',
   },
-  submitContent: {
-    height: 48,
-  },
-  submitLabel: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 16,
-  },
 });
-
-

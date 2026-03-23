@@ -69,9 +69,21 @@ export default function ModalScreen() {
   const [isSubCategoryMenuVisible, setIsSubCategoryMenuVisible] = React.useState(false);
   const [providerSearchQuery, setProviderSearchQuery] = React.useState('');
   const [agencySearchQuery, setAgencySearchQuery] = React.useState('');
+  const [agencies, setAgencies] = React.useState<CareManagerAgency[]>([]);
   const [integrativeSearchQuery, setIntegrativeSearchQuery] = React.useState('');
   const [nonEhrProviders, setNonEhrProviders] = React.useState<NonEhrProvider[]>([]);
   const [isUploadingIntegrative, setIsUploadingIntegrative] = React.useState(false);
+
+  // Load care manager agencies from API
+  React.useEffect(() => {
+    const loadAgencies = async () => {
+      const data = agencySearchQuery.trim()
+        ? await searchCareManagerAgencies(agencySearchQuery)
+        : await getAllCareManagerAgencies();
+      setAgencies(data);
+    };
+    loadAgencies();
+  }, [agencySearchQuery]);
 
   // Collect all provider IDs from category groups to load photos
   const allProviderIds = React.useMemo(() => {
@@ -423,13 +435,6 @@ export default function ModalScreen() {
 
                 // Handle Care Manager category specially - show agencies directly
                 if (category.id === 'care-manager') {
-                  let agencies = getAllCareManagerAgencies();
-
-                  // Filter agencies based on search query
-                  if (agencySearchQuery.trim()) {
-                    agencies = searchCareManagerAgencies(agencySearchQuery);
-                  }
-
                   return (
                     <TabScreen
                       key={category.id}
@@ -624,7 +629,7 @@ export default function ModalScreen() {
                                 id={provider.id}
                                 name={provider.providerName}
                                 qualifications={provider.specialty || 'Integrative Health'}
-                                image={undefined}
+                                image={null}
                                 onPress={() => {
                                   router.back();
                                   setTimeout(() => {
@@ -943,7 +948,7 @@ export default function ModalScreen() {
                                           qualifications={provider.isManual
                                             ? (provider.relationship || provider.qualifications || 'Member')
                                             : (provider.qualifications || 'Healthcare Provider')}
-                                          image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || undefined)}
+                                          image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
                                           onPress={provider.isManual ? undefined : () => {
                                             router.back();
                                             setTimeout(() => {
@@ -1013,7 +1018,7 @@ export default function ModalScreen() {
                                   id={provider.id}
                                   name={provider.name}
                                   qualifications={provider.qualifications || 'Healthcare Provider'}
-                                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || undefined)}
+                                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
                                   onPress={() => {
                                     router.back();
                                     setTimeout(() => {

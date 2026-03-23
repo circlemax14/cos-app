@@ -9,7 +9,7 @@ interface DoctorCardProps {
   id: string;
   name: string;
   qualifications: string;
-  image: any;
+  image: number | { uri: string } | null;
   showSwitch?: boolean;
   switchValue?: boolean;
   onSwitchChange?: (value: boolean) => void;

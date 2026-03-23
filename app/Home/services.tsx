@@ -45,7 +45,13 @@ export default function ServicesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const { settings: appSettings, toggleHealthChat } = useSettings();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const { getStatus, isVisible, isUnlocked, isPurchasable } = useFeaturePermissions();
+  const { data: permissionsData } = useFeaturePermissions();
+
+  // Default to visible/enabled while permissions are loading
+  const isVisible = (featureKey: string) => permissionsData?.[featureKey as keyof typeof permissionsData]?.enabled ?? true
+  const isUnlocked = (_featureKey: string) => true // TODO: wire to purchase/subscription status
+  const isPurchasable = (_featureKey: string) => true // TODO: wire to purchase/subscription status
+  const getStatus = (_featureKey: string) => 'active' // TODO: wire to subscription status
 
   const visibleServices = SERVICES.filter((svc) => isVisible(svc.featureKey));
 

@@ -36,15 +36,34 @@ export interface IMessage {
     pending?: boolean;
 }
 
+interface BubbleRenderProps {
+    currentMessage: IMessage;
+    nextMessage: IMessage | null;
+    previousMessage: IMessage | null;
+    user: User;
+    position: 'left' | 'right';
+}
+
+interface InputToolbarRenderProps {
+    text: string;
+    onTextChanged: (text: string) => void;
+    onSend: () => void;
+    placeholder: string;
+}
+
+interface SendRenderProps {
+    text: string;
+}
+
 interface CustomChatProps {
     messages: IMessage[];
     onSend: (messages: IMessage[]) => void;
     user: User;
     placeholder?: string;
     isTyping?: boolean;
-    renderBubble?: (props: any) => React.ReactNode;
-    renderInputToolbar?: (props: any) => React.ReactNode;
-    renderSend?: (props: any) => React.ReactNode;
+    renderBubble?: (props: BubbleRenderProps) => React.ReactNode;
+    renderInputToolbar?: (props: InputToolbarRenderProps) => React.ReactNode;
+    renderSend?: (props: SendRenderProps) => React.ReactNode;
     minInputToolbarHeight?: number;
     showAvatar?: boolean;
 }

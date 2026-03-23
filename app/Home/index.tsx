@@ -72,8 +72,8 @@ type OrbitItem = SelectedProvider | { id: string; isPlaceholder: true };
 
 interface CircleViewProps {
   providers: SelectedProvider[];
-  userImg: any;
-  colors: any;
+  userImg: number | { uri: string };
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
@@ -82,7 +82,7 @@ interface CircleViewProps {
 }
 
 // Original Circle View for iPhone/Android (fixed dimensions)
-function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = 'Jenny Wilson', onAddProviderPress, isCircleComplete }: CircleViewProps) {
+function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', onAddProviderPress, isCircleComplete }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -244,7 +244,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
 }
 
 // Responsive Circle View for iPad/Tablet
-function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = 'Jenny Wilson', onAddProviderPress, isCircleComplete }: CircleViewProps) {
+function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', onAddProviderPress, isCircleComplete }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -498,8 +498,8 @@ const defaultDepartments = [
 // Circle Providers List View Component (shows providers from circle)
 interface CircleProvidersListViewProps {
   providers: SelectedProvider[];
-  userImg: any;
-  colors: any;
+  userImg: number | { uri: string };
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
@@ -507,7 +507,7 @@ interface CircleProvidersListViewProps {
   isCircleComplete: boolean;
 }
 
-function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = 'Jenny Wilson', hasUpcomingAppointments, isCircleComplete }: CircleProvidersListViewProps) {
+function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', hasUpcomingAppointments, isCircleComplete }: CircleProvidersListViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -659,8 +659,8 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
 
 // List View Component (categories -> sub-categories -> providers)
 interface ListViewProps {
-  userImg: any;
-  colors: any;
+  userImg: number | { uri: string };
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   onItemPress: (categoryId?: string, subCategoryId?: string) => void;
@@ -674,7 +674,7 @@ interface ListViewProps {
 
 type ListViewLevel = 'categories' | 'sub-categories' | 'providers';
 
-function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onItemPress, patientName = 'Jenny Wilson', hasUpcomingAppointments, selectedProviderIds, onAddProvider, onRemoveProvider, maxCircleProviders }: ListViewProps) {
+function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onItemPress, patientName = '', hasUpcomingAppointments, selectedProviderIds, onAddProvider, onRemoveProvider, maxCircleProviders }: ListViewProps) {
   // Calculate max height to push appointments to bottom of screen
   const screenHeight = Dimensions.get('window').height;
   // Use larger percentage to push appointments section to bottom
@@ -713,11 +713,23 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
   const [subCategorySearchQuery, setSubCategorySearchQuery] = useState('');
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
   const [agencySearchQuery, setAgencySearchQuery] = useState('');
+  const [agencies, setAgencies] = useState<CareManagerAgency[]>([]);
   const [integrativeSearchQuery, setIntegrativeSearchQuery] = useState('');
   // Non-EHR (Integrative) providers
   const [nonEhrProviders, setNonEhrProviders] = useState<NonEhrProvider[]>([]);
   const [nonEhrProviderCount, setNonEhrProviderCount] = useState(0);
   const [isUploadingIntegrative, setIsUploadingIntegrative] = useState(false);
+
+  // Load care manager agencies from API
+  useEffect(() => {
+    const loadAgencies = async () => {
+      const data = agencySearchQuery.trim()
+        ? await searchCareManagerAgencies(agencySearchQuery)
+        : await getAllCareManagerAgencies();
+      setAgencies(data);
+    };
+    loadAgencies();
+  }, [agencySearchQuery]);
 
   // Load non-EHR providers on mount and whenever the providers level changes
   const loadNonEhrProviders = React.useCallback(async () => {
@@ -1322,9 +1334,9 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       if (dupCount > 0) message += ` ${dupCount} duplicate${dupCount !== 1 ? 's' : ''} skipped.`;
       Alert.alert('Upload Complete', message);
       await loadNonEhrProviders();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[ListView] Integrative upload error:', err);
-      Alert.alert('Upload Failed', err?.message ?? 'An unexpected error occurred.');
+      Alert.alert('Upload Failed', (err instanceof Error ? err.message : null) ?? 'An unexpected error occurred.');
     } finally {
       setIsUploadingIntegrative(false);
     }
@@ -1467,13 +1479,6 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
     // Handle Care Manager category specially - show agencies
     if (selectedCategoryId === 'care-manager') {
-      let agencies = getAllCareManagerAgencies();
-
-      // Filter agencies based on search query
-      if (agencySearchQuery.trim()) {
-        agencies = searchCareManagerAgencies(agencySearchQuery);
-      }
-
       return (
         <>
           <View style={[
@@ -1896,7 +1901,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
 // Provider Details List Component (replaces main list)
 interface ProviderDetailsListProps {
-  colors: any;
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   onBack: () => void;
@@ -1995,7 +2000,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
     }
 
     // Fallback to default departments
-    const providers: Array<{ id: string; name: string; qualifications: string; image: any }> = [];
+    const providers: Array<{ id: string; name: string; qualifications: string; image: number | { uri: string } }> = [];
     if (departmentId) {
       // Filter by department if specified
       const dept = defaultDepartments.find(d => d.id === departmentId);
@@ -2120,7 +2125,7 @@ export default function HomeScreen() {
   const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const { selectedProviders, addProvider, removeProvider, validateAndCleanProviders } = useProviderSelection();
-  const [patientName, setPatientName] = useState('Jenny Wilson');
+  const [patientName, setPatientName] = useState('');
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
 
@@ -2136,9 +2141,9 @@ export default function HomeScreen() {
 
   // Helper function to get first name from full name
   const getFirstName = (fullName: string): string => {
-    if (!fullName) return 'Jenny';
+    if (!fullName) return '';
     const parts = fullName.trim().split(/\s+/);
-    return parts[0] || 'Jenny';
+    return parts[0] || '';
   };
 
   useEffect(() => {
@@ -2162,7 +2167,7 @@ export default function HomeScreen() {
       try {
         const patient = await getFastenPatient();
         if (patient) {
-          setPatientName(patient.name || 'Jenny Wilson');
+          setPatientName(patient.name || '');
           console.log('Loaded patient name for home screen:', patient.name);
         }
       } catch (error) {
@@ -2307,6 +2312,12 @@ export default function HomeScreen() {
 
   return (
     <AppWrapper notificationCount={3}>
+      {/* Medical disclaimer — required by App Store §1.4.1 for health apps */}
+      <View style={[styles.disclaimerBanner, { backgroundColor: colors.card ?? '#f0f7ff', borderColor: colors.border ?? '#d0e4f7' }]}>
+        <Text style={[styles.disclaimerText, { color: colors.subtext ?? '#555', fontSize: getScaledFontSize(11) }]}>
+          ⚕️ This app is for care coordination only and does not provide medical advice. Always consult your healthcare provider for medical decisions.
+        </Text>
+      </View>
       <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
@@ -2539,6 +2550,15 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  disclaimerBanner: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+  },
+  disclaimerText: {
+    textAlign: 'center',
+    lineHeight: 16,
+  },
   scrollContainer: {
     flex: 1,
   },

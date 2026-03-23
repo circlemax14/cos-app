@@ -37,6 +37,10 @@ const MAPPING = {
   'slider.vertical.3': 'equalizer',
   'tray.fill': 'inbox',
   'message.fill': 'chat',
+  'eye': 'visibility',
+  'eye.slash': 'visibility-off',
+  'checkmark.circle.fill': 'check-circle',
+  'xmark.circle.fill': 'cancel',
 } as IconMapping;
 
 /**

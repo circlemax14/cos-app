@@ -1,0 +1,300 @@
+name: EAS Build & Submit
+
+# ── Release model ────────────────────────────────────────────────────────────
+# main          → dev     EAS "development" build, internal distribution
+# release-X.Y.Z → staging EAS "preview" build, distributed via TestFlight
+# workflow_dispatch (from a release-* branch) → production
+#                           EAS "production" build + App Store submit
+#                           AI-generated "What's New" release notes
+
+on:
+  push:
+    branches:
+      - main
+      - 'release-*'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RELEASE to confirm App Store submission'
+        required: true
+        type: string
+
+jobs:
+  # ── Validate and resolve the target environment ─────────────────────────────
+  resolve-env:
+    name: Resolve Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment:   ${{ steps.resolve.outputs.environment }}
+      eas-profile:   ${{ steps.resolve.outputs.eas-profile }}
+      is-production: ${{ steps.resolve.outputs.is-production }}
+      version:       ${{ steps.resolve.outputs.version }}
+    steps:
+      - id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.ref_name }}" != release-* ]]; then
+              echo "::error::App Store submission must be triggered from a release-* branch (got: ${{ github.ref_name }})"
+              exit 1
+            fi
+            if [[ "${{ inputs.confirm }}" != "RELEASE" ]]; then
+              echo "::error::Confirmation input must be exactly RELEASE"
+              exit 1
+            fi
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^release-//')
+            echo "environment=production"  >> $GITHUB_OUTPUT
+            echo "eas-profile=production"  >> $GITHUB_OUTPUT
+            echo "is-production=true"      >> $GITHUB_OUTPUT
+            echo "version=$VERSION"        >> $GITHUB_OUTPUT
+
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=dev"         >> $GITHUB_OUTPUT
+            echo "eas-profile=development" >> $GITHUB_OUTPUT
+            echo "is-production=false"     >> $GITHUB_OUTPUT
+            echo "version=dev"             >> $GITHUB_OUTPUT
+
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release- ]]; then
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^release-//')
+            echo "environment=staging"     >> $GITHUB_OUTPUT
+            echo "eas-profile=preview"     >> $GITHUB_OUTPUT
+            echo "is-production=false"     >> $GITHUB_OUTPUT
+            echo "version=$VERSION"        >> $GITHUB_OUTPUT
+
+          else
+            echo "::error::Unrecognised ref: ${{ github.ref }}"
+            exit 1
+          fi
+
+  # ── CI gate ─────────────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: resolve-env
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm audit --audit-level=high
+
+  # ── EAS Build ───────────────────────────────────────────────────────────────
+  build:
+    name: EAS Build (iOS) — ${{ needs.resolve-env.outputs.eas-profile }}
+    runs-on: ubuntu-latest
+    needs: [resolve-env, ci-gate]
+    environment: ${{ needs.resolve-env.outputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Build — iOS (${{ needs.resolve-env.outputs.eas-profile }})
+        run: |
+          eas build \
+            --platform ios \
+            --profile ${{ needs.resolve-env.outputs.eas-profile }} \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.EXPO_PUBLIC_COGNITO_USER_POOL_ID }}
+          EXPO_PUBLIC_COGNITO_CLIENT_ID:    ${{ secrets.EXPO_PUBLIC_COGNITO_CLIENT_ID }}
+          EXPO_PUBLIC_COGNITO_REGION:       ${{ secrets.EXPO_PUBLIC_COGNITO_REGION }}
+
+  # ── AI Release Notes + App Store Submit — production manual trigger only ────
+  release:
+    name: Release to App Store
+    runs-on: ubuntu-latest
+    needs: [resolve-env, build]
+    if: needs.resolve-env.outputs.is-production == 'true'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # ── Generate AI "What's New" copy via Claude API ──────────────────────
+      - name: Generate AI release notes
+        id: release-notes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VERSION: ${{ needs.resolve-env.outputs.version }}
+        run: |
+          # Collect commits since the last git tag (falls back to full history)
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null \
+            || git rev-list --max-parents=0 HEAD)
+
+          # Exclude chore/ci commits — they're not user-facing
+          COMMITS=$(git log --pretty=format:"- %s" "${PREV_TAG}..HEAD" \
+            --no-merges \
+            --invert-grep --grep="^chore" \
+            --invert-grep --grep="^ci" \
+            | head -60)
+
+          [[ -z "$COMMITS" ]] && COMMITS="- General improvements and bug fixes"
+
+          PAYLOAD=$(jq -n \
+            --arg version "$VERSION" \
+            --arg commits "$COMMITS" \
+            '{
+              model: "claude-opus-4-6",
+              max_tokens: 500,
+              messages: [{
+                role: "user",
+                content: ("You are writing App Store \"What'\''s New\" release notes for version " + $version + " of CoS — a mobile app that helps patients coordinate their healthcare care team.\n\nWrite concise, friendly, plain-English release notes (max 300 words, suitable for the App Store). Rules:\n- Focus only on user-facing improvements\n- Do not mention: branch names, internal ticket numbers, technical debt, PHI, or developer jargon\n- Format: one short opening sentence summarising the theme of this release, then a bullet list of improvements\n- Return only the release notes text — no preamble\n\nCommits since last release:\n" + $commits)
+              }]
+            }')
+
+          RESPONSE=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD")
+
+          NOTES=$(echo "$RESPONSE" | jq -r '.content[0].text // "See GitHub release for details."')
+
+          echo "$NOTES" > /tmp/release-notes.txt
+
+          {
+            echo "notes<<NOTES_EOF"
+            echo "$NOTES"
+            echo "NOTES_EOF"
+          } >> $GITHUB_OUTPUT
+
+          # Print to job summary so it's visible in the GitHub Actions UI
+          echo "## Release Notes — v${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "$NOTES" >> $GITHUB_STEP_SUMMARY
+
+      # ── Tag the repo and create a GitHub Release ───────────────────────────
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.resolve-env.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file /tmp/release-notes.txt \
+            --latest
+
+      # ── EAS Submit — sends the .ipa to App Store Connect ──────────────────
+      - name: Write ASC API key
+        run: |
+          mkdir -p /tmp/asc
+          echo "${{ secrets.ASC_API_KEY_CONTENT }}" | base64 --decode > /tmp/asc/api_key.p8
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Submit — iOS
+        run: |
+          eas submit \
+            --platform ios \
+            --profile production \
+            --latest \
+            --non-interactive
+        env:
+          ASC_API_KEY_PATH:  /tmp/asc/api_key.p8
+          ASC_API_KEY_ID:    ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+
+      # ── Patch "What's New" text via App Store Connect REST API ────────────
+      # EAS Submit delivers the binary; this step writes the release notes
+      # into the pending App Store version so reviewers see them.
+      - name: Patch App Store "What's New" text
+        env:
+          ASC_API_KEY_ID:      ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID:   ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_CONTENT: ${{ secrets.ASC_API_KEY_CONTENT }}
+          ASC_APP_ID:          ${{ secrets.ASC_APP_ID }}
+        run: |
+          pip install pyjwt cryptography -q 2>/dev/null
+
+          echo "$ASC_API_KEY_CONTENT" | base64 --decode > /tmp/asc/api_key.p8
+
+          ASC_TOKEN=$(python3 - <<'PYEOF'
+          import jwt, time, os
+
+          with open("/tmp/asc/api_key.p8") as f:
+              key = f.read()
+
+          now = int(time.time())
+          token = jwt.encode(
+              {"iss": os.environ["ASC_API_ISSUER_ID"], "iat": now, "exp": now + 1200,
+               "aud": "appstoreconnect-v1"},
+              key, algorithm="ES256",
+              headers={"kid": os.environ["ASC_API_KEY_ID"]}
+          )
+          print(token)
+          PYEOF
+          )
+
+          WHATS_NEW=$(cat /tmp/release-notes.txt)
+          AUTH="Authorization: Bearer $ASC_TOKEN"
+
+          # Find the in-progress App Store version
+          VERSION_ID=$(curl -s \
+            "https://api.appstoreconnect.apple.com/v1/apps/${ASC_APP_ID}/appStoreVersions?filter[appVersionState]=PREPARE_FOR_SUBMISSION,WAITING_FOR_REVIEW&limit=1" \
+            -H "$AUTH" | jq -r '.data[0].id // empty')
+
+          if [[ -z "$VERSION_ID" ]]; then
+            echo "⚠ No editable App Store version found — paste notes from the GitHub Release manually."
+            exit 0
+          fi
+
+          # Get the en-US localisation record
+          LOC_ID=$(curl -s \
+            "https://api.appstoreconnect.apple.com/v1/appStoreVersions/${VERSION_ID}/appStoreVersionLocalizations?filter[locale]=en-US" \
+            -H "$AUTH" | jq -r '.data[0].id // empty')
+
+          if [[ -z "$LOC_ID" ]]; then
+            echo "⚠ en-US localisation record not found — paste notes from the GitHub Release manually."
+            exit 0
+          fi
+
+          PATCH_BODY=$(jq -n --arg id "$LOC_ID" --arg notes "$WHATS_NEW" \
+            '{data:{type:"appStoreVersionLocalizations",id:$id,attributes:{whatsNew:$notes}}}')
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH \
+            "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocalizations/${LOC_ID}" \
+            -H "$AUTH" \
+            -H "Content-Type: application/json" \
+            -d "$PATCH_BODY")
+
+          if [[ "$STATUS" == "200" ]]; then
+            echo "✓ App Store 'What's New' text updated successfully"
+          else
+            echo "⚠ ASC API returned HTTP $STATUS — paste notes from the GitHub Release manually."
+          fi
+
+      - name: Clean up ASC key
+        if: always()
+        run: rm -f /tmp/asc/api_key.p8

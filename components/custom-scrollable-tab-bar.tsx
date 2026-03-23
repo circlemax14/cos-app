@@ -48,7 +48,7 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     return true;
   });
 
-  const renderTab = (route: any, index: number) => {
+  const renderTab = (route: BottomTabBarProps['state']['routes'][number], index: number) => {
     const { options } = descriptors[route.key];
     const label = options.tabBarLabel !== undefined
       ? options.tabBarLabel

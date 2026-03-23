@@ -10,22 +10,20 @@ import { InitialsAvatar } from '@/utils/avatar-utils';
 export default function PersonalInfoScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const userImg = require('@/assets/images/dummy.jpg');
-
-  // Default form data (fallback)
-  const defaultFormData = {
-    name: 'Jenny Wilson',
-    email: 'jenny.wilson@email.com',
-    phone: '+1 234 567 8900',
-    dateOfBirth: '1990-05-15',
-    gender: 'Female',
-    address: '123 Main Street',
-    city: 'New York',
-    state: 'NY',
-    zipCode: '10001',
+  // Empty form data — populated from API
+  const emptyFormData = {
+    name: '',
+    email: '',
+    phone: '',
+    dateOfBirth: '',
+    gender: '',
+    address: '',
+    city: '',
+    state: '',
+    zipCode: '',
   };
 
-  const [formData, setFormData] = useState(defaultFormData);
+  const [formData, setFormData] = useState(emptyFormData);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
 
   // Load patient data from Fasten Health
@@ -36,15 +34,15 @@ export default function PersonalInfoScreen() {
         const patient = await getFastenPatient();
         if (patient) {
           setFormData({
-            name: patient.name || defaultFormData.name,
-            email: patient.email || defaultFormData.email,
-            phone: patient.phone || defaultFormData.phone,
-            dateOfBirth: patient.dateOfBirth || defaultFormData.dateOfBirth,
-            gender: patient.gender || defaultFormData.gender,
-            address: patient.address || defaultFormData.address,
-            city: patient.city || defaultFormData.city,
-            state: patient.state || defaultFormData.state,
-            zipCode: patient.zipCode || defaultFormData.zipCode,
+            name: patient.name || '',
+            email: patient.email || '',
+            phone: patient.phone || '',
+            dateOfBirth: patient.dateOfBirth || '',
+            gender: patient.gender || '',
+            address: patient.address || '',
+            city: patient.city || '',
+            state: patient.state || '',
+            zipCode: patient.zipCode || '',
           });
           console.log('Loaded patient data from Fasten Health:', patient.name);
         }
