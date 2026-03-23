@@ -27,8 +27,8 @@ Notifications.setNotificationHandler({
  * Call it only once, at the highest level of your app.
  */
 export function useNotifications() {
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<Notifications.Subscription>(undefined);
+  const responseListener = useRef<Notifications.Subscription>(undefined);
 
   useEffect(() => {
     // Listen for notifications received while app is in foreground
