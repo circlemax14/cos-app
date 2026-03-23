@@ -251,7 +251,7 @@ interface FHIRPatient extends FHIRResource {
   contact?: Array<{
     name?: {
       text?: string;
-    use?: string;
+      use?: string;
       family?: string;
       given?: string[];
     };
@@ -287,7 +287,7 @@ interface FHIRPractitioner extends FHIRResource {
   qualification?: Array<{
     code?: {
       text?: string;
-    use?: string;
+      use?: string;
       coding?: Array<{
         display?: string;
       }>;
@@ -659,7 +659,7 @@ function isLab(orgName: string): boolean {
     'analytical',
     'imaging', // Imaging centers are typically diagnostic/lab services
   ];
-  
+
   return labKeywords.some(keyword => nameLower.includes(keyword));
 }
 
@@ -675,7 +675,7 @@ function shouldExcludeOrganization(orgName: string): boolean {
     'internal',
     'csv', // Exclude CSV export artifacts like "Cc Csv Sonoma Valley Hospital Sa"
   ];
-  
+
   return excludeKeywords.some(keyword => nameLower.includes(keyword));
 }
 
@@ -694,12 +694,12 @@ function processOrganizations(
   organizations.forEach(org => {
     const orgId = org.id;
     const orgName = org.name || 'Unknown Organization';
-    
+
     // Skip internal systems and interfaces
     if (shouldExcludeOrganization(orgName)) {
       return;
     }
-    
+
     const address = org.address?.[0];
     const phone = org.telecom?.find(t => t.system === 'phone')?.value;
     const email = org.telecom?.find(t => t.system === 'email')?.value;
@@ -740,12 +740,12 @@ function processOrganizations(
       if (orgRef) {
         const orgId = orgRef.split('/')[1];
         const orgName = resource.managingOrganization.display || 'Unknown Organization';
-        
+
         // Skip if already excluded or already processed
         if (shouldExcludeOrganization(orgName)) {
           return;
         }
-        
+
         if (!clinicMap.has(orgId) && !labMap.has(orgId)) {
           // Patient managing organizations are typically clinics, not labs
           clinicMap.set(orgId, {
@@ -782,7 +782,7 @@ function processPatients(
 ): Array<ProcessedPatient & { managingOrgDisplay?: string }> {
   return patients.map(patient => {
     const nameObj = patient.name?.find(n => n.use === 'official') || patient.name?.[0] || {};
-    const fullName = nameObj.text || 
+    const fullName = nameObj.text ||
       `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim() ||
       'Unknown Patient';
 
@@ -804,18 +804,18 @@ function processPatients(
       country: addressObj.country,
     } : undefined;
 
-    const maritalStatus = patient.maritalStatus?.text || 
+    const maritalStatus = patient.maritalStatus?.text ||
       patient.maritalStatus?.coding?.[0]?.display || '';
 
     let emergencyContact: ProcessedPatient['emergencyContact'] | undefined;
-    const contact = patient.contact?.find(c => 
-      c.relationship?.some(r => 
+    const contact = patient.contact?.find(c =>
+      c.relationship?.some(r =>
         r.coding?.some(coding => coding.code === 'C' || coding.display?.toLowerCase().includes('emergency'))
       )
     );
 
     if (contact) {
-      const contactName = contact.name?.text || 
+      const contactName = contact.name?.text ||
         `${contact.name?.given?.join(' ') || ''} ${contact.name?.family || ''}`.trim();
       const relationship = contact.relationship?.[0]?.coding?.[0]?.display || '';
       const contactPhone = contact.telecom?.find(t => t.system === 'phone')?.value || '';
@@ -828,13 +828,13 @@ function processPatients(
     }
 
     // Map patient to clinic (use managing organization or default to first clinic)
-    let clinicId: string = patient.managingOrganization?.reference?.split('/')[1] || 
+    let clinicId: string = patient.managingOrganization?.reference?.split('/')[1] ||
       clinics[0]?.id || 'default-clinic';
     const managingOrgDisplay = patient.managingOrganization?.display;
-    
+
     // Check if the clinicId exists in the clinics array
     let clinicExists = clinics.some(c => c.id === clinicId);
-    
+
     // If clinic doesn't exist or managing org is excluded, try to find matching clinic by name
     if (!clinicExists || (managingOrgDisplay && shouldExcludeOrganization(managingOrgDisplay))) {
       if (managingOrgDisplay) {
@@ -844,26 +844,26 @@ function processPatients(
           .replace(/^(cc\s+)?csv\s+/i, '')
           .replace(/\s+sa$/i, '')
           .trim();
-        
+
         // Try to find a clinic that matches
         const matchingClinic = clinics.find(c => {
           const clinicNameLower = c.name.toLowerCase();
           // Check if clinic name is contained in the display name or vice versa
-          return normalizedDisplay.includes(clinicNameLower) || 
-                 clinicNameLower.includes(normalizedDisplay) ||
-                 // Also check if removing common words helps match
-                 normalizedDisplay.replace(/\s*(hospital|medical|center|clinic)\s*/gi, '').includes(
-                   clinicNameLower.replace(/\s*(hospital|medical|center|clinic)\s*/gi, '')
-                 );
+          return normalizedDisplay.includes(clinicNameLower) ||
+            clinicNameLower.includes(normalizedDisplay) ||
+            // Also check if removing common words helps match
+            normalizedDisplay.replace(/\s*(hospital|medical|center|clinic)\s*/gi, '').includes(
+              clinicNameLower.replace(/\s*(hospital|medical|center|clinic)\s*/gi, '')
+            );
         });
-        
+
         if (matchingClinic) {
           clinicId = matchingClinic.id;
           clinicExists = true;
         }
       }
     }
-    
+
     // Final fallback
     if (!clinicExists) {
       clinicId = clinics[0]?.id || 'default-clinic';
@@ -903,7 +903,7 @@ function processProviders(
   diagnosticReports.forEach(report => {
     const reportDate = report.effectiveDateTime || report.issued;
     const reportDateObj = reportDate ? new Date(reportDate) : null;
-    
+
     if (report.performer && report.performer.length > 0) {
       report.performer.forEach(performer => {
         if (performer.reference && (!performer.type || performer.type === 'Practitioner')) {
@@ -913,10 +913,10 @@ function processProviders(
               practitionerId,
               (engagementCountMap.get(practitionerId) || 0) + 1
             );
-            
+
             // Update last visited date if this report is more recent
-            if (reportDateObj && (!practitionerLastVisited.has(practitionerId) || 
-                reportDateObj > practitionerLastVisited.get(practitionerId)!)) {
+            if (reportDateObj && (!practitionerLastVisited.has(practitionerId) ||
+              reportDateObj > practitionerLastVisited.get(practitionerId)!)) {
               practitionerLastVisited.set(practitionerId, reportDateObj);
             }
           }
@@ -933,10 +933,10 @@ function processProviders(
               practitionerId,
               (engagementCountMap.get(practitionerId) || 0) + 1
             );
-            
+
             // Update last visited date if this report is more recent
-            if (reportDateObj && (!practitionerLastVisited.has(practitionerId) || 
-                reportDateObj > practitionerLastVisited.get(practitionerId)!)) {
+            if (reportDateObj && (!practitionerLastVisited.has(practitionerId) ||
+              reportDateObj > practitionerLastVisited.get(practitionerId)!)) {
               practitionerLastVisited.set(practitionerId, reportDateObj);
             }
           }
@@ -949,7 +949,7 @@ function processProviders(
     // Get encounter date from period or use current date as fallback
     const encounterDate = encounter.period?.start || encounter.period?.end;
     const encounterDateObj = encounterDate ? new Date(encounterDate) : null;
-    
+
     if (encounter.participant) {
       encounter.participant.forEach(participant => {
         if (participant.individual?.reference) {
@@ -959,10 +959,10 @@ function processProviders(
               practitionerId,
               (engagementCountMap.get(practitionerId) || 0) + 1
             );
-            
+
             // Update last visited date if this encounter is more recent
-            if (encounterDateObj && (!practitionerLastVisited.has(practitionerId) || 
-                encounterDateObj > practitionerLastVisited.get(practitionerId)!)) {
+            if (encounterDateObj && (!practitionerLastVisited.has(practitionerId) ||
+              encounterDateObj > practitionerLastVisited.get(practitionerId)!)) {
               practitionerLastVisited.set(practitionerId, encounterDateObj);
             }
           }
@@ -973,7 +973,7 @@ function processProviders(
 
   return practitioners.map(practitioner => {
     const nameObj = practitioner.name?.[0] || {};
-    const fullName = nameObj.text || 
+    const fullName = nameObj.text ||
       `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim() ||
       'Unknown Provider';
 
@@ -1034,7 +1034,7 @@ function processProviders(
     // Sort by last visited date in descending order (most recently visited first), then by engagement count
     const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
     const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-    
+
     // If both have dates, sort by date descending
     if (dateA > 0 && dateB > 0) {
       return dateB - dateA; // Descending order (most recent first)
@@ -1042,7 +1042,7 @@ function processProviders(
     // If only one has a date, prioritize it
     if (dateA > 0 && dateB === 0) return -1;
     if (dateB > 0 && dateA === 0) return 1;
-    
+
     // If neither has a date, fall back to engagement count
     return b.engagementCount - a.engagementCount;
   });
@@ -1091,7 +1091,7 @@ function processMedicalReports(
           const practitioner = practitionerMap.get(practitionerId);
           if (practitioner) {
             const nameObj = practitioner.name?.[0] || {};
-            const providerName = nameObj.text || 
+            const providerName = nameObj.text ||
               `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim();
             provider = {
               id: practitionerId,
@@ -1151,7 +1151,7 @@ function processMedicalReports(
           const practitioner = practitionerMap.get(practitionerId);
           if (practitioner) {
             const nameObj = practitioner.name?.[0] || {};
-            interpretedBy = nameObj.text || 
+            interpretedBy = nameObj.text ||
               `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim();
           }
         }
@@ -1260,9 +1260,9 @@ function processAppointments(
           if (practitioner) {
             providerId = practitionerId;
             const nameObj = practitioner.name?.[0] || {};
-            doctorName = nameObj.text || 
+            doctorName = nameObj.text ||
               `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim();
-            
+
             // Try to get specialty
             const quals = practitioner.qualification?.[0]?.code?.text || '';
             if (quals.toLowerCase().includes('cardiology')) {
@@ -1274,8 +1274,8 @@ function processAppointments(
         }
       }
 
-      const type = encounter?.type?.[0]?.text || 
-        encounter?.class?.display || 
+      const type = encounter?.type?.[0]?.text ||
+        encounter?.class?.display ||
         'Follow-up';
 
       let status: 'Scheduled' | 'Completed' | 'Cancelled' = 'Completed';
@@ -1336,12 +1336,12 @@ function processMedications(
     const patient = patientId ? patientMap.get(patientId) : undefined;
     const clinicId = patient?.clinicId || clinics[0]?.id || 'default-clinic';
 
-    const name = med.medicationCodeableConcept?.text || 
-      med.medicationCodeableConcept?.coding?.[0]?.display || 
+    const name = med.medicationCodeableConcept?.text ||
+      med.medicationCodeableConcept?.coding?.[0]?.display ||
       'Unknown Medication';
 
     const dosage = med.dosage?.[0]?.text;
-    const frequency = med.dosage?.[0]?.timing?.repeat 
+    const frequency = med.dosage?.[0]?.timing?.repeat
       ? `${med.dosage[0].timing.repeat.frequency || 1} times per ${med.dosage[0].timing.repeat.period || 'day'}`
       : undefined;
 
@@ -1361,7 +1361,7 @@ function processMedications(
       const practitioner = practitionerMap.get(practitionerId);
       if (practitioner) {
         const nameObj = practitioner.name?.[0] || {};
-        const prescriberName = nameObj.text || 
+        const prescriberName = nameObj.text ||
           `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim();
         prescriber = {
           id: practitionerId,
@@ -1528,7 +1528,7 @@ function processHealthDetails(
     if (status === 'active' || status === 'recurrence' || status === 'relapse') {
       const conditionText = condition.code?.text || condition.code?.coding?.[0]?.display || '';
       const conditionLower = conditionText.toLowerCase();
-      
+
       // Check if it's a chronic condition
       const isChronic = chronicConditionKeywords.some(keyword => conditionLower.includes(keyword));
       if (isChronic && conditionText) {
@@ -1541,9 +1541,9 @@ function processHealthDetails(
   devices.forEach(device => {
     const typeText = device.type?.text?.toLowerCase() || '';
     const typeDisplay = device.type?.coding?.[0]?.display?.toLowerCase() || '';
-    if (typeText.includes('cpap') || typeDisplay.includes('cpap') || 
-        typeText.includes('continuous positive airway pressure') ||
-        typeDisplay.includes('continuous positive airway pressure')) {
+    if (typeText.includes('cpap') || typeDisplay.includes('cpap') ||
+      typeText.includes('continuous positive airway pressure') ||
+      typeDisplay.includes('continuous positive airway pressure')) {
       usesCpap = true;
     }
   });
@@ -1585,7 +1585,7 @@ function processEncounters(
           const practitioner = practitionerMap.get(practitionerId);
           if (practitioner) {
             const nameObj = practitioner.name?.[0] || {};
-            const providerName = nameObj.text || 
+            const providerName = nameObj.text ||
               `${nameObj.given?.join(' ') || ''} ${nameObj.family || ''}`.trim();
             providers.push({
               id: practitionerId,
@@ -1646,6 +1646,7 @@ export async function buildLoincMapFromIncludedPdfs(): Promise<Map<string, any>>
     'GuideForUsingLoincMicrobiologyTerms1.1.pdf',
   ];
 
+  /*
   try {
     // Dynamic import to avoid bundler/static resolution of Node-only modules.
     // This will succeed only in Node environments where fs/path/pdf-parse exist.
@@ -1667,6 +1668,8 @@ export async function buildLoincMapFromIncludedPdfs(): Promise<Map<string, any>>
     console.warn('LOINC PDF processing is unavailable in this environment:', (err as Error).message);
     return new Map();
   }
+  */
+  return new Map();
 }
 
 /**
@@ -1684,17 +1687,17 @@ export async function processFastenHealthDataFromFile(
     // In app: load from file using static require paths
     // In API: this would be replaced with database query or API call
     // Note: React Native/Expo requires static require() paths at module level
-    
+
     // IMPORTANT: Check USE_MOCK_DATA at runtime to ensure we use current config
     // This helps ensure we always use the current config value
     // Note: React Native's require() may still cache files, so a full app restart may be needed
     const useMockData = USE_MOCK_DATA;
-    
+
     let fastenData;
     const dataSourceName = useMockData ? 'mock' : 'original';
-    
+
     console.log(`📂 Loading data from ${dataSourceName} file (USE_MOCK_DATA: ${useMockData}, env: ${process.env.EXPO_PUBLIC_USE_MOCK_DATA})`);
-    
+
     // Use the pre-loaded module-level data
     if (useMockData) {
       fastenData = mockFastenData;
@@ -1703,9 +1706,9 @@ export async function processFastenHealthDataFromFile(
       fastenData = originalFastenData;
       console.log(`📦 Loaded original data file (${Array.isArray(fastenData) ? fastenData.length : 1} resources)`);
     }
-    
+
     const rawData = Array.isArray(fastenData) ? fastenData : [fastenData];
-    
+
     console.log(`✅ Processing ${rawData.length} FHIR resources from ${dataSourceName} data`);
     // First, try loading a static JSON LOINC map (preferred for RN).
     // eslint-disable-next-line @typescript-eslint/no-var-requires
