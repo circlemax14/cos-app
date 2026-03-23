@@ -128,8 +128,8 @@ function ManualEntryModal({ visible, colors, getScaledFontSize, fileName, initia
                         </Text>
                     </View>
                     <Text style={[mStyles.subtitle, { color: colors.text + '70', fontSize: getScaledFontSize(13) }]}>
-                        We couldn't auto-extract info from{'\n'}
-                        <Text style={{ fontWeight: '600', color: colors.text + '90' }}>"{fileName}"</Text>
+                        We couldn&apos;t auto-extract info from{'\n'}
+                        <Text style={{ fontWeight: '600', color: colors.text + '90' }}>&quot;{fileName}&quot;</Text>
                         {'\n'}Please fill in the details below.
                     </Text>
 
@@ -441,7 +441,7 @@ export function IntegrativeScreen({
                     Add Integrative Providers
                 </Text>
                 <Text style={[emptyStyles.subtitle, { color: colors.text + '70', fontSize: getScaledFontSize(14) }]}>
-                    Upload medical records from providers not connected to your EHR. We'll extract the provider's name and clinic automatically — or you can enter them manually for PDFs.
+                    Upload medical records from providers not connected to your EHR. We&apos;ll extract the provider&apos;s name and clinic automatically — or you can enter them manually for PDFs.
                 </Text>
             </View>
 

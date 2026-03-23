@@ -1,5 +1,5 @@
 import { Colors } from '@/constants/theme';
-import { getFastenPatient } from '@/services/fasten-health';
+import { fetchPatientInfo } from '@/services/api/patient';
 import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -60,19 +60,22 @@ export function ProfileContent({
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const [patientName, setPatientName] = useState('Jenny Wilson');
-  const [patientEmail, setPatientEmail] = useState('jenny.wilson@email.com');
+  const [patientName, setPatientName] = useState('User');
+  const [patientEmail, setPatientEmail] = useState('');
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
     const loadPatientData = async () => {
       try {
-        const patient = await getFastenPatient();
+        const patient = await fetchPatientInfo();
         if (patient) {
-          setPatientName(patient.name || 'Jenny Wilson');
-          setPatientEmail(patient.email || 'jenny.wilson@email.com');
+          setPatientName(patient.name || 'User');
+          setPatientEmail(patient.email || '');
         }
-      } catch (error) {
-        console.error('Error loading patient data:', error);
+      } catch {
+        // Patient data failed to load — keep defaults
+      } finally {
+        setIsLoadingProfile(false);
       }
     };
 
@@ -93,9 +96,15 @@ export function ProfileContent({
     >
       {showProfileHeader && (
         <View style={styles.header}>
-          <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
-          <Text style={[styles.name, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>{patientName}</Text>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{patientEmail}</Text>
+          {isLoadingProfile ? (
+            <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 24 }} />
+          ) : (
+            <>
+              <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
+              <Text style={[styles.name, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>{patientName}</Text>
+              <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{patientEmail}</Text>
+            </>
+          )}
         </View>
       )}
 
@@ -112,6 +121,22 @@ export function ProfileContent({
           </Card>
 
           {/* TODO: Temporarily hidden — re-enable when ready
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Services</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>View and manage your services</Text>}
+              left={(props) => <Icon {...props} source="bag-personal" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => {
+                if (onServicesPress) {
+                  onServicesPress();
+                } else {
+                  router.push('/Home/services');
+                }
+              }}
+            />
+          </Card>
+
           <Card style={styles.menuCard}>
             <List.Item
               title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Services</Text>}

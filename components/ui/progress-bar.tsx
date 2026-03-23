@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 export interface ProgressBarProps {
@@ -45,11 +45,11 @@ export function ProgressBar({
           {label && (
             <Text
               style={[
-                styles.label,
+                styles.label as TextStyle,
                 {
                   color: isDark ? '#ECEDEE' : '#11181C',
                   fontSize: getScaledFontSize(16),
-                  fontWeight: getScaledFontWeight(600) as any,
+                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
                 },
               ]}
             >
@@ -59,11 +59,11 @@ export function ProgressBar({
           {showPercentage && (
             <Text
               style={[
-                styles.percentage,
+                styles.percentage as TextStyle,
                 {
                   color: isDark ? '#9BA1A6' : '#687076',
                   fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(600) as any,
+                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
                 },
               ]}
             >
@@ -74,7 +74,7 @@ export function ProgressBar({
       )}
       <View
         style={[
-          styles.progressContainer,
+          styles.progressContainer as ViewStyle,
           {
             backgroundColor: defaultBgColor,
             height: barHeight,
@@ -84,7 +84,7 @@ export function ProgressBar({
       >
         <View
           style={[
-            styles.progressBar,
+            styles.progressBar as ViewStyle,
             {
               backgroundColor: defaultColor,
               width: `${clampedProgress}%`,
@@ -97,11 +97,11 @@ export function ProgressBar({
       {subtitle && (
         <Text
           style={[
-            styles.subtitle,
+            styles.subtitle as TextStyle,
             {
               color: isDark ? '#9BA1A6' : '#687076',
               fontSize: getScaledFontSize(12),
-              fontWeight: getScaledFontWeight(400) as any,
+              fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
               marginTop: getScaledFontSize(4),
             },
           ]}
@@ -133,9 +133,7 @@ const styles = StyleSheet.create({
     width: '100%',
     overflow: 'hidden',
   },
-  progressBar: {
-    transition: 'width 0.3s ease',
-  },
+  progressBar: {},
   subtitle: {
     marginTop: 4,
   },

@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import React from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Card, List, Text, Icon } from 'react-native-paper';
-import { Appointment as FastenAppointment, transformFastenHealthData } from '@/services/fasten-health';
+import { fetchAppointments } from '@/services/api/appointments';
+import type { Appointment as FastenAppointment } from '@/services/api/types';
 
 export default function AppointmentsModalScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
@@ -17,46 +18,23 @@ export default function AppointmentsModalScreen() {
     const loadUpcomingAppointments = async () => {
       setIsLoadingAppointments(true);
       try {
-        const healthData = await transformFastenHealthData();
-        const allAppointments = healthData.appointments || [];
         const now = new Date();
         const start = new Date(now);
         start.setHours(0, 0, 0, 0);
         const end = new Date(start);
         end.setDate(end.getDate() + 15);
 
-        const upcoming = allAppointments
-          .map(apt => {
-            const dateObj = new Date(apt.date);
-            if (apt.time) {
-              const timeMatch = apt.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-              if (timeMatch) {
-                let hour = parseInt(timeMatch[1], 10);
-                const minute = parseInt(timeMatch[2], 10);
-                const meridiem = timeMatch[3].toUpperCase();
-                if (meridiem === 'PM' && hour !== 12) {
-                  hour += 12;
-                } else if (meridiem === 'AM' && hour === 12) {
-                  hour = 0;
-                }
-                dateObj.setHours(hour, minute, 0, 0);
-              }
-            }
-            return { apt, dateObj };
-          })
-          .filter(({ dateObj }) => dateObj >= start && dateObj <= end)
-          .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
-          .map(({ apt }) => apt);
-
-        setAppointments(upcoming);
-      } catch (error) {
-        console.error('Error loading upcoming appointments:', error);
+        const allAppointments = await fetchAppointments({
+          from: start.toISOString().split('T')[0],
+          to: end.toISOString().split('T')[0],
+        });
+        setAppointments(allAppointments);
+      } catch {
         setAppointments([]);
       } finally {
         setIsLoadingAppointments(false);
       }
     };
-
     loadUpcomingAppointments();
   }, []);
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dimensions, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Modal, Pressable, StyleSheet, TextStyle, TouchableOpacity, View } from 'react-native';
 import { Text } from 'react-native-paper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
@@ -110,7 +110,7 @@ export function FilterMenu({
                 <Text
                   style={[
                     styles.menuItemText,
-                    { color: textColor, fontSize, fontWeight },
+                    { color: textColor, fontSize, fontWeight: fontWeight as TextStyle['fontWeight'] },
                   ]}
                 >
                   {option.label}
@@ -125,7 +125,7 @@ export function FilterMenu({
                 setVisible(false);
               }}
             >
-              <Text style={[styles.menuItemText, { color: textColor, fontSize, fontWeight }]}>
+              <Text style={[styles.menuItemText, { color: textColor, fontSize, fontWeight: fontWeight as TextStyle['fontWeight'] }]}>
                 Clear filter
               </Text>
             </Pressable>

@@ -12,7 +12,11 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Avatar, Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { getFastenPractitioners, getFastenPractitionersByDepartment, Provider as FastenProvider, getFastenPatient, transformFastenHealthData, Appointment as FastenAppointment } from '@/services/fasten-health';
+import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
+import { fetchAppointments } from '@/services/api/appointments';
+import { fetchPatientInfo } from '@/services/api/patient';
+import type { Provider as FastenProvider } from '@/services/api/types';
+import type { Appointment as FastenAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -72,7 +76,7 @@ type OrbitItem = SelectedProvider | { id: string; isPlaceholder: true };
 
 interface CircleViewProps {
   providers: SelectedProvider[];
-  userImg: number | { uri: string };
+  userImg?: number | { uri: string };
   colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
@@ -128,12 +132,12 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           onPress={() => {
             try {
               console.log('Navigating to today-schedule...');
-              router.push('/Home/today-schedule');
+              router.push('/Home/today-schedule' as any);
             } catch (error) {
               console.error('Error navigating to today-schedule:', error);
               // Fallback navigation
               try {
-                router.push('/(Home)/today-schedule');
+                router.push('/Home/today-schedule' as any);
               } catch (fallbackError) {
                 console.error('Fallback navigation also failed:', fallbackError);
               }
@@ -334,12 +338,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           onPress={() => {
             try {
               console.log('Navigating to today-schedule...');
-              router.push('/Home/today-schedule');
+              router.push('/Home/today-schedule' as any);
             } catch (error) {
               console.error('Error navigating to today-schedule:', error);
               // Fallback navigation
               try {
-                router.push('/(Home)/today-schedule');
+                router.push('/Home/today-schedule' as any);
               } catch (fallbackError) {
                 console.error('Fallback navigation also failed:', fallbackError);
               }
@@ -459,46 +463,11 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   );
 }
 
-// Default provider data structure (fallback)
-const defaultDepartments = [
-  {
-    id: 'cardiology',
-    name: 'Cardiology',
-    doctors: [
-      { id: 'd1', name: 'Dr. Alice Heart', qualifications: 'MD, FACC', image: require('@/assets/images/dummy.jpg') },
-      { id: 'd2', name: 'Dr. Robert Valve', qualifications: 'MD, FSCAI', image: require('@/assets/images/dummy.jpg') },
-    ],
-  },
-  {
-    id: 'neurology',
-    name: 'Neurology',
-    doctors: [
-      { id: 'd3', name: 'Dr. Nina Neuron', qualifications: 'MD, FAAN', image: require('@/assets/images/dummy.jpg') },
-      { id: 'd4', name: 'Dr. Brian Synapse', qualifications: 'MD, PhD', image: require('@/assets/images/dummy.jpg') },
-    ],
-  },
-  {
-    id: 'pediatrics',
-    name: 'Pediatrics',
-    doctors: [
-      { id: 'd5', name: 'Dr. Peter Care', qualifications: 'MD, FAAP', image: require('@/assets/images/dummy.jpg') },
-      { id: 'd6', name: 'Dr. Paula Smile', qualifications: 'MD, DCH', image: require('@/assets/images/dummy.jpg') },
-    ],
-  },
-  {
-    id: 'orthopedics',
-    name: 'Orthopedics',
-    doctors: [
-      { id: 'd7', name: 'Dr. Olivia Joint', qualifications: 'MS, DNB (Ortho)', image: require('@/assets/images/dummy.jpg') },
-      { id: 'd8', name: 'Dr. Max Bone', qualifications: 'MS Ortho', image: require('@/assets/images/dummy.jpg') },
-    ],
-  },
-];
 
 // Circle Providers List View Component (shows providers from circle)
 interface CircleProvidersListViewProps {
   providers: SelectedProvider[];
-  userImg: number | { uri: string };
+  userImg?: number | { uri: string };
   colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
@@ -541,7 +510,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               paddingHorizontal: getScaledFontSize(16),
             }
           ]}
-          onPress={() => router.push('/Home/today-schedule')}
+          onPress={() => router.push('/Home/today-schedule' as any)}
           activeOpacity={0.7}
         >
           <InitialsAvatar name={patientName} size={getScaledFontSize(56)} style={styles.listAvatar} />
@@ -659,7 +628,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
 
 // List View Component (categories -> sub-categories -> providers)
 interface ListViewProps {
-  userImg: number | { uri: string };
+  userImg?: number | { uri: string };
   colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
@@ -811,7 +780,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
     const loadAndCategorizeProviders = async () => {
       setIsLoadingProviders(true);
       try {
-        const providers = await getFastenPractitioners();
+        const providers = await fetchProviders();
         const categorizedProviders = new Map<string, FastenProvider[]>();
 
         // Categorize each provider (can belong to multiple subcategories)
@@ -959,7 +928,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
             paddingHorizontal: getScaledFontSize(16),
           }
         ]}
-        onPress={() => router.push('/Home/today-schedule')}
+        onPress={() => router.push('/Home/today-schedule' as any)}
         activeOpacity={0.7}
       >
         <InitialsAvatar name={patientName} size={getScaledFontSize(56)} style={styles.listAvatar} />
@@ -1023,7 +992,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                 justifyContent: 'center',
               }
             ]}>
-              <IconSymbol name={category.icon || 'circle.fill'} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
+              <IconSymbol name={(category.icon || 'circle.fill') as any} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
             </View>
             <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
               <Text style={[
@@ -1272,7 +1241,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   justifyContent: 'center',
                 }
               ]}>
-                <IconSymbol name={subCategory.icon || 'circle.fill'} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
+                <IconSymbol name={(subCategory.icon || 'circle.fill') as any} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
               </View>
               <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
                 <Text style={[
@@ -1929,11 +1898,11 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
       try {
         if (departmentId) {
           // Load providers by department
-          const departments = await getFastenPractitionersByDepartment();
+          const departments = await fetchProvidersByDepartment();
           const department = departments.find(d => d.id === departmentId);
           if (department) {
             // Sort by lastVisited in descending order (most recently visited first)
-            const sortedDoctors = [...department.doctors].sort((a, b) => {
+            const sortedDoctors = [...department.providers].sort((a, b) => {
               const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
               const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
 
@@ -1954,8 +1923,8 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
             setFastenProviders([]);
           }
         } else {
-          // Load all providers (already sorted by lastVisited in getFastenPractitioners)
-          const providers = await getFastenPractitioners();
+          // Load all providers (already sorted by lastVisited in fetchProviders)
+          const providers = await fetchProviders();
           setFastenProviders(providers);
           console.log(`Loaded ${providers.length} providers from Fasten Health`);
         }
@@ -1995,29 +1964,12 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
         name: provider.name,
         qualifications: provider.qualifications || 'Healthcare Provider',
         specialty: provider.specialty || 'General',
-        image: require('@/assets/images/dummy.jpg'), // Use default image
+        image: undefined,
       }));
     }
 
-    // Fallback to default departments
-    const providers: Array<{ id: string; name: string; qualifications: string; image: number | { uri: string } }> = [];
-    if (departmentId) {
-      // Filter by department if specified
-      const dept = defaultDepartments.find(d => d.id === departmentId);
-      if (dept) {
-        dept.doctors.forEach((doc) => {
-          providers.push(doc);
-        });
-      }
-    } else {
-      // Show all providers from all departments
-      defaultDepartments.forEach((dept) => {
-        dept.doctors.forEach((doc) => {
-          providers.push(doc);
-        });
-      });
-    }
-    return providers;
+    // No providers available
+    return [];
   }, [fastenProviders, departmentId]);
 
   return (
@@ -2116,7 +2068,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
 
 export default function HomeScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
-  const userImg = require('@/assets/images/dummy.jpg');
+  const userImg = undefined;
   const isTabletDevice = isTablet();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [viewMode, setViewMode] = React.useState<'circle' | 'list' | 'circle-providers'>('circle');
@@ -2126,6 +2078,7 @@ export default function HomeScreen() {
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const { selectedProviders, addProvider, removeProvider, validateAndCleanProviders } = useProviderSelection();
   const [patientName, setPatientName] = useState('');
+  const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
 
@@ -2150,9 +2103,9 @@ export default function HomeScreen() {
     const loadProviders = async () => {
       setIsLoadingProviders(true);
       try {
-        const providers = await getFastenPractitioners();
+        const providers = await fetchProviders();
         setFastenProviders(providers);
-        console.log(`Loaded ${providers.length} providers from Fasten Health for home screen`);
+        console.log(`Loaded ${providers.length} providers for home screen`);
 
         // Validate and clean selected providers when data changes
         await validateAndCleanProviders();
@@ -2165,13 +2118,14 @@ export default function HomeScreen() {
 
     const loadPatient = async () => {
       try {
-        const patient = await getFastenPatient();
+        const patient = await fetchPatientInfo();
         if (patient) {
           setPatientName(patient.name || '');
-          console.log('Loaded patient name for home screen:', patient.name);
         }
-      } catch (error) {
-        console.error('Error loading patient data:', error);
+      } catch {
+        // Patient data failed to load
+      } finally {
+        setIsLoadingPatient(false);
       }
     };
 
@@ -2183,8 +2137,8 @@ export default function HomeScreen() {
     const loadUpcomingAppointments = async () => {
       setIsLoadingAppointments(true);
       try {
-        const healthData = await transformFastenHealthData();
-        const appointments = healthData.appointments || [];
+        const allAppointments = await fetchAppointments();
+        const appointments = allAppointments || [];
         const now = new Date();
         const start = new Date(now);
         start.setHours(0, 0, 0, 0);
@@ -2335,7 +2289,7 @@ export default function HomeScreen() {
                 flex: 1,
               }
             ]}>
-              {getFirstName(patientName)}'s Circle of Support
+              {isLoadingPatient ? 'Loading...' : `${getFirstName(patientName)}'s Circle of Support`}
             </Text>
             <TouchableOpacity
               onPress={toggleViewMode}

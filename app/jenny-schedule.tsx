@@ -3,13 +3,14 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
-import React from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Avatar, Card, Chip, Divider, Text } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Card, Chip, Divider, Text } from 'react-native-paper';
+import { fetchAppointments } from '@/services/api/appointments';
+import { fetchHealthPlan } from '@/services/api/health-plan';
 
 export default function JennyScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
-  const userImg = require('@/assets/images/dummy.jpg');
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   // Get today's date
@@ -20,64 +21,56 @@ export default function JennyScheduleScreen() {
     day: 'numeric'
   });
 
-  // Sample schedule data
-  const scheduleItems = [
-    {
-      id: '1',
-      time: '9:00 AM',
-      title: 'Morning Medication',
-      description: 'Take blood pressure medication with breakfast',
-      icon: 'pills.fill',
-      completed: true,
-      category: 'Medication'
-    },
-    {
-      id: '2',
-      time: '10:00 AM',
-      title: 'Therapy Session',
-      description: 'Meeting with Dr. Sarah Johnson for weekly therapy',
-      icon: 'person.2.fill',
-      completed: false,
-      category: 'Appointment',
-      urgent: true
-    },
-    {
-      id: '3',
-      time: '2:00 PM',
-      title: 'Exercise',
-      description: '30-minute walk in the park',
-      icon: 'figure.walk',
-      completed: false,
-      category: 'Wellness'
-    },
-    {
-      id: '4',
-      time: '3:30 PM',
-      title: 'Afternoon Medication',
-      description: 'Take vitamin supplements',
-      icon: 'pills.fill',
-      completed: false,
-      category: 'Medication'
-    },
-    {
-      id: '5',
-      time: '5:00 PM',
-      title: 'Call Family',
-      description: 'Weekly check-in with Mom',
-      icon: 'phone.fill',
-      completed: false,
-      category: 'Social'
-    },
-    {
-      id: '6',
-      time: '8:00 PM',
-      title: 'Evening Medication',
-      description: 'Take sleep medication before bed',
-      icon: 'pills.fill',
-      completed: false,
-      category: 'Medication'
-    },
-  ];
+  const [scheduleItems, setScheduleItems] = useState<Array<{
+    id: string;
+    time: string;
+    title: string;
+    description: string;
+    icon: string;
+    completed: boolean;
+    category: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadSchedule = async () => {
+      try {
+        const [appointments, plan] = await Promise.all([
+          fetchAppointments(),
+          fetchHealthPlan().catch(() => null),
+        ]);
+        const items: typeof scheduleItems = [];
+        appointments.forEach((apt) => {
+          items.push({
+            id: apt.id,
+            time: apt.time,
+            title: apt.type || 'Appointment',
+            description: `${apt.doctorName}${apt.clinicName ? ` at ${apt.clinicName}` : ''}`,
+            icon: 'event',
+            completed: apt.status === 'fulfilled',
+            category: 'appointment',
+          });
+        });
+        plan?.aiInsights?.recommendations.forEach((rec, i) => {
+          items.push({
+            id: `rec-${i}`,
+            time: '',
+            title: rec.text,
+            description: rec.category,
+            icon: 'lightbulb',
+            completed: false,
+            category: 'recommendation',
+          });
+        });
+        setScheduleItems(items);
+      } catch {
+        setScheduleItems([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSchedule();
+  }, []);
 
   const completedCount = scheduleItems.filter(item => item.completed).length;
   const totalCount = scheduleItems.length;
@@ -92,7 +85,7 @@ export default function JennyScheduleScreen() {
           fontSize: getScaledFontSize(20),
           fontWeight: getScaledFontWeight(600) as any,
           color: colors.text
-        }]}>Today's Schedule</Text>
+        }]}>Today&apos;s Schedule</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -105,7 +98,9 @@ export default function JennyScheduleScreen() {
         <Card style={[styles.profileCard, { backgroundColor: colors.background }]}>
           <Card.Content>
             <View style={styles.profileHeader}>
-              <Avatar.Image source={userImg} size={getScaledFontSize(64)} />
+              <View style={{ width: getScaledFontSize(64), height: getScaledFontSize(64), borderRadius: getScaledFontSize(32), backgroundColor: colors.tint + '20', alignItems: 'center', justifyContent: 'center' }}>
+                <IconSymbol name="person.fill" size={getScaledFontSize(32)} color={colors.tint} />
+              </View>
               <View style={styles.profileInfo}>
                 <Text style={[styles.profileName, {
                   fontSize: getScaledFontSize(18),
@@ -142,6 +137,14 @@ export default function JennyScheduleScreen() {
         </Card>
 
         {/* Schedule Items */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.tint} />
+            <Text style={{ fontSize: getScaledFontSize(14), color: colors.text, marginTop: 12 }}>
+              Loading schedule...
+            </Text>
+          </View>
+        ) : (
         <View style={styles.scheduleContainer}>
           {scheduleItems.map((item, index) => (
             <Card
@@ -157,11 +160,11 @@ export default function JennyScheduleScreen() {
               <Card.Content>
                 <View style={styles.scheduleItem}>
                   <View style={styles.scheduleLeft}>
-                    <View style={[styles.timeContainer, item.urgent && styles.urgentTimeContainer]}>
+                    <View style={[styles.timeContainer]}>
                       <Text style={[styles.timeText, {
                         fontSize: getScaledFontSize(14),
                         fontWeight: getScaledFontWeight(600) as any,
-                        color: item.urgent ? '#fff' : colors.text
+                        color: colors.text
                       }]}>{item.time}</Text>
                     </View>
                   </View>
@@ -204,6 +207,7 @@ export default function JennyScheduleScreen() {
             </Card>
           ))}
         </View>
+        )}
       </ScrollView>
     </AppWrapper>
   );
@@ -289,6 +293,11 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: 4,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
   },
   scheduleContainer: {
     gap: 12,

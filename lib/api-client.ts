@@ -1,4 +1,6 @@
 import axios, { AxiosError } from 'axios';
+import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from './auth-tokens';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
@@ -8,6 +10,25 @@ export const apiClient = axios.create({
   timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 });
+
+/**
+ * Clear all auth state and redirect to sign-in.
+ * Called when token refresh fails — the session is unrecoverable.
+ * Guarded against re-entry to prevent navigation loops.
+ */
+let isSigningOut = false;
+async function forceSignOut(): Promise<void> {
+  if (isSigningOut) return;
+  isSigningOut = true;
+  await clearTokens();
+  await SecureStore.deleteItemAsync('cos_username');
+  try {
+    router.replace('/(auth)/sign-in' as never);
+  } finally {
+    // Reset after a short delay to allow navigation to settle
+    setTimeout(() => { isSigningOut = false; }, 2000);
+  }
+}
 
 // ─── Request interceptor: attach stored access token ───────────────────────
 apiClient.interceptors.request.use(async (config) => {
@@ -55,7 +76,7 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = await getRefreshToken();
         if (!refreshToken) {
-          await clearTokens();
+          await forceSignOut();
           throw error;
         }
 
@@ -82,8 +103,8 @@ apiClient.interceptors.response.use(
           return apiClient(originalRequest);
         }
       } catch {
-        await clearTokens();
         pendingRequests = [];
+        await forceSignOut();
         throw error;
       } finally {
         isRefreshing = false;

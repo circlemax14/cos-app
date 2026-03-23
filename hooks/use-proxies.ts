@@ -10,7 +10,7 @@ export function useProxies() {
   return useQuery({
     queryKey: ['proxies'],
     queryFn: async () => {
-      const res = await apiClient.get('/patients/me/proxies')
+      const res = await apiClient.get('/v1/patients/me/proxies')
       return res.data.data.proxies as Proxy[]
     },
     staleTime: 5 * 60 * 1000,
@@ -21,7 +21,7 @@ export function useCreateProxy() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: { email: string; name: string; scopes: ProxyScope[] }) => {
-      const res = await apiClient.post('/patients/me/proxies', input)
+      const res = await apiClient.post('/v1/patients/me/proxies', input)
       return res.data.data.proxy as Proxy
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['proxies'] }),
@@ -32,7 +32,7 @@ export function useUpdateProxy() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, scopes }: { id: string; scopes: ProxyScope[] }) => {
-      const res = await apiClient.put(`/patients/me/proxies/${id}`, { scopes })
+      const res = await apiClient.put(`/v1/patients/me/proxies/${id}`, { scopes })
       return res.data.data.proxy as Proxy
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['proxies'] }),
@@ -43,7 +43,7 @@ export function useRevokeProxy() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.delete(`/patients/me/proxies/${id}`)
+      await apiClient.delete(`/v1/patients/me/proxies/${id}`)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['proxies'] }),
   })

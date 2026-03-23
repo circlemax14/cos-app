@@ -9,7 +9,7 @@ export function useEmergencyContacts() {
   return useQuery({
     queryKey: ['emergency-contacts'],
     queryFn: async () => {
-      const res = await apiClient.get('/patients/me/emergency-contacts')
+      const res = await apiClient.get('/v1/patients/me/emergency-contacts')
       return res.data.data.contacts as EmergencyContact[]
     },
     staleTime: 5 * 60 * 1000,
@@ -20,7 +20,7 @@ export function useCreateEmergencyContact() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: Omit<EmergencyContact, 'id' | 'source'>) => {
-      const res = await apiClient.post('/patients/me/emergency-contacts', input)
+      const res = await apiClient.post('/v1/patients/me/emergency-contacts', input)
       return res.data.data.contact as EmergencyContact
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['emergency-contacts'] }),
@@ -31,7 +31,7 @@ export function useUpdateEmergencyContact() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, ...input }: Partial<EmergencyContact> & { id: string }) => {
-      const res = await apiClient.put(`/patients/me/emergency-contacts/${id}`, input)
+      const res = await apiClient.put(`/v1/patients/me/emergency-contacts/${id}`, input)
       return res.data.data.contact as EmergencyContact
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['emergency-contacts'] }),
@@ -42,7 +42,7 @@ export function useDeleteEmergencyContact() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.delete(`/patients/me/emergency-contacts/${id}`)
+      await apiClient.delete(`/v1/patients/me/emergency-contacts/${id}`)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['emergency-contacts'] }),
   })

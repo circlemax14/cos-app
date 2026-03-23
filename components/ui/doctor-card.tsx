@@ -97,7 +97,7 @@ export function DoctorCard({
               }}
               disabled={actionDisabled}
             >
-              <IconSymbol name={actionIconName} size={getScaledFontSize(18)} color={actionColor} />
+              <IconSymbol name={actionIconName as any} size={getScaledFontSize(18)} color={actionColor} />
             </TouchableOpacity>
           )}
           {showSwitch && (

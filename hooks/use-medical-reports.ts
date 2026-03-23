@@ -7,7 +7,7 @@ export function useMedicalReports() {
   return useQuery({
     queryKey: ['reports'],
     queryFn: async () => {
-      const res = await apiClient.get('/patients/me/reports')
+      const res = await apiClient.get('/v1/patients/me/reports')
       return res.data.data.reports as MedicalReport[]
     },
     staleTime: 10 * 60 * 1000,
@@ -18,7 +18,7 @@ export function useMedicalReport(id: string) {
   return useQuery({
     queryKey: ['reports', id],
     queryFn: async () => {
-      const res = await apiClient.get(`/patients/me/reports/${id}`)
+      const res = await apiClient.get(`/v1/patients/me/reports/${id}`)
       return res.data.data.report as MedicalReport
     },
     enabled: !!id,

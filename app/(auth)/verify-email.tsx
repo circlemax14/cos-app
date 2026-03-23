@@ -6,13 +6,13 @@ import { Button, Text } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
-import { confirmSignUp, resendCode } from '@/services/auth';
+import { confirmSignUp, resendCode, signIn } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 export default function VerifyEmailScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const { email } = useLocalSearchParams<{ email: string }>();
+  const { email, password } = useLocalSearchParams<{ email: string; password?: string }>();
 
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -65,7 +65,16 @@ export default function VerifyEmailScreen() {
     const res = await confirmSignUp(email ?? '', code);
     setLoading(false);
     if (res.success) {
-      router.replace('/(auth)/sign-in');
+      // Auto sign-in if we have the password (coming from sign-up flow)
+      if (password) {
+        const signInRes = await signIn({ username: email ?? '', password });
+        if (signInRes.success) {
+          router.replace('/(onboarding)/usage-guidelines' as never);
+          return;
+        }
+      }
+      // Fallback: if no password or auto sign-in failed, go to sign-in page
+      router.replace('/(auth)/sign-in' as never);
     } else {
       setError(res.message ?? 'Verification failed. Please try again.');
       // Clear digits so user can re-enter

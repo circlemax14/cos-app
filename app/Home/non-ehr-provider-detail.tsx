@@ -107,15 +107,13 @@ export default function NonEhrProviderDetailScreen() {
         setSummaryError(null);
         try {
             const filesToSend: TreatmentSummaryFile[] = providerFiles.map(f => ({
+                id: f.id,
+                name: f.name,
                 uri: f.uri,
                 mimeType: f.mimeType,
                 fileName: f.fileName,
             }));
-            const summary = await summarizeTreatmentFromFiles(
-                filesToSend,
-                providerData.providerName,
-                providerData.clinicName,
-            );
+            const summary = await summarizeTreatmentFromFiles(filesToSend);
             setTreatmentSummary(summary);
         } catch (err) {
             console.error('[NonEhrDetail] Error generating treatment summary:', err);
@@ -184,8 +182,7 @@ export default function NonEhrProviderDetailScreen() {
                     uri: a.uri,
                     mimeType: a.mimeType || 'application/octet-stream',
                     size: a.size || 0,
-                })),
-                { targetProviderId: params.id }
+                }))
             );
 
             const addedCount = uploadResults.filter(r => r.added).length;
@@ -344,8 +341,8 @@ export default function NonEhrProviderDetailScreen() {
                                             {file.fileName}
                                         </Text>
                                         <Text style={[styles.fileMeta, { color: colors.text + '60', fontSize: getScaledFontSize(12) }]}>
-                                            {formatFileSize(file.size)} •{' '}
-                                            {new Date(file.uploadedAt).toLocaleDateString('en-US', {
+                                            {formatFileSize(file.size ?? 0)} •{' '}
+                                            {new Date(file.uploadedAt ?? Date.now()).toLocaleDateString('en-US', {
                                                 month: 'short',
                                                 day: 'numeric',
                                                 year: 'numeric',

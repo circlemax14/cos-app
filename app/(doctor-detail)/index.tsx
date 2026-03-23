@@ -3,10 +3,11 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router } from 'expo-router';
 import React, { useRef, useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Modal, Image } from 'react-native';
-import { Avatar, Card, Button, Portal, Switch } from 'react-native-paper';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
+import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { getFastenPractitionerById, Provider, getProviderDiagnosesAndTreatmentPlans, getProviderProgressNotes, getProviderAppointments, TreatmentPlanItem, ProgressNote, ProviderAppointment, getFastenPractitioners } from '@/services/fasten-health';
+import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments } from '@/services/api/providers';
+import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -92,16 +93,16 @@ export default function DoctorDetailScreen() {
         setIsLoadingProvider(true);
         setIsLoadingData(true);
         try {
-          const providerData = await getFastenPractitionerById(providerId);
+          const providerData = await fetchProviderById(providerId);
           if (providerData) {
             setProvider(providerData);
           }
           
           // Load provider-specific data
           const [plans, notes, apts] = await Promise.all([
-            getProviderDiagnosesAndTreatmentPlans(providerId),
-            getProviderProgressNotes(providerId),
-            getProviderAppointments(providerId),
+            fetchProviderTreatmentPlans(providerId),
+            fetchProviderProgressNotes(providerId),
+            fetchProviderAppointments(providerId),
           ]);
           
           setTreatmentPlans(plans);
@@ -138,7 +139,7 @@ export default function DoctorDetailScreen() {
     const loadOtherProviders = async () => {
       setIsLoadingProviders(true);
       try {
-        const allProviders = await getFastenPractitioners();
+        const allProviders = await fetchProviders();
         // Filter out the current doctor
         const filtered = allProviders.filter(p => p.id !== providerId);
         setOtherProviders(filtered);
@@ -803,7 +804,7 @@ export default function DoctorDetailScreen() {
     </Portal>
 
     {/* Consent Modal */}
-    <Modal
+    <RNModal
       visible={showConsentModal}
       transparent={true}
       animationType="fade"
@@ -827,7 +828,7 @@ export default function DoctorDetailScreen() {
               </Text>
               
               <Text style={[styles.consentDescription, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
-                By selecting "Yes", you agree to share your health information with this provider to facilitate care coordination and treatment.
+                By selecting &quot;Yes&quot;, you agree to share your health information with this provider to facilitate care coordination and treatment.
               </Text>
             </View>
 
@@ -895,7 +896,7 @@ export default function DoctorDetailScreen() {
           </View>
         </View>
       </View>
-    </Modal>
+    </RNModal>
     </>
   );
 }

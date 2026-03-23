@@ -75,7 +75,7 @@ export default function PrivacyPolicyScreen() {
           Last updated: March 2026 · Version 1.0
         </Text>
         <Text style={[styles.intro, { color: colors.text, fontSize: getScaledFontSize(14), marginBottom: 24 }]}>
-          Join a Bright Future ("we," "our," or "us") is committed to protecting your privacy and the
+          Join a Bright Future (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) is committed to protecting your privacy and the
           privacy of your health information. This policy explains what data we collect, how we use
           it, and your rights.
         </Text>
