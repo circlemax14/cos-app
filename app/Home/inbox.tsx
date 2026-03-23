@@ -115,64 +115,71 @@ export default function InboxScreen() {
     const channelName = `chat-${currentUser._id}-${selectedProvider.id}`;
     setCurrentChannel(channelName);
 
-    // Initialize Ably
-    const client = initializeAbly();
-    
-    if (!client) {
-      console.warn('Ably not initialized. Chat will work in offline mode only.');
-      setIsConnected(false);
-      setIsAblyConfigured(false);
-      return;
-    }
-    
-    setIsAblyConfigured(true);
-    
-    client.connection.on('connected', () => {
-      console.log('Ably connected');
-      setIsConnected(true);
-      
-      // Enter presence
-      enterPresence(channelName, { userId: currentUser._id, name: currentUser.name });
-    });
+    let cancelled = false;
+    let unsubscribeFn: (() => void) | null = null;
 
-    client.connection.on('disconnected', () => {
-      console.log('Ably disconnected');
-      setIsConnected(false);
-    });
+    // Initialize Ably (async)
+    const setup = async () => {
+      try {
+        const { client } = await initializeAbly('care_manager');
 
-    client.connection.on('failed', () => {
-      console.error('Ably connection failed');
-      setIsConnected(false);
-    });
+        if (cancelled) return;
 
-    // Subscribe to channel messages
-    const channel = subscribeToChannel(channelName, (message) => {
-      if (message.name === 'message' && message.data) {
-        // Filter out messages from current user to prevent duplicates
-        // (we already add them optimistically when sending)
-        if (message.data.userId === currentUser._id) {
-          return;
+        setIsAblyConfigured(true);
+
+        client.connection.on('connected', () => {
+          setIsConnected(true);
+          enterPresence(channelName, { userId: currentUser._id as string, name: currentUser.name });
+        });
+
+        client.connection.on('disconnected', () => {
+          setIsConnected(false);
+        });
+
+        client.connection.on('failed', () => {
+          setIsConnected(false);
+        });
+
+        // Subscribe to channel messages
+        unsubscribeFn = await subscribeToChannel(channelName, (message) => {
+          if (message.name === 'message' && message.data) {
+            const msgData = message.data as Record<string, unknown>;
+            if (msgData.userId === currentUser._id) {
+              return;
+            }
+
+            const newMessage: IMessage = {
+              _id: message.id || `${Date.now()}-${Math.random()}`,
+              text: (msgData.text as string) || '',
+              createdAt: new Date((message.timestamp as number) || Date.now()),
+              user: {
+                _id: (msgData.userId as string) || 'unknown',
+                name: (msgData.userName as string) || 'Unknown',
+              },
+            };
+
+            setMessages((previousMessages) =>
+              GiftedChat.append(previousMessages, [newMessage])
+            );
+          }
+        });
+      } catch (error) {
+        console.warn('Ably not initialized. Chat will work in offline mode only.', error);
+        if (!cancelled) {
+          setIsConnected(false);
+          setIsAblyConfigured(false);
         }
-        
-        const newMessage: IMessage = {
-          _id: message.id || `${Date.now()}-${Math.random()}`,
-          text: message.data.text || '',
-          createdAt: new Date(message.timestamp || Date.now()),
-          user: {
-            _id: message.data.userId || 'unknown',
-            name: message.data.userName || 'Unknown',
-          },
-        };
-        
-        setMessages((previousMessages) => 
-          GiftedChat.append(previousMessages, [newMessage])
-        );
       }
-    });
+    };
+
+    setup();
 
     // Cleanup on unmount or provider change
     return () => {
-      if (channel) {
+      cancelled = true;
+      if (unsubscribeFn) {
+        unsubscribeFn();
+      } else {
         unsubscribeFromChannel(channelName);
       }
       leavePresence(channelName);
@@ -190,7 +197,7 @@ export default function InboxScreen() {
     // Publish to Ably
     for (const message of newMessages) {
       try {
-        await publishMessage(currentChannel, {
+        await publishMessage(currentChannel, 'message', {
           text: message.text,
           userId: currentUser._id,
           userName: currentUser.name,
