@@ -2080,7 +2080,7 @@ export default function HomeScreen() {
   const [patientName, setPatientName] = useState('');
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
-  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
 
   const circleProviders = React.useMemo(
     () => selectedProviders.slice(0, MAX_SELECTED_PROVIDERS),
@@ -2266,13 +2266,13 @@ export default function HomeScreen() {
 
   return (
     <AppWrapper notificationCount={3}>
-      {/* Medical disclaimer — required by App Store §1.4.1 for health apps */}
-      <View style={[styles.disclaimerBanner, { backgroundColor: colors.card ?? '#f0f7ff', borderColor: colors.border ?? '#d0e4f7' }]}>
-        <Text style={[styles.disclaimerText, { color: colors.subtext ?? '#555', fontSize: getScaledFontSize(11) }]}>
-          ⚕️ This app is for care coordination only and does not provide medical advice. Always consult your healthcare provider for medical decisions.
-        </Text>
-      </View>
-      <ScrollView
+      {(isLoadingPatient || isLoadingAppointments) ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), marginTop: 12 }}>Loading your health data...</Text>
+        </View>
+      ) : null}
+      {!(isLoadingPatient || isLoadingAppointments) && <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -2498,21 +2498,12 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+      </ScrollView>}
     </AppWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  disclaimerBanner: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-  },
-  disclaimerText: {
-    textAlign: 'center',
-    lineHeight: 16,
-  },
   scrollContainer: {
     flex: 1,
   },
