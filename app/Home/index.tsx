@@ -128,12 +128,12 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           onPress={() => {
             try {
               console.log('Navigating to today-schedule...');
-              router.push('/Home/today-schedule');
+              router.push('/Home/today-schedule' as any);
             } catch (error) {
               console.error('Error navigating to today-schedule:', error);
               // Fallback navigation
               try {
-                router.push('/(Home)/today-schedule');
+                router.push('/Home/today-schedule' as any);
               } catch (fallbackError) {
                 console.error('Fallback navigation also failed:', fallbackError);
               }
@@ -334,12 +334,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           onPress={() => {
             try {
               console.log('Navigating to today-schedule...');
-              router.push('/Home/today-schedule');
+              router.push('/Home/today-schedule' as any);
             } catch (error) {
               console.error('Error navigating to today-schedule:', error);
               // Fallback navigation
               try {
-                router.push('/(Home)/today-schedule');
+                router.push('/Home/today-schedule' as any);
               } catch (fallbackError) {
                 console.error('Fallback navigation also failed:', fallbackError);
               }
@@ -541,7 +541,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               paddingHorizontal: getScaledFontSize(16),
             }
           ]}
-          onPress={() => router.push('/Home/today-schedule')}
+          onPress={() => router.push('/Home/today-schedule' as any)}
           activeOpacity={0.7}
         >
           <InitialsAvatar name={patientName} size={getScaledFontSize(56)} style={styles.listAvatar} />
@@ -959,7 +959,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
             paddingHorizontal: getScaledFontSize(16),
           }
         ]}
-        onPress={() => router.push('/Home/today-schedule')}
+        onPress={() => router.push('/Home/today-schedule' as any)}
         activeOpacity={0.7}
       >
         <InitialsAvatar name={patientName} size={getScaledFontSize(56)} style={styles.listAvatar} />
@@ -1023,7 +1023,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                 justifyContent: 'center',
               }
             ]}>
-              <IconSymbol name={category.icon || 'circle.fill'} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
+              <IconSymbol name={(category.icon || 'circle.fill') as any} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
             </View>
             <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
               <Text style={[
@@ -1272,7 +1272,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   justifyContent: 'center',
                 }
               ]}>
-                <IconSymbol name={subCategory.icon || 'circle.fill'} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
+                <IconSymbol name={(subCategory.icon || 'circle.fill') as any} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
               </View>
               <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
                 <Text style={[

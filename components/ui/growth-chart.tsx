@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, ScrollView } from 'react-native';
+import { DimensionValue, StyleSheet, Text, View, ScrollView } from 'react-native';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 export interface DataPoint {
@@ -181,7 +181,7 @@ export function GrowthChart({
                       style={[
                         styles.line,
                         {
-                          left: x1,
+                          left: x1 as DimensionValue,
                           top: y1,
                           width: length,
                           backgroundColor: defaultColor,
@@ -202,7 +202,7 @@ export function GrowthChart({
                       style={[
                         styles.point,
                         {
-                          left: x,
+                          left: x as DimensionValue,
                           top: y - getScaledFontSize(6),
                           backgroundColor: defaultColor,
                           width: getScaledFontSize(12),

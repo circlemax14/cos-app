@@ -3,8 +3,8 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router } from 'expo-router';
 import React, { useRef, useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Modal, Image } from 'react-native';
-import { Avatar, Card, Button, Portal, Switch } from 'react-native-paper';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
+import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getFastenPractitionerById, Provider, getProviderDiagnosesAndTreatmentPlans, getProviderProgressNotes, getProviderAppointments, TreatmentPlanItem, ProgressNote, ProviderAppointment, getFastenPractitioners } from '@/services/fasten-health';
 import { InitialsAvatar } from '@/utils/avatar-utils';
@@ -803,7 +803,7 @@ export default function DoctorDetailScreen() {
     </Portal>
 
     {/* Consent Modal */}
-    <Modal
+    <RNModal
       visible={showConsentModal}
       transparent={true}
       animationType="fade"
@@ -895,7 +895,7 @@ export default function DoctorDetailScreen() {
           </View>
         </View>
       </View>
-    </Modal>
+    </RNModal>
     </>
   );
 }

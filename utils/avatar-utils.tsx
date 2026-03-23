@@ -111,13 +111,13 @@ export function InitialsAvatar({
     if (Array.isArray(style)) {
       cleanedStyle = style.map(s => {
         if (s && typeof s === 'object') {
-          const { backgroundColor, ...rest } = s;
+          const { backgroundColor: _bg, ...rest } = s as ViewStyle;
           return rest;
         }
         return s;
       });
     } else if (typeof style === 'object') {
-      const { backgroundColor, ...rest } = style;
+      const { backgroundColor: _bg, ...rest } = style as ViewStyle;
       cleanedStyle = rest;
     }
   }

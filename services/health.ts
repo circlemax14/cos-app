@@ -4,6 +4,7 @@ import type {
   HealthKitPermissions,
   HealthInputOptions,
   HealthValue,
+  HealthPermission,
 } from 'react-native-health';
 
 /**
@@ -75,7 +76,7 @@ const getHealthKitModule = () => {
       return AppleHealthKit;
     } else {
       console.warn('⚠️ JS wrapper exists but missing methods');
-      console.log('📋 Available methods:', Object.keys(AppleHealthKit).filter(key => typeof (AppleHealthKit as unknown as HealthKitExtended)[key] === 'function'));
+      console.log('📋 Available methods:', Object.keys(AppleHealthKit).filter(key => typeof (AppleHealthKit as unknown as Record<string, unknown>)[key] === 'function'));
     }
   }
   
@@ -199,13 +200,18 @@ export const initializeHealthKit = (): Promise<boolean> => {
       return;
     }
 
+    if (!Constants) {
+      reject(new Error('HealthKit Constants not available. The app needs to be rebuilt: npx expo run:ios --clean'));
+      return;
+    }
+
     const permissions: HealthKitPermissions = {
       permissions: {
         read: [
-          Constants.Permissions.StepCount,
-          Constants.Permissions.HeartRate,
-          Constants.Permissions.SleepAnalysis,
-          Constants.Permissions.ActiveEnergyBurned,
+          Constants.Permissions.StepCount as HealthPermission,
+          Constants.Permissions.HeartRate as HealthPermission,
+          Constants.Permissions.SleepAnalysis as HealthPermission,
+          Constants.Permissions.ActiveEnergyBurned as HealthPermission,
         ],
         write: [], // We only need read permissions
       },
@@ -264,15 +270,15 @@ const handleInitSuccess = (resolve: (value: boolean) => void) => {
     const permissions: HealthKitPermissions = {
       permissions: {
         read: [
-          Constants.Permissions.StepCount,
-          Constants.Permissions.HeartRate,
-          Constants.Permissions.SleepAnalysis,
-          Constants.Permissions.ActiveEnergyBurned,
+          Constants.Permissions.StepCount as HealthPermission,
+          Constants.Permissions.HeartRate as HealthPermission,
+          Constants.Permissions.SleepAnalysis as HealthPermission,
+          Constants.Permissions.ActiveEnergyBurned as HealthPermission,
         ],
         write: [],
       },
     };
-    
+
     (healthKit as unknown as HealthKitExtended).getAuthStatus(permissions, (authError: string, authResults: { permissions: { read: number[] } }) => {
       if (authError) {
         console.warn('⚠️ Could not check auth status:', authError);
@@ -349,7 +355,7 @@ export const getTodayStepCount = (): Promise<number> => {
       const errorMsg = `HealthKit getStepCount method not available. This usually means the app needs to be rebuilt. Run: npx expo run:ios --clean`;
       console.error('❌', errorMsg);
       console.log('📋 Available native methods:', nativeModule ? Object.keys(nativeModule).filter(k => typeof nativeModule[k] === 'function') : 'No native module');
-      console.log('📋 Available JS wrapper methods:', healthKit ? Object.keys(healthKit).filter(k => typeof (healthKit as unknown as HealthKitExtended)[k] === 'function') : 'No JS wrapper');
+      console.log('📋 Available JS wrapper methods:', healthKit ? Object.keys(healthKit).filter(k => typeof (healthKit as unknown as Record<string, unknown>)[k] === 'function') : 'No JS wrapper');
       reject(new Error(errorMsg));
       return;
     }
@@ -363,7 +369,7 @@ export const getTodayStepCount = (): Promise<number> => {
         // Handle authorization errors specifically
         const errorObj = typeof error === 'string' ? { message: error } : error;
         const errorMessage = errorObj?.message || String(error);
-        const errorCode = errorObj?.code || errorObj?.userInfo?.['Error reason'] || '';
+        const errorCode = (errorObj as Record<string, unknown>)?.code as string || ((errorObj as Record<string, unknown>)?.userInfo as Record<string, string> | undefined)?.['Error reason'] || '';
         
         console.error('❌ Error fetching step count:', errorMessage);
         console.error('❌ Error details:', JSON.stringify(errorObj, null, 2));
@@ -871,7 +877,7 @@ export const getTodayHealthMetrics = async (): Promise<HealthMetrics> => {
 
         // Helper to check if error is permission-related
         const isPermissionError = (err: Error | string | unknown): boolean => {
-          const errorMessage = err?.message || String(err) || '';
+          const errorMessage = (err as Error)?.message || String(err) || '';
           const errorLower = errorMessage.toLowerCase();
           return (
             errorLower.includes('permission') ||

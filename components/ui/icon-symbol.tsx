@@ -32,7 +32,6 @@ const MAPPING = {
   'circle.fill': 'circle',
   'person.fill': 'person',
   'calendar': 'calendar-today',
-  'sparkles': 'auto-awesome',
   'slider.horizontal.3': 'tune',
   'slider.vertical.3': 'equalizer',
   'tray.fill': 'inbox',

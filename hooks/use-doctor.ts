@@ -27,8 +27,9 @@ export function useDoctor(_providerId: string) {
     // no-op stub
   }, [])
 
-  const pickImage = useCallback(async () => {
+  const pickImage = useCallback(async (): Promise<string | undefined> => {
     // no-op stub
+    return undefined;
   }, [])
 
   const refresh = useCallback(async () => {
