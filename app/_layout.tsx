@@ -31,6 +31,9 @@ export default function RootLayout() {
                     <Stack.Screen name="index" options={{ headerShown: false }} />
                     <Stack.Screen name="(auth)" options={{ headerShown: false }} />
                     <Stack.Screen name="Home" options={{ headerShown: false }} />
+                    <Stack.Screen name="(personal-info)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(care-manager-detail)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(doctor-detail)" options={{ headerShown: false }} />
                     <Stack.Screen
                       name="modal"
                       options={{
