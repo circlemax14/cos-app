@@ -163,8 +163,8 @@ export default function DoctorDetailScreen() {
   }, [providerId]);
 
   // Doctor contact information
-  const doctorPhone = provider?.phone || params.phone as string || '+1234567890';
-  const doctorEmail = provider?.email || params.email as string || 'doctor@example.com';
+  const doctorPhone = provider?.phone || params.phone as string || '';
+  const doctorEmail = provider?.email || params.email as string || '';
   const doctorQualifications = provider?.qualifications || providerQualifications;
   const doctorSpecialty = provider?.specialty || providerSpecialty;
 
@@ -610,28 +610,30 @@ export default function DoctorDetailScreen() {
         
         {/* Communication Options */}
         <View style={styles.communicationContainer}>
-          <TouchableOpacity 
-            style={[styles.communicationButton, { backgroundColor: colors.background }]} 
+          <TouchableOpacity
+            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
             onPress={handleCall}
+            disabled={!doctorPhone}
             accessibilityLabel="Call doctor"
             accessibilityRole="button"
           >
             <MaterialIcons name="phone" size={getScaledFontSize(24)} color="#008080" />
             <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Call</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.communicationButton, { backgroundColor: colors.background }]} 
+
+          <TouchableOpacity
+            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
             onPress={handleMessage}
+            disabled={!doctorPhone}
             accessibilityLabel="Message doctor"
             accessibilityRole="button"
           >
             <MaterialIcons name="message" size={getScaledFontSize(24)} color="#008080" />
             <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Message</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.communicationButton, { backgroundColor: colors.background }]} 
+
+          <TouchableOpacity
+            style={[styles.communicationButton, { backgroundColor: colors.background }]}
             onPress={handleVideoCall}
             accessibilityLabel="Video call doctor"
             accessibilityRole="button"
@@ -639,10 +641,11 @@ export default function DoctorDetailScreen() {
             <MaterialIcons name="videocam" size={getScaledFontSize(24)} color="#008080" />
             <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Video</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.communicationButton, { backgroundColor: colors.background }]} 
+
+          <TouchableOpacity
+            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorEmail ? 1 : 0.4 }]}
             onPress={handleEmail}
+            disabled={!doctorEmail}
             accessibilityLabel="Email doctor"
             accessibilityRole="button"
           >
