@@ -92,7 +92,7 @@ export default function JennyScheduleScreen() {
           fontSize: getScaledFontSize(20),
           fontWeight: getScaledFontWeight(600) as any,
           color: colors.text
-        }]}>Today's Schedule</Text>
+        }]}>Today&apos;s Schedule</Text>
         <View style={styles.headerSpacer} />
       </View>
 

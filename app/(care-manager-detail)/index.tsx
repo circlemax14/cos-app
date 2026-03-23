@@ -309,7 +309,7 @@ export default function CareManagerDetailScreen() {
                   </Text>
                   
                   <Text style={[styles.consentDescription, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
-                    By selecting "Yes", you agree to share your health information with the care management agency to facilitate care coordination and management services.
+                    By selecting &quot;Yes&quot;, you agree to share your health information with the care management agency to facilitate care coordination and management services.
                   </Text>
                 </View>
 

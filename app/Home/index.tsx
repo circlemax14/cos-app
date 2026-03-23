@@ -2335,7 +2335,7 @@ export default function HomeScreen() {
                 flex: 1,
               }
             ]}>
-              {getFirstName(patientName)}'s Circle of Support
+              {getFirstName(patientName)}&apos;s Circle of Support
             </Text>
             <TouchableOpacity
               onPress={toggleViewMode}

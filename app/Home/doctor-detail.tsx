@@ -828,7 +828,7 @@ export default function DoctorDetailScreen() {
               </Text>
               
               <Text style={[styles.consentDescription, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
-                By selecting "Yes", you agree to share your health information with this provider to facilitate care coordination and treatment.
+                By selecting &quot;Yes&quot;, you agree to share your health information with this provider to facilitate care coordination and treatment.
               </Text>
             </View>
 

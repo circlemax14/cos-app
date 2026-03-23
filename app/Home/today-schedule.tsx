@@ -290,7 +290,7 @@ export default function TodayScheduleScreen() {
                 color: colors.text,
               }
             ]}>
-            Today's Schedule
+            Today&apos;s Schedule
           </Text>
           <View style={{ width: 40 }} />
         </View>
@@ -481,7 +481,7 @@ export default function TodayScheduleScreen() {
                     marginBottom: 16,
                   }
                 ]}>
-                  Today's Health Metrics
+                  Today&apos;s Health Metrics
                 </Text>
                 
                 <View style={styles.healthMetricsGrid}>
@@ -625,7 +625,7 @@ export default function TodayScheduleScreen() {
                 marginBottom: 8,
               }
             ]}>
-              Today's Progress
+              Today&apos;s Progress
             </Text>
             <View style={styles.progressBarContainer}>
               <View style={[styles.progressBar]}>
@@ -662,7 +662,7 @@ export default function TodayScheduleScreen() {
               color: colors.text,
             }
           ]}>
-            Today's Tasks
+            Today&apos;s Tasks
           </Text>
           
           {tasks.map((task, index) => (
