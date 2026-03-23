@@ -1099,7 +1099,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
-    height: 48,
+    minHeight: 48,
   },
   cardsContainer: {
     padding: 16,

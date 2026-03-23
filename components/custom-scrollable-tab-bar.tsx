@@ -105,8 +105,9 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         style={[
           styles.tabButton,
           {
-            paddingHorizontal: getScaledFontSize(16),
-            minWidth: getScaledFontSize(80),
+            paddingHorizontal: getScaledFontSize(14),
+            paddingVertical: getScaledFontSize(10),
+            minWidth: getScaledFontSize(70),
           },
           shouldDistributeEvenly && styles.tabButtonDistributed
         ]}>
@@ -176,19 +177,18 @@ const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
   },
   tabsContainerDistributed: {
     width: '100%',
     justifyContent: 'space-around',
   },
   tabButton: {
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabButtonDistributed: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   tabContent: {
     alignItems: 'center',
