@@ -145,7 +145,7 @@ export async function fetchProviderProgressNotes(providerId: string): Promise<Pr
     data: { reports: Array<{ id: string; title: string; date: string; performer: string; conclusion?: string }> };
   }>('/v1/patients/me/reports');
   return res.data.data.reports
-    .filter((r) => r.performer?.toLowerCase().includes(providerId.toLowerCase()))
+    .filter((r) => r.performer?.includes(providerId) || r.performer?.includes(`Practitioner/${providerId}`))
     .map((r) => ({
       id: r.id,
       date: r.date?.split('T')[0] ?? '',
