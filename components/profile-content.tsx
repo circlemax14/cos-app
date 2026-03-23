@@ -111,6 +111,7 @@ export function ProfileContent({
             />
           </Card>
 
+          {/* TODO: Temporarily hidden — re-enable when ready
           <Card style={styles.menuCard}>
             <List.Item
               title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Services</Text>}
@@ -150,6 +151,7 @@ export function ProfileContent({
               onPress={() => router.push('/Home/proxy-management')}
             />
           </Card>
+          */}
 
           <Card style={styles.menuCard}>
             <List.Item
@@ -165,6 +167,7 @@ export function ProfileContent({
             />
           </Card>
 
+          {/* TODO: Temporarily hidden — re-enable when ready
           <Card style={styles.menuCard}>
             <List.Item
               title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Notifications</Text>}
@@ -184,6 +187,7 @@ export function ProfileContent({
               onPress={() => {}}
             />
           </Card>
+          */}
         </View>
       )}
 
