@@ -128,6 +128,11 @@ export default function UsageGuidelinesScreen() {
         <Text style={[styles.instruction, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
           Please read the following guidelines carefully. Scroll to the bottom to accept.
         </Text>
+        <View style={[styles.disclaimerBanner, { backgroundColor: colors.card ?? '#f0f7ff', borderColor: colors.border ?? '#d0e4f7' }]}>
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), textAlign: 'center', lineHeight: getScaledFontSize(18) }}>
+            ⚕️ This app is for care coordination only and does not provide medical advice. Always consult your healthcare provider for medical decisions.
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -227,6 +232,13 @@ const styles = StyleSheet.create({
   instruction: {
     marginTop: 4,
     fontStyle: 'italic',
+  },
+  disclaimerBanner: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   scrollView: {
     flex: 1,
