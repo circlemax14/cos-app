@@ -1,0 +1,16 @@
+diff --git a/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx b/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx
+index ce803d7..5aee95f 100644
+--- a/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx
++++ b/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx
+@@ -191,10 +191,9 @@ const styles = StyleSheet.create({
+   tabRoot: { position: 'relative' },
+   tabRootFixed: { flex: 1 },
+   touchableRipple: {
+-    height: 48,
++    minHeight: 48,
+     justifyContent: 'center',
+     alignItems: 'center',
+-    overflow: 'hidden',
+   },
+   touchableRippleTop: {
+     height: 72,
