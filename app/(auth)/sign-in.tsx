@@ -73,8 +73,7 @@ export default function SignInScreen() {
 
           <View style={styles.form}>
             <Text
-              variant="headlineSmall"
-              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}
+              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}
             >
               Sign In
             </Text>
@@ -132,7 +131,7 @@ export default function SignInScreen() {
               disabled={loading}
               style={styles.submit}
               contentStyle={styles.submitContent}
-              labelStyle={styles.submitLabel}
+              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
               accessibilityLabel="Sign in with email and password"
             >
               Sign In
@@ -166,16 +165,13 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
-    minHeight: '100%',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    paddingTop: 0,
     gap: 24,
-    minHeight: '100%',
+    flexGrow: 1,
   },
   form: {
     width: '100%',
@@ -202,7 +198,6 @@ const styles = StyleSheet.create({
   submitLabel: {
     color: 'white',
     fontWeight: '600',
-    fontSize: 16,
   },
   switchRow: {
     flexDirection: 'row',

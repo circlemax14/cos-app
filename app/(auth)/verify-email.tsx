@@ -103,13 +103,12 @@ export default function VerifyEmailScreen() {
 
             <View style={styles.form}>
               <Text
-                variant="headlineSmall"
-                style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}
+                style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}
               >
                 Verify your email
               </Text>
               <Text
-                style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}
+                style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(22) }]}
               >
                 We sent a 6-digit code to{'\n'}
                 <Text style={{ color: colors.text, fontWeight: getScaledFontWeight(600) as any }}>
@@ -135,6 +134,8 @@ export default function VerifyEmailScreen() {
                         borderColor: digit ? colors.primary : colors.border,
                         backgroundColor: 'transparent',
                         fontSize: getScaledFontSize(22),
+                        width: getScaledFontSize(48),
+                        height: getScaledFontSize(56),
                       },
                     ]}
                   />
@@ -161,7 +162,7 @@ export default function VerifyEmailScreen() {
                 disabled={loading || code.length < 6}
                 style={styles.submit}
                 contentStyle={styles.submitContent}
-                labelStyle={styles.submitLabel}
+                labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
               >
                 Verify
               </Button>
@@ -197,15 +198,13 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
-    minHeight: '100%',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     gap: 24,
-    minHeight: '100%',
+    flexGrow: 1,
   },
   form: {
     width: '100%',
@@ -227,8 +226,6 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   otpBox: {
-    width: 48,
-    height: 56,
     borderWidth: 1.5,
     borderRadius: 12,
     textAlign: 'center',
@@ -252,6 +249,5 @@ const styles = StyleSheet.create({
   submitLabel: {
     color: 'white',
     fontWeight: '600',
-    fontSize: 16,
   },
 });

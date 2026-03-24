@@ -4,10 +4,10 @@ import { getCategoryIcon, getSubCategoryIcon } from './category-icons';
  * Category groups for Circle of Support
  * Structure: Category -> Sub-categories -> Providers
  *
- * Three categories are active:
+ * Two categories are active:
  *  1. Care Manager – EHR-linked agencies
  *  2. Medical      – EHR-linked practitioners
- *  3. Integrative  – Non-EHR providers uploaded by the user
+ *  (Integrative – Non-EHR providers – temporarily disabled)
  */
 
 export interface SubCategory {
@@ -46,14 +46,15 @@ export const SUPPORT_CATEGORIES: Category[] = [
       { id: 'others', name: 'Others', icon: getSubCategoryIcon('others'), keywords: ['healthcare', 'provider', 'practitioner', 'medical'] },
     ],
   },
-  {
-    id: 'integrative',
-    name: 'Integrative',
-    icon: getCategoryIcon('integrative'),
-    // Integrative providers come from user-uploaded files (non-EHR).
-    // Managed by services/non-ehr-processor.ts, not tracked in sub-categories here.
-    subCategories: [],
-  },
+  // TODO: Re-enable when Integrative feature is ready
+  // {
+  //   id: 'integrative',
+  //   name: 'Integrative',
+  //   icon: getCategoryIcon('integrative'),
+  //   // Integrative providers come from user-uploaded files (non-EHR).
+  //   // Managed by services/non-ehr-processor.ts, not tracked in sub-categories here.
+  //   subCategories: [],
+  // },
 ];
 
 /**
