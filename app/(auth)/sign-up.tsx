@@ -1,7 +1,8 @@
+import Checkbox from 'expo-checkbox';
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text as RNText, View } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -28,6 +29,7 @@ export default function SignUpScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const onSubmit = async () => {
     setLoading(true);
@@ -56,7 +58,7 @@ export default function SignUpScreen() {
         <View style={styles.container}>
           <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(140), height: getScaledFontSize(140) }]} contentFit="contain" />
           <View style={styles.form}>
-            <Text variant="headlineSmall" style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>Sign Up</Text>
+            <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}>Sign Up</Text>
             <TextInput
               mode="flat"
               label="Email"
@@ -90,28 +92,22 @@ export default function SignUpScreen() {
                 />
               }
             />
-            {password.length > 0 && (
-              <View style={styles.requirements}>
-                <Text style={[styles.requirementsTitle, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
-                  Password requirements:
-                </Text>
-                {PASSWORD_RULES.map((rule) => {
-                  const met = rule.test(password);
-                  return (
-                    <View key={rule.label} style={styles.requirementRow}>
-                      <IconSymbol
-                        name={met ? 'checkmark.circle.fill' : 'xmark.circle.fill'}
-                        size={getScaledFontSize(15)}
-                        color={met ? '#16a34a' : '#dc2626'}
-                      />
-                      <Text style={[styles.requirementText, { color: met ? '#16a34a' : '#dc2626', fontSize: getScaledFontSize(13) }]}>
-                        {rule.label}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+            {password.length > 0 && (() => {
+              const firstUnmet = PASSWORD_RULES.find((rule) => !rule.test(password));
+              if (!firstUnmet) return null;
+              return (
+                <View style={styles.requirementRow}>
+                  <IconSymbol
+                    name="info.circle.fill"
+                    size={getScaledFontSize(15)}
+                    color="#b45309"
+                  />
+                  <Text style={[styles.requirementText, { color: '#b45309', fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(18) }]}>
+                    {firstUnmet.label}
+                  </Text>
+                </View>
+              );
+            })()}
             <TextInput
               mode="flat"
               label="Confirm Password"
@@ -135,15 +131,40 @@ export default function SignUpScreen() {
               }
             />
             {error ? <Text style={[styles.error, { fontSize: getScaledFontSize(16) }]}>{error}</Text> : null}
+
+            <Pressable
+              style={styles.termsRow}
+              onPress={() => setTermsAccepted(v => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: termsAccepted }}
+              accessibilityLabel="I agree to the Terms and Conditions"
+            >
+              <Checkbox
+                value={termsAccepted}
+                onValueChange={setTermsAccepted}
+                color={termsAccepted ? colors.primary : undefined}
+              />
+              <RNText style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(20), flex: 1 }}>
+                I agree to the{' '}
+                <RNText
+                  onPress={(e) => { e.stopPropagation(); router.push('/(auth)/terms' as never); }}
+                  style={{ color: '#2563eb', fontWeight: '600', textDecorationLine: 'underline' }}
+                >
+                  Terms and Conditions
+                </RNText>
+              </RNText>
+            </Pressable>
+
             <Button
               mode="contained"
-              buttonColor={loading ? "#9ca3af" : "#2563eb"}
+              buttonColor={loading || !termsAccepted ? '#9ca3af' : '#2563eb'}
               onPress={onSubmit}
               loading={loading}
-              disabled={loading}
+              disabled={loading || !termsAccepted}
               style={styles.submit}
               contentStyle={styles.submitContent}
-              labelStyle={styles.submitLabel}
+              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
+              accessibilityLabel={termsAccepted ? 'Sign up' : 'Accept terms and conditions to sign up'}
             >
               Sign Up
             </Button>
@@ -167,15 +188,13 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
-    minHeight: '100%',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     gap: 24,
-    minHeight: '100%',
+    flexGrow: 1,
   },
   form: {
     width: '100%',
@@ -192,18 +211,11 @@ const styles = StyleSheet.create({
   inputOutline: {
     borderRadius: 14,
   },
-  requirements: {
-    gap: 4,
-    paddingHorizontal: 4,
-  },
-  requirementsTitle: {
-    fontWeight: '600',
-    marginBottom: 2,
-  },
   requirementRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 4,
   },
   requirementText: {
     fontWeight: '500',
@@ -218,7 +230,13 @@ const styles = StyleSheet.create({
   submitLabel: {
     color: 'white',
     fontWeight: '600',
-    fontSize: 16,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 4,
+    paddingHorizontal: 4,
   },
   switchRow: {
     flexDirection: 'row',
