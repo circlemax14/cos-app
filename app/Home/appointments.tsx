@@ -1,9 +1,10 @@
 import { AppWrapper } from '@/components/app-wrapper';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import type { MarkedDates } from 'react-native-calendars/src/types';
 import { Card } from 'react-native-paper';
@@ -14,9 +15,16 @@ export default function AppointmentsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const { data, isLoading, isError, refetch } = useAppointments();
   const appointments = data ?? [];
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   // Map API appointments to display-friendly objects with parsed dates and colors
   const displayAppointments = useMemo(() => {
@@ -117,71 +125,103 @@ export default function AppointmentsScreen() {
 
   return (
     <AppWrapper>
-      <ScrollView style={styles.container}>
-        <Text style={[styles.title, { fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>Appointments Calendar</Text>
-
-        {/* Calendar */}
-        <Card style={styles.calendarCard}>
-          <Calendar
-            onDayPress={onDayPress}
-            markedDates={markedDates}
-            markingType="multi-dot"
-            theme={{
-              backgroundColor: '#ffffff',
-              calendarBackground: '#ffffff',
-              textSectionTitleColor: '#b6c1cd',
-              selectedDayBackgroundColor: '#1976D2',
-              selectedDayTextColor: '#ffffff',
-              todayTextColor: '#1976D2',
-              dayTextColor: '#2d4150',
-              textDisabledColor: '#d9e1e8',
-              dotColor: '#00adf5',
-              selectedDotColor: '#ffffff',
-              arrowColor: '#1976D2',
-              monthTextColor: '#2d4150',
-              indicatorColor: '#1976D2',
-              textDayFontFamily: 'System',
-              textMonthFontFamily: 'System',
-              textDayHeaderFontFamily: 'System',
-              textDayFontWeight: getScaledFontWeight(300) as any,
-              textMonthFontWeight: getScaledFontWeight(600) as any,
-              textDayHeaderFontWeight: getScaledFontWeight(300) as any,
-              textDayFontSize: 16,
-              textMonthFontSize: 16,
-              textDayHeaderFontSize: 13,
-            }}
-            style={styles.calendar}
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
           />
-        </Card>
+        }
+      >
+        <Text style={[styles.title, { fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>Appointments</Text>
+        <Text style={[styles.refreshHint, { color: colors.subtext, fontSize: getScaledFontSize(12), lineHeight: getScaledFontSize(16) }]}>
+          Pull down to refresh
+        </Text>
 
-        {/* Selected Date Appointments */}
-        <Card style={styles.appointmentsListCard}>
-          <Text style={[styles.sectionTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, paddingHorizontal: getScaledFontSize(16) }]}>
-            Appointments for {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            }) : 'Selected Date'}
-          </Text>
-          {selectedDateAppointments.length > 0 ? (
-            selectedDateAppointments.map((appointment) => (
-              <View key={appointment.id} style={[styles.appointmentItem, { paddingHorizontal: getScaledFontSize(16), paddingVertical: getScaledFontSize(12) }]}>
-                <View style={[styles.appointmentColor, { backgroundColor: appointment.color, flexShrink: 0 }]} />
-                <View style={styles.appointmentDetails}>
-                  <Text style={[styles.appointmentTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>{appointment.title}</Text>
-                  <Text style={[styles.appointmentDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                    {appointment.time}
-                  </Text>
-                </View>
+        {appointments.length === 0 ? (
+          /* Empty state — no data from API */
+          <Card style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+            <Card.Content>
+              <View style={styles.emptyContainer}>
+                <IconSymbol name="calendar" size={getScaledFontSize(48)} color={colors.text + '60'} />
+                <Text style={[styles.emptyText, { color: colors.text + '80', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>
+                  No appointments found
+                </Text>
+                <Text style={[styles.emptySubtext, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
+                  Your upcoming and past appointments will appear here once they are available from your connected clinics.
+                </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.noAppointmentsContainer}>
-              <Text style={[styles.noAppointmentsText, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>No appointments scheduled for this date</Text>
-            </View>
-          )}
-        </Card>
+            </Card.Content>
+          </Card>
+        ) : (
+          <>
+            {/* Calendar */}
+            <Card style={styles.calendarCard}>
+              <Calendar
+                onDayPress={onDayPress}
+                markedDates={markedDates}
+                markingType="multi-dot"
+                theme={{
+                  backgroundColor: '#ffffff',
+                  calendarBackground: '#ffffff',
+                  textSectionTitleColor: '#b6c1cd',
+                  selectedDayBackgroundColor: '#1976D2',
+                  selectedDayTextColor: '#ffffff',
+                  todayTextColor: '#1976D2',
+                  dayTextColor: '#2d4150',
+                  textDisabledColor: '#d9e1e8',
+                  dotColor: '#00adf5',
+                  selectedDotColor: '#ffffff',
+                  arrowColor: '#1976D2',
+                  monthTextColor: '#2d4150',
+                  indicatorColor: '#1976D2',
+                  textDayFontFamily: 'System',
+                  textMonthFontFamily: 'System',
+                  textDayHeaderFontFamily: 'System',
+                  textDayFontWeight: getScaledFontWeight(300) as any,
+                  textMonthFontWeight: getScaledFontWeight(600) as any,
+                  textDayHeaderFontWeight: getScaledFontWeight(300) as any,
+                  textDayFontSize: 16,
+                  textMonthFontSize: 16,
+                  textDayHeaderFontSize: 13,
+                }}
+                style={styles.calendar}
+              />
+            </Card>
+
+            {/* Selected Date Appointments */}
+            <Card style={styles.appointmentsListCard}>
+              <Text style={[styles.sectionTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, paddingHorizontal: getScaledFontSize(16) }]}>
+                Appointments for {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                }) : 'Selected Date'}
+              </Text>
+              {selectedDateAppointments.length > 0 ? (
+                selectedDateAppointments.map((appointment) => (
+                  <View key={appointment.id} style={[styles.appointmentItem, { paddingHorizontal: getScaledFontSize(16), paddingVertical: getScaledFontSize(12) }]}>
+                    <View style={[styles.appointmentColor, { backgroundColor: appointment.color, flexShrink: 0 }]} />
+                    <View style={styles.appointmentDetails}>
+                      <Text style={[styles.appointmentTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>{appointment.title}</Text>
+                      <Text style={[styles.appointmentDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+                        {appointment.time}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.noAppointmentsContainer}>
+                  <Text style={[styles.noAppointmentsText, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>No appointments scheduled for this date</Text>
+                </View>
+              )}
+            </Card>
+          </>
+        )}
       </ScrollView>
     </AppWrapper>
   );
@@ -215,10 +255,35 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    marginBottom: 24,
+    marginBottom: 4,
     textAlign: 'center',
     color: '#333',
   },
+  refreshHint: {
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  // Empty state
+  emptyCard: {
+    marginBottom: 16,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  // Calendar
   calendarCard: {
     marginBottom: 20,
     elevation: 4,

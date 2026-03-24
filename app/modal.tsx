@@ -771,7 +771,7 @@ export default function ModalScreen() {
                             color: colors.text,
                             paddingHorizontal: Math.max(8, getScaledFontSize(12) / 2),
                             textAlign: 'center',
-                            lineHeight: getScaledFontSize(18)
+                            lineHeight: getScaledFontSize(18),
                           }}
                           tabHeaderStyle={{
                             backgroundColor: colors.background,

@@ -1248,6 +1248,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   styles.listItemName,
                   {
                     fontSize: getScaledFontSize(16),
+                    lineHeight: getScaledFontSize(22),
                     fontWeight: getScaledFontWeight(600) as any,
                     color: colors.text,
                     marginBottom: getScaledFontSize(4),
