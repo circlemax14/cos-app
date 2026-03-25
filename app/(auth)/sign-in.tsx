@@ -27,6 +27,11 @@ export default function SignInScreen() {
       router.replace('/(onboarding)/fasten-connect' as never);
     } else if (!user.dataReady && user.ehiExportPending) {
       router.replace('/(onboarding)/data-processing' as never);
+    } else if (!user.dataReady && user.ehiExportFailed) {
+      router.replace('/(onboarding)/data-processing' as never);
+    } else if (!user.dataReady && user.fastenConnected) {
+      // Fallback: connected but no data and unknown status — show processing/retry screen
+      router.replace('/(onboarding)/data-processing' as never);
     } else {
       router.replace('/Home' as never);
     }

@@ -21,6 +21,7 @@ export interface UserProfile {
   fastenConnected: boolean;
   dataReady: boolean;
   ehiExportPending: boolean;
+  ehiExportFailed: boolean;
 }
 
 /**
