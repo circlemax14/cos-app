@@ -19,7 +19,8 @@ type GateState = 'loading' | 'no-internet' | 'done';
 function getDestination(user: UserProfile): string {
   if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
   if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
-  if (!user.dataReady && user.ehiExportPending) return '/(onboarding)/data-processing';
+  // If connected but data not ready (pending, failed, or unknown status) → show data-processing
+  if (!user.dataReady && user.fastenConnected) return '/(onboarding)/data-processing';
   return '/Home';
 }
 
