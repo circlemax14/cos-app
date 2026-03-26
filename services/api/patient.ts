@@ -54,12 +54,14 @@ export async function fetchPatientInfo(): Promise<Patient | null> {
   // Try HealthLake FHIR Patient first
   try {
     const res = await apiClient.get<{ success: boolean; data: FhirPatientResource }>('/v1/patients/me');
-    return mapToPatient(res.data.data);
+    const patient = mapToPatient(res.data.data);
+    // If HealthLake returned a patient but with no name, fall through to DynamoDB
+    if (patient.name) return patient;
   } catch {
     // HealthLake may be unavailable (403/permissions) — fall back to DynamoDB
   }
 
-  // Fallback: read patientDetails from the /auth/me response
+  // Fallback: read patientDetails from the /auth/me response (populated by webhook)
   try {
     const meRes = await apiClient.get<{
       success: boolean;
