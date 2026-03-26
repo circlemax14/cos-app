@@ -3,22 +3,58 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
+import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Calendar, DateData } from 'react-native-calendars';
-import type { MarkedDates } from 'react-native-calendars/src/types';
-import { Card } from 'react-native-paper';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { router } from 'expo-router';
 
-const APPOINTMENT_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  booked: { bg: '#E3F2FD', text: '#1565C0' },
+  arrived: { bg: '#E8F5E9', text: '#2E7D32' },
+  fulfilled: { bg: '#E8F5E9', text: '#2E7D32' },
+  finished: { bg: '#F3E5F5', text: '#7B1FA2' },
+  cancelled: { bg: '#FFEBEE', text: '#C62828' },
+  noshow: { bg: '#FFF3E0', text: '#E65100' },
+  'entered-in-error': { bg: '#FFEBEE', text: '#C62828' },
+  planned: { bg: '#E3F2FD', text: '#1565C0' },
+  'in-progress': { bg: '#FFF8E1', text: '#F57F17' },
+  triaged: { bg: '#FFF8E1', text: '#F57F17' },
+  onleave: { bg: '#FFF3E0', text: '#E65100' },
+};
+
+const RESOURCE_TYPE_STYLES = {
+  Appointment: { bg: '#E3F2FD', text: '#1565C0', label: 'Appointment' },
+  Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
+};
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export default function AppointmentsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data, isLoading, isError, refetch } = useAppointments();
-  const appointments = data ?? [];
+  const allAppointments = data ?? [];
+
+  // Filter by search query (matches type, doctor, clinic, diagnosis, status, resourceType)
+  const appointments = useMemo(() => {
+    if (!searchQuery.trim()) return allAppointments;
+    const q = searchQuery.toLowerCase();
+    return allAppointments.filter((apt) =>
+      (apt.type?.toLowerCase().includes(q)) ||
+      (apt.doctorName?.toLowerCase().includes(q)) ||
+      (apt.clinicName?.toLowerCase().includes(q)) ||
+      (apt.diagnosis?.toLowerCase().includes(q)) ||
+      (apt.status?.toLowerCase().includes(q)) ||
+      (apt.resourceType?.toLowerCase().includes(q)) ||
+      (apt.encounterClass?.toLowerCase().includes(q))
+    );
+  }, [allAppointments, searchQuery]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -26,78 +62,26 @@ export default function AppointmentsScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  // Map API appointments to display-friendly objects with parsed dates and colors
-  const displayAppointments = useMemo(() => {
-    return appointments.map((apt, index) => {
-      const dateObj = new Date(apt.date);
-      // Parse time from apt.time (format: "10:00 AM")
-      const timeMatch = apt.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      let hour = 9;
-      let minute = 0;
-      if (timeMatch) {
-        hour = parseInt(timeMatch[1], 10);
-        minute = parseInt(timeMatch[2], 10);
-        if (timeMatch[3].toUpperCase() === 'PM' && hour !== 12) {
-          hour += 12;
-        } else if (timeMatch[3].toUpperCase() === 'AM' && hour === 12) {
-          hour = 0;
-        }
-      }
-      dateObj.setHours(hour, minute, 0, 0);
-
-      const title = apt.doctorName
-        ? `${apt.type || 'Appointment'} - ${apt.doctorName}`
-        : apt.type || 'Appointment';
-
-      return {
-        id: apt.id,
-        title,
-        date: dateObj,
-        color: APPOINTMENT_COLORS[index % APPOINTMENT_COLORS.length],
-        time: apt.time || '9:00 AM',
-      };
-    });
+  // Group appointments by date
+  const groupedByDate = useMemo(() => {
+    const groups: Record<string, Appointment[]> = {};
+    for (const apt of appointments) {
+      const date = apt.date || 'Unknown';
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(apt);
+    }
+    // Sort dates descending (most recent first)
+    return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
   }, [appointments]);
 
-  // Create marked dates for calendar with multi-dot marking
-  const markedDates = useMemo(() => {
-    const marked: MarkedDates = {};
-
-    displayAppointments.forEach(appointment => {
-      const dateString = appointment.date.toISOString().split('T')[0];
-
-      if (!marked[dateString]) {
-        marked[dateString] = { dots: [] };
-      }
-
-      marked[dateString]!.dots!.push({
-        color: appointment.color,
-        selectedDotColor: appointment.color,
-      });
+  const handleCardPress = (appointment: Appointment) => {
+    router.push({
+      pathname: '/Home/appointment-detail',
+      params: {
+        id: appointment.id,
+        data: JSON.stringify(appointment),
+      },
     });
-
-    // Mark selected date
-    if (selectedDate) {
-      marked[selectedDate] = {
-        ...marked[selectedDate],
-        selected: true,
-        selectedColor: '#1976D2',
-      };
-    }
-
-    return marked;
-  }, [displayAppointments, selectedDate]);
-
-  // Get appointments for selected date
-  const selectedDateAppointments = useMemo(() => {
-    if (!selectedDate) return [];
-    return displayAppointments
-      .filter(apt => apt.date.toISOString().split('T')[0] === selectedDate)
-      .sort((a, b) => a.time.localeCompare(b.time));
-  }, [displayAppointments, selectedDate]);
-
-  const onDayPress = (day: DateData) => {
-    setSelectedDate(day.dateString);
   };
 
   if (isLoading) {
@@ -128,100 +112,131 @@ export default function AppointmentsScreen() {
       <ScrollView
         style={styles.container}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
         }
       >
-        <Text style={[styles.title, { fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>Appointments</Text>
-        <Text style={[styles.refreshHint, { color: colors.subtext, fontSize: getScaledFontSize(12), lineHeight: getScaledFontSize(16) }]}>
-          Pull down to refresh
+        <Text style={[styles.title, { fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>
+          Appointments & Encounters
+        </Text>
+        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+          {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
         </Text>
 
-        {appointments.length === 0 ? (
-          /* Empty state — no data from API */
-          <Card style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-            <Card.Content>
-              <View style={styles.emptyContainer}>
-                <IconSymbol name="calendar" size={getScaledFontSize(48)} color={colors.text + '60'} />
-                <Text style={[styles.emptyText, { color: colors.text + '80', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>
-                  No appointments found
-                </Text>
-                <Text style={[styles.emptySubtext, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
-                  Your upcoming and past appointments will appear here once they are available from your connected clinics.
-                </Text>
-              </View>
-            </Card.Content>
-          </Card>
-        ) : (
-          <>
-            {/* Calendar */}
-            <Card style={styles.calendarCard}>
-              <Calendar
-                onDayPress={onDayPress}
-                markedDates={markedDates}
-                markingType="multi-dot"
-                theme={{
-                  backgroundColor: '#ffffff',
-                  calendarBackground: '#ffffff',
-                  textSectionTitleColor: '#b6c1cd',
-                  selectedDayBackgroundColor: '#1976D2',
-                  selectedDayTextColor: '#ffffff',
-                  todayTextColor: '#1976D2',
-                  dayTextColor: '#2d4150',
-                  textDisabledColor: '#d9e1e8',
-                  dotColor: '#00adf5',
-                  selectedDotColor: '#ffffff',
-                  arrowColor: '#1976D2',
-                  monthTextColor: '#2d4150',
-                  indicatorColor: '#1976D2',
-                  textDayFontFamily: 'System',
-                  textMonthFontFamily: 'System',
-                  textDayHeaderFontFamily: 'System',
-                  textDayFontWeight: getScaledFontWeight(300) as any,
-                  textMonthFontWeight: getScaledFontWeight(600) as any,
-                  textDayHeaderFontWeight: getScaledFontWeight(300) as any,
-                  textDayFontSize: 16,
-                  textMonthFontSize: 16,
-                  textDayHeaderFontSize: 13,
-                }}
-                style={styles.calendar}
-              />
-            </Card>
+        {/* Search bar */}
+        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+          <IconSymbol name="magnifyingglass" size={18} color={colors.subtext} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text, fontSize: getScaledFontSize(14) }]}
+            placeholder="Search by type, doctor, clinic, diagnosis..."
+            placeholderTextColor={colors.subtext}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <IconSymbol name="xmark.circle.fill" size={18} color={colors.subtext} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
-            {/* Selected Date Appointments */}
-            <Card style={styles.appointmentsListCard}>
-              <Text style={[styles.sectionTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, paddingHorizontal: getScaledFontSize(16) }]}>
-                Appointments for {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                }) : 'Selected Date'}
+        {appointments.length === 0 ? (
+          <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
+            <IconSymbol name="calendar" size={getScaledFontSize(48)} color={colors.text + '60'} />
+            <Text style={[styles.emptyText, { color: colors.text + '80', fontSize: getScaledFontSize(16) }]}>
+              No appointments or encounters found
+            </Text>
+            <Text style={[styles.emptySubtext, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
+              Your records will appear here once available from your connected clinics.
+            </Text>
+          </View>
+        ) : (
+          groupedByDate.map(([date, items]) => (
+            <View key={date} style={styles.dateGroup}>
+              <Text style={[styles.dateHeader, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+                {formatDate(date)}
               </Text>
-              {selectedDateAppointments.length > 0 ? (
-                selectedDateAppointments.map((appointment) => (
-                  <View key={appointment.id} style={[styles.appointmentItem, { paddingHorizontal: getScaledFontSize(16), paddingVertical: getScaledFontSize(12) }]}>
-                    <View style={[styles.appointmentColor, { backgroundColor: appointment.color, flexShrink: 0 }]} />
-                    <View style={styles.appointmentDetails}>
-                      <Text style={[styles.appointmentTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>{appointment.title}</Text>
-                      <Text style={[styles.appointmentDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                        {appointment.time}
-                      </Text>
+              {items.map((apt) => {
+                const resStyle = RESOURCE_TYPE_STYLES[apt.resourceType ?? 'Encounter'];
+                const statusStyle = STATUS_COLORS[apt.status] ?? STATUS_COLORS.finished;
+
+                return (
+                  <TouchableOpacity
+                    key={apt.id}
+                    activeOpacity={0.7}
+                    onPress={() => handleCardPress(apt)}
+                    style={[styles.card, { backgroundColor: colors.card }]}
+                  >
+                    {/* Top row: resource type badge + status badge */}
+                    <View style={styles.badgeRow}>
+                      <View style={[styles.badge, { backgroundColor: resStyle.bg }]}>
+                        <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(11) }]}>
+                          {resStyle.label}
+                        </Text>
+                      </View>
+                      <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
+                        <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(11) }]}>
+                          {apt.status}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.noAppointmentsContainer}>
-                  <Text style={[styles.noAppointmentsText, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>No appointments scheduled for this date</Text>
-                </View>
-              )}
-            </Card>
-          </>
+
+                    {/* Title */}
+                    <Text style={[styles.cardTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+                      {apt.type || 'Office Visit'}
+                    </Text>
+
+                    {/* Time */}
+                    {apt.time ? (
+                      <View style={styles.infoRow}>
+                        <IconSymbol name="clock" size={14} color={colors.subtext} />
+                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                          {apt.time}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Doctor */}
+                    {apt.doctorName && apt.doctorName !== 'Unknown Provider' ? (
+                      <View style={styles.infoRow}>
+                        <IconSymbol name="person" size={14} color={colors.subtext} />
+                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                          {apt.doctorName}{apt.doctorSpecialty ? ` - ${apt.doctorSpecialty}` : ''}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Clinic */}
+                    {apt.clinicName ? (
+                      <View style={styles.infoRow}>
+                        <IconSymbol name="house" size={14} color={colors.subtext} />
+                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                          {apt.clinicName}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Diagnosis */}
+                    {apt.diagnosis ? (
+                      <View style={styles.infoRow}>
+                        <IconSymbol name="doc.text" size={14} color={colors.subtext} />
+                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]} numberOfLines={1}>
+                          {apt.diagnosis}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Chevron */}
+                    <View style={styles.chevron}>
+                      <IconSymbol name="chevron.right" size={16} color={colors.subtext} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))
         )}
+
+        <View style={styles.bottomPadding} />
       </ScrollView>
     </AppWrapper>
   );
@@ -253,95 +268,87 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
     marginBottom: 4,
-    textAlign: 'center',
-    color: '#333',
   },
-  refreshHint: {
-    textAlign: 'center',
+  subtitle: {
+    marginBottom: 12,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     marginBottom: 20,
+    gap: 8,
   },
-  // Empty state
-  emptyCard: {
-    marginBottom: 16,
+  searchInput: {
+    flex: 1,
+    padding: 0,
   },
   emptyContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
     padding: 32,
+    borderRadius: 12,
   },
   emptyText: {
-    fontSize: 16,
-    fontWeight: '500',
     marginTop: 16,
     textAlign: 'center',
   },
   emptySubtext: {
-    fontSize: 14,
     marginTop: 8,
     textAlign: 'center',
   },
-  // Calendar
-  calendarCard: {
+  dateGroup: {
     marginBottom: 20,
-    elevation: 4,
+  },
+  dateHeader: {
+    marginBottom: 10,
+    paddingLeft: 4,
+  },
+  card: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    position: 'relative',
   },
-  calendar: {
-    borderRadius: 8,
-  },
-  appointmentsListCard: {
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-    paddingTop: 16,
-    color: '#333',
-  },
-  appointmentItem: {
+  badgeRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    gap: 8,
+    marginBottom: 8,
   },
-  appointmentColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
-  appointmentDetails: {
+  badgeText: {
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  cardTitle: {
+    marginBottom: 6,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  infoText: {
     flex: 1,
   },
-  appointmentTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
+  chevron: {
+    position: 'absolute',
+    right: 14,
+    top: 14,
   },
-  appointmentDate: {
-    fontSize: 14,
-    color: '#666',
-  },
-  noAppointmentsContainer: {
-    paddingVertical: 24,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  noAppointmentsText: {
-    fontSize: 16,
-    color: '#666',
-    fontStyle: 'italic',
+  bottomPadding: {
+    height: 40,
   },
 });

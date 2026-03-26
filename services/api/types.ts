@@ -47,13 +47,16 @@ export interface Report {
 // ─── Appointment ─────────────────────────────────────────────────────────────
 export interface Appointment {
   id: string;
+  resourceType?: 'Appointment' | 'Encounter';
   date: string;
   time: string;
+  endDate?: string;
   type: string;
   status: string;
   doctorName: string;
   doctorSpecialty?: string;
   clinicName?: string;
+  encounterClass?: string;
   notes?: string;
   diagnosis?: string;
 }

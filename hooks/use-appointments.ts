@@ -1,10 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
-
-export interface Appointment {
-  id: string; date: string; time: string; type: string; status: string
-  doctorName: string; doctorSpecialty: string; clinicName: string; notes?: string; diagnosis?: string
-}
+import type { Appointment } from '@/services/api/types'
 
 interface AppointmentFilters { status?: string; from?: string; to?: string; type?: string }
 
