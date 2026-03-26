@@ -188,7 +188,7 @@ export default function AppointmentsScreen() {
                     {/* Time */}
                     {apt.time ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="clock" size={14} color={colors.subtext} />
+                        <IconSymbol name="clock" size={getScaledFontSize(14)} color={colors.subtext} />
                         <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
                           {apt.time}
                         </Text>
@@ -198,7 +198,7 @@ export default function AppointmentsScreen() {
                     {/* Doctor */}
                     {apt.doctorName && apt.doctorName !== 'Unknown Provider' ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="person" size={14} color={colors.subtext} />
+                        <IconSymbol name="person" size={getScaledFontSize(14)} color={colors.subtext} />
                         <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
                           {apt.doctorName}{apt.doctorSpecialty ? ` - ${apt.doctorSpecialty}` : ''}
                         </Text>
@@ -208,7 +208,7 @@ export default function AppointmentsScreen() {
                     {/* Clinic */}
                     {apt.clinicName ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="house" size={14} color={colors.subtext} />
+                        <IconSymbol name="house" size={getScaledFontSize(14)} color={colors.subtext} />
                         <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
                           {apt.clinicName}
                         </Text>
@@ -218,17 +218,12 @@ export default function AppointmentsScreen() {
                     {/* Diagnosis */}
                     {apt.diagnosis ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="doc.text" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]} numberOfLines={1}>
+                        <IconSymbol name="doc.text" size={getScaledFontSize(14)} color={colors.subtext} />
+                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
                           {apt.diagnosis}
                         </Text>
                       </View>
                     ) : null}
-
-                    {/* Chevron */}
-                    <View style={styles.chevron}>
-                      <IconSymbol name="chevron.right" size={16} color={colors.subtext} />
-                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -315,11 +310,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 3,
-    position: 'relative',
   },
   badgeRow: {
     flexDirection: 'row',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 6,
     marginBottom: 8,
   },
   badge: {
@@ -333,20 +328,21 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     marginBottom: 6,
+    paddingRight: 24,
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
     marginTop: 4,
   },
   infoText: {
     flex: 1,
+    flexWrap: 'wrap',
   },
   chevron: {
-    position: 'absolute',
-    right: 14,
-    top: 14,
+    alignSelf: 'flex-end',
+    marginTop: 8,
   },
   bottomPadding: {
     height: 40,

@@ -35,7 +35,7 @@ function DetailRow({ icon, label, value, colors: themeColors }: { icon: string; 
   return (
     <View style={styles.detailRow}>
       <View style={[styles.detailIcon, { backgroundColor: (themeColors.primary ?? '#1976D2') + '15' }]}>
-        <IconSymbol name={icon as any} size={16} color={themeColors.primary ?? '#1976D2'} />
+        <IconSymbol name={icon as any} size={getScaledFontSize(16)} color={themeColors.primary ?? '#1976D2'} />
       </View>
       <View style={styles.detailContent}>
         <Text style={[styles.detailLabel, { color: themeColors.subtext, fontSize: getScaledFontSize(11) }]}>{label}</Text>
@@ -106,7 +106,7 @@ export default function AppointmentDetailScreen() {
           {/* Date + time summary */}
           {appointment.date ? (
             <View style={styles.headerMeta}>
-              <IconSymbol name="calendar" size={16} color={resStyle.text} />
+              <IconSymbol name="calendar" size={getScaledFontSize(16)} color={resStyle.text} />
               <Text style={[styles.headerMetaText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
                 {formatFullDate(appointment.date)}
                 {timeDisplay ? `  ·  ${timeDisplay}` : ''}
@@ -157,6 +157,7 @@ const styles = StyleSheet.create({
   },
   badgeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
@@ -174,7 +175,7 @@ const styles = StyleSheet.create({
   },
   headerMeta: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
   },
   headerMetaText: {
@@ -196,22 +197,24 @@ const styles = StyleSheet.create({
   },
   detailRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E0E0E0',
   },
   detailIcon: {
-    width: 32,
-    height: 32,
+    minWidth: 32,
+    minHeight: 32,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    flexShrink: 0,
   },
   detailContent: {
     flex: 1,
+    flexShrink: 1,
   },
   detailLabel: {
     textTransform: 'uppercase',
