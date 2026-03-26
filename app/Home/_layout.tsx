@@ -179,6 +179,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="allergies"
+        options={{
+          title: 'Allergies',
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
