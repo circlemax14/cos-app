@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { CustomChat, IMessage, User } from '@/components/ui/custom-chat';
 import { AppWrapper } from '@/components/app-wrapper';

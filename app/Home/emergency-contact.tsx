@@ -88,7 +88,7 @@ export default function EmergencyContactScreen() {
         Alert.alert('Success', 'Contact added');
       }
       closeModal();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save contact. Please try again.');
     }
   };
@@ -106,7 +106,7 @@ export default function EmergencyContactScreen() {
             try {
               await deleteContact.mutateAsync(contact.id);
               Alert.alert('Success', 'Contact removed');
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'Failed to delete contact. Please try again.');
             }
           },

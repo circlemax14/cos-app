@@ -17,7 +17,7 @@ export default function ServicesScreen() {
   const { data: permissionsData } = useFeaturePermissions();
 
   const [services, setServices] = useState<ServiceDefinition[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchAvailableServices()

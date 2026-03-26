@@ -2,7 +2,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { FilterMenu } from '@/components/ui/filter-menu';
 import { Colors } from '@/constants/theme';
-import { SUPPORT_CATEGORIES, getSubCategoriesByCategoryId, getCategoryById, getSubCategoryById, matchProviderToSubCategory, type Category, type SubCategory } from '@/constants/categories';
+import { SUPPORT_CATEGORIES, getCategoryById, getSubCategoryById, matchProviderToSubCategory } from '@/constants/categories';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { Image } from 'expo-image';
@@ -10,13 +10,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Avatar, Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
+import { Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
 import { fetchAppointments } from '@/services/api/appointments';
 import { fetchPatientInfo } from '@/services/api/patient';
-import type { Provider as FastenProvider } from '@/services/api/types';
-import type { Appointment as FastenAppointment } from '@/services/api/types';
+import type { Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -1886,7 +1885,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
   const maxListHeight = hasUpcomingAppointments ? Math.min(screenHeight * 0.65, 600) : undefined;
 
   const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
-  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+  const [, setIsLoadingProviders] = useState(false);
 
   // Load doctor photos for all providers in the list
   const providerIds = fastenProviders.map(p => p.id);
@@ -1971,7 +1970,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
 
     // No providers available
     return [];
-  }, [fastenProviders, departmentId]);
+  }, [fastenProviders]);
 
   return (
     <View style={styles.listContainer}>
@@ -2075,8 +2074,8 @@ export default function HomeScreen() {
   const [viewMode, setViewMode] = React.useState<'circle' | 'list' | 'circle-providers'>('circle');
 
   // Load Fasten Health providers for circle view
-  const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
-  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+  const [, setFastenProviders] = useState<FastenProvider[]>([]);
+  const [, setIsLoadingProviders] = useState(false);
   const { selectedProviders, addProvider, removeProvider, validateAndCleanProviders } = useProviderSelection();
   const [patientName, setPatientName] = useState('');
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
@@ -2263,7 +2262,7 @@ export default function HomeScreen() {
         }),
       ]).start();
     }
-  }, [showProviderDetails, screenWidth]);
+  }, [showProviderDetails, screenWidth, detailsListOpacity, detailsListSlide, mainListOpacity, mainListSlide]);
 
   return (
     <AppWrapper notificationCount={3}>

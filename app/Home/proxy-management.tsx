@@ -92,7 +92,7 @@ export default function ProxyManagementScreen() {
       setPendingName('');
       setPendingScopes([]);
       Alert.alert('Success', 'Proxy has been added successfully');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to add proxy. Please try again.');
     }
   };
@@ -118,7 +118,7 @@ export default function ProxyManagementScreen() {
             try {
               await revokeProxy.mutateAsync(proxyId);
               Alert.alert('Success', 'Proxy has been removed');
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'Failed to remove proxy. Please try again.');
             }
           },
@@ -145,7 +145,7 @@ export default function ProxyManagementScreen() {
       setEditingProxy(null);
       setSelectedScopes([]);
       Alert.alert('Success', 'Proxy permissions updated');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to update proxy. Please try again.');
     }
   };

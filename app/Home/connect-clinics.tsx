@@ -21,7 +21,6 @@ export default function ConnectClinicsScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const navigating = useRef(false);
   const [connectedCount, setConnectedCount] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showProcessingModal, setShowProcessingModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

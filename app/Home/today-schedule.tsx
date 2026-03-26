@@ -1,10 +1,9 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { router } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
-import { Avatar, Card, IconButton, List, Button } from 'react-native-paper';
+import { Card, IconButton, List, Button } from 'react-native-paper';
 import { getTodayHealthMetrics, HealthMetrics } from '@/services/health';
 import { fetchPatientInfo, fetchMedications } from '@/services/api/patient';
 import type { Medication } from '@/services/api/types';
