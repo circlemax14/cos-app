@@ -11,6 +11,7 @@ import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment } f
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
+import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api/data-sharing';
 
 export default function DoctorDetailScreen() {
   const params = useLocalSearchParams();
@@ -134,20 +135,24 @@ export default function DoctorDetailScreen() {
     loadProviderData();
   }, [providerId, providerName, providerQualifications, providerSpecialty]);
 
-  // Load other providers for Share Data tab
+  // Load other providers and existing data shares for Share Data tab
   useEffect(() => {
     const loadOtherProviders = async () => {
       setIsLoadingProviders(true);
       try {
-        const allProviders = await fetchProviders();
+        const [allProviders, existingShares] = await Promise.all([
+          fetchProviders(),
+          fetchDataShares(),
+        ]);
         // Filter out the current doctor
         const filtered = allProviders.filter(p => p.id !== providerId);
         setOtherProviders(filtered);
-        
-        // Initialize share state for all providers (default to false)
+
+        // Initialize share state — true for providers with active shares
+        const activeShareIds = new Set(existingShares.map(s => s.providerId));
         const initialShares: { [key: string]: boolean } = {};
         filtered.forEach(p => {
-          initialShares[p.id] = false;
+          initialShares[p.id] = activeShareIds.has(p.id);
         });
         setDoctorShares(initialShares);
       } catch (error) {
@@ -446,24 +451,50 @@ export default function DoctorDetailScreen() {
     </ScrollView>
   );
 
-  const handleSwitchChange = (providerId: string, providerName: string, value: boolean) => {
+  const handleSwitchChange = async (targetProviderId: string, targetProviderName: string, value: boolean) => {
     if (value) {
       // If turning on, show consent modal
-      setPendingProviderId(providerId);
-      setPendingProviderName(providerName);
+      setPendingProviderId(targetProviderId);
+      setPendingProviderName(targetProviderName);
       setShowConsentModal(true);
     } else {
-      // If turning off, just update state
-      setDoctorShares(prev => ({ ...prev, [providerId]: false }));
+      // If turning off, revoke access via API
+      try {
+        await revokeDataShare(targetProviderId);
+        setDoctorShares(prev => ({ ...prev, [targetProviderId]: false }));
+      } catch {
+        Alert.alert('Error', 'Failed to revoke data sharing. Please try again.');
+      }
     }
   };
 
-  const handleConsentYes = () => {
+  const handleConsentYes = async () => {
     if (pendingProviderId) {
-      setDoctorShares(prev => ({ ...prev, [pendingProviderId]: true }));
-      setShowConsentModal(false);
-      setPendingProviderId(null);
-      setPendingProviderName('');
+      try {
+        // Find the provider's email from the list
+        const targetProvider = otherProviders.find(p => p.id === pendingProviderId);
+        const providerEmail = targetProvider?.email || '';
+
+        await grantDataShare(
+          pendingProviderId,
+          pendingProviderName,
+          providerEmail,
+          doctorName, // patient name context
+        );
+        setDoctorShares(prev => ({ ...prev, [pendingProviderId]: true }));
+        setShowConsentModal(false);
+        setPendingProviderId(null);
+        setPendingProviderName('');
+
+        if (providerEmail) {
+          Alert.alert('Success', `${pendingProviderName} will receive an email notification about the shared access.`);
+        }
+      } catch {
+        Alert.alert('Error', 'Failed to grant data sharing. Please try again.');
+        setShowConsentModal(false);
+        setPendingProviderId(null);
+        setPendingProviderName('');
+      }
     }
   };
 
@@ -593,8 +624,8 @@ export default function DoctorDetailScreen() {
             ) : (
               <InitialsAvatar name={doctorName} size={getScaledFontSize(120)} style={styles.doctorAvatar} />
             )}
-            <TouchableOpacity 
-              style={[styles.editButton, { backgroundColor: colors.tint }]}
+            <TouchableOpacity
+              style={[styles.editButton, { backgroundColor: colors.tint, width: getScaledFontSize(40), height: getScaledFontSize(40), borderRadius: getScaledFontSize(20) }]}
               onPress={handleEditPress}
             >
               <MaterialIcons name="edit" size={getScaledFontSize(20)} color="#fff" />
@@ -633,8 +664,9 @@ export default function DoctorDetailScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.communicationButton, { backgroundColor: colors.background }]}
+            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
             onPress={handleVideoCall}
+            disabled={!doctorPhone}
             accessibilityLabel="Video call doctor"
             accessibilityRole="button"
           >
@@ -691,7 +723,7 @@ export default function DoctorDetailScreen() {
         contentContainerStyle={[styles.modalContainer, { backgroundColor: colors.background }]}
       >
         <ScrollView style={styles.modalContent}>
-          <Text style={[styles.modalTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>
+          <Text style={[styles.modalTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any, marginBottom: getScaledFontSize(24) }]}>
             Edit Doctor Information
           </Text>
 
@@ -723,12 +755,12 @@ export default function DoctorDetailScreen() {
           </View>
 
           {/* Name */}
-          <View style={styles.inputSection}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
+            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
               Name
             </Text>
             <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
               value={editedData.name}
               onChangeText={(text) => setEditedData({ ...editedData, name: text })}
               placeholder="Doctor name"
@@ -737,12 +769,12 @@ export default function DoctorDetailScreen() {
           </View>
 
           {/* Specialty */}
-          <View style={styles.inputSection}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
+            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
               Specialty
             </Text>
             <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
               value={editedData.specialty}
               onChangeText={(text) => setEditedData({ ...editedData, specialty: text })}
               placeholder="Specialty"
@@ -751,12 +783,12 @@ export default function DoctorDetailScreen() {
           </View>
 
           {/* Phone */}
-          <View style={styles.inputSection}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
+            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
               Phone
             </Text>
             <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
               value={editedData.phone}
               onChangeText={(text) => setEditedData({ ...editedData, phone: text })}
               placeholder="Phone number"
@@ -766,12 +798,12 @@ export default function DoctorDetailScreen() {
           </View>
 
           {/* Email */}
-          <View style={styles.inputSection}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
+            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
               Email
             </Text>
             <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
               value={editedData.email}
               onChangeText={(text) => setEditedData({ ...editedData, email: text })}
               placeholder="Email address"
@@ -824,13 +856,13 @@ export default function DoctorDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.consentModalScrollView} showsVerticalScrollIndicator={true}>
+          <ScrollView style={[styles.consentModalScrollView, { maxHeight: getScaledFontSize(400) }]} showsVerticalScrollIndicator={true}>
             <View style={styles.consentSection}>
-              <Text style={[styles.consentQuestion, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>
+              <Text style={[styles.consentQuestion, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, lineHeight: getScaledFontSize(26) }]}>
                 Do you consent to share your health-related data with {pendingProviderName}?
               </Text>
-              
-              <Text style={[styles.consentDescription, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+
+              <Text style={[styles.consentDescription, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                 By selecting &quot;Yes&quot;, you agree to share your health information with this provider to facilitate care coordination and treatment.
               </Text>
             </View>
@@ -839,39 +871,39 @@ export default function DoctorDetailScreen() {
               <Text style={[styles.termsTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
                 Terms and Conditions:
               </Text>
-              
-              <View style={styles.termsList}>
-                <View style={styles.termItem}>
-                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} />
-                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+
+              <View style={[styles.termsList, { gap: getScaledFontSize(12) }]}>
+                <View style={[styles.termItem, { gap: getScaledFontSize(12) }]}>
+                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} style={{ marginTop: getScaledFontSize(2) }} />
+                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                     Your health data will be used solely for medical treatment and care coordination purposes.
                   </Text>
                 </View>
-                
-                <View style={styles.termItem}>
-                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} />
-                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+
+                <View style={[styles.termItem, { gap: getScaledFontSize(12) }]}>
+                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} style={{ marginTop: getScaledFontSize(2) }} />
+                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                     The provider is required to maintain confidentiality and comply with HIPAA regulations.
                   </Text>
                 </View>
-                
-                <View style={styles.termItem}>
-                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} />
-                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+
+                <View style={[styles.termItem, { gap: getScaledFontSize(12) }]}>
+                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} style={{ marginTop: getScaledFontSize(2) }} />
+                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                     You have the right to revoke this consent at any time.
                   </Text>
                 </View>
-                
-                <View style={styles.termItem}>
-                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} />
-                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+
+                <View style={[styles.termItem, { gap: getScaledFontSize(12) }]}>
+                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} style={{ marginTop: getScaledFontSize(2) }} />
+                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                     Your data will be shared securely and only with authorized personnel.
                   </Text>
                 </View>
-                
-                <View style={styles.termItem}>
-                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} />
-                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+
+                <View style={[styles.termItem, { gap: getScaledFontSize(12) }]}>
+                  <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} style={{ marginTop: getScaledFontSize(2) }} />
+                  <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                     The provider will not sell or share your data with third parties without your explicit consent.
                   </Text>
                 </View>
@@ -1251,7 +1283,6 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   consentModalScrollView: {
-    maxHeight: 400,
     padding: 20,
   },
   consentSection: {
