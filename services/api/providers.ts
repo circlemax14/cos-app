@@ -224,3 +224,21 @@ export async function fetchProviderLabReports(providerId?: string): Promise<LabR
     return [];
   }
 }
+
+/**
+ * Fetch AI-generated insight for a specific doctor detail tab.
+ */
+export async function fetchAiInsight(
+  tab: 'treatment' | 'progress' | 'appointments' | 'carePlans',
+  providerName?: string,
+): Promise<{ summary: string; generatedAt: string } | null> {
+  try {
+    const res = await apiClient.post<{ success: boolean; data: { summary: string; generatedAt: string } }>(
+      '/v1/patients/me/ai-insights',
+      { tab, providerName },
+    );
+    return res.data.data ?? null;
+  } catch {
+    return null;
+  }
+}
