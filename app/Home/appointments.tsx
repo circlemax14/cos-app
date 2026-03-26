@@ -8,19 +8,21 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  booked: { bg: '#E3F2FD', text: '#1565C0' },
-  arrived: { bg: '#E8F5E9', text: '#2E7D32' },
-  fulfilled: { bg: '#E8F5E9', text: '#2E7D32' },
-  finished: { bg: '#F3E5F5', text: '#7B1FA2' },
-  cancelled: { bg: '#FFEBEE', text: '#C62828' },
-  noshow: { bg: '#FFF3E0', text: '#E65100' },
-  'entered-in-error': { bg: '#FFEBEE', text: '#C62828' },
-  planned: { bg: '#E3F2FD', text: '#1565C0' },
-  'in-progress': { bg: '#FFF8E1', text: '#F57F17' },
-  triaged: { bg: '#FFF8E1', text: '#F57F17' },
-  onleave: { bg: '#FFF3E0', text: '#E65100' },
+const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
+  booked: { bg: '#E3F2FD', text: '#1565C0', label: 'Scheduled' },
+  arrived: { bg: '#E8F5E9', text: '#2E7D32', label: 'Arrived' },
+  fulfilled: { bg: '#E8F5E9', text: '#2E7D32', label: 'Completed' },
+  finished: { bg: '#F3E5F5', text: '#7B1FA2', label: 'Completed' },
+  cancelled: { bg: '#FFEBEE', text: '#C62828', label: 'Cancelled' },
+  noshow: { bg: '#FFF3E0', text: '#E65100', label: 'No Show' },
+  'entered-in-error': { bg: '#FFEBEE', text: '#C62828', label: 'Error' },
+  planned: { bg: '#E3F2FD', text: '#1565C0', label: 'Planned' },
+  'in-progress': { bg: '#FFF8E1', text: '#F57F17', label: 'In Progress' },
+  triaged: { bg: '#FFF8E1', text: '#F57F17', label: 'Triaged' },
+  onleave: { bg: '#FFF3E0', text: '#E65100', label: 'On Leave' },
 };
+
+const DEFAULT_STATUS = { bg: '#F5F5F5', text: '#616161', label: 'Unknown' };
 
 const RESOURCE_TYPE_STYLES = {
   Appointment: { bg: '#E3F2FD', text: '#1565C0', label: 'Appointment' },
@@ -157,7 +159,7 @@ export default function AppointmentsScreen() {
               </Text>
               {items.map((apt) => {
                 const resStyle = RESOURCE_TYPE_STYLES[apt.resourceType ?? 'Encounter'];
-                const statusStyle = STATUS_COLORS[apt.status] ?? STATUS_COLORS.finished;
+                const statusStyle = STATUS_CONFIG[apt.status] ?? DEFAULT_STATUS;
 
                 return (
                   <TouchableOpacity
@@ -175,7 +177,7 @@ export default function AppointmentsScreen() {
                       </View>
                       <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
                         <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(11) }]}>
-                          {apt.status}
+                          {statusStyle.label}
                         </Text>
                       </View>
                     </View>

@@ -12,17 +12,19 @@ const RESOURCE_TYPE_STYLES = {
   Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
 };
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  booked: { bg: '#E3F2FD', text: '#1565C0' },
-  arrived: { bg: '#E8F5E9', text: '#2E7D32' },
-  fulfilled: { bg: '#E8F5E9', text: '#2E7D32' },
-  finished: { bg: '#F3E5F5', text: '#7B1FA2' },
-  cancelled: { bg: '#FFEBEE', text: '#C62828' },
-  noshow: { bg: '#FFF3E0', text: '#E65100' },
-  planned: { bg: '#E3F2FD', text: '#1565C0' },
-  'in-progress': { bg: '#FFF8E1', text: '#F57F17' },
-  triaged: { bg: '#FFF8E1', text: '#F57F17' },
+const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
+  booked: { bg: '#E3F2FD', text: '#1565C0', label: 'Scheduled' },
+  arrived: { bg: '#E8F5E9', text: '#2E7D32', label: 'Arrived' },
+  fulfilled: { bg: '#E8F5E9', text: '#2E7D32', label: 'Completed' },
+  finished: { bg: '#F3E5F5', text: '#7B1FA2', label: 'Completed' },
+  cancelled: { bg: '#FFEBEE', text: '#C62828', label: 'Cancelled' },
+  noshow: { bg: '#FFF3E0', text: '#E65100', label: 'No Show' },
+  planned: { bg: '#E3F2FD', text: '#1565C0', label: 'Planned' },
+  'in-progress': { bg: '#FFF8E1', text: '#F57F17', label: 'In Progress' },
+  triaged: { bg: '#FFF8E1', text: '#F57F17', label: 'Triaged' },
 };
+
+const DEFAULT_STATUS = { bg: '#F5F5F5', text: '#616161', label: 'Unknown' };
 
 function formatFullDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -68,7 +70,7 @@ export default function AppointmentDetailScreen() {
   }
 
   const resStyle = RESOURCE_TYPE_STYLES[appointment.resourceType ?? 'Encounter'];
-  const statusStyle = STATUS_COLORS[appointment.status] ?? STATUS_COLORS.finished;
+  const statusStyle = STATUS_CONFIG[appointment.status] ?? DEFAULT_STATUS;
 
   // Build time display
   let timeDisplay = appointment.time || undefined;
@@ -93,7 +95,7 @@ export default function AppointmentDetailScreen() {
             </View>
             <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
               <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(12) }]}>
-                {appointment.status}
+                {statusStyle.label}
               </Text>
             </View>
           </View>
