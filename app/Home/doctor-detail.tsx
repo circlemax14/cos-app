@@ -5,8 +5,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
 import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments } from '@/services/api/providers';
-import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment } from '@/services/api/types';
+import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchProviderAllergies, fetchCarePlans, fetchDevices, fetchProviderLabReports } from '@/services/api/providers';
+import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment, Allergy, CarePlanItem, DeviceItem, LabReport } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -22,6 +22,10 @@ export default function DoctorDetailScreen() {
   const [treatmentPlans, setTreatmentPlans] = useState<TreatmentPlanItem[]>([]);
   const [progressNotes, setProgressNotes] = useState<ProgressNote[]>([]);
   const [appointments, setAppointments] = useState<ProviderAppointment[]>([]);
+  const [allergies, setAllergies] = useState<Allergy[]>([]);
+  const [carePlans, setCarePlans] = useState<CarePlanItem[]>([]);
+  const [devices, setDevices] = useState<DeviceItem[]>([]);
+  const [labReports, setLabReports] = useState<LabReport[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -95,15 +99,23 @@ export default function DoctorDetailScreen() {
           }
           
           // Load provider-specific data
-          const [plans, notes, apts] = await Promise.all([
+          const [plans, notes, apts, allergyData, carePlanData, deviceData, labData] = await Promise.all([
             fetchProviderTreatmentPlans(providerId),
             fetchProviderProgressNotes(providerId),
             fetchProviderAppointments(providerId),
+            fetchProviderAllergies(providerId),
+            fetchCarePlans(),
+            fetchDevices(),
+            fetchProviderLabReports(providerId),
           ]);
-          
+
           setTreatmentPlans(plans);
           setProgressNotes(notes);
           setAppointments(apts);
+          setAllergies(allergyData);
+          setCarePlans(carePlanData);
+          setDevices(deviceData);
+          setLabReports(labData);
         } catch (error) {
           console.error('Error loading provider data:', error);
         } finally {
@@ -124,6 +136,10 @@ export default function DoctorDetailScreen() {
         setTreatmentPlans([]);
         setProgressNotes([]);
         setAppointments([]);
+        setAllergies([]);
+        setCarePlans([]);
+        setDevices([]);
+        setLabReports([]);
       }
     };
     
@@ -270,6 +286,10 @@ export default function DoctorDetailScreen() {
     { id: 'progress', label: 'Progress Notes' },
     { id: 'share', label: 'Share Data' },
     { id: 'appointments', label: 'Appointments' },
+    { id: 'labs', label: 'Lab Results' },
+    { id: 'allergies', label: 'Allergies' },
+    { id: 'carePlans', label: 'Care Plans' },
+    { id: 'devices', label: 'Devices' },
   ];
 
   const handleTabPress = (tabId: string) => {
@@ -574,6 +594,350 @@ export default function DoctorDetailScreen() {
     </ScrollView>
   );
 
+  const renderLabResults = () => {
+    // Group lab reports by name
+    const groupedReports: Record<string, LabReport[]> = {};
+    labReports.forEach((report) => {
+      const key = report.name || 'Unknown Report';
+      if (!groupedReports[key]) {
+        groupedReports[key] = [];
+      }
+      groupedReports[key].push(report);
+    });
+
+    const getInterpretationColor = (interpretation?: string) => {
+      if (!interpretation) return colors.text + '60';
+      const lower = interpretation.toLowerCase();
+      if (lower === 'normal' || lower === 'n') return '#4CAF50';
+      if (lower === 'abnormal' || lower === 'a' || lower === 'high' || lower === 'h') return '#F44336';
+      if (lower === 'low' || lower === 'l') return '#FF9800';
+      return colors.text + '60';
+    };
+
+    return (
+      <ScrollView style={styles.tabContent}>
+        {isLoadingData ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading lab results...</Text>
+          </View>
+        ) : labReports.length === 0 ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No lab results available</Text>
+          </View>
+        ) : (
+          Object.entries(groupedReports).map(([groupName, reports]) => (
+            <View key={groupName} style={{ marginBottom: getScaledFontSize(16) }}>
+              <Text style={{ fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(8) }}>
+                {groupName}
+              </Text>
+              {reports.map((report) => (
+                <Card key={report.id} style={styles.planCard}>
+                  <Card.Content>
+                    <View style={styles.planHeader}>
+                      <Text style={[styles.planTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>{report.name}</Text>
+                      {report.status && (
+                        <View style={[styles.statusBadge, { backgroundColor: report.status === 'final' ? '#008080' : '#FF9800' }]}>
+                          <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>{report.status}</Text>
+                        </View>
+                      )}
+                    </View>
+                    {report.date && (
+                      <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                        Date: {report.date}
+                      </Text>
+                    )}
+                    {report.performerName && (
+                      <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                        Performer: {report.performerName}
+                      </Text>
+                    )}
+                    {report.organizationName && (
+                      <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(8) }}>
+                        Organization: {report.organizationName}
+                      </Text>
+                    )}
+                    {report.results.length > 0 && (
+                      <View style={{ marginTop: getScaledFontSize(8) }}>
+                        <Text style={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(6) }}>
+                          Results:
+                        </Text>
+                        {report.results.map((result, idx) => (
+                          <View key={idx} style={{ paddingVertical: getScaledFontSize(6), borderBottomWidth: idx < report.results.length - 1 ? 1 : 0, borderBottomColor: colors.text + '15' }}>
+                            <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}>
+                              {result.name}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: getScaledFontSize(2), gap: getScaledFontSize(8) }}>
+                              {(result.value || result.unit) && (
+                                <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '90' }}>
+                                  {result.value}{result.unit ? ` ${result.unit}` : ''}
+                                </Text>
+                              )}
+                              {result.referenceRange && (
+                                <Text style={{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '60' }}>
+                                  (Ref: {result.referenceRange})
+                                </Text>
+                              )}
+                              {result.interpretation && (
+                                <View style={[styles.statusBadge, { backgroundColor: getInterpretationColor(result.interpretation) }]}>
+                                  <Text style={[styles.statusText, { fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(500) as any }]}>
+                                    {result.interpretation}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </Card.Content>
+                </Card>
+              ))}
+            </View>
+          ))
+        )}
+      </ScrollView>
+    );
+  };
+
+  const renderAllergies = () => {
+    const getCriticalityColor = (criticality?: string) => {
+      if (!criticality) return '#9E9E9E';
+      const lower = criticality.toLowerCase();
+      if (lower === 'high') return '#F44336';
+      if (lower === 'low') return '#4CAF50';
+      return '#FF9800';
+    };
+
+    const getSeverityColor = (severity?: string) => {
+      if (!severity) return '#9E9E9E';
+      const lower = severity.toLowerCase();
+      if (lower === 'severe') return '#F44336';
+      if (lower === 'moderate') return '#FF9800';
+      if (lower === 'mild') return '#4CAF50';
+      return '#9E9E9E';
+    };
+
+    return (
+      <ScrollView style={styles.tabContent}>
+        {isLoadingData ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading allergies...</Text>
+          </View>
+        ) : allergies.length === 0 ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No allergies recorded</Text>
+          </View>
+        ) : (
+          allergies.map((allergy) => (
+            <Card key={allergy.id} style={styles.planCard}>
+              <Card.Content>
+                <Text style={{ fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(8) }}>
+                  {allergy.name}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: getScaledFontSize(8), marginBottom: getScaledFontSize(8), flexWrap: 'wrap' }}>
+                  {allergy.category && (
+                    <View style={[styles.statusBadge, { backgroundColor: '#008080' }]}>
+                      <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>{allergy.category}</Text>
+                    </View>
+                  )}
+                  {allergy.criticality && (
+                    <View style={[styles.statusBadge, { backgroundColor: getCriticalityColor(allergy.criticality) }]}>
+                      <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>
+                        {allergy.criticality} criticality
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {allergy.clinicalStatus && (
+                  <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                    Clinical Status: {allergy.clinicalStatus}
+                  </Text>
+                )}
+                {allergy.onsetDate && (
+                  <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                    Onset: {allergy.onsetDate}
+                  </Text>
+                )}
+                {allergy.reactions.length > 0 && (
+                  <View style={{ marginTop: getScaledFontSize(8) }}>
+                    <Text style={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(6) }}>
+                      Reactions:
+                    </Text>
+                    {allergy.reactions.map((reaction, idx) => (
+                      <View key={idx} style={{ paddingVertical: getScaledFontSize(4), borderBottomWidth: idx < allergy.reactions.length - 1 ? 1 : 0, borderBottomColor: colors.text + '15' }}>
+                        {reaction.manifestations.map((manifestation, mIdx) => (
+                          <Text key={mIdx} style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '90' }}>
+                            {'\u2022'} {manifestation}
+                          </Text>
+                        ))}
+                        {reaction.severity && (
+                          <View style={[styles.statusBadge, { backgroundColor: getSeverityColor(reaction.severity), marginTop: getScaledFontSize(4), alignSelf: 'flex-start' }]}>
+                            <Text style={[styles.statusText, { fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(500) as any }]}>
+                              {reaction.severity}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
+          ))
+        )}
+      </ScrollView>
+    );
+  };
+
+  const renderCarePlans = () => (
+    <ScrollView style={styles.tabContent}>
+      {isLoadingData ? (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading care plans...</Text>
+        </View>
+      ) : carePlans.length === 0 ? (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No care plans available</Text>
+        </View>
+      ) : (
+        carePlans.map((plan) => (
+          <Card key={plan.id} style={styles.planCard}>
+            <Card.Content>
+              <View style={styles.planHeader}>
+                <Text style={[styles.planTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>
+                  {plan.category || 'Care Plan'}
+                </Text>
+                {plan.status && (
+                  <View style={[styles.statusBadge, { backgroundColor: plan.status === 'active' ? '#008080' : '#9E9E9E' }]}>
+                    <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>{plan.status}</Text>
+                  </View>
+                )}
+              </View>
+              {plan.conditions.length > 0 && (
+                <View style={{ marginTop: getScaledFontSize(8), marginBottom: getScaledFontSize(8) }}>
+                  <Text style={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(4) }}>
+                    Conditions Addressed:
+                  </Text>
+                  {plan.conditions.map((condition, idx) => (
+                    <Text key={idx} style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '90' }}>
+                      {'\u2022'} {condition}
+                    </Text>
+                  ))}
+                </View>
+              )}
+              {plan.activities.length > 0 && (
+                <View style={{ marginTop: getScaledFontSize(8) }}>
+                  <Text style={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(4) }}>
+                    Activities:
+                  </Text>
+                  {plan.activities.map((activity, idx) => (
+                    <View key={idx} style={{ paddingVertical: getScaledFontSize(4), borderBottomWidth: idx < plan.activities.length - 1 ? 1 : 0, borderBottomColor: colors.text + '15' }}>
+                      {activity.description && (
+                        <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}>
+                          {activity.description}
+                        </Text>
+                      )}
+                      {activity.kind && (
+                        <Text style={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '70' }}>
+                          Type: {activity.kind}
+                        </Text>
+                      )}
+                      {(activity.scheduledStart || activity.scheduledEnd) && (
+                        <Text style={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '70' }}>
+                          Scheduled: {activity.scheduledStart || ''}{activity.scheduledEnd ? ` - ${activity.scheduledEnd}` : ''}
+                        </Text>
+                      )}
+                      {activity.status && (
+                        <View style={[styles.statusBadge, { backgroundColor: activity.status === 'scheduled' ? '#008080' : '#9E9E9E', marginTop: getScaledFontSize(4), alignSelf: 'flex-start' }]}>
+                          <Text style={[styles.statusText, { fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(500) as any }]}>{activity.status}</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+              {plan.textSummary && (
+                <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginTop: getScaledFontSize(8) }}>
+                  {plan.textSummary}
+                </Text>
+              )}
+            </Card.Content>
+          </Card>
+        ))
+      )}
+    </ScrollView>
+  );
+
+  const renderDevices = () => (
+    <ScrollView style={styles.tabContent}>
+      {isLoadingData ? (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading devices...</Text>
+        </View>
+      ) : devices.length === 0 ? (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No devices recorded</Text>
+        </View>
+      ) : (
+        devices.map((device) => (
+          <Card key={device.id} style={styles.planCard}>
+            <Card.Content>
+              <Text style={{ fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(8) }}>
+                {device.name}
+              </Text>
+              {device.modelNumber && (
+                <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                  Model: {device.modelNumber}
+                </Text>
+              )}
+              {device.lotNumber && (
+                <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                  Lot Number: {device.lotNumber}
+                </Text>
+              )}
+              {device.serialNumber && (
+                <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                  Serial: {device.serialNumber}
+                </Text>
+              )}
+              {device.expirationDate && (
+                <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginBottom: getScaledFontSize(4) }}>
+                  Expires: {device.expirationDate}
+                </Text>
+              )}
+              {(device.site || device.laterality) && (
+                <View style={{ flexDirection: 'row', gap: getScaledFontSize(8), marginTop: getScaledFontSize(4), marginBottom: getScaledFontSize(4), flexWrap: 'wrap' }}>
+                  {device.site && (
+                    <View style={[styles.statusBadge, { backgroundColor: '#008080' }]}>
+                      <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>{device.site}</Text>
+                    </View>
+                  )}
+                  {device.laterality && (
+                    <View style={[styles.statusBadge, { backgroundColor: '#607D8B' }]}>
+                      <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>{device.laterality}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+              {device.notes.length > 0 && (
+                <View style={{ marginTop: getScaledFontSize(8) }}>
+                  <Text style={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(4) }}>
+                    Notes:
+                  </Text>
+                  {device.notes.map((note, idx) => (
+                    <Text key={idx} style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '90', marginBottom: getScaledFontSize(2) }}>
+                      {'\u2022'} {note}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </Card.Content>
+          </Card>
+        ))
+      )}
+    </ScrollView>
+  );
+
   return (
     <AppWrapper>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -677,6 +1041,10 @@ export default function DoctorDetailScreen() {
       {activeTab === 'progress' && renderProgressNotes()}
       {activeTab === 'share' && renderShareData()}
       {activeTab === 'appointments' && renderAppointments()}
+      {activeTab === 'labs' && renderLabResults()}
+      {activeTab === 'allergies' && renderAllergies()}
+      {activeTab === 'carePlans' && renderCarePlans()}
+      {activeTab === 'devices' && renderDevices()}
     </ScrollView>
 
     {/* Edit Modal */}

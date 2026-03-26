@@ -1,6 +1,6 @@
 import { apiClient } from '@/lib/api-client';
 import { categorizeProvider } from '@/services/provider-categorization';
-import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment } from './types';
+import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment, Allergy, CarePlanItem, DeviceItem, LabReport } from './types';
 
 interface FhirName {
   given?: string[];
@@ -12,13 +12,13 @@ interface FhirName {
 interface FhirPractitioner {
   id: string;
   name?: FhirName[];
-  telecom?: Array<{ system?: string; value?: string }>;
-  qualification?: Array<{ code?: { text?: string; coding?: Array<{ display?: string }> } }>;
+  telecom?: { system?: string; value?: string }[];
+  qualification?: { code?: { text?: string; coding?: { display?: string }[] } }[];
 }
 
 interface FhirPractitionerRole {
   practitioner?: { reference?: string };
-  specialty?: Array<{ text?: string; coding?: Array<{ display?: string }> }>;
+  specialty?: { text?: string; coding?: { display?: string }[] }[];
 }
 
 function buildName(names?: FhirName[]): string {
@@ -85,7 +85,7 @@ export async function fetchProviderById(providerId: string): Promise<Provider | 
   return all.find((p) => p.id === providerId) ?? null;
 }
 
-export async function fetchProvidersByDepartment(): Promise<Array<{ id: string; name: string; providers: Provider[] }>> {
+export async function fetchProvidersByDepartment(): Promise<{ id: string; name: string; providers: Provider[] }[]> {
   const all = await fetchProviders();
   const groups = new Map<string, Provider[]>();
   for (const provider of all) {
@@ -104,19 +104,19 @@ export async function fetchProviderTreatmentPlans(providerId: string): Promise<T
   const res = await apiClient.get<{
     success: boolean;
     data: {
-      conditions: Array<{
+      conditions: {
         id: string;
         code?: { text?: string };
-        clinicalStatus?: { coding?: Array<{ code?: string }> };
+        clinicalStatus?: { coding?: { code?: string }[] };
         recordedDate?: string;
-        note?: Array<{ text?: string }>;
+        note?: { text?: string }[];
         recorder?: { reference?: string };
         asserter?: { reference?: string };
-      }>;
-      medications: Array<{
+      }[];
+      medications: {
         medicationCodeableConcept?: { text?: string };
         requester?: { reference?: string };
-      }>;
+      }[];
     };
   }>('/v1/patients/me/medical-data');
   const { conditions, medications } = res.data.data;
@@ -142,7 +142,7 @@ export async function fetchProviderTreatmentPlans(providerId: string): Promise<T
 export async function fetchProviderProgressNotes(providerId: string): Promise<ProgressNote[]> {
   const res = await apiClient.get<{
     success: boolean;
-    data: { reports: Array<{ id: string; title: string; date: string; performer: string; conclusion?: string }> };
+    data: { reports: { id: string; title: string; date: string; performer: string; conclusion?: string }[] };
   }>('/v1/patients/me/reports');
   return res.data.data.reports
     .filter((r) => r.performer?.includes(providerId) || r.performer?.includes(`Practitioner/${providerId}`))
@@ -158,7 +158,7 @@ export async function fetchProviderProgressNotes(providerId: string): Promise<Pr
 export async function fetchProviderAppointments(providerName: string): Promise<ProviderAppointment[]> {
   const res = await apiClient.get<{
     success: boolean;
-    data: { appointments: Array<{ id: string; date: string; time: string; type: string; status: string; doctorName: string }> };
+    data: { appointments: { id: string; date: string; time: string; type: string; status: string; doctorName: string }[] };
   }>('/v1/patients/me/appointments');
   return res.data.data.appointments
     .filter((a) => a.doctorName === providerName)
@@ -169,4 +169,58 @@ export async function fetchProviderAppointments(providerName: string): Promise<P
       type: a.type,
       status: a.status === 'fulfilled' ? 'Completed' as const : a.status === 'booked' ? 'Confirmed' as const : 'Pending' as const,
     }));
+}
+
+/**
+ * Fetch allergies for a patient, optionally filtered by recorder practitioner.
+ */
+export async function fetchProviderAllergies(providerId?: string): Promise<Allergy[]> {
+  try {
+    const res = await apiClient.get<{ success: boolean; data: Allergy[] }>('/v1/patients/me/allergies');
+    const allergies = res.data.data ?? [];
+    if (!providerId) return allergies;
+    const providerRef = `Practitioner/${providerId}`;
+    return allergies.filter((a) => !a.recorderRef || a.recorderRef === providerRef);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch care plans for a patient.
+ */
+export async function fetchCarePlans(): Promise<CarePlanItem[]> {
+  try {
+    const res = await apiClient.get<{ success: boolean; data: CarePlanItem[] }>('/v1/patients/me/care-plans');
+    return res.data.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch devices (implants) for a patient.
+ */
+export async function fetchDevices(): Promise<DeviceItem[]> {
+  try {
+    const res = await apiClient.get<{ success: boolean; data: DeviceItem[] }>('/v1/patients/me/devices');
+    return res.data.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch lab reports with resolved Observation values, optionally filtered by performer.
+ */
+export async function fetchProviderLabReports(providerId?: string): Promise<LabReport[]> {
+  try {
+    const res = await apiClient.get<{ success: boolean; data: LabReport[] }>('/v1/patients/me/lab-reports');
+    const reports = res.data.data ?? [];
+    if (!providerId) return reports;
+    const providerRef = `Practitioner/${providerId}`;
+    return reports.filter((r) => !r.performerRef || r.performerRef === providerRef || r.performerRef.includes(providerId));
+  } catch {
+    return [];
+  }
 }
