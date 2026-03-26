@@ -160,6 +160,67 @@ export interface Clinic {
   email?: string;
 }
 
+// ─── Allergy ─────────────────────────────────────────────────────────────────
+export interface Allergy {
+  id: string;
+  name: string;
+  category?: string;
+  criticality?: string;
+  clinicalStatus?: string;
+  verificationStatus?: string;
+  onsetDate?: string;
+  recordedDate?: string;
+  recorderRef?: string;
+  reactions: { description?: string; manifestations: string[]; severity?: string }[];
+}
+
+// ─── Care Plan ───────────────────────────────────────────────────────────────
+export interface CarePlanItem {
+  id: string;
+  status?: string;
+  intent?: string;
+  category?: string;
+  conditions: string[];
+  activities: { kind?: string; status?: string; scheduledStart?: string; scheduledEnd?: string; description?: string }[];
+  textSummary?: string;
+}
+
+// ─── Device ──────────────────────────────────────────────────────────────────
+export interface DeviceItem {
+  id: string;
+  name: string;
+  status?: string;
+  modelNumber?: string;
+  serialNumber?: string;
+  lotNumber?: string;
+  expirationDate?: string;
+  location?: string;
+  site?: string;
+  laterality?: string;
+  notes: string[];
+  noteAuthorRef?: string;
+}
+
+// ─── Lab Report ──────────────────────────────────────────────────────────────
+export interface LabResultValue {
+  name: string;
+  value?: string;
+  unit?: string;
+  referenceRange?: string;
+  interpretation?: string;
+}
+
+export interface LabReport {
+  id: string;
+  name: string;
+  date?: string;
+  status?: string;
+  performerName?: string;
+  performerRef?: string;
+  organizationName?: string;
+  results: LabResultValue[];
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 export interface ServiceDefinition {
   id: string;
