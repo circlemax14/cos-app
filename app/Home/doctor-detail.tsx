@@ -1,7 +1,6 @@
-import { DoctorCard } from '@/components/ui/doctor-card';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
 import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
@@ -19,7 +18,7 @@ export default function DoctorDetailScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   
   const [provider, setProvider] = useState<Provider | null>(null);
-  const [isLoadingProvider, setIsLoadingProvider] = useState(false);
+  const [, setIsLoadingProvider] = useState(false);
   const [treatmentPlans, setTreatmentPlans] = useState<TreatmentPlanItem[]>([]);
   const [progressNotes, setProgressNotes] = useState<ProgressNote[]>([]);
   const [appointments, setAppointments] = useState<ProviderAppointment[]>([]);
@@ -34,14 +33,10 @@ export default function DoctorDetailScreen() {
   const providerSpecialty = params.specialty as string || '';
   
   // Load doctor data from database
-  const { doctor: doctorData, updateDoctor, pickImage, isLoading: isLoadingDoctor } = useDoctor(providerId || '');
+  const { doctor: doctorData, updateDoctor, pickImage } = useDoctor(providerId || '');
   
   // Use database data if available, otherwise fall back to provider/params
   const doctorName = doctorData?.name || provider?.name || providerName;
-  const doctorImage = doctorData?.photoUrl 
-    ? { uri: doctorData.photoUrl }
-    : null;
-  
   // Edit form state
   const [editedData, setEditedData] = useState({
     name: doctorName,
@@ -133,7 +128,7 @@ export default function DoctorDetailScreen() {
     };
     
     loadProviderData();
-  }, [providerId, providerName, providerQualifications, providerSpecialty]);
+  }, [providerId, providerName, providerQualifications, providerSpecialty, params.email, params.phone]);
 
   // Load other providers for Share Data tab
   useEffect(() => {
@@ -178,7 +173,7 @@ export default function DoctorDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to make a phone call');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to make a phone call');
     }
   };
@@ -192,7 +187,7 @@ export default function DoctorDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to send a message');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to send a message');
     }
   };
@@ -251,7 +246,7 @@ export default function DoctorDetailScreen() {
           'No video calling apps found. Please install a video calling app like Zoom, Google Meet, or Skype.',
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to start a video call');
     }
   };
@@ -265,7 +260,7 @@ export default function DoctorDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to send an email');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to send an email');
     }
   };
@@ -344,7 +339,7 @@ export default function DoctorDetailScreen() {
       });
       setIsEditModalVisible(false);
       Alert.alert('Success', 'Doctor information updated successfully');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save doctor information. Please try again.');
     } finally {
       setIsSaving(false);

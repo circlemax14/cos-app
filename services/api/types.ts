@@ -50,6 +50,7 @@ export interface Appointment {
   resourceType?: 'Appointment' | 'Encounter';
   date: string;
   time: string;
+  endTime?: string;
   endDate?: string;
   type: string;
   status: string;
@@ -57,8 +58,10 @@ export interface Appointment {
   doctorSpecialty?: string;
   clinicName?: string;
   encounterClass?: string;
+  encounterClassDisplay?: string;
   notes?: string;
   diagnosis?: string;
+  participantStatus?: string;
 }
 
 // ─── Patient ─────────────────────────────────────────────────────────────────
@@ -123,23 +126,23 @@ export interface Medication {
 // ─── Health Plan ─────────────────────────────────────────────────────────────
 export interface HealthPlan {
   careManagerPlan: {
-    goals: Array<{
+    goals: {
       id: string;
       title: string;
       description: string;
       status: 'active' | 'completed' | 'cancelled';
-    }>;
+    }[];
     notes: string;
     updatedAt: string;
     updatedBy: string;
   } | null;
   aiInsights: {
     summary: string;
-    recommendations: Array<{
+    recommendations: {
       category: string;
       text: string;
       priority: 'high' | 'medium' | 'low';
-    }>;
+    }[];
     generatedAt: string;
     nextRefreshAvailableAt: string;
   } | null;

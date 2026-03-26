@@ -40,7 +40,7 @@ export default function Reports() {
   
   // Fasten Health reports state
   const [fastenReports, setFastenReports] = useState<Report[]>([]);
-  const [isLoadingFastenReports, setIsLoadingFastenReports] = useState(false);
+  const [, setIsLoadingFastenReports] = useState(false);
   
   // Load reports on mount
   useEffect(() => {
@@ -245,7 +245,7 @@ export default function Reports() {
       setReportSummary(null);
       setSummaryError(null);
     }
-  }, [showReportModal, selectedReport?.id]);
+  }, [showReportModal, selectedReport]);
 
   // Load history data and generate summaries
   const loadHistorySummaries = useCallback(async (isRefresh = false) => {

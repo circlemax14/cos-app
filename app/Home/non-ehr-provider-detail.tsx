@@ -7,11 +7,9 @@ import {
     ActivityIndicator,
     Alert,
     Linking,
-    Modal,
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -21,7 +19,6 @@ import { InitialsAvatar } from '@/utils/avatar-utils';
 import {
     getNonEhrProviders,
     getFilesForProvider,
-    upsertAppointmentForNonEhrProvider,
     processAndStoreFiles,
     type NonEhrProvider,
     type NonEhrFile,
@@ -59,7 +56,7 @@ type TabId = (typeof TABS)[number]['id'];
 
 export default function NonEhrProviderDetailScreen() {
     const params = useLocalSearchParams<{ id: string }>();
-    const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+    const { settings, getScaledFontSize } = useAccessibility();
     const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
     const [provider, setProvider] = useState<NonEhrProvider | null>(null);

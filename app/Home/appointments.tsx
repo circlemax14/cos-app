@@ -39,13 +39,13 @@ export default function AppointmentsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const { data, isLoading, isError, refetch } = useAppointments();
-  const allAppointments = data ?? [];
 
   // Filter by search query (matches type, doctor, clinic, diagnosis, status, resourceType)
   const appointments = useMemo(() => {
-    if (!searchQuery.trim()) return allAppointments;
+    const all = data ?? [];
+    if (!searchQuery.trim()) return all;
     const q = searchQuery.toLowerCase();
-    return allAppointments.filter((apt) =>
+    return all.filter((apt) =>
       (apt.type?.toLowerCase().includes(q)) ||
       (apt.doctorName?.toLowerCase().includes(q)) ||
       (apt.clinicName?.toLowerCase().includes(q)) ||
@@ -54,7 +54,7 @@ export default function AppointmentsScreen() {
       (apt.resourceType?.toLowerCase().includes(q)) ||
       (apt.encounterClass?.toLowerCase().includes(q))
     );
-  }, [allAppointments, searchQuery]);
+  }, [data, searchQuery]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -13,9 +13,7 @@
  * modal is shown so the user can enter clinic / provider details themselves.
  */
 
-import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
