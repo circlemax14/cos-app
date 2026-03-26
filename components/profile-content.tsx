@@ -36,6 +36,7 @@ interface ProfileContentProps {
   onEmergencyContactPress?: () => void;
   onHealthDetailsPress?: () => void;
   onServicesPress?: () => void;
+  onAllergiesPress?: () => void;
   showEhrTitle?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
 }
@@ -54,6 +55,7 @@ export function ProfileContent({
   onEmergencyContactPress,
   onHealthDetailsPress,
   onServicesPress,
+  onAllergiesPress,
   showEhrTitle = true,
   containerStyle,
 }: ProfileContentProps) {
@@ -187,6 +189,20 @@ export function ProfileContent({
               onPress={() => {
                 if (onEmergencyContactPress) {
                   onEmergencyContactPress();
+                }
+              }}
+            />
+          </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Allergies</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>View your allergy records from EHR</Text>}
+              left={(props) => <Icon {...props} source="alert-circle" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => {
+                if (onAllergiesPress) {
+                  onAllergiesPress();
                 }
               }}
             />

@@ -49,13 +49,9 @@ export function AppWrapper({
     }
   }, [drawerWidth, drawerTranslateX, isDrawerMenuVisible]);
 
-  const handleTabPress = (route: string) => {
-    router.push(`/(tabs)/${route}` as any);
-  };
-
-  const handleNotificationPress = () => {
-    // setIsAccessibilityModalVisible(true);
-  };
+  // TODO: re-enable when tab navigation and notifications are wired up
+  // const handleTabPress = (route: string) => { router.push(`/(tabs)/${route}` as any); };
+  // const handleNotificationPress = () => { };
 
   const handleAccessibilityPress = () => {
     setIsAccessibilityModalVisible(true);
@@ -188,6 +184,10 @@ export function AppWrapper({
                 onServicesPress={() => {
                   closeDrawerMenu();
                   router.push('/Home/services');
+                }}
+                onAllergiesPress={() => {
+                  closeDrawerMenu();
+                  router.push('/Home/allergies');
                 }}
                 connectedHospitals={connectedHospitals}
                 isLoadingClinics={isLoadingClinics}
