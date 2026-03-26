@@ -55,13 +55,19 @@ export function useDoctor(providerId: string) {
     const current = doctor ?? { id: providerId, name: '' };
     const updated: DoctorData = { ...current, ...updates };
 
-    // If photo changed and it's a local file, upload to S3
+    // If photo changed and it's a local file, try uploading to S3
+    // but don't block the save — keep local URI as fallback
     if (updates.photoUrl && updates.photoUrl.startsWith('file://')) {
-      const uploadedUrl = await uploadPhoto(providerId, updates.photoUrl);
-      updated.photoUrl = uploadedUrl;
+      try {
+        const uploadedUrl = await uploadPhoto(providerId, updates.photoUrl);
+        updated.photoUrl = uploadedUrl;
+      } catch {
+        // Keep local file URI — photo will display locally but not persist on server
+        updated.photoUrl = updates.photoUrl;
+      }
     }
 
-    // Save locally
+    // Always save locally
     await AsyncStorage.setItem(storageKey(providerId), JSON.stringify(updated));
     setDoctor(updated);
   }, [providerId, doctor]);

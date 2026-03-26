@@ -115,15 +115,15 @@ const styles = StyleSheet.create({
   backButton: { width: 60 },
   headerTitle: { fontWeight: '700', textAlign: 'center', flex: 1 },
   content: { padding: 20, paddingBottom: 48 },
-  intro: { lineHeight: 20, marginBottom: 8 },
+  intro: { marginBottom: 8 },
   section: { marginBottom: 20 },
   sectionTitle: { fontWeight: '700', marginBottom: 6 },
-  sectionBody: { lineHeight: 22 },
+  sectionBody: {},
   disclaimer: {
     marginTop: 16,
     padding: 16,
     borderRadius: 10,
     borderWidth: 1,
   },
-  disclaimerText: { lineHeight: 20 },
+  disclaimerText: {},
 });

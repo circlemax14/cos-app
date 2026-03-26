@@ -8,8 +8,8 @@ import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } f
 import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
@@ -2081,6 +2081,7 @@ export default function HomeScreen() {
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const circleProviders = React.useMemo(
     () => selectedProviders.slice(0, MAX_SELECTED_PROVIDERS),
@@ -2180,6 +2181,52 @@ export default function HomeScreen() {
     loadUpcomingAppointments();
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const [providers, patient, allAppointments] = await Promise.all([
+        fetchProviders(),
+        fetchPatientInfo(),
+        fetchAppointments(),
+      ]);
+      setFastenProviders(providers);
+      if (patient) {
+        setPatientName(patient.name || '');
+      }
+      const appointments = allAppointments || [];
+      const now = new Date();
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 15);
+      const upcoming = appointments
+        .map(apt => {
+          const dateObj = new Date(apt.date);
+          if (apt.time) {
+            const timeMatch = apt.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (timeMatch) {
+              let hour = parseInt(timeMatch[1], 10);
+              const minute = parseInt(timeMatch[2], 10);
+              const meridiem = timeMatch[3].toUpperCase();
+              if (meridiem === 'PM' && hour !== 12) hour += 12;
+              else if (meridiem === 'AM' && hour === 12) hour = 0;
+              dateObj.setHours(hour, minute, 0, 0);
+            }
+          }
+          return { apt, dateObj };
+        })
+        .filter(({ dateObj }) => dateObj >= start && dateObj <= end)
+        .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
+        .map(({ apt }) => apt);
+      setUpcomingAppointments(upcoming);
+      await validateAndCleanProviders();
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
+    }
+  }, [validateAndCleanProviders]);
+
   // Cycle through views: circle -> circle-providers -> list -> circle
   const toggleViewMode = () => {
     if (viewMode === 'circle') {
@@ -2276,6 +2323,7 @@ export default function HomeScreen() {
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
         <View style={styles.circleSection}>
           <View style={styles.titleRow}>

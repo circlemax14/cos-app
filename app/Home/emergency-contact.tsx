@@ -8,8 +8,8 @@ import {
   useDeleteEmergencyContact,
   EmergencyContact,
 } from '@/hooks/use-emergency-contact';
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, Alert, ActivityIndicator, TextInput as RNTextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, Alert, ActivityIndicator, TextInput as RNTextInput, RefreshControl } from 'react-native';
 import { Card, Button } from 'react-native-paper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -32,6 +32,7 @@ export default function EmergencyContactScreen() {
   const updateContact = useUpdateEmergencyContact();
   const deleteContact = useDeleteEmergencyContact();
 
+  const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingContact, setEditingContact] = useState<EmergencyContact | null>(null);
   const [form, setForm] = useState<ContactFormValues>(EMPTY_FORM);
@@ -115,11 +116,22 @@ export default function EmergencyContactScreen() {
     );
   };
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
   const isSaving = createContact.isPending || updateContact.isPending;
 
   return (
     <AppWrapper>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Title Section */}
         <View style={styles.titleSection}>
           <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>

@@ -219,7 +219,6 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   detailValue: {
-    lineHeight: 22,
   },
   bottomPadding: {
     height: 40,

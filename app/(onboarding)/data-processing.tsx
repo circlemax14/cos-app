@@ -186,7 +186,6 @@ const styles = StyleSheet.create({
   },
   body: {
     textAlign: 'center',
-    lineHeight: 22,
   },
   retryButton: {
     marginTop: 16,

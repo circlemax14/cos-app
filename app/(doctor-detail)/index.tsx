@@ -2,8 +2,8 @@ import { DoctorCard } from '@/components/ui/doctor-card';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router } from 'expo-router';
-import React, { useRef, useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
 import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments } from '@/services/api/providers';
@@ -59,6 +59,7 @@ export default function DoctorDetailScreen() {
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
   const [pendingProviderName, setPendingProviderName] = useState<string>('');
   const scrollViewRef = useRef<ScrollView>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load doctor photos for other providers
   const providerIds = otherProviders.map(p => p.id);
@@ -164,6 +165,38 @@ export default function DoctorDetailScreen() {
 
     if (providerId) {
       loadOtherProviders();
+    }
+  }, [providerId]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (providerId && providerId !== 'unknown') {
+        const [providerData, plans, notes, apts, allProviders, existingShares] = await Promise.all([
+          fetchProviderById(providerId),
+          fetchProviderTreatmentPlans(providerId),
+          fetchProviderProgressNotes(providerId),
+          fetchProviderAppointments(providerId),
+          fetchProviders(),
+          fetchDataShares(),
+        ]);
+        if (providerData) setProvider(providerData);
+        setTreatmentPlans(plans);
+        setProgressNotes(notes);
+        setAppointments(apts);
+        const filtered = allProviders.filter(p => p.id !== providerId);
+        setOtherProviders(filtered);
+        const activeShareIds = new Set(existingShares.map(s => s.providerId));
+        const initialShares: { [key: string]: boolean } = {};
+        filtered.forEach(p => {
+          initialShares[p.id] = activeShareIds.has(p.id);
+        });
+        setDoctorShares(initialShares);
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
     }
   }, [providerId]);
 
@@ -611,7 +644,7 @@ export default function DoctorDetailScreen() {
 
   return (
     <>
-      <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+      <ScrollView style={[styles.container, { backgroundColor: colors.background }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Doctor Header */}
         <View style={[styles.header, { backgroundColor: colors.background }]}>
           <View style={styles.avatarContainer}>
@@ -1156,7 +1189,6 @@ const styles = StyleSheet.create({
   planDescription: {
     fontSize: 16,
     marginBottom: 12,
-    lineHeight: 22,
   },
   medicationsTitle: {
     fontSize: 16,
@@ -1295,7 +1327,6 @@ const styles = StyleSheet.create({
   },
   consentDescription: {
     fontSize: 14,
-    lineHeight: 20,
   },
   termsSection: {
     marginTop: 8,
@@ -1316,7 +1347,6 @@ const styles = StyleSheet.create({
   termText: {
     flex: 1,
     fontSize: 14,
-    lineHeight: 20,
   },
   consentModalActions: {
     flexDirection: 'row',

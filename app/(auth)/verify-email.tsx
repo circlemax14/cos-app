@@ -217,7 +217,6 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     textAlign: 'center',
-    lineHeight: 22,
   },
   otpRow: {
     flexDirection: 'row',

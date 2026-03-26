@@ -1122,7 +1122,6 @@ const styles = StyleSheet.create({
   planDescription: {
     fontSize: 16,
     marginBottom: 12,
-    lineHeight: 22,
   },
   medicationsTitle: {
     fontSize: 16,
@@ -1230,7 +1229,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 12,
-    lineHeight: 24,
   },
   viewButton: {
     flexDirection: 'row',
@@ -1320,7 +1318,6 @@ const styles = StyleSheet.create({
   },
   reportModalCardText: {
     fontSize: 14,
-    lineHeight: 22,
     marginBottom: 8,
   },
   reportModalCardDate: {
@@ -1337,11 +1334,9 @@ const styles = StyleSheet.create({
   },
   reportNarrativeText: {
     fontSize: 14,
-    lineHeight: 22,
   },
   reportImpressionText: {
     fontSize: 14,
-    lineHeight: 22,
     marginBottom: 12,
   },
   reportSignatureText: {
@@ -1351,7 +1346,6 @@ const styles = StyleSheet.create({
   },
   reportFacilityText: {
     fontSize: 14,
-    lineHeight: 22,
   },
   mainTabsContainer: {
     paddingHorizontal: 16,
@@ -1421,7 +1415,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   historyContentText: {
-    lineHeight: 24,
   },
   retryButton: {
     paddingHorizontal: 24,
@@ -1556,7 +1549,6 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontSize: 14,
-    lineHeight: 22,
   },
   errorCard: {
     flexDirection: 'row',
@@ -1570,6 +1562,5 @@ const styles = StyleSheet.create({
   errorText: {
     flex: 1,
     fontSize: 14,
-    lineHeight: 20,
   },
 });

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -18,13 +18,31 @@ export default function ServicesScreen() {
 
   const [services, setServices] = useState<ServiceDefinition[]>([]);
   const [, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadServices = useCallback(async () => {
+    try {
+      const result = await fetchAvailableServices();
+      setServices(result);
+    } catch {
+      setServices([]);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchAvailableServices()
-      .then(setServices)
-      .catch(() => setServices([]))
-      .finally(() => setIsLoading(false));
-  }, []);
+    loadServices().finally(() => setIsLoading(false));
+  }, [loadServices]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadServices();
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadServices]);
 
   // Default to visible/enabled while permissions are loading
   const isVisible = (featureKey: string) => permissionsData?.[featureKey as keyof typeof permissionsData]?.enabled ?? true
@@ -46,6 +64,7 @@ export default function ServicesScreen() {
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
         <Text
           style={[

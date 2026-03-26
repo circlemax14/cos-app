@@ -7,6 +7,7 @@ import {
     ActivityIndicator,
     Alert,
     Linking,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -72,6 +73,7 @@ export default function NonEhrProviderDetailScreen() {
 
     // ── Upload ─────────────────────────────────
     const [isUploading, setIsUploading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     // ── Load data ───────────────────────────────
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -120,6 +122,17 @@ export default function NonEhrProviderDetailScreen() {
             isGeneratingSummaryRef.current = false;
         }
     }, []);
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            await loadData();
+        } catch {
+            // silent fail
+        } finally {
+            setRefreshing(false);
+        }
+    }, [loadData]);
 
     useEffect(() => {
         loadData();
@@ -228,7 +241,7 @@ export default function NonEhrProviderDetailScreen() {
                     </TouchableOpacity>
                 </View>
             ) : treatmentSummary ? (
-                <Text style={[styles.focusText, { color: colors.text, fontSize: getScaledFontSize(15), lineHeight: 24 }]}>
+                <Text style={[styles.focusText, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
                     {treatmentSummary}
                 </Text>
             ) : (
@@ -288,7 +301,7 @@ export default function NonEhrProviderDetailScreen() {
                                                 })}
                                             </Text>
                                         </View>
-                                        <Text style={[styles.noteContent, { color: colors.text, fontSize: getScaledFontSize(14), lineHeight: 22 }]}>
+                                        <Text style={[styles.noteContent, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
                                             {combinedContent}
                                         </Text>
                                     </Card.Content>
@@ -443,7 +456,7 @@ export default function NonEhrProviderDetailScreen() {
 
     return (
         <AppWrapper>
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ flex: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
                 {/* ── Header ── */}
                 <View style={[styles.header, { backgroundColor: colors.background }]}>
                     <View style={styles.headerAvatarRow}>
@@ -519,7 +532,7 @@ export default function NonEhrProviderDetailScreen() {
                     {activeTab === 'files' && renderFilesTab()}
                     {activeTab === 'appointments' && renderAppointmentsTab()}
                 </View>
-            </View>
+            </ScrollView>
 
         </AppWrapper>
     );
@@ -585,7 +598,6 @@ const styles = StyleSheet.create({
     tabBar: {
         borderBottomWidth: 1,
         borderBottomColor: 'rgba(0,0,0,0.08)',
-        maxHeight: 44,
     },
     tabBarContent: {
         flexDirection: 'row',
@@ -622,14 +634,12 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     focusText: {
-        lineHeight: 22,
     },
     focusInput: {
         borderWidth: 1,
         borderRadius: 8,
         padding: 12,
         minHeight: 120,
-        lineHeight: 22,
     },
     focusEditContainer: {
         gap: 12,
@@ -691,7 +701,6 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     emptyText: {
-        lineHeight: 22,
         fontStyle: 'italic',
         marginTop: 8,
     },
@@ -719,7 +728,6 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     noteContent: {
-        lineHeight: 20,
     },
     fileCard: {
         marginBottom: 10,
@@ -803,7 +811,6 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         padding: 12,
         minHeight: 100,
-        lineHeight: 20,
     },
     modalInput: {
         borderWidth: 1,

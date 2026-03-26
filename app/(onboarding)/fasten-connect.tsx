@@ -139,7 +139,6 @@ const styles = StyleSheet.create({
   },
   loaderBody: {
     textAlign: 'center',
-    lineHeight: 22,
   },
   errorContainer: {
     flex: 1,
@@ -154,7 +153,6 @@ const styles = StyleSheet.create({
   },
   errorBody: {
     textAlign: 'center',
-    lineHeight: 22,
   },
   errorBanner: {
     paddingHorizontal: 16,
