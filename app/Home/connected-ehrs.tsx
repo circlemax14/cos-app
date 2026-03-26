@@ -5,19 +5,32 @@ import { useConnectedEhrs } from '@/hooks/use-connected-ehrs';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, View, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, RefreshControl } from 'react-native';
 
 export default function ConnectedEhrsScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const { connectedHospitals, isLoadingClinics } = useConnectedEhrs();
+  const { connectedHospitals, isLoadingClinics, refreshConnectedEhrs } = useConnectedEhrs();
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await refreshConnectedEhrs();
+    setRefreshing(false);
+  }, [refreshConnectedEhrs]);
 
   // Show all connected hospitals (both EHR and Integrative)
   const actualConnectedHospitals = connectedHospitals;
 
   return (
     <AppWrapper>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
+        }
+      >
         {/* Title Section */}
         <View style={styles.titleSection}>
           <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>
