@@ -24,23 +24,22 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   triaged: { bg: '#FFF8E1', text: '#F57F17' },
 };
 
-function formatDate(dateStr: string): string {
+function formatFullDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function DetailRow({ icon, label, value }: { icon: string; label: string; value?: string }) {
-  const { settings, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+function DetailRow({ icon, label, value, colors: themeColors }: { icon: string; label: string; value?: string; colors: any }) {
+  const { getScaledFontSize } = useAccessibility();
   if (!value) return null;
   return (
     <View style={styles.detailRow}>
-      <View style={styles.detailIcon}>
-        <IconSymbol name={icon as any} size={18} color={colors.primary ?? '#1976D2'} />
+      <View style={[styles.detailIcon, { backgroundColor: (themeColors.primary ?? '#1976D2') + '15' }]}>
+        <IconSymbol name={icon as any} size={16} color={themeColors.primary ?? '#1976D2'} />
       </View>
       <View style={styles.detailContent}>
-        <Text style={[styles.detailLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>{label}</Text>
-        <Text style={[styles.detailValue, { color: colors.text, fontSize: getScaledFontSize(15) }]}>{value}</Text>
+        <Text style={[styles.detailLabel, { color: themeColors.subtext, fontSize: getScaledFontSize(11) }]}>{label}</Text>
+        <Text style={[styles.detailValue, { color: themeColors.text, fontSize: getScaledFontSize(15) }]}>{value}</Text>
       </View>
     </View>
   );
@@ -71,41 +70,66 @@ export default function AppointmentDetailScreen() {
   const resStyle = RESOURCE_TYPE_STYLES[appointment.resourceType ?? 'Encounter'];
   const statusStyle = STATUS_COLORS[appointment.status] ?? STATUS_COLORS.finished;
 
+  // Build time display
+  let timeDisplay = appointment.time || undefined;
+  if (timeDisplay && appointment.endTime) {
+    timeDisplay = `${timeDisplay} — ${appointment.endTime}`;
+  }
+
+  // Encounter class display
+  const classDisplay = appointment.encounterClassDisplay ?? appointment.encounterClass;
+
   return (
     <AppWrapper>
-      <ScrollView style={styles.container}>
-        {/* Header badges */}
-        <View style={styles.badgeRow}>
-          <View style={[styles.badge, { backgroundColor: resStyle.bg }]}>
-            <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(12) }]}>
-              {resStyle.label}
-            </Text>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        {/* Header card */}
+        <View style={[styles.headerCard, { backgroundColor: resStyle.bg + '40' }]}>
+          {/* Badges */}
+          <View style={styles.badgeRow}>
+            <View style={[styles.badge, { backgroundColor: resStyle.bg }]}>
+              <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(12) }]}>
+                {resStyle.label}
+              </Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
+              <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(12) }]}>
+                {appointment.status}
+              </Text>
+            </View>
           </View>
-          <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-            <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(12) }]}>
-              {appointment.status}
-            </Text>
-          </View>
+
+          {/* Title */}
+          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
+            {appointment.type || 'Office Visit'}
+          </Text>
+
+          {/* Date + time summary */}
+          {appointment.date ? (
+            <View style={styles.headerMeta}>
+              <IconSymbol name="calendar" size={16} color={resStyle.text} />
+              <Text style={[styles.headerMetaText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+                {formatFullDate(appointment.date)}
+                {timeDisplay ? `  ·  ${timeDisplay}` : ''}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
-        {/* Title */}
-        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(700) as any }]}>
-          {appointment.type || 'Office Visit'}
+        {/* Details section */}
+        <Text style={[styles.sectionTitle, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }]}>
+          DETAILS
         </Text>
-
-        {/* Details card */}
         <View style={[styles.detailsCard, { backgroundColor: colors.card }]}>
-          <DetailRow icon="calendar" label="Date" value={appointment.date ? formatDate(appointment.date) : undefined} />
-          <DetailRow icon="clock" label="Time" value={appointment.time} />
+          <DetailRow colors={colors} icon="person" label="Provider" value={appointment.doctorName !== 'Unknown Provider' ? appointment.doctorName : undefined} />
+          <DetailRow colors={colors} icon="star" label="Specialty" value={appointment.doctorSpecialty} />
+          <DetailRow colors={colors} icon="house" label="Clinic / Location" value={appointment.clinicName} />
+          <DetailRow colors={colors} icon="doc.text" label="Reason / Diagnosis" value={appointment.diagnosis} />
+          <DetailRow colors={colors} icon="text.bubble" label="Notes" value={appointment.notes} />
+          <DetailRow colors={colors} icon="tag" label="Encounter Class" value={classDisplay} />
+          <DetailRow colors={colors} icon="person.2" label="Participant Status" value={appointment.participantStatus} />
           {appointment.endDate && appointment.endDate !== appointment.date ? (
-            <DetailRow icon="clock" label="End Date" value={formatDate(appointment.endDate)} />
+            <DetailRow colors={colors} icon="clock" label="End Date" value={formatFullDate(appointment.endDate)} />
           ) : null}
-          <DetailRow icon="person" label="Provider" value={appointment.doctorName !== 'Unknown Provider' ? appointment.doctorName : undefined} />
-          <DetailRow icon="star" label="Specialty" value={appointment.doctorSpecialty} />
-          <DetailRow icon="house" label="Clinic" value={appointment.clinicName} />
-          <DetailRow icon="doc.text" label="Diagnosis / Reason" value={appointment.diagnosis} />
-          <DetailRow icon="text.bubble" label="Notes" value={appointment.notes} />
-          <DetailRow icon="tag" label="Encounter Class" value={appointment.encounterClass} />
         </View>
 
         <View style={styles.bottomPadding} />
@@ -117,12 +141,19 @@ export default function AppointmentDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  contentContainer: {
     padding: 16,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -139,11 +170,24 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   title: {
-    marginBottom: 20,
+    marginBottom: 8,
+  },
+  headerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerMetaText: {
+    flex: 1,
+  },
+  sectionTitle: {
+    letterSpacing: 1,
+    marginBottom: 8,
+    paddingLeft: 4,
   },
   detailsCard: {
     borderRadius: 12,
-    padding: 16,
+    overflow: 'hidden',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -152,23 +196,27 @@ const styles = StyleSheet.create({
   },
   detailRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E0E0E0',
   },
   detailIcon: {
     width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
-    paddingTop: 2,
+    justifyContent: 'center',
+    marginRight: 12,
   },
   detailContent: {
     flex: 1,
   },
   detailLabel: {
-    marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 2,
   },
   detailValue: {
     lineHeight: 22,

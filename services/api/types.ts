@@ -50,6 +50,7 @@ export interface Appointment {
   resourceType?: 'Appointment' | 'Encounter';
   date: string;
   time: string;
+  endTime?: string;
   endDate?: string;
   type: string;
   status: string;
@@ -57,8 +58,10 @@ export interface Appointment {
   doctorSpecialty?: string;
   clinicName?: string;
   encounterClass?: string;
+  encounterClassDisplay?: string;
   notes?: string;
   diagnosis?: string;
+  participantStatus?: string;
 }
 
 // ─── Patient ─────────────────────────────────────────────────────────────────

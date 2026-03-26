@@ -172,6 +172,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="appointment-detail"
+        options={{
+          title: 'Appointment Detail',
+          href: null,
+        }}
+      />
     </Tabs>
     </View>
   );
