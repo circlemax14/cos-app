@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   },
   badge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 5,
     borderRadius: 4,
   },
   badgeText: {

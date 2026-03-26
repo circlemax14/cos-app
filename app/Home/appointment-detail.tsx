@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   },
   badge: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   badgeText: {
@@ -188,7 +188,6 @@ const styles = StyleSheet.create({
   },
   detailsCard: {
     borderRadius: 12,
-    overflow: 'hidden',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -222,7 +221,6 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   detailValue: {
-    lineHeight: 22,
   },
   bottomPadding: {
     height: 40,
