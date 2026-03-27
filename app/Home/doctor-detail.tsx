@@ -903,7 +903,8 @@ export default function DoctorDetailScreen() {
               mode="outlined"
               onPress={handlePickImage}
               style={[styles.imageButton, { borderColor: colors.tint }]}
-              labelStyle={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }}
+              contentStyle={{ minHeight: getScaledFontSize(44) }}
+              labelStyle={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }}
             >
               {editedData.photoUrl ? 'Change Photo' : 'Add Photo'}
             </Button>
@@ -912,7 +913,8 @@ export default function DoctorDetailScreen() {
                 mode="text"
                 onPress={() => setEditedData({ ...editedData, photoUrl: '' })}
                 style={styles.removeImageButton}
-                labelStyle={{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any, color: '#ff4444' }}
+                contentStyle={{ minHeight: getScaledFontSize(40) }}
+                labelStyle={{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(18), color: '#ff4444' }}
               >
                 Remove Photo
               </Button>
@@ -979,12 +981,13 @@ export default function DoctorDetailScreen() {
           </View>
 
           {/* Action Buttons */}
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { marginTop: getScaledFontSize(24) }]}>
             <Button
               mode="outlined"
               onPress={handleCancel}
               style={[styles.modalButton, { borderColor: colors.border }]}
-              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}
+              contentStyle={{ minHeight: getScaledFontSize(48) }}
+              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }}
             >
               Cancel
             </Button>
@@ -994,7 +997,8 @@ export default function DoctorDetailScreen() {
               loading={isSaving}
               disabled={isSaving}
               style={[styles.modalButton, { backgroundColor: colors.tint }]}
-              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: '#fff' }}
+              contentStyle={{ minHeight: getScaledFontSize(48) }}
+              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24), color: '#fff' }}
             >
               Save
             </Button>
@@ -1081,7 +1085,8 @@ export default function DoctorDetailScreen() {
               mode="outlined"
               onPress={handleConsentNo}
               style={[styles.consentModalButton, { borderColor: colors.text + '40' }]}
-              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}
+              contentStyle={{ minHeight: getScaledFontSize(48) }}
+              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24), color: colors.text }}
             >
               No
             </Button>
@@ -1089,7 +1094,8 @@ export default function DoctorDetailScreen() {
               mode="contained"
               onPress={handleConsentYes}
               style={[styles.consentModalButton, { backgroundColor: colors.tint || '#008080' }]}
-              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff' }}
+              contentStyle={{ minHeight: getScaledFontSize(48) }}
+              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, lineHeight: getScaledFontSize(24), color: '#fff' }}
             >
               Yes, I Consent
             </Button>
