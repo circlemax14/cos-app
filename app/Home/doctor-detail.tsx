@@ -2,10 +2,10 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
 import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
+import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans } from '@/services/api/providers';
 import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment, CarePlanItem } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
@@ -49,15 +49,6 @@ export default function DoctorDetailScreen() {
   });
 
   const [activeTab, setActiveTab] = useState('treatment');
-  const [aiInsights, setAiInsights] = useState<Record<string, { summary: string; loading: boolean }>>({});
-
-  const loadAiInsight = async (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
-    if (aiInsights[tab]?.summary || aiInsights[tab]?.loading) return;
-    setAiInsights((prev) => ({ ...prev, [tab]: { summary: '', loading: true } }));
-    const result = await fetchAiInsight(tab, provider?.name);
-    setAiInsights((prev) => ({ ...prev, [tab]: { summary: result?.summary ?? 'Unable to generate insights.', loading: false } }));
-  };
-
   const [otherProviders, setOtherProviders] = useState<Provider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [doctorShares, setDoctorShares] = useState<{ [key: string]: boolean }>({});
@@ -431,43 +422,8 @@ export default function DoctorDetailScreen() {
 
   // Appointments are loaded from Fasten Health
 
-  const renderAiInsightCard = (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
-    const insight = aiInsights[tab];
-    return (
-      <Card style={[styles.aiCard, { backgroundColor: '#F3E8FF' }]}>
-        <Card.Content>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color="#7C3AED" />
-              <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any, color: '#7C3AED' }}>
-                AI Insights
-              </Text>
-            </View>
-            {!insight?.summary && !insight?.loading && (
-              <TouchableOpacity onPress={() => loadAiInsight(tab)} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#7C3AED', borderRadius: 6 }}>
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }}>Generate</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          {insight?.loading ? (
-            <ActivityIndicator size="small" color="#7C3AED" />
-          ) : insight?.summary ? (
-            <Text style={{ fontSize: getScaledFontSize(13), color: '#4C1D95', lineHeight: getScaledFontSize(20) }}>
-              {insight.summary}
-            </Text>
-          ) : (
-            <Text style={{ fontSize: getScaledFontSize(13), color: '#6B21A8' }}>
-              Tap Generate to get AI-powered analysis of this data.
-            </Text>
-          )}
-        </Card.Content>
-      </Card>
-    );
-  };
-
   const renderTreatmentPlan = () => (
     <ScrollView style={styles.tabContent}>
-      {renderAiInsightCard('treatment')}
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading treatment plans...</Text>
@@ -508,7 +464,6 @@ export default function DoctorDetailScreen() {
 
   const renderProgressNotes = () => (
     <ScrollView style={styles.tabContent}>
-      {renderAiInsightCard('progress')}
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes...</Text>
@@ -661,7 +616,6 @@ export default function DoctorDetailScreen() {
 
   const renderAppointments = () => (
     <ScrollView style={styles.tabContent}>
-      {renderAiInsightCard('appointments')}
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading appointments...</Text>
@@ -1277,11 +1231,6 @@ const styles = StyleSheet.create({
   tabContent: {
     flex: 1,
     paddingHorizontal: 16,
-  },
-  aiCard: {
-    marginBottom: 12,
-    borderRadius: 12,
-    elevation: 1,
   },
   sectionSubtitle: {
     fontSize: 16,
