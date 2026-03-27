@@ -255,7 +255,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   sectionBody: {
-    lineHeight: 22,
   },
   endSpacer: {
     height: 20,

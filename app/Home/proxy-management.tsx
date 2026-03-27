@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, Alert, ActivityIndicator, Switch } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, Alert, ActivityIndicator, Switch, RefreshControl } from 'react-native';
 import { Card, Button, TextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useProxies, useCreateProxy, useUpdateProxy, useRevokeProxy, ProxyScope, Proxy } from '@/hooks/use-proxies';
@@ -37,6 +37,18 @@ export default function ProxyManagementScreen() {
   const [pendingName, setPendingName] = useState('');
   const [pendingScopes, setPendingScopes] = useState<ProxyScope[]>([]);
   const [editingProxy, setEditingProxy] = useState<Proxy | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -187,7 +199,7 @@ export default function ProxyManagementScreen() {
 
   return (
     <AppWrapper>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Description */}
         <Card style={[styles.infoCard, { backgroundColor: colors.background }]}>
           <Card.Content>
@@ -555,7 +567,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   infoText: {
-    lineHeight: 20,
   },
   addButton: {
     borderRadius: 12,
@@ -729,7 +740,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   modalScrollView: {
-    maxHeight: 420,
   },
   consentSection: {
     marginBottom: 24,
@@ -739,7 +749,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   consentDescription: {
-    lineHeight: 20,
   },
   consentScopeSection: {
     marginTop: 16,
@@ -767,7 +776,6 @@ const styles = StyleSheet.create({
   },
   termText: {
     flex: 1,
-    lineHeight: 20,
   },
   modalActions: {
     flexDirection: 'row',

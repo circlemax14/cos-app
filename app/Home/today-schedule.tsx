@@ -893,7 +893,6 @@ const styles = StyleSheet.create({
   permissionErrorText: {
     fontSize: 14,
     textAlign: 'center',
-    lineHeight: 20,
     includeFontPadding: true, // Android: include font padding to prevent cutoff
   },
   permissionButton: {
@@ -904,7 +903,6 @@ const styles = StyleSheet.create({
   permissionHintText: {
     fontSize: 12,
     textAlign: 'center',
-    lineHeight: 18,
     includeFontPadding: true, // Android: include font padding to prevent cutoff
   },
   healthMetricsText: {

@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center', gap: 20 },
   topIcon: { fontSize: 56, textAlign: 'center' },
   title: { fontWeight: '700', textAlign: 'center' },
-  subtitle: { textAlign: 'center', lineHeight: 22, opacity: 0.8 },
+  subtitle: { textAlign: 'center', opacity: 0.8 },
   permissionList: { gap: 12 },
   permissionCard: {
     flexDirection: 'row',
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
   permissionText: { flex: 1, gap: 4 },
   permissionTitle: { fontWeight: '600' },
   optionalBadge: { fontWeight: '400' },
-  permissionDesc: { lineHeight: 18 },
+  permissionDesc: {},
   actions: { paddingBottom: 40, gap: 16, alignItems: 'center' },
   primaryButton: {
     width: '100%',

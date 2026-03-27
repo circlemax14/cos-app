@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
   status_completed: { color: '#8E8E93' },
   status_cancelled: { color: '#FF3B30' },
   notes: { marginTop: 8, fontStyle: 'italic' },
-  summary: { lineHeight: 22, marginBottom: 12 },
+  summary: { marginBottom: 12 },
   rec: { padding: 10, borderRadius: 8, marginBottom: 6 },
   recCategory: { marginBottom: 2 },
   refreshBtn: {

@@ -1,8 +1,8 @@
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
-import React, { useState, useEffect } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Button, Icon, TextInput as PaperTextInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchPatientInfo } from '@/services/api/patient';
@@ -26,6 +26,7 @@ export default function PersonalInfoScreen() {
 
   const [formData, setFormData] = useState(emptyFormData);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const loadPatientData = async () => {
@@ -52,6 +53,30 @@ export default function PersonalInfoScreen() {
       }
     };
     loadPatientData();
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const patient = await fetchPatientInfo();
+      if (patient) {
+        setFormData({
+          name: patient.name || '',
+          email: patient.email || '',
+          phone: patient.phone || '',
+          dateOfBirth: patient.dateOfBirth || '',
+          gender: patient.gender || '',
+          address: patient.address || '',
+          city: patient.city || '',
+          state: patient.state || '',
+          zipCode: patient.zipCode || '',
+        });
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   const handleSave = () => {
@@ -121,6 +146,7 @@ export default function PersonalInfoScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
           >
             {/* Avatar Section */}
             <View style={styles.avatarSection}>

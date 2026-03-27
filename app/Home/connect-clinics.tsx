@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   modalTitle: { fontWeight: '700', textAlign: 'center' },
-  modalBody: { textAlign: 'center', lineHeight: 22 },
+  modalBody: { textAlign: 'center' },
   modalButton: {
     paddingVertical: 14,
     paddingHorizontal: 40,

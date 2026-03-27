@@ -1,8 +1,8 @@
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router } from 'expo-router';
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal, RefreshControl } from 'react-native';
 import { Card, Button } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getCareManagerAgencyById, type CareManagerAgency } from '@/services/care-manager-agencies';
@@ -17,7 +17,8 @@ export default function CareManagerDetailScreen() {
   const [agency, setAgency] = useState<CareManagerAgency | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
-  
+  const [refreshing, setRefreshing] = useState(false);
+
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
   
@@ -39,6 +40,22 @@ export default function CareManagerDetailScreen() {
     };
     loadAgency();
   }, [agencyId, agencyName]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (agencyId) {
+        const agencyData = await getCareManagerAgencyById(agencyId);
+        if (agencyData) {
+          setAgency(agencyData);
+        }
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setRefreshing(false);
+    }
+  }, [agencyId]);
 
   const handleRequestCareManager = () => {
     // Show consent modal first
@@ -134,7 +151,7 @@ export default function CareManagerDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.background }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -448,7 +465,6 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 16,
-    lineHeight: 24,
     marginBottom: 16,
   },
   infoRow: {
@@ -564,7 +580,6 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   modalScrollView: {
-    maxHeight: 400,
     padding: 20,
   },
   consentSection: {
@@ -577,7 +592,6 @@ const styles = StyleSheet.create({
   },
   consentDescription: {
     fontSize: 14,
-    lineHeight: 20,
   },
   termsSection: {
     marginTop: 8,
@@ -598,7 +612,6 @@ const styles = StyleSheet.create({
   termText: {
     flex: 1,
     fontSize: 14,
-    lineHeight: 20,
   },
   modalActions: {
     flexDirection: 'row',

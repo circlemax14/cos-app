@@ -31,6 +31,7 @@ import {
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
+    RefreshControl,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { InitialsAvatar } from '@/utils/avatar-utils';
@@ -66,7 +67,7 @@ function UploadFeedbackItem({ row }: { row: UploadResultRow }) {
 
 const feedbackStyles = StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
-    text: { flex: 1, fontSize: 13, lineHeight: 18 },
+    text: { flex: 1, fontSize: 13 },
 });
 
 // ─────────────────────────────────────────────
@@ -211,8 +212,8 @@ const mStyles = StyleSheet.create({
     },
     headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
     title: { fontWeight: '700' },
-    subtitle: { lineHeight: 20, marginBottom: 20 },
-    fields: { maxHeight: 380 },
+    subtitle: { marginBottom: 20 },
+    fields: { },
     label: { fontWeight: '700', letterSpacing: 0.6, marginBottom: 4, marginTop: 12 },
     input: {
         borderWidth: 1,
@@ -271,6 +272,8 @@ export function IntegrativeScreen({
     const [uploadResults, setUploadResults] = useState<UploadResultRow[]>([]);
     const [showResults, setShowResults] = useState(false);
 
+    const [refreshing, setRefreshing] = useState(false);
+
     // Manual entry modal state
     const [manualEntryVisible, setManualEntryVisible] = useState(false);
     const [manualEntryInitial, setManualEntryInitial] = useState<ManualEntryData>({
@@ -310,6 +313,17 @@ export function IntegrativeScreen({
 
     useEffect(() => {
         loadProviders();
+    }, [loadProviders]);
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            await loadProviders();
+        } catch {
+            // silent fail
+        } finally {
+            setRefreshing(false);
+        }
     }, [loadProviders]);
 
     // ── File upload ──────────────────────────────
@@ -429,6 +443,7 @@ export function IntegrativeScreen({
         <ScrollView
             contentContainerStyle={[emptyStyles.container]}
             showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
         >
             {/* Header */}
             <View style={emptyStyles.header}>
@@ -534,7 +549,7 @@ export function IntegrativeScreen({
             )}
 
             {/* Provider list */}
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.flex}>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.flex} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
                 <Text style={[dataStyles.sectionLabel, { color: colors.text + '70', fontSize: getScaledFontSize(12) }]}>
                     PROVIDERS ({providers.length})
                 </Text>
@@ -668,7 +683,6 @@ const emptyStyles = StyleSheet.create({
     },
     subtitle: {
         textAlign: 'center',
-        lineHeight: 20,
         maxWidth: 320,
     },
     stepsCard: {
@@ -694,7 +708,6 @@ const emptyStyles = StyleSheet.create({
     },
     stepLabel: {
         flex: 1,
-        lineHeight: 18,
     },
     uploadButton: {
         flexDirection: 'row',
@@ -716,7 +729,6 @@ const emptyStyles = StyleSheet.create({
     },
     hint: {
         textAlign: 'center',
-        lineHeight: 18,
     },
     resultsBox: {
         width: '100%',
