@@ -208,8 +208,8 @@ export default function DoctorDetailScreen() {
   }, [providerId]);
 
   // Doctor contact information
-  const doctorPhone = provider?.phone || params.phone as string || '';
-  const doctorEmail = provider?.email || params.email as string || '';
+  const doctorPhone = doctorData?.phone || provider?.phone || params.phone as string || '';
+  const doctorEmail = doctorData?.email || provider?.email || params.email as string || '';
   const doctorQualifications = provider?.qualifications || providerQualifications;
   const doctorSpecialty = provider?.specialty || providerSpecialty;
 
