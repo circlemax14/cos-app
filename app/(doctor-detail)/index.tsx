@@ -946,7 +946,7 @@ export default function DoctorDetailScreen() {
                 <View style={[styles.termItem, { gap: getScaledFontSize(12) }]}>
                   <MaterialIcons name="check-circle" size={getScaledFontSize(16)} color={colors.tint || '#008080'} style={{ marginTop: getScaledFontSize(2) }} />
                   <Text style={[styles.termText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
-                    The provider will not sell or share your data with third parties without your explicit consent.
+                    The provider will not sell or share your data with third parties.
                   </Text>
                 </View>
               </View>
