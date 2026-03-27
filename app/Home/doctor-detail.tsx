@@ -150,10 +150,15 @@ export default function DoctorDetailScreen() {
     const loadOtherProviders = async () => {
       setIsLoadingProviders(true);
       try {
-        const [allProviders, existingShares] = await Promise.all([
-          fetchProviders(),
-          fetchDataShares(),
-        ]);
+        const allProviders = await fetchProviders();
+        // Fetch existing shares separately — endpoint may not be deployed yet
+        let existingShares: Awaited<ReturnType<typeof fetchDataShares>> = [];
+        try {
+          existingShares = await fetchDataShares();
+        } catch {
+          // Data sharing endpoint not available yet — default all to off
+        }
+
         // Filter out the current doctor
         const filtered = allProviders.filter(p => p.id !== providerId);
         setOtherProviders(filtered);
