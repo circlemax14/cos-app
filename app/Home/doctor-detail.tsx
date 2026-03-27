@@ -1438,9 +1438,8 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   consentModalContent: {
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '80%',
+    width: '95%',
+    maxHeight: '85%',
     borderRadius: 16,
     padding: 0,
     elevation: 5,
