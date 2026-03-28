@@ -467,7 +467,7 @@ export default function DoctorDetailScreen() {
 
   const renderTreatmentPlan = () => (
     <ScrollView style={styles.tabContent}>
-      {renderAiInsightCard('treatment')}
+      {/* AI Insights temporarily disabled */}
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading treatment plans...</Text>
@@ -508,7 +508,7 @@ export default function DoctorDetailScreen() {
 
   const renderProgressNotes = () => (
     <ScrollView style={styles.tabContent}>
-      {renderAiInsightCard('progress')}
+      {/* AI Insights temporarily disabled */}
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes...</Text>
@@ -661,7 +661,7 @@ export default function DoctorDetailScreen() {
 
   const renderAppointments = () => (
     <ScrollView style={styles.tabContent}>
-      {renderAiInsightCard('appointments')}
+      {/* AI Insights temporarily disabled */}
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading appointments...</Text>

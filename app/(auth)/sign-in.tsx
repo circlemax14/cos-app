@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signIn, UserProfile } from '@/services/auth';
@@ -20,10 +22,20 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const handleRoute = (user: UserProfile) => {
+  const handleRoute = async (user: UserProfile) => {
     if (!user.termsAccepted) {
       router.replace('/(onboarding)/usage-guidelines' as never);
-    } else if (!user.fastenConnected) {
+      return;
+    }
+
+    // Check if device permissions have been requested
+    const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
+    if (!permissionsRequested) {
+      router.replace('/(onboarding)/permissions' as never);
+      return;
+    }
+
+    if (!user.fastenConnected) {
       router.replace('/(onboarding)/fasten-connect' as never);
     } else if (!user.dataReady && user.ehiExportPending) {
       router.replace('/(onboarding)/data-processing' as never);
@@ -47,7 +59,7 @@ export default function SignInScreen() {
     const res = await signIn({ username: username.trim(), password });
     setLoading(false);
     if (res.success && res.user) {
-      handleRoute(res.user);
+      await handleRoute(res.user);
     } else if (res.notConfirmed) {
       router.push({ pathname: '/(auth)/verify-email', params: { email: username.trim() } } as never);
     } else {
