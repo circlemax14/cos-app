@@ -19,6 +19,7 @@ export interface CareManagerAgency {
   services?: string[];
   rating?: number;
   reviewCount?: number;
+  logoUrl?: string;
 }
 
 /**

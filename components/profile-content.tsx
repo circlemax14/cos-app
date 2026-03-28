@@ -4,6 +4,8 @@ import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { InitialsAvatar } from '@/utils/avatar-utils';
+import { apiClient } from '@/lib/api-client';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -64,6 +66,7 @@ export function ProfileContent({
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
+  const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
@@ -73,6 +76,28 @@ export function ProfileContent({
         if (patient) {
           setPatientName(patient.name || 'User');
           setPatientEmail(patient.email || '');
+          if (patient.photoUrl) {
+            try {
+              const { getPhotoDownloadUrl } = await import('@/services/user-photo');
+              const downloadUrl = await getPhotoDownloadUrl();
+              setPatientPhotoUrl(downloadUrl || patient.photoUrl);
+            } catch {
+              setPatientPhotoUrl(patient.photoUrl);
+            }
+          }
+
+          // Fallback: if email is empty, try getting from auth /me endpoint
+          if (!patient.email) {
+            try {
+              const meResponse = await apiClient.get('/v1/auth/me');
+              const meData = meResponse.data?.data;
+              if (meData?.email) {
+                setPatientEmail(meData.email);
+              }
+            } catch {
+              // ignore — email fallback is best-effort
+            }
+          }
         }
       } catch {
         // Patient data failed to load — keep defaults
@@ -102,7 +127,15 @@ export function ProfileContent({
             <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 24 }} />
           ) : (
             <>
-              <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
+              {patientPhotoUrl ? (
+                <Image
+                  source={{ uri: patientPhotoUrl }}
+                  style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 16 }}
+                  contentFit="cover"
+                />
+              ) : (
+                <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
+              )}
               <Text style={[styles.name, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>{patientName}</Text>
               <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{patientEmail}</Text>
             </>

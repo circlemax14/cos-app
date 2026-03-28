@@ -220,6 +220,7 @@ export default function ProxyManagementScreen() {
           }}
           style={[styles.addButton, { backgroundColor: colors.tint }]}
           labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff' }}
+          contentStyle={{ paddingVertical: getScaledFontSize(6) }}
           icon={() => <MaterialIcons name="person-add" size={getScaledFontSize(20)} color="#fff" />}
         >
           Add Proxy
@@ -389,6 +390,7 @@ export default function ProxyManagementScreen() {
                 onPress={() => setShowAddModal(false)}
                 style={[styles.modalButton, { borderColor: colors.text + '40' }]}
                 labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Cancel
               </Button>
@@ -397,6 +399,7 @@ export default function ProxyManagementScreen() {
                 onPress={handleAddProxy}
                 style={[styles.modalButton, { backgroundColor: colors.tint }]}
                 labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff' }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Continue
               </Button>
@@ -480,6 +483,7 @@ export default function ProxyManagementScreen() {
                 onPress={handleConsentNo}
                 style={[styles.modalButton, { borderColor: colors.text + '40' }]}
                 labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 No
               </Button>
@@ -490,6 +494,7 @@ export default function ProxyManagementScreen() {
                 disabled={createProxy.isPending}
                 style={[styles.modalButton, { backgroundColor: colors.tint }]}
                 labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff' }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Yes, I Consent
               </Button>
@@ -534,6 +539,7 @@ export default function ProxyManagementScreen() {
                 onPress={() => setShowEditScopesModal(false)}
                 style={[styles.modalButton, { borderColor: colors.text + '40' }]}
                 labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Cancel
               </Button>
@@ -544,6 +550,7 @@ export default function ProxyManagementScreen() {
                 disabled={updateProxy.isPending}
                 style={[styles.modalButton, { backgroundColor: colors.tint }]}
                 labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff' }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Save
               </Button>

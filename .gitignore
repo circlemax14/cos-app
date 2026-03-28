@@ -6,4 +6,4 @@ node_modules
 expo-env.d.ts
 # @end expo-cli
 .env
-.env.example
+.env.example.env.local

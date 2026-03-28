@@ -16,7 +16,13 @@
         "applinks:joinabrightfuture.com",
         "applinks:*.joinabrightfuture.com"
       ],
-      "appleTeamId": "74MH6L4MZA"
+      "appleTeamId": "74MH6L4MZA",
+      "infoPlist": {
+        "NSCameraUsageDescription": "BrightFuture needs camera access to photograph documents and prescriptions.",
+        "NSContactsUsageDescription": "BrightFuture uses contacts to help you add emergency contacts quickly.",
+        "NSPhotoLibraryUsageDescription": "BrightFuture needs photo library access to upload health documents.",
+        "NSUserTrackingUsageDescription": "BrightFuture uses anonymous analytics to improve the app experience."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -71,7 +77,8 @@
         }
       ],
       "expo-sqlite",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-tracking-transparency"
     ],
     "experiments": {
       "typedRoutes": true,

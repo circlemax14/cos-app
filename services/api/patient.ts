@@ -68,6 +68,7 @@ export async function fetchPatientInfo(): Promise<Patient | null> {
       data: {
         sub: string;
         email?: string;
+        photoUrl?: string;
         patientDetails?: {
           fullName?: string;
           firstName?: string;
@@ -100,6 +101,7 @@ export async function fetchPatientInfo(): Promise<Patient | null> {
       city: pd.city,
       state: pd.state,
       zipCode: pd.postalCode,
+      photoUrl: meRes.data.data.photoUrl ?? undefined,
     };
   } catch {
     return null;

@@ -8,6 +8,8 @@ import { getTodayHealthMetrics, HealthMetrics } from '@/services/health';
 import { fetchPatientInfo, fetchMedications } from '@/services/api/patient';
 import type { Medication } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
+import { Image } from 'expo-image';
+import { getPhotoDownloadUrl } from '@/services/user-photo';
 
 interface Task {
   id: number;
@@ -23,6 +25,7 @@ export default function TodayScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [patientName, setPatientName] = useState('');
+  const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
@@ -43,6 +46,14 @@ export default function TodayScheduleScreen() {
         const patient = await fetchPatientInfo();
         if (patient) {
           setPatientName(patient.name || '');
+          if (patient.photoUrl) {
+            try {
+              const downloadUrl = await getPhotoDownloadUrl();
+              setPatientPhotoUrl(downloadUrl || patient.photoUrl);
+            } catch {
+              setPatientPhotoUrl(patient.photoUrl);
+            }
+          }
         }
       } catch {
         // Patient data failed to load
@@ -300,7 +311,15 @@ export default function TodayScheduleScreen() {
               <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 16 }} />
             ) : (
             <>
-            <InitialsAvatar name={patientName} size={getScaledFontSize(80)} />
+            {patientPhotoUrl ? (
+              <Image
+                source={{ uri: patientPhotoUrl }}
+                style={{ width: getScaledFontSize(80), height: getScaledFontSize(80), borderRadius: getScaledFontSize(40) }}
+                contentFit="cover"
+              />
+            ) : (
+              <InitialsAvatar name={patientName} size={getScaledFontSize(80)} />
+            )}
             <View style={styles.profileInfo}>
               <Text style={[
                 styles.profileName,
@@ -328,7 +347,8 @@ export default function TodayScheduleScreen() {
           </View>
         </Card>
 
-        {/* Medications Section */}
+        {/* Medications Section — only shown if there are medications */}
+        {medications.length > 0 && (
         <Card style={[styles.medicationsCard, { backgroundColor: colors.background }]}>
           <Text style={[
             styles.medicationsTitle,
@@ -392,6 +412,7 @@ export default function TodayScheduleScreen() {
             </View>
           ))}
         </Card>
+        )}
 
         {/* Health Metrics Section */}
         {!healthMetrics.isLoading && (
@@ -618,133 +639,14 @@ export default function TodayScheduleScreen() {
           )
         )}
 
-        {/* Progress Section */}
+        {/* Today's Progress and Today's Tasks — temporarily disabled
         <Card style={[styles.progressCard]}>
-          <View style={styles.progressContent}>
-            <Text style={[
-              styles.progressTitle,
-              {
-                fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(600) as any,
-                marginBottom: 8,
-              }
-            ]}>
-              Today&apos;s Progress
-            </Text>
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBar]}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { 
-                      width: `${progress}%`,
-                    }
-                  ]} 
-                />
-              </View>
-              <Text style={[
-                styles.progressText,
-                {
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(500) as any,
-                  marginTop: 4,
-                }
-              ]}>
-                {completedCount} of {tasks.length} completed
-              </Text>
-            </View>
-          </View>
+          ...
         </Card>
-
-        {/* Tasks List */}
         <View style={styles.tasksSection}>
-          <Text style={[
-            styles.sectionTitle,
-            {
-              fontSize: getScaledFontSize(18),
-              fontWeight: getScaledFontWeight(600) as any,
-              color: colors.text,
-            }
-          ]}>
-            Today&apos;s Tasks
-          </Text>
-          
-          {tasks.map((task, index) => (
-            <TouchableOpacity 
-              key={task.id}
-              onPress={() => toggleTaskCompletion(task.id)}
-              activeOpacity={0.7}
-            >
-              <Card 
-                style={[
-                  styles.taskCard, 
-                  { 
-                    borderLeftWidth: 4,
-                    borderLeftColor: '#008080'
-                  }
-                ]}
-              >
-                <View style={styles.taskContent}>
-                <View style={styles.taskLeft}>
-                  <List.Icon 
-                    icon={task.icon} 
-                    color={'#008080'}
-                  />
-                  <View style={styles.taskDetails}>
-                    <Text style={[
-                      styles.taskTime,
-                      {
-                        fontSize: getScaledFontSize(12),
-                        fontWeight: getScaledFontWeight(500) as any,
-                      }
-                    ]}>
-                      {task.time}
-                    </Text>
-                    <Text
-                      numberOfLines={3}
-                      style={[
-                        styles.taskTitle,
-                        {
-                          fontSize: getScaledFontSize(16),
-                          fontWeight: task.completed
-                            ? settings.isBoldTextEnabled ? '700' : '600'
-                            : '600',
-                          textDecorationLine: task.completed ? 'line-through' : 'none',
-                        }
-                      ]}>
-                      {task.title}
-                    </Text>
-                    <Text
-                      numberOfLines={4}
-                      style={[
-                        styles.taskDescription,
-                        {
-                          fontSize: getScaledFontSize(14),
-                          fontWeight: settings.isBoldTextEnabled ? '500' : '400',
-                        }
-                      ]}>
-                      {task.description}
-                    </Text>
-                  </View>
-                </View>
-                {task.completed ? (
-                  <IconButton 
-                    icon="check-circle" 
-                    iconColor={'#008080'} 
-                    size={28}
-                  />
-                ) : (
-                  <IconButton 
-                    icon="circle-outline" 
-                    iconColor={'#008080'}
-                    size={28}
-                  />
-                )}
-              </View>
-              </Card>
-            </TouchableOpacity>
-          ))}
+          ...
         </View>
+        */}
       </ScrollView>
     </AppWrapper>
   );

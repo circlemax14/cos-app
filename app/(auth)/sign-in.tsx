@@ -150,6 +150,7 @@ export default function SignInScreen() {
                 <Button
                   mode="text"
                   labelStyle={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(22) }}
+                  contentStyle={{ paddingVertical: getScaledFontSize(6) }}
                   accessibilityLabel="Go to sign up"
                 >
                   Sign Up

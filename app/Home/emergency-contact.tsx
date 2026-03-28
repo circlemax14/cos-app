@@ -322,6 +322,7 @@ export default function EmergencyContactScreen() {
                 onPress={closeModal}
                 style={[styles.modalButton, { borderColor: colors.text + '40' }]}
                 labelStyle={{ color: colors.text, fontSize: getScaledFontSize(16) }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Cancel
               </Button>
@@ -332,6 +333,7 @@ export default function EmergencyContactScreen() {
                 disabled={isSaving}
                 style={[styles.modalButton, { backgroundColor: colors.tint }]}
                 labelStyle={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 {editingContact ? 'Update' : 'Add'}
               </Button>

@@ -543,6 +543,7 @@ export default function HealthDetailsScreen() {
               onPress={handleCancel}
               style={[styles.cancelButton, { borderColor: colors.border }]}
               labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}
+              contentStyle={{ paddingVertical: getScaledFontSize(6) }}
             >
               Cancel
             </Button>
@@ -553,6 +554,7 @@ export default function HealthDetailsScreen() {
               loading={updateMutation.isPending}
               style={[styles.saveButton, { backgroundColor: colors.tint }]}
               labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: '#fff' }}
+              contentStyle={{ paddingVertical: getScaledFontSize(6) }}
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </Button>

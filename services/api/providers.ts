@@ -69,15 +69,20 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
 }
 
 export async function fetchProviders(): Promise<Provider[]> {
-  const res = await apiClient.get<{
-    success: boolean;
-    data: { roles: FhirPractitionerRole[]; practitioners: FhirPractitioner[] };
-  }>('/v1/patients/me/providers');
-  const { roles, practitioners } = res.data.data;
-  return practitioners.map((p) => {
-    const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
-    return transformToProvider(p, role);
-  });
+  try {
+    const res = await apiClient.get<{
+      success: boolean;
+      data: { roles: FhirPractitionerRole[]; practitioners: FhirPractitioner[] };
+    }>('/v1/patients/me/providers');
+    const { roles, practitioners } = res.data.data;
+    return practitioners.map((p) => {
+      const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
+      return transformToProvider(p, role);
+    });
+  } catch (error) {
+    console.warn('Failed to fetch providers (HealthLake may be unavailable):', error);
+    return [];
+  }
 }
 
 export async function fetchProviderById(providerId: string): Promise<Provider | null> {

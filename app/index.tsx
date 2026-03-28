@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,8 +17,13 @@ type GateState = 'loading' | 'no-internet' | 'done';
 /**
  * Determine the correct destination based on user onboarding state.
  */
-function getDestination(user: UserProfile): string {
+async function getDestination(user: UserProfile): Promise<string> {
   if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
+
+  // Check if permissions have been requested
+  const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
+  if (!permissionsRequested) return '/(onboarding)/permissions';
+
   if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
   // If connected but data not ready (pending, failed, or unknown status) → show data-processing
   if (!user.dataReady && user.fastenConnected) return '/(onboarding)/data-processing';
@@ -48,7 +54,7 @@ export default function SplashGate() {
       }
 
       // Step 3: Route to the correct screen based on onboarding state
-      const destination = getDestination(result.user);
+      const destination = await getDestination(result.user);
       router.replace(destination as never);
     } catch (err: unknown) {
       const isNetworkError =
