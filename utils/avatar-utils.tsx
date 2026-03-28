@@ -91,12 +91,15 @@ export function InitialsAvatar({
   // Since we don't have photos in Fasten Health data, always show initials
   const shouldUseImage = image && (typeof image === 'string' || (typeof image === 'object' && image.uri));
   
-  if (shouldUseImage) {
+  const [imageError, setImageError] = React.useState(false);
+
+  if (shouldUseImage && !imageError) {
     return (
-      <Avatar.Image 
-        source={image} 
-        size={size} 
+      <Avatar.Image
+        source={image}
+        size={size}
         style={style}
+        onError={() => setImageError(true)}
       />
     );
   }

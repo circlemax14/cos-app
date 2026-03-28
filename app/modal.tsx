@@ -55,7 +55,7 @@ type ManualMember = {
 export default function ModalScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const { selectedProviders, addProvider, removeProvider } = useProviderSelection();
+  const { selectedProviders, selectedCareManager, addProvider, removeProvider, setSelectedCareManager } = useProviderSelection();
   const [categoryGroups, setCategoryGroups] = React.useState<CategoryGroup[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(null);
@@ -483,7 +483,12 @@ export default function ModalScreen() {
                                 }
                               ]}
                               onPress={() => {
-                                router.push(`/(care-manager-detail)?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}`);
+                                const isSelected = selectedCareManager?.id === agency.id;
+                                if (isSelected) {
+                                  setSelectedCareManager(null);
+                                } else {
+                                  setSelectedCareManager({ id: agency.id, name: agency.name, agencyName: agency.name, logoUrl: agency.logoUrl });
+                                }
                               }}
                               activeOpacity={0.7}
                             >
@@ -536,7 +541,21 @@ export default function ModalScreen() {
                                   </Text>
                                 )}
                               </View>
-                              <IconSymbol name="chevron.right" size={getScaledFontSize(20)} color={colors.text + '60'} />
+                              {(() => {
+                                const isSelected = selectedCareManager?.id === agency.id;
+                                return (
+                                  <View style={{
+                                    width: getScaledFontSize(32),
+                                    height: getScaledFontSize(32),
+                                    borderRadius: getScaledFontSize(16),
+                                    backgroundColor: isSelected ? '#EF4444' + '20' : colors.tint + '20',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}>
+                                    <IconSymbol name={isSelected ? 'minus' : 'plus'} size={getScaledFontSize(18)} color={isSelected ? '#EF4444' : colors.tint} />
+                                  </View>
+                                );
+                              })()}
                             </TouchableOpacity>
                           ))
                         )}

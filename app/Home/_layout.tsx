@@ -186,6 +186,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="agency-detail"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );

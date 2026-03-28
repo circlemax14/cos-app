@@ -173,6 +173,7 @@ export default function VerifyEmailScreen() {
                 loading={resending}
                 disabled={resending || loading}
                 labelStyle={{ color: colors.primary, fontSize: getScaledFontSize(14) }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Resend code
               </Button>
@@ -181,6 +182,7 @@ export default function VerifyEmailScreen() {
                 mode="text"
                 onPress={() => router.replace('/(auth)/sign-in')}
                 labelStyle={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}
+                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Back to Sign In
               </Button>

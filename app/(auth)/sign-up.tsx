@@ -171,7 +171,7 @@ export default function SignUpScreen() {
             <View style={styles.switchRow}>
               <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Already have an account? </Text>
               <Link href="/(auth)/sign-in" asChild>
-                <Button mode="text" labelStyle={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>Sign In</Button>
+                <Button mode="text" labelStyle={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]} contentStyle={{ paddingVertical: getScaledFontSize(6) }}>Sign In</Button>
               </Link>
             </View>
           </View>

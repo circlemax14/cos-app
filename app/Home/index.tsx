@@ -4,7 +4,7 @@ import { FilterMenu } from '@/components/ui/filter-menu';
 import { Colors } from '@/constants/theme';
 import { SUPPORT_CATEGORIES, getCategoryById, getSubCategoryById, matchProviderToSubCategory } from '@/constants/categories';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
+import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider, type SelectedCareManager } from '@/stores/provider-selection-store';
 import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
@@ -71,7 +71,7 @@ type ManualMember = {
   subCategoryId: string;
 };
 
-type OrbitItem = SelectedProvider | { id: string; isPlaceholder: true };
+type OrbitItem = SelectedProvider | { id: string; isPlaceholder: true } | { id: string; isCareManager: true; name: string; agencyName?: string; logoUrl?: string };
 
 interface CircleViewProps {
   providers: SelectedProvider[];
@@ -80,12 +80,15 @@ interface CircleViewProps {
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
+  patientPhotoUrl?: string | null;
   onAddProviderPress: () => void;
   isCircleComplete: boolean;
+  selectedCareManager?: SelectedCareManager | null;
+  onCareManagerPress?: () => void;
 }
 
 // Original Circle View for iPhone/Android (fixed dimensions)
-function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', onAddProviderPress, isCircleComplete }: CircleViewProps) {
+function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -99,12 +102,22 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
   const orbitAvatarContainerSize = 120;
   const linkLineWidth = 92;
 
-  const orbitItems: OrbitItem[] = isCircleComplete
-    ? providers
-    : [
-      ...providers,
-      { id: 'add-provider', isPlaceholder: true },
-    ];
+  // Build orbit items: selected CM + providers + ONE "+" placeholder (never two)
+  const hasCareManager = !!selectedCareManager;
+  const orbitItems: OrbitItem[] = [];
+
+  // Add care manager if selected
+  if (hasCareManager) {
+    orbitItems.push({ id: selectedCareManager!.id, isCareManager: true, name: selectedCareManager!.name, agencyName: selectedCareManager!.agencyName, logoUrl: selectedCareManager!.logoUrl });
+  }
+
+  // Add providers
+  orbitItems.push(...providers);
+
+  // Add exactly ONE "+" placeholder if circle isn't full
+  if (!isCircleComplete) {
+    orbitItems.push({ id: 'add-provider', isPlaceholder: true });
+  }
 
   return (
     <View style={[styles.circleContainer, { width: containerWidth, height: containerHeight, alignItems: 'center', justifyContent: 'center' }]}>
@@ -144,7 +157,11 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           }}
           activeOpacity={0.8}
         >
-          <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
+          {patientPhotoUrl ? (
+            <Image source={{ uri: patientPhotoUrl }} style={[styles.centerAvatarImage, { width: getScaledFontSize(centerAvatarSize), height: getScaledFontSize(centerAvatarSize), borderRadius: getScaledFontSize(centerAvatarSize) / 2 }]} contentFit="cover" />
+          ) : (
+            <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
+          )}
         </TouchableOpacity>
         <Text style={[
           styles.centerAvatarText,
@@ -172,6 +189,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
         const containerSize = orbitAvatarContainerSize;
         const halfContainerSize = containerSize / 2;
         const isPlaceholder = 'isPlaceholder' in item;
+        const isCareManager = 'isCareManager' in item;
         return (
           <React.Fragment key={item.id}>
             <View
@@ -200,7 +218,16 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
               ]}
               onPress={() => {
                 if (isPlaceholder) {
-                  onAddProviderPress();
+                  // Check if this is the care manager placeholder
+                  if (item.id === 'add-care-manager' && onCareManagerPress) {
+                    onCareManagerPress();
+                  } else {
+                    onAddProviderPress();
+                  }
+                  return;
+                }
+                if (isCareManager) {
+                  router.push(`/Home/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}`);
                   return;
                 }
                 const isIntegrative = item.category === 'Integrative';
@@ -212,9 +239,54 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
               }}
             >
               {isPlaceholder ? (
-                <View style={[styles.addProviderAvatar, { width: getScaledFontSize(avatarSize), height: getScaledFontSize(avatarSize) }]}>
-                  <IconSymbol name="plus" size={getScaledFontSize(24)} color={colors.tint || '#008080'} />
+                <View style={[
+                  styles.addProviderAvatar,
+                  { width: getScaledFontSize(avatarSize), height: getScaledFontSize(avatarSize) },
+                  item.id === 'add-care-manager' && { borderColor: '#6B21A8', borderWidth: 2, borderStyle: 'dashed' },
+                ]}>
+                  <IconSymbol name="plus" size={getScaledFontSize(24)} color={item.id === 'add-care-manager' ? '#6B21A8' : (colors.tint || '#008080')} />
                 </View>
+              ) : isCareManager ? (
+                <>
+                  {'logoUrl' in item && item.logoUrl ? (
+                    <Image
+                      source={{ uri: item.logoUrl }}
+                      style={{
+                        width: getScaledFontSize(avatarSize),
+                        height: getScaledFontSize(avatarSize),
+                        borderRadius: getScaledFontSize(avatarSize) / 2,
+                        borderWidth: 2,
+                        borderColor: '#6B21A8',
+                      }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={{
+                      width: getScaledFontSize(avatarSize),
+                      height: getScaledFontSize(avatarSize),
+                      borderRadius: getScaledFontSize(avatarSize) / 2,
+                      backgroundColor: '#6B21A8',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <MaterialIcons name="support-agent" size={getScaledFontSize(24)} color="#FFFFFF" />
+                    </View>
+                  )}
+                  <Text
+                    numberOfLines={3}
+                    style={[
+                      styles.orbitAvatarText,
+                      {
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(500) as any,
+                        color: colors.text,
+                        width: 90,
+                        textAlign: 'center'
+                      }
+                    ]}>
+                    {formatProviderDisplayName(item.name)}
+                  </Text>
+                </>
               ) : (
                 <>
                   <InitialsAvatar
@@ -247,7 +319,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
 }
 
 // Responsive Circle View for iPad/Tablet
-function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', onAddProviderPress, isCircleComplete }: CircleViewProps) {
+function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -292,12 +364,22 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
 
   // Calculate minimum radius to prevent overlapping between orbiting doctors
   // Each doctor needs space around the circle: we need enough circumference for all doctors
-  const orbitItems: OrbitItem[] = isCircleComplete
-    ? providers
-    : [
-      ...providers,
-      { id: 'add-provider', isPlaceholder: true },
-    ];
+  // Build orbit items: selected CM + providers + ONE "+" placeholder (never two)
+  const hasCareManager = !!selectedCareManager;
+  const orbitItems: OrbitItem[] = [];
+
+  // Add care manager if selected
+  if (hasCareManager) {
+    orbitItems.push({ id: selectedCareManager!.id, isCareManager: true, name: selectedCareManager!.name, agencyName: selectedCareManager!.agencyName, logoUrl: selectedCareManager!.logoUrl });
+  }
+
+  // Add providers
+  orbitItems.push(...providers);
+
+  // Add exactly ONE "+" placeholder if circle isn't full
+  if (!isCircleComplete) {
+    orbitItems.push({ id: 'add-provider', isPlaceholder: true });
+  }
   const minRadiusForSpacing = (maxContainerSize * orbitItems.length * 1.5) / (2 * Math.PI);
 
   // Scale radius more aggressively for larger screens - increased multiplier for more spacing
@@ -350,7 +432,11 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           }}
           activeOpacity={0.8}
         >
-          <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
+          {patientPhotoUrl ? (
+            <Image source={{ uri: patientPhotoUrl }} style={[styles.centerAvatarImage, { width: getScaledFontSize(centerAvatarSize), height: getScaledFontSize(centerAvatarSize), borderRadius: getScaledFontSize(centerAvatarSize) / 2 }]} contentFit="cover" />
+          ) : (
+            <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
+          )}
         </TouchableOpacity>
         <Text style={[
           styles.centerAvatarText,
@@ -389,6 +475,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
         const containerSize = orbitAvatarContainerSize;
         const halfContainerSize = containerSize / 2;
         const isPlaceholder = 'isPlaceholder' in item;
+        const isCareManager = 'isCareManager' in item;
         return (
           <React.Fragment key={item.id}>
             <View
@@ -418,9 +505,14 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
               ]}
               onPress={() => {
                 if (isPlaceholder) {
-                  onAddProviderPress();
+                  if (item.id === 'add-care-manager' && onCareManagerPress) {
+                    onCareManagerPress();
+                  } else {
+                    onAddProviderPress();
+                  }
                   return;
                 }
+                if (isCareManager) return;
                 const isIntegrative = item.category === 'Integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
@@ -430,9 +522,38 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
               }}
             >
               {isPlaceholder ? (
-                <View style={[styles.addProviderAvatar, { width: getScaledFontSize(avatarSize), height: getScaledFontSize(avatarSize) }]}>
-                  <IconSymbol name="plus" size={getScaledFontSize(24)} color={colors.tint || '#008080'} />
+                <View style={[
+                  styles.addProviderAvatar,
+                  { width: getScaledFontSize(avatarSize), height: getScaledFontSize(avatarSize) },
+                  item.id === 'add-care-manager' && { borderColor: '#6B21A8', borderWidth: 2, borderStyle: 'dashed' },
+                ]}>
+                  <IconSymbol name="plus" size={getScaledFontSize(24)} color={item.id === 'add-care-manager' ? '#6B21A8' : (colors.tint || '#008080')} />
                 </View>
+              ) : isCareManager ? (
+                <>
+                  <View style={{
+                    width: getScaledFontSize(avatarSize),
+                    height: getScaledFontSize(avatarSize),
+                    borderRadius: getScaledFontSize(avatarSize) / 2,
+                    backgroundColor: '#6B21A8',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <MaterialIcons name="support-agent" size={getScaledFontSize(24)} color="#FFFFFF" />
+                  </View>
+                  <Text
+                    style={[
+                      styles.orbitAvatarText,
+                      {
+                        fontSize: getScaledFontSize(12 * Math.min(scaleFactor, 1.5)),
+                        fontWeight: getScaledFontWeight(500) as any,
+                        color: colors.text,
+                        textAlign: 'center',
+                      }
+                    ]}>
+                    {formatProviderDisplayName(item.name)}
+                  </Text>
+                </>
               ) : (
                 <>
                   <InitialsAvatar
@@ -954,7 +1075,10 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       {SUPPORT_CATEGORIES.map((category) => {
         // Count providers in this category
         let categoryProviderCount: number;
-        if (category.id === 'integrative') {
+        if (category.id === 'care-manager') {
+          // Care manager agencies are fetched separately
+          categoryProviderCount = agencies.length;
+        } else if (category.id === 'integrative') {
           // Integrative providers come from the non-EHR storage
           categoryProviderCount = nonEhrProviderCount;
         } else {
@@ -1510,7 +1634,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   }
                 ]}
                 onPress={() => {
-                  router.push(`/(care-manager-detail)?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}`);
+                  router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}`);
                 }}
                 activeOpacity={0.7}
               >
@@ -1523,9 +1647,22 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                     backgroundColor: colors.tint + '20',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    overflow: 'hidden',
                   }
                 ]}>
-                  <IconSymbol name="building.2" size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
+                  {agency.logoUrl ? (
+                    <Image
+                      source={{ uri: agency.logoUrl }}
+                      style={{
+                        width: getScaledFontSize(56),
+                        height: getScaledFontSize(56),
+                        borderRadius: getScaledFontSize(28),
+                      }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <IconSymbol name="building.2" size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
+                  )}
                 </View>
                 <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
                   <Text style={[
@@ -2076,8 +2213,9 @@ export default function HomeScreen() {
   // Load Fasten Health providers for circle view
   const [, setFastenProviders] = useState<FastenProvider[]>([]);
   const [, setIsLoadingProviders] = useState(false);
-  const { selectedProviders, addProvider, removeProvider, validateAndCleanProviders } = useProviderSelection();
+  const { selectedProviders, selectedCareManager, addProvider, removeProvider, validateAndCleanProviders, loadFromServer, setSelectedCareManager } = useProviderSelection();
   const [patientName, setPatientName] = useState('');
+  const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
@@ -2122,6 +2260,16 @@ export default function HomeScreen() {
         const patient = await fetchPatientInfo();
         if (patient) {
           setPatientName(patient.name || '');
+          // Load profile photo
+          if (patient.photoUrl) {
+            try {
+              const { getPhotoDownloadUrl } = await import('@/services/user-photo');
+              const downloadUrl = await getPhotoDownloadUrl();
+              setPatientPhotoUrl(downloadUrl || patient.photoUrl);
+            } catch {
+              setPatientPhotoUrl(patient.photoUrl);
+            }
+          }
         }
       } catch {
         // Patient data failed to load
@@ -2132,7 +2280,9 @@ export default function HomeScreen() {
 
     loadProviders();
     loadPatient();
-  }, [validateAndCleanProviders]);
+    // Restore persisted provider selection and care manager from the server
+    loadFromServer();
+  }, [validateAndCleanProviders, loadFromServer]);
 
   useEffect(() => {
     const loadUpcomingAppointments = async () => {
@@ -2368,8 +2518,11 @@ export default function HomeScreen() {
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
                 patientName={patientName}
+                patientPhotoUrl={patientPhotoUrl}
                 onAddProviderPress={() => router.push('/modal')}
                 isCircleComplete={isCircleComplete}
+                selectedCareManager={selectedCareManager}
+                onCareManagerPress={() => router.push('/modal')}
               />
             ) : (
               <PhoneCircleView
@@ -2379,8 +2532,11 @@ export default function HomeScreen() {
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
                 patientName={patientName}
+                patientPhotoUrl={patientPhotoUrl}
                 onAddProviderPress={() => router.push('/modal')}
                 isCircleComplete={isCircleComplete}
+                selectedCareManager={selectedCareManager}
+                onCareManagerPress={() => router.push('/modal')}
               />
             )
           ) : viewMode === 'list' ? (
