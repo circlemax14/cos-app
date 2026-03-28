@@ -1,8 +1,7 @@
 import { Image } from 'expo-image';
-import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
@@ -35,25 +34,7 @@ export default function DataProcessingScreen() {
   const [failed, setFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
-  const requestPermissionsAndNavigate = useCallback(async () => {
-    try {
-      // Request notification permissions silently
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status === 'granted') {
-        try {
-          const tokenData = await Notifications.getExpoPushTokenAsync();
-          await apiClient.post('/v1/notifications/register-token', {
-            token: tokenData.data,
-            platform: Platform.OS === 'ios' ? 'ios' : 'android',
-          });
-        } catch {
-          // Non-critical — registration failure doesn't block navigation
-        }
-      }
-    } catch {
-      // Non-critical — permission request failure doesn't block navigation
-    }
-    // Navigate to Home regardless of permission status
+  const navigateToHome = useCallback(async () => {
     router.replace('/Home' as never);
   }, []);
 
@@ -63,12 +44,12 @@ export default function DataProcessingScreen() {
       const { dataReady, ehiExportFailed } = res.data.data;
 
       if (dataReady) {
-        // Data is ready — stop polling and request permissions before navigating to Home
+        // Data is ready — stop polling and navigate to Home
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
         }
-        await requestPermissionsAndNavigate();
+        await navigateToHome();
         return;
       }
 
@@ -83,7 +64,7 @@ export default function DataProcessingScreen() {
     } catch {
       // Silently retry on next interval — network errors are transient
     }
-  }, [requestPermissionsAndNavigate]);
+  }, [navigateToHome]);
 
   const handleRetry = useCallback(async () => {
     setRetrying(true);
@@ -116,54 +97,59 @@ export default function DataProcessingScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Image
-        source={require('@/assets/images/logo.png')}
-        style={{ width: getScaledFontSize(100), height: getScaledFontSize(100) }}
-        contentFit="contain"
-      />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Image
+          source={require('@/assets/images/logo.png')}
+          style={{ width: getScaledFontSize(100), height: getScaledFontSize(100) }}
+          contentFit="contain"
+        />
 
-      {!failed && (
-        <ActivityIndicator size="large" color={colors.primary} style={styles.spinner} />
-      )}
+        {!failed && (
+          <ActivityIndicator size="large" color={colors.primary} style={styles.spinner} />
+        )}
 
-      <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22) }]}>
-        {failed ? 'Unable to Process Health Data' : 'Processing Your Health Data'}
-      </Text>
+        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), flexShrink: 1 }]}>
+          {failed ? 'Unable to Process Health Data' : 'Processing Your Health Data'}
+        </Text>
 
-      {failed ? (
-        <>
-          <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-            We encountered an issue while retrieving your medical records. This can happen with large data sets.
-            Please try again.
-          </Text>
+        {failed ? (
+          <>
+            <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
+              We encountered an issue while retrieving your medical records. This can happen with large data sets.
+              Please try again.
+            </Text>
 
-          <Pressable
-            onPress={handleRetry}
-            disabled={retrying}
-            style={[styles.retryButton, { backgroundColor: retrying ? '#9ca3af' : '#2563eb' }]}
-            accessibilityLabel="Retry health data export"
-            accessibilityRole="button"
-          >
-            {retrying ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={[styles.retryText, { fontSize: getScaledFontSize(16) }]}>
-                Retry
-              </Text>
-            )}
-          </Pressable>
-        </>
-      ) : (
-        <>
-          <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-            We are securely retrieving and processing your medical records. This may take a few minutes.
-          </Text>
+            <Pressable
+              onPress={handleRetry}
+              disabled={retrying}
+              style={[styles.retryButton, { backgroundColor: retrying ? '#9ca3af' : '#2563eb' }]}
+              accessibilityLabel="Retry health data export"
+              accessibilityRole="button"
+            >
+              {retrying ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Text style={[styles.retryText, { fontSize: getScaledFontSize(16) }]}>
+                  Retry
+                </Text>
+              )}
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
+              We are securely retrieving and processing your medical records. This may take a few minutes.
+            </Text>
 
-          <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-            We will notify you once your data is ready. You can safely close the app in the meantime.
-          </Text>
-        </>
-      )}
+            <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
+              We will notify you once your data is ready. You can safely close the app in the meantime.
+            </Text>
+          </>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -171,10 +157,14 @@ export default function DataProcessingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: 24,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
     gap: 16,
+    paddingVertical: 40,
   },
   spinner: {
     marginTop: 24,

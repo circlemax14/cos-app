@@ -81,6 +81,7 @@ interface CircleViewProps {
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
   patientPhotoUrl?: string | null;
+  cmLogoUrl?: string | null;
   onAddProviderPress: () => void;
   isCircleComplete: boolean;
   selectedCareManager?: SelectedCareManager | null;
@@ -88,7 +89,7 @@ interface CircleViewProps {
 }
 
 // Original Circle View for iPhone/Android (fixed dimensions)
-function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
+function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -108,7 +109,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
 
   // Add care manager if selected
   if (hasCareManager) {
-    orbitItems.push({ id: selectedCareManager!.id, isCareManager: true, name: selectedCareManager!.name, agencyName: selectedCareManager!.agencyName, logoUrl: selectedCareManager!.logoUrl });
+    orbitItems.push({ id: selectedCareManager!.id, isCareManager: true, name: selectedCareManager!.name, agencyName: selectedCareManager!.agencyName, logoUrl: cmLogoUrl || selectedCareManager!.logoUrl });
   }
 
   // Add providers
@@ -177,7 +178,9 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           mode="contained"
           buttonColor="#008080"
           onPress={() => router.push('/modal')}
-          style={styles.moreDoctorsButton}>
+          style={[styles.moreDoctorsButton, { paddingVertical: getScaledFontSize(4) }]}
+          contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
+          labelStyle={{ fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
           More
         </Button>
       )}
@@ -185,11 +188,11 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
         const angle = (idx / orbitItems.length) * 2 * Math.PI;
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
-        const avatarSize = orbitAvatarSize;
-        const containerSize = orbitAvatarContainerSize;
-        const halfContainerSize = containerSize / 2;
         const isPlaceholder = 'isPlaceholder' in item;
         const isCareManager = 'isCareManager' in item;
+        const avatarSize = isCareManager ? orbitAvatarSize * 1.15 : orbitAvatarSize;
+        const containerSize = isCareManager ? orbitAvatarContainerSize * 1.15 : orbitAvatarContainerSize;
+        const halfContainerSize = containerSize / 2;
         return (
           <React.Fragment key={item.id}>
             <View
@@ -319,7 +322,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
 }
 
 // Responsive Circle View for iPad/Tablet
-function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
+function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -370,7 +373,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
 
   // Add care manager if selected
   if (hasCareManager) {
-    orbitItems.push({ id: selectedCareManager!.id, isCareManager: true, name: selectedCareManager!.name, agencyName: selectedCareManager!.agencyName, logoUrl: selectedCareManager!.logoUrl });
+    orbitItems.push({ id: selectedCareManager!.id, isCareManager: true, name: selectedCareManager!.name, agencyName: selectedCareManager!.agencyName, logoUrl: cmLogoUrl || selectedCareManager!.logoUrl });
   }
 
   // Add providers
@@ -449,11 +452,6 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
       </View>
       {isCircleComplete && (
         <Button
-          labelStyle={{
-            fontSize: getScaledFontSize(12),
-            fontWeight: getScaledFontWeight(500) as any,
-            lineHeight: getScaledFontSize(16)
-          }}
           mode="contained"
           buttonColor="#008080"
           onPress={() => router.push('/modal')}
@@ -463,7 +461,9 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
               paddingHorizontal: getScaledFontSize(20),
               borderRadius: getScaledFontSize(24),
             }
-          ]}>
+          ]}
+          contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
+          labelStyle={{ fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
           More
         </Button>
       )}
@@ -471,11 +471,11 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
         const angle = (idx / orbitItems.length) * 2 * Math.PI;
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
-        const avatarSize = orbitAvatarSize;
-        const containerSize = orbitAvatarContainerSize;
-        const halfContainerSize = containerSize / 2;
         const isPlaceholder = 'isPlaceholder' in item;
         const isCareManager = 'isCareManager' in item;
+        const avatarSize = isCareManager ? orbitAvatarSize * 1.15 : orbitAvatarSize;
+        const containerSize = isCareManager ? orbitAvatarContainerSize * 1.15 : orbitAvatarContainerSize;
+        const halfContainerSize = containerSize / 2;
         return (
           <React.Fragment key={item.id}>
             <View
@@ -512,7 +512,10 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   }
                   return;
                 }
-                if (isCareManager) return;
+                if (isCareManager) {
+                  router.push(`/Home/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
+                  return;
+                }
                 const isIntegrative = item.category === 'Integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
@@ -531,16 +534,30 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                 </View>
               ) : isCareManager ? (
                 <>
-                  <View style={{
-                    width: getScaledFontSize(avatarSize),
-                    height: getScaledFontSize(avatarSize),
-                    borderRadius: getScaledFontSize(avatarSize) / 2,
-                    backgroundColor: '#6B21A8',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <MaterialIcons name="support-agent" size={getScaledFontSize(24)} color="#FFFFFF" />
-                  </View>
+                  {'logoUrl' in item && item.logoUrl ? (
+                    <Image
+                      source={{ uri: item.logoUrl }}
+                      style={{
+                        width: getScaledFontSize(avatarSize),
+                        height: getScaledFontSize(avatarSize),
+                        borderRadius: getScaledFontSize(avatarSize) / 2,
+                        borderWidth: 2,
+                        borderColor: '#6B21A8',
+                      }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={{
+                      width: getScaledFontSize(avatarSize),
+                      height: getScaledFontSize(avatarSize),
+                      borderRadius: getScaledFontSize(avatarSize) / 2,
+                      backgroundColor: '#6B21A8',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <MaterialIcons name="support-agent" size={getScaledFontSize(24)} color="#FFFFFF" />
+                    </View>
+                  )}
                   <Text
                     style={[
                       styles.orbitAvatarText,
@@ -735,7 +752,9 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               labelStyle={{
                 fontSize: getScaledFontSize(14),
                 fontWeight: getScaledFontWeight(500) as any,
+                lineHeight: getScaledFontSize(20),
               }}
+              contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
             >
               More
             </Button>
@@ -2217,6 +2236,7 @@ export default function HomeScreen() {
   const [patientName, setPatientName] = useState('');
   const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
+  const [cmLogoUrl, setCmLogoUrl] = useState<string | null>(null);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -2283,6 +2303,31 @@ export default function HomeScreen() {
     // Restore persisted provider selection and care manager from the server
     loadFromServer();
   }, [validateAndCleanProviders, loadFromServer]);
+
+  // Fetch care manager agency logo when CM is selected
+  useEffect(() => {
+    if (!selectedCareManager?.id) {
+      setCmLogoUrl(null);
+      return;
+    }
+    // If logoUrl is already a data URI or URL, use it directly
+    if (selectedCareManager.logoUrl) {
+      setCmLogoUrl(selectedCareManager.logoUrl);
+      return;
+    }
+    // Otherwise fetch from API
+    (async () => {
+      try {
+        const { getCareManagerAgencyById } = await import('@/services/care-manager-agencies');
+        const agency = await getCareManagerAgencyById(selectedCareManager.id);
+        if (agency?.logoUrl) {
+          setCmLogoUrl(agency.logoUrl);
+        }
+      } catch {
+        // Logo fetch failed — use default icon
+      }
+    })();
+  }, [selectedCareManager?.id, selectedCareManager?.logoUrl]);
 
   useEffect(() => {
     const loadUpcomingAppointments = async () => {
@@ -2519,6 +2564,7 @@ export default function HomeScreen() {
                 getScaledFontWeight={getScaledFontWeight}
                 patientName={patientName}
                 patientPhotoUrl={patientPhotoUrl}
+                cmLogoUrl={cmLogoUrl}
                 onAddProviderPress={() => router.push('/modal')}
                 isCircleComplete={isCircleComplete}
                 selectedCareManager={selectedCareManager}
@@ -2533,6 +2579,7 @@ export default function HomeScreen() {
                 getScaledFontWeight={getScaledFontWeight}
                 patientName={patientName}
                 patientPhotoUrl={patientPhotoUrl}
+                cmLogoUrl={cmLogoUrl}
                 onAddProviderPress={() => router.push('/modal')}
                 isCircleComplete={isCircleComplete}
                 selectedCareManager={selectedCareManager}
@@ -2780,6 +2827,9 @@ const styles = StyleSheet.create({
   },
   moreDoctorsButton: {
     alignSelf: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   moreButtonContainer: {
     alignItems: 'center',

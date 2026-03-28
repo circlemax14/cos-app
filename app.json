@@ -55,7 +55,8 @@
         }
       ],
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "com.google.android.gms.permission.AD_ID"
       ]
     },
     "web": {
@@ -87,8 +88,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "db5ae0fd-1ee7-45a4-b143-204dfaa68c7f"
+        "projectId": "30bc49bd-ee12-4a06-86b3-ee4f23690114"
       }
-    }
+    },
+    "owner": "maximilien14s-organization"
   }
 }
