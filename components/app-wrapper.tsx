@@ -187,7 +187,7 @@ export function AppWrapper({
                 }}
                 onAllergiesPress={() => {
                   closeDrawerMenu();
-                  router.push('/Home/allergies');
+                  router.push('/Home/allergies' as never);
                 }}
                 connectedHospitals={connectedHospitals}
                 isLoadingClinics={isLoadingClinics}
