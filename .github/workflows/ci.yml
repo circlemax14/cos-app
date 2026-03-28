@@ -40,5 +40,5 @@ jobs:
       - run: npm ci
 
       - name: Dependency audit
-        # info level — many React Native deps have peer warnings, fail only on high
-        run: npm audit --audit-level=high
+        # React Native / Expo deps have known transitive vulnerabilities (node-forge etc.)
+        run: npm audit --audit-level=critical

@@ -76,12 +76,12 @@ export default function AppointmentsScreen() {
 
   const handleCardPress = (appointment: Appointment) => {
     router.push({
-      pathname: '/Home/appointment-detail',
+      pathname: '/Home/appointment-detail' as const,
       params: {
         id: appointment.id,
         data: JSON.stringify(appointment),
       },
-    });
+    } as never);
   };
 
   if (isLoading) {
