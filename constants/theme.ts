@@ -1,43 +1,57 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import { Platform } from 'react-native';
+import { LightColors, DarkColors, getColors } from './design-system';
 
-const tintColorLight = '#008080';
-const tintColorDark = '#008080';
+// Explicit interface so Colors['light'] and Colors['dark'] share the same type,
+// maintaining backwards compatibility with components typed as `typeof Colors['light']`.
+interface ColorScheme {
+  text: string;
+  background: string;
+  tint: string;
+  icon: string;
+  tabIconDefault: string;
+  tabIconSelected: string;
+  primary: string;
+  subtext: string;
+  border: string;
+  card: string;
+  cardBackground: string;
+  disabled: string;
+}
 
-export const Colors = {
+// Backwards-compatible Colors object for existing code
+// New code should import from design-system.ts directly
+export const Colors: { light: ColorScheme; dark: ColorScheme } = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-    primary: '#0a7ea4',
-    subtext: '#687076',
-    border: '#e0e0e0',
-    card: '#f5f5f5',
-    cardBackground: '#f5f5f5',
-    disabled: '#9ca3af',
+    text: LightColors.text,
+    background: LightColors.background,
+    tint: LightColors.tint,
+    icon: LightColors.icon,
+    tabIconDefault: LightColors.tabIconDefault,
+    tabIconSelected: LightColors.tabIconSelected,
+    primary: LightColors.primary,
+    subtext: LightColors.secondary,
+    border: LightColors.border,
+    card: LightColors.card,
+    cardBackground: LightColors.surface,
+    disabled: LightColors.disabled,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-    primary: '#0a7ea4',
-    subtext: '#9BA1A6',
-    border: '#2d3235',
-    card: '#1e2022',
-    cardBackground: '#1e2022',
-    disabled: '#4b5563',
+    text: DarkColors.text,
+    background: DarkColors.background,
+    tint: DarkColors.tint,
+    icon: DarkColors.icon,
+    tabIconDefault: DarkColors.tabIconDefault,
+    tabIconSelected: DarkColors.tabIconSelected,
+    primary: DarkColors.primary,
+    subtext: DarkColors.secondary,
+    border: DarkColors.border,
+    card: DarkColors.card,
+    cardBackground: DarkColors.surface,
+    disabled: DarkColors.disabled,
   },
 };
+
+export { getColors, LightColors, DarkColors } from './design-system';
 
 export const Fonts = Platform.select({
   ios: {
@@ -55,11 +69,5 @@ export const Fonts = Platform.select({
     serif: 'serif',
     rounded: 'normal',
     mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
