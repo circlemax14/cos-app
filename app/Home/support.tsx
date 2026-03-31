@@ -1,94 +1,49 @@
 import React, { useState } from 'react';
 import {
-  ActionSheetIOS,
   Alert,
-  FlatList,
-  Linking,
-  Modal,
+  KeyboardAvoidingView,
   Platform,
-  Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import { AccessibleInput } from '@/components/ui/accessible-input';
-import { AccessibleButton } from '@/components/ui/accessible-button';
-import { SupportTicketCard } from '@/components/ui/support-ticket-card';
-import { EmptyState } from '@/components/ui/empty-state';
+import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button } from 'react-native-paper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { SupportTicketCard } from '@/components/ui/support-ticket-card';
+import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { getColors, Spacing, Typography, Radii, SupportCategories } from '@/constants/design-system';
 import { useSupportTickets, useCreateSupportTicket } from '@/hooks/use-support-tickets';
-
-const EMERGENCY_PHONE = '1-800-273-8255';
 
 export default function SupportScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = getColors(settings.isDarkTheme);
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [description, setDescription] = useState('');
-  const [subjectError, setSubjectError] = useState('');
   const [descriptionError, setDescriptionError] = useState('');
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   const { data: tickets, isLoading: isLoadingTickets } = useSupportTickets();
   const createTicket = useCreateSupportTicket();
 
-  const selectedLabel = SupportCategories.find((c) => c.value === selectedCategory)?.label ?? '';
-
-  const openCategoryPicker = () => {
-    if (Platform.OS === 'ios') {
-      const options = [...SupportCategories.map((c) => c.label), 'Cancel'];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: options.length - 1,
-          title: 'Select a Category',
-        },
-        (buttonIndex) => {
-          if (buttonIndex < SupportCategories.length) {
-            setSelectedCategory(SupportCategories[buttonIndex].value);
-            setSubjectError('');
-          }
-        },
-      );
-    } else {
-      setShowCategoryModal(true);
-    }
-  };
-
-  const validate = (): boolean => {
-    let valid = true;
-    if (!selectedCategory) {
-      setSubjectError('Please select a category');
-      valid = false;
-    } else {
-      setSubjectError('');
-    }
-    if (description.trim().length < 10) {
-      setDescriptionError('Description must be at least 10 characters');
-      valid = false;
-    } else {
-      setDescriptionError('');
-    }
-    return valid;
-  };
-
   const handleSubmit = () => {
-    if (!validate()) return;
+    if (description.trim().length < 10) {
+      setDescriptionError('Please describe your issue (at least 10 characters)');
+      return;
+    }
+    setDescriptionError('');
 
     createTicket.mutate(
-      { subject: selectedLabel, description: description.trim() },
+      { subject: 'Support Request', description: description.trim() },
       {
         onSuccess: (result) => {
           Alert.alert(
             'Request Submitted!',
             `Your ticket ID is ${result.ticketId}. We'll get back to you within 24-48 hours.`,
           );
-          setSelectedCategory(null);
           setDescription('');
         },
         onError: () => {
@@ -99,334 +54,315 @@ export default function SupportScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Form Section */}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <IconSymbol
+            name="chevron.right"
+            size={getScaledFontSize(24)}
+            color={colors.text}
+            style={{ transform: [{ rotate: '180deg' }] }}
+          />
+        </TouchableOpacity>
         <Text
           style={[
-            styles.sectionTitle,
+            styles.headerTitle,
             {
               color: colors.text,
-              fontSize: getScaledFontSize(Typography.title1.fontSize),
-              fontWeight: getScaledFontWeight(700) as never,
+              fontSize: getScaledFontSize(20),
+              fontWeight: getScaledFontWeight(600) as any,
             },
           ]}
-          accessibilityRole="header"
         >
-          How can we help?
+          Help & Support
         </Text>
+        <View style={{ width: getScaledFontSize(24) }} />
+      </View>
 
-        {/* Category Picker */}
-        <View style={styles.fieldContainer}>
-          <Text
-            style={[
-              styles.fieldLabel,
-              {
-                color: subjectError ? colors.error : colors.text,
-                fontSize: getScaledFontSize(Typography.footnote.fontSize),
-                fontWeight: getScaledFontWeight(600) as never,
-              },
-            ]}
-          >
-            Category
-          </Text>
-          <Pressable
-            onPress={openCategoryPicker}
-            accessibilityRole="button"
-            accessibilityLabel={`Category: ${selectedLabel || 'Select a category'}`}
-            accessibilityHint="Double tap to choose a support category"
-            style={[
-              styles.pickerButton,
-              {
-                borderColor: subjectError ? colors.error : colors.border,
-                backgroundColor: subjectError ? colors.errorBg : colors.background,
-              },
-            ]}
-          >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Form Section */}
+          <View style={styles.formSection}>
+            <View style={styles.iconContainer}>
+              <IconSymbol name="message.fill" size={getScaledFontSize(48)} color={colors.tint} />
+            </View>
+
             <Text
               style={[
-                styles.pickerText,
+                styles.title,
                 {
-                  color: selectedCategory ? colors.text : colors.disabled,
-                  fontSize: getScaledFontSize(Typography.body.fontSize),
+                  color: colors.text,
+                  fontSize: getScaledFontSize(22),
+                  fontWeight: getScaledFontWeight(700) as any,
+                },
+              ]}
+              accessibilityRole="header"
+            >
+              How can we help?
+            </Text>
+
+            <Text
+              style={[
+                styles.subtitle,
+                {
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(14),
                 },
               ]}
             >
-              {selectedLabel || 'Select a category'}
+              Describe your issue below and our team will get back to you within 24-48 hours.
             </Text>
-            <IconSymbol name="chevron.right" size={getScaledFontSize(16)} color={colors.secondary} />
-          </Pressable>
-          {subjectError ? (
-            <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="polite">
-              <Text style={styles.errorIcon}>&#x26A0;&#xFE0F;</Text>
-              <Text
-                style={{
-                  color: colors.error,
-                  fontSize: getScaledFontSize(Typography.footnote.fontSize),
-                  fontWeight: getScaledFontWeight(500) as never,
-                }}
-              >
-                {subjectError}
-              </Text>
-            </View>
-          ) : null}
-        </View>
 
-        {/* Description Input */}
-        <View style={styles.fieldContainer}>
-          <AccessibleInput
-            label="Description"
-            placeholder="Describe your issue in detail..."
-            value={description}
-            onChangeText={(text) => {
-              setDescription(text);
-              if (text.trim().length >= 10) setDescriptionError('');
-            }}
-            multiline
-            numberOfLines={5}
-            textAlignVertical="top"
-            error={descriptionError}
-          />
-        </View>
-
-        {/* Submit Button */}
-        <View style={styles.submitContainer}>
-          <AccessibleButton
-            variant="primary"
-            label="Submit Request"
-            onPress={handleSubmit}
-            loading={createTicket.isPending}
-            disabled={createTicket.isPending}
-            accessibilityHint="Submits your support request"
-          />
-        </View>
-
-        {/* Your Requests Section */}
-        <View style={styles.ticketsSection}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              {
-                color: colors.text,
-                fontSize: getScaledFontSize(Typography.title2.fontSize),
-                fontWeight: getScaledFontWeight(600) as never,
-              },
-            ]}
-            accessibilityRole="header"
-          >
-            Your Requests
-          </Text>
-
-          {isLoadingTickets ? (
-            <Text style={{ color: colors.secondary, fontSize: getScaledFontSize(Typography.callout.fontSize) }}>
-              Loading your tickets...
-            </Text>
-          ) : tickets && tickets.length > 0 ? (
-            <View style={styles.ticketList}>
-              {tickets.map((ticket) => (
-                <View key={ticket.ticketId} style={styles.ticketItem}>
-                  <SupportTicketCard ticket={ticket} />
-                </View>
-              ))}
-            </View>
-          ) : (
-            <EmptyState
-              icon="📩"
-              title="No Requests Yet"
-              description="When you submit a support request, it will appear here."
-            />
-          )}
-        </View>
-
-        {/* Emergency Contact */}
-        <View style={[styles.emergencySection, { backgroundColor: colors.surface, borderColor: colors.surfaceBorder }]}>
-          <Text
-            style={[
-              styles.emergencyTitle,
-              {
-                color: colors.text,
-                fontSize: getScaledFontSize(Typography.headline.fontSize),
-                fontWeight: getScaledFontWeight(600) as never,
-              },
-            ]}
-          >
-            Need immediate help?
-          </Text>
-          <Text
-            style={{
-              color: colors.secondary,
-              fontSize: getScaledFontSize(Typography.callout.fontSize),
-              marginBottom: Spacing.md,
-            }}
-          >
-            If you are experiencing a medical emergency, call 911. For crisis support:
-          </Text>
-          <AccessibleButton
-            variant="secondary"
-            label={`Call ${EMERGENCY_PHONE}`}
-            onPress={() => Linking.openURL(`tel:${EMERGENCY_PHONE}`)}
-            accessibilityHint="Opens your phone dialer to call the support hotline"
-          />
-        </View>
-      </ScrollView>
-
-      {/* Android/non-iOS Category Modal */}
-      {Platform.OS !== 'ios' && (
-        <Modal
-          visible={showCategoryModal}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowCategoryModal(false)}
-        >
-          <Pressable style={styles.modalOverlay} onPress={() => setShowCategoryModal(false)}>
-            <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+            {/* Description Input */}
+            <View style={styles.inputContainer}>
               <Text
                 style={[
-                  styles.modalTitle,
+                  styles.inputLabel,
                   {
-                    color: colors.text,
-                    fontSize: getScaledFontSize(Typography.title2.fontSize),
-                    fontWeight: getScaledFontWeight(600) as never,
+                    color: descriptionError ? '#DC2626' : colors.text,
+                    fontSize: getScaledFontSize(14),
+                    fontWeight: getScaledFontWeight(600) as any,
                   },
                 ]}
               >
-                Select a Category
+                Describe your issue
               </Text>
-              <ScrollView>
-                {SupportCategories.map((cat) => (
-                  <Pressable
-                    key={cat.value}
-                    style={[
-                      styles.modalOption,
-                      {
-                        backgroundColor: selectedCategory === cat.value ? colors.primaryLight : 'transparent',
-                      },
-                    ]}
-                    onPress={() => {
-                      setSelectedCategory(cat.value);
-                      setSubjectError('');
-                      setShowCategoryModal(false);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={cat.label}
-                  >
-                    <Text
-                      style={{
-                        color: selectedCategory === cat.value ? colors.primary : colors.text,
-                        fontSize: getScaledFontSize(Typography.body.fontSize),
-                        fontWeight: getScaledFontWeight(selectedCategory === cat.value ? 600 : 400) as never,
-                      }}
-                    >
-                      {cat.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-              <View style={styles.modalCancel}>
-                <AccessibleButton
-                  variant="secondary"
-                  label="Cancel"
-                  onPress={() => setShowCategoryModal(false)}
-                />
-              </View>
+              <TextInput
+                style={[
+                  styles.textArea,
+                  {
+                    color: colors.text,
+                    fontSize: getScaledFontSize(16),
+                    borderColor: descriptionError ? '#DC2626' : colors.border,
+                    backgroundColor: descriptionError ? '#FEF2F2' : colors.background,
+                  },
+                ]}
+                placeholder="Tell us what's going on..."
+                placeholderTextColor={colors.subtext + '80'}
+                value={description}
+                onChangeText={(text) => {
+                  setDescription(text);
+                  if (text.trim().length >= 10) setDescriptionError('');
+                }}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+                accessibilityLabel="Describe your issue"
+                accessibilityHint="Enter at least 10 characters"
+              />
+              {descriptionError ? (
+                <Text
+                  style={[styles.errorText, { fontSize: getScaledFontSize(13) }]}
+                  accessibilityRole="alert"
+                >
+                  ⚠️ {descriptionError}
+                </Text>
+              ) : null}
             </View>
-          </Pressable>
-        </Modal>
-      )}
+
+            {/* Submit Button */}
+            <Button
+              mode="contained"
+              onPress={handleSubmit}
+              loading={createTicket.isPending}
+              disabled={createTicket.isPending}
+              style={[styles.submitButton, { backgroundColor: createTicket.isPending ? colors.disabled : colors.tint }]}
+              contentStyle={styles.submitContent}
+              labelStyle={[
+                styles.submitLabel,
+                {
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as any,
+                },
+              ]}
+              accessibilityLabel="Submit support request"
+            >
+              Submit Request
+            </Button>
+          </View>
+
+          {/* Your Requests Section */}
+          <View style={styles.ticketsSection}>
+            <Text
+              style={[
+                styles.ticketsSectionTitle,
+                {
+                  color: colors.text,
+                  fontSize: getScaledFontSize(18),
+                  fontWeight: getScaledFontWeight(600) as any,
+                },
+              ]}
+              accessibilityRole="header"
+            >
+              Your Requests
+            </Text>
+
+            {isLoadingTickets ? (
+              <Text
+                style={[
+                  styles.loadingText,
+                  {
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(14),
+                  },
+                ]}
+              >
+                Loading your tickets...
+              </Text>
+            ) : tickets && tickets.length > 0 ? (
+              <View style={styles.ticketList}>
+                {tickets.map((ticket) => (
+                  <View key={ticket.ticketId} style={styles.ticketItem}>
+                    <SupportTicketCard ticket={ticket} />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.emptyTickets, { backgroundColor: colors.card }]}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>📩</Text>
+                <Text
+                  style={[
+                    styles.emptyTitle,
+                    {
+                      color: colors.text,
+                      fontSize: getScaledFontSize(16),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    },
+                  ]}
+                >
+                  No Requests Yet
+                </Text>
+                <Text
+                  style={[
+                    styles.emptySubtitle,
+                    {
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                    },
+                  ]}
+                >
+                  When you submit a support request, it will appear here.
+                </Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: Spacing.screenPadding,
-    paddingBottom: 40,
-  },
-  sectionTitle: {
-    marginBottom: Spacing.md,
-  },
-  fieldContainer: {
-    marginBottom: Spacing.md,
-  },
-  fieldLabel: {
-    marginLeft: 2,
-    marginBottom: Spacing.xs + 2,
-  },
-  pickerButton: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    textAlign: 'center',
+    flex: 1,
+    flexShrink: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 40,
+  },
+  formSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  iconContainer: {
+    marginBottom: 16,
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 300,
+    marginBottom: 28,
+  },
+  inputContainer: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  inputLabel: {
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+  textArea: {
     borderWidth: 2,
-    borderRadius: Radii.md,
-    paddingHorizontal: Spacing.md,
+    borderRadius: 14,
+    padding: 16,
+    minHeight: 140,
+    lineHeight: 22,
+  },
+  errorText: {
+    color: '#DC2626',
+    marginTop: 6,
+    marginLeft: 2,
+  },
+  submitButton: {
+    borderRadius: 24,
+    width: '100%',
+  },
+  submitContent: {
     minHeight: 50,
   },
-  pickerText: {},
-  errorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs + 2,
-    marginLeft: 2,
-    marginTop: Spacing.xs + 2,
-  },
-  errorIcon: {
-    fontSize: 16,
-  },
-  submitContainer: {
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.xl,
+  submitLabel: {
+    color: '#FFFFFF',
   },
   ticketsSection: {
-    marginBottom: Spacing.xl,
+    marginTop: 8,
+  },
+  ticketsSectionTitle: {
+    marginBottom: 16,
   },
   ticketList: {
-    gap: Spacing.sm,
+    gap: 10,
   },
   ticketItem: {
-    marginBottom: Spacing.sm,
+    marginBottom: 4,
   },
-  emergencySection: {
-    borderRadius: Radii.xl,
-    borderWidth: 1.5,
-    padding: Spacing.cardPadding,
-    marginBottom: Spacing.lg,
-  },
-  emergencyTitle: {
-    marginBottom: Spacing.xs,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalContent: {
-    borderTopLeftRadius: Radii.xl,
-    borderTopRightRadius: Radii.xl,
-    padding: Spacing.cardPadding,
-    maxHeight: '60%',
-  },
-  modalTitle: {
-    marginBottom: Spacing.md,
+  loadingText: {
     textAlign: 'center',
+    paddingVertical: 20,
   },
-  modalOption: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radii.sm,
-    marginBottom: Spacing.xs,
+  emptyTickets: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    borderRadius: 16,
   },
-  modalCancel: {
-    marginTop: Spacing.md,
+  emptyTitle: {
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    textAlign: 'center',
   },
 });
