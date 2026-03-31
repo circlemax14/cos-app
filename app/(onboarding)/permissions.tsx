@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 /**
@@ -24,7 +24,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
  */
 export default function PermissionsScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
   const [status, setStatus] = useState('Preparing...');
 
   useEffect(() => {
@@ -103,7 +103,7 @@ export default function PermissionsScreen() {
       <Text style={[styles.status, { color: colors.text, fontSize: getScaledFontSize(16) }]}>
         {status}
       </Text>
-      <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+      <Text style={[styles.subtitle, { color: colors.secondary, fontSize: getScaledFontSize(14) }]}>
         Please allow permissions to get the best experience
       </Text>
     </View>
