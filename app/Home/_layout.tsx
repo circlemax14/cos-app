@@ -68,7 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="plan"
         options={{
-          title: 'Plan',
+          title: 'Health Summary',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
           ),
