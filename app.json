@@ -21,7 +21,8 @@
         "NSCameraUsageDescription": "BrightFuture needs camera access to photograph documents and prescriptions.",
         "NSContactsUsageDescription": "BrightFuture uses contacts to help you add emergency contacts quickly.",
         "NSPhotoLibraryUsageDescription": "BrightFuture needs photo library access to upload health documents.",
-        "NSUserTrackingUsageDescription": "BrightFuture uses anonymous analytics to improve the app experience."
+        "NSUserTrackingUsageDescription": "BrightFuture uses anonymous analytics to improve the app experience.",
+        "NSFaceIDUsageDescription": "BrightFuture uses Face ID to securely unlock your health information."
       }
     },
     "android": {
@@ -63,8 +64,18 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LAUNCH",
+      "fallbackToCacheTimeout": 5000,
+      "url": "https://u.expo.dev/30bc49bd-ee12-4a06-86b3-ee4f23690114"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "plugins": [
       "expo-router",
+      "expo-updates",
       [
         "expo-splash-screen",
         {
