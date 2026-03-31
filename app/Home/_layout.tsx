@@ -2,18 +2,19 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
 
-import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { getColors } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useSettings } from '@/stores/settings-store';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 
 export default function TabLayout() {
-  const { getScaledFontSize } = useAccessibility();
+  const { settings: accessibilitySettings, getScaledFontSize } = useAccessibility();
   const { data: permissions } = useFeaturePermissions();
   const { settings } = useSettings();
   const { panHandlers } = useInactivityTimeout();
+  const colors = getColors(accessibilitySettings.isDarkTheme);
 
   // Default to true (visible) while permissions are loading
   const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
@@ -21,9 +22,10 @@ export default function TabLayout() {
   return (
     <View style={{ flex: 1 }} {...panHandlers}>
     <Tabs
-      tabBar={(props) => <CustomScrollableTabBar {...props} />}
       screenOptions={{
         headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.secondary,
       }}>
       {canShow('home') && (
         <Tabs.Screen
@@ -47,7 +49,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="appointments"
           options={{
-            title: 'Appointments',
+            title: 'Visits',
             tabBarIcon: ({ color }) => (
               <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
             ),
@@ -57,9 +59,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="health-chat"
         options={{
-          title: 'Health Chat',
+          title: 'Chat',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="message.fill" color={color} />
+            <IconSymbol size={getScaledFontSize(24)} name="bubble.left.and.bubble.right.fill" color={color} />
           ),
           href: settings.isHealthChatEnabled ? undefined : null,
           tabBarItemStyle: !settings.isHealthChatEnabled ? { display: 'none' } : undefined
@@ -68,9 +70,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="plan"
         options={{
-          title: 'Plan',
+          title: 'Chat',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+            <IconSymbol size={getScaledFontSize(24)} name="bubble.left.and.bubble.right.fill" color={color} />
           ),
           href: !settings.isHealthChatEnabled ? undefined : null,
           tabBarItemStyle: settings.isHealthChatEnabled ? { display: 'none' } : undefined
@@ -81,9 +83,8 @@ export default function TabLayout() {
           name="reports"
           options={{
             title: 'Reports',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
-            ),
+            href: null,
+            headerShown: false,
           }}
         />
       )}
@@ -91,17 +92,17 @@ export default function TabLayout() {
         name="today-schedule"
         options={{
           title: "Today's Schedule",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
-          ),
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          href: null,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="person.crop.circle.fill" color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -109,6 +110,7 @@ export default function TabLayout() {
         options={{
           title: 'Connected EHRs',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -116,6 +118,7 @@ export default function TabLayout() {
         options={{
           title: 'Emergency Contact',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -123,6 +126,7 @@ export default function TabLayout() {
         options={{
           title: 'Health Details',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -130,6 +134,7 @@ export default function TabLayout() {
         options={{
           title: 'Doctor Detail',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -137,12 +142,14 @@ export default function TabLayout() {
         options={{
           title: 'Proxy Management',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
         name="services"
         options={{
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -150,12 +157,14 @@ export default function TabLayout() {
         options={{
           title: 'Provider Detail',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
         name="integrative-screen"
         options={{
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -163,6 +172,7 @@ export default function TabLayout() {
         options={{
           title: 'Chat',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -170,6 +180,7 @@ export default function TabLayout() {
         options={{
           title: 'Connect Clinics',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -177,6 +188,7 @@ export default function TabLayout() {
         options={{
           title: 'Appointment Detail',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -184,10 +196,18 @@ export default function TabLayout() {
         options={{
           title: 'Allergies',
           href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
         name="agency-detail"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="support"
         options={{
           href: null,
           headerShown: false,

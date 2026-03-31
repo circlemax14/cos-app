@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
 import { AccessibilityProvider } from '@/stores/accessibility-store';
+import { SecurityProvider } from '@/stores/security-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
@@ -30,6 +31,7 @@ export default function RootLayout() {
   return (
     <QueryProvider>
       <AccessibilityProvider>
+        <SecurityProvider>
         <ProviderSelectionProvider>
           <SettingsProvider>
             <PaperProvider>
@@ -39,6 +41,7 @@ export default function RootLayout() {
                   <Stack.Screen name="index" options={{ headerShown: false }} />
                   <Stack.Screen name="(auth)" options={{ headerShown: false }} />
                   <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
+                  <Stack.Screen name="(security)" options={{ headerShown: false }} />
                   <Stack.Screen name="Home" options={{ headerShown: false }} />
                   <Stack.Screen name="(personal-info)" options={{ headerShown: false }} />
                   <Stack.Screen name="(care-manager-detail)" options={{ headerShown: false }} />
@@ -73,6 +76,7 @@ export default function RootLayout() {
             </PaperProvider>
           </SettingsProvider>
         </ProviderSelectionProvider>
+        </SecurityProvider>
       </AccessibilityProvider>
     </QueryProvider>
   );

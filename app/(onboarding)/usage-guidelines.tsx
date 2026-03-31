@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
+import { isPinSetup } from '@/services/pin-auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
@@ -74,7 +75,12 @@ export default function UsageGuidelinesScreen() {
     setError(null);
     try {
       await apiClient.post('/v1/auth/accept-terms', { version: guidelines.currentVersion });
-      router.replace('/(onboarding)/fasten-connect' as never);
+      const pinConfigured = await isPinSetup();
+      if (!pinConfigured) {
+        router.replace('/(security)/setup-pin' as never);
+      } else {
+        router.replace('/(onboarding)/permissions' as never);
+      }
     } catch {
       setError('Failed to accept guidelines. Please try again.');
       setAccepting(false);
