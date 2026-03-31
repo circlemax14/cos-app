@@ -1,4 +1,4 @@
-import { getColors } from '@/constants/design-system';
+import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
@@ -16,7 +16,7 @@ import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api
 export default function DoctorDetailScreen() {
   const params = useLocalSearchParams();
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = getColors(settings.isDarkTheme);
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   
   const [provider, setProvider] = useState<Provider | null>(null);
   const [, setIsLoadingProvider] = useState(false);

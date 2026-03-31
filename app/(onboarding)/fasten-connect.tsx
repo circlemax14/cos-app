@@ -4,14 +4,14 @@ import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
-import { getColors } from '@/constants/design-system';
+import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
 export default function FastenConnectScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
-  const colors = getColors(settings.isDarkTheme);
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   // Prevent double navigation when widget closes
   const navigating = useRef(false);
   const [connectedCount, setConnectedCount] = useState(0);
@@ -70,7 +70,7 @@ export default function FastenConnectScreen() {
         <Text style={[styles.errorTitle, { color: colors.text, fontSize: getScaledFontSize(18) }]}>
           Configuration Missing
         </Text>
-        <Text style={[styles.errorBody, { color: colors.secondary, fontSize: getScaledFontSize(14) }]}>
+        <Text style={[styles.errorBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
           EXPO_PUBLIC_FASTEN_PUBLIC_ID is not set. Add it to your .env file and rebuild.
         </Text>
       </View>
@@ -84,7 +84,7 @@ export default function FastenConnectScreen() {
         <Text style={[styles.loaderTitle, { color: colors.text, fontSize: getScaledFontSize(18) }]}>
           Setting up your health data...
         </Text>
-        <Text style={[styles.loaderBody, { color: colors.secondary, fontSize: getScaledFontSize(14) }]}>
+        <Text style={[styles.loaderBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
           Please wait while we initiate your medical records export.
         </Text>
       </View>

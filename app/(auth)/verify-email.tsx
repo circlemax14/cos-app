@@ -5,13 +5,13 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput as RN
 import { Button, Text } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
-import { getColors } from '@/constants/design-system';
+import { Colors } from '@/constants/theme';
 import { confirmSignUp, resendCode, signIn } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 export default function VerifyEmailScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
-  const colors = getColors(settings.isDarkTheme);
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { email, password } = useLocalSearchParams<{ email: string; password?: string }>();
 
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
@@ -104,12 +104,11 @@ export default function VerifyEmailScreen() {
             <View style={styles.form}>
               <Text
                 style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}
-                accessibilityRole="header"
               >
                 Verify your email
               </Text>
               <Text
-                style={[styles.subtitle, { color: colors.secondary, fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(22) }]}
+                style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(22) }]}
               >
                 We sent a 6-digit code to{'\n'}
                 <Text style={{ color: colors.text, fontWeight: getScaledFontWeight(600) as any }}>
@@ -182,7 +181,7 @@ export default function VerifyEmailScreen() {
               <Button
                 mode="text"
                 onPress={() => router.replace('/(auth)/sign-in')}
-                labelStyle={{ color: colors.secondary, fontSize: getScaledFontSize(14) }}
+                labelStyle={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}
                 contentStyle={{ paddingVertical: getScaledFontSize(6) }}
               >
                 Back to Sign In

@@ -1,9 +1,7 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { FilterMenu } from '@/components/ui/filter-menu';
-import { QuickActions } from '@/components/ui/quick-actions';
 import { Colors } from '@/constants/theme';
-import { getColors, Typography, Spacing, Radii } from '@/constants/design-system';
 import { SUPPORT_CATEGORIES, getCategoryById, getSubCategoryById, matchProviderToSubCategory } from '@/constants/categories';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider, type SelectedCareManager } from '@/stores/provider-selection-store';
@@ -78,7 +76,7 @@ type OrbitItem = SelectedProvider | { id: string; isPlaceholder: true } | { id: 
 interface CircleViewProps {
   providers: SelectedProvider[];
   userImg?: number | { uri: string };
-  colors: ReturnType<typeof getColors>;
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
@@ -607,7 +605,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
 interface CircleProvidersListViewProps {
   providers: SelectedProvider[];
   userImg?: number | { uri: string };
-  colors: ReturnType<typeof getColors>;
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
@@ -770,7 +768,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
 // List View Component (categories -> sub-categories -> providers)
 interface ListViewProps {
   userImg?: number | { uri: string };
-  colors: ReturnType<typeof getColors>;
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   onItemPress: (categoryId?: string, subCategoryId?: string) => void;
@@ -2028,7 +2026,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
 // Provider Details List Component (replaces main list)
 interface ProviderDetailsListProps {
-  colors: ReturnType<typeof getColors>;
+  colors: typeof Colors['light'];
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   onBack: () => void;
@@ -2228,7 +2226,7 @@ export default function HomeScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const userImg = undefined;
   const isTabletDevice = isTablet();
-  const colors = getColors(settings.isDarkTheme);
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [viewMode, setViewMode] = React.useState<'circle' | 'list' | 'circle-providers'>('circle');
 
   // Load Fasten Health providers for circle view
@@ -2513,7 +2511,7 @@ export default function HomeScreen() {
       {(isLoadingPatient || isLoadingAppointments) ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(Typography.callout.fontSize), marginTop: 12 }}>Loading your health data...</Text>
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), marginTop: 12 }}>Loading your health data...</Text>
         </View>
       ) : null}
       {!(isLoadingPatient || isLoadingAppointments) && <ScrollView
@@ -2524,19 +2522,16 @@ export default function HomeScreen() {
       >
         <View style={styles.circleSection}>
           <View style={styles.titleRow}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                {
-                  fontSize: getScaledFontSize(Typography.title1.fontSize),
-                  fontWeight: getScaledFontWeight(700) as any,
-                  color: colors.text,
-                  paddingBottom: 50,
-                  flex: 1,
-                }
-              ]}
-              accessibilityRole="header"
-            >
+            <Text style={[
+              styles.sectionTitle,
+              {
+                fontSize: getScaledFontSize(24),
+                fontWeight: getScaledFontWeight(600) as any,
+                color: colors.text,
+                paddingBottom: 50,
+                flex: 1,
+              }
+            ]}>
               {isLoadingPatient ? 'Loading...' : `${getFirstName(patientName)}'s Circle of Support`}
             </Text>
             <TouchableOpacity
@@ -2548,15 +2543,9 @@ export default function HomeScreen() {
                   padding: getScaledFontSize(10),
                   borderRadius: getScaledFontSize(8),
                   marginBottom: 50,
-                  minWidth: 44,
-                  minHeight: 44,
-                  alignItems: 'center',
-                  justifyContent: 'center',
                 }
               ]}
               activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={`Switch to ${viewMode === 'circle' ? 'providers list' : viewMode === 'circle-providers' ? 'category list' : 'circle'} view`}
             >
               <IconSymbol
                 name={getToggleIcon()}
@@ -2565,7 +2554,6 @@ export default function HomeScreen() {
               />
             </TouchableOpacity>
           </View>
-          <QuickActions />
           {viewMode === 'circle' ? (
             isTabletDevice ? (
               <TabletCircleView
@@ -2670,17 +2658,14 @@ export default function HomeScreen() {
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                {
-                  fontSize: getScaledFontSize(Typography.title2.fontSize),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  color: colors.text,
-                }
-              ]}
-              accessibilityRole="header"
-            >Upcoming Appointments</Text>
+            <Text style={[
+              styles.sectionTitle,
+              {
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(600) as any,
+                color: colors.text,
+              }
+            ]}>Upcoming Appointments</Text>
             <TouchableOpacity
               onPress={() => router.push('/appointments-modal')}
               style={[
@@ -2744,7 +2729,7 @@ export default function HomeScreen() {
                         <Text style={[
                           styles.appointmentTitle,
                           {
-                            fontSize: getScaledFontSize(Typography.headline.fontSize),
+                            fontSize: getScaledFontSize(16),
                             fontWeight: settings.isBoldTextEnabled ? '700' : '500',
                             marginBottom: getScaledFontSize(2),
                           }
@@ -2752,7 +2737,7 @@ export default function HomeScreen() {
                         <Text style={[
                           styles.appointmentDescription,
                           {
-                            fontSize: getScaledFontSize(Typography.callout.fontSize),
+                            fontSize: getScaledFontSize(14),
                             fontWeight: settings.isBoldTextEnabled ? '600' : '400'
                           }
                         ]}>{`${dateLabel} · ${appointment.time}`}</Text>
@@ -2774,7 +2759,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: Spacing.screenPadding,
+    paddingBottom: 20,
   },
   circleSection: {
     alignItems: 'center',
@@ -2862,17 +2847,17 @@ const styles = StyleSheet.create({
   },
   appointmentsSection: {
     width: '100%',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 24,
     paddingTop: 60,
-    paddingBottom: Spacing.screenPadding,
-    gap: Spacing.md,
+    paddingBottom: 20,
+    gap: 12,
   },
   deckContainer: {
     position: 'relative',
     minHeight: 56,
   },
   appointmentCard: {
-    borderRadius: Radii.xl,
+    borderRadius: 16,
     position: 'absolute',
     width: '100%',
     minHeight: 56,
@@ -2945,13 +2930,13 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   appointmentTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '500',
     color: '#000',
     marginBottom: 2,
   },
   appointmentDescription: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '400',
     color: '#666',
   },

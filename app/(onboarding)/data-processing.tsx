@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
-import { getColors } from '@/constants/design-system';
+import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 const POLL_INTERVAL_MS = 10_000; // Check every 10 seconds
@@ -29,7 +29,7 @@ interface FastenStatusResponse {
  */
 export default function DataProcessingScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
-  const colors = getColors(settings.isDarkTheme);
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [failed, setFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -111,13 +111,13 @@ export default function DataProcessingScreen() {
           <ActivityIndicator size="large" color={colors.primary} style={styles.spinner} />
         )}
 
-        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), flexShrink: 1 }]} accessibilityRole="header">
+        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), flexShrink: 1 }]}>
           {failed ? 'Unable to Process Health Data' : 'Processing Your Health Data'}
         </Text>
 
         {failed ? (
           <>
-            <Text style={[styles.body, { color: colors.secondary, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
+            <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
               We encountered an issue while retrieving your medical records. This can happen with large data sets.
               Please try again.
             </Text>
@@ -140,11 +140,11 @@ export default function DataProcessingScreen() {
           </>
         ) : (
           <>
-            <Text style={[styles.body, { color: colors.secondary, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
+            <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
               We are securely retrieving and processing your medical records. This may take a few minutes.
             </Text>
 
-            <Text style={[styles.body, { color: colors.secondary, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
+            <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(15), flexShrink: 1 }]}>
               We will notify you once your data is ready. You can safely close the app in the meantime.
             </Text>
           </>

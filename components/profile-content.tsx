@@ -8,10 +8,9 @@ import { apiClient } from '@/lib/api-client';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Button, Card, Icon, List } from 'react-native-paper';
-import { getColors, Spacing, Typography, Radii } from '@/constants/design-system';
 
 export interface ConnectedHospital {
   id: string;
@@ -62,25 +61,13 @@ export function ProfileContent({
   showEhrTitle = true,
   containerStyle,
 }: ProfileContentProps) {
-  const {
-    settings,
-    getScaledFontWeight,
-    getScaledFontSize,
-    toggleBoldText,
-    toggleTheme,
-    toggleHighContrast,
-    increaseFontSize,
-    decreaseFontSize,
-    effectiveFontScale,
-  } = useAccessibility();
+  const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
   const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
-  const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
-  const dsColors = getColors(settings.isDarkTheme);
 
   useEffect(() => {
     const loadPatientData = async () => {
@@ -254,55 +241,6 @@ export function ProfileContent({
             />
           </Card>
 
-          {/* Share App */}
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Share App</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Invite family & friends</Text>}
-              left={(props) => <Icon {...props} source="share" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => {
-                Share.share({
-                  message: "I'm using BrightFuture to manage my health. Check it out!",
-                  url: 'https://joinabrightfuture.com/download',
-                });
-              }}
-            />
-          </Card>
-
-          {/* Help & Support */}
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Help & Support</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Get help or report an issue</Text>}
-              left={(props) => <Icon {...props} source="help-circle-outline" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/support' as never)}
-            />
-          </Card>
-
-          {/* Security */}
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Security</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>PIN & Face ID settings</Text>}
-              left={(props) => <Icon {...props} source="shield-lock" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => Alert.alert('Security', 'Security settings coming soon')}
-            />
-          </Card>
-
-          {/* Accessibility */}
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Accessibility</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Text size, contrast, bold text</Text>}
-              left={(props) => <Icon {...props} source="human" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => setShowAccessibilityModal(true)}
-            />
-          </Card>
-
           {/* TODO: Temporarily hidden — re-enable when ready
           <Card style={styles.menuCard}>
             <List.Item
@@ -402,6 +340,45 @@ export function ProfileContent({
         </View>
       )}
 
+      {showProfileMenu && (
+        <View style={styles.menuSection}>
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Share App</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Share BrightFuture with others</Text>}
+              left={(props) => <Icon {...props} source="share-variant" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={async () => {
+                await Share.share({
+                  message: "I'm using BrightFuture to manage my health care. Download it here: https://joinabrightfuture.com/download",
+                  url: 'https://joinabrightfuture.com/download',
+                });
+              }}
+            />
+          </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Help & Support</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Get help or submit a ticket</Text>}
+              left={(props) => <Icon {...props} source="help-circle" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => router.push('/Home/support')}
+            />
+          </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Security</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Manage PIN and biometric settings</Text>}
+              left={(props) => <Icon {...props} source="shield-lock" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => Alert.alert('Security', 'Security settings coming soon.')}
+            />
+          </Card>
+        </View>
+      )}
+
       {showSignOut && (
         <View style={styles.footer}>
           <Button
@@ -431,108 +408,6 @@ export function ProfileContent({
           </Button>
         </View>
       )}
-      {/* Accessibility Settings Modal */}
-      <Modal
-        visible={showAccessibilityModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAccessibilityModal(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAccessibilityModal(false)}>
-          <View style={[styles.modalContent, { backgroundColor: dsColors.background }]}>
-            <Pressable>
-              <Text
-                style={[
-                  styles.modalTitle,
-                  {
-                    color: dsColors.text,
-                    fontSize: getScaledFontSize(20),
-                    fontWeight: getScaledFontWeight(700) as never,
-                  },
-                ]}
-                accessibilityRole="header"
-              >
-                Accessibility Settings
-              </Text>
-
-              {/* Text Size */}
-              <View style={styles.modalRow}>
-                <Text style={[styles.modalRowLabel, { color: dsColors.text, fontSize: getScaledFontSize(16) }]}>
-                  Text Size ({Math.round(effectiveFontScale * 100)}%)
-                </Text>
-                <View style={styles.fontSizeControls}>
-                  <Pressable
-                    onPress={decreaseFontSize}
-                    style={[styles.fontSizeButton, { backgroundColor: dsColors.surface, borderColor: dsColors.surfaceBorder }]}
-                    accessibilityLabel="Decrease text size"
-                    accessibilityRole="button"
-                  >
-                    <Text style={{ color: dsColors.text, fontSize: 20, fontWeight: '600' }}>A-</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={increaseFontSize}
-                    style={[styles.fontSizeButton, { backgroundColor: dsColors.surface, borderColor: dsColors.surfaceBorder }]}
-                    accessibilityLabel="Increase text size"
-                    accessibilityRole="button"
-                  >
-                    <Text style={{ color: dsColors.text, fontSize: 20, fontWeight: '600' }}>A+</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Bold Text */}
-              <View style={styles.modalRow}>
-                <Text style={[styles.modalRowLabel, { color: dsColors.text, fontSize: getScaledFontSize(16) }]}>
-                  Bold Text
-                </Text>
-                <Switch
-                  value={settings.isBoldTextEnabled}
-                  onValueChange={toggleBoldText}
-                  trackColor={{ false: dsColors.border, true: dsColors.primary }}
-                  accessibilityLabel="Toggle bold text"
-                />
-              </View>
-
-              {/* High Contrast */}
-              <View style={styles.modalRow}>
-                <Text style={[styles.modalRowLabel, { color: dsColors.text, fontSize: getScaledFontSize(16) }]}>
-                  High Contrast
-                </Text>
-                <Switch
-                  value={settings.isHighContrast}
-                  onValueChange={toggleHighContrast}
-                  trackColor={{ false: dsColors.border, true: dsColors.primary }}
-                  accessibilityLabel="Toggle high contrast mode"
-                />
-              </View>
-
-              {/* Dark Theme */}
-              <View style={styles.modalRow}>
-                <Text style={[styles.modalRowLabel, { color: dsColors.text, fontSize: getScaledFontSize(16) }]}>
-                  Dark Theme
-                </Text>
-                <Switch
-                  value={settings.isDarkTheme}
-                  onValueChange={toggleTheme}
-                  trackColor={{ false: dsColors.border, true: dsColors.primary }}
-                  accessibilityLabel="Toggle dark theme"
-                />
-              </View>
-
-              <Pressable
-                onPress={() => setShowAccessibilityModal(false)}
-                style={[styles.modalDoneButton, { backgroundColor: dsColors.primary }]}
-                accessibilityRole="button"
-                accessibilityLabel="Close accessibility settings"
-              >
-                <Text style={{ color: '#FFFFFF', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as never, textAlign: 'center' }}>
-                  Done
-                </Text>
-              </Pressable>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
     </ScrollView>
   );
 }
@@ -590,45 +465,5 @@ const styles = StyleSheet.create({
   },
   signOutButton: {
     borderColor: '#ff4444',
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-  },
-  modalTitle: {
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  modalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#D1D5DB',
-  },
-  modalRowLabel: {},
-  fontSizeControls: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  fontSizeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalDoneButton: {
-    marginTop: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
   },
 });
