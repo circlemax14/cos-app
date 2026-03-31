@@ -7,9 +7,9 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import { Button } from 'react-native-paper';
 import { AppWrapper } from '@/components/app-wrapper';
 import { SupportTicketCard } from '@/components/ui/support-ticket-card';
 import { Colors } from '@/constants/theme';
@@ -50,6 +50,19 @@ export default function SupportScreen() {
     );
   };
 
+  // Scale-aware sizes
+  const scaledFontTitle = getScaledFontSize(22);
+  const scaledFontBody = getScaledFontSize(14);
+  const scaledFontInput = getScaledFontSize(16);
+  const scaledFontLabel = getScaledFontSize(14);
+  const scaledFontButton = getScaledFontSize(16);
+  const scaledFontSection = getScaledFontSize(18);
+  const scaledFontSmall = getScaledFontSize(13);
+  const scaledFontMedium = getScaledFontSize(15);
+  const scaledLineHeight = Math.round(scaledFontInput * 1.4);
+  const scaledButtonHeight = Math.max(48, scaledFontButton + 28);
+  const scaledTextAreaMinHeight = Math.max(140, scaledFontInput * 8);
+
   return (
     <AppWrapper>
       <KeyboardAvoidingView
@@ -66,39 +79,60 @@ export default function SupportScreen() {
             <Text style={styles.emoji}>💬</Text>
 
             <Text
-              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}
+              style={{
+                color: colors.text,
+                fontSize: scaledFontTitle,
+                fontWeight: getScaledFontWeight(700) as any,
+                textAlign: 'center',
+                marginBottom: 8,
+              }}
               accessibilityRole="header"
             >
               Help & Support
             </Text>
 
-            <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: scaledFontBody,
+                textAlign: 'center',
+                lineHeight: Math.round(scaledFontBody * 1.5),
+                marginBottom: 24,
+                paddingHorizontal: 10,
+              }}
+            >
               Describe your issue below and our team will get back to you within 24-48 hours.
             </Text>
 
             {/* Description Input */}
             <View style={styles.inputContainer}>
               <Text
-                style={[
-                  styles.inputLabel,
-                  { color: descriptionError ? '#DC2626' : colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any },
-                ]}
+                style={{
+                  color: descriptionError ? '#DC2626' : colors.text,
+                  fontSize: scaledFontLabel,
+                  fontWeight: getScaledFontWeight(600) as any,
+                  marginBottom: 8,
+                  marginLeft: 4,
+                }}
               >
                 Describe your issue
               </Text>
               <TextInput
-                style={[
-                  styles.textArea,
-                  {
-                    color: colors.text,
-                    borderColor: descriptionError ? '#DC2626' : colors.border,
-                    backgroundColor: descriptionError
-                      ? '#FEF2F2'
-                      : settings.isDarkTheme
-                        ? colors.card
-                        : '#F9FAFB',
-                  },
-                ]}
+                style={{
+                  color: colors.text,
+                  fontSize: scaledFontInput,
+                  lineHeight: scaledLineHeight,
+                  borderWidth: 1.5,
+                  borderRadius: 12,
+                  padding: 14,
+                  minHeight: scaledTextAreaMinHeight,
+                  borderColor: descriptionError ? '#DC2626' : colors.border,
+                  backgroundColor: descriptionError
+                    ? '#FEF2F2'
+                    : settings.isDarkTheme
+                      ? colors.card
+                      : '#F9FAFB',
+                }}
                 placeholder="Tell us what's going on..."
                 placeholderTextColor={colors.subtext}
                 value={description}
@@ -107,48 +141,77 @@ export default function SupportScreen() {
                   if (text.trim().length >= 10) setDescriptionError('');
                 }}
                 multiline
-                numberOfLines={6}
                 textAlignVertical="top"
-                allowFontScaling
                 accessibilityLabel="Describe your issue"
                 accessibilityHint="Enter at least 10 characters"
               />
               {descriptionError ? (
-                <Text style={[styles.errorText, { fontSize: getScaledFontSize(13) }]} accessibilityRole="alert">
+                <Text
+                  style={{
+                    color: '#DC2626',
+                    fontSize: scaledFontSmall,
+                    marginTop: 6,
+                    marginLeft: 4,
+                  }}
+                  accessibilityRole="alert"
+                >
                   {descriptionError}
                 </Text>
               ) : null}
             </View>
 
             {/* Submit Button */}
-            <Button
-              mode="contained"
+            <TouchableOpacity
               onPress={handleSubmit}
-              loading={createTicket.isPending}
               disabled={createTicket.isPending}
-              style={[
-                styles.submitButton,
-                { backgroundColor: createTicket.isPending ? colors.disabled : colors.tint },
-              ]}
-              contentStyle={styles.submitContent}
-              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}
+              accessibilityRole="button"
               accessibilityLabel="Submit support request"
+              style={{
+                backgroundColor: createTicket.isPending ? colors.disabled : colors.tint,
+                borderRadius: 24,
+                width: '100%',
+                minHeight: scaledButtonHeight,
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingVertical: 12,
+                paddingHorizontal: 20,
+              }}
             >
-              Submit Request
-            </Button>
+              <Text
+                style={{
+                  color: '#FFFFFF',
+                  fontSize: scaledFontButton,
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                {createTicket.isPending ? 'Submitting...' : 'Submit Request'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Your Requests Section */}
           <View style={styles.ticketsSection}>
             <Text
-              style={[styles.ticketsSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}
+              style={{
+                color: colors.text,
+                fontSize: scaledFontSection,
+                fontWeight: getScaledFontWeight(600) as any,
+                marginBottom: 14,
+              }}
               accessibilityRole="header"
             >
               Your Requests
             </Text>
 
             {isLoadingTickets ? (
-              <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: scaledFontBody,
+                  textAlign: 'center',
+                  paddingVertical: 20,
+                }}
+              >
                 Loading your tickets...
               </Text>
             ) : tickets && tickets.length > 0 ? (
@@ -162,10 +225,23 @@ export default function SupportScreen() {
             ) : (
               <View style={[styles.emptyTickets, { backgroundColor: colors.card }]}>
                 <Text style={styles.emptyEmoji}>📩</Text>
-                <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }]}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: scaledFontMedium,
+                    fontWeight: getScaledFontWeight(600) as any,
+                    marginBottom: 4,
+                  }}
+                >
                   No Requests Yet
                 </Text>
-                <Text style={[styles.emptySubtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: scaledFontSmall,
+                    textAlign: 'center',
+                  }}
+                >
                   When you submit a support request, it will appear here.
                 </Text>
               </View>
@@ -192,67 +268,12 @@ const styles = StyleSheet.create({
     fontSize: 48,
     marginBottom: 16,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-    paddingHorizontal: 10,
-  },
   inputContainer: {
     width: '100%',
     marginBottom: 20,
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  textArea: {
-    borderWidth: 1.5,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    minHeight: 140,
-    lineHeight: 22,
-  },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 13,
-    marginTop: 6,
-    marginLeft: 4,
-  },
-  submitButton: {
-    borderRadius: 24,
-    width: '100%',
-  },
-  submitContent: {
-    height: 48,
-  },
-  submitLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
   ticketsSection: {
     marginTop: 8,
-  },
-  ticketsSectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 14,
-  },
-  loadingText: {
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 20,
   },
   emptyTickets: {
     alignItems: 'center',
@@ -263,14 +284,5 @@ const styles = StyleSheet.create({
   emptyEmoji: {
     fontSize: 36,
     marginBottom: 10,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    textAlign: 'center',
   },
 });
