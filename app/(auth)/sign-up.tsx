@@ -3,11 +3,13 @@ import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text as RNText, View } from 'react-native';
-import { Button, Text, TextInput } from 'react-native-paper';
+import { Button } from 'react-native-paper';
 
 import { AppWrapper } from '@/components/app-wrapper';
+import { AccessibleButton } from '@/components/ui/accessible-button';
+import { AccessibleInput } from '@/components/ui/accessible-input';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { getColors, Typography } from '@/constants/design-system';
 import { signUp } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
@@ -21,7 +23,7 @@ const PASSWORD_RULES = [
 
 export default function SignUpScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -58,40 +60,41 @@ export default function SignUpScreen() {
         <View style={styles.container}>
           <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(140), height: getScaledFontSize(140) }]} contentFit="contain" />
           <View style={styles.form}>
-            <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}>Sign Up</Text>
-            <TextInput
-              mode="flat"
+            <RNText style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(Typography.title2.fontSize), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}>Sign Up</RNText>
+
+            <AccessibleInput
               label="Email"
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
+              textContentType="emailAddress"
             />
-            <TextInput
-              mode="flat"
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
-              right={
-                <TextInput.Icon
-                  icon={() => (
-                    <IconSymbol
-                      name={showPassword ? 'eye.slash' : 'eye'}
-                      size={getScaledFontSize(22)}
-                      color={colors.text}
-                    />
-                  )}
-                  onPress={() => setShowPassword(v => !v)}
+
+            <View style={styles.passwordRow}>
+              <View style={styles.passwordInputWrapper}>
+                <AccessibleInput
+                  label="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  textContentType="newPassword"
                 />
-              }
-            />
+              </View>
+              <Pressable
+                onPress={() => setShowPassword(v => !v)}
+                style={[styles.eyeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <IconSymbol
+                  name={showPassword ? 'eye.slash' : 'eye'}
+                  size={getScaledFontSize(22)}
+                  color={colors.text}
+                />
+              </Pressable>
+            </View>
+
             {password.length > 0 && (() => {
               const firstUnmet = PASSWORD_RULES.find((rule) => !rule.test(password));
               if (!firstUnmet) return null;
@@ -102,35 +105,45 @@ export default function SignUpScreen() {
                     size={getScaledFontSize(15)}
                     color="#b45309"
                   />
-                  <Text style={[styles.requirementText, { color: '#b45309', fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(18) }]}>
+                  <RNText style={[styles.requirementText, { color: '#b45309', fontSize: getScaledFontSize(Typography.footnote.fontSize), lineHeight: getScaledFontSize(18) }]}>
                     {firstUnmet.label}
-                  </Text>
+                  </RNText>
                 </View>
               );
             })()}
-            <TextInput
-              mode="flat"
-              label="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showConfirmPassword}
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
-              right={
-                <TextInput.Icon
-                  icon={() => (
-                    <IconSymbol
-                      name={showConfirmPassword ? 'eye.slash' : 'eye'}
-                      size={getScaledFontSize(22)}
-                      color={colors.text}
-                    />
-                  )}
-                  onPress={() => setShowConfirmPassword(v => !v)}
+
+            <View style={styles.passwordRow}>
+              <View style={styles.passwordInputWrapper}>
+                <AccessibleInput
+                  label="Confirm Password"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                  textContentType="newPassword"
                 />
-              }
-            />
-            {error ? <Text style={[styles.error, { fontSize: getScaledFontSize(16) }]}>{error}</Text> : null}
+              </View>
+              <Pressable
+                onPress={() => setShowConfirmPassword(v => !v)}
+                style={[styles.eyeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+              >
+                <IconSymbol
+                  name={showConfirmPassword ? 'eye.slash' : 'eye'}
+                  size={getScaledFontSize(22)}
+                  color={colors.text}
+                />
+              </Pressable>
+            </View>
+
+            {error ? (
+              <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                <RNText style={styles.errorIcon}>⚠️</RNText>
+                <RNText style={[styles.error, { color: colors.error, fontSize: getScaledFontSize(Typography.footnote.fontSize) }]}>
+                  {error}
+                </RNText>
+              </View>
+            ) : null}
 
             <Pressable
               style={styles.termsRow}
@@ -144,34 +157,30 @@ export default function SignUpScreen() {
                 onValueChange={setTermsAccepted}
                 color={termsAccepted ? colors.primary : undefined}
               />
-              <RNText style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(20), flex: 1 }}>
+              <RNText style={{ color: colors.secondary, fontSize: getScaledFontSize(Typography.footnote.fontSize), lineHeight: getScaledFontSize(20), flex: 1 }}>
                 I agree to the{' '}
                 <RNText
                   onPress={(e) => { e.stopPropagation(); router.push('/(auth)/terms' as never); }}
-                  style={{ color: '#2563eb', fontWeight: '600', textDecorationLine: 'underline' }}
+                  style={{ color: colors.primary, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Terms and Conditions
                 </RNText>
               </RNText>
             </Pressable>
 
-            <Button
-              mode="contained"
-              buttonColor={loading || !termsAccepted ? '#9ca3af' : '#2563eb'}
+            <AccessibleButton
+              variant="primary"
+              label="Sign Up"
               onPress={onSubmit}
               loading={loading}
               disabled={loading || !termsAccepted}
-              style={styles.submit}
-              contentStyle={styles.submitContent}
-              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
-              accessibilityLabel={termsAccepted ? 'Sign up' : 'Accept terms and conditions to sign up'}
-            >
-              Sign Up
-            </Button>
+              accessibilityHint={termsAccepted ? undefined : 'Accept terms and conditions to sign up'}
+            />
+
             <View style={styles.switchRow}>
-              <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Already have an account? </Text>
+              <RNText style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(Typography.callout.fontSize), fontWeight: getScaledFontWeight(500) as any }]}>Already have an account? </RNText>
               <Link href="/(auth)/sign-in" asChild>
-                <Button mode="text" labelStyle={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]} contentStyle={{ paddingVertical: getScaledFontSize(6) }}>Sign In</Button>
+                <Button mode="text" labelStyle={[{ fontSize: getScaledFontSize(Typography.callout.fontSize), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]} contentStyle={{ paddingVertical: getScaledFontSize(6) }}>Sign In</Button>
               </Link>
             </View>
           </View>
@@ -205,11 +214,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  input: {
-    backgroundColor: 'transparent',
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
   },
-  inputOutline: {
-    borderRadius: 14,
+  passwordInputWrapper: {
+    flex: 1,
+  },
+  eyeToggle: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   requirementRow: {
     flexDirection: 'row',
@@ -220,17 +239,6 @@ const styles = StyleSheet.create({
   requirementText: {
     fontWeight: '500',
   },
-  submit: {
-    marginTop: 8,
-    borderRadius: 24,
-  },
-  submitContent: {
-    minHeight: 48,
-  },
-  submitLabel: {
-    color: 'white',
-    fontWeight: '600',
-  },
   termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -238,6 +246,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingHorizontal: 4,
   },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  errorIcon: {
+    fontSize: 16,
+  },
+  error: {},
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -247,8 +264,5 @@ const styles = StyleSheet.create({
   switchText: {
     flexShrink: 1,
     textAlign: 'center',
-  },
-  error: {
-    color: 'crimson',
   },
 });
