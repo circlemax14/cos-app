@@ -133,22 +133,34 @@ export default function SignUpScreen() {
             {error ? <Text style={[styles.error, { fontSize: getScaledFontSize(16) }]}>{error}</Text> : null}
 
             <Pressable
-              style={styles.termsRow}
+              style={[
+                styles.termsCard,
+                {
+                  backgroundColor: termsAccepted ? (colors.tint + '10') : colors.card,
+                  borderColor: termsAccepted ? colors.tint : colors.border,
+                },
+              ]}
               onPress={() => setTermsAccepted(v => !v)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: termsAccepted }}
               accessibilityLabel="I agree to the Terms and Conditions"
             >
-              <Checkbox
-                value={termsAccepted}
-                onValueChange={setTermsAccepted}
-                color={termsAccepted ? colors.primary : undefined}
-              />
-              <RNText style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(20), flex: 1 }}>
+              <View style={[
+                styles.termsCheckCircle,
+                {
+                  backgroundColor: termsAccepted ? colors.tint : 'transparent',
+                  borderColor: termsAccepted ? colors.tint : colors.border,
+                },
+              ]}>
+                {termsAccepted && (
+                  <RNText style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</RNText>
+                )}
+              </View>
+              <RNText style={{ color: colors.text, fontSize: getScaledFontSize(14), flex: 1, lineHeight: getScaledFontSize(20) }}>
                 I agree to the{' '}
                 <RNText
                   onPress={(e) => { e.stopPropagation(); router.push('/(auth)/terms' as never); }}
-                  style={{ color: '#2563eb', fontWeight: '600', textDecorationLine: 'underline' }}
+                  style={{ color: colors.tint, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Terms and Conditions
                 </RNText>
@@ -234,12 +246,24 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
-  termsRow: {
+  termsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     marginTop: 4,
-    paddingHorizontal: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    minHeight: 52,
+  },
+  termsCheckCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   switchRow: {
     flexDirection: 'row',
