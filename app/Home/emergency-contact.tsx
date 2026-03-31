@@ -1,5 +1,5 @@
 import { AppWrapper } from '@/components/app-wrapper';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import {
   useEmergencyContacts,
@@ -25,7 +25,7 @@ const EMPTY_FORM: ContactFormValues = { name: '', relationship: '', phone: '', e
 
 export default function EmergencyContactScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
 
   const { data: emergencyContacts = [], isLoading, isError, refetch } = useEmergencyContacts();
   const createContact = useCreateEmergencyContact();
@@ -134,7 +134,7 @@ export default function EmergencyContactScreen() {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Title Section */}
         <View style={styles.titleSection}>
-          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>
+          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]} accessibilityRole="header">
             Emergency Contacts
           </Text>
         </View>
@@ -151,7 +151,7 @@ export default function EmergencyContactScreen() {
             </TouchableOpacity>
           </View>
         ) : emergencyContacts.length === 0 ? (
-          <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+          <Card style={[styles.card, { backgroundColor: colors.surface }]}>
             <Card.Content>
               <View style={styles.emptyContainer}>
                 <IconSymbol name="person.crop.circle.badge.exclamationmark" size={getScaledFontSize(48)} color={colors.text + '60'} />
@@ -171,7 +171,7 @@ export default function EmergencyContactScreen() {
               style={[
                 styles.card,
                 {
-                  backgroundColor: colors.cardBackground,
+                  backgroundColor: colors.surface,
                   marginBottom: index < emergencyContacts.length - 1 ? 16 : 0,
                 }
               ]}
@@ -180,7 +180,7 @@ export default function EmergencyContactScreen() {
                 {/* Source label for EHR contacts */}
                 {contact.source === 'ehr' && (
                   <View style={styles.ehrBadge}>
-                    <MaterialIcons name="local-hospital" size={getScaledFontSize(14)} color={colors.primary} />
+                    <MaterialIcons name="local-hospital" size={getScaledFontSize(20)} color={colors.primary} />
                     <Text style={[styles.ehrLabel, { color: colors.primary, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>
                       From Medical Records
                     </Text>
@@ -236,10 +236,10 @@ export default function EmergencyContactScreen() {
                 {/* Edit/Delete only for user-created contacts */}
                 {contact.source === 'user' && (
                   <View style={styles.contactActions}>
-                    <TouchableOpacity onPress={() => openEditModal(contact)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => openEditModal(contact)} style={styles.actionButton} accessibilityLabel={`Edit ${contact.name}`} accessibilityRole="button">
                       <MaterialIcons name="edit" size={getScaledFontSize(20)} color={colors.tint} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(contact)} style={styles.actionButton}>
+                    <TouchableOpacity onPress={() => handleDelete(contact)} style={styles.actionButton} accessibilityLabel={`Delete ${contact.name}`} accessibilityRole="button">
                       <MaterialIcons name="delete-outline" size={getScaledFontSize(22)} color="#F44336" />
                     </TouchableOpacity>
                   </View>
@@ -251,7 +251,7 @@ export default function EmergencyContactScreen() {
       </ScrollView>
 
       {/* FAB — Add Contact */}
-      <TouchableOpacity style={[styles.fab, { backgroundColor: colors.tint }]} onPress={openAddModal}>
+      <TouchableOpacity style={[styles.fab, { backgroundColor: colors.tint }]} onPress={openAddModal} accessibilityLabel="Add emergency contact" accessibilityRole="button">
         <MaterialIcons name="person-add" size={24} color="#fff" />
       </TouchableOpacity>
 

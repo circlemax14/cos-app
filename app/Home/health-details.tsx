@@ -10,14 +10,14 @@ import {
   View,
 } from 'react-native';
 import { Card, Icon, Button } from 'react-native-paper';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthDetails, useUpdateHealthDetails } from '@/hooks/use-health-details';
 import { AppWrapper } from '@/components/app-wrapper';
 
 export default function HealthDetailsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
   const { data: healthDetails, isLoading, isError, refetch } = useHealthDetails();
   const updateMutation = useUpdateHealthDetails();
 
@@ -181,18 +181,19 @@ export default function HealthDetailsScreen() {
               styles.title,
               { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any },
             ]}
+            accessibilityRole="header"
           >
             Health Details
           </Text>
           {!isEditing && (
-            <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.editButton}>
+            <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.editButton} accessibilityLabel="Edit health details" accessibilityRole="button">
               <Icon source="pencil" size={getScaledFontSize(24)} color={colors.tint} />
             </TouchableOpacity>
           )}
         </View>
 
         {/* Height */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <Text
               style={[
@@ -224,7 +225,7 @@ export default function HealthDetailsScreen() {
         </Card>
 
         {/* Weight */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <Text
               style={[
@@ -256,7 +257,7 @@ export default function HealthDetailsScreen() {
         </Card>
 
         {/* Blood Type */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <Text
               style={[
@@ -288,7 +289,7 @@ export default function HealthDetailsScreen() {
         </Card>
 
         {/* Uses CPAP */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <View style={styles.switchContainer}>
               <View style={styles.switchLabelContainer}>
@@ -325,7 +326,7 @@ export default function HealthDetailsScreen() {
         </Card>
 
         {/* Chronic Conditions */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <Text
               style={[
@@ -412,7 +413,7 @@ export default function HealthDetailsScreen() {
         </Card>
 
         {/* Allergies */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <Text
               style={[
@@ -499,7 +500,7 @@ export default function HealthDetailsScreen() {
         </Card>
 
         {/* Notes */}
-        <Card style={[styles.card, { backgroundColor: colors.cardBackground }]}>
+        <Card style={[styles.card, { backgroundColor: colors.surface }]}>
           <Card.Content>
             <Text
               style={[

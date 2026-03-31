@@ -1,6 +1,6 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { fetchProviderAllergies } from '@/services/api/providers';
 import type { Allergy } from '@/services/api/types';
@@ -15,7 +15,7 @@ const CRITICALITY_STYLES: Record<string, { bg: string; text: string; label: stri
 
 export default function AllergiesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,10 +58,10 @@ export default function AllergiesScreen() {
         contentContainerStyle={styles.contentContainer}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
-        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>
+        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]} accessibilityRole="header">
           Allergies
         </Text>
-        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+        <Text style={[styles.subtitle, { color: colors.secondary, fontSize: getScaledFontSize(14) }]}>
           {allergies.length} allerg{allergies.length !== 1 ? 'ies' : 'y'} from your EHR records
         </Text>
 
@@ -89,19 +89,19 @@ export default function AllergiesScreen() {
                 <View style={styles.badgeRow}>
                   {allergy.category ? (
                     <View style={[styles.badge, { backgroundColor: '#E3F2FD' }]}>
-                      <Text style={[styles.badgeText, { color: '#1565C0', fontSize: getScaledFontSize(11) }]}>
+                      <Text style={[styles.badgeText, { color: '#1565C0', fontSize: getScaledFontSize(13) }]}>
                         {allergy.category}
                       </Text>
                     </View>
                   ) : null}
                   <View style={[styles.badge, { backgroundColor: critStyle.bg }]}>
-                    <Text style={[styles.badgeText, { color: critStyle.text, fontSize: getScaledFontSize(11) }]}>
+                    <Text style={[styles.badgeText, { color: critStyle.text, fontSize: getScaledFontSize(13) }]}>
                       {critStyle.label} Criticality
                     </Text>
                   </View>
                   {allergy.clinicalStatus ? (
                     <View style={[styles.badge, { backgroundColor: '#F3E5F5' }]}>
-                      <Text style={[styles.badgeText, { color: '#7B1FA2', fontSize: getScaledFontSize(11) }]}>
+                      <Text style={[styles.badgeText, { color: '#7B1FA2', fontSize: getScaledFontSize(13) }]}>
                         {allergy.clinicalStatus}
                       </Text>
                     </View>
@@ -111,8 +111,8 @@ export default function AllergiesScreen() {
                 {/* Dates */}
                 {allergy.onsetDate ? (
                   <View style={styles.infoRow}>
-                    <IconSymbol name="calendar" size={getScaledFontSize(14)} color={colors.subtext} />
-                    <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                    <IconSymbol name="calendar" size={getScaledFontSize(20)} color={colors.secondary} />
+                    <Text style={[styles.infoText, { color: colors.secondary, fontSize: getScaledFontSize(13) }]}>
                       Onset: {allergy.onsetDate}
                     </Text>
                   </View>
@@ -134,7 +134,7 @@ export default function AllergiesScreen() {
                           </View>
                         ))}
                         {reaction.severity ? (
-                          <Text style={[styles.severityText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                          <Text style={[styles.severityText, { color: colors.secondary, fontSize: getScaledFontSize(12) }]}>
                             Severity: {reaction.severity}
                           </Text>
                         ) : null}
