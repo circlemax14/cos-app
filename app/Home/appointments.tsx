@@ -1,31 +1,15 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { AccessibleCard } from '@/components/ui/accessible-card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { getColors, Typography, Spacing, TouchTargets, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
-
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  booked: { bg: '#E3F2FD', text: '#1565C0' },
-  arrived: { bg: '#E8F5E9', text: '#2E7D32' },
-  fulfilled: { bg: '#E8F5E9', text: '#2E7D32' },
-  finished: { bg: '#F3E5F5', text: '#7B1FA2' },
-  cancelled: { bg: '#FFEBEE', text: '#C62828' },
-  noshow: { bg: '#FFF3E0', text: '#E65100' },
-  'entered-in-error': { bg: '#FFEBEE', text: '#C62828' },
-  planned: { bg: '#E3F2FD', text: '#1565C0' },
-  'in-progress': { bg: '#FFF8E1', text: '#F57F17' },
-  triaged: { bg: '#FFF8E1', text: '#F57F17' },
-  onleave: { bg: '#FFF3E0', text: '#E65100' },
-};
-
-const RESOURCE_TYPE_STYLES = {
-  Appointment: { bg: '#E3F2FD', text: '#1565C0', label: 'Appointment' },
-  Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
-};
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -34,7 +18,7 @@ function formatDate(dateStr: string): string {
 
 export default function AppointmentsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -88,7 +72,7 @@ export default function AppointmentsScreen() {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#1976D2" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </AppWrapper>
     );
@@ -98,9 +82,14 @@ export default function AppointmentsScreen() {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <Text style={[styles.errorText, { color: colors.text }]}>Failed to load appointments</Text>
-          <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
-            <Text style={styles.retryText}>Retry</Text>
+          <Text style={[styles.errorText, { color: colors.text, fontSize: getScaledFontSize(Typography.body.fontSize) }]}>Failed to load appointments</Text>
+          <TouchableOpacity
+            onPress={() => refetch()}
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading appointments"
+          >
+            <Text style={[styles.retryText, { fontSize: getScaledFontSize(Typography.body.fontSize) }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       </AppWrapper>
@@ -115,81 +104,82 @@ export default function AppointmentsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
         }
       >
-        <Text style={[styles.title, { fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}>
+        <Text
+          style={[styles.title, { fontSize: getScaledFontSize(Typography.title1.fontSize), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}
+          accessibilityRole="header"
+        >
           Appointments & Encounters
         </Text>
-        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+        <Text style={[styles.subtitle, { color: colors.secondary, fontSize: getScaledFontSize(Typography.callout.fontSize) }]}>
           {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
         </Text>
 
         {/* Search bar */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-          <IconSymbol name="magnifyingglass" size={18} color={colors.subtext} />
+        <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.surfaceBorder }]}>
+          <IconSymbol name="magnifyingglass" size={20} color={colors.secondary} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text, fontSize: getScaledFontSize(14) }]}
+            style={[styles.searchInput, { color: colors.text, fontSize: getScaledFontSize(Typography.body.fontSize) }]}
             placeholder="Search by type, doctor, clinic, diagnosis..."
-            placeholderTextColor={colors.subtext}
+            placeholderTextColor={colors.secondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            accessibilityLabel="Search appointments"
           />
           {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <IconSymbol name="xmark.circle.fill" size={18} color={colors.subtext} />
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              style={styles.clearButton}
+            >
+              <IconSymbol name="xmark.circle.fill" size={20} color={colors.secondary} />
             </TouchableOpacity>
           ) : null}
         </View>
 
         {appointments.length === 0 ? (
-          <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
-            <IconSymbol name="calendar" size={getScaledFontSize(48)} color={colors.text + '60'} />
-            <Text style={[styles.emptyText, { color: colors.text + '80', fontSize: getScaledFontSize(16) }]}>
-              No appointments or encounters found
-            </Text>
-            <Text style={[styles.emptySubtext, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
-              Your records will appear here once available from your connected clinics.
-            </Text>
-          </View>
+          <EmptyState
+            icon="📅"
+            title="No Appointments Yet"
+            description="Your appointments will appear here once available from your connected clinics."
+            ctaLabel="Connect a Clinic"
+            onCtaPress={() => router.push('/Home/connect-clinics' as never)}
+          />
         ) : (
           groupedByDate.map(([date, items]) => (
             <View key={date} style={styles.dateGroup}>
-              <Text style={[styles.dateHeader, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+              <Text
+                style={[styles.dateHeader, { color: colors.text, fontSize: getScaledFontSize(Typography.headline.fontSize), fontWeight: getScaledFontWeight(600) as any }]}
+                accessibilityRole="header"
+              >
                 {formatDate(date)}
               </Text>
               {items.map((apt) => {
-                const resStyle = RESOURCE_TYPE_STYLES[apt.resourceType ?? 'Encounter'];
-                const statusStyle = STATUS_COLORS[apt.status] ?? STATUS_COLORS.finished;
+                const cardLabel = `${apt.resourceType ?? 'Encounter'}: ${apt.type || 'Office Visit'}${apt.doctorName ? `, with ${apt.doctorName}` : ''}, ${formatDate(apt.date || 'Unknown')}, status ${apt.status}`;
 
                 return (
-                  <TouchableOpacity
+                  <AccessibleCard
                     key={apt.id}
-                    activeOpacity={0.7}
                     onPress={() => handleCardPress(apt)}
-                    style={[styles.card, { backgroundColor: colors.card }]}
+                    accessibilityLabel={cardLabel}
+                    accessibilityHint="Double tap to view appointment details"
+                    showChevron
                   >
-                    {/* Top row: resource type badge + status badge */}
+                    {/* Top row: status badge */}
                     <View style={styles.badgeRow}>
-                      <View style={[styles.badge, { backgroundColor: resStyle.bg }]}>
-                        <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(11) }]}>
-                          {resStyle.label}
-                        </Text>
-                      </View>
-                      <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-                        <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(11) }]}>
-                          {apt.status}
-                        </Text>
-                      </View>
+                      <StatusBadge status={apt.status} />
                     </View>
 
                     {/* Title */}
-                    <Text style={[styles.cardTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+                    <Text style={[styles.cardTitle, { color: colors.text, fontSize: getScaledFontSize(Typography.headline.fontSize), fontWeight: getScaledFontWeight(600) as any }]}>
                       {apt.type || 'Office Visit'}
                     </Text>
 
                     {/* Time */}
                     {apt.time ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="clock" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                        <IconSymbol name="clock" size={20} color={colors.secondary} />
+                        <Text style={[styles.infoText, { color: colors.secondary, fontSize: getScaledFontSize(Typography.callout.fontSize) }]}>
                           {apt.time}
                         </Text>
                       </View>
@@ -198,8 +188,8 @@ export default function AppointmentsScreen() {
                     {/* Doctor */}
                     {apt.doctorName && apt.doctorName !== 'Unknown Provider' ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="person" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                        <IconSymbol name="person" size={20} color={colors.secondary} />
+                        <Text style={[styles.infoText, { color: colors.secondary, fontSize: getScaledFontSize(Typography.callout.fontSize) }]}>
                           {apt.doctorName}{apt.doctorSpecialty ? ` - ${apt.doctorSpecialty}` : ''}
                         </Text>
                       </View>
@@ -208,8 +198,8 @@ export default function AppointmentsScreen() {
                     {/* Clinic */}
                     {apt.clinicName ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="house" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                        <IconSymbol name="house" size={20} color={colors.secondary} />
+                        <Text style={[styles.infoText, { color: colors.secondary, fontSize: getScaledFontSize(Typography.callout.fontSize) }]}>
                           {apt.clinicName}
                         </Text>
                       </View>
@@ -218,18 +208,13 @@ export default function AppointmentsScreen() {
                     {/* Diagnosis */}
                     {apt.diagnosis ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="doc.text" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]} numberOfLines={1}>
+                        <IconSymbol name="doc.text" size={20} color={colors.secondary} />
+                        <Text style={[styles.infoText, { color: colors.secondary, fontSize: getScaledFontSize(Typography.callout.fontSize) }]} numberOfLines={1}>
                           {apt.diagnosis}
                         </Text>
                       </View>
                     ) : null}
-
-                    {/* Chevron */}
-                    <View style={styles.chevron}>
-                      <IconSymbol name="chevron.right" size={16} color={colors.subtext} />
-                    </View>
-                  </TouchableOpacity>
+                  </AccessibleCard>
                 );
               })}
             </View>
@@ -245,7 +230,7 @@ export default function AppointmentsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    padding: Spacing.screenPadding,
   },
   centered: {
     flex: 1,
@@ -253,100 +238,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    fontSize: 16,
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    backgroundColor: '#1976D2',
-    borderRadius: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radii.sm,
+    minHeight: TouchTargets.minimum,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   retryText: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: '600',
   },
   title: {
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   subtitle: {
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 20,
-    gap: 8,
+    borderRadius: Radii.md,
+    borderWidth: 1.5,
+    paddingHorizontal: Spacing.md,
+    minHeight: TouchTargets.searchBar,
+    marginBottom: Spacing.screenPadding,
+    gap: Spacing.sm,
   },
   searchInput: {
     flex: 1,
     padding: 0,
+    minHeight: TouchTargets.searchBar,
   },
-  emptyContainer: {
+  clearButton: {
+    minWidth: TouchTargets.minimum,
+    minHeight: TouchTargets.minimum,
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
-    borderRadius: 12,
-  },
-  emptyText: {
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    marginTop: 8,
-    textAlign: 'center',
   },
   dateGroup: {
-    marginBottom: 20,
+    marginBottom: Spacing.screenPadding,
+    gap: Spacing.sm + 2,
   },
   dateHeader: {
-    marginBottom: 10,
-    paddingLeft: 4,
-  },
-  card: {
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    position: 'relative',
+    paddingLeft: Spacing.xs,
   },
   badgeRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  badgeText: {
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   cardTitle: {
-    marginBottom: 6,
+    marginBottom: Spacing.xs + 2,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
+    gap: Spacing.sm,
+    marginTop: Spacing.xs + 2,
   },
   infoText: {
     flex: 1,
-  },
-  chevron: {
-    position: 'absolute',
-    right: 14,
-    top: 14,
   },
   bottomPadding: {
     height: 40,
