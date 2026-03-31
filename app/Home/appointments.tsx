@@ -8,21 +8,21 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  booked: { bg: '#E3F2FD', text: '#1565C0' },
-  arrived: { bg: '#E8F5E9', text: '#2E7D32' },
-  fulfilled: { bg: '#E8F5E9', text: '#2E7D32' },
-  finished: { bg: '#F3E5F5', text: '#7B1FA2' },
-  cancelled: { bg: '#FFEBEE', text: '#C62828' },
-  noshow: { bg: '#FFF3E0', text: '#E65100' },
-  'entered-in-error': { bg: '#FFEBEE', text: '#C62828' },
-  planned: { bg: '#E3F2FD', text: '#1565C0' },
-  'in-progress': { bg: '#FFF8E1', text: '#F57F17' },
-  triaged: { bg: '#FFF8E1', text: '#F57F17' },
-  onleave: { bg: '#FFF3E0', text: '#E65100' },
+const STATUS_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
+  booked: { bg: '#E3F2FD', text: '#1565C0', icon: '📅' },
+  arrived: { bg: '#E8F5E9', text: '#2E7D32', icon: '✓' },
+  fulfilled: { bg: '#E8F5E9', text: '#2E7D32', icon: '✓' },
+  finished: { bg: '#F3E5F5', text: '#7B1FA2', icon: '★' },
+  cancelled: { bg: '#FFEBEE', text: '#C62828', icon: '✕' },
+  noshow: { bg: '#FFF3E0', text: '#E65100', icon: '⚠' },
+  'entered-in-error': { bg: '#FFEBEE', text: '#C62828', icon: '✕' },
+  planned: { bg: '#E3F2FD', text: '#1565C0', icon: '📅' },
+  'in-progress': { bg: '#FFF8E1', text: '#F57F17', icon: '⏳' },
+  triaged: { bg: '#FFF8E1', text: '#F57F17', icon: '⏳' },
+  onleave: { bg: '#FFF3E0', text: '#E65100', icon: '⚠' },
 };
 
-const RESOURCE_TYPE_STYLES = {
+const RESOURCE_TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   Appointment: { bg: '#E3F2FD', text: '#1565C0', label: 'Appointment' },
   Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
 };
@@ -40,7 +40,6 @@ export default function AppointmentsScreen() {
 
   const { data, isLoading, isError, refetch } = useAppointments();
 
-  // Filter by search query (matches type, doctor, clinic, diagnosis, status, resourceType)
   const appointments = useMemo(() => {
     const all = data ?? [];
     if (!searchQuery.trim()) return all;
@@ -62,7 +61,6 @@ export default function AppointmentsScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  // Group appointments by date
   const groupedByDate = useMemo(() => {
     const groups: Record<string, Appointment[]> = {};
     for (const apt of appointments) {
@@ -70,7 +68,6 @@ export default function AppointmentsScreen() {
       if (!groups[date]) groups[date] = [];
       groups[date].push(apt);
     }
-    // Sort dates descending (most recent first)
     return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
   }, [appointments]);
 
@@ -88,7 +85,10 @@ export default function AppointmentsScreen() {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#1976D2" />
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>
+            Loading appointments...
+          </Text>
         </View>
       </AppWrapper>
     );
@@ -98,9 +98,22 @@ export default function AppointmentsScreen() {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <Text style={[styles.errorText, { color: colors.text }]}>Failed to load appointments</Text>
-          <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
-            <Text style={styles.retryText}>Retry</Text>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>😔</Text>
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginBottom: 8 }}>
+            Failed to load appointments
+          </Text>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginBottom: 20, textAlign: 'center' }}>
+            Please check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            onPress={() => refetch()}
+            style={[styles.retryButton, { backgroundColor: colors.tint }]}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading appointments"
+          >
+            <Text style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }}>
+              Retry
+            </Text>
           </TouchableOpacity>
         </View>
       </AppWrapper>
@@ -115,44 +128,94 @@ export default function AppointmentsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
         }
       >
-        <Text style={[styles.title, { fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]} accessibilityRole="header">
-          Appointments & Encounters
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-          {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
-        </Text>
+        {/* Header */}
+        <View style={styles.headerSection}>
+          <Text style={{ fontSize: 40, marginBottom: 12 }}>📋</Text>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(22),
+              fontWeight: getScaledFontWeight(700) as any,
+              textAlign: 'center',
+              marginBottom: 4,
+            }}
+            accessibilityRole="header"
+          >
+            Appointments & Encounters
+          </Text>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(14),
+              textAlign: 'center',
+            }}
+          >
+            {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
+          </Text>
+        </View>
 
         {/* Search bar */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-          <IconSymbol name="magnifyingglass" size={18} color={colors.subtext} />
+        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <IconSymbol name="magnifyingglass" size={getScaledFontSize(18)} color={colors.subtext} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text, fontSize: getScaledFontSize(14) }]}
-            placeholder="Search by type, doctor, clinic, diagnosis..."
+            style={[styles.searchInput, { color: colors.text, fontSize: 15 }]}
+            placeholder="Search by type, doctor, clinic..."
             placeholderTextColor={colors.subtext}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            accessibilityLabel="Search appointments"
+            allowFontScaling
           />
           {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <IconSymbol name="xmark.circle.fill" size={18} color={colors.subtext} />
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              style={styles.clearButton}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
+              <IconSymbol name="xmark.circle.fill" size={getScaledFontSize(18)} color={colors.subtext} />
             </TouchableOpacity>
           ) : null}
         </View>
 
         {appointments.length === 0 ? (
           <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
-            <IconSymbol name="calendar" size={getScaledFontSize(48)} color={colors.text + '60'} />
-            <Text style={[styles.emptyText, { color: colors.text + '80', fontSize: getScaledFontSize(16) }]}>
+            <Text style={{ fontSize: 48, marginBottom: 16 }}>📅</Text>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(16),
+                fontWeight: getScaledFontWeight(600) as any,
+                textAlign: 'center',
+                marginBottom: 6,
+              }}
+            >
               No appointments or encounters found
             </Text>
-            <Text style={[styles.emptySubtext, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                textAlign: 'center',
+                lineHeight: getScaledFontSize(20),
+              }}
+            >
               Your records will appear here once available from your connected clinics.
             </Text>
           </View>
         ) : (
           groupedByDate.map(([date, items]) => (
             <View key={date} style={styles.dateGroup}>
-              <Text style={[styles.dateHeader, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  marginBottom: 10,
+                  paddingLeft: 4,
+                }}
+                accessibilityRole="header"
+              >
                 {formatDate(date)}
               </Text>
               {items.map((apt) => {
@@ -164,63 +227,68 @@ export default function AppointmentsScreen() {
                     key={apt.id}
                     activeOpacity={0.7}
                     onPress={() => handleCardPress(apt)}
-                    style={[styles.card, { backgroundColor: colors.card }]}
-                    accessibilityLabel={`${apt.type || 'Office Visit'}, ${apt.doctorName || 'Unknown Provider'}, status ${apt.status}`}
+                    style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${apt.type || 'Office Visit'}, ${apt.doctorName || 'Unknown Provider'}, status ${apt.status}. Double tap for details.`}
                   >
-                    {/* Top row: resource type badge + status badge */}
+                    {/* Badges */}
                     <View style={styles.badgeRow}>
                       <View style={[styles.badge, { backgroundColor: resStyle.bg }]}>
-                        <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(11) }]}>
+                        <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(12) }]}>
                           {resStyle.label}
                         </Text>
                       </View>
                       <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-                        <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(11) }]}>
-                          {apt.status}
+                        <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(12) }]}>
+                          {statusStyle.icon} {apt.status}
                         </Text>
                       </View>
                     </View>
 
                     {/* Title */}
-                    <Text style={[styles.cardTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: getScaledFontSize(16),
+                        fontWeight: getScaledFontWeight(600) as any,
+                        marginBottom: 8,
+                      }}
+                    >
                       {apt.type || 'Office Visit'}
                     </Text>
 
-                    {/* Time */}
+                    {/* Info rows */}
                     {apt.time ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="clock" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                        <IconSymbol name="clock" size={getScaledFontSize(16)} color={colors.subtext} />
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }}>
                           {apt.time}
                         </Text>
                       </View>
                     ) : null}
 
-                    {/* Doctor */}
                     {apt.doctorName && apt.doctorName !== 'Unknown Provider' ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="person" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-                          {apt.doctorName}{apt.doctorSpecialty ? ` - ${apt.doctorSpecialty}` : ''}
+                        <IconSymbol name="person" size={getScaledFontSize(16)} color={colors.subtext} />
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }}>
+                          {apt.doctorName}{apt.doctorSpecialty ? ` — ${apt.doctorSpecialty}` : ''}
                         </Text>
                       </View>
                     ) : null}
 
-                    {/* Clinic */}
                     {apt.clinicName ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="house" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                        <IconSymbol name="house" size={getScaledFontSize(16)} color={colors.subtext} />
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }}>
                           {apt.clinicName}
                         </Text>
                       </View>
                     ) : null}
 
-                    {/* Diagnosis */}
                     {apt.diagnosis ? (
                       <View style={styles.infoRow}>
-                        <IconSymbol name="doc.text" size={14} color={colors.subtext} />
-                        <Text style={[styles.infoText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]} numberOfLines={1}>
+                        <IconSymbol name="doc.text" size={getScaledFontSize(16)} color={colors.subtext} />
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }} numberOfLines={2}>
                           {apt.diagnosis}
                         </Text>
                       </View>
@@ -228,7 +296,7 @@ export default function AppointmentsScreen() {
 
                     {/* Chevron */}
                     <View style={styles.chevron}>
-                      <IconSymbol name="chevron.right" size={16} color={colors.subtext} />
+                      <IconSymbol name="chevron.right" size={getScaledFontSize(16)} color={colors.subtext} />
                     </View>
                   </TouchableOpacity>
                 );
@@ -237,7 +305,7 @@ export default function AppointmentsScreen() {
           ))
         )}
 
-        <View style={styles.bottomPadding} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </AppWrapper>
   );
@@ -246,110 +314,92 @@ export default function AppointmentsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    marginBottom: 12,
+    paddingHorizontal: 24,
   },
   retryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    backgroundColor: '#1976D2',
-    borderRadius: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 24,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  retryText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  title: {
-    marginBottom: 4,
-  },
-  subtitle: {
-    marginBottom: 12,
+  headerSection: {
+    alignItems: 'center',
+    paddingTop: 16,
+    marginBottom: 20,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    minHeight: 44,
     marginBottom: 20,
-    gap: 8,
+    gap: 10,
   },
   searchInput: {
     flex: 1,
-    padding: 0,
+    paddingVertical: 10,
+  },
+  clearButton: {
+    padding: 4,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     alignItems: 'center',
     padding: 32,
-    borderRadius: 12,
-  },
-  emptyText: {
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    marginTop: 8,
-    textAlign: 'center',
+    borderRadius: 16,
   },
   dateGroup: {
     marginBottom: 20,
   },
-  dateHeader: {
-    marginBottom: 10,
-    paddingLeft: 4,
-  },
   card: {
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
     marginBottom: 10,
-    elevation: 2,
+    position: 'relative',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 3,
-    position: 'relative',
+    elevation: 1,
   },
   badgeRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 10,
+    flexWrap: 'wrap',
   },
   badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   badgeText: {
     fontWeight: '600',
     textTransform: 'capitalize',
   },
-  cardTitle: {
-    marginBottom: 6,
-  },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-  },
-  infoText: {
-    flex: 1,
+    gap: 8,
+    marginTop: 6,
   },
   chevron: {
     position: 'absolute',
-    right: 14,
-    top: 14,
-  },
-  bottomPadding: {
-    height: 40,
+    right: 16,
+    top: 16,
   },
 });
