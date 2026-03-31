@@ -63,32 +63,17 @@ export default function SupportScreen() {
         >
           {/* Form Section */}
           <View style={styles.formSection}>
-            <Text style={{ fontSize: 48, marginBottom: 16 }}>💬</Text>
+            <Text style={styles.emoji}>💬</Text>
 
             <Text
-              style={[
-                styles.title,
-                {
-                  color: colors.text,
-                  fontSize: getScaledFontSize(22),
-                  fontWeight: getScaledFontWeight(700) as any,
-                },
-              ]}
+              style={[styles.title, { color: colors.text }]}
               accessibilityRole="header"
             >
               Help & Support
             </Text>
 
-            <Text
-              style={[
-                styles.subtitle,
-                {
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(14),
-                },
-              ]}
-            >
-              Describe your issue below and our team will{'\n'}get back to you within 24-48 hours.
+            <Text style={[styles.subtitle, { color: colors.subtext }]}>
+              Describe your issue below and our team will get back to you within 24-48 hours.
             </Text>
 
             {/* Description Input */}
@@ -96,11 +81,7 @@ export default function SupportScreen() {
               <Text
                 style={[
                   styles.inputLabel,
-                  {
-                    color: descriptionError ? '#DC2626' : colors.text,
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(600) as any,
-                  },
+                  { color: descriptionError ? '#DC2626' : colors.text },
                 ]}
               >
                 Describe your issue
@@ -110,7 +91,6 @@ export default function SupportScreen() {
                   styles.textArea,
                   {
                     color: colors.text,
-                    fontSize: getScaledFontSize(16),
                     borderColor: descriptionError ? '#DC2626' : colors.border,
                     backgroundColor: descriptionError
                       ? '#FEF2F2'
@@ -133,10 +113,7 @@ export default function SupportScreen() {
                 accessibilityHint="Enter at least 10 characters"
               />
               {descriptionError ? (
-                <Text
-                  style={[styles.errorText, { fontSize: getScaledFontSize(13) }]}
-                  accessibilityRole="alert"
-                >
+                <Text style={styles.errorText} accessibilityRole="alert">
                   {descriptionError}
                 </Text>
               ) : null}
@@ -153,11 +130,7 @@ export default function SupportScreen() {
                 { backgroundColor: createTicket.isPending ? colors.disabled : colors.tint },
               ]}
               contentStyle={styles.submitContent}
-              labelStyle={{
-                fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(600) as any,
-                color: '#FFFFFF',
-              }}
+              labelStyle={styles.submitLabel}
               accessibilityLabel="Submit support request"
             >
               Submit Request
@@ -167,25 +140,18 @@ export default function SupportScreen() {
           {/* Your Requests Section */}
           <View style={styles.ticketsSection}>
             <Text
-              style={[
-                styles.ticketsSectionTitle,
-                {
-                  color: colors.text,
-                  fontSize: getScaledFontSize(18),
-                  fontWeight: getScaledFontWeight(600) as any,
-                },
-              ]}
+              style={[styles.ticketsSectionTitle, { color: colors.text }]}
               accessibilityRole="header"
             >
               Your Requests
             </Text>
 
             {isLoadingTickets ? (
-              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'center', paddingVertical: 20 }}>
+              <Text style={[styles.loadingText, { color: colors.subtext }]}>
                 Loading your tickets...
               </Text>
             ) : tickets && tickets.length > 0 ? (
-              <View style={styles.ticketList}>
+              <View>
                 {tickets.map((ticket) => (
                   <View key={ticket.ticketId} style={{ marginBottom: 10 }}>
                     <SupportTicketCard ticket={ticket} />
@@ -194,25 +160,12 @@ export default function SupportScreen() {
               </View>
             ) : (
               <View style={[styles.emptyTickets, { backgroundColor: colors.card }]}>
-                <Text style={{ fontSize: 36, marginBottom: 10 }}>📩</Text>
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    marginBottom: 4,
-                  }}
-                >
+                <Text style={styles.emptyEmoji}>📩</Text>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
                   No Requests Yet
                 </Text>
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(13),
-                    textAlign: 'center',
-                  }}
-                >
-                  When you submit a support request,{'\n'}it will appear here.
+                <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
+                  When you submit a support request, it will appear here.
                 </Text>
               </View>
             )}
@@ -234,20 +187,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 36,
   },
+  emoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
   title: {
+    fontSize: 22,
+    fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
+    fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 24,
+    paddingHorizontal: 10,
   },
   inputContainer: {
     width: '100%',
     marginBottom: 20,
   },
   inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 8,
     marginLeft: 4,
   },
@@ -255,11 +218,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: 12,
     padding: 14,
+    fontSize: 16,
     minHeight: 140,
     lineHeight: 22,
   },
   errorText: {
     color: '#DC2626',
+    fontSize: 13,
     marginTop: 6,
     marginLeft: 4,
   },
@@ -268,19 +233,43 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   submitContent: {
-    minHeight: 48,
+    height: 48,
+  },
+  submitLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   ticketsSection: {
     marginTop: 8,
   },
   ticketsSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     marginBottom: 14,
   },
-  ticketList: {},
+  loadingText: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
   emptyTickets: {
     alignItems: 'center',
     paddingVertical: 28,
     paddingHorizontal: 20,
     borderRadius: 14,
+  },
+  emptyEmoji: {
+    fontSize: 36,
+    marginBottom: 10,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
   },
 });
