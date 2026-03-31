@@ -373,7 +373,7 @@ export function ProfileContent({
               description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Manage PIN and biometric settings</Text>}
               left={(props) => <Icon {...props} source="shield-lock" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => Alert.alert('Security', 'Security settings coming soon.')}
+              onPress={() => router.push('/Home/security-settings' as never)}
             />
           </Card>
         </View>
