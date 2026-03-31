@@ -40,6 +40,9 @@ const MAPPING = {
   'eye.slash': 'visibility-off',
   'checkmark.circle.fill': 'check-circle',
   'xmark.circle.fill': 'cancel',
+  'square.and.arrow.up': 'share',
+  'questionmark.circle': 'help-outline',
+  'lock.shield': 'security',
 } as IconMapping;
 
 /**
