@@ -46,10 +46,15 @@ export function AccessibleInput({
       >
         {label}
       </Text>
-      <View
+      <TextInput
+        {...inputProps}
+        accessibilityLabel={label}
+        accessibilityHint={hint}
         style={[
-          styles.inputWrapper,
+          styles.input,
           {
+            color: colors.text,
+            fontSize: getScaledFontSize(Typography.body.fontSize),
             borderColor,
             borderWidth: 2,
             backgroundColor: error ? colors.errorBg : colors.background,
@@ -61,31 +66,18 @@ export function AccessibleInput({
             shadowRadius: 3,
           },
         ]}
-      >
-        <TextInput
-          {...inputProps}
-          accessibilityLabel={label}
-          accessibilityHint={hint}
-          style={[
-            styles.input,
-            {
-              color: colors.text,
-              fontSize: getScaledFontSize(Typography.body.fontSize),
-            },
-          ]}
-          placeholderTextColor={colors.disabled}
-          onFocus={(e) => {
-            setIsFocused(true);
-            inputProps.onFocus?.(e);
-          }}
-          onBlur={(e) => {
-            setIsFocused(false);
-            inputProps.onBlur?.(e);
-          }}
-          allowFontScaling
-          maxFontSizeMultiplier={2}
-        />
-      </View>
+        placeholderTextColor={colors.disabled}
+        onFocus={(e) => {
+          setIsFocused(true);
+          inputProps.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setIsFocused(false);
+          inputProps.onBlur?.(e);
+        }}
+        allowFontScaling
+        maxFontSizeMultiplier={2}
+      />
       {error && (
         <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="polite">
           <Text style={styles.errorIcon}>⚠️</Text>
@@ -114,12 +106,8 @@ const styles = StyleSheet.create({
   label: {
     marginLeft: 2,
   },
-  inputWrapper: {
-    borderRadius: Radii.md,
-    minHeight: TouchTargets.button,
-    justifyContent: 'center',
-  },
   input: {
+    borderRadius: Radii.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 4,
     minHeight: TouchTargets.button,
