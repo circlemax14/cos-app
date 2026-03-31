@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { CustomChat, IMessage, User } from '@/components/ui/custom-chat';
 import { AppWrapper } from '@/components/app-wrapper';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSendAiMessage, useChatHistory } from '@/hooks/use-chat';
 
@@ -20,7 +20,7 @@ const CURRENT_USER: User = {
 
 export default function HealthChatScreen() {
     const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
-    const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+    const colors = getColors(settings.isDarkTheme);
 
     const { data: historyMessages, isLoading: isHistoryLoading, isError: isHistoryError, refetch } = useChatHistory('ai');
     const sendAiMessage = useSendAiMessage();
@@ -48,7 +48,7 @@ export default function HealthChatScreen() {
             <AppWrapper>
                 <View style={[styles.container, { backgroundColor: colors.background }]}>
                     <View style={[styles.header, { borderBottomColor: colors.text + '20' }]}>
-                        <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as any }]}>
+                        <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as any }]} accessibilityRole="header">
                             Health Chat
                         </Text>
                         <Text style={[styles.headerSubtitle, { color: colors.text + '80', fontSize: getScaledFontSize(14) }]}>
@@ -68,13 +68,13 @@ export default function HealthChatScreen() {
             <AppWrapper>
                 <View style={[styles.container, { backgroundColor: colors.background }]}>
                     <View style={[styles.header, { borderBottomColor: colors.text + '20' }]}>
-                        <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as any }]}>
+                        <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as any }]} accessibilityRole="header">
                             Health Chat
                         </Text>
                     </View>
                     <View style={styles.centered}>
                         <Text style={{ color: colors.text, marginBottom: 12 }}>Failed to load chat history</Text>
-                        <TouchableOpacity onPress={() => refetch()} style={[styles.retryButton, { backgroundColor: colors.tint }]}>
+                        <TouchableOpacity onPress={() => refetch()} style={[styles.retryButton, { backgroundColor: colors.tint }]} accessibilityLabel="Retry loading chat history" accessibilityRole="button">
                             <Text style={styles.retryText}>Retry</Text>
                         </TouchableOpacity>
                     </View>
@@ -94,7 +94,7 @@ export default function HealthChatScreen() {
                             fontSize: getScaledFontSize(20),
                             fontWeight: getScaledFontWeight(700) as any,
                         }
-                    ]}>
+                    ]} accessibilityRole="header">
                         Health Chat
                     </Text>
                     <Text style={[

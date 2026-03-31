@@ -1,6 +1,6 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { ProfileContent } from '@/components/profile-content';
-import { Colors } from '@/constants/theme';
+import { getColors } from '@/constants/design-system';
 import { useConnectedEhrs } from '@/hooks/use-connected-ehrs';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
@@ -9,7 +9,7 @@ import { StyleSheet, Text, View, ScrollView, RefreshControl } from 'react-native
 
 export default function ConnectedEhrsScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const colors = getColors(settings.isDarkTheme);
   const { connectedHospitals, isLoadingClinics, refreshConnectedEhrs } = useConnectedEhrs();
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -33,7 +33,7 @@ export default function ConnectedEhrsScreen() {
       >
         {/* Title Section */}
         <View style={styles.titleSection}>
-          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>
+          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]} accessibilityRole="header">
             Connected EHRs{actualConnectedHospitals.length > 0 ? ` (${actualConnectedHospitals.length})` : ''}
           </Text>
         </View>
