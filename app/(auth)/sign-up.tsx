@@ -44,13 +44,13 @@ export default function SignUpScreen() {
   };
 
   return (
-    <AppWrapper showBellIcon={false} showLogo={false} showHamburgerIcon={false} showAccessibilityIcon={false}>
+    <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       <ScrollView
-        contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -178,23 +178,26 @@ export default function SignUpScreen() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
-    </AppWrapper>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeContainer: {
+    flex: 1,
+  },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     gap: 24,
-    flexGrow: 1,
   },
   form: {
     width: '100%',
