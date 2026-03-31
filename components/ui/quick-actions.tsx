@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { getColors, Spacing, Radii, Typography, TouchTargets } from '@/constants/design-system';
+import { getColors, Spacing, Radii, Typography } from '@/constants/design-system';
 
 interface QuickActionItem {
   icon: string;

@@ -73,7 +73,7 @@ export default function ConfirmPinScreen() {
             style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(14) }]}
             accessibilityRole="alert"
           >
-            PINs don't match. Try again.
+            PINs don&apos;t match. Try again.
           </Text>
         )}
       </View>
