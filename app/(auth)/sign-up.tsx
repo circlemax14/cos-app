@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   },
   termsRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 10,
     marginTop: 4,
     paddingHorizontal: 4,
