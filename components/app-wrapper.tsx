@@ -89,7 +89,8 @@ export function AppWrapper({
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-      {/* Header */}
+      {/* Header — only render if at least one icon is visible */}
+      {(showHamburgerIcon || showLogo || showAccessibilityIcon || showBellIcon) && (
       <View style={[styles.header, { backgroundColor: colors.background}]}>
         <View style={styles.headerContent}>
           {/* Left side - Hamburger or spacer */}
@@ -140,6 +141,7 @@ export function AppWrapper({
           </View>
         </View>
       </View>
+      )}
 
       {/* Main Content */}
       <View style={styles.content}>
