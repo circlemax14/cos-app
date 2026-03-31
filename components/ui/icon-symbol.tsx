@@ -30,6 +30,8 @@ const MAPPING = {
   'plus': 'add',
   'bold': 'format-bold',
   'circle.fill': 'circle',
+  'circle.lefthalf.filled': 'contrast',
+  'moon.fill': 'dark-mode',
   'person.fill': 'person',
   'calendar': 'calendar-today',
   'slider.horizontal.3': 'tune',
