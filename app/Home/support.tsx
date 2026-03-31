@@ -66,13 +66,13 @@ export default function SupportScreen() {
             <Text style={styles.emoji}>💬</Text>
 
             <Text
-              style={[styles.title, { color: colors.text }]}
+              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}
               accessibilityRole="header"
             >
               Help & Support
             </Text>
 
-            <Text style={[styles.subtitle, { color: colors.subtext }]}>
+            <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
               Describe your issue below and our team will get back to you within 24-48 hours.
             </Text>
 
@@ -81,7 +81,7 @@ export default function SupportScreen() {
               <Text
                 style={[
                   styles.inputLabel,
-                  { color: descriptionError ? '#DC2626' : colors.text },
+                  { color: descriptionError ? '#DC2626' : colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any },
                 ]}
               >
                 Describe your issue
@@ -109,11 +109,12 @@ export default function SupportScreen() {
                 multiline
                 numberOfLines={6}
                 textAlignVertical="top"
+                allowFontScaling
                 accessibilityLabel="Describe your issue"
                 accessibilityHint="Enter at least 10 characters"
               />
               {descriptionError ? (
-                <Text style={styles.errorText} accessibilityRole="alert">
+                <Text style={[styles.errorText, { fontSize: getScaledFontSize(13) }]} accessibilityRole="alert">
                   {descriptionError}
                 </Text>
               ) : null}
@@ -130,7 +131,7 @@ export default function SupportScreen() {
                 { backgroundColor: createTicket.isPending ? colors.disabled : colors.tint },
               ]}
               contentStyle={styles.submitContent}
-              labelStyle={styles.submitLabel}
+              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}
               accessibilityLabel="Submit support request"
             >
               Submit Request
@@ -140,14 +141,14 @@ export default function SupportScreen() {
           {/* Your Requests Section */}
           <View style={styles.ticketsSection}>
             <Text
-              style={[styles.ticketsSectionTitle, { color: colors.text }]}
+              style={[styles.ticketsSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}
               accessibilityRole="header"
             >
               Your Requests
             </Text>
 
             {isLoadingTickets ? (
-              <Text style={[styles.loadingText, { color: colors.subtext }]}>
+              <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
                 Loading your tickets...
               </Text>
             ) : tickets && tickets.length > 0 ? (
@@ -161,10 +162,10 @@ export default function SupportScreen() {
             ) : (
               <View style={[styles.emptyTickets, { backgroundColor: colors.card }]}>
                 <Text style={styles.emptyEmoji}>📩</Text>
-                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }]}>
                   No Requests Yet
                 </Text>
-                <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
+                <Text style={[styles.emptySubtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
                   When you submit a support request, it will appear here.
                 </Text>
               </View>
