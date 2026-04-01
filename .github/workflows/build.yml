@@ -192,17 +192,17 @@ jobs:
       - name: Fetch secrets from SSM
         id: ssm
         run: |
-          for PARAM in EXPO_TOKEN ANTHROPIC_API_KEY ASC_API_KEY_CONTENT ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_APP_ID; do
+          for PARAM in EXPO_TOKEN OPEN_AI_SHARED_KEY ASC_API_KEY_CONTENT ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_APP_ID; do
             VALUE=$(aws ssm get-parameter --name "/cos/shared/${PARAM}" --with-decryption --query "Parameter.Value" --output text)
             echo "::add-mask::$VALUE"
             echo "${PARAM}=${VALUE}" >> $GITHUB_OUTPUT
           done
 
-      # ── Generate AI "What's New" copy via Claude API ──────────────────────
+      # ── Generate AI "What's New" copy via OpenAI API ─────────────────────
       - name: Generate AI release notes
         id: release-notes
         env:
-          ANTHROPIC_API_KEY: ${{ steps.ssm.outputs.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ steps.ssm.outputs.OPEN_AI_SHARED_KEY }}
           VERSION: ${{ needs.resolve-env.outputs.version }}
         run: |
           # Collect commits since the last git tag (falls back to full history)
@@ -218,25 +218,34 @@ jobs:
 
           [[ -z "$COMMITS" ]] && COMMITS="- General improvements and bug fixes"
 
+          PROMPT="You are writing App Store \"What's New\" release notes for version ${VERSION} of CoS — a mobile app that helps patients coordinate their healthcare care team.
+
+          Write concise, friendly, plain-English release notes (max 300 words, suitable for the App Store). Rules:
+          - Focus only on user-facing improvements
+          - Do not mention: branch names, internal ticket numbers, technical debt, PHI, or developer jargon
+          - Format: one short opening sentence summarising the theme of this release, then a bullet list of improvements
+          - Return only the release notes text — no preamble
+
+          Commits since last release:
+          ${COMMITS}"
+
           PAYLOAD=$(jq -n \
-            --arg version "$VERSION" \
-            --arg commits "$COMMITS" \
+            --arg prompt "$PROMPT" \
             '{
-              model: "claude-opus-4-6",
+              model: "gpt-4o",
               max_tokens: 500,
               messages: [{
                 role: "user",
-                content: ("You are writing App Store \"What'\''s New\" release notes for version " + $version + " of CoS — a mobile app that helps patients coordinate their healthcare care team.\n\nWrite concise, friendly, plain-English release notes (max 300 words, suitable for the App Store). Rules:\n- Focus only on user-facing improvements\n- Do not mention: branch names, internal ticket numbers, technical debt, PHI, or developer jargon\n- Format: one short opening sentence summarising the theme of this release, then a bullet list of improvements\n- Return only the release notes text — no preamble\n\nCommits since last release:\n" + $commits)
+                content: $prompt
               }]
             }')
 
-          RESPONSE=$(curl -s -X POST https://api.anthropic.com/v1/messages \
-            -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
+          RESPONSE=$(curl -s -X POST https://api.openai.com/v1/chat/completions \
+            -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+            -H "Content-Type: application/json" \
             -d "$PAYLOAD")
 
-          NOTES=$(echo "$RESPONSE" | jq -r '.content[0].text // "See GitHub release for details."')
+          NOTES=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "See GitHub release for details."')
 
           echo "$NOTES" > /tmp/release-notes.txt
 
