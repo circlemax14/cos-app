@@ -232,7 +232,7 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg prompt "$PROMPT" \
             '{
-              model: "gpt-4o",
+              model: "gpt-4o-mini",
               max_tokens: 500,
               messages: [{
                 role: "user",
