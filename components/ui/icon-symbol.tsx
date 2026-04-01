@@ -30,6 +30,8 @@ const MAPPING = {
   'plus': 'add',
   'bold': 'format-bold',
   'circle.fill': 'circle',
+  'circle.lefthalf.filled': 'contrast',
+  'moon.fill': 'dark-mode',
   'person.fill': 'person',
   'calendar': 'calendar-today',
   'slider.horizontal.3': 'tune',
@@ -40,6 +42,9 @@ const MAPPING = {
   'eye.slash': 'visibility-off',
   'checkmark.circle.fill': 'check-circle',
   'xmark.circle.fill': 'cancel',
+  'square.and.arrow.up': 'share',
+  'questionmark.circle': 'help-outline',
+  'lock.shield': 'security',
 } as IconMapping;
 
 /**

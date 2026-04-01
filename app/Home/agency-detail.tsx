@@ -307,8 +307,8 @@ export default function AgencyDetailScreen() {
           loading={isRequesting}
           disabled={isRequesting}
           style={[styles.requestButton, { backgroundColor: colors.tint }]}
-          labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff', flexWrap: 'wrap', textAlign: 'center' }}
-          contentStyle={{ paddingVertical: getScaledFontSize(8), minHeight: getScaledFontSize(48) }}
+          labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff', textAlign: 'center' }}
+          contentStyle={{ paddingVertical: 12, paddingHorizontal: 16, minHeight: 56 }}
           icon={() => <MaterialIcons name="person-add" size={getScaledFontSize(20)} color="#fff" />}
         >
           Request Care Manager
@@ -393,8 +393,8 @@ export default function AgencyDetailScreen() {
                   mode="outlined"
                   onPress={handleConsentNo}
                   style={[styles.modalButton, { borderColor: colors.text + '40' }]}
-                  labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: colors.text, flexWrap: 'wrap', textAlign: 'center' }}
-                  contentStyle={{ paddingVertical: getScaledFontSize(8), minHeight: getScaledFontSize(48) }}
+                  labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, color: colors.text, textAlign: 'center' }}
+                  contentStyle={{ paddingVertical: 8, paddingHorizontal: 12, minHeight: 48 }}
                 >
                   No
                 </Button>
@@ -402,8 +402,8 @@ export default function AgencyDetailScreen() {
                   mode="contained"
                   onPress={handleConsentYes}
                   style={[styles.modalButton, { backgroundColor: colors.tint }]}
-                  labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff', flexWrap: 'wrap', textAlign: 'center' }}
-                  contentStyle={{ paddingVertical: getScaledFontSize(8), minHeight: getScaledFontSize(48) }}
+                  labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff', textAlign: 'center' }}
+                  contentStyle={{ paddingVertical: 8, paddingHorizontal: 12, minHeight: 48 }}
                 >
                   Yes, I Consent
                 </Button>

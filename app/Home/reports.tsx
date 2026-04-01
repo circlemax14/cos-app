@@ -1,3 +1,4 @@
+import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
@@ -40,23 +41,31 @@ export default function Reports() {
   
   // Fasten Health reports state
   const [fastenReports, setFastenReports] = useState<Report[]>([]);
-  const [, setIsLoadingFastenReports] = useState(false);
-  
+  const [isLoadingReports, setIsLoadingReports] = useState(true);
+  const [isRefreshingReports, setIsRefreshingReports] = useState(false);
+
+  // Load reports
+  const loadReports = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshingReports(true);
+    } else {
+      setIsLoadingReports(true);
+    }
+    try {
+      const reports = await fetchReports();
+      setFastenReports(reports);
+    } catch {
+      setFastenReports([]);
+    } finally {
+      setIsLoadingReports(false);
+      setIsRefreshingReports(false);
+    }
+  }, []);
+
   // Load reports on mount
   useEffect(() => {
-    const loadReports = async () => {
-      setIsLoadingFastenReports(true);
-      try {
-        const reports = await fetchReports();
-        setFastenReports(reports);
-      } catch {
-        setFastenReports([]);
-      } finally {
-        setIsLoadingFastenReports(false);
-      }
-    };
     loadReports();
-  }, []);
+  }, [loadReports]);
 
   const tabs = [
     { id: 'all', label: 'All Reports' },
@@ -419,7 +428,14 @@ export default function Reports() {
 
   const renderReports = () => (
     <ScrollView style={styles.tabContent}>
-      {filteredReports.length === 0 ? (
+      {isLoadingReports ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>
+            Loading reports...
+          </Text>
+        </View>
+      ) : filteredReports.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={[styles.emptyText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>
             No reports found matching your filters
@@ -567,22 +583,26 @@ export default function Reports() {
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView 
+    <AppWrapper>
+      <ScrollView
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={
-          mainTab === 'history' && !isLoadingHistory && !isRefreshingHistory ? (
-            <RefreshControl
-              refreshing={false}
-              onRefresh={() => loadHistorySummaries(true)}
-              tintColor={colors.tint}
-              colors={[colors.tint]}
-            />
-          ) : undefined
+          <RefreshControl
+            refreshing={mainTab === 'reports' ? isRefreshingReports : false}
+            onRefresh={() => {
+              if (mainTab === 'reports') {
+                loadReports(true);
+              } else {
+                loadHistorySummaries(true);
+              }
+            }}
+            tintColor={colors.tint}
+            colors={[colors.tint]}
+          />
         }
       >
       {/* Reports Title Header */}
-      <View style={[styles.header, { backgroundColor: colors.background, paddingTop: insets.top + 24 }]}>
+      <View style={[styles.header, { backgroundColor: colors.background, paddingTop: 16 }]}>
         <Text style={[styles.reportsTitle, { color: colors.text, fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(700) as any }]}>Reports & History</Text>
       </View>
 
@@ -959,7 +979,7 @@ export default function Reports() {
           </View>
         </View>
       )}
-    </View>
+    </AppWrapper>
   );
 }
 
@@ -1241,6 +1261,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#008080',
+  },
+  loaderContainer: {
+    padding: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     padding: 40,

@@ -8,7 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Button, Card, Icon, List } from 'react-native-paper';
 
@@ -337,6 +337,45 @@ export function ProfileContent({
               No connected clinics yet. Connect your first EHR to get started.
             </Text>
           )}
+        </View>
+      )}
+
+      {showProfileMenu && (
+        <View style={styles.menuSection}>
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Share App</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Share BrightFuture with others</Text>}
+              left={(props) => <Icon {...props} source="share-variant" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={async () => {
+                await Share.share({
+                  message: "I'm using BrightFuture to manage my health care. Download it here: https://joinabrightfuture.com/download",
+                  url: 'https://joinabrightfuture.com/download',
+                });
+              }}
+            />
+          </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Help & Support</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Get help or submit a ticket</Text>}
+              left={(props) => <Icon {...props} source="help-circle" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => router.push('/Home/support')}
+            />
+          </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Security</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Manage PIN and biometric settings</Text>}
+              left={(props) => <Icon {...props} source="shield-lock" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => router.push('/Home/security-settings' as never)}
+            />
+          </Card>
         </View>
       )}
 

@@ -68,7 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="plan"
         options={{
-          title: 'Plan',
+          title: 'Health Summary',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
           ),
@@ -188,6 +188,20 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="agency-detail"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="support"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="security-settings"
         options={{
           href: null,
           headerShown: false,

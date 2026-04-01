@@ -27,7 +27,7 @@ export function AppWrapper({
   showBellIcon = false,
   showHamburgerIcon = true
 }: AppWrapperProps) {
-  const { settings, increaseFontSize, decreaseFontSize, toggleBoldText, toggleTheme, getScaledFontWeight, getScaledFontSize } = useAccessibility();
+  const { settings, increaseFontSize, decreaseFontSize, toggleBoldText, toggleTheme, toggleAccessibilityMode, toggleHighContrast, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [isAccessibilityModalVisible, setIsAccessibilityModalVisible] = useState(false);
   const [isDrawerMenuVisible, setIsDrawerMenuVisible] = useState(false);
@@ -89,15 +89,18 @@ export function AppWrapper({
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-      {/* Header */}
+      {/* Header — only render if at least one icon is visible */}
+      {(showHamburgerIcon || showLogo || showAccessibilityIcon || showBellIcon) && (
       <View style={[styles.header, { backgroundColor: colors.background}]}>
         <View style={styles.headerContent}>
           {/* Left side - Hamburger or spacer */}
           <View style={styles.headerLeft}>
             {showHamburgerIcon && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.hamburgerContainer}
                 onPress={handleHamburgerPress}
+                accessibilityLabel="Open menu"
+                accessibilityRole="button"
               >
                 <IconSymbol 
                   name="list.bullet" 
@@ -122,9 +125,11 @@ export function AppWrapper({
           {/* Right side - Accessibility Icon */}
           <View style={styles.headerRight}>
             {showAccessibilityIcon && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.accessibilityContainer}
                 onPress={handleAccessibilityPress}
+                accessibilityLabel="Accessibility options"
+                accessibilityRole="button"
               >
                 <IconSymbol 
                   name="accessibility" 
@@ -136,6 +141,7 @@ export function AppWrapper({
           </View>
         </View>
       </View>
+      )}
 
       {/* Main Content */}
       <View style={styles.content}>
@@ -216,74 +222,101 @@ export function AppWrapper({
           
           <ScrollView style={styles.modalContent}>
             <View style={styles.accessibilitySection}>
-              <View style={styles.textSizeContainer}>
+              {/* Accessibility Mode */}
+              <View style={styles.accessibilityOption}>
+                <IconSymbol name="accessibility" size={getScaledFontSize(20)} color={colors.text} />
+                <View style={styles.optionInfo}>
+                  <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Accessibility Mode</Text>
+                  <Text style={[styles.optionSubtext, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>Larger text, buttons, and spacing</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.toggleButton, { backgroundColor: settings.isAccessibilityMode ? colors.tint : '#E0E0E0' }]}
+                  onPress={toggleAccessibilityMode}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: settings.isAccessibilityMode }}
+                  accessibilityLabel="Accessibility Mode"
+                >
+                  <View style={[styles.toggleThumb, { backgroundColor: 'white', transform: [{ translateX: settings.isAccessibilityMode ? 16 : 2 }] }]} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Text Size */}
+              <View style={styles.accessibilityOption}>
                 <IconSymbol name="textformat.size" size={getScaledFontSize(20)} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Text Size</Text>
+                <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, flex: 1, marginLeft: 12 }]}>Text Size</Text>
                 <View style={styles.fontSizeControls}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.fontSizeButton]}
                     onPress={decreaseFontSize}
+                    accessibilityRole="button"
+                    accessibilityLabel="Decrease text size"
                   >
                     <IconSymbol name="minus" size={16} color="white" />
                   </TouchableOpacity>
-                  <Text style={[styles.fontSizeDisplay, { color: colors.text }]}>{settings.fontSizeScale}%</Text>
-                  <TouchableOpacity 
+                  <Text style={[styles.fontSizeDisplay, { color: colors.text, fontSize: getScaledFontSize(14) }]}>{settings.fontSizeScale}%</Text>
+                  <TouchableOpacity
                     style={[styles.fontSizeButton]}
                     onPress={increaseFontSize}
+                    accessibilityRole="button"
+                    accessibilityLabel="Increase text size"
                   >
                     <IconSymbol name="plus" size={16} color="white" />
                   </TouchableOpacity>
                 </View>
               </View>
-              <View style={styles.boldTextContainer}>
-                <IconSymbol name="bold" size={getScaledFontSize(20)} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Bold Text</Text>
-                <TouchableOpacity 
-                  style={[
-                    styles.toggleButton, 
-                    { 
-                      backgroundColor: settings.isBoldTextEnabled ? '#0a7ea4' : '#E0E0E0' 
-                    }
-                  ]}
-                  onPress={toggleBoldText}
+
+              {/* High Contrast */}
+              <View style={styles.accessibilityOption}>
+                <IconSymbol name="circle.lefthalf.filled" size={getScaledFontSize(20)} color={colors.text} />
+                <View style={styles.optionInfo}>
+                  <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>High Contrast</Text>
+                  <Text style={[styles.optionSubtext, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>Stronger borders and bolder colors</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.toggleButton, { backgroundColor: settings.isHighContrast ? colors.tint : '#E0E0E0' }]}
+                  onPress={toggleHighContrast}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: settings.isHighContrast }}
+                  accessibilityLabel="High Contrast"
                 >
-                  <View 
-                    style={[
-                      styles.toggleThumb, 
-                      { 
-                        backgroundColor: 'white',
-                        transform: [{ translateX: settings.isBoldTextEnabled ? 16 : 2 }]
-                      }
-                    ]} 
-                  />
+                  <View style={[styles.toggleThumb, { backgroundColor: 'white', transform: [{ translateX: settings.isHighContrast ? 16 : 2 }] }]} />
                 </TouchableOpacity>
               </View>
-              <View style={styles.themeContainer}>
-                <IconSymbol name="circle.fill" size={getScaledFontSize(20)} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Theme</Text>
-                <View style={styles.themeToggle}>
-                  <Text style={[styles.themeLabel, { color: !settings.isDarkTheme ? colors.tint : colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>Light</Text>
-                  <TouchableOpacity 
-                    style={[
-                      styles.toggleButton, 
-                      { 
-                        backgroundColor: settings.isDarkTheme ? '#0a7ea4' : '#E0E0E0' 
-                      }
-                    ]}
-                    onPress={toggleTheme}
-                  >
-                    <View 
-                      style={[
-                        styles.toggleThumb, 
-                        { 
-                          backgroundColor: 'white',
-                          transform: [{ translateX: settings.isDarkTheme ? 16 : 2 }]
-                        }
-                      ]} 
-                    />
-                  </TouchableOpacity>
-                  <Text style={[styles.themeLabel, { color: settings.isDarkTheme ? colors.tint : colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>Dark</Text>
+
+              {/* Bold Text */}
+              <View style={styles.accessibilityOption}>
+                <IconSymbol name="bold" size={getScaledFontSize(20)} color={colors.text} />
+                <View style={styles.optionInfo}>
+                  <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Bold Text</Text>
+                  <Text style={[styles.optionSubtext, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>Heavier font weight throughout</Text>
                 </View>
+                <TouchableOpacity
+                  style={[styles.toggleButton, { backgroundColor: settings.isBoldTextEnabled ? colors.tint : '#E0E0E0' }]}
+                  onPress={toggleBoldText}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: settings.isBoldTextEnabled }}
+                  accessibilityLabel="Bold Text"
+                >
+                  <View style={[styles.toggleThumb, { backgroundColor: 'white', transform: [{ translateX: settings.isBoldTextEnabled ? 16 : 2 }] }]} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Dark Mode */}
+              <View style={styles.accessibilityOption}>
+                <IconSymbol name="moon.fill" size={getScaledFontSize(20)} color={colors.text} />
+                <View style={styles.optionInfo}>
+                  <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Dark Mode</Text>
+                  <Text style={[styles.optionSubtext, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>Easier on the eyes in low light</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.toggleButton, { backgroundColor: settings.isDarkTheme ? colors.tint : '#E0E0E0' }]}
+                  onPress={toggleTheme}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: settings.isDarkTheme }}
+                  accessibilityLabel="Dark Mode"
+                >
+                  <View style={[styles.toggleThumb, { backgroundColor: 'white', transform: [{ translateX: settings.isDarkTheme ? 16 : 2 }] }]} />
+                </TouchableOpacity>
               </View>
             </View>
           </ScrollView>
@@ -432,19 +465,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+    gap: 12,
+  },
+  optionInfo: {
+    flex: 1,
   },
   optionText: {
-    flex: 1,
     fontSize: 16,
-    marginLeft: 12,
   },
-  textSizeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+  optionSubtext: {
+    fontSize: 13,
+    marginTop: 2,
   },
   fontSizeControls: {
     flexDirection: 'row',
@@ -465,14 +496,6 @@ const styles = StyleSheet.create({
     minWidth: 24,
     textAlign: 'center',
   },
-  boldTextContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
   toggleButton: {
     width: 50,
     height: 30,
@@ -489,23 +512,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
-  },
-  themeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  themeToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  themeLabel: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   ehrOption: {
     paddingVertical: 20,

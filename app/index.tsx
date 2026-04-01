@@ -7,8 +7,11 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 
 import { checkSession, UserProfile } from '@/services/auth';
 import { hasStoredSession } from '@/lib/auth-tokens';
+import { isPinSetup } from '@/services/pin-auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useSecurity } from '@/stores/security-store';
+import { useAppLock } from '@/hooks/use-app-lock';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -17,7 +20,7 @@ type GateState = 'loading' | 'no-internet' | 'done';
 /**
  * Determine the correct destination based on user onboarding state.
  */
-async function getDestination(user: UserProfile): Promise<string> {
+async function getDestination(user: UserProfile, isLocked: boolean): Promise<string> {
   if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
 
   // Check if permissions have been requested
@@ -27,11 +30,19 @@ async function getDestination(user: UserProfile): Promise<string> {
   if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
   // If connected but data not ready (pending, failed, or unknown status) → show data-processing
   if (!user.dataReady && user.fastenConnected) return '/(onboarding)/data-processing';
+
+  // Check security PIN setup before allowing access to Home
+  const pinConfigured = await isPinSetup();
+  if (!pinConfigured) return '/(security)/setup-pin';
+  if (isLocked) return '/(security)/lock-screen';
+
   return '/Home';
 }
 
 export default function SplashGate() {
   const { settings, getScaledFontSize } = useAccessibility();
+  const { isLocked } = useSecurity();
+  useAppLock();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [state, setState] = useState<GateState>('loading');
   const [retryKey, setRetryKey] = useState(0);
@@ -54,7 +65,7 @@ export default function SplashGate() {
       }
 
       // Step 3: Route to the correct screen based on onboarding state
-      const destination = await getDestination(result.user);
+      const destination = await getDestination(result.user, isLocked);
       router.replace(destination as never);
     } catch (err: unknown) {
       const isNetworkError =
@@ -67,7 +78,7 @@ export default function SplashGate() {
     } finally {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, []);
+  }, [isLocked]);
 
   useEffect(() => {
     run();

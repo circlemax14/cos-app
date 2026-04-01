@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { Dimensions } from 'react-native';
+import { AccessibilityInfo, Dimensions, useWindowDimensions } from 'react-native';
 
 interface AccessibilitySettings {
-  fontSizeScale: number; // Percentage scale (100 = 100%, 150 = 150%, etc.)
+  fontSizeScale: number;
   isBoldTextEnabled: boolean;
   isDarkTheme: boolean;
+  isAccessibilityMode: boolean;
+  isHighContrast: boolean;
 }
 
 interface AccessibilityContextType {
@@ -15,48 +17,85 @@ interface AccessibilityContextType {
   decreaseFontSize: () => void;
   toggleBoldText: () => void;
   toggleTheme: () => void;
+  toggleAccessibilityMode: () => void;
+  toggleHighContrast: () => void;
   isLoading: boolean;
   getScaledFontSize: (baseFontSize: number) => number;
   getScaledFontWeight: (baseFontWeight: number) => string;
   getThemeBaseColor: () => string;
+  effectiveFontScale: number;
 }
 
 const defaultSettings: AccessibilitySettings = {
-  fontSizeScale: 100, // 100% = normal size
+  fontSizeScale: 100,
   isBoldTextEnabled: false,
   isDarkTheme: false,
+  isAccessibilityMode: false,
+  isHighContrast: false,
 };
 
 const AccessibilityContext = createContext<AccessibilityContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'accessibility_settings';
+const SMART_DEFAULTS_KEY = 'accessibility_smart_defaults_applied';
 
-// Helper function to detect if device is a tablet/iPad
 const isTablet = () => {
   const { width } = Dimensions.get('window');
-  return width >= 768; // iPad starts at 768px width
+  return width >= 768;
 };
 
-// Get the maximum font size limit based on device type
 const getMaxFontSizeLimit = () => {
-  return isTablet() ? 200 : 150; // 200% for tablets/iPads, 150% for phones
+  return isTablet() ? 200 : 150;
 };
 
 export function AccessibilityProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AccessibilitySettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
+  const { fontScale: systemFontScale } = useWindowDimensions();
 
-  // Load settings from AsyncStorage on mount
   useEffect(() => {
     loadSettings();
   }, []);
 
-  // Save settings to AsyncStorage whenever settings change
   useEffect(() => {
     if (!isLoading) {
       saveSettings();
     }
   }, [settings, isLoading]);
+
+  // Apply smart defaults on first launch
+  useEffect(() => {
+    if (!isLoading) {
+      applySmartDefaults();
+    }
+  }, [isLoading]);
+
+  const applySmartDefaults = async () => {
+    const applied = await AsyncStorage.getItem(SMART_DEFAULTS_KEY);
+    if (applied) return;
+
+    let newSettings = { ...settings };
+    let changed = false;
+
+    // If system Dynamic Type > 135%, enable accessibility mode
+    if (systemFontScale > 1.35) {
+      newSettings.isAccessibilityMode = true;
+      changed = true;
+    }
+
+    // Check system bold text
+    const sysBold = await AccessibilityInfo.isBoldTextEnabled();
+    if (sysBold && !newSettings.isBoldTextEnabled) {
+      newSettings.isBoldTextEnabled = true;
+      changed = true;
+    }
+
+    if (changed) {
+      setSettings(newSettings);
+    }
+
+    await AsyncStorage.setItem(SMART_DEFAULTS_KEY, 'true');
+  };
 
   const loadSettings = async () => {
     try {
@@ -64,15 +103,14 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
       if (storedSettings) {
         const parsedSettings = JSON.parse(storedSettings);
         const maxLimit = getMaxFontSizeLimit();
-        // Clamp fontSizeScale to the current device's limit
         const clampedFontSizeScale = Math.min(
           Math.max(parsedSettings.fontSizeScale || defaultSettings.fontSizeScale, 50),
           maxLimit
         );
-        setSettings({ 
-          ...defaultSettings, 
+        setSettings({
+          ...defaultSettings,
           ...parsedSettings,
-          fontSizeScale: clampedFontSizeScale
+          fontSizeScale: clampedFontSizeScale,
         });
       }
     } catch (error) {
@@ -90,6 +128,31 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Use the LARGER of system font scale or in-app scale
+  const effectiveFontScale = Math.max(
+    systemFontScale,
+    settings.fontSizeScale / 100
+  );
+
+  const accessibilityMultiplier = settings.isAccessibilityMode ? 1.3 : 1;
+
+  const getScaledFontSize = (baseFontSize: number) => {
+    const scaled = Math.round(baseFontSize * effectiveFontScale * accessibilityMultiplier);
+    // Cap at 2x to prevent layout breaking
+    const maxScaled = baseFontSize * 2;
+    return Math.min(scaled, maxScaled);
+  };
+
+  const getScaledFontWeight = (baseFontWeight: number) => {
+    return settings.isBoldTextEnabled
+      ? Math.min(baseFontWeight + 200, 900).toString()
+      : baseFontWeight.toString();
+  };
+
+  const getThemeBaseColor = () => {
+    return settings.isDarkTheme ? '#000000' : '#FFFFFF';
+  };
+
   const updateFontScale = (scale: number) => {
     const maxLimit = getMaxFontSizeLimit();
     setSettings(prev => ({ ...prev, fontSizeScale: Math.max(50, Math.min(maxLimit, scale)) }));
@@ -97,29 +160,17 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
 
   const increaseFontSize = () => {
     const maxLimit = getMaxFontSizeLimit();
-    setSettings(prev => ({ 
-      ...prev, 
-      fontSizeScale: Math.min(prev.fontSizeScale + 10, maxLimit) 
+    setSettings(prev => ({
+      ...prev,
+      fontSizeScale: Math.min(prev.fontSizeScale + 10, maxLimit),
     }));
   };
 
   const decreaseFontSize = () => {
-    setSettings(prev => ({ 
-      ...prev, 
-      fontSizeScale: Math.max(prev.fontSizeScale - 10, 50) 
+    setSettings(prev => ({
+      ...prev,
+      fontSizeScale: Math.max(prev.fontSizeScale - 10, 50),
     }));
-  };
-
-  const getScaledFontSize = (baseFontSize: number) => {
-    return Math.round((baseFontSize * settings.fontSizeScale) / 100);
-  };
-
-  const getScaledFontWeight = (baseFontWeight: number) => {
-    return settings.isBoldTextEnabled ? Math.min(baseFontWeight + 200, 900).toString() : baseFontWeight.toString();
-  };
-
-  const getThemeBaseColor = () => {
-    return settings.isDarkTheme ? '#000000' : '#FFFFFF';
   };
 
   const toggleBoldText = () => {
@@ -130,6 +181,14 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     setSettings(prev => ({ ...prev, isDarkTheme: !prev.isDarkTheme }));
   };
 
+  const toggleAccessibilityMode = () => {
+    setSettings(prev => ({ ...prev, isAccessibilityMode: !prev.isAccessibilityMode }));
+  };
+
+  const toggleHighContrast = () => {
+    setSettings(prev => ({ ...prev, isHighContrast: !prev.isHighContrast }));
+  };
+
   const value: AccessibilityContextType = {
     settings,
     updateFontScale,
@@ -137,10 +196,13 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     decreaseFontSize,
     toggleBoldText,
     toggleTheme,
+    toggleAccessibilityMode,
+    toggleHighContrast,
     isLoading,
     getScaledFontSize,
     getScaledFontWeight,
-    getThemeBaseColor
+    getThemeBaseColor,
+    effectiveFontScale,
   };
 
   return (

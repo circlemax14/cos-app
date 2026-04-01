@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, StatusBar } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -69,13 +69,13 @@ export default function SignInScreen() {
 
 
   return (
-    <AppWrapper showBellIcon={false} showLogo={false} showHamburgerIcon={false} showAccessibilityIcon={false}>
+    <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       <ScrollView
-        contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -173,23 +173,26 @@ export default function SignInScreen() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
-    </AppWrapper>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeContainer: {
+    flex: 1,
+  },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     gap: 24,
-    flexGrow: 1,
   },
   form: {
     width: '100%',

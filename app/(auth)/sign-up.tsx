@@ -44,13 +44,13 @@ export default function SignUpScreen() {
   };
 
   return (
-    <AppWrapper showBellIcon={false} showLogo={false} showHamburgerIcon={false} showAccessibilityIcon={false}>
+    <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       <ScrollView
-        contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -133,22 +133,34 @@ export default function SignUpScreen() {
             {error ? <Text style={[styles.error, { fontSize: getScaledFontSize(16) }]}>{error}</Text> : null}
 
             <Pressable
-              style={styles.termsRow}
+              style={[
+                styles.termsCard,
+                {
+                  backgroundColor: termsAccepted ? (colors.tint + '10') : colors.card,
+                  borderColor: termsAccepted ? colors.tint : colors.border,
+                },
+              ]}
               onPress={() => setTermsAccepted(v => !v)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: termsAccepted }}
               accessibilityLabel="I agree to the Terms and Conditions"
             >
-              <Checkbox
-                value={termsAccepted}
-                onValueChange={setTermsAccepted}
-                color={termsAccepted ? colors.primary : undefined}
-              />
-              <RNText style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(20), flex: 1 }}>
+              <View style={[
+                styles.termsCheckCircle,
+                {
+                  backgroundColor: termsAccepted ? colors.tint : 'transparent',
+                  borderColor: termsAccepted ? colors.tint : colors.border,
+                },
+              ]}>
+                {termsAccepted && (
+                  <RNText style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</RNText>
+                )}
+              </View>
+              <RNText style={{ color: colors.text, fontSize: getScaledFontSize(14), flex: 1, lineHeight: getScaledFontSize(20) }}>
                 I agree to the{' '}
                 <RNText
                   onPress={(e) => { e.stopPropagation(); router.push('/(auth)/terms' as never); }}
-                  style={{ color: '#2563eb', fontWeight: '600', textDecorationLine: 'underline' }}
+                  style={{ color: colors.tint, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Terms and Conditions
                 </RNText>
@@ -178,23 +190,26 @@ export default function SignUpScreen() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
-    </AppWrapper>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeContainer: {
+    flex: 1,
+  },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     gap: 24,
-    flexGrow: 1,
   },
   form: {
     width: '100%',
@@ -231,12 +246,24 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
-  termsRow: {
+  termsCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
+    alignItems: 'center',
+    gap: 12,
     marginTop: 4,
-    paddingHorizontal: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    minHeight: 52,
+  },
+  termsCheckCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   switchRow: {
     flexDirection: 'row',

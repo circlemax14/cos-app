@@ -63,3 +63,6 @@ export const Fonts = Platform.select({
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
+
+// Re-export design system tokens for new feature components
+export { getColors, LightColors, DarkColors } from './design-system';
