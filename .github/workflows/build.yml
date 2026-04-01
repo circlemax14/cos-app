@@ -13,8 +13,8 @@ name: EAS Build & Submit
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 #
 # SSM paths:
-#   /cos-app/shared/*              — secrets shared across all environments
-#   /cos-app/{dev|staging|production}/*  — environment-specific config
+#   /cos/shared/*                          — secrets shared across all environments
+#   /cos/{dev|staging|production}/cognito/*  — environment-specific Cognito config
 
 on:
   push:
@@ -129,14 +129,14 @@ jobs:
           ENV: ${{ needs.resolve-env.outputs.environment }}
         run: |
           # Shared secrets
-          EXPO_TOKEN=$(aws ssm get-parameter --name "/cos-app/shared/EXPO_TOKEN" --with-decryption --query "Parameter.Value" --output text)
+          EXPO_TOKEN=$(aws ssm get-parameter --name "/cos/shared/EXPO_TOKEN" --with-decryption --query "Parameter.Value" --output text)
           echo "::add-mask::$EXPO_TOKEN"
           echo "EXPO_TOKEN=$EXPO_TOKEN" >> $GITHUB_OUTPUT
 
           # Environment-specific Cognito config
-          COGNITO_USER_POOL_ID=$(aws ssm get-parameter --name "/cos-app/${ENV}/COGNITO_USER_POOL_ID" --with-decryption --query "Parameter.Value" --output text)
-          COGNITO_CLIENT_ID=$(aws ssm get-parameter --name "/cos-app/${ENV}/COGNITO_CLIENT_ID" --with-decryption --query "Parameter.Value" --output text)
-          COGNITO_REGION=$(aws ssm get-parameter --name "/cos-app/${ENV}/COGNITO_REGION" --with-decryption --query "Parameter.Value" --output text)
+          COGNITO_USER_POOL_ID=$(aws ssm get-parameter --name "/cos/${ENV}/cognito/user_pool_id" --with-decryption --query "Parameter.Value" --output text)
+          COGNITO_CLIENT_ID=$(aws ssm get-parameter --name "/cos/${ENV}/cognito/client_id" --with-decryption --query "Parameter.Value" --output text)
+          COGNITO_REGION=$(aws ssm get-parameter --name "/cos/${ENV}/cognito/region" --with-decryption --query "Parameter.Value" --output text)
 
           echo "::add-mask::$COGNITO_USER_POOL_ID"
           echo "::add-mask::$COGNITO_CLIENT_ID"
@@ -193,7 +193,7 @@ jobs:
         id: ssm
         run: |
           for PARAM in EXPO_TOKEN ANTHROPIC_API_KEY ASC_API_KEY_CONTENT ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_APP_ID; do
-            VALUE=$(aws ssm get-parameter --name "/cos-app/shared/${PARAM}" --with-decryption --query "Parameter.Value" --output text)
+            VALUE=$(aws ssm get-parameter --name "/cos/shared/${PARAM}" --with-decryption --query "Parameter.Value" --output text)
             echo "::add-mask::$VALUE"
             echo "${PARAM}=${VALUE}" >> $GITHUB_OUTPUT
           done
