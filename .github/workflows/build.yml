@@ -218,7 +218,7 @@ jobs:
 
           [[ -z "$COMMITS" ]] && COMMITS="- General improvements and bug fixes"
 
-          PROMPT="You are writing App Store \"What's New\" release notes for version ${VERSION} of CoS — a mobile app that helps patients coordinate their healthcare care team.
+          PROMPT="You are writing App Store \"What's New\" release notes for version ${VERSION} of CSH — a mobile app that helps patients coordinate their healthcare care team.
 
           Write concise, friendly, plain-English release notes (max 300 words, suitable for the App Store). Rules:
           - Focus only on user-facing improvements

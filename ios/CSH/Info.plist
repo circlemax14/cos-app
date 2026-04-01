@@ -4,10 +4,12 @@
   <dict>
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
+    <key>CFBundleAllowMixedLocalizations</key>
+    <true/>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>CoS</string>
+    <string>CSH</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -46,19 +48,21 @@
       <true/>
     </dict>
     <key>NSCameraUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your camera</string>
+    <string>BrightFuture needs camera access to photograph documents and prescriptions.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>BrightFuture uses contacts to help you add emergency contacts quickly.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>BrightFuture uses Face ID to securely unlock your health information.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your microphone</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The app needs access to your photos to set doctor profile pictures.</string>
-    <key>NSHealthShareUsageDescription</key>
-    <string>This app needs access to your health data to display your daily activity metrics including steps, sleep, heart rate, and calories burned.</string>
-    <key>NSHealthUpdateUsageDescription</key>
-    <string>This app needs permission to access health data to track your wellness progress.</string>
+    <string>BrightFuture needs photo library access to upload health documents.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
     </array>
+    <key>NSUserTrackingUsageDescription</key>
+    <string>BrightFuture uses anonymous analytics to improve the app experience.</string>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UILaunchStoryboardName</key>
