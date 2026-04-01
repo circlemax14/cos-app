@@ -6,6 +6,15 @@ name: EAS Build & Submit
 # workflow_dispatch (from a release-* branch) → production
 #                           EAS "production" build + App Store submit
 #                           AI-generated "What's New" release notes
+#
+# ── Secrets ──────────────────────────────────────────────────────────────────
+# All secrets are stored in AWS SSM Parameter Store. Only AWS credentials
+# remain in GitHub Secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+#
+# SSM paths:
+#   /cos-app/shared/*              — secrets shared across all environments
+#   /cos-app/{dev|staging|production}/*  — environment-specific config
 
 on:
   push:
@@ -31,37 +40,42 @@ jobs:
       version:       ${{ steps.resolve.outputs.version }}
     steps:
       - id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+          CONFIRM_INPUT: ${{ inputs.confirm }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ github.ref_name }}" != release-* ]]; then
-              echo "::error::App Store submission must be triggered from a release-* branch (got: ${{ github.ref_name }})"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$REF_NAME" != release-* ]]; then
+              echo "::error::App Store submission must be triggered from a release-* branch (got: $REF_NAME)"
               exit 1
             fi
-            if [[ "${{ inputs.confirm }}" != "RELEASE" ]]; then
+            if [[ "$CONFIRM_INPUT" != "RELEASE" ]]; then
               echo "::error::Confirmation input must be exactly RELEASE"
               exit 1
             fi
-            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^release-//')
+            VERSION=$(echo "$REF_NAME" | sed 's/^release-//')
             echo "environment=production"  >> $GITHUB_OUTPUT
             echo "eas-profile=production"  >> $GITHUB_OUTPUT
             echo "is-production=true"      >> $GITHUB_OUTPUT
             echo "version=$VERSION"        >> $GITHUB_OUTPUT
 
-          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          elif [[ "$REF" == "refs/heads/main" ]]; then
             echo "environment=dev"         >> $GITHUB_OUTPUT
             echo "eas-profile=development" >> $GITHUB_OUTPUT
             echo "is-production=false"     >> $GITHUB_OUTPUT
             echo "version=dev"             >> $GITHUB_OUTPUT
 
-          elif [[ "${{ github.ref }}" =~ ^refs/heads/release- ]]; then
-            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^release-//')
+          elif [[ "$REF" =~ ^refs/heads/release- ]]; then
+            VERSION=$(echo "$REF_NAME" | sed 's/^release-//')
             echo "environment=staging"     >> $GITHUB_OUTPUT
             echo "eas-profile=preview"     >> $GITHUB_OUTPUT
             echo "is-production=false"     >> $GITHUB_OUTPUT
             echo "version=$VERSION"        >> $GITHUB_OUTPUT
 
           else
-            echo "::error::Unrecognised ref: ${{ github.ref }}"
+            echo "::error::Unrecognised ref: $REF"
             exit 1
           fi
 
@@ -102,10 +116,39 @@ jobs:
 
       - run: npm ci
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Fetch secrets from SSM
+        id: ssm
+        env:
+          ENV: ${{ needs.resolve-env.outputs.environment }}
+        run: |
+          # Shared secrets
+          EXPO_TOKEN=$(aws ssm get-parameter --name "/cos-app/shared/EXPO_TOKEN" --with-decryption --query "Parameter.Value" --output text)
+          echo "::add-mask::$EXPO_TOKEN"
+          echo "EXPO_TOKEN=$EXPO_TOKEN" >> $GITHUB_OUTPUT
+
+          # Environment-specific Cognito config
+          COGNITO_USER_POOL_ID=$(aws ssm get-parameter --name "/cos-app/${ENV}/COGNITO_USER_POOL_ID" --with-decryption --query "Parameter.Value" --output text)
+          COGNITO_CLIENT_ID=$(aws ssm get-parameter --name "/cos-app/${ENV}/COGNITO_CLIENT_ID" --with-decryption --query "Parameter.Value" --output text)
+          COGNITO_REGION=$(aws ssm get-parameter --name "/cos-app/${ENV}/COGNITO_REGION" --with-decryption --query "Parameter.Value" --output text)
+
+          echo "::add-mask::$COGNITO_USER_POOL_ID"
+          echo "::add-mask::$COGNITO_CLIENT_ID"
+
+          echo "COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> $GITHUB_OUTPUT
+          echo "COGNITO_CLIENT_ID=$COGNITO_CLIENT_ID" >> $GITHUB_OUTPUT
+          echo "COGNITO_REGION=$COGNITO_REGION" >> $GITHUB_OUTPUT
+
       - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ steps.ssm.outputs.EXPO_TOKEN }}
 
       - name: EAS Build — iOS (${{ needs.resolve-env.outputs.eas-profile }})
         run: |
@@ -115,9 +158,9 @@ jobs:
             --non-interactive \
             --no-wait
         env:
-          EXPO_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.EXPO_PUBLIC_COGNITO_USER_POOL_ID }}
-          EXPO_PUBLIC_COGNITO_CLIENT_ID:    ${{ secrets.EXPO_PUBLIC_COGNITO_CLIENT_ID }}
-          EXPO_PUBLIC_COGNITO_REGION:       ${{ secrets.EXPO_PUBLIC_COGNITO_REGION }}
+          EXPO_PUBLIC_COGNITO_USER_POOL_ID: ${{ steps.ssm.outputs.COGNITO_USER_POOL_ID }}
+          EXPO_PUBLIC_COGNITO_CLIENT_ID:    ${{ steps.ssm.outputs.COGNITO_CLIENT_ID }}
+          EXPO_PUBLIC_COGNITO_REGION:       ${{ steps.ssm.outputs.COGNITO_REGION }}
 
   # ── AI Release Notes + App Store Submit — production manual trigger only ────
   release:
@@ -139,11 +182,27 @@ jobs:
 
       - run: npm ci
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Fetch secrets from SSM
+        id: ssm
+        run: |
+          for PARAM in EXPO_TOKEN ANTHROPIC_API_KEY ASC_API_KEY_CONTENT ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_APP_ID; do
+            VALUE=$(aws ssm get-parameter --name "/cos-app/shared/${PARAM}" --with-decryption --query "Parameter.Value" --output text)
+            echo "::add-mask::$VALUE"
+            echo "${PARAM}=${VALUE}" >> $GITHUB_OUTPUT
+          done
+
       # ── Generate AI "What's New" copy via Claude API ──────────────────────
       - name: Generate AI release notes
         id: release-notes
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ steps.ssm.outputs.ANTHROPIC_API_KEY }}
           VERSION: ${{ needs.resolve-env.outputs.version }}
         run: |
           # Collect commits since the last git tag (falls back to full history)
@@ -187,7 +246,6 @@ jobs:
             echo "NOTES_EOF"
           } >> $GITHUB_OUTPUT
 
-          # Print to job summary so it's visible in the GitHub Actions UI
           echo "## Release Notes — v${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "$NOTES" >> $GITHUB_STEP_SUMMARY
@@ -205,36 +263,36 @@ jobs:
 
       # ── EAS Submit — sends the .ipa to App Store Connect ──────────────────
       - name: Write ASC API key
+        env:
+          ASC_KEY: ${{ steps.ssm.outputs.ASC_API_KEY_CONTENT }}
         run: |
           mkdir -p /tmp/asc
-          echo "${{ secrets.ASC_API_KEY_CONTENT }}" | base64 --decode > /tmp/asc/api_key.p8
+          echo "$ASC_KEY" | base64 --decode > /tmp/asc/api_key.p8
 
       - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ steps.ssm.outputs.EXPO_TOKEN }}
 
       - name: EAS Submit — iOS
+        env:
+          ASC_API_KEY_PATH: /tmp/asc/api_key.p8
+          ASC_API_KEY_ID: ${{ steps.ssm.outputs.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ steps.ssm.outputs.ASC_API_ISSUER_ID }}
         run: |
           eas submit \
             --platform ios \
             --profile production \
             --latest \
             --non-interactive
-        env:
-          ASC_API_KEY_PATH:  /tmp/asc/api_key.p8
-          ASC_API_KEY_ID:    ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
 
       # ── Patch "What's New" text via App Store Connect REST API ────────────
-      # EAS Submit delivers the binary; this step writes the release notes
-      # into the pending App Store version so reviewers see them.
       - name: Patch App Store "What's New" text
         env:
-          ASC_API_KEY_ID:      ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID:   ${{ secrets.ASC_API_ISSUER_ID }}
-          ASC_API_KEY_CONTENT: ${{ secrets.ASC_API_KEY_CONTENT }}
-          ASC_APP_ID:          ${{ secrets.ASC_APP_ID }}
+          ASC_API_KEY_ID: ${{ steps.ssm.outputs.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ steps.ssm.outputs.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_CONTENT: ${{ steps.ssm.outputs.ASC_API_KEY_CONTENT }}
+          ASC_APP_ID: ${{ steps.ssm.outputs.ASC_APP_ID }}
         run: |
           pip install pyjwt cryptography -q 2>/dev/null
 
@@ -270,7 +328,6 @@ jobs:
             exit 0
           fi
 
-          # Get the en-US localisation record
           LOC_ID=$(curl -s \
             "https://api.appstoreconnect.apple.com/v1/appStoreVersions/${VERSION_ID}/appStoreVersionLocalizations?filter[locale]=en-US" \
             -H "$AUTH" | jq -r '.data[0].id // empty')
