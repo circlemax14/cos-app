@@ -39,11 +39,16 @@ export default function PermissionsScreen() {
         const { status: notifStatus } = await Notifications.requestPermissionsAsync();
         if (notifStatus === 'granted') {
           try {
-            const tokenData = await Notifications.getExpoPushTokenAsync();
-            await apiClient.post('/v1/notifications/register-token', {
-              token: tokenData.data,
-              platform: Platform.OS === 'ios' ? 'ios' : 'android',
-            });
+            // getExpoPushTokenAsync can hang on simulators — add a timeout
+            const tokenPromise = Notifications.getExpoPushTokenAsync();
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+            const tokenData = await Promise.race([tokenPromise, timeoutPromise]);
+            if (tokenData) {
+              await apiClient.post('/v1/notifications/register-token', {
+                token: tokenData.data,
+                platform: Platform.OS === 'ios' ? 'ios' : 'android',
+              });
+            }
           } catch {
             // Token registration is non-critical
           }
