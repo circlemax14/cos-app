@@ -110,6 +110,6 @@ const styles = StyleSheet.create({
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.screenPadding },
   icon: { fontSize: 64, marginBottom: Spacing.lg },
   title: { textAlign: 'center', marginBottom: Spacing.sm },
-  subtitle: { textAlign: 'center', lineHeight: 22, maxWidth: 300 },
+  subtitle: { textAlign: 'center', maxWidth: 300 },
   buttons: { gap: Spacing.sm + 4, paddingHorizontal: Spacing.screenPadding, paddingBottom: 40 },
 });
