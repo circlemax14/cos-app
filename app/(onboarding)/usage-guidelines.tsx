@@ -76,24 +76,35 @@ export default function UsageGuidelinesScreen() {
     try {
       await apiClient.post('/v1/auth/accept-terms', {
         version: guidelines.currentVersion,
-        documentType: 'usage_guidelines',
       });
+    } catch (err: unknown) {
+      // If the error is NOT a 409 (already accepted) or network error, show it and stop
+      const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
+      const status = axiosErr?.response?.status;
+      const serverMsg = axiosErr?.response?.data?.error;
+
+      // 409 = already accepted, treat as success and continue
+      if (status !== 409) {
+        if (status === 401) {
+          setError('Your session has expired. Please sign in again.');
+        } else {
+          setError(serverMsg ?? 'Failed to accept guidelines. Please try again.');
+        }
+        setAccepting(false);
+        return;
+      }
+    }
+
+    // Success or already accepted — navigate forward
+    try {
       const pinConfigured = await isPinSetup();
       if (!pinConfigured) {
         router.replace('/(security)/setup-pin' as never);
       } else {
         router.replace('/(onboarding)/permissions' as never);
       }
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
-      const status = axiosErr?.response?.status;
-      const serverMsg = axiosErr?.response?.data?.error;
-      if (status === 401) {
-        setError('Your session has expired. Please sign in again.');
-      } else {
-        setError(serverMsg ?? 'Failed to accept guidelines. Please try again.');
-      }
-      setAccepting(false);
+    } catch {
+      router.replace('/(onboarding)/permissions' as never);
     }
   };
 
