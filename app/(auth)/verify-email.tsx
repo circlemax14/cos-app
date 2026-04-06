@@ -176,19 +176,30 @@ export default function VerifyEmailScreen() {
               ) : null}
 
               {/* Verify Button */}
-              <Button
-                mode="contained"
-                buttonColor={loading || code.length < 6 ? '#9ca3af' : colors.tint}
+              <TouchableOpacity
                 onPress={onSubmit}
-                loading={loading}
                 disabled={loading || code.length < 6}
-                style={styles.submit}
-                contentStyle={{ minHeight: 48 }}
-                labelStyle={{ color: 'white', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }}
+                accessibilityRole="button"
                 accessibilityLabel="Verify email"
+                style={[
+                  styles.submit,
+                  {
+                    backgroundColor: loading || code.length < 6 ? '#9ca3af' : colors.tint,
+                    opacity: loading || code.length < 6 ? 0.7 : 1,
+                  },
+                ]}
               >
-                Verify
-              </Button>
+                <Text
+                  style={{
+                    color: 'white',
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(600) as any,
+                    textAlign: 'center',
+                  }}
+                >
+                  {loading ? 'Verifying...' : 'Verify'}
+                </Text>
+              </TouchableOpacity>
 
               {/* Resend Code */}
               <TouchableOpacity
@@ -278,6 +289,10 @@ const styles = StyleSheet.create({
   submit: {
     width: '100%',
     borderRadius: 24,
+    minHeight: 48,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textButton: {
     paddingVertical: 10,
