@@ -7,7 +7,8 @@ import { Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
-import { generateHistorySummaries, HistorySummary, PatientHistoryData, generateReportSummary, ReportSummary } from '@/services/openai';
+import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
+import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
 import { fetchReports } from '@/services/api/reports';
 import type { Report } from '@/services/api/types';
 
@@ -228,7 +229,7 @@ export default function Reports() {
     setSummaryError(null);
 
     try {
-      const summary = await generateReportSummary({
+      const summary = await fetchReportSummary({
         title: selectedReport.title,
         date: selectedReport.date,
         provider: selectedReport.provider,
@@ -256,7 +257,7 @@ export default function Reports() {
     }
   }, [showReportModal, selectedReport]);
 
-  // Load history data and generate summaries
+  // Load history summaries from API
   const loadHistorySummaries = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setIsRefreshingHistory(true);
@@ -266,139 +267,7 @@ export default function Reports() {
     setHistoryError(null);
 
     try {
-      // Gather patient data from various sources (in a real app, this would come from your API)
-      const historyData: PatientHistoryData = {
-        currentTreatmentPlan: {
-          plan: 'Diabetes management and cardiovascular health monitoring',
-          duration: '12 months',
-          goals: ['Maintain blood sugar levels', 'Reduce cardiovascular risk', 'Improve overall wellness'],
-        },
-        previousTreatmentPlan: {
-          plan: 'Acute lower back pain with suspected disc involvement',
-          duration: '3 months',
-          goals: ['Pain management', 'Improve mobility', 'Reduce inflammation'],
-        },
-        currentMedications: [
-          {
-            name: 'Metformin',
-            dosage: '500mg',
-            frequency: 'Twice daily with meals',
-            purpose: 'Diabetes management',
-          },
-          {
-            name: 'Lisinopril',
-            dosage: '10mg',
-            frequency: 'Once daily in the morning',
-            purpose: 'Blood pressure control',
-          },
-          {
-            name: 'Aspirin',
-            dosage: '81mg',
-            frequency: 'Once daily',
-            purpose: 'Cardiovascular protection',
-          },
-        ],
-        previousMedications: [
-          {
-            name: 'Ibuprofen',
-            dosage: '400mg',
-            frequency: 'As needed',
-            purpose: 'Pain relief',
-          },
-          {
-            name: 'Acetaminophen',
-            dosage: '500mg',
-            frequency: 'As needed',
-            purpose: 'Pain management',
-          },
-        ],
-        reports: fastenReports.map(report => ({
-          title: report.title,
-          category: report.category,
-          date: report.date,
-          findings: report.findings,
-          impression: report.impression,
-          description: report.description,
-        })),
-        providerNotes: [
-          {
-            date: 'Nov 18, 2024',
-            author: 'Dr. Max K.',
-            note: 'Patient shows significant improvement in range of motion. Lower back pain has decreased from 7/10 to 4/10. Patient is responding well to physical therapy exercises. Continue with current treatment plan.',
-            providerSpecialty: 'Orthopedist',
-          },
-          {
-            date: 'Nov 11, 2024',
-            author: 'Dr. Max K.',
-            note: 'Follow-up appointment completed. Patient reports moderate pain relief with current medication regimen. Muscle tension has improved. Recommended continuation of weekly physical therapy sessions.',
-            providerSpecialty: 'Orthopedist',
-          },
-          {
-            date: 'Nov 20, 2024',
-            author: 'Dr. Sarah Johnson',
-            note: 'Patient showing good progress with medication adherence. Blood pressure readings are stable.',
-            providerSpecialty: 'Cardiologist',
-          },
-          {
-            date: 'Nov 25, 2024',
-            author: 'Dr. Michael Chen',
-            note: 'HbA1c levels have decreased from 7.2% to 6.8%. Continue current medication regimen.',
-            providerSpecialty: 'Endocrinologist',
-          },
-        ],
-        appointments: [
-          {
-            id: '1',
-            date: '2024-11-20',
-            time: '10:00 AM',
-            type: 'Follow-up',
-            status: 'Completed',
-            doctorName: 'Dr. Sarah Johnson',
-            doctorSpecialty: 'Cardiologist',
-            diagnosis: 'Type 2 Diabetes with controlled blood pressure',
-            notes: 'Patient showing good progress with medication adherence. Blood pressure readings are stable.',
-          },
-          {
-            id: '2',
-            date: '2024-11-25',
-            time: '2:30 PM',
-            type: 'Routine Check-up',
-            status: 'Completed',
-            doctorName: 'Dr. Michael Chen',
-            doctorSpecialty: 'Endocrinologist',
-            diagnosis: 'Diabetes management - HbA1c improving',
-            notes: 'HbA1c levels have decreased from 7.2% to 6.8%. Continue current medication regimen.',
-          },
-        ],
-        doctorDiagnoses: [
-          {
-            doctorName: 'Dr. Sarah Johnson',
-            doctorSpecialty: 'Cardiologist',
-            date: '2024-11-20',
-            diagnosis: 'Type 2 Diabetes with controlled hypertension',
-            notes: 'Patient has well-controlled blood pressure with current medication. Cardiovascular risk factors are being managed effectively.',
-            treatmentRecommendations: [
-              'Continue Lisinopril 10mg daily',
-              'Maintain low-sodium diet',
-              'Regular blood pressure monitoring',
-            ],
-          },
-          {
-            doctorName: 'Dr. Michael Chen',
-            doctorSpecialty: 'Endocrinologist',
-            date: '2024-11-25',
-            diagnosis: 'Type 2 Diabetes - Well controlled',
-            notes: 'HbA1c levels showing significant improvement. Patient is responding well to Metformin therapy.',
-            treatmentRecommendations: [
-              'Continue Metformin 500mg twice daily',
-              'Monitor blood sugar levels regularly',
-              'Maintain current dietary modifications',
-            ],
-          },
-        ],
-      };
-
-      const summaries = await generateHistorySummaries(historyData);
+      const summaries = await fetchHistorySummary();
       setHistorySummary(summaries);
     } catch (error) {
       console.error('Error loading history summaries:', error);
@@ -407,7 +276,7 @@ export default function Reports() {
       setIsLoadingHistory(false);
       setIsRefreshingHistory(false);
     }
-  }, [fastenReports]);
+  }, []);
 
   // Load history when main tab changes to history
   useEffect(() => {
