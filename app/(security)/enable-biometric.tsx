@@ -12,7 +12,7 @@ import { getColors, Spacing, Typography } from '@/constants/design-system';
 export default function EnableBiometricScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = getColors(settings.isDarkTheme);
-  const { refreshSecurityState } = useSecurity();
+  const { refreshSecurityState, setIsLocked } = useSecurity();
   const [hasBiometric, setHasBiometric] = useState(false);
   const [biometricType, setBiometricType] = useState('');
 
@@ -42,12 +42,16 @@ export default function EnableBiometricScreen() {
       await setBiometricEnabled(true);
     }
     await refreshSecurityState();
+    // User just set up their PIN — they are authenticated, don't lock
+    setIsLocked(false);
     navigateNext();
   };
 
   const handleSkip = async () => {
     await setBiometricEnabled(false);
     await refreshSecurityState();
+    // User just set up their PIN — they are authenticated, don't lock
+    setIsLocked(false);
     navigateNext();
   };
 
@@ -110,6 +114,6 @@ const styles = StyleSheet.create({
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.screenPadding },
   icon: { fontSize: 64, marginBottom: Spacing.lg },
   title: { textAlign: 'center', marginBottom: Spacing.sm },
-  subtitle: { textAlign: 'center', lineHeight: 22, maxWidth: 300 },
+  subtitle: { textAlign: 'center', maxWidth: 300 },
   buttons: { gap: Spacing.sm + 4, paddingHorizontal: Spacing.screenPadding, paddingBottom: 40 },
 });

@@ -131,6 +131,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
+    paddingVertical: 14,
   },
   content: {
     flexDirection: 'row',
