@@ -62,8 +62,8 @@ export default function VerifyEmailScreen() {
     setLoading(true);
     setError(undefined);
     const res = await confirmSignUp(email ?? '', code);
-    setLoading(false);
     if (res.success) {
+      // Keep loading=true so button stays disabled during navigation
       if (password) {
         const signInRes = await signIn({ username: email ?? '', password });
         if (signInRes.success) {
@@ -73,6 +73,7 @@ export default function VerifyEmailScreen() {
       }
       router.replace('/(auth)/sign-in' as never);
     } else {
+      setLoading(false);
       setError(res.message ?? 'Verification failed. Please try again.');
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
