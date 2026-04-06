@@ -74,15 +74,25 @@ export default function UsageGuidelinesScreen() {
     setAccepting(true);
     setError(null);
     try {
-      await apiClient.post('/v1/auth/accept-terms', { version: guidelines.currentVersion });
+      await apiClient.post('/v1/auth/accept-terms', {
+        version: guidelines.currentVersion,
+        documentType: 'usage_guidelines',
+      });
       const pinConfigured = await isPinSetup();
       if (!pinConfigured) {
         router.replace('/(security)/setup-pin' as never);
       } else {
         router.replace('/(onboarding)/permissions' as never);
       }
-    } catch {
-      setError('Failed to accept guidelines. Please try again.');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
+      const status = axiosErr?.response?.status;
+      const serverMsg = axiosErr?.response?.data?.error;
+      if (status === 401) {
+        setError('Your session has expired. Please sign in again.');
+      } else {
+        setError(serverMsg ?? 'Failed to accept guidelines. Please try again.');
+      }
       setAccepting(false);
     }
   };
@@ -152,7 +162,7 @@ export default function UsageGuidelinesScreen() {
         {guidelines.sections.map((section, index) => (
           <View key={index} style={styles.section}>
             <Text style={[styles.sectionHeading, { color: colors.text, fontSize: getScaledFontSize(16) }]}>
-              {index + 1}. {section.heading}
+              {section.heading}
             </Text>
             <Text style={[styles.sectionBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
               {section.body}

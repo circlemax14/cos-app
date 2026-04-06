@@ -1,10 +1,9 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput as RNTextInput, View } from 'react-native';
-import { Button, Text } from 'react-native-paper';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput as RNTextInput, TouchableOpacity, View } from 'react-native';
+import { Button } from 'react-native-paper';
 
-import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { confirmSignUp, resendCode, signIn } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -63,9 +62,8 @@ export default function VerifyEmailScreen() {
     setLoading(true);
     setError(undefined);
     const res = await confirmSignUp(email ?? '', code);
-    setLoading(false);
     if (res.success) {
-      // Auto sign-in if we have the password (coming from sign-up flow)
+      // Keep loading=true so button stays disabled during navigation
       if (password) {
         const signInRes = await signIn({ username: email ?? '', password });
         if (signInRes.success) {
@@ -73,24 +71,23 @@ export default function VerifyEmailScreen() {
           return;
         }
       }
-      // Fallback: if no password or auto sign-in failed, go to sign-in page
       router.replace('/(auth)/sign-in' as never);
     } else {
+      setLoading(false);
       setError(res.message ?? 'Verification failed. Please try again.');
-      // Clear digits so user can re-enter
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     }
   };
 
   return (
-    <AppWrapper showBellIcon={false} showLogo={false} showHamburgerIcon={false} showAccessibilityIcon={false}>
+    <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
+          contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -99,16 +96,29 @@ export default function VerifyEmailScreen() {
               source={require('@/assets/images/logo.png')}
               style={{ width: getScaledFontSize(100), height: getScaledFontSize(100) }}
               contentFit="contain"
+              accessibilityLabel="App logo"
             />
 
             <View style={styles.form}>
               <Text
-                style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(22),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  textAlign: 'center',
+                  marginBottom: 4,
+                }}
               >
                 Verify your email
               </Text>
               <Text
-                style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(22) }]}
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(14),
+                  lineHeight: getScaledFontSize(22),
+                  textAlign: 'center',
+                  marginBottom: 8,
+                }}
               >
                 We sent a 6-digit code to{'\n'}
                 <Text style={{ color: colors.text, fontWeight: getScaledFontWeight(600) as any }}>
@@ -116,6 +126,7 @@ export default function VerifyEmailScreen() {
                 </Text>
               </Text>
 
+              {/* OTP Input Boxes */}
               <View style={styles.otpRow}>
                 {digits.map((digit, i) => (
                   <RNTextInput
@@ -127,15 +138,13 @@ export default function VerifyEmailScreen() {
                     keyboardType="number-pad"
                     maxLength={1}
                     selectTextOnFocus
+                    accessibilityLabel={`Digit ${i + 1} of 6`}
                     style={[
                       styles.otpBox,
                       {
                         color: colors.text,
                         borderColor: digit ? colors.primary : colors.border,
-                        backgroundColor: 'transparent',
-                        fontSize: getScaledFontSize(22),
-                        width: getScaledFontSize(48),
-                        height: getScaledFontSize(56),
+                        fontSize: 22,
                       },
                     ]}
                   />
@@ -143,112 +152,154 @@ export default function VerifyEmailScreen() {
               </View>
 
               {error ? (
-                <Text style={[styles.error, { fontSize: getScaledFontSize(14) }]} accessibilityRole="alert">
+                <Text
+                  style={{
+                    color: 'crimson',
+                    fontSize: getScaledFontSize(14),
+                    textAlign: 'center',
+                  }}
+                  accessibilityRole="alert"
+                >
                   {error}
                 </Text>
               ) : null}
 
               {resendMessage ? (
-                <Text style={[styles.resendSuccess, { fontSize: getScaledFontSize(14) }]}>
+                <Text
+                  style={{
+                    color: '#16a34a',
+                    fontSize: getScaledFontSize(14),
+                    textAlign: 'center',
+                  }}
+                >
                   {resendMessage}
                 </Text>
               ) : null}
 
-              <Button
-                mode="contained"
-                buttonColor={loading || code.length < 6 ? '#9ca3af' : '#2563eb'}
+              {/* Verify Button */}
+              <TouchableOpacity
                 onPress={onSubmit}
-                loading={loading}
                 disabled={loading || code.length < 6}
-                style={styles.submit}
-                contentStyle={styles.submitContent}
-                labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
+                accessibilityRole="button"
+                accessibilityLabel="Verify email"
+                style={[
+                  styles.submit,
+                  {
+                    backgroundColor: loading || code.length < 6 ? '#9ca3af' : colors.tint,
+                    opacity: loading || code.length < 6 ? 0.7 : 1,
+                  },
+                ]}
               >
-                Verify
-              </Button>
+                <Text
+                  style={{
+                    color: 'white',
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(600) as any,
+                    textAlign: 'center',
+                  }}
+                >
+                  {loading ? 'Verifying...' : 'Verify'}
+                </Text>
+              </TouchableOpacity>
 
-              <Button
-                mode="text"
+              {/* Resend Code */}
+              <TouchableOpacity
                 onPress={onResend}
-                loading={resending}
                 disabled={resending || loading}
-                labelStyle={{ color: colors.primary, fontSize: getScaledFontSize(14) }}
-                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
+                style={styles.textButton}
+                accessibilityRole="button"
+                accessibilityLabel="Resend verification code"
               >
-                Resend code
-              </Button>
+                <Text
+                  style={{
+                    color: resending ? colors.subtext : colors.primary,
+                    fontSize: getScaledFontSize(15),
+                    fontWeight: getScaledFontWeight(600) as any,
+                    textAlign: 'center',
+                  }}
+                >
+                  {resending ? 'Sending...' : 'Resend code'}
+                </Text>
+              </TouchableOpacity>
 
-              <Button
-                mode="text"
+              {/* Back to Sign In */}
+              <TouchableOpacity
                 onPress={() => router.replace('/(auth)/sign-in')}
-                labelStyle={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}
-                contentStyle={{ paddingVertical: getScaledFontSize(6) }}
+                style={styles.textButton}
+                accessibilityRole="button"
+                accessibilityLabel="Back to sign in"
               >
-                Back to Sign In
-              </Button>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(15),
+                    fontWeight: getScaledFontWeight(500) as any,
+                    textAlign: 'center',
+                  }}
+                >
+                  Back to Sign In
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </AppWrapper>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeContainer: {
+    flex: 1,
+  },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
   },
   container: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
     gap: 24,
-    flexGrow: 1,
   },
   form: {
     width: '100%',
     maxWidth: 420,
-    gap: 16,
+    gap: 14,
     alignItems: 'center',
-  },
-  title: {
-    textAlign: 'center',
-  },
-  subtitle: {
-    textAlign: 'center',
   },
   otpRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     justifyContent: 'center',
+    alignSelf: 'center',
     marginVertical: 8,
   },
   otpBox: {
+    width: 46,
+    height: 54,
     borderWidth: 1.5,
     borderRadius: 12,
     textAlign: 'center',
     fontWeight: '600',
-  },
-  error: {
-    color: 'crimson',
-    textAlign: 'center',
-  },
-  resendSuccess: {
-    color: '#16a34a',
-    textAlign: 'center',
+    backgroundColor: 'transparent',
   },
   submit: {
     width: '100%',
     borderRadius: 24,
-  },
-  submitContent: {
     minHeight: 48,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitLabel: {
-    color: 'white',
-    fontWeight: '600',
+  textButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
