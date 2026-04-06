@@ -1,16 +1,16 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus, PanResponder } from 'react-native';
 import { router } from 'expo-router';
-import { signOut } from '@/services/auth';
-import { queryClient } from '@/providers/QueryProvider';
+import { isPinSetup } from '@/services/pin-auth';
 
-// Auto sign-out after 15 minutes of inactivity (healthcare requirement)
+// Lock app after 15 minutes of inactivity (healthcare requirement)
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Monitors user activity (touch events and app state changes).
- * Signs the user out and clears the React Query cache after INACTIVITY_TIMEOUT_MS
+ * Locks the app (shows PIN/biometric screen) after INACTIVITY_TIMEOUT_MS
  * of inactivity, protecting PHI on unattended devices.
+ * Does NOT sign the user out — session stays active until refresh token expires.
  *
  * Usage: call this hook once in the authenticated root layout.
  */
@@ -20,9 +20,12 @@ export function useInactivityTimeout() {
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
-      await signOut();
-      queryClient.clear();
-      router.replace('/(auth)/sign-in' as never);
+      const pinConfigured = await isPinSetup();
+      if (pinConfigured) {
+        // Lock the app — show PIN/biometric screen
+        router.replace('/(security)/lock-screen' as never);
+      }
+      // If PIN is not set up, do nothing — don't sign out
     }, INACTIVITY_TIMEOUT_MS);
   }, []);
 
