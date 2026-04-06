@@ -24,7 +24,7 @@ interface GuidelineSection {
 interface GuidelinesResponse {
   success: boolean;
   data: {
-    currentVersion: string;
+    version: string;
     updatedAt: string;
     sections: GuidelineSection[];
   };
@@ -75,7 +75,7 @@ export default function UsageGuidelinesScreen() {
     setError(null);
     try {
       await apiClient.post('/v1/auth/accept-terms', {
-        version: guidelines.currentVersion,
+        version: guidelines.version,
       });
     } catch (err: unknown) {
       // If the error is NOT a 409 (already accepted) or network error, show it and stop
@@ -150,7 +150,7 @@ export default function UsageGuidelinesScreen() {
           Usage Guidelines
         </Text>
         <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-          Version {guidelines.currentVersion} — Last updated {guidelines.updatedAt}
+          Version {guidelines.version} — Last updated {guidelines.updatedAt}
         </Text>
         <Text style={[styles.instruction, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
           Please read the following guidelines carefully. Scroll to the bottom to accept.
