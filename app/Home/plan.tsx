@@ -18,14 +18,27 @@ interface SectionCardProps {
   icon: string;
   iconColor: string;
   title: string;
-  content: string;
+  content: unknown;
   colors: any;
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string;
 }
 
+function formatContent(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    // Handle objects like { "Oxygen Saturation": "...", "Weight": "..." }
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, val]) => `${key}: ${typeof val === 'string' ? val : JSON.stringify(val)}`)
+      .join('\n\n');
+  }
+  return String(value);
+}
+
 function SectionCard({ icon, iconColor, title, content, colors, getScaledFontSize, getScaledFontWeight }: SectionCardProps) {
-  if (!content) return null;
+  const displayContent = formatContent(content);
+  if (!displayContent) return null;
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -52,7 +65,7 @@ function SectionCard({ icon, iconColor, title, content, colors, getScaledFontSiz
           lineHeight: getScaledFontSize(22),
         }}
       >
-        {content}
+        {displayContent}
       </Text>
     </View>
   );
