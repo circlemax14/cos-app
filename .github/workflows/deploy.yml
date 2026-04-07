@@ -1,0 +1,112 @@
+name: Build & Deploy
+
+# ── Release model ────────────────────────────────────────────────────────────
+# main            → EAS Build (development profile) — dev builds
+# release-X.Y.Z  → EAS Build (preview profile) + auto-submit to TestFlight
+# workflow_dispatch (from release-* branch) → EAS Build (production) + submit to App Store
+
+on:
+  push:
+    branches:
+      - main
+      - 'release-*'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RELEASE to confirm production build & App Store submission'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Resolve environment ─────────────────────────────────────────────────────
+  resolve-env:
+    name: Resolve Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      profile: ${{ steps.resolve.outputs.profile }}
+      auto_submit: ${{ steps.resolve.outputs.auto_submit }}
+    steps:
+      - id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.ref_name }}" != release-* ]]; then
+              echo "::error::Production build must be triggered from a release-* branch (got: ${{ github.ref_name }})"
+              exit 1
+            fi
+            if [[ "${{ inputs.confirm }}" != "RELEASE" ]]; then
+              echo "::error::Confirmation input must be exactly RELEASE"
+              exit 1
+            fi
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "profile=production"     >> $GITHUB_OUTPUT
+            echo "auto_submit=true"       >> $GITHUB_OUTPUT
+
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=development" >> $GITHUB_OUTPUT
+            echo "profile=development"     >> $GITHUB_OUTPUT
+            echo "auto_submit=false"       >> $GITHUB_OUTPUT
+
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release- ]]; then
+            echo "environment=staging"    >> $GITHUB_OUTPUT
+            echo "profile=preview"        >> $GITHUB_OUTPUT
+            echo "auto_submit=true"       >> $GITHUB_OUTPUT
+
+          else
+            echo "::error::Unrecognised ref: ${{ github.ref }}"
+            exit 1
+          fi
+
+  # ── Lint & Type Check ──────────────────────────────────────────────────────
+  ci:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type Check
+        run: npx tsc --noEmit
+
+  # ── EAS Build ──────────────────────────────────────────────────────────────
+  build:
+    name: "Build → ${{ needs.resolve-env.outputs.environment }}"
+    needs: [resolve-env, ci]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build iOS
+        run: |
+          eas build \
+            --profile ${{ needs.resolve-env.outputs.profile }} \
+            --platform ios \
+            --non-interactive
+
+      - name: Submit to App Store / TestFlight
+        if: needs.resolve-env.outputs.auto_submit == 'true'
+        run: |
+          eas submit \
+            --platform ios \
+            --latest \
+            --non-interactive

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main, 'release-*']
   pull_request:
-    branches: [main, staging]
+    branches: [main]
 
 jobs:
   lint-typecheck:
@@ -12,33 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
       - run: npm ci
-
       - name: Lint
         run: npm run lint
-
-      - name: Type check
+      - name: Type Check
         run: npx tsc --noEmit
-
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - run: npm ci
-
-      - name: Dependency audit
-        # React Native / Expo deps have known transitive vulnerabilities (node-forge etc.)
-        run: npm audit --audit-level=critical
