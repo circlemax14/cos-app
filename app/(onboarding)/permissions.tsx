@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
-import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
@@ -18,9 +17,10 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 /**
- * Requests all device permissions sequentially using native OS dialogs.
- * No custom UI — just triggers the system prompts one after another,
- * then navigates to the next onboarding step.
+ * Requests essential device permissions sequentially using native OS dialogs.
+ * Only asks for notifications and contacts during onboarding.
+ * Camera and photo library permissions are requested at point of use
+ * (e.g., when uploading a file from profile or doctor detail screens).
  */
 export default function PermissionsScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -28,10 +28,10 @@ export default function PermissionsScreen() {
   const [status, setStatus] = useState('Preparing...');
 
   useEffect(() => {
-    requestAllPermissions();
+    requestPermissions();
   }, []);
 
-  async function requestAllPermissions() {
+  async function requestPermissions() {
     try {
       // 1. Push Notifications
       setStatus('Requesting notification access...');
@@ -71,22 +71,6 @@ export default function PermissionsScreen() {
       setStatus('Requesting contacts access...');
       try {
         await Contacts.requestPermissionsAsync();
-      } catch {
-        // Continue
-      }
-
-      // 4. Camera
-      setStatus('Requesting camera access...');
-      try {
-        await ImagePicker.requestCameraPermissionsAsync();
-      } catch {
-        // Continue
-      }
-
-      // 5. Photos / Media Library
-      setStatus('Requesting photo library access...');
-      try {
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
       } catch {
         // Continue
       }

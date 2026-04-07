@@ -1,7 +1,7 @@
 import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-native';
 import { router } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
@@ -10,16 +10,16 @@ import { useAccessibility } from '@/stores/accessibility-store';
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
 export default function FastenConnectScreen() {
-  const { settings, getScaledFontSize } = useAccessibility();
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  // Prevent double navigation when widget closes
   const navigating = useRef(false);
   const [connectedCount, setConnectedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showWidget, setShowWidget] = useState(true);
+  const [widgetDismissed, setWidgetDismissed] = useState(false);
 
   const handleEvent = useCallback(async (event: unknown) => {
-    // The event may arrive as a parsed object or as a wrapper with a stringified payload
     let parsed: { event_type?: string; api_mode?: string; data?: Record<string, unknown> } | null = null;
 
     if (event && typeof event === 'object') {
@@ -40,7 +40,6 @@ export default function FastenConnectScreen() {
     const eventType = parsed.event_type;
 
     if (eventType === 'patient.connection_success') {
-      // Record connection silently — keep the widget open so user can add more EHRs
       setError(null);
       try {
         await apiClient.post('/v1/fasten/connection', {
@@ -56,17 +55,41 @@ export default function FastenConnectScreen() {
       return;
     }
 
-    if (eventType === 'widget.complete' || eventType === 'widget.close') {
+    if (eventType === 'widget.complete') {
+      // User completed the flow — proceed to data processing
       if (navigating.current) return;
       navigating.current = true;
       setIsLoading(true);
       router.replace('/(onboarding)/data-processing' as never);
+      return;
     }
-  }, []);
+
+    if (eventType === 'widget.close') {
+      // User manually closed the widget
+      if (connectedCount > 0) {
+        // Already connected at least one clinic — proceed
+        if (navigating.current) return;
+        navigating.current = true;
+        setIsLoading(true);
+        router.replace('/(onboarding)/data-processing' as never);
+      } else {
+        // No clinics connected — show prompt to connect
+        setShowWidget(false);
+        setWidgetDismissed(true);
+      }
+    }
+  }, [connectedCount]);
+
+  const handleOpenWidget = () => {
+    navigating.current = false;
+    setWidgetDismissed(false);
+    setShowWidget(true);
+    setError(null);
+  };
 
   if (!FASTEN_PUBLIC_ID) {
     return (
-      <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <Text style={[styles.errorTitle, { color: colors.text, fontSize: getScaledFontSize(18) }]}>
           Configuration Missing
         </Text>
@@ -79,14 +102,62 @@ export default function FastenConnectScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.loaderContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loaderTitle, { color: colors.text, fontSize: getScaledFontSize(18) }]}>
+        <Text style={{ color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, textAlign: 'center', marginTop: 16 }}>
           Setting up your health data...
         </Text>
-        <Text style={[styles.loaderBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'center' }}>
           Please wait while we initiate your medical records export.
         </Text>
+      </View>
+    );
+  }
+
+  // User closed widget without connecting any clinic
+  if (widgetDismissed && !showWidget) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Text style={{ fontSize: 56, marginBottom: 16 }}>🏥</Text>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: getScaledFontSize(22),
+            fontWeight: getScaledFontWeight(700) as any,
+            textAlign: 'center',
+            marginBottom: 8,
+          }}
+        >
+          Connect a Clinic
+        </Text>
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(15),
+            textAlign: 'center',
+            lineHeight: getScaledFontSize(22),
+            paddingHorizontal: 20,
+            marginBottom: 28,
+          }}
+        >
+          To get started, you need to connect at least one healthcare provider. This allows us to securely access your health records.
+        </Text>
+        <TouchableOpacity
+          style={[styles.connectButton, { backgroundColor: colors.tint }]}
+          onPress={handleOpenWidget}
+          accessibilityRole="button"
+          accessibilityLabel="Connect a clinic"
+        >
+          <Text
+            style={{
+              color: '#fff',
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(600) as any,
+            }}
+          >
+            Connect a Clinic
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -102,12 +173,11 @@ export default function FastenConnectScreen() {
       )}
       {error && (
         <View style={[styles.errorBanner, { backgroundColor: colors.card }]}>
-          <Text style={[styles.errorBannerText, { color: '#D32F2F', fontSize: getScaledFontSize(14) }]}>
+          <Text style={{ color: '#D32F2F', fontSize: getScaledFontSize(14), textAlign: 'center' }}>
             {error}
           </Text>
         </View>
       )}
-      {/* Fasten Connect widget — fills all space */}
       <View style={styles.widgetContainer}>
         <FastenStitchElement
           publicId={FASTEN_PUBLIC_ID}
@@ -125,27 +195,12 @@ const styles = StyleSheet.create({
   widgetContainer: {
     flex: 1,
   },
-  loaderContainer: {
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
-    gap: 16,
-  },
-  loaderTitle: {
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: 16,
-  },
-  loaderBody: {
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    gap: 16,
+    gap: 12,
   },
   errorTitle: {
     fontWeight: '700',
@@ -161,9 +216,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 8,
   },
-  errorBannerText: {
-    textAlign: 'center',
-  },
   successBanner: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -176,5 +228,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#2E7D32',
     fontWeight: '600',
+  },
+  connectButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 24,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -21,6 +21,7 @@ export async function fetchReportSummary(reportData: ReportSummaryRequest): Prom
   const response = await apiClient.post<{ success: boolean; data: ReportSummary }>(
     '/v1/patients/me/reports/summary',
     reportData,
+    { timeout: 60000 }, // 60s — AI summary generation can take time
   );
   return response.data.data;
 }

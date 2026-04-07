@@ -13,6 +13,7 @@ export interface HealthSummary {
 async function fetchHealthSummary(): Promise<HealthSummary> {
   const res = await apiClient.get<{ success: boolean; data: HealthSummary }>(
     '/v1/patients/me/health-summary',
+    { timeout: 90000 }, // 90s — AI summary generation can take time
   );
   return res.data.data;
 }
