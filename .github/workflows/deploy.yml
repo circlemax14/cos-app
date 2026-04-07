@@ -52,7 +52,7 @@ jobs:
 
           elif [[ "${{ github.ref }}" =~ ^refs/heads/release- ]]; then
             echo "environment=staging"    >> $GITHUB_OUTPUT
-            echo "profile=preview"        >> $GITHUB_OUTPUT
+            echo "profile=production"     >> $GITHUB_OUTPUT
             echo "auto_submit=true"       >> $GITHUB_OUTPUT
 
           else
