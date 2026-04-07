@@ -12,7 +12,11 @@
         "buildConfiguration": "Debug"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-dev.joinabrightfuture.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://n3zgi6r0sb.execute-api.us-east-1.amazonaws.com/dev/",
+        "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_T5uZyFxGC",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "shrg82vtrbgqjanmh5hn247mj",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
+        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_test_et389iol5extr2acodl49rf70y18hw6c4k495uvm0sf4x"
       }
     },
     "preview": {
@@ -22,7 +26,11 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging.joinabrightfuture.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://8byurefjb2.execute-api.us-east-1.amazonaws.com/staging/",
+        "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_T5uZyFxGC",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "shrg82vtrbgqjanmh5hn247mj",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
+        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_test_et389iol5extr2acodl49rf70y18hw6c4k495uvm0sf4x"
       }
     },
     "production": {
@@ -33,7 +41,11 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api.joinabrightfuture.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://fyi3cszmpj.execute-api.us-east-1.amazonaws.com/production/",
+        "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_OBayj1vez",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "5cku8qg4b3obennn0c8e1uldev",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
+        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_live_idoaadrtvre70642nsw24i8xipdkcfo8rwpn6ue51ksiy",
         "EXPO_PUBLIC_USE_MOCK_DATA": "false"
       }
     }
