@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
@@ -40,7 +41,9 @@ export default function PermissionsScreen() {
         if (notifStatus === 'granted') {
           try {
             // getExpoPushTokenAsync can hang on simulators — add a timeout
-            const tokenPromise = Notifications.getExpoPushTokenAsync();
+            const tokenPromise = Notifications.getExpoPushTokenAsync({
+              projectId: Constants.expoConfig?.extra?.eas?.projectId ?? '',
+            });
             const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
             const tokenData = await Promise.race([tokenPromise, timeoutPromise]);
             if (tokenData) {

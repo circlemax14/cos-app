@@ -22,7 +22,8 @@
         "NSContactsUsageDescription": "BrightFuture uses contacts to help you add emergency contacts quickly.",
         "NSPhotoLibraryUsageDescription": "BrightFuture needs photo library access to upload health documents.",
         "NSUserTrackingUsageDescription": "BrightFuture uses anonymous analytics to improve the app experience.",
-        "NSFaceIDUsageDescription": "BrightFuture uses Face ID to securely unlock your health information."
+        "NSFaceIDUsageDescription": "BrightFuture uses Face ID to securely unlock your health information.",
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {

@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { apiClient } from '@/lib/api-client';
+
+const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId ?? '';
 
 // Configure notification handler for foreground notifications
 Notifications.setNotificationHandler({
@@ -92,7 +95,9 @@ async function registerPushToken() {
     }
 
     // Add timeout to prevent hanging on simulators
-    const tokenPromise = Notifications.getExpoPushTokenAsync();
+    const tokenPromise = Notifications.getExpoPushTokenAsync({
+      projectId: PROJECT_ID,
+    });
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
     const tokenData = await Promise.race([tokenPromise, timeoutPromise]);
 
