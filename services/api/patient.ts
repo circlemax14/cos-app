@@ -51,49 +51,38 @@ function mapToPatient(r: FhirPatientResource): Patient {
  * to patientDetails from DynamoDB via /auth/me (populated by the webhook).
  */
 export async function fetchPatientInfo(): Promise<Patient | null> {
+  // Always fetch /auth/me to get photoUrl and DynamoDB data
+  let meData: { sub: string; email?: string; photoUrl?: string; patientDetails?: Record<string, string> } | null = null;
+  try {
+    const meRes = await apiClient.get('/v1/auth/me');
+    meData = meRes.data?.data ?? null;
+  } catch {
+    // Continue — will try HealthLake
+  }
+
   // Try HealthLake FHIR Patient first
   try {
     const res = await apiClient.get<{ success: boolean; data: FhirPatientResource }>('/v1/patients/me');
     const patient = mapToPatient(res.data.data);
-    // If HealthLake returned a patient but with no name, fall through to DynamoDB
-    if (patient.name) return patient;
+    // Merge photoUrl from /auth/me into HealthLake patient
+    if (patient.name) {
+      patient.photoUrl = meData?.photoUrl ?? undefined;
+      patient.email = patient.email || meData?.email || meData?.patientDetails?.email;
+      return patient;
+    }
   } catch {
-    // HealthLake may be unavailable (403/permissions) — fall back to DynamoDB
+    // HealthLake may be unavailable — fall back to DynamoDB
   }
 
-  // Fallback: read patientDetails from the /auth/me response (populated by webhook)
-  try {
-    const meRes = await apiClient.get<{
-      success: boolean;
-      data: {
-        sub: string;
-        email?: string;
-        photoUrl?: string;
-        patientDetails?: {
-          fullName?: string;
-          firstName?: string;
-          lastName?: string;
-          dateOfBirth?: string;
-          gender?: string;
-          phone?: string;
-          email?: string;
-          address?: string;
-          city?: string;
-          state?: string;
-          postalCode?: string;
-        };
-      };
-    }>('/v1/auth/me');
-
-    const pd = meRes.data.data.patientDetails;
-    if (!pd) return null;
-
+  // Fallback: use patientDetails from /auth/me
+  if (meData?.patientDetails) {
+    const pd = meData.patientDetails;
     return {
-      id: meRes.data.data.sub,
+      id: meData.sub,
       name: pd.fullName ?? ([pd.firstName, pd.lastName].filter(Boolean).join(' ') || ''),
       firstName: pd.firstName,
       lastName: pd.lastName,
-      email: pd.email ?? meRes.data.data.email,
+      email: pd.email ?? meData.email,
       phone: pd.phone,
       dateOfBirth: pd.dateOfBirth,
       gender: pd.gender,
@@ -101,8 +90,13 @@ export async function fetchPatientInfo(): Promise<Patient | null> {
       city: pd.city,
       state: pd.state,
       zipCode: pd.postalCode,
-      photoUrl: meRes.data.data.photoUrl ?? undefined,
+      photoUrl: meData.photoUrl ?? undefined,
     };
+  }
+
+  try {
+    // Last resort — return null
+    return null;
   } catch {
     return null;
   }
