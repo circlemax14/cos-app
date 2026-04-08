@@ -16,7 +16,7 @@
         "applinks:joinabrightfuture.com",
         "applinks:*.joinabrightfuture.com"
       ],
-      "appleTeamId": "74MH6L4MZA",
+      "appleTeamId": "Y9J46AL3G2",
       "infoPlist": {
         "NSCameraUsageDescription": "BrightFuture needs camera access to photograph documents and prescriptions.",
         "NSContactsUsageDescription": "BrightFuture uses contacts to help you add emergency contacts quickly.",
