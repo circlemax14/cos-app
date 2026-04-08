@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { apiClient } from '@/lib/api-client';
 
-const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId ?? '';
+const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId ?? '30bc49bd-ee12-4a06-86b3-ee4f23690114';
 
 // Configure notification handler for foreground notifications
 Notifications.setNotificationHandler({
