@@ -2,7 +2,7 @@
   "expo": {
     "name": "CSH",
     "slug": "cos",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "cos",
@@ -71,7 +71,7 @@
       "fallbackToCacheTimeout": 5000,
       "url": "https://u.expo.dev/30bc49bd-ee12-4a06-86b3-ee4f23690114"
     },
-    "runtimeVersion": "1.0.1",
+    "runtimeVersion": "1.0.2",
     "plugins": [
       "expo-router",
       "expo-updates",
