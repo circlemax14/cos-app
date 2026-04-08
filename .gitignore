@@ -11,6 +11,6 @@ expo-env.d.ts
 # Expo local state
 .expo/
 
-# Native directories (managed by Prebuild)
-/ios/
-/android/
+# Native directories — kept in git for bare workflow
+# /ios/
+# /android/
