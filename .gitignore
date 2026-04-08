@@ -7,3 +7,10 @@ expo-env.d.ts
 # @end expo-cli
 .env
 .env.example.env.local
+
+# Expo local state
+.expo/
+
+# Native directories (managed by Prebuild)
+/ios/
+/android/
