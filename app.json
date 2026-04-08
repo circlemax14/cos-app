@@ -67,7 +67,7 @@
     },
     "updates": {
       "enabled": true,
-      "checkAutomatically": "ON_LAUNCH",
+      "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 5000,
       "url": "https://u.expo.dev/30bc49bd-ee12-4a06-86b3-ee4f23690114"
     },
