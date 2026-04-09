@@ -23,15 +23,25 @@ type GateState = 'loading' | 'no-internet' | 'done';
 async function getDestination(user: UserProfile, isLocked: boolean): Promise<string> {
   if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
 
-  // Check if permissions have been requested
+  // If user already has health data, skip all onboarding
+  if (user.dataReady) {
+    // Mark permissions as done (in case of reinstall)
+    await AsyncStorage.setItem('permissions_requested', 'true');
+
+    const pinConfigured = await isPinSetup();
+    if (!pinConfigured) return '/(security)/setup-pin';
+    if (isLocked) return '/(security)/lock-screen';
+
+    return '/Home';
+  }
+
+  // Check if permissions have been requested (local state for fresh installs)
   const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
   if (!permissionsRequested) return '/(onboarding)/permissions';
 
   if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
-  // If connected but data not ready (pending, failed, or unknown status) → show data-processing
   if (!user.dataReady && user.fastenConnected) return '/(onboarding)/data-processing';
 
-  // Check security PIN setup before allowing access to Home
   const pinConfigured = await isPinSetup();
   if (!pinConfigured) return '/(security)/setup-pin';
   if (isLocked) return '/(security)/lock-screen';
