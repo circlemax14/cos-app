@@ -19,13 +19,15 @@ export default function AgencyDetailScreen() {
   const [isRequesting, setIsRequesting] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
+  const [patientAgencyId, setPatientAgencyId] = useState<string | null>(null);
 
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
 
-  // Load agency data from API
+  // Load agency data and request status
   React.useEffect(() => {
-    const loadAgency = async () => {
+    const loadData = async () => {
       if (agencyId) {
         const agencyData = await getCareManagerAgencyById(agencyId);
         if (agencyData) {
@@ -38,8 +40,31 @@ export default function AgencyDetailScreen() {
           });
         }
       }
+
+      // Check if patient has a pending request or is already assigned
+      try {
+        const statusRes = await apiClient.get('/v1/patients/me/agency-request/status');
+        const pendingRequest = statusRes.data?.data;
+        if (pendingRequest && pendingRequest.agencyId === agencyId) {
+          setRequestStatus('pending');
+        }
+      } catch {
+        // No pending request
+      }
+
+      // Check if patient is already assigned to this agency
+      try {
+        const meRes = await apiClient.get('/v1/auth/me');
+        const userAgencyId = meRes.data?.data?.agencyId;
+        setPatientAgencyId(userAgencyId || null);
+        if (userAgencyId === agencyId) {
+          setRequestStatus('approved');
+        }
+      } catch {
+        // ignore
+      }
     };
-    loadAgency();
+    loadData();
   }, [agencyId, agencyName]);
 
   const onRefresh = useCallback(async () => {
@@ -68,13 +93,13 @@ export default function AgencyDetailScreen() {
     setIsRequesting(true);
     try {
       await apiClient.post('/v1/patients/me/agency-request', { agencyId });
+      setRequestStatus('pending');
       Alert.alert(
         'Request Submitted',
         'Your request for a care manager has been submitted successfully. You will be contacted within 24-48 hours.',
         [
           {
             text: 'OK',
-            onPress: () => router.back(),
           },
         ]
       );
@@ -299,20 +324,39 @@ export default function AgencyDetailScreen() {
         </Card>
       )}
 
-      {/* Request Care Manager Button */}
+      {/* Request Care Manager Button / Status */}
       <View style={styles.buttonContainer}>
-        <Button
-          mode="contained"
-          onPress={handleRequestCareManager}
-          loading={isRequesting}
-          disabled={isRequesting}
-          style={[styles.requestButton, { backgroundColor: colors.tint }]}
-          labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff', textAlign: 'center' }}
-          contentStyle={{ paddingVertical: 12, paddingHorizontal: 16, minHeight: 56 }}
-          icon={() => <MaterialIcons name="person-add" size={getScaledFontSize(20)} color="#fff" />}
-        >
-          Request Care Manager
-        </Button>
+        {requestStatus === 'approved' ? (
+          <View style={[styles.requestButton, { backgroundColor: '#E8F5E9', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
+            <MaterialIcons name="check-circle" size={getScaledFontSize(24)} color="#2E7D32" />
+            <Text style={{ color: '#2E7D32', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
+              You are assigned to this agency
+            </Text>
+          </View>
+        ) : requestStatus === 'pending' ? (
+          <View style={[styles.requestButton, { backgroundColor: '#FFF3E0', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
+            <MaterialIcons name="hourglass-top" size={getScaledFontSize(24)} color="#E65100" />
+            <Text style={{ color: '#E65100', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
+              Request Pending
+            </Text>
+            <Text style={{ color: '#E65100', fontSize: getScaledFontSize(13), marginTop: 4, textAlign: 'center' }}>
+              Your request is being reviewed by the agency
+            </Text>
+          </View>
+        ) : (
+          <Button
+            mode="contained"
+            onPress={handleRequestCareManager}
+            loading={isRequesting}
+            disabled={isRequesting}
+            style={[styles.requestButton, { backgroundColor: colors.tint }]}
+            labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: '#fff', textAlign: 'center' }}
+            contentStyle={{ paddingVertical: 12, paddingHorizontal: 16, minHeight: 56 }}
+            icon={() => <MaterialIcons name="person-add" size={getScaledFontSize(20)} color="#fff" />}
+          >
+            Request Care Manager
+          </Button>
+        )}
       </View>
 
       {/* Consent Modal */}
