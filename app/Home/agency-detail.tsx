@@ -67,7 +67,7 @@ export default function AgencyDetailScreen() {
     setShowConsentModal(false);
     setIsRequesting(true);
     try {
-      await apiClient.post('/v1/care-managers/request', { agencyId });
+      await apiClient.post('/v1/patients/me/agency-request', { agencyId });
       Alert.alert(
         'Request Submitted',
         'Your request for a care manager has been submitted successfully. You will be contacted within 24-48 hours.',

@@ -469,7 +469,7 @@ export default function ModalScreen() {
                           </View>
                         ) : (
                           agencies.map((agency) => (
-                            <TouchableOpacity
+                            <View
                               key={agency.id}
                               style={[
                                 styles.listItem,
@@ -482,15 +482,6 @@ export default function ModalScreen() {
                                   backgroundColor: colors.background,
                                 }
                               ]}
-                              onPress={() => {
-                                const isSelected = selectedCareManager?.id === agency.id;
-                                if (isSelected) {
-                                  setSelectedCareManager(null);
-                                } else {
-                                  setSelectedCareManager({ id: agency.id, name: agency.name, agencyName: agency.name, logoUrl: agency.logoUrl });
-                                }
-                              }}
-                              activeOpacity={0.7}
                             >
                               <View style={[
                                 styles.listAvatar,
@@ -505,7 +496,13 @@ export default function ModalScreen() {
                               ]}>
                                 <IconSymbol name={(category.icon as any) || 'building.2'} size={getScaledFontSize(28)} color={colors.tint || '#008080'} />
                               </View>
-                              <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16), flex: 1 }]}>
+                              <TouchableOpacity
+                                style={[styles.listItemContent, { marginLeft: getScaledFontSize(16), flex: 1 }]}
+                                onPress={() => {
+                                  router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
+                                }}
+                                activeOpacity={0.7}
+                              >
                                 <Text style={[
                                   styles.listItemName,
                                   {
@@ -540,23 +537,37 @@ export default function ModalScreen() {
                                     {agency.city}, {agency.state}
                                   </Text>
                                 )}
-                              </View>
-                              {(() => {
-                                const isSelected = selectedCareManager?.id === agency.id;
-                                return (
-                                  <View style={{
-                                    width: getScaledFontSize(32),
-                                    height: getScaledFontSize(32),
-                                    borderRadius: getScaledFontSize(16),
-                                    backgroundColor: isSelected ? '#EF4444' + '20' : colors.tint + '20',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                  }}>
-                                    <IconSymbol name={isSelected ? 'minus' : 'plus'} size={getScaledFontSize(18)} color={isSelected ? '#EF4444' : colors.tint} />
-                                  </View>
-                                );
-                              })()}
-                            </TouchableOpacity>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const isSelected = selectedCareManager?.id === agency.id;
+                                  if (isSelected) {
+                                    setSelectedCareManager(null);
+                                  } else {
+                                    setSelectedCareManager({ id: agency.id, name: agency.name, agencyName: agency.name, logoUrl: agency.logoUrl });
+                                  }
+                                }}
+                                style={{ padding: getScaledFontSize(8), minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+                                accessibilityRole="button"
+                                accessibilityLabel={selectedCareManager?.id === agency.id ? 'Remove from circle' : 'Add to circle'}
+                              >
+                                {(() => {
+                                  const isSelected = selectedCareManager?.id === agency.id;
+                                  return (
+                                    <View style={{
+                                      width: getScaledFontSize(32),
+                                      height: getScaledFontSize(32),
+                                      borderRadius: getScaledFontSize(16),
+                                      backgroundColor: isSelected ? '#EF4444' + '20' : colors.tint + '20',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}>
+                                      <IconSymbol name={isSelected ? 'minus' : 'plus'} size={getScaledFontSize(18)} color={isSelected ? '#EF4444' : colors.tint} />
+                                    </View>
+                                  );
+                                })()}
+                              </TouchableOpacity>
+                            </View>
                           ))
                         )}
                       </ScrollView>
