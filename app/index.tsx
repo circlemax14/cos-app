@@ -21,27 +21,21 @@ type GateState = 'loading' | 'no-internet' | 'done';
  * Determine the correct destination based on user onboarding state.
  */
 async function getDestination(user: UserProfile, isLocked: boolean): Promise<string> {
-  // Terms check comes first UNLESS user has Fasten connected + data ready
-  // (existing users shouldn't re-onboard after an app data reset)
-  if (!user.termsAccepted && !(user.fastenConnected && user.dataReady)) {
-    return '/(onboarding)/usage-guidelines';
-  }
-
-  // If user already has Fasten connected + health data, skip all onboarding
-  if (user.fastenConnected && user.dataReady) {
-    // Mark permissions as done (in case of reinstall)
-    await AsyncStorage.setItem('permissions_requested', 'true');
-
-    const pinConfigured = await isPinSetup();
-    if (!pinConfigured) return '/(security)/setup-pin';
-    if (isLocked) return '/(security)/lock-screen';
-
-    return '/Home';
-  }
+  // Terms acceptance is required for all users
+  if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
 
   // Check if permissions have been requested (local state for fresh installs)
   const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
   if (!permissionsRequested) return '/(onboarding)/permissions';
+
+  // After terms + permissions, check data state
+  // Users with data → go to Home (skip Fasten screen)
+  if (user.fastenConnected && user.dataReady) {
+    const pinConfigured = await isPinSetup();
+    if (!pinConfigured) return '/(security)/setup-pin';
+    if (isLocked) return '/(security)/lock-screen';
+    return '/Home';
+  }
 
   if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
   if (!user.dataReady && user.fastenConnected) return '/(onboarding)/data-processing';
