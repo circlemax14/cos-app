@@ -21,10 +21,14 @@ type GateState = 'loading' | 'no-internet' | 'done';
  * Determine the correct destination based on user onboarding state.
  */
 async function getDestination(user: UserProfile, isLocked: boolean): Promise<string> {
-  if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
+  // Terms check comes first UNLESS user has Fasten connected + data ready
+  // (existing users shouldn't re-onboard after an app data reset)
+  if (!user.termsAccepted && !(user.fastenConnected && user.dataReady)) {
+    return '/(onboarding)/usage-guidelines';
+  }
 
-  // If user already has health data, skip all onboarding
-  if (user.dataReady) {
+  // If user already has Fasten connected + health data, skip all onboarding
+  if (user.fastenConnected && user.dataReady) {
     // Mark permissions as done (in case of reinstall)
     await AsyncStorage.setItem('permissions_requested', 'true');
 
