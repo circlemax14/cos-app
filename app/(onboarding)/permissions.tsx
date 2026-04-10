@@ -3,7 +3,6 @@ import * as Contacts from 'expo-contacts';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
-import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -60,17 +59,7 @@ export default function PermissionsScreen() {
         // Continue if notification permission fails
       }
 
-      // 2. App Tracking Transparency (iOS only)
-      if (Platform.OS === 'ios') {
-        setStatus('Requesting tracking permission...');
-        try {
-          await requestTrackingPermissionsAsync();
-        } catch {
-          // Continue
-        }
-      }
-
-      // 3. Contacts
+      // 2. Contacts
       setStatus('Requesting contacts access...');
       try {
         await Contacts.requestPermissionsAsync();
@@ -78,15 +67,34 @@ export default function PermissionsScreen() {
         // Continue
       }
 
-      // All done — mark as complete and move on
+      // All done — mark as complete and route based on user state
       await AsyncStorage.setItem('permissions_requested', 'true');
       setStatus('All set!');
-      router.replace('/(onboarding)/fasten-connect' as never);
+      await routeNext();
     } catch {
       // If anything goes catastrophically wrong, still proceed
       await AsyncStorage.setItem('permissions_requested', 'true');
-      router.replace('/(onboarding)/fasten-connect' as never);
+      await routeNext();
     }
+  }
+
+  async function routeNext() {
+    // Check if user already has Fasten connected + data ready — if yes, skip Fasten screen
+    try {
+      const res = await apiClient.get<{ success: boolean; data: { fastenConnected?: boolean; dataReady?: boolean } }>('/v1/auth/me');
+      const user = res.data?.data;
+      if (user?.fastenConnected && user?.dataReady) {
+        router.replace('/Home' as never);
+        return;
+      }
+      if (user?.fastenConnected && !user?.dataReady) {
+        router.replace('/(onboarding)/data-processing' as never);
+        return;
+      }
+    } catch {
+      // Fall through to Fasten connect
+    }
+    router.replace('/(onboarding)/fasten-connect' as never);
   }
 
   return (
