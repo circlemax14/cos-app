@@ -230,3 +230,29 @@ export interface ServiceDefinition {
   priceLabel: string;
   isToggle?: boolean;
 }
+
+// ─── Recommended Appointment ─────────────────────────────────────────────────
+export interface RecommendedAppointment {
+  id: string;
+  sourceType: 'service_request' | 'care_plan' | 'encounter_pattern' | 'nlp_extraction';
+  title: string;
+  reason: string;
+  appointmentType: string;
+  specialty?: string;
+  recommendedByDate: string;
+  recommendedInterval?: string;
+  urgency: 'routine' | 'soon' | 'urgent';
+  recommendedProviderName?: string;
+  relatedCondition?: string;
+  status: 'pending' | 'reminded' | 'scheduled' | 'completed' | 'dismissed';
+  generatedAt: string;
+}
+
+// ─── Encounter Narrative ─────────────────────────────────────────────────────
+export interface EncounterNarrative {
+  summary: string;
+  keyFindings: string[];
+  followUps: string[];
+  context: string;
+  generatedAt: string;
+}

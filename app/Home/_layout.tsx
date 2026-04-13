@@ -180,6 +180,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="recommended-appointments"
+        options={{
+          title: 'Recommended Appointments',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="allergies"
         options={{
           title: 'Allergies',

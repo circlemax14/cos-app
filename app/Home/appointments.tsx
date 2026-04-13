@@ -5,8 +5,10 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
+
+type AppointmentTab = 'past' | 'recommended';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
   booked: { bg: '#E3F2FD', text: '#1565C0', icon: '📅' },
@@ -37,6 +39,7 @@ export default function AppointmentsScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<AppointmentTab>('past');
 
   const { data, isLoading, isError, refetch } = useAppointments();
 
@@ -152,6 +155,53 @@ export default function AppointmentsScreen() {
           >
             {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
           </Text>
+        </View>
+
+        {/* Tab toggle: Past Visits | Recommended */}
+        <View style={[styles.tabToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable
+            onPress={() => setActiveTab('past')}
+            style={[
+              styles.tabToggleItem,
+              activeTab === 'past' && { backgroundColor: colors.tint },
+            ]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'past' }}
+            accessibilityLabel="Past Visits"
+          >
+            <Text
+              style={{
+                color: activeTab === 'past' ? '#fff' : colors.subtext,
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(activeTab === 'past' ? 600 : 400) as any,
+              }}
+            >
+              Past Visits
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setActiveTab('recommended');
+              router.push('/Home/recommended-appointments' as never);
+            }}
+            style={[
+              styles.tabToggleItem,
+              activeTab === 'recommended' && { backgroundColor: colors.tint },
+            ]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'recommended' }}
+            accessibilityLabel="Recommended"
+          >
+            <Text
+              style={{
+                color: activeTab === 'recommended' ? '#fff' : colors.subtext,
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(activeTab === 'recommended' ? 600 : 400) as any,
+              }}
+            >
+              Recommended
+            </Text>
+          </Pressable>
         </View>
 
         {/* Search bar */}
@@ -334,6 +384,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 16,
     marginBottom: 20,
+  },
+  tabToggle: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  tabToggleItem: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   searchContainer: {
     flexDirection: 'row',

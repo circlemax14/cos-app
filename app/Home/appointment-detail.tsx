@@ -2,9 +2,10 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import type { Appointment } from '@/services/api/types';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
 const RESOURCE_TYPE_STYLES = {
@@ -27,6 +28,172 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 function formatFullDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function EncounterNarrativeSection({
+  encounterId,
+  colors: themeColors,
+}: {
+  encounterId: string | undefined;
+  colors: any;
+}) {
+  const { getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const { data: narrative, isLoading, isError, refetch } = useEncounterNarrative(encounterId);
+
+  if (!encounterId) return null;
+
+  return (
+    <View style={narrativeStyles.wrapper}>
+      <Text
+        style={[
+          narrativeStyles.sectionTitle,
+          { color: themeColors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any },
+        ]}
+      >
+        VISIT SUMMARY
+      </Text>
+      <View style={[narrativeStyles.card, { backgroundColor: themeColors.card }]}>
+        {isLoading ? (
+          <View style={narrativeStyles.stateRow}>
+            <ActivityIndicator size="small" color={themeColors.tint} />
+            <Text style={{ color: themeColors.subtext, fontSize: getScaledFontSize(14), marginLeft: 10 }}>
+              Generating summary...
+            </Text>
+          </View>
+        ) : isError || !narrative ? (
+          <View style={narrativeStyles.stateRow}>
+            <Text style={{ color: themeColors.subtext, fontSize: getScaledFontSize(14) }}>
+              Unable to generate summary.{' '}
+            </Text>
+            <TouchableOpacity
+              onPress={() => refetch()}
+              accessibilityRole="button"
+              accessibilityLabel="Try again to load visit summary"
+            >
+              <Text
+                style={{
+                  color: themeColors.tint ?? '#1976D2',
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  textDecorationLine: 'underline',
+                }}
+              >
+                Try again
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {/* What happened */}
+            <Text
+              style={[
+                narrativeStyles.subsectionLabel,
+                { color: themeColors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any },
+              ]}
+            >
+              WHAT HAPPENED
+            </Text>
+            <Text
+              style={{
+                color: themeColors.text,
+                fontSize: getScaledFontSize(14),
+                lineHeight: getScaledFontSize(21),
+                marginBottom: 16,
+              }}
+            >
+              {narrative.summary}
+            </Text>
+
+            {/* Key findings */}
+            {narrative.keyFindings.length > 0 ? (
+              <>
+                <Text
+                  style={[
+                    narrativeStyles.subsectionLabel,
+                    { color: themeColors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any },
+                  ]}
+                >
+                  KEY FINDINGS
+                </Text>
+                {narrative.keyFindings.map((finding, i) => (
+                  <View key={i} style={narrativeStyles.bulletRow}>
+                    <Text style={{ color: themeColors.tint ?? '#1976D2', fontSize: getScaledFontSize(14) }}>•</Text>
+                    <Text
+                      style={{
+                        color: themeColors.text,
+                        fontSize: getScaledFontSize(14),
+                        lineHeight: getScaledFontSize(21),
+                        flex: 1,
+                        marginLeft: 8,
+                      }}
+                    >
+                      {finding}
+                    </Text>
+                  </View>
+                ))}
+                <View style={{ height: 16 }} />
+              </>
+            ) : null}
+
+            {/* What's next */}
+            {narrative.followUps.length > 0 ? (
+              <>
+                <Text
+                  style={[
+                    narrativeStyles.subsectionLabel,
+                    { color: themeColors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any },
+                  ]}
+                >
+                  WHAT'S NEXT
+                </Text>
+                {narrative.followUps.map((followUp, i) => (
+                  <View key={i} style={narrativeStyles.bulletRow}>
+                    <Text style={{ color: themeColors.tint ?? '#1976D2', fontSize: getScaledFontSize(14) }}>•</Text>
+                    <Text
+                      style={{
+                        color: themeColors.text,
+                        fontSize: getScaledFontSize(14),
+                        lineHeight: getScaledFontSize(21),
+                        flex: 1,
+                        marginLeft: 8,
+                      }}
+                    >
+                      {followUp}
+                    </Text>
+                  </View>
+                ))}
+                <View style={{ height: 16 }} />
+              </>
+            ) : null}
+
+            {/* Connected to your care */}
+            {narrative.context ? (
+              <>
+                <Text
+                  style={[
+                    narrativeStyles.subsectionLabel,
+                    { color: themeColors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any },
+                  ]}
+                >
+                  CONNECTED TO YOUR CARE
+                </Text>
+                <Text
+                  style={{
+                    color: themeColors.subtext,
+                    fontSize: getScaledFontSize(14),
+                    lineHeight: getScaledFontSize(21),
+                    fontStyle: 'italic',
+                  }}
+                >
+                  {narrative.context}
+                </Text>
+              </>
+            ) : null}
+          </>
+        )}
+      </View>
+    </View>
+  );
 }
 
 function DetailRow({ icon, label, value, colors: themeColors }: { icon: string; label: string; value?: string; colors: any }) {
@@ -67,6 +234,7 @@ export default function AppointmentDetailScreen() {
     );
   }
 
+  const isEncounter = appointment.resourceType === 'Encounter';
   const resStyle = RESOURCE_TYPE_STYLES[appointment.resourceType ?? 'Encounter'];
   const statusStyle = STATUS_COLORS[appointment.status] ?? STATUS_COLORS.finished;
 
@@ -131,6 +299,12 @@ export default function AppointmentDetailScreen() {
             <DetailRow colors={colors} icon="clock" label="End Date" value={formatFullDate(appointment.endDate)} />
           ) : null}
         </View>
+
+        {/* Encounter narrative — only shown for Encounter resource types */}
+        <EncounterNarrativeSection
+          encounterId={isEncounter ? appointment.id : undefined}
+          colors={colors}
+        />
 
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -222,5 +396,41 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+});
+
+const narrativeStyles = StyleSheet.create({
+  wrapper: {
+    marginTop: 24,
+  },
+  sectionTitle: {
+    letterSpacing: 1,
+    marginBottom: 8,
+    paddingLeft: 4,
+    textTransform: 'uppercase',
+  },
+  card: {
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  stateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  subsectionLabel: {
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
   },
 });
