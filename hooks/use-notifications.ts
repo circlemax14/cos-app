@@ -66,6 +66,8 @@ export function useNotifications() {
         router.push('/Home/plan' as never);
       } else if (data?.type === 'NEW_MESSAGE') {
         router.push('/Home/chat' as never);
+      } else if (data?.type === 'RECOMMENDED_APPOINTMENTS') {
+        router.push('/Home/appointments' as never);
       } else {
         router.push('/Home' as never);
       }
