@@ -183,7 +183,7 @@ export default function RecommendedAppointmentsScreen() {
                 marginBottom: 6,
               }}
             >
-              You're all caught up!
+              {"You're all caught up!"}
             </Text>
             <Text
               style={{

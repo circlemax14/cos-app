@@ -256,3 +256,57 @@ export interface EncounterNarrative {
   context: string;
   generatedAt: string;
 }
+
+// ─── Care Gap ─────────────────────────────────────────────────────────────────
+export interface CareGap {
+  id: string;
+  gapType: string;
+  title: string;
+  description: string;
+  relatedConditions: Array<{ name: string; fhirId: string }>;
+  guidelineSource?: string;
+  evidenceSummary: string;
+  priority: 'high' | 'medium' | 'low';
+  overdueDays?: number;
+  detectedBy: 'rule_engine' | 'ai_analysis';
+  status: 'open' | 'addressed' | 'deferred' | 'resolved';
+  detectedAt: string;
+}
+
+export interface CareGapExplanation {
+  explanation: string;
+  risk: string;
+  action: string;
+  generatedAt: string;
+}
+
+// ─── Health Trends ────────────────────────────────────────────────────────────
+
+export interface TrendDataPoint {
+  date: string;
+  value: number;
+  unit: string;
+  encounterId?: string;
+  referenceRange?: { low: number; high: number };
+  interpretation?: 'normal' | 'high' | 'low' | 'critical';
+}
+
+export interface LongitudinalTrend {
+  id: string;
+  metricCode: string;
+  metricName: string;
+  category: 'lab' | 'vital' | 'score';
+  dataPoints: TrendDataPoint[];
+  trendDirection: 'improving' | 'worsening' | 'stable' | 'insufficient_data';
+  trendPercentage?: number;
+  trendPeriod: string;
+  relatedConditions: string[];
+  relatedMedications: string[];
+}
+
+export interface TrendExplanation {
+  explanation: string;
+  factors: string[];
+  recommendation: string;
+  generatedAt: string;
+}
