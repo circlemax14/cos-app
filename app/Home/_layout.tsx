@@ -228,6 +228,14 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="linked-accounts"
+        options={{
+          title: 'Linked Accounts',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );

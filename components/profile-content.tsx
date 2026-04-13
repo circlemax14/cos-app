@@ -376,6 +376,16 @@ export function ProfileContent({
               onPress={() => router.push('/Home/security-settings' as never)}
             />
           </Card>
+
+          <Card style={styles.menuCard}>
+            <List.Item
+              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Linked Accounts</Text>}
+              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Connect Google or Apple</Text>}
+              left={(props) => <Icon {...props} source="link-variant" size={getScaledFontSize(40)} />}
+              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+              onPress={() => router.push('/Home/linked-accounts' as never)}
+            />
+          </Card>
         </View>
       )}
 
