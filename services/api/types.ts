@@ -279,3 +279,34 @@ export interface CareGapExplanation {
   action: string;
   generatedAt: string;
 }
+
+// ─── Health Trends ────────────────────────────────────────────────────────────
+
+export interface TrendDataPoint {
+  date: string;
+  value: number;
+  unit: string;
+  encounterId?: string;
+  referenceRange?: { low: number; high: number };
+  interpretation?: 'normal' | 'high' | 'low' | 'critical';
+}
+
+export interface LongitudinalTrend {
+  id: string;
+  metricCode: string;
+  metricName: string;
+  category: 'lab' | 'vital' | 'score';
+  dataPoints: TrendDataPoint[];
+  trendDirection: 'improving' | 'worsening' | 'stable' | 'insufficient_data';
+  trendPercentage?: number;
+  trendPeriod: string;
+  relatedConditions: string[];
+  relatedMedications: string[];
+}
+
+export interface TrendExplanation {
+  explanation: string;
+  factors: string[];
+  recommendation: string;
+  generatedAt: string;
+}

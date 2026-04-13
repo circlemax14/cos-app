@@ -194,6 +194,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="health-trends"
+        options={{
+          title: 'Health Trends',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="allergies"
         options={{
           title: 'Allergies',
