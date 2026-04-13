@@ -68,6 +68,8 @@ export function useNotifications() {
         router.push('/Home/chat' as never);
       } else if (data?.type === 'RECOMMENDED_APPOINTMENTS') {
         router.push('/Home/appointments' as never);
+      } else if (data?.type === 'CARE_GAP') {
+        router.push('/Home/care-checklist' as never);
       } else {
         router.push('/Home' as never);
       }
