@@ -197,7 +197,7 @@ function CareGapCard({
           accessibilityLabel={`Mark ${item.title} as scheduled`}
         >
           <Text style={{ color: '#fff', fontSize: getScaledFontSize(13), fontWeight: '600' }}>
-            I've Scheduled This
+            {"I've Scheduled This"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -317,7 +317,7 @@ export default function CareChecklistScreen() {
                 marginBottom: 6,
               }}
             >
-              You're all caught up
+              {"You're all caught up"}
             </Text>
             <Text
               style={{

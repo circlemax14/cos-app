@@ -144,7 +144,7 @@ function EncounterNarrativeSection({
                     { color: themeColors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any },
                   ]}
                 >
-                  WHAT'S NEXT
+                  {"WHAT'S NEXT"}
                 </Text>
                 {narrative.followUps.map((followUp, i) => (
                   <View key={i} style={narrativeStyles.bulletRow}>
