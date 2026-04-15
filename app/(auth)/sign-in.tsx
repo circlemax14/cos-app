@@ -15,6 +15,7 @@ import { signInWithApple, socialSignInWithBackend } from '@/services/social-auth
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useIsFeatureFlagEnabled } from '@/hooks/use-feature-flags';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -27,6 +28,8 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const isAppleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_apple');
+  const isGoogleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_google');
 
   // Google Sign-In via expo-auth-session/providers/google
   const [, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
@@ -151,7 +154,7 @@ export default function SignInScreen() {
         <View style={styles.container}>
           <Image
             source={require('@/assets/images/logo.png')}
-            style={{ width: getScaledFontSize(140), height: getScaledFontSize(140) }}
+            style={{ width: getScaledFontSize(220), height: getScaledFontSize(140) }}
             contentFit="contain"
             accessibilityLabel="App logo"
           />
@@ -232,29 +235,31 @@ export default function SignInScreen() {
             </View>
 
             {/* Google Sign-In */}
-            <Button
-              mode="outlined"
-              onPress={handleGoogleSignIn}
-              loading={googleLoading}
-              disabled={loading || googleLoading}
-              style={styles.socialButton}
-              contentStyle={styles.socialButtonContent}
-              labelStyle={[styles.socialButtonLabel, { fontSize: getScaledFontSize(15) }]}
-              icon={() => (
-                <Image
-                  source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
-                  style={{ width: 20, height: 20 }}
-                  contentFit="contain"
-                  accessibilityLabel=""
-                />
-              )}
-              accessibilityLabel="Continue with Google"
-            >
-              Continue with Google
-            </Button>
+            {isGoogleSignInEnabled && (
+              <Button
+                mode="outlined"
+                onPress={handleGoogleSignIn}
+                loading={googleLoading}
+                disabled={loading || googleLoading}
+                style={styles.socialButton}
+                contentStyle={styles.socialButtonContent}
+                labelStyle={[styles.socialButtonLabel, { fontSize: getScaledFontSize(15) }]}
+                icon={() => (
+                  <Image
+                    source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                    style={{ width: 20, height: 20 }}
+                    contentFit="contain"
+                    accessibilityLabel=""
+                  />
+                )}
+                accessibilityLabel="Continue with Google"
+              >
+                Continue with Google
+              </Button>
+            )}
 
             {/* Apple Sign-In — iOS only */}
-            {Platform.OS === 'ios' && (
+            {isAppleSignInEnabled && Platform.OS === 'ios' && (
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
                 buttonStyle={

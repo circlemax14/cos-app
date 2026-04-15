@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 
-export type Feature = 'HEALTH_CHAT' | 'CARE_PLAN' | 'PROXY_MANAGEMENT' | 'MEDICAL_RECORDS' | 'HEALTH_METRICS' | 'INTEGRATIVE_HEALTH' | 'APPOINTMENTS' | 'REPORTS' | 'INBOX'
+export type Feature = 'HEALTH_CHAT' | 'CARE_PLAN' | 'PROXY_MANAGEMENT' | 'MEDICAL_RECORDS' | 'HEALTH_METRICS' | 'INTEGRATIVE_HEALTH' | 'APPOINTMENTS' | 'REPORTS' | 'INBOX' | 'CONNECT_CLINIC'
 
 export interface PermissionEntry { enabled: boolean; source: 'role' | 'care_manager'; overriddenBy?: string; overriddenAt?: string }
 
