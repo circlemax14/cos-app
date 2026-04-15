@@ -13,12 +13,14 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions';
 
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
 export default function ConnectClinicsScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const isConnectClinicEnabled = useIsFeatureEnabled('CONNECT_CLINIC');
   const navigating = useRef(false);
   const [connectedCount, setConnectedCount] = useState(0);
   const [showProcessingModal, setShowProcessingModal] = useState(false);
@@ -77,6 +79,16 @@ export default function ConnectClinicsScreen() {
     setShowProcessingModal(false);
     router.back();
   };
+
+  if (!isConnectClinicEnabled) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text, textAlign: 'center', marginTop: 40, fontSize: getScaledFontSize(16) }}>
+          This feature is not available for your account.
+        </Text>
+      </View>
+    );
+  }
 
   if (!FASTEN_PUBLIC_ID) {
     return (
