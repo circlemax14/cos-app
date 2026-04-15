@@ -1,17 +1,22 @@
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, StatusBar } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Text, TextInput } from 'react-native-paper';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signIn, UserProfile } from '@/services/auth';
+import { signInWithApple, socialSignInWithBackend } from '@/services/social-auth';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
@@ -20,7 +25,30 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+
+  // Google Sign-In via expo-auth-session/providers/google
+  const [, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  });
+
+  // Respond to Google auth result when it changes
+  React.useEffect(() => {
+    if (googleResponse?.type === 'success') {
+      const { id_token } = googleResponse.params;
+      handleGoogleToken(id_token);
+    } else if (googleResponse?.type === 'error' || googleResponse?.type === 'dismiss') {
+      setGoogleLoading(false);
+      if (googleResponse?.type === 'error') {
+        setError('Google sign-in failed. Please try again.');
+      }
+    }
+  // handleGoogleToken is defined below and stable — safe to omit from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleResponse]);
 
   const handleRoute = async (user: UserProfile) => {
     if (!user.termsAccepted) {
@@ -67,6 +95,46 @@ export default function SignInScreen() {
     }
   };
 
+  const handleGoogleToken = async (idToken: string) => {
+    setGoogleLoading(true);
+    setError(undefined);
+    const res = await socialSignInWithBackend('google', { idToken });
+    setGoogleLoading(false);
+    if (res.success && res.user) {
+      await handleRoute(res.user as unknown as UserProfile);
+    } else {
+      setError(res.message ?? 'Google sign-in failed. Please try again.');
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setError(undefined);
+    await promptGoogleAsync();
+    // Result handled in the googleResponse useEffect above
+  };
+
+  const handleAppleSignIn = async () => {
+    try {
+      setLoading(true);
+      setError(undefined);
+      const { identityToken, fullName } = await signInWithApple();
+      const res = await socialSignInWithBackend('apple', { identityToken, fullName });
+      setLoading(false);
+      if (res.success && res.user) {
+        await handleRoute(res.user as unknown as UserProfile);
+      } else {
+        setError(res.message ?? 'Apple sign-in failed. Please try again.');
+      }
+    } catch (err: unknown) {
+      setLoading(false);
+      const appleErr = err as { code?: string };
+      // ERR_REQUEST_CANCELED means user tapped Cancel — don't show an error
+      if (appleErr.code !== 'ERR_REQUEST_CANCELED') {
+        setError('Apple sign-in failed. Please try again.');
+      }
+    }
+  };
 
   return (
     <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
@@ -145,7 +213,7 @@ export default function SignInScreen() {
               buttonColor={loading ? '#9ca3af' : '#2563eb'}
               onPress={onSubmit}
               loading={loading}
-              disabled={loading}
+              disabled={loading || googleLoading}
               style={styles.submit}
               contentStyle={styles.submitContent}
               labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
@@ -153,6 +221,52 @@ export default function SignInScreen() {
             >
               Sign In
             </Button>
+
+            {/* Social sign-in divider */}
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
+              <Text style={[styles.dividerText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                or
+              </Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
+            </View>
+
+            {/* Google Sign-In */}
+            <Button
+              mode="outlined"
+              onPress={handleGoogleSignIn}
+              loading={googleLoading}
+              disabled={loading || googleLoading}
+              style={styles.socialButton}
+              contentStyle={styles.socialButtonContent}
+              labelStyle={[styles.socialButtonLabel, { fontSize: getScaledFontSize(15) }]}
+              icon={() => (
+                <Image
+                  source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                  style={{ width: 20, height: 20 }}
+                  contentFit="contain"
+                  accessibilityLabel=""
+                />
+              )}
+              accessibilityLabel="Continue with Google"
+            >
+              Continue with Google
+            </Button>
+
+            {/* Apple Sign-In — iOS only */}
+            {Platform.OS === 'ios' && (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={
+                  settings.isDarkTheme
+                    ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                    : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                }
+                cornerRadius={24}
+                style={styles.appleButton}
+                onPress={handleAppleSignIn}
+              />
+            )}
 
             <View style={styles.switchRow}>
               <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
@@ -219,6 +333,33 @@ const styles = StyleSheet.create({
   submitLabel: {
     color: 'white',
     fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+    gap: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontWeight: '500',
+  },
+  socialButton: {
+    borderRadius: 24,
+    borderColor: '#D1D5DB',
+  },
+  socialButtonContent: {
+    minHeight: 48,
+  },
+  socialButtonLabel: {
+    fontWeight: '500',
+  },
+  appleButton: {
+    width: '100%',
+    height: 48,
   },
   switchRow: {
     flexDirection: 'row',
