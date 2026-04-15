@@ -2,7 +2,7 @@
   "expo": {
     "name": "CSH",
     "slug": "cos",
-    "version": "1.0.2",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "cos",
@@ -10,20 +10,21 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.joinabrightfuture.cos",
+      "bundleIdentifier": "ai.circlesupporthealth.csh",
       "buildNumber": "2",
       "associatedDomains": [
-        "applinks:joinabrightfuture.com",
-        "applinks:*.joinabrightfuture.com"
+        "applinks:circlesupporthealth.ai",
+        "applinks:*.circlesupporthealth.ai"
       ],
       "appleTeamId": "Y9J46AL3G2",
       "infoPlist": {
         "NSCameraUsageDescription": "BrightFuture needs camera access to photograph documents and prescriptions.",
         "NSContactsUsageDescription": "BrightFuture uses contacts to help you add emergency contacts quickly.",
         "NSPhotoLibraryUsageDescription": "BrightFuture needs photo library access to upload health documents.",
-        "NSUserTrackingUsageDescription": "BrightFuture uses anonymous analytics to improve the app experience.",
         "NSFaceIDUsageDescription": "BrightFuture uses Face ID to securely unlock your health information.",
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -34,7 +35,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.joinabrightfuture.cos",
+      "package": "ai.circlesupporthealth.csh",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -42,12 +43,12 @@
           "data": [
             {
               "scheme": "https",
-              "host": "joinabrightfuture.com",
+              "host": "circlesupporthealth.ai",
               "pathPrefix": "/"
             },
             {
               "scheme": "https",
-              "host": "*.joinabrightfuture.com",
+              "host": "*.circlesupporthealth.ai",
               "pathPrefix": "/"
             }
           ],
@@ -72,7 +73,7 @@
       "fallbackToCacheTimeout": 5000,
       "url": "https://u.expo.dev/30bc49bd-ee12-4a06-86b3-ee4f23690114"
     },
-    "runtimeVersion": "1.0.2",
+    "runtimeVersion": "1.0.4",
     "plugins": [
       "expo-router",
       "expo-updates",
@@ -90,7 +91,6 @@
       ],
       "expo-sqlite",
       "expo-secure-store",
-      "expo-tracking-transparency",
       [
         "expo-notifications",
         {

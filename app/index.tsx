@@ -116,7 +116,7 @@ export default function SplashGate() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Image
         source={require('@/assets/images/logo.png')}
-        style={{ width: getScaledFontSize(140), height: getScaledFontSize(140) }}
+        style={{ width: getScaledFontSize(220), height: getScaledFontSize(140) }}
         contentFit="contain"
       />
       <ActivityIndicator size="large" color={colors.primary} />

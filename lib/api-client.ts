@@ -80,6 +80,25 @@ apiClient.interceptors.response.use(
           throw error;
         }
 
+        // Check if this is a social auth token (app-signed JWT, not Cognito)
+        // Social tokens have tokenType: 'social' in the payload
+        const currentToken = await getAccessToken();
+        let isSocialToken = false;
+        if (currentToken) {
+          try {
+            const payload = JSON.parse(atob(currentToken.split('.')[1]));
+            isSocialToken = payload.tokenType === 'social';
+          } catch {
+            // Not a valid JWT — treat as Cognito
+          }
+        }
+
+        if (isSocialToken) {
+          // Social tokens can't be refreshed via Cognito — force re-authentication
+          await forceSignOut();
+          throw error;
+        }
+
         // Dynamic import to avoid circular dependency
         const { refreshCognitoTokens } = await import('./cognito');
         // We need a username for refresh — stored separately or decoded from id token

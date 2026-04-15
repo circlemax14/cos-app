@@ -94,7 +94,7 @@ export default function VerifyEmailScreen() {
           <View style={styles.container}>
             <Image
               source={require('@/assets/images/logo.png')}
-              style={{ width: getScaledFontSize(100), height: getScaledFontSize(100) }}
+              style={{ width: getScaledFontSize(160), height: getScaledFontSize(100) }}
               contentFit="contain"
               accessibilityLabel="App logo"
             />

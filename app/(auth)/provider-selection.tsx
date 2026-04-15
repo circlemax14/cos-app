@@ -39,8 +39,8 @@ export default function ProviderSelectionScreen() {
         <View style={[styles.container, { padding: getScaledFontSize(24), gap: getScaledFontSize(24) }]}>
           <Image 
             source={require('@/assets/images/logo.png')} 
-            style={[{ width: getScaledFontSize(140), height: getScaledFontSize(140) }]} 
-            contentFit="contain" 
+            style={[{ width: getScaledFontSize(220), height: getScaledFontSize(140) }]}
+            contentFit="contain"
           />
           
           <View style={styles.content}>

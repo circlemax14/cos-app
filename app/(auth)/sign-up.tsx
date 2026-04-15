@@ -56,7 +56,7 @@ export default function SignUpScreen() {
         keyboardDismissMode="on-drag"
       >
         <View style={styles.container}>
-          <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(140), height: getScaledFontSize(140) }]} contentFit="contain" />
+          <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(220), height: getScaledFontSize(140) }]} contentFit="contain" />
           <View style={styles.form}>
             <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}>Sign Up</Text>
             <TextInput

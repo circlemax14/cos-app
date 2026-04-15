@@ -1,7 +1,17 @@
+import axios from 'axios';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { apiClient } from '@/lib/api-client';
 import { storeTokens } from '@/lib/auth-tokens';
+
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
+
+// Public API client — no auth interceptor, used for social sign-in endpoints
+const publicApi = axios.create({
+  baseURL: API_BASE,
+  timeout: 30_000,
+  headers: { 'Content-Type': 'application/json' },
+});
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -47,7 +57,8 @@ export async function socialSignInWithBackend(
   try {
     const endpoint =
       provider === 'google' ? '/v1/auth/social/google' : '/v1/auth/social/apple';
-    const res = await apiClient.post(endpoint, payload);
+    // Use publicApi (no auth interceptor) to avoid sending stale tokens
+    const res = await publicApi.post(endpoint, payload);
     const data: Record<string, unknown> = res.data?.data ?? res.data;
 
     const accessToken = data.accessToken as string | undefined;
