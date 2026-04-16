@@ -164,8 +164,10 @@ export default function AgencyDetailScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <IconSymbol name="chevron.right" size={getScaledFontSize(24)} color={colors.text} style={{ transform: [{ rotate: '180deg' }] }} />
+          <View style={{ width: getScaledFontSize(24) }} />
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityLabel="Close">
+            <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
           </TouchableOpacity>
         </View>
         <View style={styles.loadingContainer}>
@@ -180,13 +182,13 @@ export default function AgencyDetailScreen() {
       <ScrollView style={{ flex: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.background }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <IconSymbol name="chevron.right" size={getScaledFontSize(24)} color={colors.text} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
+          <View style={{ width: getScaledFontSize(24) }} />
           <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>
             Agency Details
           </Text>
-          <View style={{ width: getScaledFontSize(24) }} />
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityLabel="Close">
+            <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
       {/* Agency Info Card */}
@@ -473,7 +475,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
-  backButton: {
+  closeButton: {
     padding: 4,
   },
   headerTitle: {
