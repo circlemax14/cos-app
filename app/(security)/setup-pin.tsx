@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NumberPad } from '@/components/ui/number-pad';
@@ -35,6 +36,12 @@ export default function SetupPinScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
+        <Image
+          source={require('@/assets/images/logo.png')}
+          style={{ width: getScaledFontSize(180), height: getScaledFontSize(110), marginBottom: Spacing.sm }}
+          contentFit="contain"
+          accessibilityLabel="Circle Support Health logo"
+        />
         <Text style={styles.icon}>🔒</Text>
         <Text
           style={[
@@ -70,7 +77,7 @@ export default function SetupPinScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { alignItems: 'center', paddingTop: 60, paddingHorizontal: Spacing.screenPadding },
+  content: { alignItems: 'center', paddingTop: 20, paddingHorizontal: Spacing.screenPadding },
   icon: { fontSize: 48, marginBottom: Spacing.md },
   title: { textAlign: 'center', marginBottom: Spacing.xs },
   subtitle: { textAlign: 'center', marginBottom: Spacing.sm },

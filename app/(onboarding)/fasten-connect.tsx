@@ -2,6 +2,7 @@ import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-n
 import { router } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
@@ -163,7 +164,7 @@ export default function FastenConnectScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {connectedCount > 0 && (
         <View style={styles.successBanner}>
           <Text style={[styles.successBannerText, { fontSize: getScaledFontSize(14) }]}>
@@ -184,7 +185,7 @@ export default function FastenConnectScreen() {
           onEventBus={handleEvent}
         />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

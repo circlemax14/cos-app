@@ -12,11 +12,13 @@
         "buildConfiguration": "Debug"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://n3zgi6r0sb.execute-api.us-east-1.amazonaws.com/dev/",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.dev.circlesupporthealth.ai/",
         "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_T5uZyFxGC",
         "EXPO_PUBLIC_COGNITO_CLIENT_ID": "shrg82vtrbgqjanmh5hn247mj",
         "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
-        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_test_et389iol5extr2acodl49rf70y18hw6c4k495uvm0sf4x"
+        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_test_et389iol5extr2acodl49rf70y18hw6c4k495uvm0sf4x",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "819915532646-mr5a90b6pbk0tvjl9d7bon3l1lpcqrjq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "819915532646-hhdggafmagr2qa2g64jkt49hidfbj9t8.apps.googleusercontent.com"
       }
     },
     "preview": {
@@ -27,11 +29,13 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://8byurefjb2.execute-api.us-east-1.amazonaws.com/staging/",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.staging.circlesupporthealth.ai/",
         "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_T5uZyFxGC",
         "EXPO_PUBLIC_COGNITO_CLIENT_ID": "shrg82vtrbgqjanmh5hn247mj",
         "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
-        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_test_et389iol5extr2acodl49rf70y18hw6c4k495uvm0sf4x"
+        "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_test_et389iol5extr2acodl49rf70y18hw6c4k495uvm0sf4x",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "819915532646-mr5a90b6pbk0tvjl9d7bon3l1lpcqrjq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "819915532646-hhdggafmagr2qa2g64jkt49hidfbj9t8.apps.googleusercontent.com"
       }
     },
     "production": {
@@ -42,12 +46,14 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://fyi3cszmpj.execute-api.us-east-1.amazonaws.com/production/",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.circlesupporthealth.ai/",
         "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-east-1_OBayj1vez",
         "EXPO_PUBLIC_COGNITO_CLIENT_ID": "5cku8qg4b3obennn0c8e1uldev",
         "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
         "EXPO_PUBLIC_FASTEN_PUBLIC_ID": "public_live_idoaadrtvre70642nsw24i8xipdkcfo8rwpn6ue51ksiy",
-        "EXPO_PUBLIC_USE_MOCK_DATA": "false"
+        "EXPO_PUBLIC_USE_MOCK_DATA": "false",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "819915532646-mr5a90b6pbk0tvjl9d7bon3l1lpcqrjq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "819915532646-hhdggafmagr2qa2g64jkt49hidfbj9t8.apps.googleusercontent.com"
       }
     }
   },
@@ -55,13 +61,13 @@
     "preview": {
       "ios": {
         "appleTeamId": "Y9J46AL3G2",
-        "ascAppId": "6758455413"
+        "ascAppId": "6762306727"
       }
     },
     "production": {
       "ios": {
         "appleTeamId": "Y9J46AL3G2",
-        "ascAppId": "6758455413"
+        "ascAppId": "6762306727"
       }
     }
   }
