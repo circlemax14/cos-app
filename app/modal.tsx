@@ -499,7 +499,7 @@ export default function ModalScreen() {
                               <TouchableOpacity
                                 style={[styles.listItemContent, { marginLeft: getScaledFontSize(16), flex: 1 }]}
                                 onPress={() => {
-                                  router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
+                                  router.push(`/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
                                 }}
                                 activeOpacity={0.7}
                               >

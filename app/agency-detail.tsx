@@ -1,14 +1,32 @@
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router } from 'expo-router';
-import React, { useState, useCallback } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal, RefreshControl } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { Card, Button } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getCareManagerAgencyById, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { apiClient } from '@/lib/api-client';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+
+/**
+ * Dismiss the agency detail modal. Prefer `router.dismiss` (proper modal
+ * close — pops the modal off the root Stack) and fall back to `router.back`
+ * only if we can go back. If neither works (deep-link entry point) send the
+ * user to the Home tab instead of leaving them on a blank screen.
+ */
+function closeModal() {
+  if (router.canDismiss()) {
+    router.dismiss();
+    return;
+  }
+  if (router.canGoBack()) {
+    router.back();
+    return;
+  }
+  router.replace('/Home' as never);
+}
 
 export default function AgencyDetailScreen() {
   const params = useLocalSearchParams();
@@ -18,9 +36,8 @@ export default function AgencyDetailScreen() {
   const [agency, setAgency] = useState<CareManagerAgency | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
-  const [patientAgencyId, setPatientAgencyId] = useState<string | null>(null);
+  const [, setPatientAgencyId] = useState<string | null>(null);
 
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
@@ -67,24 +84,7 @@ export default function AgencyDetailScreen() {
     loadData();
   }, [agencyId, agencyName]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      if (agencyId) {
-        const agencyData = await getCareManagerAgencyById(agencyId);
-        if (agencyData) {
-          setAgency(agencyData);
-        }
-      }
-    } catch {
-      // silent fail
-    } finally {
-      setRefreshing(false);
-    }
-  }, [agencyId]);
-
   const handleRequestCareManager = () => {
-    // Show consent modal first
     setShowConsentModal(true);
   };
 
@@ -97,13 +97,9 @@ export default function AgencyDetailScreen() {
       Alert.alert(
         'Request Submitted',
         'Your request for a care manager has been submitted successfully. You will be contacted within 24-48 hours.',
-        [
-          {
-            text: 'OK',
-          },
-        ]
+        [{ text: 'OK' }]
       );
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to submit request. Please try again.');
     } finally {
       setIsRequesting(false);
@@ -111,7 +107,6 @@ export default function AgencyDetailScreen() {
   };
 
   const handleConsentNo = () => {
-    // Close modal without sending request
     setShowConsentModal(false);
   };
 
@@ -125,7 +120,7 @@ export default function AgencyDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to make a phone call');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to make a phone call');
     }
   };
@@ -140,7 +135,7 @@ export default function AgencyDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to send an email');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to send an email');
     }
   };
@@ -155,7 +150,7 @@ export default function AgencyDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to open website');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to open website');
     }
   };
@@ -164,8 +159,10 @@ export default function AgencyDetailScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <IconSymbol name="chevron.right" size={getScaledFontSize(24)} color={colors.text} style={{ transform: [{ rotate: '180deg' }] }} />
+          <View style={{ width: getScaledFontSize(24) }} />
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={closeModal} style={styles.closeButton} accessibilityLabel="Close">
+            <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
           </TouchableOpacity>
         </View>
         <View style={styles.loadingContainer}>
@@ -177,16 +174,18 @@ export default function AgencyDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView style={{ flex: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
+      {/* No RefreshControl — pulling the sheet down triggers the native
+          modal dismiss gesture (iOS) or no-op (Android). */}
+      <ScrollView style={{ flex: 1 }}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.background }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <IconSymbol name="chevron.right" size={getScaledFontSize(24)} color={colors.text} style={{ transform: [{ rotate: '180deg' }] }} />
-          </TouchableOpacity>
+          <View style={{ width: getScaledFontSize(24) }} />
           <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>
             Agency Details
           </Text>
-          <View style={{ width: getScaledFontSize(24) }} />
+          <TouchableOpacity onPress={closeModal} style={styles.closeButton} accessibilityLabel="Close">
+            <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
       {/* Agency Info Card */}
@@ -473,7 +472,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
-  backButton: {
+  closeButton: {
     padding: 4,
   },
   headerTitle: {
