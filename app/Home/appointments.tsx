@@ -3,10 +3,33 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
-import type { Appointment } from '@/services/api/types';
+import { useRecommendedAppointments, useUpdateRecommendedAppointmentStatus } from '@/hooks/use-recommended-appointments';
+import type { Appointment, RecommendedAppointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
+
+const URGENCY_CONFIG: Record<
+  RecommendedAppointment['urgency'],
+  { label: string; indicator: string; bg: string; text: string }
+> = {
+  urgent: { label: 'Urgent', indicator: '🔴', bg: '#FFEBEE', text: '#C62828' },
+  soon: { label: 'Soon', indicator: '🟡', bg: '#FFF8E1', text: '#E65100' },
+  routine: { label: 'Routine', indicator: '⚪', bg: '#F5F5F5', text: '#616161' },
+};
+
+const URGENCY_ORDER: Record<RecommendedAppointment['urgency'], number> = {
+  urgent: 0,
+  soon: 1,
+  routine: 2,
+};
+
+const SOURCE_LABELS: Record<RecommendedAppointment['sourceType'], string> = {
+  service_request: "Doctor's order",
+  care_plan: 'Care plan',
+  encounter_pattern: 'Visit pattern detected',
+  nlp_extraction: 'Visit notes',
+};
 
 type AppointmentTab = 'past' | 'recommended';
 
@@ -42,6 +65,13 @@ export default function AppointmentsScreen() {
   const [activeTab, setActiveTab] = useState<AppointmentTab>('past');
 
   const { data, isLoading, isError, refetch } = useAppointments();
+  const {
+    data: recommendations,
+    isLoading: isLoadingRecs,
+    isError: isErrorRecs,
+    refetch: refetchRecs,
+  } = useRecommendedAppointments({ status: 'pending' });
+  const { mutate: updateRecStatus } = useUpdateRecommendedAppointmentStatus();
 
   const appointments = useMemo(() => {
     const all = data ?? [];
@@ -60,9 +90,51 @@ export default function AppointmentsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refetch();
+    // Refetch both — the recommended tab refresh also triggers server-side regen
+    await Promise.all([refetch(), refetchRecs()]);
     setRefreshing(false);
-  }, [refetch]);
+  }, [refetch, refetchRecs]);
+
+  const groupedRecommendations = useMemo(() => {
+    const items = recommendations ?? [];
+    const groups: Partial<Record<RecommendedAppointment['urgency'], RecommendedAppointment[]>> = {};
+    for (const item of items) {
+      if (!groups[item.urgency]) groups[item.urgency] = [];
+      groups[item.urgency]!.push(item);
+    }
+    return (['urgent', 'soon', 'routine'] as const)
+      .filter((u) => (groups[u]?.length ?? 0) > 0)
+      .map((u) => ({ urgency: u, items: groups[u]!.sort((a, b) => a.recommendedByDate.localeCompare(b.recommendedByDate)) }));
+  }, [recommendations]);
+
+  const handleMarkScheduled = useCallback(
+    (item: RecommendedAppointment) => {
+      Alert.alert(
+        'Mark as Scheduled',
+        `Have you scheduled "${item.title}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Yes, I scheduled it', onPress: () => updateRecStatus({ id: item.id, status: 'scheduled' }) },
+        ],
+      );
+    },
+    [updateRecStatus],
+  );
+
+  const handleDismissRec = useCallback(
+    (item: RecommendedAppointment) => {
+      Alert.alert(
+        'Dismiss Recommendation',
+        `Dismiss "${item.title}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Already have one', onPress: () => updateRecStatus({ id: item.id, status: 'dismissed', reason: 'Already have an appointment scheduled' }) },
+          { text: 'Dismiss', style: 'destructive', onPress: () => updateRecStatus({ id: item.id, status: 'dismissed' }) },
+        ],
+      );
+    },
+    [updateRecStatus],
+  );
 
   const groupedByDate = useMemo(() => {
     const groups: Record<string, Appointment[]> = {};
@@ -180,10 +252,7 @@ export default function AppointmentsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => {
-              setActiveTab('recommended');
-              router.push('/Home/recommended-appointments' as never);
-            }}
+            onPress={() => setActiveTab('recommended')}
             style={[
               styles.tabToggleItem,
               activeTab === 'recommended' && { backgroundColor: colors.tint },
@@ -204,6 +273,8 @@ export default function AppointmentsScreen() {
           </Pressable>
         </View>
 
+        {activeTab === 'past' && (
+        <>
         {/* Search bar */}
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <IconSymbol name="magnifyingglass" size={getScaledFontSize(18)} color={colors.subtext} />
@@ -353,6 +424,121 @@ export default function AppointmentsScreen() {
               })}
             </View>
           ))
+        )}
+        </>
+        )}
+
+        {activeTab === 'recommended' && (
+          <View>
+            {isLoadingRecs ? (
+              <View style={styles.centered}>
+                <ActivityIndicator size="large" color={colors.tint} />
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12, textAlign: 'center' }}>
+                  Generating AI-powered recommendations from your records...
+                </Text>
+              </View>
+            ) : isErrorRecs ? (
+              <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
+                <Text style={{ fontSize: 48, marginBottom: 16 }}>😔</Text>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, textAlign: 'center', marginBottom: 12 }}>
+                  Failed to load recommendations
+                </Text>
+                <TouchableOpacity
+                  onPress={() => refetchRecs()}
+                  style={[styles.retryButton, { backgroundColor: colors.tint }]}
+                  accessibilityRole="button"
+                >
+                  <Text style={{ color: '#fff', fontSize: getScaledFontSize(16) }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : groupedRecommendations.length === 0 ? (
+              <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
+                <Text style={{ fontSize: 48, marginBottom: 16 }}>✅</Text>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, textAlign: 'center', marginBottom: 6 }}>
+                  {"You're all caught up!"}
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'center', lineHeight: getScaledFontSize(20) }}>
+                  No pending appointment recommendations at this time.
+                </Text>
+              </View>
+            ) : (
+              groupedRecommendations.map(({ urgency, items }) => {
+                const urgencyConfig = URGENCY_CONFIG[urgency];
+                return (
+                  <View key={urgency} style={styles.dateGroup}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingLeft: 4 }}>
+                      <Text style={{ fontSize: getScaledFontSize(14) }}>{urgencyConfig.indicator}</Text>
+                      <Text
+                        style={{
+                          color: urgencyConfig.text,
+                          fontSize: getScaledFontSize(13),
+                          fontWeight: getScaledFontWeight(600) as any,
+                          marginLeft: 6,
+                          letterSpacing: 0.5,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {urgencyConfig.label}
+                      </Text>
+                    </View>
+                    {items.map((item) => (
+                      <View
+                        key={item.id}
+                        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: urgencyConfig.text, borderLeftWidth: 4 }]}
+                      >
+                        <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginBottom: 4 }}>
+                          {item.title}
+                        </Text>
+                        {item.specialty ? (
+                          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 2 }}>
+                            {item.specialty}
+                          </Text>
+                        ) : null}
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 8 }} numberOfLines={2}>
+                          {item.reason}
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                          <View style={[styles.badge, { backgroundColor: urgencyConfig.bg }]}>
+                            <Text style={{ color: urgencyConfig.text, fontSize: getScaledFontSize(11), fontWeight: '600' }}>
+                              By {formatDate(item.recommendedByDate)}
+                            </Text>
+                          </View>
+                          <View style={[styles.badge, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
+                            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
+                              {SOURCE_LABELS[item.sourceType]}
+                            </Text>
+                          </View>
+                        </View>
+                        {item.relatedCondition ? (
+                          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontStyle: 'italic', marginTop: 4, marginBottom: 4 }}>
+                            Related: {item.relatedCondition}
+                          </Text>
+                        ) : null}
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                          <TouchableOpacity
+                            onPress={() => handleMarkScheduled(item)}
+                            style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center', minHeight: 44, backgroundColor: colors.tint }}
+                            accessibilityRole="button"
+                          >
+                            <Text style={{ color: '#fff', fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                              I Scheduled This
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleDismissRec(item)}
+                            style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center', minHeight: 44, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+                            accessibilityRole="button"
+                          >
+                            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>Dismiss</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })
+            )}
+          </View>
         )}
 
         <View style={{ height: 40 }} />

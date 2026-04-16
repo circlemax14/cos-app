@@ -15,7 +15,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
 import { fetchAppointments } from '@/services/api/appointments';
 import { fetchPatientInfo } from '@/services/api/patient';
-import type { Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
+import type { Provider as FastenProvider , Appointment as FastenAppointment, RecommendedAppointment } from '@/services/api/types';
+import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -2241,6 +2242,21 @@ export default function HomeScreen() {
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Recommended appointments (AI-generated). Pull the top-3 urgent/soon/routine
+  // and show them instead of the raw upcoming appointments list.
+  const { data: recommendedData } = useRecommendedAppointments({ status: 'pending' });
+  const topRecommendations: RecommendedAppointment[] = React.useMemo(() => {
+    const all = recommendedData ?? [];
+    const urgencyOrder: Record<RecommendedAppointment['urgency'], number> = { urgent: 0, soon: 1, routine: 2 };
+    return [...all]
+      .sort((a, b) => {
+        const u = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
+        if (u !== 0) return u;
+        return a.recommendedByDate.localeCompare(b.recommendedByDate);
+      })
+      .slice(0, 3);
+  }, [recommendedData]);
+
   const circleProviders = React.useMemo(
     () => selectedProviders.slice(0, MAX_SELECTED_PROVIDERS),
     [selectedProviders]
@@ -2656,7 +2672,7 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {upcomingAppointments.length > 0 && (
+        {topRecommendations.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
@@ -2665,9 +2681,9 @@ export default function HomeScreen() {
                 fontWeight: getScaledFontWeight(600) as any,
                 color: colors.text,
               }
-            ]}>Upcoming Appointments</Text>
+            ]}>Recommended Appointments</Text>
             <TouchableOpacity
-              onPress={() => router.push('/appointments-modal')}
+              onPress={() => router.push('/Home/appointments')}
               style={[
                 styles.deckContainer,
                 {
@@ -2677,23 +2693,28 @@ export default function HomeScreen() {
                   ),
                 }
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="View all recommended appointments"
             >
-              {upcomingAppointments.slice(0, 3).map((appointment, index) => {
-                const appointmentDate = new Date(appointment.date);
-                const dateLabel = appointmentDate.toLocaleDateString('en-US', {
+              {topRecommendations.map((rec, index) => {
+                const recDate = new Date(rec.recommendedByDate + 'T00:00:00');
+                const dateLabel = recDate.toLocaleDateString('en-US', {
                   weekday: 'short',
                   month: 'short',
                   day: 'numeric',
                 });
-                const title = appointment.doctorName
-                  ? `${appointment.type || 'Appointment'} - ${appointment.doctorName}`
-                  : appointment.type || 'Appointment';
-                const iconNames = ['calendar-clock', 'stethoscope', 'tooth'];
+                const urgencyIcon: Record<RecommendedAppointment['urgency'], string> = {
+                  urgent: 'alert-circle-outline',
+                  soon: 'clock-alert-outline',
+                  routine: 'calendar-check',
+                };
+                const iconName = urgencyIcon[rec.urgency];
                 const cardStyle = [styles.firstCard, styles.secondCard, styles.thirdCard][index] || styles.firstCard;
+                const title = rec.specialty ? `${rec.title} — ${rec.specialty}` : rec.title;
 
                 return (
                   <Card
-                    key={appointment.id}
+                    key={rec.id}
                     style={[
                       styles.appointmentCard,
                       cardStyle,
@@ -2717,7 +2738,7 @@ export default function HomeScreen() {
                       }
                     ]}>
                       <View style={{ transform: [{ scale: getScaledFontSize(24) / 24 }] }}>
-                        <List.Icon icon={iconNames[index] || 'calendar'} />
+                        <List.Icon icon={iconName} />
                       </View>
                       <View style={[
                         styles.listItemContent,
@@ -2726,21 +2747,27 @@ export default function HomeScreen() {
                           flexShrink: 1,
                         }
                       ]}>
-                        <Text style={[
-                          styles.appointmentTitle,
-                          {
-                            fontSize: getScaledFontSize(16),
-                            fontWeight: settings.isBoldTextEnabled ? '700' : '500',
-                            marginBottom: getScaledFontSize(2),
-                          }
-                        ]}>{title}</Text>
-                        <Text style={[
-                          styles.appointmentDescription,
-                          {
-                            fontSize: getScaledFontSize(14),
-                            fontWeight: settings.isBoldTextEnabled ? '600' : '400'
-                          }
-                        ]}>{`${dateLabel} · ${appointment.time}`}</Text>
+                        <Text
+                          style={[
+                            styles.appointmentTitle,
+                            {
+                              fontSize: getScaledFontSize(16),
+                              fontWeight: settings.isBoldTextEnabled ? '700' : '500',
+                              marginBottom: getScaledFontSize(2),
+                            }
+                          ]}
+                          numberOfLines={1}
+                        >{title}</Text>
+                        <Text
+                          style={[
+                            styles.appointmentDescription,
+                            {
+                              fontSize: getScaledFontSize(14),
+                              fontWeight: settings.isBoldTextEnabled ? '600' : '400',
+                            }
+                          ]}
+                          numberOfLines={1}
+                        >{`By ${dateLabel} · ${rec.urgency}`}</Text>
                       </View>
                     </View>
                   </Card>
