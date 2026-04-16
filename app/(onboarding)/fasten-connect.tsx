@@ -1,12 +1,13 @@
 import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-native';
 import { router } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
@@ -19,6 +20,22 @@ export default function FastenConnectScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showWidget, setShowWidget] = useState(true);
   const [widgetDismissed, setWidgetDismissed] = useState(false);
+
+  // Guard: if the reviewer / any user has CONNECT_CLINIC disabled by an
+  // admin, never show the Fasten widget. 4 separate routes can land here
+  // (sign-in, index, permissions, terms) so we check at the destination,
+  // not at every source. Wait for permissions to load before deciding —
+  // default-true would flash the widget to a disabled user.
+  const { data: permissions, isLoading: permissionsLoading } = useFeaturePermissions();
+  const connectClinicDisabled =
+    permissions !== undefined && permissions.CONNECT_CLINIC?.enabled === false;
+
+  useEffect(() => {
+    if (connectClinicDisabled && !navigating.current) {
+      navigating.current = true;
+      router.replace('/Home' as never);
+    }
+  }, [connectClinicDisabled]);
 
   const handleEvent = useCallback(async (event: unknown) => {
     let parsed: { event_type?: string; api_mode?: string; data?: Record<string, unknown> } | null = null;
@@ -97,6 +114,17 @@ export default function FastenConnectScreen() {
         <Text style={[styles.errorBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
           EXPO_PUBLIC_FASTEN_PUBLIC_ID is not set. Add it to your .env file and rebuild.
         </Text>
+      </View>
+    );
+  }
+
+  // Wait for feature permissions before rendering the widget. If
+  // CONNECT_CLINIC is disabled, the useEffect above has already kicked
+  // off a redirect to /Home — show a spinner until it completes.
+  if (permissionsLoading || connectClinicDisabled) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
