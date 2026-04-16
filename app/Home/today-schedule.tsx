@@ -4,7 +4,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import React, { useEffect, useState, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
 import { Card, IconButton, List, Button } from 'react-native-paper';
-import { getTodayHealthMetrics, HealthMetrics } from '@/services/health';
+import { getTodayHealthMetrics, initializeHealthKit, HealthMetrics } from '@/services/health';
 import { fetchPatientInfo, fetchMedications } from '@/services/api/patient';
 import type { Medication } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
@@ -156,31 +156,54 @@ export default function TodayScheduleScreen() {
     let isMounted = true;
     let timeoutId: NodeJS.Timeout | null = null;
     
-    // TEMPORARILY DISABLE HealthKit initialization on mount to prevent crashes
-    // HealthKit initialization is causing crashes - we'll make it optional/lazy
-    // Users can manually refresh to load health data if needed
-    console.log('⚠️ HealthKit initialization disabled on mount to prevent crashes');
-    
-    // Set initial state without loading
-    setHealthMetrics({
-      steps: 0,
-      heartRate: null,
-      sleepHours: 0,
-      caloriesBurned: 0,
-      isLoading: false,
-      error: null, // No error - just not loaded yet
-    });
+    // Initialize HealthKit and fetch metrics on mount (iOS only)
+    const loadHealthData = async () => {
+      if (Platform.OS !== 'ios') {
+        if (isMounted) {
+          setHealthMetrics({
+            steps: 0,
+            heartRate: null,
+            sleepHours: 0,
+            caloriesBurned: 0,
+            isLoading: false,
+            error: 'Health data is only available on iOS devices.',
+          });
+        }
+        return;
+      }
 
-    // Listen for app state changes
+      try {
+        await initializeHealthKit();
+        if (isMounted) {
+          await fetchHealthData(true);
+        }
+      } catch (err) {
+        console.warn('HealthKit initialization failed:', err);
+        if (isMounted) {
+          setHealthMetrics({
+            steps: 0,
+            heartRate: null,
+            sleepHours: 0,
+            caloriesBurned: 0,
+            isLoading: false,
+            error: 'Unable to access health data. Please grant permission in Settings.',
+          });
+        }
+      }
+    };
+
+    loadHealthData();
+
+    // Listen for app state changes — refresh health data when app returns to foreground
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (!isMounted) return;
-      
+
       if (
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App has come to the foreground - don't auto-load health data
-        console.log('🔄 App came to foreground');
+        // App came back — re-fetch health data
+        fetchHealthData(false);
       }
       appState.current = nextAppState;
     });

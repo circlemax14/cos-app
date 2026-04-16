@@ -18,10 +18,12 @@
       ],
       "appleTeamId": "Y9J46AL3G2",
       "infoPlist": {
-        "NSCameraUsageDescription": "BrightFuture needs camera access to photograph documents and prescriptions.",
-        "NSContactsUsageDescription": "BrightFuture uses contacts to help you add emergency contacts quickly.",
-        "NSPhotoLibraryUsageDescription": "BrightFuture needs photo library access to upload health documents.",
-        "NSFaceIDUsageDescription": "BrightFuture uses Face ID to securely unlock your health information.",
+        "NSCameraUsageDescription": "Circle Support Health needs camera access to photograph documents and prescriptions.",
+        "NSContactsUsageDescription": "Circle Support Health uses contacts to help you add emergency contacts quickly.",
+        "NSPhotoLibraryUsageDescription": "Circle Support Health needs photo library access to upload health documents.",
+        "NSFaceIDUsageDescription": "Circle Support Health uses Face ID to securely unlock your health information.",
+        "NSHealthShareUsageDescription": "Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.",
+        "NSHealthUpdateUsageDescription": "Circle Support Health updates your health data so your care team has the latest information.",
         "UIBackgroundModes": [
           "remote-notification"
         ],

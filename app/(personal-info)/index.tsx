@@ -11,6 +11,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { apiClient } from '@/lib/api-client';
 import { getPresignedUploadUrl, confirmPhotoUpload, getPhotoDownloadUrl } from '@/services/user-photo';
+import { initializeHealthKit } from '@/services/health';
 
 export default function PersonalInfoScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
@@ -103,6 +104,19 @@ export default function PersonalInfoScreen() {
       },
       { text: 'Cancel', style: 'cancel' },
     ]);
+  }, []);
+
+  // Request HealthKit permissions when this screen opens (iOS only).
+  // This is where patients land when they tap their own name in the circle of providers.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    initializeHealthKit()
+      .then((granted) => {
+        console.log('HealthKit permission granted:', granted);
+      })
+      .catch((err) => {
+        console.warn('HealthKit permission request failed:', err);
+      });
   }, []);
 
   useEffect(() => {

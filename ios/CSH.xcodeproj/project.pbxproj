@@ -24,7 +24,7 @@
 		16B2B6D048F590118108F53C /* Pods-CSH.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CSH.debug.xcconfig"; path = "Target Support Files/Pods-CSH/Pods-CSH.debug.xcconfig"; sourceTree = "<group>"; };
 		9A88AEAD8710B42C4D5C419E /* libPods-CSH.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CSH.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = CSH/SplashScreen.storyboard; sourceTree = "<group>"; };
-		B1182B350487DB40E4B04A7F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = CSH/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B1182B350487DB40E4B04A7F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = CSH/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		D1D36EFE9BDBA84B6B33D4AC /* Pods-CSH.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CSH.release.xcconfig"; path = "Target Support Files/Pods-CSH/Pods-CSH.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -128,7 +128,6 @@
 				16B2B6D048F590118108F53C /* Pods-CSH.debug.xcconfig */,
 				D1D36EFE9BDBA84B6B33D4AC /* Pods-CSH.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
