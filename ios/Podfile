@@ -59,5 +59,64 @@ target 'CSH' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # ── Generate dSYMs for prebuilt XCFrameworks ──────────────────────
+    # Expo SDK 54 / RN 0.81 ships React.xcframework,
+    # ReactNativeDependencies.xcframework, and hermes.xcframework as
+    # stripped prebuilt binaries WITHOUT .dSYM bundles. Xcode then logs
+    #   "Upload Symbols Failed - The archive did not include a dSYM..."
+    # during archive upload. These warnings don't block release, but
+    # without dSYMs Xcode cannot symbolicate crashes in those frameworks.
+    # Fix: run dsymutil against each framework binary during archive and
+    # drop the resulting .dSYM into the archive's dSYMs/ folder.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'Pods-CSH'
+
+      phase = target.new_shell_script_build_phase('Generate missing dSYMs for prebuilt XCFrameworks')
+      phase.shell_script = <<~SH
+        set -e
+
+        # Only run during archive/device builds (have DWARF_DSYM_FOLDER_PATH).
+        if [ -z "${DWARF_DSYM_FOLDER_PATH:-}" ]; then
+          echo "Skipping dSYM generation (not an archive build)"
+          exit 0
+        fi
+
+        # Only handle device slice; simulator builds don't need uploaded dSYMs.
+        if [ "$PLATFORM_NAME" != "iphoneos" ]; then
+          echo "Skipping dSYM generation (platform $PLATFORM_NAME != iphoneos)"
+          exit 0
+        fi
+
+        PODS_ROOT="${PODS_ROOT:-${SRCROOT}/Pods}"
+        mkdir -p "$DWARF_DSYM_FOLDER_PATH"
+
+        generate_dsym() {
+          local xcf_relpath="$1"
+          local fw_name="$2"
+          local slice="ios-arm64"
+          local binary="$PODS_ROOT/$xcf_relpath/$slice/$fw_name.framework/$fw_name"
+          local dsym_out="$DWARF_DSYM_FOLDER_PATH/$fw_name.framework.dSYM"
+
+          if [ ! -f "$binary" ]; then
+            echo "Skipping $fw_name — binary not found at $binary"
+            return 0
+          fi
+
+          if [ -d "$dsym_out" ]; then
+            echo "dSYM already exists for $fw_name"
+            return 0
+          fi
+
+          echo "Generating dSYM for $fw_name..."
+          dsymutil "$binary" -o "$dsym_out"
+        }
+
+        generate_dsym "React-Core-prebuilt/React.xcframework" "React"
+        generate_dsym "ReactNativeDependencies/framework/packages/react-native/ReactNativeDependencies.xcframework" "ReactNativeDependencies"
+        generate_dsym "hermes-engine/destroot/Library/Frameworks/universal/hermes.xcframework" "hermes"
+      SH
+      phase.run_only_for_deployment_postprocessing = '1'
+    end
   end
 end
