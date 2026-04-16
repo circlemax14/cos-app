@@ -3,6 +3,7 @@ import { fetchPatientInfo } from '@/services/api/patient';
 import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { apiClient } from '@/lib/api-client';
 import { Image } from 'expo-image';
@@ -63,6 +64,13 @@ export function ProfileContent({
 }: ProfileContentProps) {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // Hide the "Connect Another EHR" card for users with CONNECT_CLINIC
+  // disabled by an admin (e.g. the App Store reviewer). Fail closed —
+  // if permissions haven't loaded yet, treat as disabled so the button
+  // never flashes to a restricted user.
+  const { data: permissions } = useFeaturePermissions();
+  const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
@@ -287,15 +295,17 @@ export function ProfileContent({
             </Text>
           )}
 
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: colors.tint }]}>Connect Another EHR</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Link another provider to your records</Text>}
-              left={(props) => <Icon {...props} source="plus" color={colors.tint} size={getScaledFontSize(32)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(32)} />}
-              onPress={onConnectEhr}
-            />
-          </Card>
+          {canConnectClinic && (
+            <Card style={styles.menuCard}>
+              <List.Item
+                title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, color: colors.tint }]}>Connect Another EHR</Text>}
+                description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Link another provider to your records</Text>}
+                left={(props) => <Icon {...props} source="plus" color={colors.tint} size={getScaledFontSize(32)} />}
+                right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(32)} />}
+                onPress={onConnectEhr}
+              />
+            </Card>
+          )}
 
           {isLoadingClinics && (
             <View style={styles.loadingContainer}>
