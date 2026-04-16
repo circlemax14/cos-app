@@ -38,16 +38,20 @@ export default function SignInScreen() {
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
 
-  // Respond to Google auth result when it changes
+  // Respond to Google auth result when it changes.
+  // All non-success outcomes (cancel, dismiss, error, locked) must reset the
+  // loading state so the user can try again — otherwise the button is stuck.
   React.useEffect(() => {
-    if (googleResponse?.type === 'success') {
+    if (!googleResponse) return;
+    if (googleResponse.type === 'success') {
       const { id_token } = googleResponse.params;
       handleGoogleToken(id_token);
-    } else if (googleResponse?.type === 'error' || googleResponse?.type === 'dismiss') {
+    } else {
       setGoogleLoading(false);
-      if (googleResponse?.type === 'error') {
+      if (googleResponse.type === 'error') {
         setError('Google sign-in failed. Please try again.');
       }
+      // cancel / dismiss / locked — user bailed, no error message needed
     }
   // handleGoogleToken is defined below and stable — safe to omit from deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,8 +117,21 @@ export default function SignInScreen() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setError(undefined);
-    await promptGoogleAsync();
-    // Result handled in the googleResponse useEffect above
+    try {
+      const result = await promptGoogleAsync();
+      // If user canceled the iOS system prompt ("CSH wants to use google.com")
+      // or dismissed the web browser, reset loading immediately. Success is
+      // handled in the googleResponse useEffect.
+      if (result?.type !== 'success') {
+        setGoogleLoading(false);
+        if (result?.type === 'error') {
+          setError('Google sign-in failed. Please try again.');
+        }
+      }
+    } catch {
+      setGoogleLoading(false);
+      setError('Google sign-in failed. Please try again.');
+    }
   };
 
   const handleAppleSignIn = async () => {
