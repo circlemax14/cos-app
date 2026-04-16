@@ -51,16 +51,20 @@ export default function LinkedAccountsScreen() {
     loadProviders();
   }, [loadProviders]);
 
-  // Handle Google auth response for linking
+  // Handle Google auth response for linking.
+  // All non-success outcomes (cancel, dismiss, error, locked) must reset the
+  // linking state — otherwise the button is stuck in a loading state.
   useEffect(() => {
-    if (googleResponse?.type === 'success') {
+    if (!googleResponse) return;
+    if (googleResponse.type === 'success') {
       const { id_token } = googleResponse.params;
       handleLinkGoogleToken(id_token);
-    } else if (googleResponse?.type === 'error' || googleResponse?.type === 'dismiss') {
+    } else {
       setGoogleLinking(false);
-      if (googleResponse?.type === 'error') {
+      if (googleResponse.type === 'error') {
         setStatusMessage({ text: 'Google connection failed. Please try again.', isError: true });
       }
+      // cancel / dismiss / locked — user bailed, no error message needed
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleResponse]);
@@ -82,8 +86,20 @@ export default function LinkedAccountsScreen() {
   const handleConnectGoogle = async () => {
     setGoogleLinking(true);
     setStatusMessage(null);
-    await promptGoogleAsync();
-    // Result handled in the googleResponse useEffect above
+    try {
+      const result = await promptGoogleAsync();
+      // If user canceled the iOS system prompt or dismissed the web session,
+      // reset the button immediately. Success is handled in the useEffect.
+      if (result?.type !== 'success') {
+        setGoogleLinking(false);
+        if (result?.type === 'error') {
+          setStatusMessage({ text: 'Google connection failed. Please try again.', isError: true });
+        }
+      }
+    } catch {
+      setGoogleLinking(false);
+      setStatusMessage({ text: 'Google connection failed. Please try again.', isError: true });
+    }
   };
 
   const handleConnectApple = async () => {
