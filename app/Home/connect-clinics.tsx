@@ -13,14 +13,18 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions';
+import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
 export default function ConnectClinicsScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const isConnectClinicEnabled = useIsFeatureEnabled('CONNECT_CLINIC');
+  // Wait for permissions to load before deciding — if CONNECT_CLINIC is
+  // disabled we must NOT briefly mount the Fasten widget while the check
+  // is in flight.
+  const { data: permissions, isLoading: permissionsLoading } = useFeaturePermissions();
+  const isConnectClinicEnabled = permissions?.CONNECT_CLINIC?.enabled ?? false;
   const navigating = useRef(false);
   const [connectedCount, setConnectedCount] = useState(0);
   const [showProcessingModal, setShowProcessingModal] = useState(false);
@@ -79,6 +83,17 @@ export default function ConnectClinicsScreen() {
     setShowProcessingModal(false);
     router.back();
   };
+
+  // Show a spinner while permissions are still loading — do NOT render
+  // the Fasten widget yet. Once loaded, either the widget appears (enabled)
+  // or the "not available" card appears (disabled).
+  if (permissionsLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+      </View>
+    );
+  }
 
   if (!isConnectClinicEnabled) {
     return (
