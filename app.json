@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"
@@ -73,7 +73,10 @@
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 5000,
-      "url": "https://u.expo.dev/30bc49bd-ee12-4a06-86b3-ee4f23690114"
+      "url": "https://u.expo.dev/30bc49bd-ee12-4a06-86b3-ee4f23690114",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "runtimeVersion": "1.0.4",
     "plugins": [
