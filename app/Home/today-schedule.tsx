@@ -5,8 +5,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
 import { Card, IconButton, List, Button } from 'react-native-paper';
 import { getTodayHealthMetrics, initializeHealthKit, HealthMetrics } from '@/services/health';
-import { fetchPatientInfo, fetchMedications } from '@/services/api/patient';
-import type { Medication } from '@/services/api/types';
+import { fetchPatientInfo, fetchMedicationsSummary } from '@/services/api/patient';
+import type { MedicationSummary } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { Image } from 'expo-image';
 import { getPhotoDownloadUrl } from '@/services/user-photo';
@@ -27,7 +27,7 @@ export default function TodayScheduleScreen() {
   const [patientName, setPatientName] = useState('');
   const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
-  const [medications, setMedications] = useState<Medication[]>([]);
+  const [medications, setMedications] = useState<MedicationSummary[]>([]);
   const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
     steps: 0,
     heartRate: null,
@@ -64,7 +64,7 @@ export default function TodayScheduleScreen() {
 
     const loadMedications = async () => {
       try {
-        const meds = await fetchMedications();
+        const meds = await fetchMedicationsSummary(6);
         if (meds && meds.length > 0) {
           setMedications(meds);
         }
@@ -370,71 +370,97 @@ export default function TodayScheduleScreen() {
           </View>
         </Card>
 
-        {/* Medications Section — only shown if there are medications */}
+        {/* Medications Section — last 6 months (active + completed) */}
         {medications.length > 0 && (
-        <Card style={[styles.medicationsCard, { backgroundColor: colors.background }]}>
-          <Text style={[
-            styles.medicationsTitle,
-            {
-              fontSize: getScaledFontSize(16),
-              fontWeight: getScaledFontWeight(600) as any,
-              color: colors.text,
-              marginBottom: 12,
-            }
-          ]}>
-            Current Medications
-          </Text>
-          {medications.map((medication, index) => (
-            <View 
-              key={index} 
-              style={[
-                styles.medicationItem,
-                index < medications.length - 1 && {
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.text + '20',
-                }
-              ]}
-            >
-              <View style={styles.medicationIconContainer}>
-                <List.Icon icon="pill" color="#008080" />
-              </View>
-              <View style={styles.medicationContent}>
-                <Text style={[
-                  styles.medicationName,
-                  {
-                    fontSize: getScaledFontSize(16),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    color: colors.text,
-                    marginBottom: 4,
-                  }
-                ]}>
-                  {medication.name}
-                </Text>
-                <Text style={[
-                  styles.medicationDosage,
-                  {
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(500) as any,
-                    color: colors.text,
-                    marginBottom: 2,
-                  }
-                ]}>
-                  {medication.dosage} • {medication.frequency}
-                </Text>
-                <Text style={[
-                  styles.medicationPurpose,
-                  {
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(400) as any,
-                    color: colors.text + '80',
-                  }
-                ]}>
-                  {medication.purpose}
-                </Text>
-              </View>
+        <View style={styles.medicationsSection}>
+          <View style={styles.medSectionHeader}>
+            <Text style={[
+              styles.medicationsTitle,
+              { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }
+            ]}>
+              Medications
+            </Text>
+            <View style={[styles.medCountBadge, { backgroundColor: colors.primary + '15' }]}>
+              <Text style={[styles.medCountText, { fontSize: getScaledFontSize(12), color: colors.primary }]}>
+                {medications.length}
+              </Text>
             </View>
-          ))}
-        </Card>
+          </View>
+          <Text style={[styles.medSubtitle, { fontSize: getScaledFontSize(13), color: colors.text + '60' }]}>
+            Last 6 months · Active & recent prescriptions
+          </Text>
+
+          {medications.map((med) => {
+            const isActive = med.status === 'active';
+            const statusColor = isActive ? '#059669' : '#6B7280';
+            const statusBg = isActive ? '#D1FAE5' : '#F3F4F6';
+            const statusLabel = isActive ? 'Active' : med.status.charAt(0).toUpperCase() + med.status.slice(1);
+
+            // Format the prescribed date
+            let dateLabel = '';
+            if (med.authoredOn) {
+              const d = new Date(med.authoredOn);
+              dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+
+            // Build dosage display: prefer structured dose, fall back to text
+            const doseDisplay = med.dosage || med.rawDosageText || '';
+            const freqDisplay = med.frequency || '';
+            const detailParts = [doseDisplay, freqDisplay].filter(Boolean);
+
+            return (
+              <View
+                key={med.id}
+                style={[
+                  styles.medCard,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: isActive ? colors.primary + '20' : colors.text + '10',
+                    borderLeftColor: isActive ? colors.primary : colors.text + '30',
+                  },
+                ]}
+              >
+                <View style={styles.medCardHeader}>
+                  <View style={styles.medCardLeft}>
+                    <View style={[styles.medIconCircle, { backgroundColor: isActive ? colors.primary + '12' : colors.text + '08' }]}>
+                      <List.Icon icon="pill" color={isActive ? colors.primary : colors.text + '60'} style={{ margin: 0 }} />
+                    </View>
+                    <View style={styles.medCardInfo}>
+                      <Text
+                        style={[{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {med.name}
+                      </Text>
+                      {detailParts.length > 0 && (
+                        <Text
+                          style={[{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginTop: 2 }]}
+                          numberOfLines={1}
+                        >
+                          {detailParts.join(' · ')}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <View style={[styles.medStatusBadge, { backgroundColor: settings.isDarkTheme ? statusColor + '20' : statusBg }]}>
+                    <Text style={[styles.medStatusText, { fontSize: getScaledFontSize(11), color: statusColor }]}>
+                      {statusLabel}
+                    </Text>
+                  </View>
+                </View>
+
+                {dateLabel ? (
+                  <View style={styles.medDateRow}>
+                    <IconButton icon="calendar-outline" size={getScaledFontSize(14)} iconColor={colors.text + '50'} style={{ margin: 0, padding: 0, width: 18, height: 18 }} />
+                    <Text style={[{ fontSize: getScaledFontSize(12), color: colors.text + '50' }]}>
+                      Prescribed {dateLabel}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
         )}
 
         {/* Health Metrics Section */}
@@ -865,42 +891,79 @@ const styles = StyleSheet.create({
   healthMetricLabel: {
     fontSize: 12,
   },
-  medicationsCard: {
+  medicationsSection: {
     marginHorizontal: 16,
     marginBottom: 16,
-    padding: 16,
-    borderRadius: 16,
   },
-  medicationsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  medicationItem: {
+  medSectionHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-  },
-  medicationIconContainer: {
-    marginRight: 12,
-    marginTop: 2,
-    flexShrink: 0,
-  },
-  medicationContent: {
-    flex: 1,
-  },
-  medicationName: {
-    fontSize: 16,
-    fontWeight: '600',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 4,
   },
-  medicationDosage: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 2,
+  medicationsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
   },
-  medicationPurpose: {
+  medCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  medCountText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  medSubtitle: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  medCard: {
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+  },
+  medCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  medCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    gap: 10,
+    marginRight: 8,
+  },
+  medIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  medCardInfo: {
+    flex: 1,
+  },
+  medStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  medStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  medDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
   },
 });
 

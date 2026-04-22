@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client';
-import type { Patient, Medication } from './types';
+import type { Patient, Medication, MedicationSummary } from './types';
 
 interface FhirPatientResource {
   id: string;
@@ -132,6 +132,22 @@ export async function fetchMedications(): Promise<Medication[]> {
       purpose: m.reasonCode?.[0]?.text ?? '',
     };
   });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch structured medications from the last N months (active + completed).
+ * Uses the dedicated /medications endpoint with richer data.
+ */
+export async function fetchMedicationsSummary(months = 6): Promise<MedicationSummary[]> {
+  try {
+    const res = await apiClient.get<{
+      success: boolean;
+      data: { medications: MedicationSummary[] };
+    }>(`/v1/patients/me/medications?months=${months}`);
+    return res.data.data.medications;
   } catch {
     return [];
   }

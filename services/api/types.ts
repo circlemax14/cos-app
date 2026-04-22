@@ -123,6 +123,19 @@ export interface Medication {
   purpose: string;
 }
 
+/** Richer medication from /v1/patients/me/medications */
+export interface MedicationSummary {
+  id: string;
+  name: string;
+  status: string;
+  dosage: string;
+  frequency: string;
+  authoredOn: string | null;
+  doseValue: number | null;
+  doseUnit: string | null;
+  rawDosageText: string | null;
+}
+
 // ─── Health Plan ─────────────────────────────────────────────────────────────
 export interface HealthPlan {
   careManagerPlan: {
