@@ -64,7 +64,7 @@ export default function TodayScheduleScreen() {
 
     const loadMedications = async () => {
       try {
-        const meds = await fetchMedicationsSummary(6);
+        const meds = await fetchMedicationsSummary();
         if (meds && meds.length > 0) {
           setMedications(meds);
         }
@@ -370,7 +370,7 @@ export default function TodayScheduleScreen() {
           </View>
         </Card>
 
-        {/* Medications Section — last 6 months (active + completed) */}
+        {/* Current Medications — active prescriptions only */}
         {medications.length > 0 && (
         <View style={styles.medicationsSection}>
           <View style={styles.medSectionHeader}>
@@ -378,7 +378,7 @@ export default function TodayScheduleScreen() {
               styles.medicationsTitle,
               { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }
             ]}>
-              Medications
+              Current Medications
             </Text>
             <View style={[styles.medCountBadge, { backgroundColor: colors.primary + '15' }]}>
               <Text style={[styles.medCountText, { fontSize: getScaledFontSize(12), color: colors.primary }]}>
@@ -386,16 +386,8 @@ export default function TodayScheduleScreen() {
               </Text>
             </View>
           </View>
-          <Text style={[styles.medSubtitle, { fontSize: getScaledFontSize(13), color: colors.text + '60' }]}>
-            Last 6 months · Active & recent prescriptions
-          </Text>
 
           {medications.map((med) => {
-            const isActive = med.status === 'active';
-            const statusColor = isActive ? '#059669' : '#6B7280';
-            const statusBg = isActive ? '#D1FAE5' : '#F3F4F6';
-            const statusLabel = isActive ? 'Active' : med.status.charAt(0).toUpperCase() + med.status.slice(1);
-
             // Format the prescribed date
             let dateLabel = '';
             if (med.authoredOn) {
@@ -415,15 +407,15 @@ export default function TodayScheduleScreen() {
                   styles.medCard,
                   {
                     backgroundColor: colors.background,
-                    borderColor: isActive ? colors.primary + '20' : colors.text + '10',
-                    borderLeftColor: isActive ? colors.primary : colors.text + '30',
+                    borderColor: colors.primary + '20',
+                    borderLeftColor: colors.primary,
                   },
                 ]}
               >
                 <View style={styles.medCardHeader}>
                   <View style={styles.medCardLeft}>
-                    <View style={[styles.medIconCircle, { backgroundColor: isActive ? colors.primary + '12' : colors.text + '08' }]}>
-                      <List.Icon icon="pill" color={isActive ? colors.primary : colors.text + '60'} style={{ margin: 0 }} />
+                    <View style={[styles.medIconCircle, { backgroundColor: colors.primary + '12' }]}>
+                      <List.Icon icon="pill" color={colors.primary} style={{ margin: 0 }} />
                     </View>
                     <View style={styles.medCardInfo}>
                       <Text
@@ -441,11 +433,6 @@ export default function TodayScheduleScreen() {
                         </Text>
                       )}
                     </View>
-                  </View>
-                  <View style={[styles.medStatusBadge, { backgroundColor: settings.isDarkTheme ? statusColor + '20' : statusBg }]}>
-                    <Text style={[styles.medStatusText, { fontSize: getScaledFontSize(11), color: statusColor }]}>
-                      {statusLabel}
-                    </Text>
                   </View>
                 </View>
 

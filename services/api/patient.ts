@@ -138,15 +138,14 @@ export async function fetchMedications(): Promise<Medication[]> {
 }
 
 /**
- * Fetch structured medications from the last N months (active + completed).
- * Uses the dedicated /medications endpoint with richer data.
+ * Fetch currently active medications with structured dose/frequency.
  */
-export async function fetchMedicationsSummary(months = 6): Promise<MedicationSummary[]> {
+export async function fetchMedicationsSummary(): Promise<MedicationSummary[]> {
   try {
     const res = await apiClient.get<{
       success: boolean;
       data: { medications: MedicationSummary[] };
-    }>(`/v1/patients/me/medications?months=${months}`);
+    }>('/v1/patients/me/medications');
     return res.data.data.medications;
   } catch {
     return [];
