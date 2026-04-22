@@ -55,9 +55,18 @@ export default function TabLayout() {
         />
       )}
       <Tabs.Screen
+        name="health-plan"
+        options={{
+          title: 'Health Plan',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(26)} name="heart.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="health-chat"
         options={{
-          title: 'Health Chat',
+          title: 'Chat',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={getScaledFontSize(24)} name="message.fill" color={color} />
           ),
@@ -69,11 +78,8 @@ export default function TabLayout() {
         name="plan"
         options={{
           title: 'Health Summary',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
-          ),
-          href: !settings.isHealthChatEnabled ? undefined : null,
-          tabBarItemStyle: settings.isHealthChatEnabled ? { display: 'none' } : undefined
+          href: null,
+          tabBarItemStyle: { display: 'none' },
         }}
       />
       {canShow('reports') && (

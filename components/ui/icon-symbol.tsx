@@ -45,6 +45,7 @@ const MAPPING = {
   'square.and.arrow.up': 'share',
   'questionmark.circle': 'help-outline',
   'lock.shield': 'security',
+  'heart.fill': 'favorite',
 } as IconMapping;
 
 /**

@@ -136,6 +136,56 @@ export interface MedicationSummary {
   rawDosageText: string | null;
 }
 
+// ─── AI Health Plan + Tasks ──────────────────────────────────────────────
+export type TaskType = 'medication' | 'exercise' | 'appointment' | 'reminder';
+export type TaskRecurrence = 'daily' | 'weekdays' | 'weekly' | 'once';
+export type TaskStatus = 'pending' | 'completed' | 'skipped';
+
+export interface PlanTask {
+  id: string;
+  type: TaskType;
+  title: string;
+  description: string;
+  /** HH:MM 24-hour local time */
+  scheduledTime: string;
+  recurrence: TaskRecurrence;
+  /** ISO date YYYY-MM-DD */
+  startDate: string;
+  endDate?: string;
+  daysOfWeek?: number[];
+  metadata?: {
+    medicationName?: string;
+    dosage?: string;
+    durationMinutes?: number;
+    relatedConditionFhirId?: string;
+  };
+  source: 'ai' | 'care_manager';
+}
+
+export interface AiPlanGoal {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface AiHealthPlan {
+  version: number;
+  summary: string;
+  goals: AiPlanGoal[];
+  tasks: PlanTask[];
+  sourceDataHash: string;
+  generatedAt: string;
+  provider: 'bedrock' | 'openai';
+}
+
+/** Task + completion state for a specific date. */
+export interface TaskOccurrence extends PlanTask {
+  scheduledFor: string;
+  status: TaskStatus;
+  completedAt?: string;
+}
+
 // ─── Health Plan ─────────────────────────────────────────────────────────────
 export interface HealthPlan {
   careManagerPlan: {

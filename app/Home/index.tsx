@@ -15,6 +15,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
 import { fetchAppointments } from '@/services/api/appointments';
 import { fetchPatientInfo } from '@/services/api/patient';
+import { fetchPendingTaskCount } from '@/services/api/ai-health-plan';
 import type { Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
@@ -86,10 +87,11 @@ interface CircleViewProps {
   isCircleComplete: boolean;
   selectedCareManager?: SelectedCareManager | null;
   onCareManagerPress?: () => void;
+  pendingTaskCount?: number;
 }
 
 // Original Circle View for iPhone/Android (fixed dimensions)
-function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
+function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress, pendingTaskCount = 0 }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -157,11 +159,30 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
             }
           }}
           activeOpacity={0.8}
+          style={{ position: 'relative' }}
         >
           {patientPhotoUrl ? (
             <Image source={{ uri: patientPhotoUrl }} style={[styles.centerAvatarImage, { width: getScaledFontSize(centerAvatarSize), height: getScaledFontSize(centerAvatarSize), borderRadius: getScaledFontSize(centerAvatarSize) / 2 }]} contentFit="cover" />
           ) : (
             <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
+          )}
+          {pendingTaskCount > 0 && (
+            <View
+              style={[
+                styles.pendingBadge,
+                {
+                  top: -4,
+                  right: -6,
+                  backgroundColor: '#EF4444',
+                  borderColor: colors.background,
+                },
+              ]}
+              accessibilityLabel={`${pendingTaskCount} pending tasks`}
+            >
+              <Text style={styles.pendingBadgeText}>
+                {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
         <Text style={[
@@ -322,7 +343,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
 }
 
 // Responsive Circle View for iPad/Tablet
-function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress }: CircleViewProps) {
+function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress, pendingTaskCount = 0 }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -434,11 +455,30 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
             }
           }}
           activeOpacity={0.8}
+          style={{ position: 'relative' }}
         >
           {patientPhotoUrl ? (
             <Image source={{ uri: patientPhotoUrl }} style={[styles.centerAvatarImage, { width: getScaledFontSize(centerAvatarSize), height: getScaledFontSize(centerAvatarSize), borderRadius: getScaledFontSize(centerAvatarSize) / 2 }]} contentFit="cover" />
           ) : (
             <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
+          )}
+          {pendingTaskCount > 0 && (
+            <View
+              style={[
+                styles.pendingBadge,
+                {
+                  top: -4,
+                  right: -6,
+                  backgroundColor: '#EF4444',
+                  borderColor: colors.background,
+                },
+              ]}
+              accessibilityLabel={`${pendingTaskCount} pending tasks`}
+            >
+              <Text style={styles.pendingBadgeText}>
+                {pendingTaskCount > 9 ? '9+' : pendingTaskCount}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
         <Text style={[
@@ -2240,6 +2280,7 @@ export default function HomeScreen() {
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingTaskCount, setPendingTaskCount] = useState(0);
 
   const circleProviders = React.useMemo(
     () => selectedProviders.slice(0, MAX_SELECTED_PROVIDERS),
@@ -2298,8 +2339,18 @@ export default function HomeScreen() {
       }
     };
 
+    const loadTaskCount = async () => {
+      try {
+        const count = await fetchPendingTaskCount();
+        setPendingTaskCount(count);
+      } catch {
+        // Non-critical — badge just won't show
+      }
+    };
+
     loadProviders();
     loadPatient();
+    loadTaskCount();
     // Restore persisted provider selection and care manager from the server
     loadFromServer();
   }, [validateAndCleanProviders, loadFromServer]);
@@ -2379,12 +2430,14 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [providers, patient, allAppointments] = await Promise.all([
+      const [providers, patient, allAppointments, taskCount] = await Promise.all([
         fetchProviders(),
         fetchPatientInfo(),
         fetchAppointments(),
+        fetchPendingTaskCount(),
       ]);
       setFastenProviders(providers);
+      setPendingTaskCount(taskCount);
       if (patient) {
         setPatientName(patient.name || '');
       }
@@ -2569,6 +2622,7 @@ export default function HomeScreen() {
                 isCircleComplete={isCircleComplete}
                 selectedCareManager={selectedCareManager}
                 onCareManagerPress={() => router.push('/modal')}
+                pendingTaskCount={pendingTaskCount}
               />
             ) : (
               <PhoneCircleView
@@ -2584,6 +2638,7 @@ export default function HomeScreen() {
                 isCircleComplete={isCircleComplete}
                 selectedCareManager={selectedCareManager}
                 onCareManagerPress={() => router.push('/modal')}
+                pendingTaskCount={pendingTaskCount}
               />
             )
           ) : viewMode === 'list' ? (
@@ -2913,6 +2968,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
     textAlign: 'center',
+  },
+  pendingBadge: {
+    position: 'absolute',
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pendingBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   orbitAvatarText: {
     marginTop: 4,

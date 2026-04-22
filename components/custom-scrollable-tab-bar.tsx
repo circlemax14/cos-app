@@ -84,12 +84,15 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     };
 
     // Get icon from options
-    const iconColor = isFocused ? '#008080' : '#000000';
+    const isHealthPlan = route.name === 'health-plan';
+    const iconColor = isHealthPlan
+      ? (isFocused ? '#FFFFFF' : '#008080')
+      : (isFocused ? '#008080' : '#000000');
     const icon = options.tabBarIcon
       ? options.tabBarIcon({
         focused: isFocused,
         color: iconColor,
-        size: getScaledFontSize(24),
+        size: getScaledFontSize(isHealthPlan ? 26 : 24),
       })
       : null;
 
@@ -112,7 +115,22 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
           shouldDistributeEvenly && styles.tabButtonDistributed
         ]}>
         <View style={styles.tabContent}>
-          {icon && <View style={styles.iconContainer}>{icon}</View>}
+          {icon && (
+            isHealthPlan ? (
+              <View style={[
+                styles.healthPlanHighlight,
+                {
+                  backgroundColor: isFocused ? '#008080' : 'rgba(0,128,128,0.10)',
+                  borderColor: isFocused ? 'transparent' : 'rgba(0,128,128,0.25)',
+                  shadowOpacity: isFocused ? 0.25 : 0,
+                },
+              ]}>
+                {icon}
+              </View>
+            ) : (
+              <View style={styles.iconContainer}>{icon}</View>
+            )
+          )}
           <Text
             numberOfLines={1}
             adjustsFontSizeToFit
@@ -122,6 +140,7 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
               {
                 fontSize: getScaledFontSize(12),
                 color: isFocused ? '#008080' : '#000000',
+                marginTop: isHealthPlan ? 2 : 4,
               },
             ]}>
             {label as string}
@@ -200,9 +219,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  healthPlanHighlight: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    shadowColor: '#008080',
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 10,
+    elevation: 4,
+  },
   tabLabel: {
     fontWeight: '500',
-    color: '#000000', // Sharp black color
+    color: '#000000',
   },
 });
 
