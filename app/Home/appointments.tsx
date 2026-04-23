@@ -30,8 +30,12 @@ const RESOURCE_TYPE_STYLES: Record<string, { bg: string; text: string; label: st
   Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
 };
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  // Accept both "YYYY-MM-DD" and full ISO timestamps by slicing the date part first.
+  const dateOnly = dateStr.slice(0, 10);
+  const d = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 

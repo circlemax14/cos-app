@@ -31,11 +31,12 @@ const URGENCY_CONFIG: Record<
   routine: { label: 'Routine', indicator: '⚪', bg: '#F5F5F5', text: '#616161', order: 2 },
 };
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string | null | undefined): string {
   // Backend stores full ISO timestamps (e.g. "2026-05-07T08:10:35.694Z").
   // Older data may still be a plain "YYYY-MM-DD". Strip any time portion
   // first so both shapes parse reliably, then treat the remainder as a
   // local calendar date.
+  if (!dateStr || typeof dateStr !== 'string') return '';
   const dateOnly = dateStr.slice(0, 10);
   const d = new Date(`${dateOnly}T00:00:00`);
   if (Number.isNaN(d.getTime())) return '';
