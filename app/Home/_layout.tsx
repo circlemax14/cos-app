@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
@@ -57,7 +58,7 @@ export default function TabLayout() {
         options={{
           title: 'Health Plan',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(26)} name="checklist" color={color} />
+            <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
           ),
         }}
       />
