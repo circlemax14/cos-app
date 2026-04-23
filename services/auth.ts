@@ -22,6 +22,22 @@ export interface UserProfile {
   dataReady: boolean;
   ehiExportPending: boolean;
   ehiExportFailed: boolean;
+  firstName?: string | null;
+  lastName?: string | null;
+  hasSeenWelcome?: boolean;
+}
+
+/**
+ * Flag the one-time welcome screen as seen on the server. Idempotent — safe
+ * to call multiple times; swallows errors so a network blip doesn't trap the
+ * user on the welcome screen.
+ */
+export async function markWelcomeSeen(): Promise<void> {
+  try {
+    await apiClient.post('/v1/auth/welcome-seen');
+  } catch (err) {
+    console.warn('[auth] markWelcomeSeen failed:', err);
+  }
 }
 
 /**
