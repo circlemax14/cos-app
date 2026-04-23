@@ -28,23 +28,34 @@ async function getDestination(user: UserProfile, isLocked: boolean): Promise<str
   const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
   if (!permissionsRequested) return '/(onboarding)/permissions';
 
-  // After terms + permissions, check data state
-  // Users with data → go to Home (skip Fasten screen)
-  if (user.fastenConnected && user.dataReady) {
+  // Resolve PIN / lock gates once up-front so each exit path can reuse them.
+  const finalHome = async (): Promise<string> => {
     const pinConfigured = await isPinSetup();
     if (!pinConfigured) return '/(security)/setup-pin';
     if (isLocked) return '/(security)/lock-screen';
     return '/Home';
+  };
+
+  // Users with data ready and welcome already seen → straight to Home.
+  if (user.fastenConnected && user.dataReady && user.hasSeenWelcome) {
+    return finalHome();
   }
 
-  if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
-  if (!user.dataReady && user.fastenConnected) return '/(onboarding)/data-processing';
+  // First-time users still in the Fasten onboarding flow.
+  if (!user.fastenConnected) {
+    const fastenOnboardingDone = await AsyncStorage.getItem('fasten_onboarding_done');
+    if (!fastenOnboardingDone) return '/(onboarding)/fasten-connect';
+    // User skipped the widget during onboarding — nudge them to connect.
+    return '/(onboarding)/connect-clinic';
+  }
 
-  const pinConfigured = await isPinSetup();
-  if (!pinConfigured) return '/(security)/setup-pin';
-  if (isLocked) return '/(security)/lock-screen';
+  // Fasten connected but FHIR export still processing.
+  if (!user.dataReady) return '/(onboarding)/data-processing';
 
-  return '/Home';
+  // Data ready + welcome not yet seen → show it now (applies to existing users).
+  if (!user.hasSeenWelcome) return '/(onboarding)/welcome';
+
+  return finalHome();
 }
 
 export default function SplashGate() {

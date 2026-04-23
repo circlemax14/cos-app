@@ -8,6 +8,8 @@ export default function OnboardingLayout() {
       <Stack.Screen name="data-processing" />
       <Stack.Screen name="permissions" />
       <Stack.Screen name="terms" />
+      <Stack.Screen name="connect-clinic" />
+      <Stack.Screen name="welcome" />
     </Stack>
   );
 }
