@@ -129,7 +129,7 @@ export default function WelcomeScreen() {
             },
           ]}
         >
-          {firstName ? `Hi, ${firstName}!` : 'Hi there!'}
+          {firstName ? `Hi, ${firstName}!` : 'Hi!'}
         </Text>
 
         <Text
