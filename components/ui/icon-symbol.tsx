@@ -46,6 +46,9 @@ const MAPPING = {
   'questionmark.circle': 'help-outline',
   'lock.shield': 'security',
   'heart.fill': 'favorite',
+  'checklist': 'checklist',
+  'list.bullet.clipboard': 'assignment',
+  'cross.case.fill': 'medical-services',
 } as IconMapping;
 
 /**

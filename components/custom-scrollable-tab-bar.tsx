@@ -2,7 +2,7 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -58,6 +58,9 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
 
     // Check if this route is focused by comparing with the current route key
     const isFocused = state.routes[state.index]?.key === route.key;
+
+    // Accessibility-only label; not visually rendered any more
+    void label;
 
     const onPress = () => {
       const event = navigation.emit({
@@ -131,20 +134,6 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
               <View style={styles.iconContainer}>{icon}</View>
             )
           )}
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={[
-              styles.tabLabel,
-              {
-                fontSize: getScaledFontSize(12),
-                color: isFocused ? '#008080' : '#000000',
-                marginTop: isHealthPlan ? 2 : 4,
-              },
-            ]}>
-            {label as string}
-          </Text>
         </View>
       </PlatformPressable>
     );
@@ -230,10 +219,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 10,
     elevation: 4,
-  },
-  tabLabel: {
-    fontWeight: '500',
-    color: '#000000',
   },
 });
 

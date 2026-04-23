@@ -57,7 +57,7 @@ export default function TabLayout() {
         options={{
           title: 'Health Plan',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(26)} name="heart.fill" color={color} />
+            <IconSymbol size={getScaledFontSize(26)} name="checklist" color={color} />
           ),
         }}
       />
