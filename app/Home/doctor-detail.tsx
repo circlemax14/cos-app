@@ -6,7 +6,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextIn
 import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
-import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment, CarePlanItem } from '@/services/api/types';
+import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, ProviderDiagnosis, ProviderMedication, ClinicalStatus } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -20,7 +20,10 @@ export default function DoctorDetailScreen() {
   
   const [provider, setProvider] = useState<Provider | null>(null);
   const [, setIsLoadingProvider] = useState(false);
-  const [treatmentPlans, setTreatmentPlans] = useState<TreatmentPlanItem[]>([]);
+  const [treatmentPlans, setTreatmentPlans] = useState<ProviderTreatmentPlan>({
+    diagnoses: [],
+    medications: [],
+  });
   const [progressNotes, setProgressNotes] = useState<ProgressNote[]>([]);
   const [appointments, setAppointments] = useState<ProviderAppointment[]>([]);
   const [carePlans, setCarePlans] = useState<CarePlanItem[]>([]);
@@ -135,7 +138,7 @@ export default function DoctorDetailScreen() {
           email: params.email as string,
         });
         // Set empty arrays for data when no provider ID
-        setTreatmentPlans([]);
+        setTreatmentPlans({ diagnoses: [], medications: [] });
         setProgressNotes([]);
         setAppointments([]);
         setCarePlans([]);
@@ -465,46 +468,273 @@ export default function DoctorDetailScreen() {
     );
   };
 
-  const renderTreatmentPlan = () => (
-    <ScrollView style={styles.tabContent}>
-      {/* AI Insights temporarily disabled */}
-      {isLoadingData ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading treatment plans...</Text>
-        </View>
-      ) : treatmentPlans.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No treatment plans available</Text>
-        </View>
-      ) : (
-        treatmentPlans.map((plan) => (
-          <Card key={plan.id} style={styles.planCard}>
-            <Card.Content>
-              <View style={styles.planHeader}>
-                <Text style={[styles.planTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>{plan.title}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: plan.status === 'Active' ? '#008080' : '#9E9E9E' }]}>
-                  <Text style={[styles.statusText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{plan.status}</Text>
+  const renderTreatmentPlan = () => {
+    const { diagnoses, medications } = treatmentPlans;
+    const isEmpty = diagnoses.length === 0 && medications.length === 0;
+
+    return (
+      <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+        {isLoadingData ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>
+              Loading diagnoses and medications…
+            </Text>
+          </View>
+        ) : isEmpty ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>
+              No diagnoses or prescriptions from this provider yet.
+            </Text>
+          </View>
+        ) : (
+          <>
+            {diagnoses.length > 0 && (
+              <View style={styles.treatmentSection}>
+                <View style={styles.treatmentSectionHeader}>
+                  <MaterialIcons name="medical-services" size={getScaledFontSize(18)} color={colors.primary} />
+                  <Text
+                    style={[
+                      styles.treatmentSectionTitle,
+                      {
+                        color: colors.text,
+                        fontSize: getScaledFontSize(16),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      },
+                    ]}
+                  >
+                    Diagnoses
+                  </Text>
+                  <View style={[styles.treatmentCountPill, { backgroundColor: colors.card }]}>
+                    <Text
+                      style={{
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(600) as any,
+                      }}
+                    >
+                      {diagnoses.length}
+                    </Text>
+                  </View>
                 </View>
+                {diagnoses.map((d) => renderDiagnosisCard(d))}
               </View>
-              <Text style={[styles.planDate, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{plan.date}</Text>
-              <View style={[styles.diagnosisContainer, { marginTop: getScaledFontSize(12), marginBottom: getScaledFontSize(12) }]}>
-                <Text style={[styles.diagnosisTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Diagnosis:</Text>
-                <Text style={[styles.diagnosis, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]} numberOfLines={0}>{plan.diagnosis}</Text>
+            )}
+
+            {medications.length > 0 && (
+              <View style={styles.treatmentSection}>
+                <View style={styles.treatmentSectionHeader}>
+                  <MaterialIcons name="medication" size={getScaledFontSize(18)} color={colors.primary} />
+                  <Text
+                    style={[
+                      styles.treatmentSectionTitle,
+                      {
+                        color: colors.text,
+                        fontSize: getScaledFontSize(16),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      },
+                    ]}
+                  >
+                    Medications Prescribed
+                  </Text>
+                  <View style={[styles.treatmentCountPill, { backgroundColor: colors.card }]}>
+                    <Text
+                      style={{
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(600) as any,
+                      }}
+                    >
+                      {medications.length}
+                    </Text>
+                  </View>
+                </View>
+                {medications.map((m) => renderMedicationRow(m))}
               </View>
-              <View style={[styles.diagnosisContainer, { marginTop: getScaledFontSize(12), marginBottom: getScaledFontSize(12) }]}>
-                <Text style={[styles.diagnosisTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Treatment Recommendations:</Text>
-                <Text style={[styles.diagnosis, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]} numberOfLines={0}>{plan.description}</Text>
-              </View>
-              <Text style={[styles.medicationsTitle, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Medications:</Text>
-              {plan.medications.map((med, idx) => (
-                <Text key={idx} style={[styles.medication, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>• {med}</Text>
+            )}
+          </>
+        )}
+      </ScrollView>
+    );
+  };
+
+  const renderDiagnosisCard = (d: ProviderDiagnosis) => {
+    const pill = clinicalStatusPill(d.clinicalStatus);
+    return (
+      <Card key={d.id} style={styles.diagnosisCard}>
+        <Card.Content>
+          <View style={styles.diagnosisRow}>
+            <Text
+              style={[
+                styles.diagnosisName,
+                {
+                  color: colors.text,
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  flex: 1,
+                },
+              ]}
+            >
+              {d.name}
+            </Text>
+            <View style={[styles.clinicalPill, { backgroundColor: pill.bg }]}>
+              <View style={[styles.clinicalDot, { backgroundColor: pill.fg }]} />
+              <Text
+                style={{
+                  color: pill.fg,
+                  fontSize: getScaledFontSize(11),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  textTransform: 'capitalize',
+                }}
+              >
+                {pill.label}
+              </Text>
+            </View>
+          </View>
+
+          {(d.onsetDate || d.recordedDate) && (
+            <View style={[styles.diagnosisMeta, { marginTop: 6 }]}>
+              {d.onsetDate && (
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(12),
+                  }}
+                >
+                  Onset {formatShortDate(d.onsetDate)}
+                </Text>
+              )}
+              {d.onsetDate && d.recordedDate && (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}> · </Text>
+              )}
+              {d.recordedDate && (
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(12),
+                  }}
+                >
+                  Recorded {formatShortDate(d.recordedDate)}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {d.notes.length > 0 && (
+            <View style={styles.diagnosisNotes}>
+              {d.notes.map((note, idx) => (
+                <Text
+                  key={idx}
+                  style={[
+                    styles.diagnosisNoteText,
+                    {
+                      color: colors.text,
+                      fontSize: getScaledFontSize(14),
+                      lineHeight: getScaledFontSize(21),
+                    },
+                  ]}
+                >
+                  {note}
+                </Text>
               ))}
-            </Card.Content>
-          </Card>
-        ))
-      )}
-    </ScrollView>
-  );
+            </View>
+          )}
+        </Card.Content>
+      </Card>
+    );
+  };
+
+  const renderMedicationRow = (m: ProviderMedication) => {
+    const status = medicationStatusPill(m.status);
+    return (
+      <Card key={m.id} style={styles.medicationCard}>
+        <Card.Content>
+          <View style={styles.diagnosisRow}>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                {m.name}
+              </Text>
+              {m.reason && (
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(12),
+                    marginTop: 2,
+                    fontStyle: 'italic',
+                  }}
+                >
+                  for {m.reason}
+                </Text>
+              )}
+            </View>
+            <View style={[styles.clinicalPill, { backgroundColor: status.bg }]}>
+              <View style={[styles.clinicalDot, { backgroundColor: status.fg }]} />
+              <Text
+                style={{
+                  color: status.fg,
+                  fontSize: getScaledFontSize(11),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  textTransform: 'capitalize',
+                }}
+              >
+                {status.label}
+              </Text>
+            </View>
+          </View>
+
+          {(m.dose || m.frequency) && (
+            <View style={styles.medChipRow}>
+              {m.dose && (
+                <View style={[styles.medChip, { backgroundColor: colors.card }]}>
+                  <MaterialIcons name="opacity" size={getScaledFontSize(12)} color={colors.subtext} />
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(12),
+                      fontWeight: getScaledFontWeight(500) as any,
+                    }}
+                  >
+                    {m.dose}
+                  </Text>
+                </View>
+              )}
+              {m.frequency && (
+                <View style={[styles.medChip, { backgroundColor: colors.card }]}>
+                  <MaterialIcons name="schedule" size={getScaledFontSize(12)} color={colors.subtext} />
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(12),
+                      fontWeight: getScaledFontWeight(500) as any,
+                    }}
+                  >
+                    {m.frequency}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {m.authoredOn && (
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(11),
+                marginTop: 8,
+              }}
+            >
+              Prescribed {formatShortDate(m.authoredOn)}
+            </Text>
+          )}
+        </Card.Content>
+      </Card>
+    );
+  };
 
   const renderProgressNotes = () => (
     <ScrollView style={styles.tabContent}>
@@ -1110,7 +1340,142 @@ export default function DoctorDetailScreen() {
   );
 }
 
+/**
+ * Map a FHIR Condition.clinicalStatus code to a display pill.
+ * Colors chosen for consistent meaning across light + dark themes:
+ *   - green  = ongoing/active condition
+ *   - amber  = recent flare (recurrence, relapse)
+ *   - blue   = in remission
+ *   - grey   = inactive / resolved / unknown
+ */
+function clinicalStatusPill(status: ClinicalStatus): { label: string; bg: string; fg: string } {
+  switch (status) {
+    case 'active':
+      return { label: 'Active', bg: '#DCFCE7', fg: '#15803D' };
+    case 'recurrence':
+    case 'relapse':
+      return { label: status === 'relapse' ? 'Relapse' : 'Recurrence', bg: '#FEF3C7', fg: '#B45309' };
+    case 'remission':
+      return { label: 'In Remission', bg: '#DBEAFE', fg: '#1D4ED8' };
+    case 'resolved':
+      return { label: 'Resolved', bg: '#E5E7EB', fg: '#374151' };
+    case 'inactive':
+      return { label: 'Inactive', bg: '#E5E7EB', fg: '#374151' };
+    default:
+      return { label: 'Unknown', bg: '#E5E7EB', fg: '#6B7280' };
+  }
+}
+
+/**
+ * Map a FHIR MedicationRequest.status to a display pill. The common
+ * values we see in practice are active / completed / stopped / cancelled.
+ */
+function medicationStatusPill(status: string): { label: string; bg: string; fg: string } {
+  const s = status.toLowerCase();
+  if (s === 'active')
+    return { label: 'Active', bg: '#DCFCE7', fg: '#15803D' };
+  if (s === 'on-hold' || s === 'draft')
+    return { label: s === 'draft' ? 'Draft' : 'On Hold', bg: '#FEF3C7', fg: '#B45309' };
+  if (s === 'stopped' || s === 'cancelled' || s === 'entered-in-error')
+    return { label: s === 'stopped' ? 'Stopped' : s === 'cancelled' ? 'Cancelled' : 'Error', bg: '#FEE2E2', fg: '#B91C1C' };
+  if (s === 'completed')
+    return { label: 'Completed', bg: '#E5E7EB', fg: '#374151' };
+  return { label: status || 'Unknown', bg: '#E5E7EB', fg: '#6B7280' };
+}
+
+/**
+ * Format an ISO date (or YYYY-MM-DD prefix) as "MMM D, YYYY". Returns
+ * the raw string unchanged if it can't be parsed, so unusual EHR formats
+ * survive without blowing up.
+ */
+function formatShortDate(iso: string): string {
+  const slice = iso.slice(0, 10);
+  const d = new Date(`${slice}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 const styles = StyleSheet.create({
+  // ─── Treatment plan redesign (diagnoses + medications sections) ────────
+  treatmentSection: {
+    marginBottom: 20,
+  },
+  treatmentSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+    marginBottom: 10,
+  },
+  treatmentSectionTitle: {
+    flex: 1,
+  },
+  treatmentCountPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  diagnosisCard: {
+    marginBottom: 10,
+    borderRadius: 12,
+    elevation: 0,
+  },
+  medicationCard: {
+    marginBottom: 10,
+    borderRadius: 12,
+    elevation: 0,
+  },
+  diagnosisRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  diagnosisName: {
+    flexShrink: 1,
+  },
+  diagnosisMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  diagnosisNotes: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
+    gap: 6,
+  },
+  diagnosisNoteText: {},
+  clinicalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  clinicalDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  medChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  medChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
   container: {
     flex: 1,
   },

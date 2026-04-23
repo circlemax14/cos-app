@@ -6,7 +6,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
 import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments } from '@/services/api/providers';
+import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlansLegacy as fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments } from '@/services/api/providers';
 import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';

@@ -89,6 +89,38 @@ export interface Patient {
 }
 
 // ─── Doctor Detail types ─────────────────────────────────────────────────────
+export type ClinicalStatus = 'active' | 'recurrence' | 'relapse' | 'inactive' | 'remission' | 'resolved' | 'unknown';
+
+export interface ProviderDiagnosis {
+  id: string;
+  name: string;
+  clinicalStatus: ClinicalStatus;
+  onsetDate: string | null;
+  recordedDate: string | null;
+  notes: string[];
+}
+
+export interface ProviderMedication {
+  id: string;
+  name: string;
+  status: string;
+  dose: string | null;
+  frequency: string | null;
+  authoredOn: string | null;
+  reason: string | null;
+}
+
+/**
+ * Combined view of a single provider's clinical footprint: the diagnoses
+ * they recorded and the medications they prescribed. Replaces the legacy
+ * TreatmentPlanItem which duplicated the same med list on every diagnosis.
+ */
+export interface ProviderTreatmentPlan {
+  diagnoses: ProviderDiagnosis[];
+  medications: ProviderMedication[];
+}
+
+/** @deprecated Retained only for the legacy card path; use ProviderTreatmentPlan. */
 export interface TreatmentPlanItem {
   id: string;
   title: string;
