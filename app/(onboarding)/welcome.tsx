@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -24,19 +24,25 @@ import { useAccessibility } from '@/stores/accessibility-store';
 export default function WelcomeScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const [firstName, setFirstName] = useState<string | null>(null);
+  const { firstName: firstNameParam } = useLocalSearchParams<{ firstName?: string }>();
+  const initialName = firstNameParam?.trim() || null;
+  const [firstName, setFirstName] = useState<string | null>(initialName);
   const [continuing, setContinuing] = useState(false);
 
   const waveRotation = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
   const contentTranslate = useSharedValue(16);
 
+  // Fallback: only fetch from the server if no name was passed via the
+  // route param. This avoids the flash where "Hi!" renders first and then
+  // swaps to "Hi, {firstName}!" once the async call resolves.
   useEffect(() => {
+    if (initialName) return;
     (async () => {
       const res = await checkSession();
       setFirstName(res.user?.firstName?.trim() || null);
     })();
-  }, []);
+  }, [initialName]);
 
   useEffect(() => {
     contentOpacity.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.quad) });

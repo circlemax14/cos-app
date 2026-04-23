@@ -53,7 +53,15 @@ async function getDestination(user: UserProfile, isLocked: boolean): Promise<str
   if (!user.dataReady) return '/(onboarding)/data-processing';
 
   // Data ready + welcome not yet seen → show it now (applies to existing users).
-  if (!user.hasSeenWelcome) return '/(onboarding)/welcome';
+  if (!user.hasSeenWelcome) {
+    // Pass firstName as a route param so the greeting renders correctly on
+    // first paint — otherwise the screen flashes "Hi!" before the async
+    // profile fetch completes and the name swaps in.
+    const firstName = user.firstName?.trim();
+    return firstName
+      ? `/(onboarding)/welcome?firstName=${encodeURIComponent(firstName)}`
+      : '/(onboarding)/welcome';
+  }
 
   return finalHome();
 }
