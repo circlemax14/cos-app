@@ -55,6 +55,14 @@ export default function RootLayout() {
                     }}
                   />
                   <Stack.Screen
+                    name="agency-detail"
+                    options={{
+                      presentation: 'modal',
+                      title: 'Agency Details',
+                      headerShown: false,
+                    }}
+                  />
+                  <Stack.Screen
                     name="appointments-modal"
                     options={{
                       presentation: 'modal',
