@@ -32,7 +32,13 @@ const URGENCY_CONFIG: Record<
 };
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
+  // Backend stores full ISO timestamps (e.g. "2026-05-07T08:10:35.694Z").
+  // Older data may still be a plain "YYYY-MM-DD". Strip any time portion
+  // first so both shapes parse reliably, then treat the remainder as a
+  // local calendar date.
+  const dateOnly = dateStr.slice(0, 10);
+  const d = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -232,13 +238,23 @@ export function RecommendedAppointmentsList() {
                 </Text>
 
                 <View style={styles.metaRow}>
-                  <View style={[styles.badge, { backgroundColor: urgencyConfig.bg }]}>
-                    <Text
-                      style={{ color: urgencyConfig.text, fontSize: getScaledFontSize(11), fontWeight: '600' }}
-                    >
-                      By {formatDate(item.recommendedByDate)}
-                    </Text>
-                  </View>
+                  {(() => {
+                    const formatted = formatDate(item.recommendedByDate);
+                    if (!formatted) return null;
+                    return (
+                      <View style={[styles.badge, { backgroundColor: urgencyConfig.bg }]}>
+                        <Text
+                          style={{
+                            color: urgencyConfig.text,
+                            fontSize: getScaledFontSize(11),
+                            fontWeight: '600',
+                          }}
+                        >
+                          By {formatted}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                   <View
                     style={[
                       styles.badge,
