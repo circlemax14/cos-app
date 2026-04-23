@@ -111,9 +111,16 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         style={[
           styles.tabButton,
           {
-            paddingHorizontal: getScaledFontSize(14),
+            // Icon-only tabs: tighter padding than the old label-bearing
+            // layout. These values are scaled with accessibility text size
+            // so icons grow with the patient's chosen scale. When the
+            // total content exceeds the container, ScrollView kicks in
+            // and the row becomes horizontally scrollable.
+            // minWidth is 60px so the 46px elevated Health Plan pill
+            // clears its 8px side-padding without clipping.
+            paddingHorizontal: getScaledFontSize(8),
             paddingVertical: getScaledFontSize(10),
-            minWidth: getScaledFontSize(70),
+            minWidth: getScaledFontSize(60),
           },
           shouldDistributeEvenly && styles.tabButtonDistributed
         ]}>
