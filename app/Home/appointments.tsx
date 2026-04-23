@@ -7,7 +7,7 @@ import { useAppointments } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 type AppointmentTab = 'past' | 'recommended';
 
@@ -44,7 +44,12 @@ export default function AppointmentsScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<AppointmentTab>('past');
+  // Initial tab honours ?tab=recommended from deep-links (e.g. the
+  // "Recommended Appointments" card on the Home screen).
+  const searchParams = useLocalSearchParams<{ tab?: string }>();
+  const [activeTab, setActiveTab] = useState<AppointmentTab>(
+    searchParams.tab === 'recommended' ? 'recommended' : 'past',
+  );
 
   const { data, isLoading, isError, refetch } = useAppointments();
 

@@ -16,6 +16,8 @@ import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/provi
 import { fetchAppointments } from '@/services/api/appointments';
 import { fetchPatientInfo } from '@/services/api/patient';
 import { fetchPendingTaskCount } from '@/services/api/ai-health-plan';
+import { fetchRecommendedAppointments } from '@/services/api/recommended-appointments';
+import type { RecommendedAppointment } from '@/services/api/types';
 import type { Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
@@ -2281,6 +2283,7 @@ export default function HomeScreen() {
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
+  const [recommendedAppointments, setRecommendedAppointments] = useState<RecommendedAppointment[]>([]);
 
   const circleProviders = React.useMemo(
     () => selectedProviders.slice(0, MAX_SELECTED_PROVIDERS),
@@ -2348,9 +2351,34 @@ export default function HomeScreen() {
       }
     };
 
+    const loadRecommended = async () => {
+      try {
+        const items = await fetchRecommendedAppointments({ status: 'pending' });
+        // Filter to "next 30 days" for the home-screen preview. Anything
+        // further out stays in the full Recommended tab but clutters the
+        // home summary.
+        const now = Date.now();
+        const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+        const upcoming = items
+          .filter((r) => {
+            const t = new Date(r.recommendedByDate).getTime();
+            return Number.isFinite(t) && t >= now && t <= now + THIRTY_DAYS_MS;
+          })
+          .sort(
+            (a, b) =>
+              new Date(a.recommendedByDate).getTime() -
+              new Date(b.recommendedByDate).getTime(),
+          );
+        setRecommendedAppointments(upcoming);
+      } catch {
+        // Non-critical — the section just won't render
+      }
+    };
+
     loadProviders();
     loadPatient();
     loadTaskCount();
+    loadRecommended();
     // Restore persisted provider selection and care manager from the server
     loadFromServer();
   }, [validateAndCleanProviders, loadFromServer]);
@@ -2430,14 +2458,28 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [providers, patient, allAppointments, taskCount] = await Promise.all([
+      const [providers, patient, allAppointments, taskCount, recItems] = await Promise.all([
         fetchProviders(),
         fetchPatientInfo(),
         fetchAppointments(),
         fetchPendingTaskCount(),
+        fetchRecommendedAppointments({ status: 'pending' }),
       ]);
       setFastenProviders(providers);
       setPendingTaskCount(taskCount);
+      const nowMs = Date.now();
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      const upcomingRecs = (recItems ?? [])
+        .filter((r) => {
+          const t = new Date(r.recommendedByDate).getTime();
+          return Number.isFinite(t) && t >= nowMs && t <= nowMs + THIRTY_DAYS_MS;
+        })
+        .sort(
+          (a, b) =>
+            new Date(a.recommendedByDate).getTime() -
+            new Date(b.recommendedByDate).getTime(),
+        );
+      setRecommendedAppointments(upcomingRecs);
       if (patient) {
         setPatientName(patient.name || '');
       }
@@ -2796,6 +2838,147 @@ export default function HomeScreen() {
                             fontWeight: settings.isBoldTextEnabled ? '600' : '400'
                           }
                         ]}>{`${dateLabel} · ${appointment.time}`}</Text>
+                      </View>
+                    </View>
+                  </Card>
+                );
+              })}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {recommendedAppointments.length > 0 && (
+          <View style={styles.appointmentsSection}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                {
+                  fontSize: getScaledFontSize(18),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  color: colors.text,
+                },
+              ]}
+            >
+              Recommended Appointments
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginBottom: getScaledFontSize(8),
+                textAlign: 'center',
+              }}
+            >
+              Next 30 days · tap to view all
+            </Text>
+            <TouchableOpacity
+              onPress={() => router.push('/Home/appointments?tab=recommended' as never)}
+              style={[
+                styles.deckContainer,
+                {
+                  minHeight: Math.max(
+                    56,
+                    getScaledFontSize(16) +
+                      getScaledFontSize(2) +
+                      getScaledFontSize(14) +
+                      getScaledFontSize(8) * 2 +
+                      getScaledFontSize(4),
+                  ),
+                },
+              ]}
+            >
+              {recommendedAppointments.slice(0, 3).map((rec, index) => {
+                const byDate = new Date(rec.recommendedByDate);
+                const dateLabel = Number.isFinite(byDate.getTime())
+                  ? byDate.toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : '';
+                const urgencyLabel =
+                  rec.urgency === 'urgent'
+                    ? '🔴 Urgent'
+                    : rec.urgency === 'soon'
+                      ? '🟡 Soon'
+                      : '⚪ Routine';
+                const subtitle = dateLabel
+                  ? `${urgencyLabel} · By ${dateLabel}`
+                  : urgencyLabel;
+                const iconNames = ['calendar-plus', 'clipboard-pulse', 'medical-bag'];
+                const cardStyle =
+                  [styles.firstCard, styles.secondCard, styles.thirdCard][index] ??
+                  styles.firstCard;
+
+                return (
+                  <Card
+                    key={rec.id}
+                    style={[
+                      styles.appointmentCard,
+                      cardStyle,
+                      {
+                        minHeight: Math.max(
+                          56,
+                          getScaledFontSize(16) +
+                            getScaledFontSize(2) +
+                            getScaledFontSize(14) +
+                            getScaledFontSize(8) * 2 +
+                            getScaledFontSize(4),
+                        ),
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.listItemContainer,
+                        {
+                          paddingHorizontal: getScaledFontSize(16),
+                          paddingVertical: getScaledFontSize(8),
+                          minHeight: Math.max(
+                            56,
+                            getScaledFontSize(16) +
+                              getScaledFontSize(2) +
+                              getScaledFontSize(14) +
+                              getScaledFontSize(8) * 2 +
+                              getScaledFontSize(4),
+                          ),
+                        },
+                      ]}
+                    >
+                      <View style={{ transform: [{ scale: getScaledFontSize(24) / 24 }] }}>
+                        <List.Icon icon={iconNames[index] ?? 'calendar-plus'} color="#008080" />
+                      </View>
+                      <View
+                        style={[
+                          styles.listItemContent,
+                          { marginLeft: getScaledFontSize(16), flexShrink: 1 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.appointmentTitle,
+                            {
+                              fontSize: getScaledFontSize(16),
+                              fontWeight: settings.isBoldTextEnabled ? '700' : '500',
+                              marginBottom: getScaledFontSize(2),
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {rec.title}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.appointmentDescription,
+                            {
+                              fontSize: getScaledFontSize(14),
+                              fontWeight: settings.isBoldTextEnabled ? '600' : '400',
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {subtitle}
+                        </Text>
                       </View>
                     </View>
                   </Card>
