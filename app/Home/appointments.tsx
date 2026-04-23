@@ -1,5 +1,6 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { RecommendedAppointmentsList } from '@/components/recommended-appointments-list';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
@@ -180,10 +181,7 @@ export default function AppointmentsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => {
-              setActiveTab('recommended');
-              router.push('/Home/recommended-appointments' as never);
-            }}
+            onPress={() => setActiveTab('recommended')}
             style={[
               styles.tabToggleItem,
               activeTab === 'recommended' && { backgroundColor: colors.tint },
@@ -204,6 +202,10 @@ export default function AppointmentsScreen() {
           </Pressable>
         </View>
 
+        {activeTab === 'recommended' ? (
+          <RecommendedAppointmentsList />
+        ) : (
+          <>
         {/* Search bar */}
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <IconSymbol name="magnifyingglass" size={getScaledFontSize(18)} color={colors.subtext} />
@@ -353,6 +355,8 @@ export default function AppointmentsScreen() {
               })}
             </View>
           ))
+        )}
+          </>
         )}
 
         <View style={{ height: 40 }} />
