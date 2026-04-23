@@ -1,3 +1,4 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
@@ -153,7 +154,7 @@ export function BeatingHeartIcon({
       />
       {/* Heart with built-in ECG line */}
       <Animated.View style={{ transform: [{ scale }] }}>
-        <MaterialIcons name="monitor-heart" size={size} color={color} />
+        <MaterialCommunityIcons name="heart-pulse" size={size} color={color} />
       </Animated.View>
       {/* AI sparkle */}
       <Animated.View
