@@ -2861,16 +2861,6 @@ export default function HomeScreen() {
             >
               Recommended Appointments
             </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(12),
-                marginBottom: getScaledFontSize(8),
-                textAlign: 'center',
-              }}
-            >
-              Next 30 days · tap to view all
-            </Text>
             <TouchableOpacity
               onPress={() => router.push('/Home/appointments?tab=recommended' as never)}
               style={[
