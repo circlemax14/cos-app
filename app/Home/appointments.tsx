@@ -1,12 +1,13 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { RecommendedAppointmentsList } from '@/components/recommended-appointments-list';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 type AppointmentTab = 'past' | 'recommended';
 
@@ -29,8 +30,12 @@ const RESOURCE_TYPE_STYLES: Record<string, { bg: string; text: string; label: st
   Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
 };
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  // Accept both "YYYY-MM-DD" and full ISO timestamps by slicing the date part first.
+  const dateOnly = dateStr.slice(0, 10);
+  const d = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -39,7 +44,12 @@ export default function AppointmentsScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<AppointmentTab>('past');
+  // Initial tab honours ?tab=recommended from deep-links (e.g. the
+  // "Recommended Appointments" card on the Home screen).
+  const searchParams = useLocalSearchParams<{ tab?: string }>();
+  const [activeTab, setActiveTab] = useState<AppointmentTab>(
+    searchParams.tab === 'recommended' ? 'recommended' : 'past',
+  );
 
   const { data, isLoading, isError, refetch } = useAppointments();
 
@@ -180,10 +190,7 @@ export default function AppointmentsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            onPress={() => {
-              setActiveTab('recommended');
-              router.push('/Home/recommended-appointments' as never);
-            }}
+            onPress={() => setActiveTab('recommended')}
             style={[
               styles.tabToggleItem,
               activeTab === 'recommended' && { backgroundColor: colors.tint },
@@ -204,6 +211,10 @@ export default function AppointmentsScreen() {
           </Pressable>
         </View>
 
+        {activeTab === 'recommended' ? (
+          <RecommendedAppointmentsList />
+        ) : (
+          <>
         {/* Search bar */}
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <IconSymbol name="magnifyingglass" size={getScaledFontSize(18)} color={colors.subtext} />
@@ -353,6 +364,8 @@ export default function AppointmentsScreen() {
               })}
             </View>
           ))
+        )}
+          </>
         )}
 
         <View style={{ height: 40 }} />

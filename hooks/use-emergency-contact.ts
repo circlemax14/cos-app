@@ -2,7 +2,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 
 export interface EmergencyContact {
-  id: string; name: string; relationship: string; phone: string; email?: string; source: 'ehr' | 'user'
+  id: string;
+  name: string;
+  relationship: string;
+  phone: string;
+  email?: string;
+  source: 'ehr' | 'user';
+  /** Originating clinic / organization — populated for EHR-sourced contacts. */
+  clinicName?: string;
+  /** Opaque FHIR reference to the originating Organization. */
+  clinicRef?: string;
 }
 
 export function useEmergencyContacts() {

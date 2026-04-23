@@ -177,12 +177,24 @@ export default function EmergencyContactScreen() {
               ]}
             >
               <Card.Content>
-                {/* Source label for EHR contacts */}
+                {/* Source label for EHR contacts — show clinic when present */}
                 {contact.source === 'ehr' && (
                   <View style={styles.ehrBadge}>
                     <MaterialIcons name="local-hospital" size={getScaledFontSize(14)} color={colors.primary} />
-                    <Text style={[styles.ehrLabel, { color: colors.primary, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>
-                      From Medical Records
+                    <Text
+                      style={[
+                        styles.ehrLabel,
+                        {
+                          color: colors.primary,
+                          fontSize: getScaledFontSize(12),
+                          fontWeight: getScaledFontWeight(500) as any,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {contact.clinicName
+                        ? `From ${contact.clinicName}`
+                        : 'From Medical Records'}
                     </Text>
                   </View>
                 )}

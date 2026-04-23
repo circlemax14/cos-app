@@ -89,6 +89,38 @@ export interface Patient {
 }
 
 // ─── Doctor Detail types ─────────────────────────────────────────────────────
+export type ClinicalStatus = 'active' | 'recurrence' | 'relapse' | 'inactive' | 'remission' | 'resolved' | 'unknown';
+
+export interface ProviderDiagnosis {
+  id: string;
+  name: string;
+  clinicalStatus: ClinicalStatus;
+  onsetDate: string | null;
+  recordedDate: string | null;
+  notes: string[];
+}
+
+export interface ProviderMedication {
+  id: string;
+  name: string;
+  status: string;
+  dose: string | null;
+  frequency: string | null;
+  authoredOn: string | null;
+  reason: string | null;
+}
+
+/**
+ * Combined view of a single provider's clinical footprint: the diagnoses
+ * they recorded and the medications they prescribed. Replaces the legacy
+ * TreatmentPlanItem which duplicated the same med list on every diagnosis.
+ */
+export interface ProviderTreatmentPlan {
+  diagnoses: ProviderDiagnosis[];
+  medications: ProviderMedication[];
+}
+
+/** @deprecated Retained only for the legacy card path; use ProviderTreatmentPlan. */
 export interface TreatmentPlanItem {
   id: string;
   title: string;
@@ -121,6 +153,69 @@ export interface Medication {
   dosage: string;
   frequency: string;
   purpose: string;
+}
+
+/** Richer medication from /v1/patients/me/medications */
+export interface MedicationSummary {
+  id: string;
+  name: string;
+  status: string;
+  dosage: string;
+  frequency: string;
+  authoredOn: string | null;
+  doseValue: number | null;
+  doseUnit: string | null;
+  rawDosageText: string | null;
+}
+
+// ─── AI Health Plan + Tasks ──────────────────────────────────────────────
+export type TaskType = 'medication' | 'exercise' | 'appointment' | 'reminder';
+export type TaskRecurrence = 'daily' | 'weekdays' | 'weekly' | 'once';
+export type TaskStatus = 'pending' | 'completed' | 'skipped';
+
+export interface PlanTask {
+  id: string;
+  type: TaskType;
+  title: string;
+  description: string;
+  /** HH:MM 24-hour local time */
+  scheduledTime: string;
+  recurrence: TaskRecurrence;
+  /** ISO date YYYY-MM-DD */
+  startDate: string;
+  endDate?: string;
+  daysOfWeek?: number[];
+  metadata?: {
+    medicationName?: string;
+    dosage?: string;
+    durationMinutes?: number;
+    relatedConditionFhirId?: string;
+  };
+  source: 'ai' | 'care_manager';
+}
+
+export interface AiPlanGoal {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface AiHealthPlan {
+  version: number;
+  summary: string;
+  goals: AiPlanGoal[];
+  tasks: PlanTask[];
+  sourceDataHash: string;
+  generatedAt: string;
+  provider: 'bedrock' | 'openai';
+}
+
+/** Task + completion state for a specific date. */
+export interface TaskOccurrence extends PlanTask {
+  scheduledFor: string;
+  status: TaskStatus;
+  completedAt?: string;
 }
 
 // ─── Health Plan ─────────────────────────────────────────────────────────────

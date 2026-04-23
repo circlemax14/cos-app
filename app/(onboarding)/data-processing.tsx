@@ -35,7 +35,10 @@ export default function DataProcessingScreen() {
   const [retrying, setRetrying] = useState(false);
 
   const navigateToHome = useCallback(async () => {
-    router.replace('/Home' as never);
+    // Route through the splash gate so the one-time welcome screen gets a
+    // chance to run before Home (new users AND existing users who haven't
+    // seen it yet).
+    router.replace('/' as never);
   }, []);
 
   const checkDataReady = useCallback(async () => {

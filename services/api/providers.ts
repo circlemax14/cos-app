@@ -1,6 +1,19 @@
 import { apiClient } from '@/lib/api-client';
 import { categorizeProvider } from '@/services/provider-categorization';
-import type { Provider, TreatmentPlanItem, ProgressNote, ProviderAppointment, Allergy, CarePlanItem, DeviceItem, LabReport } from './types';
+import type {
+  Provider,
+  TreatmentPlanItem,
+  ProgressNote,
+  ProviderAppointment,
+  Allergy,
+  CarePlanItem,
+  DeviceItem,
+  LabReport,
+  ProviderTreatmentPlan,
+  ProviderDiagnosis,
+  ProviderMedication,
+  ClinicalStatus,
+} from './types';
 
 interface FhirName {
   given?: string[];
@@ -105,42 +118,196 @@ export async function fetchProvidersByDepartment(): Promise<{ id: string; name: 
   }));
 }
 
-export async function fetchProviderTreatmentPlans(providerId: string): Promise<TreatmentPlanItem[]> {
+interface RawCondition {
+  id: string;
+  code?: { text?: string; coding?: { display?: string; code?: string }[] };
+  clinicalStatus?: { coding?: { code?: string }[] };
+  onsetDateTime?: string;
+  recordedDate?: string;
+  note?: { text?: string }[];
+  recorder?: { reference?: string };
+  asserter?: { reference?: string };
+}
+
+interface RawMedicationRequest {
+  id: string;
+  status?: string;
+  authoredOn?: string;
+  medicationCodeableConcept?: { text?: string; coding?: { display?: string }[] };
+  medicationReference?: { display?: string };
+  requester?: { reference?: string };
+  dosageInstruction?: Array<{
+    text?: string;
+    timing?: {
+      repeat?: { frequency?: number; period?: number; periodUnit?: string };
+    };
+    doseAndRate?: Array<{ doseQuantity?: { value?: number; unit?: string } }>;
+  }>;
+  reasonCode?: { text?: string; coding?: { display?: string }[] }[];
+  reasonReference?: { reference?: string; display?: string }[];
+}
+
+const CLINICAL_STATUS_CODES: ClinicalStatus[] = [
+  'active',
+  'recurrence',
+  'relapse',
+  'inactive',
+  'remission',
+  'resolved',
+];
+
+function normaliseClinicalStatus(raw: RawCondition['clinicalStatus']): ClinicalStatus {
+  const code = raw?.coding?.[0]?.code?.toLowerCase();
+  if (code && (CLINICAL_STATUS_CODES as string[]).includes(code)) {
+    return code as ClinicalStatus;
+  }
+  return 'unknown';
+}
+
+function conditionName(c: RawCondition): string {
+  return (
+    c.code?.text?.trim() ||
+    c.code?.coding?.find((x) => x.display)?.display ||
+    'Unnamed condition'
+  );
+}
+
+function medicationName(m: RawMedicationRequest): string {
+  return (
+    m.medicationCodeableConcept?.text?.trim() ||
+    m.medicationCodeableConcept?.coding?.find((x) => x.display)?.display ||
+    m.medicationReference?.display ||
+    'Unnamed medication'
+  );
+}
+
+/**
+ * Derive a human-readable dose string from a MedicationRequest.
+ * Prefers structured doseQuantity; falls back to the free-text `.text`
+ * field when the EHR only supplied prose.
+ */
+function formatDose(m: RawMedicationRequest): string | null {
+  const dose = m.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity;
+  if (dose?.value != null) {
+    const unit = dose.unit ?? '';
+    return `${dose.value}${unit ? ` ${unit}` : ''}`.trim();
+  }
+  const text = m.dosageInstruction?.[0]?.text?.trim();
+  return text || null;
+}
+
+/**
+ * Derive "once daily", "twice daily", "every 8 hours", etc. from a
+ * structured timing.repeat block. Returns null when the EHR didn't
+ * provide structured timing.
+ */
+function formatFrequency(m: RawMedicationRequest): string | null {
+  const repeat = m.dosageInstruction?.[0]?.timing?.repeat;
+  if (!repeat) return null;
+  const freq = repeat.frequency ?? 1;
+  const period = repeat.period ?? 1;
+  const unit = repeat.periodUnit ?? 'd';
+  // Common shortcuts
+  if (unit === 'd' && period === 1) {
+    if (freq === 1) return 'Once daily';
+    if (freq === 2) return 'Twice daily';
+    if (freq === 3) return 'Three times daily';
+    if (freq === 4) return 'Four times daily';
+    return `${freq} times daily`;
+  }
+  if (unit === 'h') return `Every ${period} hour${period === 1 ? '' : 's'}`;
+  if (unit === 'wk') return `${freq} time${freq === 1 ? '' : 's'} per week`;
+  return `${freq}/${period}${unit}`;
+}
+
+function formatReason(m: RawMedicationRequest): string | null {
+  const code = m.reasonCode?.[0];
+  const byCode = code?.text || code?.coding?.find((x) => x.display)?.display;
+  if (byCode) return byCode.trim();
+  const ref = m.reasonReference?.[0]?.display;
+  return ref ? ref.trim() : null;
+}
+
+function isFromProvider(
+  recorderRef: string | undefined,
+  asserterRef: string | undefined,
+  requesterRef: string | undefined,
+  providerRef: string,
+): boolean {
+  return (
+    recorderRef === providerRef ||
+    asserterRef === providerRef ||
+    requesterRef === providerRef
+  );
+}
+
+/**
+ * Fetch a provider's clinical footprint for this patient: the diagnoses
+ * they recorded and the medications they prescribed. Unattributed items
+ * (no recorder / requester reference on the FHIR resource) are shown on
+ * every provider since most real-world EHR exports from Fasten strip
+ * those references — otherwise the tab would look empty for every
+ * provider.
+ */
+export async function fetchProviderTreatmentPlans(
+  providerId: string,
+): Promise<ProviderTreatmentPlan> {
   const res = await apiClient.get<{
     success: boolean;
-    data: {
-      conditions: {
-        id: string;
-        code?: { text?: string };
-        clinicalStatus?: { coding?: { code?: string }[] };
-        recordedDate?: string;
-        note?: { text?: string }[];
-        recorder?: { reference?: string };
-        asserter?: { reference?: string };
-      }[];
-      medications: {
-        medicationCodeableConcept?: { text?: string };
-        requester?: { reference?: string };
-      }[];
-    };
+    data: { conditions: RawCondition[]; medications: RawMedicationRequest[] };
   }>('/v1/patients/me/medical-data');
+
   const { conditions, medications } = res.data.data;
   const providerRef = `Practitioner/${providerId}`;
-  const filtered = conditions.filter(
-    (c) => c.recorder?.reference === providerRef || c.asserter?.reference === providerRef || (!c.recorder?.reference && !c.asserter?.reference),
-  );
-  const medNames = medications
-    .filter((m) => m.requester?.reference === providerRef || !m.requester?.reference)
-    .map((m) => m.medicationCodeableConcept?.text)
-    .filter((n): n is string => !!n);
-  return filtered.map((c) => ({
-    id: c.id,
-    title: c.code?.text ?? 'Unknown Condition',
-    status: c.clinicalStatus?.coding?.[0]?.code === 'active' ? 'Active' as const : 'Completed' as const,
-    date: c.recordedDate ?? '',
-    diagnosis: c.code?.text ?? '',
-    description: c.note?.[0]?.text ?? '',
-    medications: medNames,
+
+  const diagnoses: ProviderDiagnosis[] = conditions
+    .filter((c) => {
+      const hasAnyRef = !!(c.recorder?.reference || c.asserter?.reference);
+      if (!hasAnyRef) return true;
+      return isFromProvider(c.recorder?.reference, c.asserter?.reference, undefined, providerRef);
+    })
+    .map((c) => ({
+      id: c.id,
+      name: conditionName(c),
+      clinicalStatus: normaliseClinicalStatus(c.clinicalStatus),
+      onsetDate: c.onsetDateTime ?? null,
+      recordedDate: c.recordedDate ?? null,
+      notes: (c.note ?? [])
+        .map((n) => n.text?.trim())
+        .filter((t): t is string => !!t),
+    }));
+
+  const meds: ProviderMedication[] = medications
+    .filter((m) => {
+      if (!m.requester?.reference) return true;
+      return isFromProvider(undefined, undefined, m.requester.reference, providerRef);
+    })
+    .map((m) => ({
+      id: m.id,
+      name: medicationName(m),
+      status: m.status ?? 'unknown',
+      dose: formatDose(m),
+      frequency: formatFrequency(m),
+      authoredOn: m.authoredOn ?? null,
+      reason: formatReason(m),
+    }));
+
+  return { diagnoses, medications: meds };
+}
+
+/** @deprecated Use fetchProviderTreatmentPlans (now returns ProviderTreatmentPlan). */
+export async function fetchProviderTreatmentPlansLegacy(
+  providerId: string,
+): Promise<TreatmentPlanItem[]> {
+  const { diagnoses } = await fetchProviderTreatmentPlans(providerId);
+  return diagnoses.map((d) => ({
+    id: d.id,
+    title: d.name,
+    status: d.clinicalStatus === 'active' ? 'Active' as const : 'Completed' as const,
+    date: d.recordedDate ?? '',
+    diagnosis: d.name,
+    description: d.notes.join('\n\n'),
+    medications: [],
   }));
 }
 

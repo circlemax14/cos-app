@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-native';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -78,6 +79,7 @@ export default function FastenConnectScreen() {
       if (navigating.current) return;
       navigating.current = true;
       setIsLoading(true);
+      await AsyncStorage.setItem('fasten_onboarding_done', '1');
       router.replace('/(onboarding)/data-processing' as never);
       return;
     }
@@ -89,6 +91,7 @@ export default function FastenConnectScreen() {
         if (navigating.current) return;
         navigating.current = true;
         setIsLoading(true);
+        await AsyncStorage.setItem('fasten_onboarding_done', '1');
         router.replace('/(onboarding)/data-processing' as never);
       } else {
         // No clinics connected — show prompt to connect
@@ -187,6 +190,25 @@ export default function FastenConnectScreen() {
             Connect a Clinic
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.skipButton}
+          onPress={async () => {
+            await AsyncStorage.setItem('fasten_onboarding_done', '1');
+            router.replace('/Home' as never);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Skip for now"
+        >
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(15),
+              fontWeight: getScaledFontWeight(500) as any,
+            }}
+          >
+            Skip for now
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -263,6 +285,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     borderRadius: 24,
     minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    marginTop: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

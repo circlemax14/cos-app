@@ -2,7 +2,7 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -59,6 +59,9 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     // Check if this route is focused by comparing with the current route key
     const isFocused = state.routes[state.index]?.key === route.key;
 
+    // Accessibility-only label; not visually rendered any more
+    void label;
+
     const onPress = () => {
       const event = navigation.emit({
         type: 'tabPress',
@@ -84,12 +87,15 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     };
 
     // Get icon from options
-    const iconColor = isFocused ? '#008080' : '#000000';
+    const isHealthPlan = route.name === 'health-plan';
+    const iconColor = isHealthPlan
+      ? (isFocused ? '#FFFFFF' : '#008080')
+      : (isFocused ? '#008080' : '#000000');
     const icon = options.tabBarIcon
       ? options.tabBarIcon({
         focused: isFocused,
         color: iconColor,
-        size: getScaledFontSize(24),
+        size: getScaledFontSize(isHealthPlan ? 26 : 24),
       })
       : null;
 
@@ -105,27 +111,36 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         style={[
           styles.tabButton,
           {
-            paddingHorizontal: getScaledFontSize(14),
+            // Icon-only tabs: tighter padding than the old label-bearing
+            // layout. These values are scaled with accessibility text size
+            // so icons grow with the patient's chosen scale. When the
+            // total content exceeds the container, ScrollView kicks in
+            // and the row becomes horizontally scrollable.
+            // minWidth is 60px so the 46px elevated Health Plan pill
+            // clears its 8px side-padding without clipping.
+            paddingHorizontal: getScaledFontSize(8),
             paddingVertical: getScaledFontSize(10),
-            minWidth: getScaledFontSize(70),
+            minWidth: getScaledFontSize(60),
           },
           shouldDistributeEvenly && styles.tabButtonDistributed
         ]}>
         <View style={styles.tabContent}>
-          {icon && <View style={styles.iconContainer}>{icon}</View>}
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={[
-              styles.tabLabel,
-              {
-                fontSize: getScaledFontSize(12),
-                color: isFocused ? '#008080' : '#000000',
-              },
-            ]}>
-            {label as string}
-          </Text>
+          {icon && (
+            isHealthPlan ? (
+              <View style={[
+                styles.healthPlanHighlight,
+                {
+                  backgroundColor: isFocused ? '#008080' : 'rgba(0,128,128,0.10)',
+                  borderColor: isFocused ? 'transparent' : 'rgba(0,128,128,0.25)',
+                  shadowOpacity: isFocused ? 0.25 : 0,
+                },
+              ]}>
+                {icon}
+              </View>
+            ) : (
+              <View style={styles.iconContainer}>{icon}</View>
+            )
+          )}
         </View>
       </PlatformPressable>
     );
@@ -200,9 +215,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabLabel: {
-    fontWeight: '500',
-    color: '#000000', // Sharp black color
+  healthPlanHighlight: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    shadowColor: '#008080',
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 10,
+    elevation: 4,
   },
 });
 

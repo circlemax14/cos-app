@@ -37,6 +37,11 @@ export default function LockScreen() {
     const enabled = await isBiometricEnabled();
     if (enabled) {
       setShowBiometric(true);
+      // Race PIN entry against Face ID / Touch ID. The lock screen (with
+      // the number pad) is rendered first so the user can start typing
+      // immediately; the biometric sheet layers on top and either succeeds
+      // (unlocks) or the user taps "Use PIN" and falls back to what they
+      // already see behind it. Whichever finishes first wins.
       attemptBiometric();
     }
   };
@@ -133,7 +138,7 @@ export default function LockScreen() {
             },
           ]}
         >
-          6-digit security code
+          {showBiometric ? 'Enter PIN or use Face ID' : '6-digit security code'}
         </Text>
         <PinDots length={6} filled={pin.length} error={error} />
         {error && (
