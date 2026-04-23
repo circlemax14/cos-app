@@ -440,160 +440,6 @@ export default function TodayScheduleScreen() {
           </View>
         </Card>
 
-        {/* Today's Plan Tasks (from AI health plan) */}
-        {planTasks.length > 0 && (
-          <View style={styles.planTasksSection}>
-            <View style={styles.planTasksHeader}>
-              <Text style={[styles.planTasksTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}>
-                Today&apos;s Tasks
-              </Text>
-              <Text style={[styles.planTasksProgress, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any, color: '#008080' }]}>
-                {planTasks.filter((t) => t.status === 'completed').length} / {planTasks.length} done
-              </Text>
-            </View>
-            {planTasks.map((task) => {
-              const icon = TASK_ICON_CONFIG[task.type];
-              const done = task.status === 'completed';
-              const skipped = task.status === 'skipped';
-              return (
-                <TouchableOpacity
-                  key={`${task.id}#${task.scheduledFor}`}
-                  activeOpacity={0.7}
-                  onPress={() => handleTaskComplete(task)}
-                  onLongPress={() => handleTaskSkip(task)}
-                  style={[
-                    styles.planTaskRow,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: colors.text + '15',
-                      opacity: done || skipped ? 0.55 : 1,
-                    },
-                  ]}>
-                  <View
-                    style={[
-                      styles.planTaskCheck,
-                      {
-                        borderColor: done ? '#008080' : colors.text + '50',
-                        backgroundColor: done ? '#008080' : 'transparent',
-                      },
-                    ]}>
-                    {done && <MaterialIcons name="check" size={14} color="#fff" />}
-                    {skipped && <MaterialIcons name="close" size={14} color={colors.text + '70'} />}
-                  </View>
-                  <View style={[styles.planTaskIcon, { backgroundColor: icon.bg }]}>
-                    <MaterialIcons name={icon.name} size={18} color={icon.color} />
-                  </View>
-                  <View style={styles.planTaskBody}>
-                    <Text
-                      style={[
-                        styles.planTaskTitle,
-                        {
-                          fontSize: getScaledFontSize(14),
-                          fontWeight: getScaledFontWeight(600) as any,
-                          color: colors.text,
-                          textDecorationLine: done ? 'line-through' : 'none',
-                        },
-                      ]}
-                      numberOfLines={1}>
-                      {task.title}
-                    </Text>
-                    {!!task.description && (
-                      <Text
-                        style={[styles.planTaskSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]}
-                        numberOfLines={1}>
-                        {task.description}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
-                    {formatTaskTime(task.scheduledTime)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Current Medications — active prescriptions only */}
-        {medications.length > 0 && (
-        <View style={styles.medicationsSection}>
-          <View style={styles.medSectionHeader}>
-            <Text style={[
-              styles.medicationsTitle,
-              { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }
-            ]}>
-              Current Medications
-            </Text>
-            <View style={[styles.medCountBadge, { backgroundColor: colors.primary + '15' }]}>
-              <Text style={[styles.medCountText, { fontSize: getScaledFontSize(12), color: colors.primary }]}>
-                {medications.length}
-              </Text>
-            </View>
-          </View>
-
-          {medications.map((med) => {
-            // Format the prescribed date
-            let dateLabel = '';
-            if (med.authoredOn) {
-              const d = new Date(med.authoredOn);
-              dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            }
-
-            // Build dosage display: prefer structured dose, fall back to text
-            const doseDisplay = med.dosage || med.rawDosageText || '';
-            const freqDisplay = med.frequency || '';
-            const detailParts = [doseDisplay, freqDisplay].filter(Boolean);
-
-            return (
-              <View
-                key={med.id}
-                style={[
-                  styles.medCard,
-                  {
-                    backgroundColor: colors.background,
-                    borderColor: colors.primary + '20',
-                    borderLeftColor: colors.primary,
-                  },
-                ]}
-              >
-                <View style={styles.medCardHeader}>
-                  <View style={styles.medCardLeft}>
-                    <View style={[styles.medIconCircle, { backgroundColor: colors.primary + '12' }]}>
-                      <List.Icon icon="pill" color={colors.primary} style={{ margin: 0 }} />
-                    </View>
-                    <View style={styles.medCardInfo}>
-                      <Text
-                        style={[{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}
-                        numberOfLines={2}
-                      >
-                        {med.name}
-                      </Text>
-                      {detailParts.length > 0 && (
-                        <Text
-                          style={[{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginTop: 2 }]}
-                          numberOfLines={1}
-                        >
-                          {detailParts.join(' · ')}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                </View>
-
-                {dateLabel ? (
-                  <View style={styles.medDateRow}>
-                    <IconButton icon="calendar-outline" size={getScaledFontSize(14)} iconColor={colors.text + '50'} style={{ margin: 0, padding: 0, width: 18, height: 18 }} />
-                    <Text style={[{ fontSize: getScaledFontSize(12), color: colors.text + '50' }]}>
-                      Prescribed {dateLabel}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
-        )}
-
         {/* Health Metrics Section */}
         {!healthMetrics.isLoading && (
           // Show permission error card if permissions are denied
@@ -817,6 +663,160 @@ export default function TodayScheduleScreen() {
               </Card>
             )
           )
+        )}
+
+        {/* Current Medications — active prescriptions only */}
+        {medications.length > 0 && (
+        <View style={styles.medicationsSection}>
+          <View style={styles.medSectionHeader}>
+            <Text style={[
+              styles.medicationsTitle,
+              { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }
+            ]}>
+              Current Medications
+            </Text>
+            <View style={[styles.medCountBadge, { backgroundColor: colors.primary + '15' }]}>
+              <Text style={[styles.medCountText, { fontSize: getScaledFontSize(12), color: colors.primary }]}>
+                {medications.length}
+              </Text>
+            </View>
+          </View>
+
+          {medications.map((med) => {
+            // Format the prescribed date
+            let dateLabel = '';
+            if (med.authoredOn) {
+              const d = new Date(med.authoredOn);
+              dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+
+            // Build dosage display: prefer structured dose, fall back to text
+            const doseDisplay = med.dosage || med.rawDosageText || '';
+            const freqDisplay = med.frequency || '';
+            const detailParts = [doseDisplay, freqDisplay].filter(Boolean);
+
+            return (
+              <View
+                key={med.id}
+                style={[
+                  styles.medCard,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: colors.primary + '20',
+                    borderLeftColor: colors.primary,
+                  },
+                ]}
+              >
+                <View style={styles.medCardHeader}>
+                  <View style={styles.medCardLeft}>
+                    <View style={[styles.medIconCircle, { backgroundColor: colors.primary + '12' }]}>
+                      <List.Icon icon="pill" color={colors.primary} style={{ margin: 0 }} />
+                    </View>
+                    <View style={styles.medCardInfo}>
+                      <Text
+                        style={[{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {med.name}
+                      </Text>
+                      {detailParts.length > 0 && (
+                        <Text
+                          style={[{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '80', marginTop: 2 }]}
+                          numberOfLines={1}
+                        >
+                          {detailParts.join(' · ')}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {dateLabel ? (
+                  <View style={styles.medDateRow}>
+                    <IconButton icon="calendar-outline" size={getScaledFontSize(14)} iconColor={colors.text + '50'} style={{ margin: 0, padding: 0, width: 18, height: 18 }} />
+                    <Text style={[{ fontSize: getScaledFontSize(12), color: colors.text + '50' }]}>
+                      Prescribed {dateLabel}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+        )}
+
+        {/* Today's Plan Tasks (from AI health plan) */}
+        {planTasks.length > 0 && (
+          <View style={styles.planTasksSection}>
+            <View style={styles.planTasksHeader}>
+              <Text style={[styles.planTasksTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}>
+                Today&apos;s Tasks
+              </Text>
+              <Text style={[styles.planTasksProgress, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any, color: '#008080' }]}>
+                {planTasks.filter((t) => t.status === 'completed').length} / {planTasks.length} done
+              </Text>
+            </View>
+            {planTasks.map((task) => {
+              const icon = TASK_ICON_CONFIG[task.type];
+              const done = task.status === 'completed';
+              const skipped = task.status === 'skipped';
+              return (
+                <TouchableOpacity
+                  key={`${task.id}#${task.scheduledFor}`}
+                  activeOpacity={0.7}
+                  onPress={() => handleTaskComplete(task)}
+                  onLongPress={() => handleTaskSkip(task)}
+                  style={[
+                    styles.planTaskRow,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.text + '15',
+                      opacity: done || skipped ? 0.55 : 1,
+                    },
+                  ]}>
+                  <View
+                    style={[
+                      styles.planTaskCheck,
+                      {
+                        borderColor: done ? '#008080' : colors.text + '50',
+                        backgroundColor: done ? '#008080' : 'transparent',
+                      },
+                    ]}>
+                    {done && <MaterialIcons name="check" size={14} color="#fff" />}
+                    {skipped && <MaterialIcons name="close" size={14} color={colors.text + '70'} />}
+                  </View>
+                  <View style={[styles.planTaskIcon, { backgroundColor: icon.bg }]}>
+                    <MaterialIcons name={icon.name} size={18} color={icon.color} />
+                  </View>
+                  <View style={styles.planTaskBody}>
+                    <Text
+                      style={[
+                        styles.planTaskTitle,
+                        {
+                          fontSize: getScaledFontSize(14),
+                          fontWeight: getScaledFontWeight(600) as any,
+                          color: colors.text,
+                          textDecorationLine: done ? 'line-through' : 'none',
+                        },
+                      ]}
+                      numberOfLines={1}>
+                      {task.title}
+                    </Text>
+                    {!!task.description && (
+                      <Text
+                        style={[styles.planTaskSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]}
+                        numberOfLines={1}>
+                        {task.description}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
+                    {formatTaskTime(task.scheduledTime)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         )}
 
         {/* Today's Progress and Today's Tasks — temporarily disabled

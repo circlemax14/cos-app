@@ -6,13 +6,11 @@ import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
-import { useSettings } from '@/stores/settings-store';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
   const { data: permissions } = useFeaturePermissions();
-  const { settings } = useSettings();
   const { panHandlers } = useInactivityTimeout();
 
   // Default to true (visible) while permissions are loading
@@ -64,20 +62,18 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="health-chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="message.fill" color={color} />
-          ),
-          href: settings.isHealthChatEnabled ? undefined : null,
-          tabBarItemStyle: !settings.isHealthChatEnabled ? { display: 'none' } : undefined
-        }}
-      />
-      <Tabs.Screen
         name="plan"
         options={{
           title: 'Health Summary',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="health-chat"
+        options={{
+          title: 'Chat',
           href: null,
           tabBarItemStyle: { display: 'none' },
         }}

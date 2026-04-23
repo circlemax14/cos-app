@@ -153,7 +153,30 @@ export default function HealthPlanScreen() {
   );
 
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
+  const skippedCount = tasks.filter((t) => t.status === 'skipped').length;
   const progressPct = tasks.length > 0 ? completedCount / tasks.length : 0;
+
+  // Plan-level breakdown (all tasks in the plan, not just today)
+  const planTaskCounts = plan
+    ? {
+        medication: plan.tasks.filter((t) => t.type === 'medication').length,
+        exercise: plan.tasks.filter((t) => t.type === 'exercise').length,
+        appointment: plan.tasks.filter((t) => t.type === 'appointment').length,
+        reminder: plan.tasks.filter((t) => t.type === 'reminder').length,
+      }
+    : { medication: 0, exercise: 0, appointment: 0, reminder: 0 };
+
+  // Group all tasks by type for the Full Plan section.
+  // Sort within each group by scheduledTime so per-dose tasks show in order.
+  const tasksByType = plan
+    ? (['medication', 'exercise', 'appointment', 'reminder'] as TaskType[]).map((t) => ({
+        type: t,
+        tasks: plan.tasks
+          .filter((pt) => pt.type === t)
+          .slice()
+          .sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime)),
+      }))
+    : [];
 
   // ── Render ────────────────────────────────────────────────────────────
   if (loading) {
@@ -247,7 +270,7 @@ export default function HealthPlanScreen() {
           </Text>
         </View>
 
-        {/* Today progress */}
+        {/* Progress report */}
         {tasks.length > 0 && (
           <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.progressTop}>
@@ -261,8 +284,79 @@ export default function HealthPlanScreen() {
             <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
               <View style={[styles.progressBarFill, { backgroundColor: colors.tint, width: `${progressPct * 100}%` }]} />
             </View>
+            <View style={styles.reportStatsRow}>
+              <View style={styles.reportStat}>
+                <Text style={[styles.reportStatValue, { color: '#059669', fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
+                  {completedCount}
+                </Text>
+                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Done</Text>
+              </View>
+              <View style={styles.reportStat}>
+                <Text style={[styles.reportStatValue, { color: colors.tint, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
+                  {tasks.length - completedCount - skippedCount}
+                </Text>
+                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Pending</Text>
+              </View>
+              <View style={styles.reportStat}>
+                <Text style={[styles.reportStatValue, { color: '#9CA3AF', fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
+                  {skippedCount}
+                </Text>
+                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Skipped</Text>
+              </View>
+              <View style={styles.reportStat}>
+                <Text style={[styles.reportStatValue, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
+                  {Math.round(progressPct * 100)}%
+                </Text>
+                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Adherence</Text>
+              </View>
+            </View>
           </View>
         )}
+
+        {/* Plan overview — breakdown of all tasks in the plan */}
+        <View style={[styles.planOverview, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.planOverviewTitle, { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
+            COMPLETE PLAN OVERVIEW
+          </Text>
+          <View style={styles.planOverviewGrid}>
+            <View style={styles.planOverviewItem}>
+              <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.medication.bg }]}>
+                <MaterialIcons name={TASK_ICON.medication.name} size={18} color={TASK_ICON.medication.color} />
+              </View>
+              <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
+                {planTaskCounts.medication}
+              </Text>
+              <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Medications</Text>
+            </View>
+            <View style={styles.planOverviewItem}>
+              <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.exercise.bg }]}>
+                <MaterialIcons name={TASK_ICON.exercise.name} size={18} color={TASK_ICON.exercise.color} />
+              </View>
+              <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
+                {planTaskCounts.exercise}
+              </Text>
+              <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Exercise</Text>
+            </View>
+            <View style={styles.planOverviewItem}>
+              <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.appointment.bg }]}>
+                <MaterialIcons name={TASK_ICON.appointment.name} size={18} color={TASK_ICON.appointment.color} />
+              </View>
+              <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
+                {planTaskCounts.appointment}
+              </Text>
+              <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Visits</Text>
+            </View>
+            <View style={styles.planOverviewItem}>
+              <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
+                <MaterialIcons name={TASK_ICON.reminder.name} size={18} color={TASK_ICON.reminder.color} />
+              </View>
+              <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
+                {planTaskCounts.reminder}
+              </Text>
+              <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Reminders</Text>
+            </View>
+          </View>
+        </View>
 
         {/* Goals */}
         {plan.goals.length > 0 && (
@@ -392,6 +486,70 @@ export default function HealthPlanScreen() {
           Tap a task to complete · Long-press to skip
         </Text>
 
+        {/* Full plan — all tasks grouped by type */}
+        {plan.tasks.length > 0 && (
+          <>
+            <View style={styles.secHead}>
+              <Text style={[styles.secLabel, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
+                FULL PLAN
+              </Text>
+              <Text style={[styles.secProgress, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                {plan.tasks.length} tasks
+              </Text>
+            </View>
+            {tasksByType
+              .filter((g) => g.tasks.length > 0)
+              .map((group) => {
+                const icon = TASK_ICON[group.type];
+                const groupLabels: Record<TaskType, string> = {
+                  medication: 'Medications',
+                  exercise: 'Exercise',
+                  appointment: 'Visits',
+                  reminder: 'Reminders',
+                };
+                return (
+                  <View key={group.type} style={styles.groupBlock}>
+                    <Text style={[styles.groupHeader, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}>
+                      {groupLabels[group.type]} · {group.tasks.length}
+                    </Text>
+                    {group.tasks.map((t) => {
+                      const { time, meridiem } = formatTime(t.scheduledTime);
+                      const recurLabel =
+                        t.recurrence === 'daily'
+                          ? 'Daily'
+                          : t.recurrence === 'weekdays'
+                            ? 'Weekdays'
+                            : t.recurrence === 'weekly'
+                              ? 'Weekly'
+                              : 'Once';
+                      return (
+                        <View
+                          key={t.id}
+                          style={[styles.fullPlanRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          <View style={[styles.taskIcon, { backgroundColor: icon.bg }]}>
+                            <MaterialIcons name={icon.name} size={16} color={icon.color} />
+                          </View>
+                          <View style={styles.taskBody}>
+                            <Text
+                              style={[styles.taskTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}
+                              numberOfLines={1}>
+                              {t.title}
+                            </Text>
+                            <Text
+                              style={[styles.taskSub, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}
+                              numberOfLines={1}>
+                              {recurLabel} · {time} {meridiem}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+          </>
+        )}
+
         <View style={{ height: 24 }} />
       </ScrollView>
     </AppWrapper>
@@ -467,4 +625,29 @@ const styles = StyleSheet.create({
   emptyTasksText: {},
 
   hint: { textAlign: 'center', marginTop: 12, paddingHorizontal: 20 },
+
+  // Progress report stats row
+  reportStatsRow: { flexDirection: 'row', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)' },
+  reportStat: { flex: 1, alignItems: 'center' },
+  reportStatValue: { letterSpacing: -0.5, marginBottom: 2 },
+  reportStatLabel: { textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // Plan overview card
+  planOverview: { marginHorizontal: 20, marginTop: 10, padding: 16, borderRadius: 16, borderWidth: 1 },
+  planOverviewTitle: { marginBottom: 12, letterSpacing: 1, textTransform: 'uppercase' },
+  planOverviewGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  planOverviewItem: { flex: 1, alignItems: 'center', gap: 6 },
+  planOverviewIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  planOverviewCount: { letterSpacing: -0.5 },
+  planOverviewLabel: { textAlign: 'center' },
+
+  // Full plan section
+  groupBlock: { marginBottom: 12 },
+  groupHeader: { marginHorizontal: 20, marginTop: 12, marginBottom: 8, letterSpacing: -0.2 },
+  fullPlanRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+    marginHorizontal: 20, marginBottom: 6,
+    borderRadius: 12, borderWidth: 1,
+  },
 });

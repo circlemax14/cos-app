@@ -37,7 +37,10 @@ export default function LockScreen() {
     const enabled = await isBiometricEnabled();
     if (enabled) {
       setShowBiometric(true);
-      attemptBiometric();
+      // Don't auto-trigger — let the user tap the biometric button on the
+      // NumberPad or enter their PIN. Auto-prompting every unlock is
+      // annoying: users have to cancel the system sheet before they can
+      // type their PIN.
     }
   };
 
@@ -133,7 +136,7 @@ export default function LockScreen() {
             },
           ]}
         >
-          6-digit security code
+          {showBiometric ? 'Enter PIN or tap the biometric icon' : '6-digit security code'}
         </Text>
         <PinDots length={6} filled={pin.length} error={error} />
         {error && (
