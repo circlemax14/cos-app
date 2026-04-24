@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiClient } from '@/lib/api-client';
+import { signOut } from '@/services/auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
@@ -187,6 +188,25 @@ export default function FastenConnectScreen() {
             Connect a Clinic
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={async () => {
+            await signOut();
+            router.replace('/(auth)/sign-in' as never);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+        >
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(14),
+              fontWeight: getScaledFontWeight(500) as any,
+            }}
+          >
+            Sign out
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -263,6 +283,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     borderRadius: 24,
     minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signOutButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginTop: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
