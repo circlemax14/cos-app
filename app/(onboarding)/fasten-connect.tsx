@@ -22,6 +22,24 @@ import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
+// TEMPORARY TELEMETRY — remove alongside the backend /v1/fasten/debug-event
+// endpoint once the Fasten widget handoff bug is diagnosed. Fires a
+// best-effort, non-blocking POST for every event the widget emits plus a
+// handful of lifecycle markers so we can see *where* the flow breaks after
+// Epic OAuth completes.
+function sendFastenDebug(eventType: string, payload?: unknown, source = 'fasten-widget') {
+  apiClient
+    .post('/v1/fasten/debug-event', {
+      ts: Date.now(),
+      eventType,
+      source,
+      payload,
+    })
+    .catch(() => {
+      /* best-effort — never block the widget flow on telemetry */
+    });
+}
+
 export default function FastenConnectScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -42,28 +60,54 @@ export default function FastenConnectScreen() {
     permissions !== undefined && permissions.CONNECT_CLINIC?.enabled === false;
 
   useEffect(() => {
+    sendFastenDebug(
+      'screen.mounted',
+      {
+        hasPublicId: !!FASTEN_PUBLIC_ID,
+        publicIdPrefix: FASTEN_PUBLIC_ID ? FASTEN_PUBLIC_ID.slice(0, 6) : null,
+      },
+      'app-lifecycle',
+    );
+    return () => {
+      sendFastenDebug('screen.unmounted', null, 'app-lifecycle');
+    };
+  }, []);
+
+  useEffect(() => {
     if (connectClinicDisabled && !navigating.current) {
       navigating.current = true;
+      sendFastenDebug('nav.connect-clinic-disabled-redirect', null, 'app-lifecycle');
       router.replace('/Home' as never);
     }
   }, [connectClinicDisabled]);
 
   const handleEvent = useCallback(async (event: unknown) => {
     let parsed: { event_type?: string; api_mode?: string; data?: Record<string, unknown> } | null = null;
+    let parseError: string | undefined;
 
     if (event && typeof event === 'object') {
       const raw = event as Record<string, unknown>;
       if (typeof raw.payload === 'string') {
         try {
           parsed = JSON.parse(raw.payload);
-        } catch {
-          return;
+        } catch (e) {
+          parseError = e instanceof Error ? e.message : 'unknown parse error';
         }
       } else if (raw.event_type) {
         parsed = raw as { event_type?: string; api_mode?: string; data?: Record<string, unknown> };
       }
     }
 
+    // Fire debug telemetry for EVERY event the widget emits, even unparseable
+    // ones, so we can see raw payload shapes in CloudWatch.
+    sendFastenDebug(parsed?.event_type ?? 'raw-from-widget', {
+      rawType: typeof event,
+      parseError,
+      parsed,
+      raw: event,
+    });
+
+    if (parseError) return;
     if (!parsed?.event_type) return;
 
     const eventType = parsed.event_type;
@@ -77,14 +121,21 @@ export default function FastenConnectScreen() {
           data: parsed.data ?? {},
         });
         setConnectedCount(c => c + 1);
+        sendFastenDebug('connection.recorded', { api_mode: parsed.api_mode }, 'app-lifecycle');
       } catch (err) {
         console.warn('[FastenConnect] Failed to record connection:', err);
         setError('Failed to save this connection. Please try again.');
+        sendFastenDebug(
+          'connection.record-failed',
+          { message: err instanceof Error ? err.message : String(err) },
+          'app-lifecycle',
+        );
       }
       return;
     }
 
     if (eventType === 'widget.complete') {
+      sendFastenDebug('nav.widget-complete', { connectedCount }, 'app-lifecycle');
       // User completed the flow — proceed to data processing
       if (navigating.current) return;
       navigating.current = true;
@@ -94,6 +145,7 @@ export default function FastenConnectScreen() {
     }
 
     if (eventType === 'widget.close') {
+      sendFastenDebug('nav.widget-close', { connectedCount }, 'app-lifecycle');
       // User manually closed the widget
       if (connectedCount > 0) {
         // Already connected at least one clinic — proceed
@@ -114,6 +166,7 @@ export default function FastenConnectScreen() {
     setWidgetDismissed(false);
     setShowWidget(true);
     setError(null);
+    sendFastenDebug('widget.reopened', { from: 'connect-clinic-prompt' }, 'app-lifecycle');
   };
 
   if (!FASTEN_PUBLIC_ID) {
@@ -181,8 +234,22 @@ export default function FastenConnectScreen() {
           onEventBus={handleEvent}
         />
       </View>
+      <WidgetMountMarker connectedCount={connectedCount} />
     </SafeAreaView>
   );
+}
+
+// Zero-height telemetry marker — emits a lifecycle log when the widget
+// container is mounted/unmounted so we can correlate with screen events.
+function WidgetMountMarker({ connectedCount }: { connectedCount: number }) {
+  useEffect(() => {
+    sendFastenDebug('widget.rendered', { connectedCount }, 'app-lifecycle');
+    return () => {
+      sendFastenDebug('widget.torn-down', { connectedCount }, 'app-lifecycle');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────
