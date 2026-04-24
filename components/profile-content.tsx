@@ -9,9 +9,10 @@ import { apiClient } from '@/lib/api-client';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Button, Card, Icon, List } from 'react-native-paper';
+import { MaterialIcons } from '@expo/vector-icons';
 
 export interface ConnectedHospital {
   id: string;
@@ -209,6 +210,56 @@ export function ProfileContent({
 
       {showProfileMenu && (
         <View style={styles.menuSection}>
+          <SectionLabel label="My Health" colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight} />
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <DrawerRow
+              iconName="person"
+              label="Personal Information"
+              onPress={() => router.push('/(personal-info)')}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+            {onEmergencyContactPress && (
+              <DrawerRow
+                iconName="contact-phone"
+                label="Emergency Contact"
+                onPress={onEmergencyContactPress}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
+            {onAllergiesPress && (
+              <DrawerRow
+                iconName="warning"
+                label="Allergies"
+                onPress={onAllergiesPress}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
+            {onHealthDetailsPress && (
+              <DrawerRow
+                iconName="favorite"
+                label="Health Details"
+                onPress={onHealthDetailsPress}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* HIDE the legacy Card stack — replaced by SectionLabel + DrawerRow above. */}
+      {false && showProfileMenu && (
+        <View style={styles.menuSection}>
           <Card style={styles.menuCard}>
             <List.Item
               title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Personal Information</Text>}
@@ -329,17 +380,20 @@ export function ProfileContent({
         </View>
       )}
 
-      {showConnectedEhrButton && (
-        <View style={styles.connectedEhrButtonSection}>
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Connected EHRs</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>View your connected providers</Text>}
-              left={(props) => <Icon {...props} source="hospital-building" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+      {showConnectedEhrButton && onConnectedEhrPress && (
+        <View style={styles.menuSection}>
+          <SectionLabel label="Providers" colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight} />
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <DrawerRow
+              iconName="local-hospital"
+              label="Connected Clinics"
+              badge={connectedHospitals.length > 0 ? String(connectedHospitals.length) : undefined}
               onPress={onConnectedEhrPress}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
             />
-          </Card>
+          </View>
         </View>
       )}
 
@@ -408,50 +462,55 @@ export function ProfileContent({
 
       {showProfileMenu && (
         <View style={styles.menuSection}>
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Share App</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Share BrightFuture with others</Text>}
-              left={(props) => <Icon {...props} source="share-variant" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={async () => {
-                await Share.share({
-                  message: "I'm using BrightFuture to manage my health care. Download it here: https://joinabrightfuture.com/download",
-                  url: 'https://joinabrightfuture.com/download',
-                });
-              }}
-            />
-          </Card>
-
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Help & Support</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Get help or submit a ticket</Text>}
-              left={(props) => <Icon {...props} source="help-circle" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/support')}
-            />
-          </Card>
-
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Security</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Manage PIN and biometric settings</Text>}
-              left={(props) => <Icon {...props} source="shield-lock" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/security-settings' as never)}
-            />
-          </Card>
-
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Linked Accounts</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Connect Google or Apple</Text>}
-              left={(props) => <Icon {...props} source="link-variant" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
+          <SectionLabel label="Account & Privacy" colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight} />
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <DrawerRow
+              iconName="link"
+              label="Linked Accounts"
               onPress={() => router.push('/Home/linked-accounts' as never)}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
             />
-          </Card>
+            <DrawerRow
+              iconName="shield"
+              label="Security"
+              onPress={() => router.push('/Home/security-settings' as never)}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          </View>
+
+          <View style={{ marginTop: 14 }}>
+            <SectionLabel label="More" colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight} />
+            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <DrawerRow
+                iconName="help-outline"
+                label="Help & Support"
+                onPress={() => router.push('/Home/support')}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+              <DrawerRow
+                iconName="share"
+                label="Share App"
+                onPress={async () => {
+                  await Share.share({
+                    message:
+                      "I'm using BrightFuture to manage my health care. Download it here: https://joinabrightfuture.com/download",
+                    url: 'https://joinabrightfuture.com/download',
+                  });
+                }}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            </View>
+          </View>
         </View>
       )}
 
@@ -525,6 +584,44 @@ const styles = StyleSheet.create({
   menuSection: {
     marginBottom: 16,
   },
+  sectionLabel: {
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    paddingHorizontal: 6,
+  },
+  sectionCard: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  drawerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    minHeight: 56,
+  },
+  drawerRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  drawerRowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  drawerRowBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   connectedEhrButtonSection: {
     marginBottom: 16,
   },
@@ -561,3 +658,96 @@ const styles = StyleSheet.create({
     borderColor: '#ff4444',
   },
 });
+
+// ────────────────────────────────────────────────────────────────────
+// Drawer helper components — bring the drawer in line with the rest
+// of the app (accent icon circles, grouped sections with uppercase
+// eyebrow labels, hairline-divided rows in a rounded container).
+// ────────────────────────────────────────────────────────────────────
+interface DrawerSharedProps {
+  colors: typeof import('@/constants/theme').Colors.light;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string;
+}
+
+function SectionLabel({
+  label,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: { label: string } & DrawerSharedProps) {
+  return (
+    <Text
+      style={[
+        styles.sectionLabel,
+        {
+          color: colors.subtext,
+          fontSize: getScaledFontSize(11),
+          fontWeight: getScaledFontWeight(700) as any,
+        },
+      ]}
+    >
+      {label}
+    </Text>
+  );
+}
+
+interface DrawerRowProps extends DrawerSharedProps {
+  iconName: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  onPress: () => void;
+  badge?: string;
+  divider?: boolean;
+}
+
+function DrawerRow({
+  iconName,
+  label,
+  onPress,
+  badge,
+  divider,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: DrawerRowProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.drawerRow,
+        divider && [styles.drawerRowDivider, { borderBottomColor: colors.border }],
+        pressed && { backgroundColor: colors.primary + '0F' },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <View style={[styles.drawerRowIcon, { backgroundColor: colors.primary + '1A' }]}>
+        <MaterialIcons name={iconName} size={getScaledFontSize(18)} color={colors.primary} />
+      </View>
+      <Text
+        style={{
+          flex: 1,
+          color: colors.text,
+          fontSize: getScaledFontSize(15),
+          fontWeight: getScaledFontWeight(600) as any,
+        }}
+      >
+        {label}
+      </Text>
+      {badge !== undefined && (
+        <View style={[styles.drawerRowBadge, { backgroundColor: colors.primary }]}>
+          <Text
+            style={{
+              color: '#fff',
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+          >
+            {badge}
+          </Text>
+        </View>
+      )}
+      <MaterialIcons name="chevron-right" size={getScaledFontSize(20)} color={colors.subtext} />
+    </Pressable>
+  );
+}
