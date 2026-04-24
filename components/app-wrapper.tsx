@@ -105,7 +105,7 @@ export function AppWrapper({
 
       {/* Header — only render if at least one icon is visible */}
       {(showHamburgerIcon || showLogo || showAccessibilityIcon || showBellIcon) && (
-      <View style={[styles.header, { backgroundColor: colors.background}]}>
+      <View style={styles.header}>
         <View style={styles.headerContent}>
           {/* Left side - Hamburger or spacer */}
           <View style={styles.headerLeft}>
