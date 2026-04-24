@@ -243,11 +243,11 @@ function isFromProvider(
 
 /**
  * Fetch a provider's clinical footprint for this patient: the diagnoses
- * they recorded and the medications they prescribed. Unattributed items
- * (no recorder / requester reference on the FHIR resource) are shown on
- * every provider since most real-world EHR exports from Fasten strip
- * those references — otherwise the tab would look empty for every
- * provider.
+ * they recorded and the medications they prescribed. Strictly scoped —
+ * resources without a recorder / requester reference back to this
+ * provider are NOT shown here (they may still surface on the patient's
+ * global Conditions / Medications pages). This prevents mixing care
+ * across providers on a single doctor's detail screen.
  */
 export async function fetchProviderTreatmentPlans(
   providerId: string,
@@ -261,11 +261,9 @@ export async function fetchProviderTreatmentPlans(
   const providerRef = `Practitioner/${providerId}`;
 
   const diagnoses: ProviderDiagnosis[] = conditions
-    .filter((c) => {
-      const hasAnyRef = !!(c.recorder?.reference || c.asserter?.reference);
-      if (!hasAnyRef) return true;
-      return isFromProvider(c.recorder?.reference, c.asserter?.reference, undefined, providerRef);
-    })
+    .filter((c) =>
+      isFromProvider(c.recorder?.reference, c.asserter?.reference, undefined, providerRef),
+    )
     .map((c) => ({
       id: c.id,
       name: conditionName(c),
@@ -278,10 +276,7 @@ export async function fetchProviderTreatmentPlans(
     }));
 
   const meds: ProviderMedication[] = medications
-    .filter((m) => {
-      if (!m.requester?.reference) return true;
-      return isFromProvider(undefined, undefined, m.requester.reference, providerRef);
-    })
+    .filter((m) => isFromProvider(undefined, undefined, m.requester?.reference, providerRef))
     .map((m) => ({
       id: m.id,
       name: medicationName(m),
@@ -330,16 +325,43 @@ export async function fetchProviderProgressNotes(providerId: string): Promise<Pr
 export async function fetchProviderAppointments(providerName: string): Promise<ProviderAppointment[]> {
   const res = await apiClient.get<{
     success: boolean;
-    data: { appointments: { id: string; date: string; time: string; type: string; status: string; doctorName: string }[] };
+    data: {
+      appointments: {
+        id: string;
+        resourceType?: 'Appointment' | 'Encounter';
+        date: string;
+        time: string;
+        type: string;
+        status: string;
+        doctorName: string;
+        doctorSpecialty?: string;
+        clinicName?: string;
+        encounterClass?: string;
+        encounterClassDisplay?: string;
+        notes?: string;
+        diagnosis?: string;
+      }[];
+    };
   }>('/v1/patients/me/appointments');
   return res.data.data.appointments
     .filter((a) => a.doctorName === providerName)
     .map((a) => ({
       id: a.id,
+      resourceType: a.resourceType,
       date: a.date,
       time: a.time,
       type: a.type,
-      status: a.status === 'fulfilled' ? 'Completed' as const : a.status === 'booked' ? 'Confirmed' as const : 'Pending' as const,
+      status:
+        a.status === 'fulfilled' || a.status === 'finished'
+          ? ('Completed' as const)
+          : a.status === 'booked'
+            ? ('Confirmed' as const)
+            : ('Pending' as const),
+      encounterClass: a.encounterClassDisplay || a.encounterClass,
+      notes: a.notes,
+      diagnosis: a.diagnosis,
+      clinicName: a.clinicName,
+      doctorSpecialty: a.doctorSpecialty,
     }));
 }
 
@@ -399,16 +421,19 @@ export async function fetchProviderLabReports(providerId?: string): Promise<LabR
 
 /**
  * Fetch AI-generated insight for a specific doctor detail tab.
+ * Passing providerId scopes the LLM context to a single practitioner so
+ * the summary doesn't blend care from other providers into the narrative.
  */
 export async function fetchAiInsight(
   tab: 'treatment' | 'progress' | 'appointments' | 'carePlans',
   providerName?: string,
-): Promise<{ summary: string; generatedAt: string } | null> {
+  providerId?: string,
+): Promise<{ summary: string; generatedAt: string; empty?: boolean } | null> {
   try {
-    const res = await apiClient.post<{ success: boolean; data: { summary: string; generatedAt: string } }>(
-      '/v1/patients/me/ai-insights',
-      { tab, providerName },
-    );
+    const res = await apiClient.post<{
+      success: boolean;
+      data: { summary: string; generatedAt: string; empty?: boolean };
+    }>('/v1/patients/me/ai-insights', { tab, providerName, providerId });
     return res.data.data ?? null;
   } catch {
     return null;

@@ -145,6 +145,22 @@ export interface ProviderAppointment {
   time: string;
   type: string;
   status: 'Confirmed' | 'Pending' | 'Completed';
+  /**
+   * Underlying FHIR resource kind. `Encounter` entries support an
+   * AI-generated "Explain this visit" narrative pulled from
+   * `/v1/patients/me/encounters/:id/narrative`.
+   */
+  resourceType?: 'Appointment' | 'Encounter';
+  /** Inpatient / outpatient / emergency (Encounter-only). */
+  encounterClass?: string;
+  /** Free-text visit notes or reason captured by the EHR. */
+  notes?: string;
+  /** Primary diagnosis surfaced from the encounter. */
+  diagnosis?: string;
+  /** Clinic / facility that hosted the visit. */
+  clinicName?: string;
+  /** Provider specialty, when the EHR tagged it. */
+  doctorSpecialty?: string;
 }
 
 // ─── Medication ──────────────────────────────────────────────────────────────
