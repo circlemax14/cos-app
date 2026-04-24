@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { PaperProvider } from 'react-native-paper';
 import 'react-native-reanimated';
 
@@ -11,6 +12,13 @@ import { SecurityProvider } from '@/stores/security-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
+
+// Hold the native splash up as early as possible — at module load,
+// before any layout mount — so there is no flash of blank white
+// screen between the OS splash dismissing and our JS splash
+// rendering. app/index.tsx (SplashGate) is responsible for hiding it
+// once the session check completes.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Suppress console output in production to avoid leaking PHI into device logs.
 if (!__DEV__) {

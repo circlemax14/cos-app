@@ -85,9 +85,9 @@ export default function DoctorDetailScreen() {
     [aiInsights, providerId],
   );
 
-  // Kick off the AI narrative fetch when a tab becomes active (or the
-  // provider changes). Each fetch is deduped inside loadAiInsight, so
-  // this effect is safe to call liberally.
+  // Kick off the overview narrative fetch when a tab becomes active
+  // (or the provider changes). Each fetch is deduped inside
+  // loadAiInsight, so this effect is safe to call liberally.
   useEffect(() => {
     if (!providerId || isLoadingData) return;
     if (activeTab === 'treatment' || activeTab === 'progress' || activeTab === 'appointments') {
@@ -468,54 +468,20 @@ export default function DoctorDetailScreen() {
 
   // Appointments are loaded from Fasten Health
 
-  const renderAiInsightCard = (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
-    const insight = aiInsights[tab];
-    return (
-      <Card style={[styles.aiCard, { backgroundColor: '#F3E8FF' }]}>
-        <Card.Content>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color="#7C3AED" />
-              <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any, color: '#7C3AED' }}>
-                AI Insights
-              </Text>
-            </View>
-            {!insight?.summary && !insight?.loading && (
-              <TouchableOpacity onPress={() => loadAiInsight(tab)} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#7C3AED', borderRadius: 6 }}>
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }}>Generate</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          {insight?.loading ? (
-            <ActivityIndicator size="small" color="#7C3AED" />
-          ) : insight?.summary ? (
-            <Text style={{ fontSize: getScaledFontSize(13), color: '#4C1D95', lineHeight: getScaledFontSize(20) }}>
-              {insight.summary}
-            </Text>
-          ) : (
-            <Text style={{ fontSize: getScaledFontSize(13), color: '#6B21A8' }}>
-              Tap Generate to get AI-powered analysis of this data.
-            </Text>
-          )}
-        </Card.Content>
-      </Card>
-    );
-  };
-
-  const renderAiNarrative = (tab: 'treatment' | 'progress' | 'appointments', title: string) => {
+  const renderOverviewCard = (
+    tab: 'treatment' | 'progress' | 'appointments',
+    title: string,
+  ) => {
     const state = insightFor(tab);
     return (
       <Card style={[styles.aiNarrativeCard, { backgroundColor: colors.card }]}>
         <Card.Content>
           <View style={styles.aiNarrativeHeader}>
-            <MaterialIcons name="auto-awesome" size={getScaledFontSize(16)} color={colors.primary} />
             <Text
               style={{
-                color: colors.primary,
-                fontSize: getScaledFontSize(12),
+                color: colors.text,
+                fontSize: getScaledFontSize(16),
                 fontWeight: getScaledFontWeight(700) as any,
-                letterSpacing: 1,
-                textTransform: 'uppercase',
               }}
             >
               {title}
@@ -559,7 +525,7 @@ export default function DoctorDetailScreen() {
           </View>
         ) : (
           <>
-            {renderAiNarrative('treatment', 'Your Care in Plain Language')}
+            {renderOverviewCard('treatment', 'Summary')}
             {isEmpty && (
               <View style={{ padding: 20, alignItems: 'center' }}>
                 <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
@@ -569,64 +535,38 @@ export default function DoctorDetailScreen() {
             )}
             {diagnoses.length > 0 && (
               <View style={styles.treatmentSection}>
-                <View style={styles.treatmentSectionHeader}>
-                  <MaterialIcons name="medical-services" size={getScaledFontSize(18)} color={colors.primary} />
-                  <Text
-                    style={[
-                      styles.treatmentSectionTitle,
-                      {
-                        color: colors.text,
-                        fontSize: getScaledFontSize(16),
-                        fontWeight: getScaledFontWeight(700) as any,
-                      },
-                    ]}
-                  >
-                    Diagnoses
-                  </Text>
-                  <View style={[styles.treatmentCountPill, { backgroundColor: colors.card }]}>
-                    <Text
-                      style={{
-                        color: colors.subtext,
-                        fontSize: getScaledFontSize(12),
-                        fontWeight: getScaledFontWeight(600) as any,
-                      }}
-                    >
-                      {diagnoses.length}
-                    </Text>
-                  </View>
-                </View>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    marginBottom: 10,
+                    paddingHorizontal: 4,
+                  }}
+                >
+                  Diagnoses
+                </Text>
                 {diagnoses.map((d) => renderDiagnosisCard(d))}
               </View>
             )}
 
             {medications.length > 0 && (
               <View style={styles.treatmentSection}>
-                <View style={styles.treatmentSectionHeader}>
-                  <MaterialIcons name="medication" size={getScaledFontSize(18)} color={colors.primary} />
-                  <Text
-                    style={[
-                      styles.treatmentSectionTitle,
-                      {
-                        color: colors.text,
-                        fontSize: getScaledFontSize(16),
-                        fontWeight: getScaledFontWeight(700) as any,
-                      },
-                    ]}
-                  >
-                    Medications Prescribed
-                  </Text>
-                  <View style={[styles.treatmentCountPill, { backgroundColor: colors.card }]}>
-                    <Text
-                      style={{
-                        color: colors.subtext,
-                        fontSize: getScaledFontSize(12),
-                        fontWeight: getScaledFontWeight(600) as any,
-                      }}
-                    >
-                      {medications.length}
-                    </Text>
-                  </View>
-                </View>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    letterSpacing: 1.5,
+                    textTransform: 'uppercase',
+                    marginBottom: 10,
+                    paddingHorizontal: 4,
+                  }}
+                >
+                  Medications
+                </Text>
                 {medications.map((m) => renderMedicationRow(m))}
               </View>
             )}
@@ -822,15 +762,14 @@ export default function DoctorDetailScreen() {
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes...</Text>
         </View>
       ) : progressNotes.length === 0 ? (
-        // No real clinical notes for this provider — fall back to an
-        // AI-generated plain-English summary of recent care so the tab
-        // isn't an empty shell. Scoped to this provider on the backend.
+        // No clinical notes on file — show a plain-English overview of
+        // recent care instead of an empty tab. Generated behind the
+        // scenes from this provider's visit history.
         <>
-          {renderAiNarrative('progress', 'AI-Written Progress Summary')}
+          {renderOverviewCard('progress', 'Progress Overview')}
           <View style={{ padding: 20, alignItems: 'center' }}>
             <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-              No official progress notes are on file for this provider yet.
-              The summary above is AI-generated from your visit history.
+              No formal progress notes are on file for this provider yet.
             </Text>
           </View>
         </>
@@ -984,7 +923,7 @@ export default function DoctorDetailScreen() {
         </View>
       ) : (
         <>
-          {renderAiNarrative('appointments', 'Recent Visits at a Glance')}
+          {renderOverviewCard('appointments', 'Recent Visits')}
           {appointments.length === 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
@@ -1480,7 +1419,7 @@ function formatShortDate(iso: string): string {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Appointment card with optional AI "Explain this visit" expander.
+// Appointment card with an optional "View details" visit expander.
 // Only Encounter-backed items get the expander — Appointment resources
 // don't have narrative payloads to summarise.
 // ────────────────────────────────────────────────────────────────────────
@@ -1606,11 +1545,11 @@ function AppointmentCard({
                 alignSelf: 'flex-start',
               }}
               accessibilityRole="button"
-              accessibilityLabel={expanded ? 'Hide visit summary' : 'Explain this visit'}
+              accessibilityLabel={expanded ? 'Hide visit details' : 'View visit details'}
             >
               <MaterialIcons
-                name="auto-awesome"
-                size={getScaledFontSize(14)}
+                name={expanded ? 'expand-less' : 'expand-more'}
+                size={getScaledFontSize(16)}
                 color={colors.primary}
               />
               <Text
@@ -1620,7 +1559,7 @@ function AppointmentCard({
                   fontWeight: getScaledFontWeight(600) as any,
                 }}
               >
-                {expanded ? 'Hide AI summary' : 'Explain this visit'}
+                {expanded ? 'Hide details' : 'View details'}
               </Text>
             </TouchableOpacity>
 

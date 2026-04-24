@@ -13,12 +13,6 @@ import { TextInput, Text } from 'react-native-paper';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -51,18 +45,6 @@ export default function SignInScreen() {
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
-
-  // Entrance animation for the form card.
-  const contentOpacity = useSharedValue(0);
-  const contentTranslate = useSharedValue(14);
-  useEffect(() => {
-    contentOpacity.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.quad) });
-    contentTranslate.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.quad) });
-  }, [contentOpacity, contentTranslate]);
-  const contentStyle = useAnimatedStyle(() => ({
-    opacity: contentOpacity.value,
-    transform: [{ translateY: contentTranslate.value }],
-  }));
 
   // Respond to Google auth result when it changes.
   // All non-success outcomes (cancel, dismiss, error, locked) must reset the
@@ -201,7 +183,7 @@ export default function SignInScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <Animated.View style={[styles.content, contentStyle]}>
+          <View style={styles.content}>
             <Image
               source={require('@/assets/images/logo.png')}
               style={{ width: getScaledFontSize(180), height: getScaledFontSize(110) }}
@@ -465,7 +447,7 @@ export default function SignInScreen() {
                 </Link>
               </View>
             </View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
