@@ -127,6 +127,7 @@ interface RawCondition {
   note?: { text?: string }[];
   recorder?: { reference?: string };
   asserter?: { reference?: string };
+  encounter?: { reference?: string };
 }
 
 interface RawMedicationRequest {
@@ -136,6 +137,7 @@ interface RawMedicationRequest {
   medicationCodeableConcept?: { text?: string; coding?: { display?: string }[] };
   medicationReference?: { display?: string };
   requester?: { reference?: string };
+  encounter?: { reference?: string };
   dosageInstruction?: Array<{
     text?: string;
     timing?: {
@@ -243,26 +245,58 @@ function isFromProvider(
 
 /**
  * Fetch a provider's clinical footprint for this patient: the diagnoses
- * they recorded and the medications they prescribed. Strictly scoped —
- * resources without a recorder / requester reference back to this
- * provider are NOT shown here (they may still surface on the patient's
- * global Conditions / Medications pages). This prevents mixing care
- * across providers on a single doctor's detail screen.
+ * they recorded and the medications they prescribed. Attribution is
+ * widened beyond Condition.recorder / MedicationRequest.requester to
+ * also include any resource tied to an Encounter where this provider
+ * was the service provider or a participant. Many EHR exports only
+ * tag the encounter, so without this widening the treatment tab would
+ * look empty for most providers.
  */
 export async function fetchProviderTreatmentPlans(
   providerId: string,
+  providerName?: string,
 ): Promise<ProviderTreatmentPlan> {
-  const res = await apiClient.get<{
-    success: boolean;
-    data: { conditions: RawCondition[]; medications: RawMedicationRequest[] };
-  }>('/v1/patients/me/medical-data');
+  const [medicalRes, apptRes] = await Promise.all([
+    apiClient.get<{
+      success: boolean;
+      data: { conditions: RawCondition[]; medications: RawMedicationRequest[] };
+    }>('/v1/patients/me/medical-data'),
+    apiClient
+      .get<{
+        success: boolean;
+        data: {
+          appointments: {
+            id: string;
+            resourceType?: 'Appointment' | 'Encounter';
+            doctorName?: string;
+          }[];
+        };
+      }>('/v1/patients/me/appointments')
+      .catch(() => null),
+  ]);
 
-  const { conditions, medications } = res.data.data;
+  const { conditions, medications } = medicalRes.data.data;
   const providerRef = `Practitioner/${providerId}`;
 
+  // Build the set of Encounter IDs that belong to this provider so we
+  // can widen the condition / medication filter to include encounter
+  // attribution. Match by name (the appointments endpoint tags each
+  // encounter with the provider's display name, not an ID).
+  const providerEncounterRefs = new Set(
+    (apptRes?.data?.data?.appointments ?? [])
+      .filter(
+        (a) =>
+          a.resourceType === 'Encounter' &&
+          (!providerName || a.doctorName === providerName),
+      )
+      .map((a) => `Encounter/${a.id}`),
+  );
+
   const diagnoses: ProviderDiagnosis[] = conditions
-    .filter((c) =>
-      isFromProvider(c.recorder?.reference, c.asserter?.reference, undefined, providerRef),
+    .filter(
+      (c) =>
+        isFromProvider(c.recorder?.reference, c.asserter?.reference, undefined, providerRef) ||
+        (c.encounter?.reference != null && providerEncounterRefs.has(c.encounter.reference)),
     )
     .map((c) => ({
       id: c.id,
@@ -276,7 +310,11 @@ export async function fetchProviderTreatmentPlans(
     }));
 
   const meds: ProviderMedication[] = medications
-    .filter((m) => isFromProvider(undefined, undefined, m.requester?.reference, providerRef))
+    .filter(
+      (m) =>
+        isFromProvider(undefined, undefined, m.requester?.reference, providerRef) ||
+        (m.encounter?.reference != null && providerEncounterRefs.has(m.encounter.reference)),
+    )
     .map((m) => ({
       id: m.id,
       name: medicationName(m),
