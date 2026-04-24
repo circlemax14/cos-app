@@ -359,23 +359,33 @@ function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
           </Text>
         </View>
 
-        <TouchableOpacity
+        <Pressable
           onPress={handleSignOut}
-          style={connectStyles.signOutLink}
+          style={({ pressed }) => [
+            connectStyles.secondaryButton,
+            {
+              borderColor: colors.border,
+              backgroundColor: pressed ? colors.card : 'transparent',
+            },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Sign out"
         >
+          <MaterialIcons
+            name="logout"
+            size={getScaledFontSize(16)}
+            color={colors.text}
+          />
           <Text
             style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(13),
-              fontWeight: getScaledFontWeight(500) as any,
-              textDecorationLine: 'underline',
+              color: colors.text,
+              fontSize: getScaledFontSize(15),
+              fontWeight: getScaledFontWeight(600) as any,
             }}
           >
-            Sign out
+            Sign Out
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </Animated.View>
     </View>
   );
@@ -458,9 +468,16 @@ const connectStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  signOutLink: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+  secondaryButton: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    minHeight: 48,
   },
 });
 

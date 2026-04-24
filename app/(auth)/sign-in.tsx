@@ -1,11 +1,25 @@
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
-import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Text, TextInput } from 'react-native-paper';
+import React, { useEffect, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { TextInput, Text } from 'react-native-paper';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -38,10 +52,22 @@ export default function SignInScreen() {
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
 
+  // Entrance animation for the form card.
+  const contentOpacity = useSharedValue(0);
+  const contentTranslate = useSharedValue(14);
+  useEffect(() => {
+    contentOpacity.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.quad) });
+    contentTranslate.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.quad) });
+  }, [contentOpacity, contentTranslate]);
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslate.value }],
+  }));
+
   // Respond to Google auth result when it changes.
   // All non-success outcomes (cancel, dismiss, error, locked) must reset the
   // loading state so the user can try again — otherwise the button is stuck.
-  React.useEffect(() => {
+  useEffect(() => {
     if (!googleResponse) return;
     if (googleResponse.type === 'success') {
       const { id_token } = googleResponse.params;
@@ -77,7 +103,6 @@ export default function SignInScreen() {
     } else if (!user.dataReady && user.ehiExportFailed) {
       router.replace('/(onboarding)/data-processing' as never);
     } else if (!user.dataReady && user.fastenConnected) {
-      // Fallback: connected but no data and unknown status — show processing/retry screen
       router.replace('/(onboarding)/data-processing' as never);
     } else {
       router.replace('/Home' as never);
@@ -119,9 +144,6 @@ export default function SignInScreen() {
     setError(undefined);
     try {
       const result = await promptGoogleAsync();
-      // If user canceled the iOS system prompt ("CSH wants to use google.com")
-      // or dismissed the web browser, reset loading immediately. Success is
-      // handled in the googleResponse useEffect.
       if (result?.type !== 'success') {
         setGoogleLoading(false);
         if (result?.type === 'error') {
@@ -149,173 +171,299 @@ export default function SignInScreen() {
     } catch (err: unknown) {
       setLoading(false);
       const appleErr = err as { code?: string };
-      // ERR_REQUEST_CANCELED means user tapped Cancel — don't show an error
       if (appleErr.code !== 'ERR_REQUEST_CANCELED') {
         setError('Apple sign-in failed. Please try again.');
       }
     }
   };
 
+  const disabled = loading || googleLoading;
+
   return (
-    <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* Decorative background blobs */}
+      <View
+        pointerEvents="none"
+        style={[styles.blobTopRight, { backgroundColor: colors.primary + '1A' }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.blobBottomLeft, { backgroundColor: colors.primary + '0F' }]}
+      />
+
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        <View style={styles.container}>
-          <Image
-            source={require('@/assets/images/logo.png')}
-            style={{ width: getScaledFontSize(220), height: getScaledFontSize(140) }}
-            contentFit="contain"
-            accessibilityLabel="App logo"
-          />
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          <Animated.View style={[styles.content, contentStyle]}>
+            <Image
+              source={require('@/assets/images/logo.png')}
+              style={{ width: getScaledFontSize(180), height: getScaledFontSize(110) }}
+              contentFit="contain"
+              accessibilityLabel="App logo"
+            />
 
-          <View style={styles.form}>
             <Text
-              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}
+              style={{
+                color: colors.primary,
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+                marginTop: 8,
+              }}
             >
-              Sign In
+              Welcome Back
+            </Text>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(28),
+                fontWeight: getScaledFontWeight(700) as any,
+                textAlign: 'center',
+              }}
+            >
+              Sign in to your account
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                textAlign: 'center',
+                lineHeight: getScaledFontSize(22),
+                marginBottom: 20,
+              }}
+            >
+              Your health records, medications, and appointments — in one secure place.
             </Text>
 
-            <TextInput
-              mode="flat"
-              label="Email Address"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              accessibilityLabel="Email address"
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
-            />
-            <TextInput
-              mode="flat"
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              textContentType="password"
-              accessibilityLabel="Password"
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              textColor={colors.text}
-              outlineStyle={styles.inputOutline}
-              right={
-                <TextInput.Icon
-                  icon={() => (
-                    <IconSymbol
-                      name={showPassword ? 'eye.slash' : 'eye'}
-                      size={getScaledFontSize(22)}
-                      color={colors.text}
-                    />
-                  )}
-                  onPress={() => setShowPassword(v => !v)}
-                />
-              }
-            />
+            <View style={styles.form}>
+              <TextInput
+                mode="flat"
+                label="Email Address"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                textContentType="emailAddress"
+                accessibilityLabel="Email address"
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  },
+                ]}
+                outlineStyle={styles.inputOutline}
+                textColor={colors.text}
+              />
+              <TextInput
+                mode="flat"
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                textContentType="password"
+                accessibilityLabel="Password"
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  },
+                ]}
+                textColor={colors.text}
+                outlineStyle={styles.inputOutline}
+                right={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name={showPassword ? 'eye.slash' : 'eye'}
+                        size={getScaledFontSize(22)}
+                        color={colors.text}
+                      />
+                    )}
+                    onPress={() => setShowPassword((v) => !v)}
+                  />
+                }
+              />
 
-            {error ? (
-              <Text style={[styles.error, { fontSize: getScaledFontSize(14) }]} accessibilityRole="alert">
-                {error}
-              </Text>
-            ) : null}
+              {error ? (
+                <Text
+                  style={{
+                    color: '#B91C1C',
+                    fontSize: getScaledFontSize(13),
+                    marginTop: 4,
+                  }}
+                  accessibilityRole="alert"
+                >
+                  {error}
+                </Text>
+              ) : null}
 
-            <Button
-              mode="contained"
-              buttonColor={loading ? '#9ca3af' : '#2563eb'}
-              onPress={onSubmit}
-              loading={loading}
-              disabled={loading || googleLoading}
-              style={styles.submit}
-              contentStyle={styles.submitContent}
-              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
-              accessibilityLabel="Sign in with email and password"
-            >
-              Sign In
-            </Button>
+              <Pressable
+                onPress={onSubmit}
+                disabled={disabled}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  {
+                    backgroundColor: disabled ? '#9ca3af' : colors.primary,
+                    opacity: pressed ? 0.9 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with email and password"
+              >
+                <Text
+                  style={{
+                    color: '#fff',
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {loading ? 'Signing in…' : 'Sign In'}
+                </Text>
+              </Pressable>
 
-            {/* Social sign-in divider */}
-            <View style={styles.dividerRow}>
-              <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
-              <Text style={[styles.dividerText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-                or
-              </Text>
-              <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
-            </View>
+              {(isGoogleSignInEnabled || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
+                <View style={styles.dividerRow}>
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(12),
+                      letterSpacing: 1,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    or continue with
+                  </Text>
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
+                </View>
+              )}
 
-            {/* Google Sign-In */}
-            {isGoogleSignInEnabled && (
-              <Button
-                mode="outlined"
-                onPress={handleGoogleSignIn}
-                loading={googleLoading}
-                disabled={loading || googleLoading}
-                style={styles.socialButton}
-                contentStyle={styles.socialButtonContent}
-                labelStyle={[styles.socialButtonLabel, { fontSize: getScaledFontSize(15) }]}
-                icon={() => (
+              {isGoogleSignInEnabled && (
+                <Pressable
+                  onPress={handleGoogleSignIn}
+                  disabled={disabled}
+                  style={({ pressed }) => [
+                    styles.socialButton,
+                    {
+                      borderColor: colors.border ?? '#D1D5DB',
+                      backgroundColor: pressed ? colors.card : 'transparent',
+                      opacity: disabled ? 0.6 : 1,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue with Google"
+                >
                   <Image
                     source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
                     style={{ width: 20, height: 20 }}
                     contentFit="contain"
                     accessibilityLabel=""
                   />
-                )}
-                accessibilityLabel="Continue with Google"
-              >
-                Continue with Google
-              </Button>
-            )}
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(15),
+                      fontWeight: getScaledFontWeight(500) as any,
+                    }}
+                  >
+                    {googleLoading ? 'Connecting to Google…' : 'Continue with Google'}
+                  </Text>
+                </Pressable>
+              )}
 
-            {/* Apple Sign-In — iOS only */}
-            {isAppleSignInEnabled && Platform.OS === 'ios' && (
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={
-                  settings.isDarkTheme
-                    ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                    : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                }
-                cornerRadius={24}
-                style={styles.appleButton}
-                onPress={handleAppleSignIn}
-              />
-            )}
-
-            <View style={styles.switchRow}>
-              <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                Don&apos;t have an account?{' '}
-              </Text>
-              <Link href="/(auth)/sign-up" asChild>
-                <Button
-                  mode="text"
-                  labelStyle={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(22) }}
-                  contentStyle={{ paddingVertical: getScaledFontSize(6) }}
-                  accessibilityLabel="Go to sign up"
-                >
-                  Sign Up
-                </Button>
-              </Link>
+              {isAppleSignInEnabled && Platform.OS === 'ios' && (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={
+                    settings.isDarkTheme
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
+                  cornerRadius={28}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              )}
             </View>
-          </View>
-        </View>
-      </ScrollView>
+
+            <View style={styles.footer}>
+              <View style={styles.privacyRow}>
+                <MaterialIcons name="lock" size={getScaledFontSize(12)} color={colors.subtext} />
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  }}
+                >
+                  HIPAA-compliant · Encrypted in transit
+                </Text>
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(14),
+                  }}
+                >
+                  Don&apos;t have an account?{' '}
+                </Text>
+                <Link href="/(auth)/sign-up" asChild>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Go to sign up">
+                    <Text
+                      style={{
+                        color: colors.primary,
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      }}
+                    >
+                      Sign Up
+                    </Text>
+                  </Pressable>
+                </Link>
+              </View>
+            </View>
+          </Animated.View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeContainer: {
+  root: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  blobTopRight: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    top: -140,
+    right: -100,
+  },
+  blobBottomLeft: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    bottom: -110,
+    left: -80,
   },
   keyboardAvoid: {
     flex: 1,
@@ -324,76 +472,78 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  container: {
+  content: {
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 24,
+    padding: 28,
+    paddingVertical: 48,
+    gap: 8,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   form: {
     width: '100%',
-    maxWidth: 420,
     gap: 12,
-  },
-  title: {
-    textAlign: 'center',
-    marginBottom: 4,
+    marginTop: 4,
   },
   input: {
-    backgroundColor: 'transparent',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
   },
   inputOutline: {
     borderRadius: 14,
   },
-  submit: {
+  primaryButton: {
     marginTop: 8,
-    borderRadius: 24,
-  },
-  submitContent: {
-    minHeight: 48,
-  },
-  submitLabel: {
-    color: 'white',
-    fontWeight: '600',
+    paddingVertical: 16,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
   },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 4,
-    gap: 8,
+    marginVertical: 8,
+    gap: 10,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
-  dividerText: {
-    fontWeight: '500',
-  },
   socialButton: {
-    borderRadius: 24,
-    borderColor: '#D1D5DB',
-  },
-  socialButtonContent: {
-    minHeight: 48,
-  },
-  socialButtonLabel: {
-    fontWeight: '500',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    minHeight: 50,
   },
   appleButton: {
     width: '100%',
-    height: 48,
+    height: 50,
+  },
+  footer: {
+    marginTop: 24,
+    alignItems: 'center',
+    gap: 14,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-  },
-  switchText: {
-    flexShrink: 1,
-    textAlign: 'center',
-  },
-  error: {
-    color: 'crimson',
   },
 });
