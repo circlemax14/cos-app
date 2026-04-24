@@ -7,11 +7,9 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 /**
- * Blocking "Connect a Clinic" screen. Shown when the user has finished core
- * onboarding but still has zero EHR connections — for example, if they
- * skipped the Fasten flow during onboarding. The user can either connect a
- * clinic or tap "Skip for now" to land on Home and try again later. The
- * screen reappears on the next app open until a connection is made.
+ * Blocking "Connect a Clinic" screen. Shown when the user finished core
+ * onboarding but still has zero EHR connections. The only way forward is
+ * to actually connect a clinic — there is no skip.
  */
 export default function ConnectClinicScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -19,10 +17,6 @@ export default function ConnectClinicScreen() {
 
   const handleConnect = useCallback(() => {
     router.replace('/(onboarding)/fasten-connect' as never);
-  }, []);
-
-  const handleSkip = useCallback(() => {
-    router.replace('/Home' as never);
   }, []);
 
   return (
@@ -55,6 +49,7 @@ export default function ConnectClinicScreen() {
         >
           Link your healthcare provider to securely access your medical
           records, medications, labs, and appointments — all in one place.
+          You need at least one connection to continue.
         </Text>
       </View>
 
@@ -75,26 +70,6 @@ export default function ConnectClinicScreen() {
             ]}
           >
             Connect Now
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={handleSkip}
-          style={styles.secondaryButton}
-          accessibilityRole="button"
-          accessibilityLabel="Skip for now"
-        >
-          <Text
-            style={[
-              styles.secondaryButtonText,
-              {
-                color: colors.subtext,
-                fontSize: getScaledFontSize(15),
-                fontWeight: getScaledFontWeight(500) as '500',
-              },
-            ]}
-          >
-            Skip for now
           </Text>
         </Pressable>
       </View>
@@ -145,10 +120,4 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#fff',
   },
-  secondaryButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {},
 });
