@@ -11,12 +11,6 @@ import {
   View,
 } from 'react-native';
 import { TextInput, Text } from 'react-native-paper';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -44,16 +38,6 @@ export default function SignUpScreen() {
   const [error, setError] = useState<string | undefined>();
   const [termsAccepted, setTermsAccepted] = useState(false);
 
-  const contentOpacity = useSharedValue(0);
-  const contentTranslate = useSharedValue(14);
-  useEffect(() => {
-    contentOpacity.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.quad) });
-    contentTranslate.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.quad) });
-  }, [contentOpacity, contentTranslate]);
-  const contentStyle = useAnimatedStyle(() => ({
-    opacity: contentOpacity.value,
-    transform: [{ translateY: contentTranslate.value }],
-  }));
 
   const onSubmit = async () => {
     setLoading(true);
@@ -93,7 +77,7 @@ export default function SignUpScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <Animated.View style={[styles.content, contentStyle]}>
+          <View style={styles.content}>
             <Image
               source={require('@/assets/images/logo.png')}
               style={{ width: getScaledFontSize(180), height: getScaledFontSize(110) }}
@@ -399,7 +383,7 @@ export default function SignUpScreen() {
                 </Link>
               </View>
             </View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
