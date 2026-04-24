@@ -89,6 +89,20 @@ export function AppWrapper({
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+      {/* Decorative soft bubbles — same accent-tinted treatment as
+          the Welcome / Connect-a-Clinic screens, but muted so the
+          main content stays the focus. Positioned absolute behind
+          everything so tap targets are unaffected. Skipped for
+          modals because modals don't render AppWrapper. */}
+      <View
+        pointerEvents="none"
+        style={[styles.bubbleTopRight, { backgroundColor: colors.primary + '12' }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.bubbleBottomLeft, { backgroundColor: colors.primary + '0A' }]}
+      />
+
       {/* Header — only render if at least one icon is visible */}
       {(showHamburgerIcon || showLogo || showAccessibilityIcon || showBellIcon) && (
       <View style={[styles.header, { backgroundColor: colors.background}]}>
@@ -329,6 +343,23 @@ export function AppWrapper({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  bubbleTopRight: {
+    position: 'absolute',
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    top: -200,
+    right: -160,
+  },
+  bubbleBottomLeft: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    bottom: -160,
+    left: -120,
   },
   header: {
     paddingHorizontal: 16,
