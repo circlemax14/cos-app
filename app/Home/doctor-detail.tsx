@@ -7,6 +7,7 @@ import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
 import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, ProviderDiagnosis, ProviderMedication, ClinicalStatus } from '@/services/api/types';
+import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -52,14 +53,47 @@ export default function DoctorDetailScreen() {
   });
 
   const [activeTab, setActiveTab] = useState('treatment');
-  const [aiInsights, setAiInsights] = useState<Record<string, { summary: string; loading: boolean }>>({});
+  type AiInsightState = { summary: string; loading: boolean; empty: boolean };
+  const [aiInsights, setAiInsights] = useState<Record<string, AiInsightState>>({});
 
-  const loadAiInsight = async (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
-    if (aiInsights[tab]?.summary || aiInsights[tab]?.loading) return;
-    setAiInsights((prev) => ({ ...prev, [tab]: { summary: '', loading: true } }));
-    const result = await fetchAiInsight(tab, provider?.name);
-    setAiInsights((prev) => ({ ...prev, [tab]: { summary: result?.summary ?? 'Unable to generate insights.', loading: false } }));
-  };
+  const loadAiInsight = useCallback(
+    async (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
+      if (!providerId) return;
+      // Key on providerId so switching providers re-triggers a fetch.
+      const cacheKey = `${providerId}:${tab}`;
+      if (aiInsights[cacheKey]?.summary || aiInsights[cacheKey]?.loading) return;
+      setAiInsights((prev) => ({
+        ...prev,
+        [cacheKey]: { summary: '', loading: true, empty: false },
+      }));
+      const result = await fetchAiInsight(tab, provider?.name, providerId);
+      setAiInsights((prev) => ({
+        ...prev,
+        [cacheKey]: {
+          summary: result?.summary ?? 'Unable to generate insights.',
+          loading: false,
+          empty: result?.empty === true,
+        },
+      }));
+    },
+    [providerId, provider?.name, aiInsights],
+  );
+
+  const insightFor = useCallback(
+    (tab: 'treatment' | 'progress' | 'appointments'): AiInsightState | undefined =>
+      providerId ? aiInsights[`${providerId}:${tab}`] : undefined,
+    [aiInsights, providerId],
+  );
+
+  // Kick off the AI narrative fetch when a tab becomes active (or the
+  // provider changes). Each fetch is deduped inside loadAiInsight, so
+  // this effect is safe to call liberally.
+  useEffect(() => {
+    if (!providerId || isLoadingData) return;
+    if (activeTab === 'treatment' || activeTab === 'progress' || activeTab === 'appointments') {
+      loadAiInsight(activeTab);
+    }
+  }, [providerId, activeTab, isLoadingData, loadAiInsight]);
 
   const [otherProviders, setOtherProviders] = useState<Provider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
@@ -468,6 +502,49 @@ export default function DoctorDetailScreen() {
     );
   };
 
+  const renderAiNarrative = (tab: 'treatment' | 'progress' | 'appointments', title: string) => {
+    const state = insightFor(tab);
+    return (
+      <Card style={[styles.aiNarrativeCard, { backgroundColor: colors.card }]}>
+        <Card.Content>
+          <View style={styles.aiNarrativeHeader}>
+            <MaterialIcons name="auto-awesome" size={getScaledFontSize(16)} color={colors.primary} />
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 1,
+                textTransform: 'uppercase',
+              }}
+            >
+              {title}
+            </Text>
+          </View>
+          {!state || state.loading ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                Reading your records…
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(14),
+                lineHeight: getScaledFontSize(22),
+                marginTop: 8,
+              }}
+            >
+              {state.summary}
+            </Text>
+          )}
+        </Card.Content>
+      </Card>
+    );
+  };
+
   const renderTreatmentPlan = () => {
     const { diagnoses, medications } = treatmentPlans;
     const isEmpty = diagnoses.length === 0 && medications.length === 0;
@@ -480,14 +557,16 @@ export default function DoctorDetailScreen() {
               Loading diagnoses and medications…
             </Text>
           </View>
-        ) : isEmpty ? (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>
-              No diagnoses or prescriptions from this provider yet.
-            </Text>
-          </View>
         ) : (
           <>
+            {renderAiNarrative('treatment', 'Your Care in Plain Language')}
+            {isEmpty && (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                  No diagnoses or prescriptions recorded by this provider in your EHR.
+                </Text>
+              </View>
+            )}
             {diagnoses.length > 0 && (
               <View style={styles.treatmentSection}>
                 <View style={styles.treatmentSectionHeader}>
@@ -737,16 +816,24 @@ export default function DoctorDetailScreen() {
   };
 
   const renderProgressNotes = () => (
-    <ScrollView style={styles.tabContent}>
-      {/* AI Insights temporarily disabled */}
+    <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes...</Text>
         </View>
       ) : progressNotes.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No progress notes available</Text>
-        </View>
+        // No real clinical notes for this provider — fall back to an
+        // AI-generated plain-English summary of recent care so the tab
+        // isn't an empty shell. Scoped to this provider on the backend.
+        <>
+          {renderAiNarrative('progress', 'AI-Written Progress Summary')}
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+              No official progress notes are on file for this provider yet.
+              The summary above is AI-generated from your visit history.
+            </Text>
+          </View>
+        </>
       ) : (
         progressNotes.map((note) => (
         <Card key={note.id} style={styles.progressNoteCard}>
@@ -890,35 +977,32 @@ export default function DoctorDetailScreen() {
   );
 
   const renderAppointments = () => (
-    <ScrollView style={styles.tabContent}>
-      {/* AI Insights temporarily disabled */}
+    <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading appointments...</Text>
         </View>
-      ) : appointments.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>No appointments available</Text>
-        </View>
       ) : (
-        appointments.map((appointment) => (
-        <Card key={appointment.id} style={styles.appointmentCard}>
-          <Card.Content>
-            <View style={styles.appointmentHeader}>
-              <View>
-                <Text style={[styles.appointmentDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{appointment.date}</Text>
-                <Text style={[styles.appointmentTime, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{appointment.time}</Text>
-              </View>
-              <View style={styles.appointmentRight}>
-                <Text style={[styles.appointmentType, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{appointment.type}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: appointment.status === 'Confirmed' ? '#008080' : '#FF9800' }]}>
-                  <Text style={[styles.statusText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{appointment.status}</Text>
-                </View>
-              </View>
+        <>
+          {renderAiNarrative('appointments', 'Recent Visits at a Glance')}
+          {appointments.length === 0 ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                No appointments or encounters on record with this provider yet.
+              </Text>
             </View>
-          </Card.Content>
-        </Card>
-        ))
+          ) : (
+            appointments.map((appointment) => (
+              <AppointmentCard
+                key={appointment.id}
+                appointment={appointment}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            ))
+          )}
+        </>
       )}
     </ScrollView>
   );
@@ -1395,7 +1479,261 @@ function formatShortDate(iso: string): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// Appointment card with optional AI "Explain this visit" expander.
+// Only Encounter-backed items get the expander — Appointment resources
+// don't have narrative payloads to summarise.
+// ────────────────────────────────────────────────────────────────────────
+interface AppointmentCardProps {
+  appointment: ProviderAppointment;
+  colors: typeof Colors.light;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string;
+}
+
+function AppointmentCard({
+  appointment,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: AppointmentCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const isEncounter = appointment.resourceType === 'Encounter';
+  const narrativeQuery = useEncounterNarrative(
+    isEncounter && expanded ? appointment.id : undefined,
+  );
+  const narrative = narrativeQuery.data;
+
+  const statusColor =
+    appointment.status === 'Completed'
+      ? '#6B7280'
+      : appointment.status === 'Confirmed'
+        ? '#008080'
+        : '#FF9800';
+
+  return (
+    <Card style={styles.appointmentCard}>
+      <Card.Content>
+        <View style={styles.appointmentHeader}>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={[
+                styles.appointmentDate,
+                { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any },
+              ]}
+            >
+              {formatShortDate(appointment.date)}
+              {appointment.time ? ` · ${appointment.time}` : ''}
+            </Text>
+            {(appointment.clinicName || appointment.encounterClass) && (
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                  marginTop: 2,
+                }}
+              >
+                {[appointment.clinicName, appointment.encounterClass].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+          </View>
+          <View style={styles.appointmentRight}>
+            <Text
+              style={[
+                styles.appointmentType,
+                {
+                  fontSize: getScaledFontSize(13),
+                  fontWeight: getScaledFontWeight(500) as any,
+                  color: colors.text,
+                },
+              ]}
+            >
+              {appointment.type}
+            </Text>
+            <View style={[styles.statusBadge, { backgroundColor: statusColor, marginTop: 4 }]}>
+              <Text
+                style={[
+                  styles.statusText,
+                  { fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any },
+                ]}
+              >
+                {appointment.status}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {(appointment.diagnosis || appointment.notes) && (
+          <View
+            style={{
+              marginTop: 10,
+              paddingTop: 10,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: '#E5E7EB',
+              gap: 4,
+            }}
+          >
+            {appointment.diagnosis && (
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(13) }}>
+                <Text style={{ fontWeight: getScaledFontWeight(600) as any }}>Reason: </Text>
+                {appointment.diagnosis}
+              </Text>
+            )}
+            {appointment.notes && (
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                  lineHeight: getScaledFontSize(18),
+                }}
+                numberOfLines={expanded ? undefined : 2}
+              >
+                {appointment.notes}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {isEncounter && (
+          <>
+            <TouchableOpacity
+              onPress={() => setExpanded((v) => !v)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 12,
+                alignSelf: 'flex-start',
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={expanded ? 'Hide visit summary' : 'Explain this visit'}
+            >
+              <MaterialIcons
+                name="auto-awesome"
+                size={getScaledFontSize(14)}
+                color={colors.primary}
+              />
+              <Text
+                style={{
+                  color: colors.primary,
+                  fontSize: getScaledFontSize(13),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                {expanded ? 'Hide AI summary' : 'Explain this visit'}
+              </Text>
+            </TouchableOpacity>
+
+            {expanded && (
+              <View
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 10,
+                  backgroundColor: colors.card,
+                  gap: 8,
+                }}
+              >
+                {narrativeQuery.isLoading ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+                      Reading the visit record…
+                    </Text>
+                  </View>
+                ) : narrative ? (
+                  <>
+                    {narrative.summary && (
+                      <Text
+                        style={{
+                          color: colors.text,
+                          fontSize: getScaledFontSize(13),
+                          lineHeight: getScaledFontSize(20),
+                        }}
+                      >
+                        {narrative.summary}
+                      </Text>
+                    )}
+                    {narrative.keyFindings?.length > 0 && (
+                      <View style={{ gap: 3 }}>
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontSize: getScaledFontSize(12),
+                            fontWeight: getScaledFontWeight(700) as any,
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Key findings
+                        </Text>
+                        {narrative.keyFindings.map((k, i) => (
+                          <Text
+                            key={i}
+                            style={{
+                              color: colors.text,
+                              fontSize: getScaledFontSize(12),
+                              lineHeight: getScaledFontSize(18),
+                            }}
+                          >
+                            • {k}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                    {narrative.followUps?.length > 0 && (
+                      <View style={{ gap: 3 }}>
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontSize: getScaledFontSize(12),
+                            fontWeight: getScaledFontWeight(700) as any,
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          Follow up
+                        </Text>
+                        {narrative.followUps.map((f, i) => (
+                          <Text
+                            key={i}
+                            style={{
+                              color: colors.text,
+                              fontSize: getScaledFontSize(12),
+                              lineHeight: getScaledFontSize(18),
+                            }}
+                          >
+                            • {f}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+                    We couldn&apos;t generate a summary for this visit.
+                  </Text>
+                )}
+              </View>
+            )}
+          </>
+        )}
+      </Card.Content>
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
+  aiNarrativeCard: {
+    marginBottom: 12,
+    borderRadius: 12,
+    elevation: 0,
+  },
+  aiNarrativeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   // ─── Treatment plan redesign (diagnoses + medications sections) ────────
   treatmentSection: {
     marginBottom: 20,
