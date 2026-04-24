@@ -1,8 +1,18 @@
 import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { apiClient } from '@/lib/api-client';
 import { signOut } from '@/services/auth';
@@ -146,69 +156,7 @@ export default function FastenConnectScreen() {
 
   // User closed widget without connecting any clinic
   if (widgetDismissed && !showWidget) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Text style={{ fontSize: 56, marginBottom: 16 }}>🏥</Text>
-        <Text
-          style={{
-            color: colors.text,
-            fontSize: getScaledFontSize(22),
-            fontWeight: getScaledFontWeight(700) as any,
-            textAlign: 'center',
-            marginBottom: 8,
-          }}
-        >
-          Connect a Clinic
-        </Text>
-        <Text
-          style={{
-            color: colors.subtext,
-            fontSize: getScaledFontSize(15),
-            textAlign: 'center',
-            lineHeight: getScaledFontSize(22),
-            paddingHorizontal: 20,
-            marginBottom: 28,
-          }}
-        >
-          To get started, you need to connect at least one healthcare provider. This allows us to securely access your health records.
-        </Text>
-        <TouchableOpacity
-          style={[styles.connectButton, { backgroundColor: colors.tint }]}
-          onPress={handleOpenWidget}
-          accessibilityRole="button"
-          accessibilityLabel="Connect a clinic"
-        >
-          <Text
-            style={{
-              color: '#fff',
-              fontSize: getScaledFontSize(16),
-              fontWeight: getScaledFontWeight(600) as any,
-            }}
-          >
-            Connect a Clinic
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.signOutButton}
-          onPress={async () => {
-            await signOut();
-            router.replace('/(auth)/sign-in' as never);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Sign out"
-        >
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(14),
-              fontWeight: getScaledFontWeight(500) as any,
-            }}
-          >
-            Sign out
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
+    return <ConnectClinicPrompt onConnect={handleOpenWidget} />;
   }
 
   return (
@@ -236,6 +184,285 @@ export default function FastenConnectScreen() {
     </SafeAreaView>
   );
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// Blocking "Connect a Clinic" screen shown when the Fasten widget is
+// dismissed without a connection. Uses the same visual language as the
+// Welcome screen — decorative background blobs, animated icon, eyebrow
+// + heading + subtitle, benefits list, rounded primary CTA, and a
+// subtle Sign out escape hatch.
+// ────────────────────────────────────────────────────────────────────────
+interface ConnectClinicPromptProps {
+  onConnect: () => void;
+}
+
+function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  const contentOpacity = useSharedValue(0);
+  const contentTranslate = useSharedValue(18);
+  const iconScale = useSharedValue(1);
+
+  useEffect(() => {
+    contentOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.quad) });
+    contentTranslate.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.quad) });
+    iconScale.value = withDelay(
+      300,
+      withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 900, easing: Easing.inOut(Easing.quad) }),
+          withTiming(1, { duration: 900, easing: Easing.inOut(Easing.quad) }),
+        ),
+        -1,
+      ),
+    );
+  }, [contentOpacity, contentTranslate, iconScale]);
+
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslate.value }],
+  }));
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+  }));
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.replace('/(auth)/sign-in' as never);
+  };
+
+  const benefits: Array<{ icon: keyof typeof MaterialIcons.glyphMap; text: string }> = [
+    { icon: 'medical-services', text: 'See diagnoses, conditions, and visit notes' },
+    { icon: 'medication', text: 'Track medications and refills in one place' },
+    { icon: 'event-available', text: 'Review appointments and upcoming care' },
+  ];
+
+  return (
+    <View style={[connectStyles.root, { backgroundColor: colors.background }]}>
+      {/* Decorative background blobs — match the Welcome screen. */}
+      <View
+        pointerEvents="none"
+        style={[connectStyles.blobTopRight, { backgroundColor: colors.primary + '1A' }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[connectStyles.blobBottomLeft, { backgroundColor: colors.primary + '0F' }]}
+      />
+
+      <Animated.View style={[connectStyles.hero, contentStyle]}>
+        <Animated.View
+          style={[
+            connectStyles.iconCircle,
+            { backgroundColor: colors.primary + '1A' },
+            iconStyle,
+          ]}
+        >
+          <MaterialIcons
+            name="local-hospital"
+            size={getScaledFontSize(64)}
+            color={colors.primary}
+          />
+        </Animated.View>
+
+        <Text
+          style={{
+            color: colors.primary,
+            fontSize: getScaledFontSize(12),
+            fontWeight: getScaledFontWeight(700) as any,
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+          }}
+        >
+          Get Started
+        </Text>
+
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: getScaledFontSize(28),
+            fontWeight: getScaledFontWeight(700) as any,
+            textAlign: 'center',
+          }}
+        >
+          Connect your clinic
+        </Text>
+
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(15),
+            textAlign: 'center',
+            lineHeight: getScaledFontSize(22),
+            paddingHorizontal: 12,
+          }}
+        >
+          Link your healthcare provider to bring your health records,
+          medications, and appointments together in one secure place.
+        </Text>
+
+        <View style={connectStyles.benefitsList}>
+          {benefits.map((b) => (
+            <View key={b.icon} style={connectStyles.benefitRow}>
+              <View style={[connectStyles.benefitIcon, { backgroundColor: colors.primary + '1A' }]}>
+                <MaterialIcons name={b.icon} size={getScaledFontSize(18)} color={colors.primary} />
+              </View>
+              <Text
+                style={{
+                  flex: 1,
+                  color: colors.text,
+                  fontSize: getScaledFontSize(14),
+                  lineHeight: getScaledFontSize(20),
+                }}
+              >
+                {b.text}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </Animated.View>
+
+      <Animated.View style={[connectStyles.footer, contentStyle]}>
+        <Pressable
+          onPress={onConnect}
+          style={({ pressed }) => [
+            connectStyles.primaryButton,
+            {
+              backgroundColor: colors.primary,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Connect a clinic"
+        >
+          <Text
+            style={{
+              color: '#fff',
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(600) as any,
+            }}
+          >
+            Connect a Clinic
+          </Text>
+        </Pressable>
+
+        <View style={connectStyles.privacyRow}>
+          <MaterialIcons name="lock" size={getScaledFontSize(12)} color={colors.subtext} />
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(500) as any,
+            }}
+          >
+            HIPAA-compliant · Your data is encrypted in transit
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleSignOut}
+          style={connectStyles.signOutLink}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+        >
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              fontWeight: getScaledFontWeight(500) as any,
+              textDecorationLine: 'underline',
+            }}
+          >
+            Sign out
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+}
+
+const connectStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    paddingHorizontal: 28,
+    paddingVertical: 56,
+    overflow: 'hidden',
+    justifyContent: 'space-between',
+  },
+  blobTopRight: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    top: -140,
+    right: -100,
+  },
+  blobBottomLeft: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    bottom: -110,
+    left: -80,
+  },
+  hero: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  iconCircle: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  benefitsList: {
+    width: '100%',
+    marginTop: 20,
+    gap: 12,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  benefitIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footer: {
+    gap: 16,
+    alignItems: 'center',
+  },
+  primaryButton: {
+    width: '100%',
+    paddingVertical: 18,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  signOutLink: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -277,20 +504,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#2E7D32',
     fontWeight: '600',
-  },
-  connectButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 24,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  signOutButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    marginTop: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
