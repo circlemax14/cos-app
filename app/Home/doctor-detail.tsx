@@ -1,13 +1,14 @@
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams } from 'expo-router';
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
-import { Avatar, Card, Button, Portal, Modal, Switch } from 'react-native-paper';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
+import { Avatar, Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
-import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, ProviderDiagnosis, ProviderMedication, ClinicalStatus } from '@/services/api/types';
+import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, ProviderDiagnosis, ProviderMedication, ClinicalStatus, RecommendedAppointment } from '@/services/api/types';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
+import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -53,8 +54,21 @@ export default function DoctorDetailScreen() {
   });
 
   const [activeTab, setActiveTab] = useState('treatment');
+  const [appointmentSubTab, setAppointmentSubTab] = useState<'past' | 'recommended'>('past');
   type AiInsightState = { summary: string; loading: boolean; empty: boolean };
   const [aiInsights, setAiInsights] = useState<Record<string, AiInsightState>>({});
+
+  // Recommended appointments for this provider only. The hook pulls
+  // /v1/patients/me/recommended-appointments once and we filter by the
+  // provider's display name on the client.
+  const { data: allRecommended } = useRecommendedAppointments({ status: 'pending' });
+  const recommendedForProvider = useMemo(() => {
+    if (!allRecommended || !provider?.name) return [];
+    const target = provider.name.trim().toLowerCase();
+    return allRecommended.filter(
+      (r) => r.recommendedProviderName?.trim().toLowerCase() === target,
+    );
+  }, [allRecommended, provider?.name]);
 
   const loadAiInsight = useCallback(
     async (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
@@ -145,9 +159,9 @@ export default function DoctorDetailScreen() {
           
           // Load provider-specific data
           const [plans, notes, apts, carePlanData] = await Promise.all([
-            fetchProviderTreatmentPlans(providerId),
+            fetchProviderTreatmentPlans(providerId, providerData?.name),
             fetchProviderProgressNotes(providerId),
-            fetchProviderAppointments(providerId),
+            fetchProviderAppointments(providerData?.name ?? ''),
             fetchCarePlans(),
           ]);
 
@@ -223,11 +237,11 @@ export default function DoctorDetailScreen() {
     setRefreshing(true);
     try {
       if (providerId && providerId !== 'unknown') {
-        const [providerData, plans, notes, apts, carePlanData, allProviders, existingShares] = await Promise.all([
-          fetchProviderById(providerId),
-          fetchProviderTreatmentPlans(providerId),
+        const providerData = await fetchProviderById(providerId);
+        const [plans, notes, apts, carePlanData, allProviders, existingShares] = await Promise.all([
+          fetchProviderTreatmentPlans(providerId, providerData?.name),
           fetchProviderProgressNotes(providerId),
-          fetchProviderAppointments(providerId),
+          fetchProviderAppointments(providerData?.name ?? ''),
           fetchCarePlans(),
           fetchProviders(),
           fetchDataShares(),
@@ -755,42 +769,94 @@ export default function DoctorDetailScreen() {
     );
   };
 
-  const renderProgressNotes = () => (
-    <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-      {isLoadingData ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes...</Text>
-        </View>
-      ) : progressNotes.length === 0 ? (
-        // No clinical notes on file — show a plain-English overview of
-        // recent care instead of an empty tab. Generated behind the
-        // scenes from this provider's visit history.
-        <>
-          {renderOverviewCard('progress', 'Progress Overview')}
+  const renderProgressNotes = () => {
+    // Each encounter this provider participated in gets its own progress
+    // card summarizing what happened at that visit. Report-backed notes
+    // (DiagnosticReport) come first, then any remaining encounters get a
+    // synthesised card so there is a full timeline rather than gaps.
+    const encounterAppointments = appointments.filter((a) => a.resourceType === 'Encounter');
+
+    if (isLoadingData) {
+      return (
+        <ScrollView style={styles.tabContent}>
           <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-              No formal progress notes are on file for this provider yet.
+            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes…</Text>
+          </View>
+        </ScrollView>
+      );
+    }
+
+    if (progressNotes.length === 0 && encounterAppointments.length === 0) {
+      return (
+        <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }]}>
+              No progress notes or visits with this provider yet.
             </Text>
           </View>
-        </>
-      ) : (
-        progressNotes.map((note) => (
-        <Card key={note.id} style={styles.progressNoteCard}>
-          <Card.Content>
-            <View style={styles.progressNoteHeader}>
-              <View>
-                <Text style={[styles.progressNoteDate, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>{note.date}</Text>
-                <Text style={[styles.progressNoteTime, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{note.time}</Text>
+        </ScrollView>
+      );
+    }
+
+    return (
+      <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+        {progressNotes.map((note) => (
+          <Card key={note.id} style={styles.progressNoteCard}>
+            <Card.Content>
+              <View style={styles.progressNoteHeader}>
+                <View>
+                  <Text
+                    style={[
+                      styles.progressNoteDate,
+                      { fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any },
+                    ]}
+                  >
+                    {formatShortDate(note.date)}
+                  </Text>
+                  {note.time ? (
+                    <Text
+                      style={[
+                        styles.progressNoteTime,
+                        { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any },
+                      ]}
+                    >
+                      {note.time}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text
+                  style={[
+                    styles.progressNoteAuthor,
+                    { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any },
+                  ]}
+                >
+                  {note.author}
+                </Text>
               </View>
-              <Text style={[styles.progressNoteAuthor, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>{note.author}</Text>
-            </View>
-            <Text style={[styles.progressNoteText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>{note.note}</Text>
-          </Card.Content>
-        </Card>
-        ))
-      )}
-    </ScrollView>
-  );
+              <Text
+                style={[
+                  styles.progressNoteText,
+                  { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any },
+                ]}
+              >
+                {note.note}
+              </Text>
+            </Card.Content>
+          </Card>
+        ))}
+
+        {encounterAppointments.map((apt) => (
+          <EncounterProgressCard
+            key={apt.id}
+            encounter={apt}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+        ))}
+      </ScrollView>
+    );
+  };
 
   const handleSwitchChange = async (targetProviderId: string, targetProviderName: string, value: boolean) => {
     if (value) {
@@ -917,11 +983,43 @@ export default function DoctorDetailScreen() {
 
   const renderAppointments = () => (
     <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+      {/* Past / Recommended sub-tab toggle */}
+      <View style={styles.subTabRow}>
+        {(['past', 'recommended'] as const).map((key) => {
+          const active = appointmentSubTab === key;
+          const count = key === 'past' ? appointments.length : recommendedForProvider.length;
+          const label = key === 'past' ? 'Past Visits' : 'Recommended';
+          return (
+            <TouchableOpacity
+              key={key}
+              onPress={() => setAppointmentSubTab(key)}
+              style={[
+                styles.subTabItem,
+                active && { backgroundColor: colors.primary },
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text
+                style={{
+                  color: active ? '#fff' : colors.text,
+                  fontSize: getScaledFontSize(13),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                {label}
+                {count > 0 ? ` (${count})` : ''}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {isLoadingData ? (
         <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading appointments...</Text>
+          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading…</Text>
         </View>
-      ) : (
+      ) : appointmentSubTab === 'past' ? (
         <>
           {renderOverviewCard('appointments', 'Recent Visits')}
           {appointments.length === 0 ? (
@@ -942,6 +1040,22 @@ export default function DoctorDetailScreen() {
             ))
           )}
         </>
+      ) : recommendedForProvider.length === 0 ? (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }]}>
+            No recommended appointments with this provider right now.
+          </Text>
+        </View>
+      ) : (
+        recommendedForProvider.map((rec) => (
+          <RecommendedCard
+            key={rec.id}
+            rec={rec}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+        ))
       )}
     </ScrollView>
   );
@@ -1029,7 +1143,7 @@ export default function DoctorDetailScreen() {
     <AppWrapper>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Doctor Header */}
-        <View style={[styles.header, { backgroundColor: colors.background }]}>
+        <View style={styles.header}>
           <View style={styles.avatarContainer}>
             {doctorData?.photoUrl ? (
               <Avatar.Image 
@@ -1141,125 +1255,218 @@ export default function DoctorDetailScreen() {
       <Modal
         visible={isEditModalVisible}
         onDismiss={handleCancel}
-        contentContainerStyle={[styles.modalContainer, { backgroundColor: colors.background }]}
+        contentContainerStyle={[
+          styles.editModalContainer,
+          { backgroundColor: colors.background },
+        ]}
       >
-        <ScrollView style={styles.modalContent}>
-          <Text style={[styles.modalTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any, marginBottom: getScaledFontSize(24) }]}>
-            Edit Doctor Information
-          </Text>
+        <View style={[styles.editModalHandleBar, { backgroundColor: colors.border }]} />
 
-          {/* Profile Picture */}
-          <View style={styles.imageSection}>
-            {editedData.photoUrl ? (
-              <Image source={{ uri: editedData.photoUrl }} style={[styles.previewImage, { width: getScaledFontSize(120), height: getScaledFontSize(120) }]} />
-            ) : (
-              <InitialsAvatar name={editedData.name} size={getScaledFontSize(120)} />
-            )}
-            <Button
-              mode="outlined"
+        <View style={styles.editModalHeader}>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(22),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+          >
+            Edit Provider
+          </Text>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              marginTop: 4,
+            }}
+          >
+            Update the details we show on this provider&apos;s card.
+          </Text>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.editModalBody}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Hero: avatar with camera chip — tap to change, remove via text link */}
+          <View style={styles.editAvatarHero}>
+            <TouchableOpacity
               onPress={handlePickImage}
-              style={[styles.imageButton, { borderColor: colors.tint }]}
-              contentStyle={{ minHeight: getScaledFontSize(44) }}
-              labelStyle={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }}
+              accessibilityRole="button"
+              accessibilityLabel={editedData.photoUrl ? 'Change photo' : 'Add photo'}
+              style={{ position: 'relative' }}
             >
-              {editedData.photoUrl ? 'Change Photo' : 'Add Photo'}
-            </Button>
-            {editedData.photoUrl && (
-              <Button
-                mode="text"
-                onPress={() => setEditedData({ ...editedData, photoUrl: '' })}
-                style={styles.removeImageButton}
-                contentStyle={{ minHeight: getScaledFontSize(40) }}
-                labelStyle={{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(18), color: '#ff4444' }}
+              {editedData.photoUrl ? (
+                <Image
+                  source={{ uri: editedData.photoUrl }}
+                  style={styles.editAvatarImage}
+                />
+              ) : (
+                <InitialsAvatar name={editedData.name} size={getScaledFontSize(112)} />
+              )}
+              <View
+                style={[
+                  styles.editAvatarCameraChip,
+                  { backgroundColor: colors.primary, borderColor: colors.background },
+                ]}
               >
-                Remove Photo
-              </Button>
+                <MaterialIcons
+                  name="photo-camera"
+                  size={getScaledFontSize(18)}
+                  color="#fff"
+                />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handlePickImage}
+              style={{ marginTop: 12 }}
+              accessibilityRole="button"
+            >
+              <Text
+                style={{
+                  color: colors.primary,
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                {editedData.photoUrl ? 'Change photo' : 'Add photo'}
+              </Text>
+            </TouchableOpacity>
+
+            {editedData.photoUrl && (
+              <TouchableOpacity
+                onPress={() => setEditedData({ ...editedData, photoUrl: '' })}
+                style={{ marginTop: 6 }}
+                accessibilityRole="button"
+              >
+                <Text
+                  style={{
+                    color: '#B91C1C',
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  }}
+                >
+                  Remove photo
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
 
-          {/* Name */}
-          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
-              Name
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
+          <View style={{ gap: 14, marginTop: 12 }}>
+            <PaperTextInput
+              mode="outlined"
+              label="Name"
               value={editedData.name}
               onChangeText={(text) => setEditedData({ ...editedData, name: text })}
               placeholder="Doctor name"
-              placeholderTextColor={colors.text + '60'}
+              style={styles.editPaperInput}
+              outlineColor={colors.border}
+              activeOutlineColor={colors.primary}
+              textColor={colors.text}
+              outlineStyle={{ borderRadius: 16, borderWidth: 1.5 }}
+              theme={{ roundness: 16 }}
             />
-          </View>
-
-          {/* Specialty */}
-          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
-              Specialty
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
+            <PaperTextInput
+              mode="outlined"
+              label="Specialty"
               value={editedData.specialty}
               onChangeText={(text) => setEditedData({ ...editedData, specialty: text })}
-              placeholder="Specialty"
-              placeholderTextColor={colors.text + '60'}
+              placeholder="e.g. Primary Care"
+              style={styles.editPaperInput}
+              outlineColor={colors.border}
+              activeOutlineColor={colors.primary}
+              textColor={colors.text}
+              outlineStyle={{ borderRadius: 16, borderWidth: 1.5 }}
+              theme={{ roundness: 16 }}
             />
-          </View>
-
-          {/* Phone */}
-          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
-              Phone
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
+            <PaperTextInput
+              mode="outlined"
+              label="Phone"
               value={editedData.phone}
               onChangeText={(text) => setEditedData({ ...editedData, phone: text })}
-              placeholder="Phone number"
-              placeholderTextColor={colors.text + '60'}
+              placeholder="(555) 555-5555"
               keyboardType="phone-pad"
+              style={styles.editPaperInput}
+              outlineColor={colors.border}
+              activeOutlineColor={colors.primary}
+              textColor={colors.text}
+              outlineStyle={{ borderRadius: 16, borderWidth: 1.5 }}
+              theme={{ roundness: 16 }}
             />
-          </View>
-
-          {/* Email */}
-          <View style={[styles.inputSection, { marginBottom: getScaledFontSize(20) }]}>
-            <Text style={[styles.inputLabel, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, marginBottom: getScaledFontSize(8) }]}>
-              Email
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16), padding: getScaledFontSize(12), minHeight: getScaledFontSize(48) }]}
+            <PaperTextInput
+              mode="outlined"
+              label="Email"
               value={editedData.email}
               onChangeText={(text) => setEditedData({ ...editedData, email: text })}
-              placeholder="Email address"
-              placeholderTextColor={colors.text + '60'}
+              placeholder="doctor@clinic.com"
               keyboardType="email-address"
               autoCapitalize="none"
+              style={styles.editPaperInput}
+              outlineColor={colors.border}
+              activeOutlineColor={colors.primary}
+              textColor={colors.text}
+              outlineStyle={{ borderRadius: 16, borderWidth: 1.5 }}
+              theme={{ roundness: 16 }}
             />
           </View>
+        </ScrollView>
 
-          {/* Action Buttons */}
-          <View style={[styles.modalActions, { marginTop: getScaledFontSize(24) }]}>
-            <Button
-              mode="outlined"
-              onPress={handleCancel}
-              style={[styles.modalButton, { borderColor: colors.border }]}
-              contentStyle={{ minHeight: getScaledFontSize(48) }}
-              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }}
+        <View
+          style={[
+            styles.editModalFooter,
+            { borderTopColor: colors.border, backgroundColor: colors.background },
+          ]}
+        >
+          <Pressable
+            onPress={handleCancel}
+            style={({ pressed }) => [
+              styles.editSecondaryButton,
+              {
+                borderColor: colors.border,
+                backgroundColor: pressed ? colors.card : 'transparent',
+              },
+            ]}
+            accessibilityRole="button"
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(600) as any,
+              }}
             >
               Cancel
-            </Button>
-            <Button
-              mode="contained"
-              onPress={handleSave}
-              loading={isSaving}
-              disabled={isSaving}
-              style={[styles.modalButton, { backgroundColor: colors.tint }]}
-              contentStyle={{ minHeight: getScaledFontSize(48) }}
-              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24), color: '#fff' }}
-            >
-              Save
-            </Button>
-          </View>
-        </ScrollView>
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={handleSave}
+            disabled={isSaving}
+            style={({ pressed }) => [
+              styles.editPrimaryButton,
+              {
+                backgroundColor: isSaving ? '#9CA3AF' : colors.primary,
+                opacity: pressed ? 0.9 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                Save changes
+              </Text>
+            )}
+          </Pressable>
+        </View>
       </Modal>
     </Portal>
 
@@ -1416,6 +1623,253 @@ function formatShortDate(iso: string): string {
   const d = new Date(`${slice}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+const URGENCY_STYLE: Record<
+  RecommendedAppointment['urgency'],
+  { label: string; bg: string; fg: string }
+> = {
+  urgent: { label: 'Urgent', bg: '#FEE2E2', fg: '#B91C1C' },
+  soon: { label: 'Soon', bg: '#FEF3C7', fg: '#B45309' },
+  routine: { label: 'Routine', bg: '#E5E7EB', fg: '#374151' },
+};
+
+interface EncounterProgressCardProps {
+  encounter: ProviderAppointment;
+  colors: typeof Colors.light;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string;
+}
+
+function EncounterProgressCard({
+  encounter,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: EncounterProgressCardProps) {
+  const narrativeQuery = useEncounterNarrative(encounter.id);
+  const narrative = narrativeQuery.data;
+
+  return (
+    <Card style={styles.progressNoteCard}>
+      <Card.Content>
+        <View style={styles.progressNoteHeader}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(700) as any,
+              }}
+            >
+              {formatShortDate(encounter.date)}
+              {encounter.time ? ` · ${encounter.time}` : ''}
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: 2,
+              }}
+            >
+              {encounter.type || 'Visit'}
+              {encounter.clinicName ? ` · ${encounter.clinicName}` : ''}
+            </Text>
+          </View>
+        </View>
+
+        {encounter.diagnosis && (
+          <Text
+            style={{
+              marginTop: 10,
+              fontSize: getScaledFontSize(13),
+              color: colors.text,
+            }}
+          >
+            <Text style={{ fontWeight: getScaledFontWeight(600) as any }}>Reason: </Text>
+            {encounter.diagnosis}
+          </Text>
+        )}
+
+        {narrativeQuery.isLoading ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: 10,
+            }}
+          >
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+              Reading this visit record…
+            </Text>
+          </View>
+        ) : narrative ? (
+          <View style={{ marginTop: 10, gap: 10 }}>
+            {narrative.summary && (
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(14),
+                  lineHeight: getScaledFontSize(21),
+                }}
+              >
+                {narrative.summary}
+              </Text>
+            )}
+            {narrative.keyFindings?.length > 0 && (
+              <View style={{ gap: 4 }}>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    letterSpacing: 1.2,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Key findings
+                </Text>
+                {narrative.keyFindings.map((k, i) => (
+                  <Text
+                    key={i}
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(13),
+                      lineHeight: getScaledFontSize(19),
+                    }}
+                  >
+                    • {k}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {narrative.followUps?.length > 0 && (
+              <View style={{ gap: 4 }}>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    letterSpacing: 1.2,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Follow up
+                </Text>
+                {narrative.followUps.map((f, i) => (
+                  <Text
+                    key={i}
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(13),
+                      lineHeight: getScaledFontSize(19),
+                    }}
+                  >
+                    • {f}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </View>
+        ) : encounter.notes ? (
+          <Text
+            style={{
+              marginTop: 10,
+              color: colors.text,
+              fontSize: getScaledFontSize(13),
+              lineHeight: getScaledFontSize(19),
+            }}
+          >
+            {encounter.notes}
+          </Text>
+        ) : null}
+      </Card.Content>
+    </Card>
+  );
+}
+
+interface RecommendedCardProps {
+  rec: RecommendedAppointment;
+  colors: typeof Colors.light;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string;
+}
+
+function RecommendedCard({
+  rec,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: RecommendedCardProps) {
+  const pill = URGENCY_STYLE[rec.urgency];
+  return (
+    <Card style={styles.recommendedCard}>
+      <Card.Content>
+        <View style={styles.diagnosisRow}>
+          <Text
+            style={{
+              flex: 1,
+              color: colors.text,
+              fontSize: getScaledFontSize(15),
+              fontWeight: getScaledFontWeight(600) as any,
+              lineHeight: getScaledFontSize(22),
+            }}
+          >
+            {rec.title}
+          </Text>
+          <View style={[styles.urgencyPill, { backgroundColor: pill.bg }]}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: pill.fg }} />
+            <Text
+              style={{
+                color: pill.fg,
+                fontSize: getScaledFontSize(11),
+                fontWeight: getScaledFontWeight(600) as any,
+              }}
+            >
+              {pill.label}
+            </Text>
+          </View>
+        </View>
+        {rec.reason && (
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              lineHeight: getScaledFontSize(20),
+              marginTop: 6,
+            }}
+          >
+            {rec.reason}
+          </Text>
+        )}
+        <View
+          style={{
+            marginTop: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 6,
+          }}
+        >
+          {rec.specialty && (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+              {rec.specialty}
+            </Text>
+          )}
+          {rec.specialty && rec.recommendedByDate && (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>·</Text>
+          )}
+          {rec.recommendedByDate && (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+              by {formatShortDate(rec.recommendedByDate)}
+            </Text>
+          )}
+        </View>
+      </Card.Content>
+    </Card>
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -1759,8 +2213,115 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     padding: 24,
-    backgroundColor: 'white',
     marginBottom: 16,
+  },
+  editModalContainer: {
+    marginHorizontal: 0,
+    marginTop: 'auto',
+    marginBottom: 0,
+    maxHeight: '92%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    overflow: 'hidden',
+  },
+  editModalHandleBar: {
+    width: 48,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  editModalHeader: {
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+  },
+  editModalBody: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  editAvatarHero: {
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  editAvatarImage: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+  },
+  editAvatarCameraChip: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+  },
+  editPaperInput: {
+    backgroundColor: 'transparent',
+  },
+  editModalFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 28,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  editSecondaryButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  editPrimaryButton: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  subTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 4,
+    borderRadius: 28,
+    backgroundColor: '#F3F4F6',
+    marginBottom: 14,
+    alignSelf: 'center',
+  },
+  subTabItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recommendedCard: {
+    marginBottom: 10,
+    borderRadius: 14,
+    elevation: 0,
+  },
+  urgencyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
   },
   avatarContainer: {
     position: 'relative',
