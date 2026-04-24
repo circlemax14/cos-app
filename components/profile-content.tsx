@@ -130,23 +130,79 @@ export function ProfileContent({
       showsVerticalScrollIndicator={false}
     >
       {showProfileHeader && (
-        <View style={styles.header}>
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: colors.primary + '14',
+              borderColor: colors.primary + '24',
+            },
+          ]}
+        >
+          {/* Soft accent blob echoed from the Welcome / Connect screens */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.headerBlob,
+              { backgroundColor: colors.primary + '1C' },
+            ]}
+          />
+
+          <Text
+            style={{
+              color: colors.primary,
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as any,
+              letterSpacing: 2,
+              textTransform: 'uppercase',
+              marginBottom: 14,
+              alignSelf: 'flex-start',
+            }}
+          >
+            My Account
+          </Text>
+
           {isLoadingProfile ? (
-            <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 24 }} />
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 12 }} />
           ) : (
-            <>
+            <View style={styles.headerRow}>
               {patientPhotoUrl ? (
                 <Image
                   source={{ uri: patientPhotoUrl }}
-                  style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 16 }}
+                  style={{ width: 64, height: 64, borderRadius: 32 }}
                   contentFit="cover"
                 />
               ) : (
-                <InitialsAvatar name={patientName} size={80} style={styles.avatar} />
+                <InitialsAvatar name={patientName} size={64} />
               )}
-              <Text style={[styles.name, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>{patientName}</Text>
-              <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>{patientEmail}</Text>
-            </>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.name,
+                    {
+                      color: colors.text,
+                      fontSize: getScaledFontSize(20),
+                      fontWeight: getScaledFontWeight(700) as any,
+                    },
+                  ]}
+                >
+                  {patientName}
+                </Text>
+                {patientEmail ? (
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(500) as any,
+                    }}
+                  >
+                    {patientEmail}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
           )}
         </View>
       )}
@@ -439,14 +495,32 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   header: {
+    position: 'relative',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  headerBlob: {
+    position: 'absolute',
+    top: -70,
+    right: -60,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+  },
+  headerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
+    gap: 14,
+    position: 'relative',
   },
   avatar: {
     marginBottom: 16,
   },
   name: {
-    marginBottom: 4,
+    marginBottom: 2,
   },
   menuSection: {
     marginBottom: 16,
