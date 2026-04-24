@@ -137,7 +137,7 @@ export default function SignUpScreen() {
 
             <View style={styles.form}>
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Email"
                 value={email}
                 onChangeText={setEmail}
@@ -146,16 +146,30 @@ export default function SignUpScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
                 textColor={colors.text}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="envelope"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
               />
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Password"
                 value={password}
                 onChangeText={setPassword}
@@ -163,20 +177,34 @@ export default function SignUpScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
                 textColor={colors.text}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="lock"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
                 right={
                   <TextInput.Icon
                     icon={() => (
                       <IconSymbol
                         name={showPassword ? 'eye.slash' : 'eye'}
-                        size={getScaledFontSize(22)}
-                        color={colors.text}
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
                       />
                     )}
                     onPress={() => setShowPassword((v) => !v)}
@@ -202,7 +230,7 @@ export default function SignUpScreen() {
                 </View>
               )}
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Confirm Password"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
@@ -210,20 +238,34 @@ export default function SignUpScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
                 textColor={colors.text}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="lock"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
                 right={
                   <TextInput.Icon
                     icon={() => (
                       <IconSymbol
                         name={showConfirmPassword ? 'eye.slash' : 'eye'}
-                        size={getScaledFontSize(22)}
-                        color={colors.text}
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
                       />
                     )}
                     onPress={() => setShowConfirmPassword((v) => !v)}
@@ -407,11 +449,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   input: {
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    height: 58,
   },
   inputOutline: {
-    borderRadius: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
   },
   requirementRow: {
     flexDirection: 'row',

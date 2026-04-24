@@ -245,7 +245,7 @@ export default function SignInScreen() {
 
             <View style={styles.form}>
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Email Address"
                 value={username}
                 onChangeText={setUsername}
@@ -257,16 +257,30 @@ export default function SignInScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
                 textColor={colors.text}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="envelope"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
               />
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Password"
                 value={password}
                 onChangeText={setPassword}
@@ -276,20 +290,34 @@ export default function SignInScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 textColor={colors.text}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="lock"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
                 right={
                   <TextInput.Icon
                     icon={() => (
                       <IconSymbol
                         name={showPassword ? 'eye.slash' : 'eye'}
-                        size={getScaledFontSize(22)}
-                        color={colors.text}
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
                       />
                     )}
                     onPress={() => setShowPassword((v) => !v)}
@@ -487,11 +515,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   input: {
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    // Slight bump in height so the outlined input feels generous enough
+    // to tap without fat-fingering the icons on either side.
+    height: 58,
   },
   inputOutline: {
-    borderRadius: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
   },
   primaryButton: {
     marginTop: 8,

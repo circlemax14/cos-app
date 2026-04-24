@@ -45,6 +45,8 @@ const MAPPING = {
   'square.and.arrow.up': 'share',
   'questionmark.circle': 'help-outline',
   'lock.shield': 'security',
+  'lock': 'lock-outline',
+  'envelope': 'mail-outline',
   'heart.fill': 'favorite',
   'checklist': 'checklist',
   'list.bullet.clipboard': 'assignment',
