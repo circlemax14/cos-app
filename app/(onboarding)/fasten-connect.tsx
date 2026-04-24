@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-native';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -79,7 +78,6 @@ export default function FastenConnectScreen() {
       if (navigating.current) return;
       navigating.current = true;
       setIsLoading(true);
-      await AsyncStorage.setItem('fasten_onboarding_done', '1');
       router.replace('/(onboarding)/data-processing' as never);
       return;
     }
@@ -91,7 +89,6 @@ export default function FastenConnectScreen() {
         if (navigating.current) return;
         navigating.current = true;
         setIsLoading(true);
-        await AsyncStorage.setItem('fasten_onboarding_done', '1');
         router.replace('/(onboarding)/data-processing' as never);
       } else {
         // No clinics connected — show prompt to connect

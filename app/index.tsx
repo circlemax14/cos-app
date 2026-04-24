@@ -41,13 +41,10 @@ async function getDestination(user: UserProfile, isLocked: boolean): Promise<str
     return finalHome();
   }
 
-  // First-time users still in the Fasten onboarding flow.
-  if (!user.fastenConnected) {
-    const fastenOnboardingDone = await AsyncStorage.getItem('fasten_onboarding_done');
-    if (!fastenOnboardingDone) return '/(onboarding)/fasten-connect';
-    // User skipped the widget during onboarding — nudge them to connect.
-    return '/(onboarding)/connect-clinic';
-  }
+  // Users without an EHR connection must go through Fasten — the widget
+  // itself renders a "Connect a Clinic" prompt if they dismiss it without
+  // connecting, so we don't need a separate route for that state.
+  if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
 
   // Fasten connected but FHIR export still processing.
   if (!user.dataReady) return '/(onboarding)/data-processing';
