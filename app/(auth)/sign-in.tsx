@@ -19,6 +19,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { MaterialIcons } from '@expo/vector-icons';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -179,10 +181,14 @@ export default function SignInScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* Single soft accent in the top-right for visual interest. */}
+      {/* Decorative background blobs */}
       <View
         pointerEvents="none"
-        style={[styles.blobTopRight, { backgroundColor: colors.primary + '14' }]}
+        style={[styles.blobTopRight, { backgroundColor: colors.primary + '1A' }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.blobBottomLeft, { backgroundColor: colors.primary + '0F' }]}
       />
 
       <KeyboardAvoidingView
@@ -198,27 +204,48 @@ export default function SignInScreen() {
           <Animated.View style={[styles.content, contentStyle]}>
             <Image
               source={require('@/assets/images/logo.png')}
-              style={{ width: getScaledFontSize(120), height: getScaledFontSize(72) }}
+              style={{ width: getScaledFontSize(180), height: getScaledFontSize(110) }}
               contentFit="contain"
               accessibilityLabel="App logo"
             />
 
             <Text
               style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(30),
+                color: colors.primary,
+                fontSize: getScaledFontSize(12),
                 fontWeight: getScaledFontWeight(700) as any,
-                textAlign: 'center',
-                marginTop: 12,
-                marginBottom: 24,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+                marginTop: 8,
               }}
             >
-              Welcome back
+              Welcome Back
+            </Text>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(28),
+                fontWeight: getScaledFontWeight(700) as any,
+                textAlign: 'center',
+              }}
+            >
+              Sign in to your account
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                textAlign: 'center',
+                lineHeight: getScaledFontSize(22),
+                marginBottom: 20,
+              }}
+            >
+              Your health records, medications, and appointments — in one secure place.
             </Text>
 
             <View style={styles.form}>
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Email Address"
                 value={username}
                 onChangeText={setUsername}
@@ -230,16 +257,30 @@ export default function SignInScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
                 textColor={colors.text}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="envelope"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
               />
               <TextInput
-                mode="flat"
+                mode="outlined"
                 label="Password"
                 value={password}
                 onChangeText={setPassword}
@@ -249,20 +290,34 @@ export default function SignInScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: colors.background,
                     fontSize: getScaledFontSize(16),
                     fontWeight: getScaledFontWeight(500) as any,
                   },
                 ]}
                 textColor={colors.text}
                 outlineStyle={styles.inputOutline}
+                outlineColor={colors.border}
+                activeOutlineColor={colors.primary}
+                theme={{ roundness: 16 }}
+                left={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name="lock"
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
+                      />
+                    )}
+                  />
+                }
                 right={
                   <TextInput.Icon
                     icon={() => (
                       <IconSymbol
                         name={showPassword ? 'eye.slash' : 'eye'}
-                        size={getScaledFontSize(22)}
-                        color={colors.text}
+                        size={getScaledFontSize(20)}
+                        color={colors.subtext}
                       />
                     )}
                     onPress={() => setShowPassword((v) => !v)}
@@ -308,7 +363,20 @@ export default function SignInScreen() {
               </Pressable>
 
               {(isGoogleSignInEnabled || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
-                <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0', marginVertical: 6 }]} />
+                <View style={styles.dividerRow}>
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(12),
+                      letterSpacing: 1,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    or continue with
+                  </Text>
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
+                </View>
               )}
 
               {isGoogleSignInEnabled && (
@@ -359,28 +427,43 @@ export default function SignInScreen() {
               )}
             </View>
 
-            <View style={styles.switchRow}>
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(14),
-                }}
-              >
-                Don&apos;t have an account?{' '}
-              </Text>
-              <Link href="/(auth)/sign-up" asChild>
-                <Pressable accessibilityRole="button" accessibilityLabel="Go to sign up">
-                  <Text
-                    style={{
-                      color: colors.primary,
-                      fontSize: getScaledFontSize(14),
-                      fontWeight: getScaledFontWeight(700) as any,
-                    }}
-                  >
-                    Sign Up
-                  </Text>
-                </Pressable>
-              </Link>
+            <View style={styles.footer}>
+              <View style={styles.privacyRow}>
+                <MaterialIcons name="lock" size={getScaledFontSize(12)} color={colors.subtext} />
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  }}
+                >
+                  HIPAA-compliant · Encrypted in transit
+                </Text>
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(14),
+                  }}
+                >
+                  Don&apos;t have an account?{' '}
+                </Text>
+                <Link href="/(auth)/sign-up" asChild>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Go to sign up">
+                    <Text
+                      style={{
+                        color: colors.primary,
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      }}
+                    >
+                      Sign Up
+                    </Text>
+                  </Pressable>
+                </Link>
+              </View>
             </View>
           </Animated.View>
         </ScrollView>
@@ -396,11 +479,19 @@ const styles = StyleSheet.create({
   },
   blobTopRight: {
     position: 'absolute',
-    width: 360,
-    height: 360,
-    borderRadius: 180,
-    top: -180,
-    right: -140,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    top: -140,
+    right: -100,
+  },
+  blobBottomLeft: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    bottom: -110,
+    left: -80,
   },
   keyboardAvoid: {
     flex: 1,
@@ -424,11 +515,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   input: {
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    // Slight bump in height so the outlined input feels generous enough
+    // to tap without fat-fingering the icons on either side.
+    height: 58,
   },
   inputOutline: {
-    borderRadius: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
   },
   primaryButton: {
     marginTop: 8,
@@ -443,8 +536,14 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+    gap: 10,
+  },
   dividerLine: {
-    width: '100%',
+    flex: 1,
     height: 1,
   },
   socialButton: {
@@ -461,11 +560,20 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 50,
   },
+  footer: {
+    marginTop: 24,
+    alignItems: 'center',
+    gap: 14,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    marginTop: 28,
   },
 });
