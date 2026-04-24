@@ -1,11 +1,24 @@
-import Checkbox from 'expo-checkbox';
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
-import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text as RNText, View } from 'react-native';
-import { Button, Text, TextInput } from 'react-native-paper';
+import React, { useEffect, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text as RNText,
+  View,
+} from 'react-native';
+import { TextInput, Text } from 'react-native-paper';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { MaterialIcons } from '@expo/vector-icons';
 
-import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { signUp } from '@/services/auth';
@@ -31,6 +44,17 @@ export default function SignUpScreen() {
   const [error, setError] = useState<string | undefined>();
   const [termsAccepted, setTermsAccepted] = useState(false);
 
+  const contentOpacity = useSharedValue(0);
+  const contentTranslate = useSharedValue(14);
+  useEffect(() => {
+    contentOpacity.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.quad) });
+    contentTranslate.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.quad) });
+  }, [contentOpacity, contentTranslate]);
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslate.value }],
+  }));
+
   const onSubmit = async () => {
     setLoading(true);
     setError(undefined);
@@ -43,160 +67,323 @@ export default function SignUpScreen() {
     }
   };
 
+  const firstUnmet = password.length > 0
+    ? PASSWORD_RULES.find((rule) => !rule.test(password))
+    : undefined;
+  const disabled = loading || !termsAccepted;
+
   return (
-    <View style={[styles.safeContainer, { backgroundColor: colors.background }]}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <View
+        pointerEvents="none"
+        style={[styles.blobTopRight, { backgroundColor: colors.primary + '1A' }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.blobBottomLeft, { backgroundColor: colors.primary + '0F' }]}
+      />
+
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        <View style={styles.container}>
-          <Image source={require('@/assets/images/logo.png')} style={[{ width: getScaledFontSize(220), height: getScaledFontSize(140) }]} contentFit="contain" />
-          <View style={styles.form}>
-            <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20), lineHeight: getScaledFontSize(28), fontWeight: getScaledFontWeight(600) as any }]}>Sign Up</Text>
-            <TextInput
-              mode="flat"
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          <Animated.View style={[styles.content, contentStyle]}>
+            <Image
+              source={require('@/assets/images/logo.png')}
+              style={{ width: getScaledFontSize(180), height: getScaledFontSize(110) }}
+              contentFit="contain"
+              accessibilityLabel="App logo"
             />
-            <TextInput
-              mode="flat"
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
-              right={
-                <TextInput.Icon
-                  icon={() => (
-                    <IconSymbol
-                      name={showPassword ? 'eye.slash' : 'eye'}
-                      size={getScaledFontSize(22)}
-                      color={colors.text}
-                    />
-                  )}
-                  onPress={() => setShowPassword(v => !v)}
-                />
-              }
-            />
-            {password.length > 0 && (() => {
-              const firstUnmet = PASSWORD_RULES.find((rule) => !rule.test(password));
-              if (!firstUnmet) return null;
-              return (
+
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+                marginTop: 8,
+              }}
+            >
+              Get Started
+            </Text>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(28),
+                fontWeight: getScaledFontWeight(700) as any,
+                textAlign: 'center',
+              }}
+            >
+              Create your account
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                textAlign: 'center',
+                lineHeight: getScaledFontSize(22),
+                marginBottom: 20,
+              }}
+            >
+              Sign up to connect your health records, medications, and care team.
+            </Text>
+
+            <View style={styles.form}>
+              <TextInput
+                mode="flat"
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  },
+                ]}
+                outlineStyle={styles.inputOutline}
+                textColor={colors.text}
+              />
+              <TextInput
+                mode="flat"
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  },
+                ]}
+                outlineStyle={styles.inputOutline}
+                textColor={colors.text}
+                right={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name={showPassword ? 'eye.slash' : 'eye'}
+                        size={getScaledFontSize(22)}
+                        color={colors.text}
+                      />
+                    )}
+                    onPress={() => setShowPassword((v) => !v)}
+                  />
+                }
+              />
+              {firstUnmet && (
                 <View style={styles.requirementRow}>
                   <IconSymbol
                     name="info.circle.fill"
                     size={getScaledFontSize(15)}
                     color="#b45309"
                   />
-                  <Text style={[styles.requirementText, { color: '#b45309', fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(18) }]}>
+                  <Text
+                    style={{
+                      color: '#b45309',
+                      fontSize: getScaledFontSize(13),
+                      lineHeight: getScaledFontSize(18),
+                    }}
+                  >
                     {firstUnmet.label}
                   </Text>
                 </View>
-              );
-            })()}
-            <TextInput
-              mode="flat"
-              label="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showConfirmPassword}
-              style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}
-              outlineStyle={styles.inputOutline}
-              textColor={colors.text}
-              right={
-                <TextInput.Icon
-                  icon={() => (
-                    <IconSymbol
-                      name={showConfirmPassword ? 'eye.slash' : 'eye'}
-                      size={getScaledFontSize(22)}
-                      color={colors.text}
-                    />
-                  )}
-                  onPress={() => setShowConfirmPassword(v => !v)}
-                />
-              }
-            />
-            {error ? <Text style={[styles.error, { fontSize: getScaledFontSize(16) }]}>{error}</Text> : null}
+              )}
+              <TextInput
+                mode="flat"
+                label="Confirm Password"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirmPassword}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.card,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  },
+                ]}
+                outlineStyle={styles.inputOutline}
+                textColor={colors.text}
+                right={
+                  <TextInput.Icon
+                    icon={() => (
+                      <IconSymbol
+                        name={showConfirmPassword ? 'eye.slash' : 'eye'}
+                        size={getScaledFontSize(22)}
+                        color={colors.text}
+                      />
+                    )}
+                    onPress={() => setShowConfirmPassword((v) => !v)}
+                  />
+                }
+              />
 
-            <Pressable
-              style={[
-                styles.termsCard,
-                {
-                  backgroundColor: termsAccepted ? (colors.tint + '10') : colors.card,
-                  borderColor: termsAccepted ? colors.tint : colors.border,
-                },
-              ]}
-              onPress={() => setTermsAccepted(v => !v)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: termsAccepted }}
-              accessibilityLabel="I agree to the Terms and Conditions"
-            >
-              <View style={[
-                styles.termsCheckCircle,
-                {
-                  backgroundColor: termsAccepted ? colors.tint : 'transparent',
-                  borderColor: termsAccepted ? colors.tint : colors.border,
-                },
-              ]}>
-                {termsAccepted && (
-                  <RNText style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</RNText>
-                )}
-              </View>
-              <RNText style={{ color: colors.text, fontSize: getScaledFontSize(14), flex: 1, lineHeight: getScaledFontSize(20) }}>
-                I agree to the{' '}
-                <RNText
-                  onPress={(e) => { e.stopPropagation(); router.push('/(auth)/terms' as never); }}
-                  style={{ color: colors.tint, fontWeight: '600', textDecorationLine: 'underline' }}
+              {error ? (
+                <Text
+                  style={{
+                    color: '#B91C1C',
+                    fontSize: getScaledFontSize(13),
+                    marginTop: 4,
+                  }}
+                  accessibilityRole="alert"
                 >
-                  Terms and Conditions
-                </RNText>
-              </RNText>
-            </Pressable>
+                  {error}
+                </Text>
+              ) : null}
 
-            <Button
-              mode="contained"
-              buttonColor={loading || !termsAccepted ? '#9ca3af' : '#2563eb'}
-              onPress={onSubmit}
-              loading={loading}
-              disabled={loading || !termsAccepted}
-              style={styles.submit}
-              contentStyle={styles.submitContent}
-              labelStyle={[styles.submitLabel, { fontSize: getScaledFontSize(16), lineHeight: getScaledFontSize(22) }]}
-              accessibilityLabel={termsAccepted ? 'Sign up' : 'Accept terms and conditions to sign up'}
-            >
-              Sign Up
-            </Button>
-            <View style={styles.switchRow}>
-              <Text style={[styles.switchText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>Already have an account? </Text>
-              <Link href="/(auth)/sign-in" asChild>
-                <Button mode="text" labelStyle={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]} contentStyle={{ paddingVertical: getScaledFontSize(6) }}>Sign In</Button>
-              </Link>
+              <Pressable
+                style={[
+                  styles.termsCard,
+                  {
+                    backgroundColor: termsAccepted ? colors.primary + '14' : colors.card,
+                    borderColor: termsAccepted ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setTermsAccepted((v) => !v)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: termsAccepted }}
+                accessibilityLabel="I agree to the Terms and Conditions"
+              >
+                <View
+                  style={[
+                    styles.termsCheckCircle,
+                    {
+                      backgroundColor: termsAccepted ? colors.primary : 'transparent',
+                      borderColor: termsAccepted ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  {termsAccepted && (
+                    <RNText style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</RNText>
+                  )}
+                </View>
+                <RNText
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(14),
+                    flex: 1,
+                    lineHeight: getScaledFontSize(20),
+                  }}
+                >
+                  I agree to the{' '}
+                  <RNText
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      router.push('/(auth)/terms' as never);
+                    }}
+                    style={{
+                      color: colors.primary,
+                      fontWeight: '600',
+                      textDecorationLine: 'underline',
+                    }}
+                  >
+                    Terms and Conditions
+                  </RNText>
+                </RNText>
+              </Pressable>
+
+              <Pressable
+                onPress={onSubmit}
+                disabled={disabled}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  {
+                    backgroundColor: disabled ? '#9ca3af' : colors.primary,
+                    opacity: pressed ? 0.9 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  termsAccepted ? 'Sign up' : 'Accept terms and conditions to sign up'
+                }
+              >
+                <Text
+                  style={{
+                    color: '#fff',
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {loading ? 'Creating account…' : 'Sign Up'}
+                </Text>
+              </Pressable>
             </View>
-          </View>
-        </View>
-      </ScrollView>
+
+            <View style={styles.footer}>
+              <View style={styles.privacyRow}>
+                <MaterialIcons name="lock" size={getScaledFontSize(12)} color={colors.subtext} />
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(500) as any,
+                  }}
+                >
+                  HIPAA-compliant · Encrypted in transit
+                </Text>
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text
+                  style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}
+                >
+                  Already have an account?{' '}
+                </Text>
+                <Link href="/(auth)/sign-in" asChild>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Go to sign in">
+                    <Text
+                      style={{
+                        color: colors.primary,
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      }}
+                    >
+                      Sign In
+                    </Text>
+                  </Pressable>
+                </Link>
+              </View>
+            </View>
+          </Animated.View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeContainer: {
+  root: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  blobTopRight: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    top: -140,
+    right: -100,
+  },
+  blobBottomLeft: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    bottom: -110,
+    left: -80,
   },
   keyboardAvoid: {
     flex: 1,
@@ -205,23 +392,23 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  container: {
+  content: {
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 24,
+    padding: 28,
+    paddingVertical: 48,
+    gap: 8,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   form: {
     width: '100%',
-    maxWidth: 420,
     gap: 12,
-  },
-  title: {
-    textAlign: 'center',
-    marginBottom: 4,
+    marginTop: 4,
   },
   input: {
-    backgroundColor: 'transparent',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
   },
   inputOutline: {
     borderRadius: 14,
@@ -232,20 +419,6 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 4,
   },
-  requirementText: {
-    fontWeight: '500',
-  },
-  submit: {
-    marginTop: 8,
-    borderRadius: 24,
-  },
-  submitContent: {
-    minHeight: 48,
-  },
-  submitLabel: {
-    color: 'white',
-    fontWeight: '600',
-  },
   termsCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -253,7 +426,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingVertical: 14,
     paddingHorizontal: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1.5,
     minHeight: 52,
   },
@@ -265,17 +438,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primaryButton: {
+    marginTop: 8,
+    paddingVertical: 16,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  footer: {
+    marginTop: 24,
+    alignItems: 'center',
+    gap: 14,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-  },
-  switchText: {
-    flexShrink: 1,
-    textAlign: 'center',
-  },
-  error: {
-    color: 'crimson',
   },
 });
