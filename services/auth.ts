@@ -3,6 +3,7 @@ import { AxiosError } from 'axios';
 import { cognitoSignOut } from '@/lib/cognito';
 import { storeTokens, clearTokens, hasStoredSession } from '@/lib/auth-tokens';
 import { apiClient } from '@/lib/api-client';
+import { setCachedProfile, clearCachedProfile } from '@/lib/cached-profile';
 
 export type SignInPayload = { username: string; password: string };
 export type SignUpPayload = {
@@ -65,6 +66,7 @@ export async function signIn(
     await SecureStore.setItemAsync('cos_username', payload.username);
 
     const meRes = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
+    await setCachedProfile(meRes.data.data);
     return { success: true, user: meRes.data.data };
   } catch (err: unknown) {
     if (err instanceof AxiosError) {
@@ -92,9 +94,17 @@ export async function checkSession(): Promise<{ authenticated: boolean; user?: U
 
   try {
     const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
+    await setCachedProfile(res.data.data);
     return { authenticated: true, user: res.data.data };
-  } catch {
-    await clearTokens();
+  } catch (err) {
+    // Only clear tokens on definitive auth failures (401/403). Network errors
+    // and server 5xx must not log the user out — they should fall back to
+    // cached data on the startup path instead.
+    const status = err instanceof AxiosError ? err.response?.status : undefined;
+    if (status === 401 || status === 403) {
+      await clearTokens();
+      await clearCachedProfile();
+    }
     return { authenticated: false };
   }
 }
@@ -105,6 +115,7 @@ export async function checkSession(): Promise<{ authenticated: boolean; user?: U
 export async function signOut(): Promise<void> {
   cognitoSignOut();
   await clearTokens();
+  await clearCachedProfile();
   await SecureStore.deleteItemAsync('cos_username');
 }
 
