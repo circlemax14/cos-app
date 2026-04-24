@@ -17,8 +17,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { MaterialIcons } from '@expo/vector-icons';
-
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { signUp } from '@/services/auth';
@@ -74,13 +72,10 @@ export default function SignUpScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* Single soft accent in the top-right for visual interest. */}
       <View
         pointerEvents="none"
-        style={[styles.blobTopRight, { backgroundColor: colors.primary + '1A' }]}
-      />
-      <View
-        pointerEvents="none"
-        style={[styles.blobBottomLeft, { backgroundColor: colors.primary + '0F' }]}
+        style={[styles.blobTopRight, { backgroundColor: colors.primary + '14' }]}
       />
 
       <KeyboardAvoidingView
@@ -96,43 +91,22 @@ export default function SignUpScreen() {
           <Animated.View style={[styles.content, contentStyle]}>
             <Image
               source={require('@/assets/images/logo.png')}
-              style={{ width: getScaledFontSize(180), height: getScaledFontSize(110) }}
+              style={{ width: getScaledFontSize(120), height: getScaledFontSize(72) }}
               contentFit="contain"
               accessibilityLabel="App logo"
             />
 
             <Text
               style={{
-                color: colors.primary,
-                fontSize: getScaledFontSize(12),
-                fontWeight: getScaledFontWeight(700) as any,
-                letterSpacing: 2,
-                textTransform: 'uppercase',
-                marginTop: 8,
-              }}
-            >
-              Get Started
-            </Text>
-            <Text
-              style={{
                 color: colors.text,
-                fontSize: getScaledFontSize(28),
+                fontSize: getScaledFontSize(30),
                 fontWeight: getScaledFontWeight(700) as any,
                 textAlign: 'center',
+                marginTop: 12,
+                marginBottom: 24,
               }}
             >
               Create your account
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(14),
-                textAlign: 'center',
-                lineHeight: getScaledFontSize(22),
-                marginBottom: 20,
-              }}
-            >
-              Sign up to connect your health records, medications, and care team.
             </Text>
 
             <View style={styles.form}>
@@ -322,40 +296,23 @@ export default function SignUpScreen() {
               </Pressable>
             </View>
 
-            <View style={styles.footer}>
-              <View style={styles.privacyRow}>
-                <MaterialIcons name="lock" size={getScaledFontSize(12)} color={colors.subtext} />
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: getScaledFontWeight(500) as any,
-                  }}
-                >
-                  HIPAA-compliant · Encrypted in transit
-                </Text>
-              </View>
-
-              <View style={styles.switchRow}>
-                <Text
-                  style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}
-                >
-                  Already have an account?{' '}
-                </Text>
-                <Link href="/(auth)/sign-in" asChild>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Go to sign in">
-                    <Text
-                      style={{
-                        color: colors.primary,
-                        fontSize: getScaledFontSize(14),
-                        fontWeight: getScaledFontWeight(700) as any,
-                      }}
-                    >
-                      Sign In
-                    </Text>
-                  </Pressable>
-                </Link>
-              </View>
+            <View style={styles.switchRow}>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}>
+                Already have an account?{' '}
+              </Text>
+              <Link href="/(auth)/sign-in" asChild>
+                <Pressable accessibilityRole="button" accessibilityLabel="Go to sign in">
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(700) as any,
+                    }}
+                  >
+                    Sign In
+                  </Text>
+                </Pressable>
+              </Link>
             </View>
           </Animated.View>
         </ScrollView>
@@ -371,19 +328,11 @@ const styles = StyleSheet.create({
   },
   blobTopRight: {
     position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    top: -140,
-    right: -100,
-  },
-  blobBottomLeft: {
-    position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    bottom: -110,
-    left: -80,
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    top: -180,
+    right: -140,
   },
   keyboardAvoid: {
     flex: 1,
@@ -451,20 +400,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  footer: {
-    marginTop: 24,
-    alignItems: 'center',
-    gap: 14,
-  },
-  privacyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
+    marginTop: 28,
   },
 });
