@@ -17,13 +17,13 @@ orbs:
   node: circleci/node@5.2
 
 executors:
-  node20:
+  node22:
     docker:
-      - image: cimg/node:20.18
+      - image: cimg/node:22.12
 
 jobs:
   lint-typecheck:
-    executor: node20
+    executor: node22
     steps:
       - checkout
       - node/install-packages:
