@@ -197,10 +197,11 @@ export function AppWrapper({
                   closeDrawerMenu();
                   router.push('/Home/emergency-contact');
                 }}
-                onHealthDetailsPress={() => {
-                  closeDrawerMenu();
-                  router.push('/Home/health-details');
-                }}
+                // Health Details menu entry hidden — see SCRUM-111. The
+                // route at app/Home/health-details.tsx and the GET/PUT
+                // /v1/patients/me/health-details endpoints are still
+                // active so deep links keep working; only the entrypoint
+                // is removed until we decide what the feature should do.
                 onServicesPress={() => {
                   closeDrawerMenu();
                   router.push('/Home/services');
