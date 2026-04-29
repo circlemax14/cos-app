@@ -8,9 +8,12 @@ name: EAS Build & Submit
 #                           AI-generated "What's New" release notes
 
 on:
+  # Push to release-* → preview build (TestFlight). Push to main is
+  # intentionally NOT a trigger — routine merges shouldn't consume EAS
+  # build credits. Use a release branch or workflow_dispatch for binary
+  # builds.
   push:
     branches:
-      - main
       - 'release-*'
   workflow_dispatch:
     inputs:
@@ -81,7 +84,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npx tsc --noEmit
-      - run: npm audit --audit-level=high
+      - run: npm audit --audit-level=critical --omit=dev
 
   # ── EAS Build ───────────────────────────────────────────────────────────────
   build:

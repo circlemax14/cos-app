@@ -6,9 +6,12 @@ name: Build & Deploy
 # workflow_dispatch (from release-* branch) → EAS Build (production) + submit to App Store
 
 on:
+  # Push to release-* → preview/prod EAS Build (per resolve-env). Push to
+  # main is intentionally NOT a trigger — routine merges shouldn't
+  # consume EAS build credits. Use a release branch or workflow_dispatch
+  # to produce a binary.
   push:
     branches:
-      - main
       - 'release-*'
   workflow_dispatch:
     inputs:
