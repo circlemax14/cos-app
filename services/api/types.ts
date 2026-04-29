@@ -260,6 +260,8 @@ export interface HealthPlan {
 }
 
 // ─── Clinic ──────────────────────────────────────────────────────────────────
+export type ClinicStatus = 'active' | 'syncing' | 'failed' | 'pending';
+
 export interface Clinic {
   id: string;
   name: string;
@@ -269,6 +271,14 @@ export interface Clinic {
   zipCode?: string;
   phone?: string;
   email?: string;
+  // Connection metadata supplied by the backend so the Connected EHRs
+  // screen can render a richer card (logo, platform pill, status badge,
+  // last-sync timestamp). All optional — older app clients that don't
+  // surface these still work.
+  logoUrl?: string;
+  platformType?: string;
+  status?: ClinicStatus;
+  lastSyncAt?: string;
 }
 
 // ─── Allergy ─────────────────────────────────────────────────────────────────
