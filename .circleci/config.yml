@@ -1,0 +1,38 @@
+# CircleCI configuration — cos-app (mobile, Expo)
+#
+# CI ONLY in this config. EAS Build + EAS Submit are deliberately
+# excluded so this pipeline cannot consume EAS build credits without
+# explicit human action — matching the project's free-plan rule.
+# When a binary is needed, run `eas build --platform ios --profile <p>`
+# locally (or via the existing GitHub Actions build.yml workflow when
+# GH minutes are available).
+#
+#   any branch     → CI: lint / type-check
+#
+# (No deploy steps. EAS Update / EAS Build remain manual.)
+
+version: 2.1
+
+orbs:
+  node: circleci/node@5.2
+
+executors:
+  node20:
+    docker:
+      - image: cimg/node:20.18
+
+jobs:
+  lint-typecheck:
+    executor: node20
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+          cache-version: v1
+      - run: npm run lint
+      - run: npx tsc --noEmit
+
+workflows:
+  ci:
+    jobs:
+      - lint-typecheck
