@@ -20,6 +20,7 @@ import { fetchRecommendedAppointments } from '@/services/api/recommended-appoint
 import type { RecommendedAppointment } from '@/services/api/types';
 import type { Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
 import { InitialsAvatar } from '@/utils/avatar-utils';
+import { useUserPhoto } from '@/stores/user-photo-store';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import {
@@ -2276,7 +2277,7 @@ export default function HomeScreen() {
   const [, setIsLoadingProviders] = useState(false);
   const { selectedProviders, selectedCareManager, addProvider, removeProvider, validateAndCleanProviders, loadFromServer, setSelectedCareManager } = useProviderSelection();
   const [patientName, setPatientName] = useState('');
-  const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
+  const { photoUrl: patientPhotoUrl } = useUserPhoto();
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [cmLogoUrl, setCmLogoUrl] = useState<string | null>(null);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
@@ -2324,16 +2325,9 @@ export default function HomeScreen() {
         const patient = await fetchPatientInfo();
         if (patient) {
           setPatientName(patient.name || '');
-          // Load profile photo
-          if (patient.photoUrl) {
-            try {
-              const { getPhotoDownloadUrl } = await import('@/services/user-photo');
-              const downloadUrl = await getPhotoDownloadUrl();
-              setPatientPhotoUrl(downloadUrl || patient.photoUrl);
-            } catch {
-              setPatientPhotoUrl(patient.photoUrl);
-            }
-          }
+          // Profile photo lives in the global UserPhotoProvider — no
+          // per-screen fetch needed. The store already loaded it on
+          // app start and keeps it in sync after uploads.
         }
       } catch {
         // Patient data failed to load
