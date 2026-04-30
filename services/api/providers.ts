@@ -243,6 +243,14 @@ function isFromProvider(
   );
 }
 
+/** Extract the bare id from a FHIR reference like "Encounter/abc-123".
+ *  Returns null if the reference is missing or malformed. */
+function extractEncounterId(ref?: string): string | null {
+  if (!ref) return null;
+  const m = ref.match(/^Encounter\/([^/]+)$/);
+  return m ? m[1] : null;
+}
+
 /**
  * Fetch a provider's clinical footprint for this patient: the diagnoses
  * they recorded and the medications they prescribed. Attribution is
@@ -307,6 +315,7 @@ export async function fetchProviderTreatmentPlans(
       notes: (c.note ?? [])
         .map((n) => n.text?.trim())
         .filter((t): t is string => !!t),
+      encounterId: extractEncounterId(c.encounter?.reference),
     }));
 
   const meds: ProviderMedication[] = medications
@@ -323,6 +332,7 @@ export async function fetchProviderTreatmentPlans(
       frequency: formatFrequency(m),
       authoredOn: m.authoredOn ?? null,
       reason: formatReason(m),
+      encounterId: extractEncounterId(m.encounter?.reference),
     }));
 
   return { diagnoses, medications: meds };
