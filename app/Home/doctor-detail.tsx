@@ -2219,6 +2219,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
     marginTop: 'auto',
     marginBottom: 0,
+    // Definite size range — `maxHeight` alone leaves the container
+    // sized-to-content, which makes the body ScrollView's `flex: 1`
+    // resolve to 0 and hides every field except Save/Cancel.
+    minHeight: '60%',
     maxHeight: '92%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
