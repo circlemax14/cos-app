@@ -4,6 +4,7 @@ import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useUserPhoto } from '@/stores/user-photo-store';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { apiClient } from '@/lib/api-client';
 import { Image } from 'expo-image';
@@ -75,7 +76,7 @@ export function ProfileContent({
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
-  const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
+  const { photoUrl: patientPhotoUrl } = useUserPhoto();
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
@@ -85,15 +86,6 @@ export function ProfileContent({
         if (patient) {
           setPatientName(patient.name || 'User');
           setPatientEmail(patient.email || '');
-          if (patient.photoUrl) {
-            try {
-              const { getPhotoDownloadUrl } = await import('@/services/user-photo');
-              const downloadUrl = await getPhotoDownloadUrl();
-              setPatientPhotoUrl(downloadUrl || patient.photoUrl);
-            } catch {
-              setPatientPhotoUrl(patient.photoUrl);
-            }
-          }
 
           // Fallback: if email is empty, try getting from auth /me endpoint
           if (!patient.email) {

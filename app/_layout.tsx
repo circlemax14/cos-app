@@ -12,6 +12,7 @@ import { SecurityProvider } from '@/stores/security-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
+import { UserPhotoProvider } from '@/stores/user-photo-store';
 
 // Hold the native splash up as early as possible — at module load,
 // before any layout mount — so there is no flash of blank white
@@ -42,6 +43,7 @@ export default function RootLayout() {
         <SecurityProvider>
         <ProviderSelectionProvider>
           <SettingsProvider>
+            <UserPhotoProvider>
             <PaperProvider>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                 {/* ... Stack and other children ... */}
@@ -90,6 +92,7 @@ export default function RootLayout() {
                 <StatusBar style="auto" />
               </ThemeProvider>
             </PaperProvider>
+            </UserPhotoProvider>
           </SettingsProvider>
         </ProviderSelectionProvider>
         </SecurityProvider>

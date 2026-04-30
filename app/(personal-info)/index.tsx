@@ -9,9 +9,13 @@ import { fetchPatientInfo } from '@/services/api/patient';
 import { InitialsAvatar } from '@/utils/avatar-utils';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+// expo-file-system v19 split off uploadAsync into the /legacy subpath; the
+// new top-level API is sync/scoped and doesn't include uploads. Use legacy.
+import * as FileSystem from 'expo-file-system/legacy';
 import { apiClient } from '@/lib/api-client';
 import { getPresignedUploadUrl, confirmPhotoUpload, getPhotoDownloadUrl } from '@/services/user-photo';
 import { initializeHealthKit } from '@/services/health';
+import { useUserPhoto } from '@/stores/user-photo-store';
 
 export default function PersonalInfoScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
@@ -32,8 +36,15 @@ export default function PersonalInfoScreen() {
   const [formData, setFormData] = useState(emptyFormData);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { photoUrl: storePhotoUrl, setPhotoUrl: setStorePhotoUrl } = useUserPhoto();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Local photoUri stays in sync with the global store so navigating away
+  // and back doesn't lose the image.
+  useEffect(() => {
+    if (storePhotoUrl) setPhotoUri(storePhotoUrl);
+  }, [storePhotoUrl]);
 
   const uploadPhoto = useCallback(async (uri: string) => {
     setIsUploading(true);
@@ -43,26 +54,36 @@ export default function PersonalInfoScreen() {
 
       const { uploadUrl, photoUrl } = await getPresignedUploadUrl(fileName, contentType);
 
-      const fileResponse = await fetch(uri);
-      const blob = await fileResponse.blob();
-
-      await fetch(uploadUrl, {
-        method: 'PUT',
+      // FileSystem.uploadAsync streams the file directly from disk over a
+      // native HTTP request. The previous fetch(uri).blob() + fetch(PUT)
+      // pattern is broken in React Native — for file:// URIs from
+      // expo-image-picker the blob is often 0 bytes, so S3 either
+      // accepted an empty file or rejected the PUT with 403. Either way
+      // confirmPhotoUpload then wrote a URL into the user record that
+      // pointed at nothing, and every screen rendered a blank circle.
+      const result = await FileSystem.uploadAsync(uploadUrl, uri, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: { 'Content-Type': contentType },
-        body: blob,
       });
+      if (result.status >= 400) {
+        throw new Error(`S3 upload failed: HTTP ${result.status}`);
+      }
 
       await confirmPhotoUpload(photoUrl);
 
-      // Get presigned download URL to display the image
+      // Get a fresh presigned download URL to display the image.
       const downloadUrl = await getPhotoDownloadUrl();
-      setPhotoUri(downloadUrl || photoUrl);
+      const displayUrl = downloadUrl || photoUrl;
+      setPhotoUri(displayUrl);
+      // Publish to the global store so Home, drawer, etc. update too.
+      setStorePhotoUrl(displayUrl);
     } catch {
       Alert.alert('Error', 'Failed to upload photo. Please try again.');
     } finally {
       setIsUploading(false);
     }
-  }, []);
+  }, [setStorePhotoUrl]);
 
   const handlePickImage = useCallback(() => {
     Alert.alert('Update Profile Photo', 'Choose an option', [
