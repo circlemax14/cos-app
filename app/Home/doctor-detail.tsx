@@ -2219,11 +2219,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
     marginTop: 'auto',
     marginBottom: 0,
-    // Definite size range — `maxHeight` alone leaves the container
-    // sized-to-content, which makes the body ScrollView's `flex: 1`
-    // resolve to 0 and hides every field except Save/Cancel.
-    minHeight: '60%',
-    maxHeight: '92%',
+    // Generous fixed height — earlier minHeight: '60%' fixed the empty-form
+    // bug but felt cramped, so the form gets a near-full-screen sheet
+    // (90%) with breathing room around the avatar hero + 4 fields and
+    // a comfortable footer.
+    height: '90%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 8,
