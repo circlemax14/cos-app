@@ -123,10 +123,16 @@ export function groupTreatmentByEncounter(
     });
   }
 
-  // Sort dated groups newest-first by appt.date (fallback: keep insertion order)
+  // Sort dated groups newest-first by appt.date. Groups whose appointment
+  // is missing (no date string) sort to the bottom of the dated set, so
+  // they sit just above the EARLIER bucket rather than above real dated
+  // visits. ISO-8601 timestamps compare correctly via localeCompare.
   groups.sort((a, b) => {
     const da = apptById.get(a.id)?.date ?? '';
     const db = apptById.get(b.id)?.date ?? '';
+    if (!da && !db) return 0;
+    if (!da) return 1;   // unknown date → after known dates
+    if (!db) return -1;
     return db.localeCompare(da);
   });
 
