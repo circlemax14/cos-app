@@ -12,7 +12,7 @@ import {
   WhatChangedCard,
   ActiveConditionsRow,
   EncounterGroup,
-} from './doctor-detail/index';
+} from '@/components/doctor-detail';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { InitialsAvatar } from '@/utils/avatar-utils';
