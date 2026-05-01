@@ -6,10 +6,10 @@
  * Usage:
  *   <JargonText style={...}>{diagnosis.name}</JargonText>
  *
- * The glossary seed list covers ~25 high-frequency terms surfaced in our
+ * The glossary seed list covers ~17 high-frequency terms surfaced in our
  * existing FHIR samples. Expand based on user feedback.
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, Text, TextStyle, StyleSheet } from 'react-native';
 import { Modal, Portal } from 'react-native-paper';
 
@@ -36,12 +36,26 @@ const CLINICAL_GLOSSARY: Record<string, string> = {
   'frequency': 'How often you take the medicine.',
 };
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Pre-sort glossary keys by descending length so longer phrases win first
+// (e.g. "type 2 diabetes" before "diabetes", "in remission" before "remission").
+const GLOSSARY_KEYS_LONGEST_FIRST = Object.keys(CLINICAL_GLOSSARY).sort(
+  (a, b) => b.length - a.length,
+);
+
 function lookupExplanation(term: string): string | null {
   const key = term.trim().toLowerCase();
   if (CLINICAL_GLOSSARY[key]) return CLINICAL_GLOSSARY[key];
-  // Also try matching the last word/phrase (e.g. "Asthma → Resolved" → "resolved")
-  for (const [glossKey, explanation] of Object.entries(CLINICAL_GLOSSARY)) {
-    if (key.includes(glossKey)) return explanation;
+  // Word-boundary substring fallback: match each glossary key only when it
+  // appears as a complete word in `key` (so "stable" does NOT match
+  // "Stable Angina"). Iterate longest-first so "type 2 diabetes" beats
+  // "diabetes" when both would match.
+  for (const glossKey of GLOSSARY_KEYS_LONGEST_FIRST) {
+    const re = new RegExp(`\\b${escapeRegex(glossKey)}\\b`);
+    if (re.test(key)) return CLINICAL_GLOSSARY[glossKey];
   }
   return null;
 }
@@ -52,7 +66,7 @@ interface JargonTextProps {
 }
 
 export function JargonText({ children, style }: JargonTextProps) {
-  const explanation = lookupExplanation(children);
+  const explanation = useMemo(() => lookupExplanation(children), [children]);
   const [popoverVisible, setPopoverVisible] = useState(false);
 
   if (!explanation) {
@@ -66,7 +80,14 @@ export function JargonText({ children, style }: JargonTextProps) {
         accessibilityRole="button"
         accessibilityHint="Long press for plain-language explanation"
       >
-        <Text style={style}>{children}</Text>
+        <Text
+          style={[
+            style as TextStyle | TextStyle[] | undefined,
+            { textDecorationLine: 'underline', textDecorationStyle: 'dotted' },
+          ]}
+        >
+          {children}
+        </Text>
       </Pressable>
       <Portal>
         <Modal
