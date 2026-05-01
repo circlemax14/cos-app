@@ -6,7 +6,13 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { Avatar, Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
-import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, ProviderDiagnosis, ProviderMedication, ClinicalStatus, RecommendedAppointment } from '@/services/api/types';
+import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, RecommendedAppointment } from '@/services/api/types';
+import { groupTreatmentByEncounter } from '@/services/treatment-timeline';
+import {
+  WhatChangedCard,
+  ActiveConditionsRow,
+  EncounterGroup,
+} from './doctor-detail/index';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { InitialsAvatar } from '@/utils/avatar-utils';
@@ -525,247 +531,68 @@ export default function DoctorDetailScreen() {
     );
   };
 
+  // Memoize the encounter grouping so unrelated re-renders (edit-form
+  // keystrokes, modal toggles, etc.) don't re-bucket diagnoses + meds.
+  const treatmentTimeline = useMemo(
+    () => groupTreatmentByEncounter(treatmentPlans, appointments),
+    [treatmentPlans, appointments],
+  );
+
   const renderTreatmentPlan = () => {
-    const { diagnoses, medications } = treatmentPlans;
-    const isEmpty = diagnoses.length === 0 && medications.length === 0;
+    const { activeConditions, resolvedConditions, encounterGroups } = treatmentTimeline;
+
+    const isEmpty =
+      activeConditions.length === 0 &&
+      resolvedConditions.length === 0 &&
+      encounterGroups.length === 0;
 
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
         {isLoadingData ? (
           <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>
+            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14) }}>
               Loading diagnoses and medications…
             </Text>
           </View>
         ) : (
           <>
-            {renderOverviewCard('treatment', 'Summary')}
-            {isEmpty && (
+            <WhatChangedCard
+              state={insightFor('treatment')}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+
+            {isEmpty ? (
               <View style={{ padding: 20, alignItems: 'center' }}>
-                <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
                   No diagnoses or prescriptions recorded by this provider in your EHR.
                 </Text>
               </View>
-            )}
-            {diagnoses.length > 0 && (
-              <View style={styles.treatmentSection}>
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    letterSpacing: 1.5,
-                    textTransform: 'uppercase',
-                    marginBottom: 10,
-                    paddingHorizontal: 4,
-                  }}
-                >
-                  Diagnoses
-                </Text>
-                {diagnoses.map((d) => renderDiagnosisCard(d))}
-              </View>
-            )}
+            ) : (
+              <>
+                <ActiveConditionsRow
+                  active={activeConditions}
+                  resolved={resolvedConditions}
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                />
 
-            {medications.length > 0 && (
-              <View style={styles.treatmentSection}>
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    letterSpacing: 1.5,
-                    textTransform: 'uppercase',
-                    marginBottom: 10,
-                    paddingHorizontal: 4,
-                  }}
-                >
-                  Medications
-                </Text>
-                {medications.map((m) => renderMedicationRow(m))}
-              </View>
+                {encounterGroups.map((group) => (
+                  <EncounterGroup
+                    key={group.id}
+                    group={group}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                  />
+                ))}
+              </>
             )}
           </>
         )}
       </ScrollView>
-    );
-  };
-
-  const renderDiagnosisCard = (d: ProviderDiagnosis) => {
-    const pill = clinicalStatusPill(d.clinicalStatus);
-    return (
-      <Card key={d.id} style={styles.diagnosisCard}>
-        <Card.Content>
-          <View style={styles.diagnosisRow}>
-            <Text
-              style={[
-                styles.diagnosisName,
-                {
-                  color: colors.text,
-                  fontSize: getScaledFontSize(16),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  flex: 1,
-                },
-              ]}
-            >
-              {d.name}
-            </Text>
-            <View style={[styles.clinicalPill, { backgroundColor: pill.bg }]}>
-              <View style={[styles.clinicalDot, { backgroundColor: pill.fg }]} />
-              <Text
-                style={{
-                  color: pill.fg,
-                  fontSize: getScaledFontSize(11),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  textTransform: 'capitalize',
-                }}
-              >
-                {pill.label}
-              </Text>
-            </View>
-          </View>
-
-          {(d.onsetDate || d.recordedDate) && (
-            <View style={[styles.diagnosisMeta, { marginTop: 6 }]}>
-              {d.onsetDate && (
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(12),
-                  }}
-                >
-                  Onset {formatShortDate(d.onsetDate)}
-                </Text>
-              )}
-              {d.onsetDate && d.recordedDate && (
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}> · </Text>
-              )}
-              {d.recordedDate && (
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(12),
-                  }}
-                >
-                  Recorded {formatShortDate(d.recordedDate)}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {d.notes.length > 0 && (
-            <View style={styles.diagnosisNotes}>
-              {d.notes.map((note, idx) => (
-                <Text
-                  key={idx}
-                  style={[
-                    styles.diagnosisNoteText,
-                    {
-                      color: colors.text,
-                      fontSize: getScaledFontSize(14),
-                      lineHeight: getScaledFontSize(21),
-                    },
-                  ]}
-                >
-                  {note}
-                </Text>
-              ))}
-            </View>
-          )}
-        </Card.Content>
-      </Card>
-    );
-  };
-
-  const renderMedicationRow = (m: ProviderMedication) => {
-    const status = medicationStatusPill(m.status);
-    return (
-      <Card key={m.id} style={styles.medicationCard}>
-        <Card.Content>
-          <View style={styles.diagnosisRow}>
-            <View style={{ flex: 1 }}>
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: getScaledFontSize(15),
-                  fontWeight: getScaledFontWeight(600) as any,
-                }}
-              >
-                {m.name}
-              </Text>
-              {m.reason && (
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(12),
-                    marginTop: 2,
-                    fontStyle: 'italic',
-                  }}
-                >
-                  for {m.reason}
-                </Text>
-              )}
-            </View>
-            <View style={[styles.clinicalPill, { backgroundColor: status.bg }]}>
-              <View style={[styles.clinicalDot, { backgroundColor: status.fg }]} />
-              <Text
-                style={{
-                  color: status.fg,
-                  fontSize: getScaledFontSize(11),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  textTransform: 'capitalize',
-                }}
-              >
-                {status.label}
-              </Text>
-            </View>
-          </View>
-
-          {(m.dose || m.frequency) && (
-            <View style={styles.medChipRow}>
-              {m.dose && (
-                <View style={[styles.medChip, { backgroundColor: colors.card }]}>
-                  <MaterialIcons name="opacity" size={getScaledFontSize(12)} color={colors.subtext} />
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: getScaledFontSize(12),
-                      fontWeight: getScaledFontWeight(500) as any,
-                    }}
-                  >
-                    {m.dose}
-                  </Text>
-                </View>
-              )}
-              {m.frequency && (
-                <View style={[styles.medChip, { backgroundColor: colors.card }]}>
-                  <MaterialIcons name="schedule" size={getScaledFontSize(12)} color={colors.subtext} />
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: getScaledFontSize(12),
-                      fontWeight: getScaledFontWeight(500) as any,
-                    }}
-                  >
-                    {m.frequency}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {m.authoredOn && (
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(11),
-                marginTop: 8,
-              }}
-            >
-              Prescribed {formatShortDate(m.authoredOn)}
-            </Text>
-          )}
-        </Card.Content>
-      </Card>
     );
   };
 
@@ -1571,49 +1398,6 @@ export default function DoctorDetailScreen() {
 }
 
 /**
- * Map a FHIR Condition.clinicalStatus code to a display pill.
- * Colors chosen for consistent meaning across light + dark themes:
- *   - green  = ongoing/active condition
- *   - amber  = recent flare (recurrence, relapse)
- *   - blue   = in remission
- *   - grey   = inactive / resolved / unknown
- */
-function clinicalStatusPill(status: ClinicalStatus): { label: string; bg: string; fg: string } {
-  switch (status) {
-    case 'active':
-      return { label: 'Active', bg: '#DCFCE7', fg: '#15803D' };
-    case 'recurrence':
-    case 'relapse':
-      return { label: status === 'relapse' ? 'Relapse' : 'Recurrence', bg: '#FEF3C7', fg: '#B45309' };
-    case 'remission':
-      return { label: 'In Remission', bg: '#DBEAFE', fg: '#1D4ED8' };
-    case 'resolved':
-      return { label: 'Resolved', bg: '#E5E7EB', fg: '#374151' };
-    case 'inactive':
-      return { label: 'Inactive', bg: '#E5E7EB', fg: '#374151' };
-    default:
-      return { label: 'Unknown', bg: '#E5E7EB', fg: '#6B7280' };
-  }
-}
-
-/**
- * Map a FHIR MedicationRequest.status to a display pill. The common
- * values we see in practice are active / completed / stopped / cancelled.
- */
-function medicationStatusPill(status: string): { label: string; bg: string; fg: string } {
-  const s = status.toLowerCase();
-  if (s === 'active')
-    return { label: 'Active', bg: '#DCFCE7', fg: '#15803D' };
-  if (s === 'on-hold' || s === 'draft')
-    return { label: s === 'draft' ? 'Draft' : 'On Hold', bg: '#FEF3C7', fg: '#B45309' };
-  if (s === 'stopped' || s === 'cancelled' || s === 'entered-in-error')
-    return { label: s === 'stopped' ? 'Stopped' : s === 'cancelled' ? 'Cancelled' : 'Error', bg: '#FEE2E2', fg: '#B91C1C' };
-  if (s === 'completed')
-    return { label: 'Completed', bg: '#E5E7EB', fg: '#374151' };
-  return { label: status || 'Unknown', bg: '#E5E7EB', fg: '#6B7280' };
-}
-
-/**
  * Format an ISO date (or YYYY-MM-DD prefix) as "MMM D, YYYY". Returns
  * the raw string unchanged if it can't be parsed, so unusual EHR formats
  * survive without blowing up.
@@ -2127,85 +1911,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  // ─── Treatment plan redesign (diagnoses + medications sections) ────────
-  treatmentSection: {
-    marginBottom: 20,
-  },
-  treatmentSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 4,
-    marginBottom: 10,
-  },
-  treatmentSectionTitle: {
-    flex: 1,
-  },
-  treatmentCountPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  diagnosisCard: {
-    marginBottom: 10,
-    borderRadius: 12,
-    elevation: 0,
-  },
-  medicationCard: {
-    marginBottom: 10,
-    borderRadius: 12,
-    elevation: 0,
-  },
+  // diagnosisRow kept — still referenced by RecommendedCard layout below.
   diagnosisRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-  },
-  diagnosisName: {
-    flexShrink: 1,
-  },
-  diagnosisMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  diagnosisNotes: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E5E7EB',
-    gap: 6,
-  },
-  diagnosisNoteText: {},
-  clinicalPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  clinicalDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  medChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
-  },
-  medChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
   },
   container: {
     flex: 1,
@@ -2219,7 +1929,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
     marginTop: 'auto',
     marginBottom: 0,
-    maxHeight: '92%',
+    // Generous fixed height — earlier minHeight: '60%' fixed the empty-form
+    // bug but felt cramped, so the form gets a near-full-screen sheet
+    // (90%) with breathing room around the avatar hero + 4 fields and
+    // a comfortable footer.
+    height: '90%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 8,
