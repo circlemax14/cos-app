@@ -531,9 +531,15 @@ export default function DoctorDetailScreen() {
     );
   };
 
+  // Memoize the encounter grouping so unrelated re-renders (edit-form
+  // keystrokes, modal toggles, etc.) don't re-bucket diagnoses + meds.
+  const treatmentTimeline = useMemo(
+    () => groupTreatmentByEncounter(treatmentPlans, appointments),
+    [treatmentPlans, appointments],
+  );
+
   const renderTreatmentPlan = () => {
-    const { activeConditions, resolvedConditions, encounterGroups } =
-      groupTreatmentByEncounter(treatmentPlans, appointments);
+    const { activeConditions, resolvedConditions, encounterGroups } = treatmentTimeline;
 
     const isEmpty =
       activeConditions.length === 0 &&
