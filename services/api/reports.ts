@@ -8,8 +8,20 @@ interface BackendReport {
   status: string;
   date: string;
   performer: string;
+  performingFacility?: string;
+  interpretedBy?: string;
+  accessionNumber?: string;
+  orderNumber?: string;
   conclusion?: string;
-  results?: Array<{ name: string; value: string; unit?: string }>;
+  results?: Array<{ name: string; value: string; unit?: string; referenceRange?: string }>;
+  // Detail-only narrative sections (only populated by GET /reports/:id)
+  exam?: string;
+  clinicalHistory?: string;
+  technique?: string;
+  findings?: string;
+  impression?: string;
+  rawNarrative?: string;
+  aiSummary?: string;
 }
 
 function mapToReport(r: BackendReport): Report {
@@ -21,6 +33,12 @@ function mapToReport(r: BackendReport): Report {
     corrected: 'Available',
     cancelled: 'Completed',
   };
+  // Description is the structured-results join — used as a fallback in
+  // the list / card view when the rich narrative isn't loaded yet.
+  const description = r.results
+    ?.map((res) => `${res.name}: ${res.value}${res.unit ? ` ${res.unit}` : ''}`)
+    .filter((line) => line.trim() !== ':')
+    .join('\n');
   return {
     id: r.id,
     title: r.title,
@@ -28,8 +46,24 @@ function mapToReport(r: BackendReport): Report {
     provider: r.performer,
     date: r.date,
     status: statusMap[r.status] ?? 'Available',
-    impression: r.conclusion,
-    description: r.results?.map((res) => `${res.name}: ${res.value}${res.unit ? ` ${res.unit}` : ''}`).join('\n'),
+    description: description || r.rawNarrative,
+    exam: r.exam,
+    clinicalHistory: r.clinicalHistory,
+    technique: r.technique,
+    findings: r.findings,
+    impression: r.impression ?? r.conclusion,
+    interpretedBy: r.interpretedBy,
+    accessionNumber: r.accessionNumber,
+    orderNumber: r.orderNumber,
+    performingFacility: r.performingFacility
+      ? {
+          name: r.performingFacility,
+          address: '',
+          city: '',
+          state: '',
+          zip: '',
+        }
+      : undefined,
   };
 }
 
