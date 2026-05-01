@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchConnectedClinics } from '@/services/api/clinics';
 import { getNonEhrClinics } from '@/services/non-ehr-processor';
 import { hasStoredSession } from '@/lib/auth-tokens';
+import type { ClinicStatus } from '@/services/api/types';
 
 export interface ConnectedHospital {
   id: string;
@@ -11,8 +12,14 @@ export interface ConnectedHospital {
   address?: string;
   city?: string;
   state?: string;
+  zipCode?: string;
   phone?: string;
   email?: string;
+  // Optional metadata for the redesigned Connected EHRs hero card.
+  logoUrl?: string;
+  platformType?: string;
+  status?: ClinicStatus;
+  lastSyncAt?: string;
 }
 
 export function useConnectedEhrs() {
@@ -35,8 +42,13 @@ export function useConnectedEhrs() {
         address: clinic.address,
         city: clinic.city,
         state: clinic.state,
+        zipCode: clinic.zipCode,
         phone: clinic.phone,
         email: clinic.email,
+        logoUrl: clinic.logoUrl,
+        platformType: clinic.platformType,
+        status: clinic.status,
+        lastSyncAt: clinic.lastSyncAt,
       }));
 
       let integrativeHospitals: ConnectedHospital[] = [];
