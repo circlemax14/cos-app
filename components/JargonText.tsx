@@ -66,11 +66,14 @@ interface JargonTextProps {
 }
 
 export function JargonText({ children, style }: JargonTextProps) {
-  const explanation = useMemo(() => lookupExplanation(children), [children]);
+  // Defensive coercion: if a caller passes a non-string (number, null,
+  // undefined), avoid crashing inside lookupExplanation's .trim() call.
+  const text = typeof children === 'string' ? children : String(children ?? '');
+  const explanation = useMemo(() => lookupExplanation(text), [text]);
   const [popoverVisible, setPopoverVisible] = useState(false);
 
   if (!explanation) {
-    return <Text style={style}>{children}</Text>;
+    return <Text style={style}>{text}</Text>;
   }
 
   return (
@@ -86,7 +89,7 @@ export function JargonText({ children, style }: JargonTextProps) {
             { textDecorationLine: 'underline', textDecorationStyle: 'dotted' },
           ]}
         >
-          {children}
+          {text}
         </Text>
       </Pressable>
       <Portal>
@@ -95,7 +98,7 @@ export function JargonText({ children, style }: JargonTextProps) {
           onDismiss={() => setPopoverVisible(false)}
           contentContainerStyle={styles.popover}
         >
-          <Text style={styles.popoverTerm}>{children}</Text>
+          <Text style={styles.popoverTerm}>{text}</Text>
           <Text style={styles.popoverExplanation}>{explanation}</Text>
         </Modal>
       </Portal>

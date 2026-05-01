@@ -26,14 +26,20 @@ function isResolved(status: ClinicalStatus): boolean {
   return RESOLVED_STATUSES.includes(status);
 }
 
+// Manual month-array lookup avoids relying on the JS engine's Intl
+// implementation. Hermes on iOS historically shipped without Intl
+// (now opt-in), and even when present, locale-data availability for
+// non-en-US is not guaranteed. The label format here is fixed —
+// uppercase 3-letter month + numeric day — so locale-aware formatting
+// would actively get in the way.
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
 /** "2026-04-12T..." → "APR 12" (uppercase, no year). Empty string if invalid. */
 function formatDateLabel(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  return d
-    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    .toUpperCase();
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
 }
 
 function diagnosisToEvent(d: ProviderDiagnosis): TimelineEvent {
