@@ -4,12 +4,19 @@ import {
   ActivityIndicator,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiClient } from '@/lib/api-client';
 import { isPinSetup } from '@/services/pin-auth';
@@ -31,7 +38,7 @@ interface GuidelinesResponse {
 }
 
 export default function UsageGuidelinesScreen() {
-  const { settings, getScaledFontSize } = useAccessibility();
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -40,6 +47,14 @@ export default function UsageGuidelinesScreen() {
   const [accepting, setAccepting] = useState(false);
   const [hasScrolledToEnd, setHasScrolledToEnd] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const contentOpacity = useSharedValue(0);
+  const contentTranslate = useSharedValue(16);
+
+  // Soft accent tints to match the bubble treatment used on Welcome and AppWrapper screens.
+  const tintSoft = colors.primary + '1A';
+  const tintSofter = colors.primary + '0F';
+  const tintHairline = colors.primary + '22';
 
   useEffect(() => {
     const fetchGuidelines = async () => {
@@ -54,6 +69,18 @@ export default function UsageGuidelinesScreen() {
     };
     fetchGuidelines();
   }, []);
+
+  useEffect(() => {
+    if (!loading && guidelines) {
+      contentOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.quad) });
+      contentTranslate.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.quad) });
+    }
+  }, [loading, guidelines, contentOpacity, contentTranslate]);
+
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslate.value }],
+  }));
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -78,12 +105,10 @@ export default function UsageGuidelinesScreen() {
         version: guidelines.version,
       });
     } catch (err: unknown) {
-      // If the error is NOT a 409 (already accepted) or network error, show it and stop
       const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
       const status = axiosErr?.response?.status;
       const serverMsg = axiosErr?.response?.data?.error;
 
-      // 409 = already accepted, treat as success and continue
       if (status !== 409) {
         if (status === 401) {
           setError('Your session has expired. Please sign in again.');
@@ -95,7 +120,6 @@ export default function UsageGuidelinesScreen() {
       }
     }
 
-    // Success or already accepted — navigate forward
     try {
       const pinConfigured = await isPinSetup();
       if (!pinConfigured) {
@@ -108,124 +132,313 @@ export default function UsageGuidelinesScreen() {
     }
   };
 
+  const Bubbles = () => (
+    <>
+      <View
+        pointerEvents="none"
+        style={[styles.bubbleTopRight, { backgroundColor: tintSoft }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.bubbleBottomLeft, { backgroundColor: tintSofter }]}
+      />
+    </>
+  );
+
   if (loading) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-          Loading usage guidelines...
-        </Text>
-      </View>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={['top', 'left', 'right', 'bottom']}
+      >
+        <Bubbles />
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text
+            style={[
+              styles.loadingText,
+              { color: colors.subtext, fontSize: getScaledFontSize(15) },
+            ]}
+          >
+            Loading usage guidelines...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!guidelines) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: 'crimson', fontSize: getScaledFontSize(15) }]}>
-          {error ?? 'Unable to load guidelines.'}
-        </Text>
-        <TouchableOpacity
-          style={[styles.retryButton, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            setLoading(true);
-            setError(null);
-            apiClient
-              .get<GuidelinesResponse>('/v1/content/usage-guidelines')
-              .then((res) => setGuidelines(res.data.data))
-              .catch(() => setError('Failed to load usage guidelines.'))
-              .finally(() => setLoading(false));
-          }}
-        >
-          <Text style={[styles.retryText, { fontSize: getScaledFontSize(16) }]}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={['top', 'left', 'right', 'bottom']}
+      >
+        <Bubbles />
+        <View style={styles.centered}>
+          <View style={[styles.iconCircle, { backgroundColor: tintSoft }]}>
+            <Text style={{ fontSize: getScaledFontSize(48) }}>⚠️</Text>
+          </View>
+          <Text
+            style={[
+              styles.errorText,
+              { color: colors.text, fontSize: getScaledFontSize(16) },
+            ]}
+          >
+            {error ?? 'Unable to load guidelines.'}
+          </Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: pressed ? 0.9 : 1,
+              },
+            ]}
+            onPress={() => {
+              setLoading(true);
+              setError(null);
+              apiClient
+                .get<GuidelinesResponse>('/v1/content/usage-guidelines')
+                .then((res) => setGuidelines(res.data.data))
+                .catch(() => setError('Failed to load usage guidelines.'))
+                .finally(() => setLoading(false));
+            }}
+          >
+            <Text
+              style={[
+                styles.primaryButtonText,
+                {
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as '600',
+                },
+              ]}
+            >
+              Retry
+            </Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22) }]}>
-          Usage Guidelines
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-          Version {guidelines.version} — Last updated {guidelines.updatedAt}
-        </Text>
-        <Text style={[styles.instruction, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-          Please read the following guidelines carefully. Scroll to the bottom to accept.
-        </Text>
-        <View style={[styles.disclaimerBanner, { backgroundColor: colors.card ?? '#f0f7ff', borderColor: colors.border ?? '#d0e4f7' }]}>
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), textAlign: 'center', lineHeight: getScaledFontSize(18) }}>
-            ⚕️ This app is for care coordination only and does not provide medical advice. Always consult your healthcare provider for medical decisions.
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top', 'left', 'right', 'bottom']}
+    >
+      <Bubbles />
+
+      <Animated.View style={[styles.header, contentStyle]}>
+        <View style={[styles.iconCircle, { backgroundColor: tintSoft }]}>
+          <Text style={{ fontSize: getScaledFontSize(40) }} accessibilityElementsHidden>
+            📖
           </Text>
         </View>
-      </View>
 
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={true}
-      >
-        {guidelines.sections.map((section, index) => (
-          <View key={index} style={styles.section}>
-            <Text style={[styles.sectionHeading, { color: colors.text, fontSize: getScaledFontSize(16) }]}>
-              {section.heading}
-            </Text>
-            <Text style={[styles.sectionBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-              {section.body}
-            </Text>
-          </View>
-        ))}
-        <View style={styles.endSpacer} />
-      </ScrollView>
-
-      <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
-        {error ? (
-          <Text style={[styles.footerError, { fontSize: getScaledFontSize(13) }]}>{error}</Text>
-        ) : null}
-        {!hasScrolledToEnd && (
-          <Text style={[styles.scrollHint, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-            Scroll to the bottom to enable acceptance
-          </Text>
-        )}
-        <TouchableOpacity
+        <Text
           style={[
-            styles.acceptButton,
+            styles.eyebrow,
             {
-              backgroundColor: hasScrolledToEnd && !accepting ? colors.primary : '#9ca3af',
+              color: colors.primary,
+              fontSize: getScaledFontSize(12),
+              fontWeight: getScaledFontWeight(600) as '600',
             },
           ]}
+        >
+          BEFORE YOU CONTINUE
+        </Text>
+
+        <Text
+          style={[
+            styles.title,
+            {
+              color: colors.text,
+              fontSize: getScaledFontSize(28),
+              fontWeight: getScaledFontWeight(700) as '700',
+            },
+          ]}
+        >
+          Usage Guidelines
+        </Text>
+
+        <Text
+          style={[
+            styles.versionText,
+            {
+              color: colors.subtext,
+              fontSize: getScaledFontSize(12),
+            },
+          ]}
+        >
+          Version {guidelines.version} · Updated {guidelines.updatedAt}
+        </Text>
+
+        <View
+          style={[
+            styles.disclaimerBanner,
+            {
+              backgroundColor: tintSofter,
+              borderColor: tintHairline,
+            },
+          ]}
+        >
+          <Text style={{ fontSize: getScaledFontSize(20) }}>⚕️</Text>
+          <Text
+            style={[
+              styles.disclaimerText,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(13),
+                lineHeight: getScaledFontSize(19),
+              },
+            ]}
+          >
+            This app is for care coordination only and does not provide medical
+            advice. Always consult your healthcare provider for medical decisions.
+          </Text>
+        </View>
+      </Animated.View>
+
+      <Animated.View style={[styles.scrollWrapper, contentStyle]}>
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={true}
+        >
+          {guidelines.sections.map((section, index) => (
+            <View
+              key={index}
+              style={[
+                styles.sectionCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: tintHairline,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sectionHeading,
+                  {
+                    color: colors.text,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(700) as '700',
+                  },
+                ]}
+              >
+                {section.heading}
+              </Text>
+              <Text
+                style={[
+                  styles.sectionBody,
+                  {
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(14),
+                    lineHeight: getScaledFontSize(21),
+                  },
+                ]}
+              >
+                {section.body}
+              </Text>
+            </View>
+          ))}
+          <View style={styles.endSpacer} />
+        </ScrollView>
+      </Animated.View>
+
+      <View
+        style={[
+          styles.footer,
+          {
+            backgroundColor: colors.background,
+            borderTopColor: tintHairline,
+          },
+        ]}
+      >
+        {error ? (
+          <Text style={[styles.footerError, { fontSize: getScaledFontSize(13) }]}>
+            {error}
+          </Text>
+        ) : null}
+
+        {!hasScrolledToEnd && (
+          <View style={styles.scrollHintRow}>
+            <Text
+              style={[
+                styles.scrollHint,
+                { color: colors.subtext, fontSize: getScaledFontSize(13) },
+              ]}
+            >
+              ↓ Scroll to the bottom to enable
+            </Text>
+          </View>
+        )}
+
+        <Pressable
           onPress={handleAccept}
           disabled={!hasScrolledToEnd || accepting}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            {
+              backgroundColor:
+                hasScrolledToEnd && !accepting ? colors.primary : colors.disabled,
+              opacity: pressed && hasScrolledToEnd ? 0.9 : 1,
+            },
+          ]}
           accessibilityLabel="Accept usage guidelines"
+          accessibilityRole="button"
           accessibilityState={{ disabled: !hasScrolledToEnd || accepting }}
         >
           {accepting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={[styles.acceptText, { fontSize: getScaledFontSize(16) }]}>
+            <Text
+              style={[
+                styles.primaryButtonText,
+                {
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(700) as '700',
+                },
+              ]}
+            >
               I Accept the Usage Guidelines
             </Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  bubbleTopRight: {
+    position: 'absolute',
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    top: -200,
+    right: -160,
+  },
+  bubbleBottomLeft: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    bottom: -160,
+    left: -120,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    paddingHorizontal: 32,
     gap: 16,
   },
   loadingText: {
@@ -235,79 +448,101 @@ const styles = StyleSheet.create({
   errorText: {
     textAlign: 'center',
   },
-  retryButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  retryText: {
-    color: '#fff',
-    fontWeight: '600',
+  iconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
   header: {
+    alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
     gap: 6,
   },
+  eyebrow: {
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
   title: {
-    fontWeight: '700',
+    textAlign: 'center',
   },
-  subtitle: {
-    opacity: 0.7,
-  },
-  instruction: {
-    marginTop: 4,
-    fontStyle: 'italic',
+  versionText: {
+    textAlign: 'center',
+    opacity: 0.85,
   },
   disclaimerBanner: {
-    marginTop: 12,
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
+    alignSelf: 'stretch',
+  },
+  disclaimerText: {
+    flex: 1,
+  },
+  scrollWrapper: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingTop: 8,
     paddingBottom: 20,
   },
-  section: {
-    marginBottom: 20,
+  sectionCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 12,
     gap: 6,
   },
-  sectionHeading: {
-    fontWeight: '600',
-  },
-  sectionBody: {
-  },
+  sectionHeading: {},
+  sectionBody: {},
   endSpacer: {
-    height: 20,
+    height: 12,
   },
   footer: {
     paddingHorizontal: 24,
-    paddingVertical: 16,
-    paddingBottom: 40,
+    paddingTop: 14,
+    paddingBottom: 20,
     borderTopWidth: 1,
-    gap: 8,
+    gap: 10,
   },
   footerError: {
     color: 'crimson',
     textAlign: 'center',
   },
+  scrollHintRow: {
+    alignItems: 'center',
+  },
   scrollHint: {
     textAlign: 'center',
     fontStyle: 'italic',
   },
-  acceptButton: {
+  primaryButton: {
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 30,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  acceptText: {
+  primaryButtonText: {
     color: '#fff',
-    fontWeight: '700',
   },
 });
