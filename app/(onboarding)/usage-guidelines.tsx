@@ -37,6 +37,22 @@ interface GuidelinesResponse {
   };
 }
 
+/**
+ * The backend returns updatedAt as a raw ISO timestamp
+ * ("2026-05-03T17:23:35.258Z"). Render it as a friendly long-form date
+ * ("May 3, 2026"). If parsing fails, fall back to the raw value rather
+ * than showing "Invalid Date".
+ */
+function formatUpdatedAt(iso: string): string {
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return iso;
+  return new Date(ts).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 export default function UsageGuidelinesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -270,7 +286,7 @@ export default function UsageGuidelinesScreen() {
             },
           ]}
         >
-          Version {guidelines.version} · Updated {guidelines.updatedAt}
+          Version {guidelines.version} · Updated {formatUpdatedAt(guidelines.updatedAt)}
         </Text>
 
         <View
