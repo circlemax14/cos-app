@@ -11,6 +11,9 @@ expo-env.d.ts
 # Expo local state
 .expo/
 
+# Superpowers brainstorm session artifacts (mockups, state)
+.superpowers/
+
 # Native directories — kept in git for bare workflow
 # /ios/
 # /android/

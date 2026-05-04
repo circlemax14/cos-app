@@ -497,6 +497,15 @@ export function ProfileContent({
                     url: 'https://joinabrightfuture.com/download',
                   });
                 }}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+              <DrawerRow
+                iconName="info-outline"
+                label="About"
+                onPress={() => router.push('/Home/about' as never)}
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}

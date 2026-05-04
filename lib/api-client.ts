@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from './auth-tokens';
+import { CLIENT_INFO_HEADERS } from './client-info';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 
@@ -30,11 +31,18 @@ async function forceSignOut(): Promise<void> {
   }
 }
 
-// ─── Request interceptor: attach stored access token ───────────────────────
+// ─── Request interceptor: attach stored access token + client telemetry ───
+// Client-info headers (app version, build number, runtime, OTA update id,
+// channel, platform) are attached to EVERY request so the backend can
+// answer "which version is this user on?" for support + rollout tracking.
+// Captured once at module load — these don't change during a launch.
 apiClient.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  for (const [k, v] of Object.entries(CLIENT_INFO_HEADERS)) {
+    config.headers[k] = v;
   }
   return config;
 });

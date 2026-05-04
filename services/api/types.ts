@@ -98,6 +98,10 @@ export interface ProviderDiagnosis {
   onsetDate: string | null;
   recordedDate: string | null;
   notes: string[];
+  /** Encounter ID this diagnosis was attached to in the EHR, if known.
+   *  Extracted from FHIR `Condition.encounter.reference` ("Encounter/{id}").
+   *  Used by the timeline view to bucket diagnoses by visit. */
+  encounterId: string | null;
 }
 
 export interface ProviderMedication {
@@ -108,6 +112,10 @@ export interface ProviderMedication {
   frequency: string | null;
   authoredOn: string | null;
   reason: string | null;
+  /** Encounter ID this prescription was authored at, if known.
+   *  Extracted from FHIR `MedicationRequest.encounter.reference`.
+   *  Used by the timeline view to bucket meds by visit. */
+  encounterId: string | null;
 }
 
 /**
@@ -161,6 +169,50 @@ export interface ProviderAppointment {
   clinicName?: string;
   /** Provider specialty, when the EHR tagged it. */
   doctorSpecialty?: string;
+}
+
+// ─── Treatment Timeline (view layer) ────────────────────────────────────────
+export type TimelineEventKind =
+  | 'medication-added'
+  | 'diagnosis-resolved'
+  | 'diagnosis-recorded';
+
+/** A single row inside an `EncounterGroup`. Either a medication that was
+ *  added/changed at the encounter, or a diagnosis whose state was set. */
+export interface TimelineEvent {
+  id: string;
+  kind: TimelineEventKind;
+  /** Display title — med name or diagnosis name. */
+  title: string;
+  /** Optional secondary line — dose+frequency for meds, status pill text
+   *  for diagnoses, free-text otherwise. */
+  subtitle: string | null;
+  /** "for High Cholesterol" — only for medications with a linked reason. */
+  reasonText: string | null;
+}
+
+/** A bucket of timeline events tied to one encounter (or the trailing
+ *  "Earlier" bucket for items with no encounter attribution). */
+export interface EncounterGroupView {
+  /** Stable id — encounter id, or "earlier" for the trailing bucket. */
+  id: string;
+  /** Header date string ("APR 12") or "EARLIER". `null` for the trailing
+   *  earlier bucket means "no date header below the headline". */
+  dateLabel: string | null;
+  /** Header type string ("ANNUAL PHYSICAL"). `null` if unknown. */
+  typeLabel: string | null;
+  events: TimelineEvent[];
+}
+
+/** Output of `groupTreatmentByEncounter` — feeds the redesigned tab. */
+export interface TreatmentTimeline {
+  /** Diagnoses with `clinicalStatus` in ['active','recurrence','relapse']. */
+  activeConditions: ProviderDiagnosis[];
+  /** Diagnoses with `clinicalStatus` in ['resolved','remission','inactive']. */
+  resolvedConditions: ProviderDiagnosis[];
+  /** Reverse-chronological encounter groups. Trailing entry has id 'earlier'
+   *  if any items lacked encounter attribution. */
+  encounterGroups: EncounterGroupView[];
 }
 
 // ─── Medication ──────────────────────────────────────────────────────────────
@@ -260,6 +312,8 @@ export interface HealthPlan {
 }
 
 // ─── Clinic ──────────────────────────────────────────────────────────────────
+export type ClinicStatus = 'active' | 'syncing' | 'failed' | 'pending';
+
 export interface Clinic {
   id: string;
   name: string;
@@ -269,6 +323,14 @@ export interface Clinic {
   zipCode?: string;
   phone?: string;
   email?: string;
+  // Connection metadata supplied by the backend so the Connected EHRs
+  // screen can render a richer card (logo, platform pill, status badge,
+  // last-sync timestamp). All optional — older app clients that don't
+  // surface these still work.
+  logoUrl?: string;
+  platformType?: string;
+  status?: ClinicStatus;
+  lastSyncAt?: string;
 }
 
 // ─── Allergy ─────────────────────────────────────────────────────────────────
