@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h b/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h
+index 2daec5d..4501c90 100644
+--- a/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h
++++ b/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h
+@@ -8,6 +8,8 @@
+ NS_ASSUME_NONNULL_BEGIN
+ 
+ @class EXReactDelegate;
++@class RCTDevMenuConfiguration;
++@class RCTRootViewFactoryConfiguration;
+ 
+ NS_SWIFT_NAME(ExpoReactRootViewFactory)
+ @interface EXReactRootViewFactory : RCTRootViewFactory
