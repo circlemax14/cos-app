@@ -8,7 +8,7 @@ PODS:
   - EXJSONUtils (55.0.2)
   - EXManifests (55.0.16):
     - ExpoModulesCore
-  - Expo (55.0.18):
+  - Expo (55.0.19):
     - ExpoModulesCore
     - hermes-engine
     - RCTRequired
@@ -68,7 +68,7 @@ PODS:
     - SDWebImageWebPCoder (~> 0.14.6)
   - ExpoImagePicker (55.0.19):
     - ExpoModulesCore
-  - ExpoKeepAwake (55.0.6):
+  - ExpoKeepAwake (55.0.7):
     - ExpoModulesCore
   - ExpoLinking (55.0.14):
     - ExpoModulesCore
@@ -76,7 +76,7 @@ PODS:
     - ExpoModulesCore
   - ExpoLogBox (55.0.11):
     - React-Core
-  - ExpoModulesCore (55.0.23):
+  - ExpoModulesCore (55.0.24):
     - ExpoModulesJSI
     - hermes-engine
     - RCTRequired
@@ -101,12 +101,12 @@ PODS:
     - ReactNativeDependencies
     - RNWorklets
     - Yoga
-  - ExpoModulesJSI (55.0.23):
+  - ExpoModulesJSI (55.0.24):
     - hermes-engine
     - React-Core
     - React-runtimescheduler
     - ReactCommon
-  - ExpoNotifications (55.0.21):
+  - ExpoNotifications (55.0.22):
     - ExpoModulesCore
   - ExpoRouter (55.0.13):
     - ExpoModulesCore
@@ -2794,7 +2794,7 @@ SPEC CHECKSUMS:
   EXConstants: b2ff8818e17593c8e0a4dc19fa256c804473fed4
   EXJSONUtils: 04bc3807d351331a5fe154ce1da596ec15d99169
   EXManifests: 45bb6adf798ea7b79e18de8904a87a872edd9894
-  Expo: 5ec106d9e4f4e6a85e811c173643d5796e29e7a6
+  Expo: 4fff73f1b8e3243edb881dc615cce0b1c47e3fe0
   ExpoAppleAuthentication: 9e3a40e8f9d95d23d980956f6dbf0b6c0302940b
   ExpoAsset: e5a93c1082e763fb7b59a0b3a16c38224ba07f8a
   ExpoCamera: b1af7b587924c631de246608f4cddafa9c8ba767
@@ -2809,13 +2809,13 @@ SPEC CHECKSUMS:
   ExpoHaptics: 18a4632ae8de62130208c76ba2bb0a0a144e99b3
   ExpoImage: 3989b3db8ede85c28d5e37e8649c1e36a3749282
   ExpoImagePicker: 02ab32edea0c3c225f78e7c4393dc2ecb6c7dfce
-  ExpoKeepAwake: 5e391c2c712b7af91e044be8ab44b7f542d81f3c
+  ExpoKeepAwake: bf2f625dca3aad834b407df8dd519403946c7724
   ExpoLinking: 0a21c06eab5a85911717d07771125fe384c7b4e8
   ExpoLocalAuthentication: 22f5fbc0935bdc7057ec7144fcfad0792ed8a3f2
   ExpoLogBox: efb519c2c43697a0638151efd53c3ddc2f6200dc
-  ExpoModulesCore: c082e316ecf8cf54e3d682f0e4deb5d2aff1961c
-  ExpoModulesJSI: 8589717ca75637de3b00f8dbf8cc734ee227f9bd
-  ExpoNotifications: 8f7d570f885f369a4a53dc722f92fbde1f69251a
+  ExpoModulesCore: 4da279b53c36cbc675dc7d1db9607b992b93eded
+  ExpoModulesJSI: 288127051458d92e2ca89c93b398b3b1d7ac034d
+  ExpoNotifications: b37f0275df4aa42f29b9f72b65a3ae091168eef2
   ExpoRouter: 73e97e4468c4435576be4c4b72ff4b5276854a1a
   ExpoSecureStore: 03372541cb9b7f67601fa2ed0a8c2abbc9037e04
   ExpoSplashScreen: a137dbb4409ae5bf56de4dc6e6990fc9fa8c716b
