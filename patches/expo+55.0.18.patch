@@ -1,13 +1,40 @@
 diff --git a/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h b/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h
-index 2daec5d..4501c90 100644
+index 2daec5d..28b614e 100644
 --- a/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h
 +++ b/node_modules/expo/ios/AppDelegates/EXReactRootViewFactory.h
-@@ -8,6 +8,8 @@
+@@ -4,10 +4,19 @@
+ 
+ #import <ExpoModulesCore/Platform.h>
+ #import <Expo/RCTAppDelegateUmbrella.h>
++// Bring in the full @interface for RCTDevMenuConfiguration so the Swift
++// bridge can synthesize properties / parameters typed against it.
++// react-native@0.83+ only forward-declares this class in its own headers,
++// which is fine for Obj-C compilation but causes Swift to drop the
++// devMenuConfiguration property when it generates ExpoReactNativeFactoryObjC's
++// interface, leading to "value of type 'ExpoReactNativeFactory' has no
++// member 'devMenuConfiguration'".
++#import <React/RCTDevMenu.h>
+ 
  NS_ASSUME_NONNULL_BEGIN
  
  @class EXReactDelegate;
-+@class RCTDevMenuConfiguration;
 +@class RCTRootViewFactoryConfiguration;
  
  NS_SWIFT_NAME(ExpoReactRootViewFactory)
  @interface EXReactRootViewFactory : RCTRootViewFactory
+diff --git a/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.h b/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.h
+index 1facfd9..e0ebc4c 100644
+--- a/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.h
++++ b/node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.h
+@@ -2,6 +2,11 @@
+ 
+ #import <ExpoModulesCore/ExpoModulesCore.h>
+ #import <Expo/RCTAppDelegateUmbrella.h>
++// Same fix as in EXReactRootViewFactory.h — RN 0.83 only forward-declares
++// RCTDevMenuConfiguration on RCTReactNativeFactory's devMenuConfiguration
++// property, which Swift can't bridge. Pulling in the full @interface here
++// surfaces the property to Swift.
++#import <React/RCTDevMenu.h>
+ 
+ @protocol RCTHostDelegate;
+ @protocol RCTHostRuntimeDelegate;
