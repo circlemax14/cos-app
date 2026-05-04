@@ -232,6 +232,14 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="about"
+        options={{
+          title: 'About',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );
