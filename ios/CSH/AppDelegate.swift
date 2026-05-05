@@ -1,15 +1,19 @@
-import Expo
-import React
-import ReactAppDependencyProvider
+// Swift 6 strict-imports: explicitly mark these `internal` to match
+// the auto-generated ExpoModulesProvider.swift, which already imports
+// Expo as `internal`. Without an explicit access level here, Swift 6
+// treats the imports as ambiguous and refuses to emit the module.
+internal import Expo
+internal import React
+internal import ReactAppDependencyProvider
 
 @UIApplicationMain
-public class AppDelegate: ExpoAppDelegate {
+class AppDelegate: ExpoAppDelegate {
   var window: UIWindow?
 
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
-  public override func application(
+  override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
@@ -19,7 +23,10 @@ public class AppDelegate: ExpoAppDelegate {
 
     reactNativeDelegate = delegate
     reactNativeFactory = factory
-    bindReactNativeFactory(factory)
+    // SDK 54 had a `bindReactNativeFactory(factory)` helper that linked the
+    // factory into the AppDelegate subscriber chain. SDK 55 wires this up
+    // automatically through ExpoReactNativeFactoryDelegate's superclass, so
+    // an explicit bind call is no longer needed (and the symbol is gone).
 
 #if os(iOS) || os(tvOS)
     window = UIWindow(frame: UIScreen.main.bounds)
@@ -33,7 +40,7 @@ public class AppDelegate: ExpoAppDelegate {
   }
 
   // Linking API
-  public override func application(
+  override func application(
     _ app: UIApplication,
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
@@ -42,7 +49,7 @@ public class AppDelegate: ExpoAppDelegate {
   }
 
   // Universal Links
-  public override func application(
+  override func application(
     _ application: UIApplication,
     continue userActivity: NSUserActivity,
     restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
