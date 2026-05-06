@@ -23,6 +23,26 @@ interface WhatChangedCardProps {
   getScaledFontWeight: (weight: number) => string | number;
 }
 
+/**
+ * Strip markdown formatting that would render as literal `#` / `*` /
+ * `**bold**` in a React Native Text view. The backend prompt
+ * (cos-backend SCRUM-129) was updated to forbid markdown, but stale
+ * cached responses + LLM occasional drift still leak through. Cheap
+ * client-side safety net.
+ */
+function stripMarkdown(s: string): string {
+  return s
+    // Drop leading "#"/"##"/"###" headings (any number of #s)
+    .replace(/^#+\s+/gm, '')
+    // Convert "* item" or "- item" markdown bullets to a Unicode bullet
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    // Drop **bold** markers (keep the inner text)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    // Drop *italic* markers (keep the inner text)
+    .replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, '$1$2')
+    .trim();
+}
+
 export function WhatChangedCard({
   state,
   colors,
@@ -66,7 +86,7 @@ export function WhatChangedCard({
             marginTop: 6,
           }}
         >
-          {state.summary}
+          {stripMarkdown(state.summary)}
         </Text>
       )}
     </View>

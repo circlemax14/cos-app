@@ -560,6 +560,14 @@ export default function DoctorDetailScreen() {
       resolvedConditions.length === 0 &&
       treatmentPlanCards.length === 0;
 
+    // When the strict Condition/MedicationRequest path is empty BUT there
+    // are CarePlans below (rendered by renderCarePlans on the same tab),
+    // suppress the "No diagnoses or prescriptions recorded" line — it's
+    // visually redundant with the CarePlan card and contradicts what the
+    // user can see directly below. The AI WhatChangedCard above handles
+    // any narrative the patient needs.
+    const hasCarePlanBelow = carePlans.length > 0;
+
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
         {isLoadingData ? (
@@ -578,11 +586,13 @@ export default function DoctorDetailScreen() {
             />
 
             {isEmpty ? (
-              <View style={{ padding: 20, alignItems: 'center' }}>
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
-                  No diagnoses or prescriptions recorded by this provider in your EHR.
-                </Text>
-              </View>
+              hasCarePlanBelow ? null : (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                    No diagnoses or prescriptions recorded by this provider in your EHR.
+                  </Text>
+                </View>
+              )
             ) : (
               <>
                 <ActiveConditionsRow
@@ -942,30 +952,59 @@ export default function DoctorDetailScreen() {
                   <Text style={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, color: colors.text, marginBottom: getScaledFontSize(4) }}>
                     Activities:
                   </Text>
-                  {plan.activities.map((activity, idx) => (
-                    <View key={idx} style={{ paddingVertical: getScaledFontSize(4), borderBottomWidth: idx < plan.activities.length - 1 ? 1 : 0, borderBottomColor: colors.text + '15' }}>
-                      {activity.description && (
-                        <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}>
-                          {activity.description}
-                        </Text>
-                      )}
-                      {activity.kind && (
-                        <Text style={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '70' }}>
-                          Type: {activity.kind}
-                        </Text>
-                      )}
-                      {(activity.scheduledStart || activity.scheduledEnd) && (
-                        <Text style={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '70' }}>
-                          Scheduled: {activity.scheduledStart || ''}{activity.scheduledEnd ? ` - ${activity.scheduledEnd}` : ''}
-                        </Text>
-                      )}
-                      {activity.status && (
-                        <View style={[styles.statusBadge, { backgroundColor: activity.status === 'scheduled' ? '#008080' : '#9E9E9E', marginTop: getScaledFontSize(4), alignSelf: 'flex-start' }]}>
-                          <Text style={[styles.statusText, { fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(500) as any }]}>{activity.status}</Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
+                  {plan.activities.map((activity, idx) => {
+                    // FHIR `kind` for an activity is a resource type
+                    // ("ServiceRequest", "Task") that isn't meaningful to
+                    // patients. Show it only as a label when no
+                    // description is available AND the kind looks like a
+                    // human-readable category. For raw resource types,
+                    // skip the "Type: …" line entirely.
+                    const kindIsResourceType = activity.kind
+                      ? /^[A-Z][a-zA-Z]+$/.test(activity.kind)
+                      : false;
+                    const showKind =
+                      activity.kind && !activity.description && !kindIsResourceType;
+                    // 'not-started' is the FHIR default and conveys no
+                    // information ("we have a plan but haven't started").
+                    // Only surface a status badge once it has actually
+                    // moved (scheduled / in-progress / completed / on-hold
+                    // / cancelled).
+                    const showStatusBadge =
+                      activity.status &&
+                      activity.status !== 'not-started' &&
+                      activity.status !== 'unknown';
+                    const hasAnyDetail =
+                      !!activity.description ||
+                      showKind ||
+                      activity.scheduledStart ||
+                      activity.scheduledEnd ||
+                      showStatusBadge;
+                    if (!hasAnyDetail) return null;
+                    return (
+                      <View key={idx} style={{ paddingVertical: getScaledFontSize(4), borderBottomWidth: idx < plan.activities.length - 1 ? 1 : 0, borderBottomColor: colors.text + '15' }}>
+                        {activity.description && (
+                          <Text style={{ fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any, color: colors.text }}>
+                            {activity.description}
+                          </Text>
+                        )}
+                        {showKind && (
+                          <Text style={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '70' }}>
+                            {activity.kind}
+                          </Text>
+                        )}
+                        {(activity.scheduledStart || activity.scheduledEnd) && (
+                          <Text style={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any, color: colors.text + '70' }}>
+                            Scheduled: {activity.scheduledStart || ''}{activity.scheduledEnd ? ` - ${activity.scheduledEnd}` : ''}
+                          </Text>
+                        )}
+                        {showStatusBadge && (
+                          <View style={[styles.statusBadge, { backgroundColor: activity.status === 'scheduled' || activity.status === 'in-progress' ? '#008080' : '#9E9E9E', marginTop: getScaledFontSize(4), alignSelf: 'flex-start' }]}>
+                            <Text style={[styles.statusText, { fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(500) as any }]}>{activity.status}</Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               )}
               {plan.textSummary && (
