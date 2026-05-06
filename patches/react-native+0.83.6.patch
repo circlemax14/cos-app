@@ -1,0 +1,32 @@
+diff --git a/node_modules/react-native/Libraries/AppDelegate/RCTReactNativeFactory.h b/node_modules/react-native/Libraries/AppDelegate/RCTReactNativeFactory.h
+index 455d23e..245ad23 100644
+--- a/node_modules/react-native/Libraries/AppDelegate/RCTReactNativeFactory.h
++++ b/node_modules/react-native/Libraries/AppDelegate/RCTReactNativeFactory.h
+@@ -7,6 +7,7 @@
+ 
+ #import <React/RCTBridgeDelegate.h>
+ #import <React/RCTConvert.h>
++#import <React/RCTDevMenu.h>
+ #import <UIKit/UIKit.h>
+ #import "RCTArchConfiguratorProtocol.h"
+ #import "RCTDependencyProvider.h"
+diff --git a/node_modules/react-native/Libraries/AppDelegate/RCTRootViewFactory.h b/node_modules/react-native/Libraries/AppDelegate/RCTRootViewFactory.h
+index 119d91a..5d1311b 100644
+--- a/node_modules/react-native/Libraries/AppDelegate/RCTRootViewFactory.h
++++ b/node_modules/react-native/Libraries/AppDelegate/RCTRootViewFactory.h
+@@ -6,6 +6,7 @@
+  */
+ 
+ #import <React/RCTBridge.h>
++#import <React/RCTDevMenu.h>
+ #import <React/RCTRootView.h>
+ #import <React/RCTUtils.h>
+ #import "RCTJSRuntimeConfiguratorProtocol.h"
+@@ -18,7 +19,6 @@
+ @class RCTHost;
+ @class RCTRootView;
+ @class RCTSurfacePresenterBridgeAdapter;
+-@class RCTDevMenuConfiguration;
+ 
+ NS_ASSUME_NONNULL_BEGIN
+ 
