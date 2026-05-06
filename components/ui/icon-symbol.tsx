@@ -5,7 +5,12 @@ import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
+// SDK 55 widened SymbolViewProps['name'] to a cross-platform union
+// (string SF symbol OR { ios, android, web } object). The cross-platform
+// shape can't be a Record key, so we type-key with plain string and
+// derive IconSymbolName from MAPPING's literal keys for consumer
+// type safety.
+type IconMapping = Record<string, ComponentProps<typeof MaterialIcons>['name']>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
