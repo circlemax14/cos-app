@@ -103,7 +103,7 @@ export default function DoctorDetailScreen() {
           // Load provider-specific data
           const [plans, notes, apts] = await Promise.all([
             fetchProviderTreatmentPlans(providerId),
-            fetchProviderProgressNotes(providerId),
+            fetchProviderProgressNotes(providerId, providerData?.name),
             fetchProviderAppointments(providerId),
           ]);
           
@@ -177,10 +177,12 @@ export default function DoctorDetailScreen() {
     setRefreshing(true);
     try {
       if (providerId && providerId !== 'unknown') {
-        const [providerData, plans, notes, apts, allProviders, existingShares] = await Promise.all([
-          fetchProviderById(providerId),
+        // Fetch the provider first so we can pass `providerData.name` to the
+        // progress-notes filter (the backend keys reports by display name).
+        const providerData = await fetchProviderById(providerId);
+        const [plans, notes, apts, allProviders, existingShares] = await Promise.all([
           fetchProviderTreatmentPlans(providerId),
-          fetchProviderProgressNotes(providerId),
+          fetchProviderProgressNotes(providerId, providerData?.name),
           fetchProviderAppointments(providerId),
           fetchProviders(),
           fetchDataShares(),

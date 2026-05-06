@@ -354,19 +354,41 @@ export async function fetchProviderTreatmentPlansLegacy(
   }));
 }
 
-export async function fetchProviderProgressNotes(providerId: string): Promise<ProgressNote[]> {
+/**
+ * Fetch progress notes (DiagnosticReports) attributed to this provider.
+ *
+ * The backend's `/reports` endpoint maps `performer` to the practitioner's
+ * display name (e.g. "Dr. Patel"), not their FHIR id. Earlier code filtered
+ * by id and almost never matched, leaving the tab empty. We now match by
+ * name primarily and fall back to id-based matching for environments where
+ * `performer` carries a "Practitioner/{id}" reference.
+ *
+ * `note` falls through `conclusion → title` so we never render an empty
+ * card — even a report with no narrative still shows its title.
+ */
+export async function fetchProviderProgressNotes(
+  providerId: string,
+  providerName?: string,
+): Promise<ProgressNote[]> {
   const res = await apiClient.get<{
     success: boolean;
     data: { reports: { id: string; title: string; date: string; performer: string; conclusion?: string }[] };
   }>('/v1/patients/me/reports');
+  const matchesProvider = (performer: string | undefined): boolean => {
+    if (!performer) return false;
+    if (providerName && performer.toLowerCase().includes(providerName.toLowerCase())) return true;
+    if (performer.includes(`Practitioner/${providerId}`)) return true;
+    if (performer === providerId) return true;
+    return false;
+  };
   return res.data.data.reports
-    .filter((r) => r.performer?.includes(providerId) || r.performer?.includes(`Practitioner/${providerId}`))
+    .filter((r) => matchesProvider(r.performer))
     .map((r) => ({
       id: r.id,
       date: r.date?.split('T')[0] ?? '',
       time: r.date?.split('T')[1]?.substring(0, 5) ?? '',
-      author: r.performer ?? 'Unknown',
-      note: r.conclusion ?? r.title,
+      author: providerName ?? r.performer ?? 'Unknown',
+      note: r.conclusion ?? r.title ?? 'Progress note recorded',
     }));
 }
 

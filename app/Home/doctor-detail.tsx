@@ -11,8 +11,9 @@ import { groupTreatmentByEncounter } from '@/services/treatment-timeline';
 import {
   WhatChangedCard,
   ActiveConditionsRow,
-  EncounterGroup,
+  TreatmentPlanCard,
 } from '@/components/doctor-detail';
+import { buildTreatmentPlanCards } from '@/services/treatment-plan-cards';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { InitialsAvatar } from '@/utils/avatar-utils';
@@ -166,7 +167,7 @@ export default function DoctorDetailScreen() {
           // Load provider-specific data
           const [plans, notes, apts, carePlanData] = await Promise.all([
             fetchProviderTreatmentPlans(providerId, providerData?.name),
-            fetchProviderProgressNotes(providerId),
+            fetchProviderProgressNotes(providerId, providerData?.name),
             fetchProviderAppointments(providerData?.name ?? ''),
             fetchCarePlans(),
           ]);
@@ -246,7 +247,7 @@ export default function DoctorDetailScreen() {
         const providerData = await fetchProviderById(providerId);
         const [plans, notes, apts, carePlanData, allProviders, existingShares] = await Promise.all([
           fetchProviderTreatmentPlans(providerId, providerData?.name),
-          fetchProviderProgressNotes(providerId),
+          fetchProviderProgressNotes(providerId, providerData?.name),
           fetchProviderAppointments(providerData?.name ?? ''),
           fetchCarePlans(),
           fetchProviders(),
@@ -538,13 +539,26 @@ export default function DoctorDetailScreen() {
     [treatmentPlans, appointments],
   );
 
+  // Build per-visit "Current / Previous" treatment-plan cards by joining
+  // diagnoses + medications + appointment dates. Restores the legacy card
+  // layout users recognized before the encounter-timeline overlay landed.
+  const treatmentPlanCards = useMemo(
+    () =>
+      buildTreatmentPlanCards({
+        diagnoses: treatmentPlans.diagnoses,
+        medications: treatmentPlans.medications,
+        appointments,
+      }),
+    [treatmentPlans, appointments],
+  );
+
   const renderTreatmentPlan = () => {
-    const { activeConditions, resolvedConditions, encounterGroups } = treatmentTimeline;
+    const { activeConditions, resolvedConditions } = treatmentTimeline;
 
     const isEmpty =
       activeConditions.length === 0 &&
       resolvedConditions.length === 0 &&
-      encounterGroups.length === 0;
+      treatmentPlanCards.length === 0;
 
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
@@ -579,10 +593,10 @@ export default function DoctorDetailScreen() {
                   getScaledFontWeight={getScaledFontWeight}
                 />
 
-                {encounterGroups.map((group) => (
-                  <EncounterGroup
-                    key={group.id}
-                    group={group}
+                {treatmentPlanCards.map((card) => (
+                  <TreatmentPlanCard
+                    key={card.id}
+                    item={card}
                     colors={colors}
                     getScaledFontSize={getScaledFontSize}
                     getScaledFontWeight={getScaledFontWeight}
