@@ -6,7 +6,9 @@ node_modules
 expo-env.d.ts
 # @end expo-cli
 .env
-.env.example.env.local
+.env.local
+.env.dev
+.sentryclirc
 
 # Expo local state
 .expo/
