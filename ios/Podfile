@@ -112,9 +112,20 @@ target 'CSH' do
           dsymutil "$binary" -o "$dsym_out"
         }
 
+        # React.xcframework and ReactNativeDependencies.xcframework only exist
+        # when building React with the prebuilt pods (RCT_USE_PREBUILT_RNCORE).
+        # We currently force source builds via ios.buildReactNativeFromSource,
+        # so generate_dsym skips these lines silently. Kept for resilience if
+        # the prebuilt path is ever re-enabled.
         generate_dsym "React-Core-prebuilt/React.xcframework" "React"
         generate_dsym "ReactNativeDependencies/framework/packages/react-native/ReactNativeDependencies.xcframework" "ReactNativeDependencies"
-        generate_dsym "hermes-engine/destroot/Library/Frameworks/universal/hermes.xcframework" "hermes"
+        # SDK 55: hermes was renamed to hermesvm. The prebuilt XCFramework
+        # directory (`hermesvm.xcframework`) and the binary inside its
+        # `ios-arm64` slice (`hermesvm.framework/hermesvm`) both follow the
+        # new name. Without this dSYM, App Store Connect emits the
+        # "archive did not include a dSYM for the hermesvm.framework"
+        # warning and native crashes inside Hermes won't symbolicate.
+        generate_dsym "hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework" "hermesvm"
       SH
       phase.run_only_for_deployment_postprocessing = '1'
     end
