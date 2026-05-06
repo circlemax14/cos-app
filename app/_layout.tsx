@@ -1,3 +1,21 @@
+import * as Sentry from '@sentry/react-native';
+
+// Initialize Sentry as early as possible — before any other imports run side
+// effects — so we capture errors thrown during module load + provider setup.
+// The DSN is public (that's how Sentry's threat model works); the secret is
+// the auth token, which is only used at build time for source-map upload.
+Sentry.init({
+  dsn: 'https://e355f7946736032baf6d1b47c7dec51c@o4511341366345728.ingest.us.sentry.io/4511341368115200',
+  // Adjust this value in production, or use tracesSampler for greater control
+  tracesSampleRate: 0.1,
+  // Capture warnings + errors
+  enableNativeCrashHandling: true,
+  enableAutoSessionTracking: true,
+  // Tag every event with the runtime info we already track in About so we
+  // can filter by build / OTA group when triaging
+  // (more tags added in app/index.tsx after the JS bundle finishes loading)
+});
+
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -33,7 +51,7 @@ export const unstable_settings = {
   anchor: '(tabs)',
 };
 
-export default function RootLayout() {
+function RootLayout() {
   const colorScheme = useColorScheme();
   useNotifications();
 
@@ -100,3 +118,8 @@ export default function RootLayout() {
     </QueryProvider>
   );
 }
+
+// Sentry.wrap installs the JS error boundary + perf instrumentation around
+// the root component. Any uncaught error inside the React tree now lands
+// in Sentry with full stack + component breadcrumbs.
+export default Sentry.wrap(RootLayout);

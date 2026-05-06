@@ -17,6 +17,7 @@ import {
   Share,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Sentry from '@sentry/react-native';
 
 /**
  * About screen — exposes the build / runtime / OTA fingerprint of the
@@ -219,6 +220,34 @@ export default function AboutScreen() {
           <MaterialIcons name="share" size={getScaledFontSize(18)} color={colors.text} />
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as '600' }}>
             Share build details
+          </Text>
+        </Pressable>
+
+        {/* Sentry smoke test — fires a synthetic error so we can verify the
+            integration end-to-end after a fresh install. Keep this in for
+            now; remove once we have at least one real crash recorded with
+            symbolicated frames. */}
+        <Pressable
+          onPress={() => {
+            Sentry.captureMessage('Sentry smoke test from About screen', 'info');
+            // Synthetic JS error too — captureMessage sends an "info" event,
+            // throwing surfaces the full uncaught-error path through
+            // Sentry.wrap's ErrorBoundary on next frame.
+            setTimeout(() => {
+              throw new Error('Sentry smoke-test: deliberate uncaught error from About screen');
+            }, 50);
+          }}
+          style={({ pressed }) => [
+            styles.secondaryBtn,
+            {
+              borderColor: '#D32F2F',
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <MaterialIcons name="bug-report" size={getScaledFontSize(18)} color="#D32F2F" />
+          <Text style={{ color: '#D32F2F', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as '600' }}>
+            Test Sentry (deliberately crash)
           </Text>
         </Pressable>
 
