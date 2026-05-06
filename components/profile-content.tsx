@@ -502,14 +502,26 @@ export function ProfileContent({
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
               />
-              <DrawerRow
-                iconName="info-outline"
-                label="About"
-                onPress={() => router.push('/Home/about' as never)}
-                colors={colors}
-                getScaledFontSize={getScaledFontSize}
-                getScaledFontWeight={getScaledFontWeight}
-              />
+              {/*
+                About screen is gated behind the ABOUT_SCREEN feature flag.
+                It exposes internal build / runtime / OTA Update ID details
+                useful for support but not for general patients. Default is
+                OFF server-side; specific support / dev users get the row
+                via a per-user override in the cos-feature-permissions
+                table. While permissions are loading the flag falls back
+                to the conservative default (off), so the row appears only
+                after we've confirmed access.
+              */}
+              {permissions?.ABOUT_SCREEN?.enabled === true && (
+                <DrawerRow
+                  iconName="info-outline"
+                  label="About"
+                  onPress={() => router.push('/Home/about' as never)}
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                />
+              )}
             </View>
           </View>
         </View>
