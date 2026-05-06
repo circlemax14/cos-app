@@ -9,6 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "eas:update:preview": "./scripts/eas-update.sh preview",
+    "eas:update:prod": "./scripts/eas-update.sh production",
     "postinstall": "npx patch-package"
   },
   "dependencies": {
