@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client';
-import type { Report } from './types';
+import type { Report, ReportResultEntry, ReportPresentedForm } from './types';
 
 interface BackendReport {
   id: string;
@@ -13,8 +13,12 @@ interface BackendReport {
   accessionNumber?: string;
   orderNumber?: string;
   conclusion?: string;
-  results?: Array<{ name: string; value: string; unit?: string; referenceRange?: string }>;
-  // Detail-only narrative sections (only populated by GET /reports/:id)
+  results?: ReportResultEntry[];
+  abnormalCount?: number;
+  encounterRef?: string;
+  encounterDisplay?: string;
+  encounterDate?: string;
+  presentedForms?: ReportPresentedForm[];
   exam?: string;
   clinicalHistory?: string;
   technique?: string;
@@ -33,12 +37,16 @@ function mapToReport(r: BackendReport): Report {
     corrected: 'Available',
     cancelled: 'Completed',
   };
-  // Description is the structured-results join — used as a fallback in
-  // the list / card view when the rich narrative isn't loaded yet.
-  const description = r.results
-    ?.map((res) => `${res.name}: ${res.value}${res.unit ? ` ${res.unit}` : ''}`)
-    .filter((line) => line.trim() !== ':')
-    .join('\n');
+  // Card description: flatten structured results into a quick preview when
+  // available, otherwise fall back to the narrative. Card rendering doesn't
+  // use the description anymore once results[] is present, but kept for
+  // Reports without structured results (Imaging, Procedures, etc.).
+  const description = r.results && r.results.length > 0
+    ? r.results
+        .map((res) => `${res.name}: ${res.value}${res.unit ? ` ${res.unit}` : ''}`)
+        .filter((line) => line.trim() !== ':')
+        .join('\n')
+    : r.rawNarrative;
   return {
     id: r.id,
     title: r.title,
@@ -46,7 +54,13 @@ function mapToReport(r: BackendReport): Report {
     provider: r.performer,
     date: r.date,
     status: statusMap[r.status] ?? 'Available',
-    description: description || r.rawNarrative,
+    description,
+    results: r.results,
+    abnormalCount: r.abnormalCount,
+    encounterRef: r.encounterRef,
+    encounterDisplay: r.encounterDisplay,
+    encounterDate: r.encounterDate,
+    presentedForms: r.presentedForms,
     exam: r.exam,
     clinicalHistory: r.clinicalHistory,
     technique: r.technique,
