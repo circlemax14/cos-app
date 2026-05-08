@@ -11,6 +11,7 @@ import { fetchHistorySummary, type HistorySummary } from '@/services/api/history
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
 import { fetchReports } from '@/services/api/reports';
 import type { Report } from '@/services/api/types';
+import { LabResultsTable } from '@/components/reports/lab-results-table';
 
 export default function Reports() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -68,21 +69,37 @@ export default function Reports() {
     loadReports();
   }, [loadReports]);
 
-  const tabs = [
-    { id: 'all', label: 'All Reports' },
-    { id: 'lab', label: 'Lab Reports' },
-    { id: 'imaging', label: 'Imaging' },
-    { id: 'medical', label: 'Medical Records' },
-    { id: 'pathology', label: 'Pathology' },
+  // Sub-tab definition + matching backend category. Order is the display
+  // order; entries with zero reports are filtered out at render time so
+  // categories like Microbiology / ECG only appear when the patient
+  // actually has data of that kind.
+  const TAB_DEFINITIONS: ReadonlyArray<{ id: string; label: string; category?: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'lab', label: 'Lab', category: 'Lab Reports' },
+    { id: 'imaging', label: 'Imaging', category: 'Imaging' },
+    { id: 'pathology', label: 'Pathology', category: 'Pathology' },
+    { id: 'microbiology', label: 'Microbio', category: 'Microbiology' },
+    { id: 'procedures', label: 'Procedures', category: 'Procedures' },
+    { id: 'cardiology', label: 'Cardiology', category: 'Cardiology' },
+    { id: 'ecg', label: 'ECG', category: 'ECG' },
+    { id: 'medical', label: 'Medical', category: 'Medical Records' },
   ];
 
-  const categories = [
-    'Lab Reports',
-    'Imaging',
-    'Medical Records',
-    'Pathology',
-    'Radiology',
-  ];
+  const tabs = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of fastenReports) counts.set(r.category, (counts.get(r.category) ?? 0) + 1);
+    return TAB_DEFINITIONS.flatMap((t) => {
+      if (t.id === 'all') return [{ id: 'all', label: `All · ${fastenReports.length}` }];
+      const c = t.category ? counts.get(t.category) ?? 0 : 0;
+      return c > 0 ? [{ id: t.id, label: `${t.label} · ${c}` }] : [];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fastenReports]);
+
+  const categories = useMemo(
+    () => Array.from(new Set(fastenReports.map((r) => r.category))).sort(),
+    [fastenReports],
+  );
 
   const providers = useMemo(() => {
     const reportsToUse = fastenReports;
@@ -95,13 +112,9 @@ export default function Reports() {
     ).sort();
   }, [fastenReports]);
 
-  const categoryMap: { [key: string]: string } = {
-    all: 'All Reports',
-    lab: 'Lab Reports',
-    imaging: 'Imaging',
-    medical: 'Medical Records',
-    pathology: 'Pathology',
-  };
+  const categoryMap: { [key: string]: string } = Object.fromEntries(
+    TAB_DEFINITIONS.filter((t) => t.category).map((t) => [t.id, t.category as string]),
+  );
 
   const toggleProvider = (provider: string) => {
     setSelectedProviders(prev =>
@@ -311,85 +324,104 @@ export default function Reports() {
           </Text>
         </View>
       ) : (
-        filteredReports.map((report) => (
-          <Card key={report.id} style={styles.reportCard}>
-            <Card.Content>
-              <View style={styles.reportHeader}>
-                <View style={styles.reportTitleContainer}>
-                  <Text
-                    style={[styles.reportTitle, {  fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}
-                    numberOfLines={3}
-                    ellipsizeMode="tail"
-                  >
-                    {report.title}
+        filteredReports.map((report) => {
+          const hasAbnormal = (report.abnormalCount ?? 0) > 0;
+          const hasPdf = (report.presentedForms?.length ?? 0) > 0;
+          return (
+            <Card
+              key={report.id}
+              style={[styles.reportCard, hasAbnormal && styles.reportCardAbnormal]}
+            >
+              <Card.Content>
+                <View style={styles.reportHeader}>
+                  <View style={styles.reportTitleContainer}>
+                    <Text
+                      style={[styles.reportTitle, {  fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}
+                      numberOfLines={3}
+                      ellipsizeMode="tail"
+                    >
+                      {report.title}
+                    </Text>
+                    <View style={[styles.statusBadge, { backgroundColor: report.status === 'Available' ? '#008080' : report.status === 'Pending' ? '#FF9800' : '#9E9E9E' }]}>
+                      <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>
+                        {report.status}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.reportDate, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+                    {report.date}
                   </Text>
-                  <View style={[styles.statusBadge, { backgroundColor: report.status === 'Available' ? '#008080' : report.status === 'Pending' ? '#FF9800' : '#9E9E9E' }]}>
-                    <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>
-                      {report.status}
+                </View>
+
+                <View style={styles.reportMeta}>
+                  <View style={styles.metaItem}>
+                    <MaterialIcons name="local-hospital" size={getScaledFontSize(16)} color="#008080" />
+                    <Text
+                      style={[styles.metaText, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {report.provider}
+                    </Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <MaterialIcons name="category" size={getScaledFontSize(16)} color="#008080" />
+                    <Text
+                      style={[styles.metaText, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {report.category}
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.reportDate, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                  {report.date}
-                </Text>
-              </View>
-              
-              <View style={styles.reportMeta}>
-                <View style={styles.metaItem}>
-                  <MaterialIcons name="local-hospital" size={getScaledFontSize(16)} color="#008080" />
-                  <Text 
-                    style={[styles.metaText, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {report.provider}
-                  </Text>
-                </View>
-                <View style={styles.metaItem}>
-                  <MaterialIcons name="category" size={getScaledFontSize(16)} color="#008080" />
-                  <Text 
-                    style={[styles.metaText, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {report.category}
-                  </Text>
-                </View>
-                {report.fileType && (
-                  <View style={styles.metaItem}>
-                    <MaterialIcons name="description" size={getScaledFontSize(16)} color="#008080" />
-                    <Text style={[styles.metaText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                      {report.fileType}
-                    </Text>
+
+                {(hasAbnormal || hasPdf) && (
+                  <View style={styles.cardBadges}>
+                    {hasAbnormal && (
+                      <View style={styles.abnormalBadge}>
+                        <Text style={[styles.abnormalBadgeText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(700) as any }]}>
+                          ⬤ {report.abnormalCount} abnormal
+                        </Text>
+                      </View>
+                    )}
+                    {hasPdf && (
+                      <View style={styles.pdfBadge}>
+                        <MaterialIcons name="picture-as-pdf" size={getScaledFontSize(12)} color="#6B21A8" />
+                        <Text style={[styles.pdfBadgeText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }]}>
+                          {(report.presentedForms?.[0]?.contentType ?? '').includes('pdf') ? 'PDF' : 'HTML'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 )}
-              </View>
-              
-              {report.description && (
-                <Text
-                  style={[styles.reportDescription, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(24) }]}
-                  numberOfLines={4}
-                  ellipsizeMode="tail"
+
+                {report.description && !report.results && (
+                  <Text
+                    style={[styles.reportDescription, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(24) }]}
+                    numberOfLines={4}
+                    ellipsizeMode="tail"
+                  >
+                    {report.description}
+                  </Text>
+                )}
+
+                <TouchableOpacity
+                  style={styles.viewButton}
+                  onPress={() => {
+                    setSelectedReport(report);
+                    setShowReportModal(true);
+                  }}
                 >
-                  {report.description}
-                </Text>
-              )}
-              
-              <TouchableOpacity 
-                style={styles.viewButton}
-                onPress={() => {
-                  setSelectedReport(report);
-                  setShowReportModal(true);
-                }}
-              >
-                <Text style={[styles.viewButtonText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
-                  View Report
-                </Text>
-                <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#008080" />
-              </TouchableOpacity>
-            </Card.Content>
-          </Card>
-        ))
+                  <Text style={[styles.viewButtonText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
+                    View Report
+                  </Text>
+                  <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#008080" />
+                </TouchableOpacity>
+              </Card.Content>
+            </Card>
+          );
+        })
       )}
     </ScrollView>
   );
@@ -649,25 +681,58 @@ export default function Reports() {
                   </View>
                 )}
 
-                {/* Results Section */}
-                <View style={styles.reportSection}>
-                  <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
-                    Results
-                  </Text>
-                  <View style={[styles.reportModalCard, { backgroundColor: colors.background, borderLeftColor: '#008080' }]}>
-                    <Text style={[styles.reportModalCardTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+                {/* Results section — structured table when we have results, otherwise meta */}
+                {selectedReport.results && selectedReport.results.length > 0 ? (
+                  <View style={styles.reportSection}>
+                    <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
                       Results
+                      {(selectedReport.abnormalCount ?? 0) > 0 && (
+                        <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                          {' '}· {selectedReport.abnormalCount} abnormal
+                        </Text>
+                      )}
                     </Text>
-                    <Text style={[styles.reportModalCardText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
-                      {selectedReport.title}
-                      {selectedReport.accessionNumber && ` [${selectedReport.accessionNumber}]`}
-                      {selectedReport.orderNumber && ` (Accession ${selectedReport.accessionNumber}) (Order ${selectedReport.orderNumber})`}
-                    </Text>
-                    <Text style={[styles.reportModalCardDate, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
-                      ▲{selectedReport.date} {selectedReport.signedOn && `- ${selectedReport.signedOn}`}
-                    </Text>
+                    <LabResultsTable results={selectedReport.results} />
                   </View>
-                </View>
+                ) : (selectedReport.accessionNumber || selectedReport.orderNumber) ? (
+                  <View style={styles.reportSection}>
+                    <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
+                      Identifiers
+                    </Text>
+                    {selectedReport.accessionNumber && (
+                      <Text style={[styles.reportModalCardText, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any }]}>
+                        Accession: {selectedReport.accessionNumber}
+                      </Text>
+                    )}
+                    {selectedReport.orderNumber && (
+                      <Text style={[styles.reportModalCardText, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any }]}>
+                        Order: {selectedReport.orderNumber}
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+
+                {/* From visit — link back to encounter (Phase C wires the navigation) */}
+                {selectedReport.encounterRef && (
+                  <View style={styles.reportSection}>
+                    <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
+                      From visit
+                    </Text>
+                    <View style={styles.fromVisitPill}>
+                      <MaterialIcons name="event-note" size={getScaledFontSize(18)} color="#3B82F6" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.fromVisitTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
+                          {selectedReport.encounterDisplay ?? 'Office Visit'}
+                        </Text>
+                        {selectedReport.encounterDate && (
+                          <Text style={[styles.fromVisitMeta, { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
+                            {new Date(selectedReport.encounterDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                )}
 
                 {/* Narrative Section */}
                 {(selectedReport.exam || selectedReport.clinicalHistory || selectedReport.technique || selectedReport.findings) && (
@@ -1190,6 +1255,54 @@ const styles = StyleSheet.create({
   },
   reportCard: {
     marginBottom: 16,
+  },
+  reportCardAbnormal: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#DC2626',
+  },
+  cardBadges: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  abnormalBadge: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  abnormalBadgeText: {
+    color: '#DC2626',
+    letterSpacing: 0.3,
+  },
+  pdfBadge: {
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pdfBadgeText: {
+    color: '#6B21A8',
+    letterSpacing: 0.3,
+  },
+  fromVisitPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#EFF6FF',
+    padding: 12,
+    borderRadius: 10,
+  },
+  fromVisitTitle: {
+    marginBottom: 2,
+  },
+  fromVisitMeta: {
+    letterSpacing: 0.2,
   },
   reportModalCard: {
     padding: 16,

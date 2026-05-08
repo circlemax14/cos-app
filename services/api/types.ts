@@ -15,6 +15,23 @@ export interface Provider {
 }
 
 // ─── Report ──────────────────────────────────────────────────────────────────
+export interface ReportResultEntry {
+  name: string;
+  value: string;
+  unit?: string;
+  referenceRange?: string;
+  /** HL7 v2 code: H/HH/L/LL/A/AA/N. Absent = normal-or-unknown. */
+  interpretation?: string;
+  interpretationDisplay?: string;
+}
+
+export interface ReportPresentedForm {
+  binaryId: string;
+  contentType: string;
+  size?: number;
+  title?: string;
+}
+
 export interface Report {
   id: string;
   title: string;
@@ -42,6 +59,15 @@ export interface Report {
     zip: string;
     phone?: string;
   };
+  /** Structured results (lab values etc.). Replaces the old description-string flattening. */
+  results?: ReportResultEntry[];
+  /** Count of abnormal-flagged results — drives the red badge on the card. */
+  abnormalCount?: number;
+  encounterRef?: string;
+  encounterDisplay?: string;
+  encounterDate?: string;
+  /** Metadata for downloadable narratives (PDF/HTML). Content fetched via the binary endpoint (Phase B). */
+  presentedForms?: ReportPresentedForm[];
 }
 
 // ─── Appointment ─────────────────────────────────────────────────────────────
