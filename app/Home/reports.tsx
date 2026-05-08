@@ -10,8 +10,10 @@ import { Checkbox } from 'expo-checkbox';
 import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
 import { fetchReports } from '@/services/api/reports';
+import { fetchDocuments, fetchDocumentDownloadUrl, getReportBinarySource, type PatientDocument } from '@/services/api/documents';
 import type { Report } from '@/services/api/types';
 import { LabResultsTable } from '@/components/reports/lab-results-table';
+import { DocumentViewer, type DocumentViewerSource } from '@/components/reports/document-viewer';
 
 export default function Reports() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -20,8 +22,19 @@ export default function Reports() {
   const scrollViewRef = useRef<ScrollView>(null);
   const historyScrollViewRef = useRef<ScrollView>(null);
 
-  // Main tab: 'reports' or 'history'
-  const [mainTab, setMainTab] = useState<'reports' | 'history'>('reports');
+  // Main tab: 'reports' | 'documents' | 'history'
+  const [mainTab, setMainTab] = useState<'reports' | 'documents' | 'history'>('reports');
+  // Documents tab state
+  const [documents, setDocuments] = useState<PatientDocument[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isRefreshingDocuments, setIsRefreshingDocuments] = useState(false);
+  const [docCategoryTab, setDocCategoryTab] = useState<string>('all');
+  // Document viewer modal state — used by both Documents tab and Report attachments
+  const [viewerSource, setViewerSource] = useState<DocumentViewerSource | null>(null);
+  const [viewerTitle, setViewerTitle] = useState<string>('');
+  const [viewerSubtitle, setViewerSubtitle] = useState<string | undefined>();
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
   // Reports tab state
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
@@ -69,11 +82,63 @@ export default function Reports() {
     loadReports();
   }, [loadReports]);
 
+  const loadDocuments = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setIsRefreshingDocuments(true);
+    else setIsLoadingDocuments(true);
+    try {
+      const docs = await fetchDocuments();
+      setDocuments(docs);
+    } catch {
+      setDocuments([]);
+    } finally {
+      setIsLoadingDocuments(false);
+      setIsRefreshingDocuments(false);
+    }
+  }, []);
+
+  // Lazy-load documents when the user switches to the Documents tab
+  useEffect(() => {
+    if (mainTab === 'documents' && documents.length === 0 && !isLoadingDocuments) {
+      loadDocuments();
+    }
+  }, [mainTab, documents.length, isLoadingDocuments, loadDocuments]);
+
+  const openDocument = useCallback(async (doc: PatientDocument) => {
+    setOpeningDocumentId(doc.id);
+    try {
+      const { downloadUrl, contentType } = await fetchDocumentDownloadUrl(doc.id);
+      setViewerSource({ uri: downloadUrl, contentType });
+      setViewerTitle(doc.title);
+      setViewerSubtitle(
+        [
+          doc.practitionerName ?? doc.organizationName,
+          doc.documentDate ? new Date(doc.documentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
+        ].filter(Boolean).join(' · '),
+      );
+      setViewerVisible(true);
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  }, []);
+
+  const openReportAttachment = useCallback(async (report: Report, binaryId: string, contentType?: string) => {
+    setOpeningDocumentId(binaryId);
+    try {
+      const source = await getReportBinarySource(report.id, binaryId);
+      setViewerSource({ ...source, contentType });
+      setViewerTitle(report.title);
+      setViewerSubtitle([report.provider, report.date].filter(Boolean).join(' · '));
+      setViewerVisible(true);
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  }, []);
+
   // Sub-tab definition + matching backend category. Order is the display
   // order; entries with zero reports are filtered out at render time so
   // categories like Microbiology / ECG only appear when the patient
   // actually has data of that kind.
-  const TAB_DEFINITIONS: ReadonlyArray<{ id: string; label: string; category?: string }> = [
+  const TAB_DEFINITIONS: readonly { id: string; label: string; category?: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'lab', label: 'Lab', category: 'Lab Reports' },
     { id: 'imaging', label: 'Imaging', category: 'Imaging' },
@@ -308,6 +373,119 @@ export default function Reports() {
     { id: 'social', label: 'Social' },
   ];
 
+  // Sub-tabs for the Documents view, derived from the loaded data
+  const documentTabs = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of documents) {
+      const key = d.documentCategory ?? d.documentType ?? 'Other';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const list: { id: string; label: string; category?: string }[] = [
+      { id: 'all', label: `All · ${documents.length}` },
+    ];
+    Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([cat, n]) => {
+        list.push({ id: cat, label: `${cat} · ${n}`, category: cat });
+      });
+    return list;
+  }, [documents]);
+
+  const filteredDocuments = useMemo(() => {
+    if (docCategoryTab === 'all') return documents;
+    return documents.filter((d) => (d.documentCategory ?? d.documentType ?? 'Other') === docCategoryTab);
+  }, [documents, docCategoryTab]);
+
+  const renderDocuments = () => (
+    <ScrollView
+      style={styles.tabContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshingDocuments}
+          onRefresh={() => loadDocuments(true)}
+          tintColor="#008080"
+        />
+      }
+    >
+      {isLoadingDocuments ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>Loading documents...</Text>
+        </View>
+      ) : filteredDocuments.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={[styles.emptyText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>
+            No documents available yet
+          </Text>
+        </View>
+      ) : (
+        filteredDocuments.map((doc) => {
+          const isPdf = (doc.contentType ?? '').toLowerCase().includes('pdf');
+          const opening = openingDocumentId === doc.id;
+          return (
+            <Card key={doc.id} style={styles.reportCard}>
+              <Card.Content>
+                <View style={styles.reportHeader}>
+                  <View style={styles.reportTitleContainer}>
+                    <Text
+                      style={[styles.reportTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}
+                      numberOfLines={3}
+                      ellipsizeMode="tail"
+                    >
+                      {doc.title || doc.documentType || 'Untitled Document'}
+                    </Text>
+                    <View style={[styles.statusBadge, { backgroundColor: '#008080' }]}>
+                      <Text style={[styles.statusText, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>{isPdf ? 'PDF' : 'HTML'}</Text>
+                    </View>
+                  </View>
+                  {doc.documentDate && (
+                    <Text style={[styles.reportDate, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+                      {new Date(doc.documentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.reportMeta}>
+                  {doc.practitionerName && (
+                    <View style={styles.metaItem}>
+                      <MaterialIcons name="local-hospital" size={getScaledFontSize(16)} color="#008080" />
+                      <Text style={[styles.metaText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]} numberOfLines={1} ellipsizeMode="tail">
+                        {doc.practitionerName}
+                      </Text>
+                    </View>
+                  )}
+                  {doc.organizationName && (
+                    <View style={styles.metaItem}>
+                      <MaterialIcons name="apartment" size={getScaledFontSize(16)} color="#008080" />
+                      <Text style={[styles.metaText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]} numberOfLines={1} ellipsizeMode="tail">
+                        {doc.organizationName}
+                      </Text>
+                    </View>
+                  )}
+                  {(doc.documentCategory || doc.documentType) && (
+                    <View style={styles.metaItem}>
+                      <MaterialIcons name="category" size={getScaledFontSize(16)} color="#008080" />
+                      <Text style={[styles.metaText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]} numberOfLines={1} ellipsizeMode="tail">
+                        {doc.documentCategory ?? doc.documentType}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity style={styles.viewButton} onPress={() => openDocument(doc)} disabled={opening}>
+                  <Text style={[styles.viewButtonText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
+                    {opening ? 'Opening…' : 'Open Document'}
+                  </Text>
+                  {opening
+                    ? <ActivityIndicator size="small" color="#008080" />
+                    : <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#008080" />}
+                </TouchableOpacity>
+              </Card.Content>
+            </Card>
+          );
+        })
+      )}
+    </ScrollView>
+  );
+
   const renderReports = () => (
     <ScrollView style={styles.tabContent}>
       {isLoadingReports ? (
@@ -524,6 +702,14 @@ export default function Reports() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.mainTab, mainTab === 'documents' && styles.activeMainTab]}
+            onPress={() => setMainTab('documents')}
+          >
+            <Text style={[styles.mainTabText, mainTab === 'documents' && styles.activeMainTabText, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+              Documents
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.mainTab, mainTab === 'history' && styles.activeMainTab]}
             onPress={() => setMainTab('history')}
           >
@@ -712,6 +898,40 @@ export default function Reports() {
                   </View>
                 ) : null}
 
+                {/* Attachments — DiagnosticReport.presentedForms backed by HealthLake Binary */}
+                {selectedReport.presentedForms && selectedReport.presentedForms.length > 0 && (
+                  <View style={styles.reportSection}>
+                    <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
+                      Attachments
+                    </Text>
+                    {selectedReport.presentedForms.map((pf, idx) => {
+                      const isPdf = (pf.contentType ?? '').toLowerCase().includes('pdf');
+                      const opening = openingDocumentId === pf.binaryId;
+                      return (
+                        <TouchableOpacity
+                          key={pf.binaryId + idx}
+                          style={styles.attachmentRow}
+                          onPress={() => openReportAttachment(selectedReport, pf.binaryId, pf.contentType)}
+                          disabled={opening}
+                        >
+                          <MaterialIcons name={isPdf ? 'picture-as-pdf' : 'description'} size={getScaledFontSize(20)} color="#6B21A8" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.attachmentTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
+                              {pf.title ?? (isPdf ? 'PDF Attachment' : 'HTML Attachment')}
+                            </Text>
+                            <Text style={[styles.attachmentMeta, { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(400) as any }]}>
+                              {pf.contentType}{pf.size ? ` · ${(pf.size / 1024).toFixed(1)} KB` : ''}
+                            </Text>
+                          </View>
+                          {opening
+                            ? <ActivityIndicator size="small" color="#008080" />
+                            : <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#008080" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
                 {/* From visit — link back to encounter (Phase C wires the navigation) */}
                 {selectedReport.encounterRef && (
                   <View style={styles.reportSection}>
@@ -873,6 +1093,29 @@ export default function Reports() {
           {/* Tab Content */}
           {renderReports()}
         </>
+      ) : mainTab === 'documents' ? (
+        <>
+          {/* Documents Sub-Tabs */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tabScrollContainer}
+            contentContainerStyle={styles.tabContainer}
+          >
+            {documentTabs.map((tab) => (
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tab, docCategoryTab === tab.id && styles.activeTab]}
+                onPress={() => setDocCategoryTab(tab.id)}
+              >
+                <Text style={[styles.tabText, docCategoryTab === tab.id && styles.activeTabText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          {renderDocuments()}
+        </>
       ) : (
         <>
           {/* History Sub-Tabs */}
@@ -901,6 +1144,15 @@ export default function Reports() {
         </>
       )}
       </ScrollView>
+
+      {/* In-app Document Viewer (shared between Documents tab + Report attachments) */}
+      <DocumentViewer
+        visible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        source={viewerSource}
+        title={viewerTitle}
+        subtitle={viewerSubtitle}
+      />
 
       {/* Loading Overlay for History */}
       {(isLoadingHistory || isRefreshingHistory) && mainTab === 'history' && (
@@ -1304,6 +1556,17 @@ const styles = StyleSheet.create({
   fromVisitMeta: {
     letterSpacing: 0.2,
   },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FAFAFA',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  attachmentTitle: { marginBottom: 2 },
+  attachmentMeta: {},
   reportModalCard: {
     padding: 16,
     borderRadius: 8,
