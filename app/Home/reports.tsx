@@ -740,14 +740,9 @@ export default function Reports() {
               Reports
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.mainTab, mainTab === 'documents' && styles.activeMainTab]}
-            onPress={() => setMainTab('documents')}
-          >
-            <Text style={[styles.mainTabText, mainTab === 'documents' && styles.activeMainTabText, { fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
-              Documents
-            </Text>
-          </TouchableOpacity>
+          {/* Documents tab hidden — content is being consumed server-side and surfaced
+              through Reports Attachments + Provider screens (SCRUM-145). The viewer
+              + loaders are kept in this file so re-enabling is a one-line change. */}
           <TouchableOpacity
             style={[styles.mainTab, mainTab === 'history' && styles.activeMainTab]}
             onPress={() => setMainTab('history')}
