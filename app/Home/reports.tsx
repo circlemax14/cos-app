@@ -7,6 +7,7 @@ import { Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
+import { router } from 'expo-router';
 import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
 import { fetchReports } from '@/services/api/reports';
@@ -486,8 +487,46 @@ export default function Reports() {
     </ScrollView>
   );
 
+  const handleOpenEncounter = useCallback((report: Report) => {
+    if (!report.encounterRef) return;
+    // Synthesize a minimal Appointment-shaped object so the existing
+    // appointment-detail screen renders. Marking resourceType as 'Encounter'
+    // unlocks the AI narrative section keyed on the FHIR Encounter id.
+    const appointmentLike = {
+      id: report.encounterRef,
+      date: report.encounterDate ?? report.date,
+      time: '',
+      type: report.encounterDisplay ?? 'Visit',
+      status: 'Completed',
+      doctorName: report.provider,
+      resourceType: 'Encounter' as const,
+    };
+    router.push({
+      pathname: '/Home/appointment-detail' as const,
+      params: { id: report.encounterRef, data: JSON.stringify(appointmentLike) },
+    } as never);
+  }, []);
+
   const renderReports = () => (
     <ScrollView style={styles.tabContent}>
+      {/* Trends quick-link — deep links to the existing Health Trends screen */}
+      <TouchableOpacity
+        style={styles.trendsBanner}
+        onPress={() => router.push('/Home/health-trends' as never)}
+      >
+        <View style={styles.trendsBannerIcon}>
+          <MaterialIcons name="show-chart" size={getScaledFontSize(22)} color="#008080" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.trendsBannerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }]}>
+            View Health Trends
+          </Text>
+          <Text style={[styles.trendsBannerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
+            Track lab values + vitals over time
+          </Text>
+        </View>
+        <MaterialIcons name="arrow-forward" size={getScaledFontSize(20)} color="#008080" />
+      </TouchableOpacity>
       {isLoadingReports ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={colors.tint} />
@@ -932,13 +971,19 @@ export default function Reports() {
                   </View>
                 )}
 
-                {/* From visit — link back to encounter (Phase C wires the navigation) */}
+                {/* From visit — links to appointment-detail with encounter narrative */}
                 {selectedReport.encounterRef && (
                   <View style={styles.reportSection}>
                     <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
                       From visit
                     </Text>
-                    <View style={styles.fromVisitPill}>
+                    <TouchableOpacity
+                      style={styles.fromVisitPill}
+                      onPress={() => {
+                        setShowReportModal(false);
+                        handleOpenEncounter(selectedReport);
+                      }}
+                    >
                       <MaterialIcons name="event-note" size={getScaledFontSize(18)} color="#3B82F6" />
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.fromVisitTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
@@ -950,7 +995,8 @@ export default function Reports() {
                           </Text>
                         )}
                       </View>
-                    </View>
+                      <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#3B82F6" />
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -1567,6 +1613,25 @@ const styles = StyleSheet.create({
   },
   attachmentTitle: { marginBottom: 2 },
   attachmentMeta: {},
+  trendsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0FAFA',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  trendsBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trendsBannerTitle: { marginBottom: 2 },
+  trendsBannerSubtitle: { letterSpacing: 0.2 },
   reportModalCard: {
     padding: 16,
     borderRadius: 8,
