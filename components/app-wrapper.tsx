@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface AppWrapperProps {
   children: React.ReactNode;
@@ -28,16 +28,6 @@ export function AppWrapper({
   showHamburgerIcon = true
 }: AppWrapperProps) {
   const { settings, toggleBoldText, toggleTheme, toggleAccessibilityMode, toggleHighContrast, getScaledFontWeight, getScaledFontSize } = useAccessibility();
-  const insets = useSafeAreaInsets();
-  // The bottom-left decorative bubble must sit ABOVE the tab bar — when
-  // anchored at the screen edge it gets visually clipped by the bar's
-  // top edge, which looks like a half-cropped circle. Pushing it up by
-  // (safeArea + tabBarHeight) lets the bubble's visible arc render
-  // entirely in the content zone. 49 ≈ stock React-Navigation tab bar.
-  // Screens without a tab bar (drawers, modals don't render AppWrapper
-  // at all) get a slightly higher bubble — still looks fine.
-  const TAB_BAR_HEIGHT = 49;
-  const bottomBubbleBottom = insets.bottom + TAB_BAR_HEIGHT;
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [isAccessibilityModalVisible, setIsAccessibilityModalVisible] = useState(false);
   const [isDrawerMenuVisible, setIsDrawerMenuVisible] = useState(false);
@@ -110,10 +100,7 @@ export function AppWrapper({
       />
       <View
         pointerEvents="none"
-        style={[
-          styles.bubbleBottomLeft,
-          { backgroundColor: colors.primary + '0A', bottom: bottomBubbleBottom },
-        ]}
+        style={[styles.bubbleBottomLeft, { backgroundColor: colors.primary + '0A' }]}
       />
 
       {/* Header — only render if at least one icon is visible */}
@@ -353,10 +340,8 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 150,
-    // `bottom` is overridden inline (insets-based) so the bubble sits
-    // entirely above the bottom tab bar — never clipped by it. left
-    // stays negative so only the right arc shows in-corner.
-    left: -180,
+    bottom: -160,
+    left: -120,
   },
   header: {
     paddingHorizontal: 16,
