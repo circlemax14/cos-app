@@ -560,14 +560,6 @@ export default function DoctorDetailScreen() {
       resolvedConditions.length === 0 &&
       treatmentPlanCards.length === 0;
 
-    // When the strict Condition/MedicationRequest path is empty BUT there
-    // are CarePlans below (rendered by renderCarePlans on the same tab),
-    // suppress the "No diagnoses or prescriptions recorded" line — it's
-    // visually redundant with the CarePlan card and contradicts what the
-    // user can see directly below. The AI WhatChangedCard above handles
-    // any narrative the patient needs.
-    const hasCarePlanBelow = carePlans.length > 0;
-
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
         {isLoadingData ? (
@@ -586,13 +578,11 @@ export default function DoctorDetailScreen() {
             />
 
             {isEmpty ? (
-              hasCarePlanBelow ? null : (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
-                    No diagnoses or prescriptions recorded by this provider in your EHR.
-                  </Text>
-                </View>
-              )
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                  No diagnoses or prescriptions recorded by this provider in your EHR.
+                </Text>
+              </View>
             ) : (
               <>
                 <ActiveConditionsRow
@@ -1118,12 +1108,15 @@ export default function DoctorDetailScreen() {
       </ScrollView>
 
       {/* Tab Content */}
-      {activeTab === 'treatment' && (
-        <>
-          {renderTreatmentPlan()}
-          {renderCarePlans()}
-        </>
-      )}
+      {/* CarePlan rendering intentionally NOT mounted on per-provider tabs:
+          FHIR CarePlan is a patient-level resource so it would render
+          identically on every provider's screen — confusing UX. The
+          renderCarePlans helper is retained because its empty-state
+          message logic is still consulted from renderTreatmentPlan
+          (the "No diagnoses or prescriptions recorded" suppression).
+          A follow-up ticket will surface CarePlan content at the
+          patient level (home or a dedicated screen). */}
+      {activeTab === 'treatment' && renderTreatmentPlan()}
       {activeTab === 'progress' && renderProgressNotes()}
       {activeTab === 'share' && renderShareData()}
       {activeTab === 'appointments' && renderAppointments()}
