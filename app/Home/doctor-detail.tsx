@@ -872,7 +872,6 @@ export default function DoctorDetailScreen() {
         </View>
       ) : appointmentSubTab === 'past' ? (
         <>
-          {renderOverviewCard('appointments', 'Recent Visits')}
           {appointments.length === 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>

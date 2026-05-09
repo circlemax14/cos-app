@@ -15,6 +15,7 @@ import { fetchDocuments, fetchDocumentDownloadUrl, getReportBinarySource, type P
 import type { Report } from '@/services/api/types';
 import { LabResultsTable } from '@/components/reports/lab-results-table';
 import { DocumentViewer, type DocumentViewerSource } from '@/components/reports/document-viewer';
+import { InlineVisitSummary } from '@/components/reports/inline-visit-summary';
 
 export default function Reports() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -487,26 +488,6 @@ export default function Reports() {
     </ScrollView>
   );
 
-  const handleOpenEncounter = useCallback((report: Report) => {
-    if (!report.encounterRef) return;
-    // Synthesize a minimal Appointment-shaped object so the existing
-    // appointment-detail screen renders. Marking resourceType as 'Encounter'
-    // unlocks the AI narrative section keyed on the FHIR Encounter id.
-    const appointmentLike = {
-      id: report.encounterRef,
-      date: report.encounterDate ?? report.date,
-      time: '',
-      type: report.encounterDisplay ?? 'Visit',
-      status: 'Completed',
-      doctorName: report.provider,
-      resourceType: 'Encounter' as const,
-    };
-    router.push({
-      pathname: '/Home/appointment-detail' as const,
-      params: { id: report.encounterRef, data: JSON.stringify(appointmentLike) },
-    } as never);
-  }, []);
-
   const renderReports = () => (
     <ScrollView style={styles.tabContent}>
       {/* Trends quick-link — deep links to the existing Health Trends screen */}
@@ -966,32 +947,18 @@ export default function Reports() {
                   </View>
                 )}
 
-                {/* From visit — links to appointment-detail with encounter narrative */}
+                {/* Visit summary — fetched inline so the patient sees the
+                    AI narrative + key findings + follow-ups in the same view,
+                    no extra "open another screen" step. Backed by the
+                    encounter-narrative endpoint which is now augmented with
+                    cached document sections (D-4 / SCRUM-148). */}
                 {selectedReport.encounterRef && (
                   <View style={styles.reportSection}>
-                    <Text style={[styles.reportSectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
-                      From visit
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.fromVisitPill}
-                      onPress={() => {
-                        setShowReportModal(false);
-                        handleOpenEncounter(selectedReport);
-                      }}
-                    >
-                      <MaterialIcons name="event-note" size={getScaledFontSize(18)} color="#3B82F6" />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.fromVisitTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
-                          {selectedReport.encounterDisplay ?? 'Office Visit'}
-                        </Text>
-                        {selectedReport.encounterDate && (
-                          <Text style={[styles.fromVisitMeta, { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
-                            {new Date(selectedReport.encounterDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </Text>
-                        )}
-                      </View>
-                      <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#3B82F6" />
-                    </TouchableOpacity>
+                    <InlineVisitSummary
+                      encounterId={selectedReport.encounterRef}
+                      encounterDisplay={selectedReport.encounterDisplay}
+                      encounterDate={selectedReport.encounterDate}
+                    />
                   </View>
                 )}
 
