@@ -27,7 +27,7 @@ export function AppWrapper({
   showBellIcon = false,
   showHamburgerIcon = true
 }: AppWrapperProps) {
-  const { settings, increaseFontSize, decreaseFontSize, toggleBoldText, toggleTheme, toggleAccessibilityMode, toggleHighContrast, getScaledFontWeight, getScaledFontSize } = useAccessibility();
+  const { settings, toggleBoldText, toggleTheme, toggleAccessibilityMode, toggleHighContrast, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [isAccessibilityModalVisible, setIsAccessibilityModalVisible] = useState(false);
   const [isDrawerMenuVisible, setIsDrawerMenuVisible] = useState(false);
@@ -89,18 +89,17 @@ export function AppWrapper({
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-      {/* Decorative soft bubbles — same accent-tinted treatment as
-          the Welcome / Connect-a-Clinic screens, but muted so the
-          main content stays the focus. Positioned absolute behind
+      {/* Decorative soft bubble — accent-tinted background motif from
+          the Welcome / Connect-a-Clinic screens, muted so the main
+          content stays the focus. Positioned absolute behind
           everything so tap targets are unaffected. Skipped for
-          modals because modals don't render AppWrapper. */}
+          modals because modals don't render AppWrapper.
+          The bottom-left bubble was removed because the bottom tab
+          bar visually clipped its arc, making it look like a
+          half-bubble cropped at an arbitrary line. */}
       <View
         pointerEvents="none"
         style={[styles.bubbleTopRight, { backgroundColor: colors.primary + '12' }]}
-      />
-      <View
-        pointerEvents="none"
-        style={[styles.bubbleBottomLeft, { backgroundColor: colors.primary + '0A' }]}
       />
 
       {/* Header — only render if at least one icon is visible */}
@@ -255,30 +254,11 @@ export function AppWrapper({
                 </TouchableOpacity>
               </View>
 
-              {/* Text Size */}
-              <View style={styles.accessibilityOption}>
-                <IconSymbol name="textformat.size" size={getScaledFontSize(20)} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, flex: 1, marginLeft: 12 }]}>Text Size</Text>
-                <View style={styles.fontSizeControls}>
-                  <TouchableOpacity
-                    style={[styles.fontSizeButton]}
-                    onPress={decreaseFontSize}
-                    accessibilityRole="button"
-                    accessibilityLabel="Decrease text size"
-                  >
-                    <IconSymbol name="minus" size={16} color="white" />
-                  </TouchableOpacity>
-                  <Text style={[styles.fontSizeDisplay, { color: colors.text, fontSize: getScaledFontSize(14) }]}>{settings.fontSizeScale}%</Text>
-                  <TouchableOpacity
-                    style={[styles.fontSizeButton]}
-                    onPress={increaseFontSize}
-                    accessibilityRole="button"
-                    accessibilityLabel="Increase text size"
-                  >
-                    <IconSymbol name="plus" size={16} color="white" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+              {/* Text Size +/- removed — the OS-level Dynamic Type setting
+                  already handles user font preferences, and the in-app
+                  control was a duplicate that confused testers. The
+                  store helpers (decreaseFontSize/increaseFontSize) stay
+                  available for any non-UI consumer. */}
 
               {/* High Contrast */}
               <View style={styles.accessibilityOption}>
