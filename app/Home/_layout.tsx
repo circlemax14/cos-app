@@ -94,9 +94,7 @@ export default function TabLayout() {
         name="medications"
         options={{
           title: 'Medications',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="pills.fill" color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen

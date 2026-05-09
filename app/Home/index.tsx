@@ -2750,8 +2750,14 @@ export default function HomeScreen() {
 
         {/* Three primary quick-action buttons. First-tap captures the
             contact info; subsequent taps go straight to dialer / pharmacy.
-            Positioned below the Circle of Support per user request. */}
-        <QuickActionButtons />
+            Positioned below the Circle of Support per user request.
+            paddingHorizontal mirrors circleSection so the buttons align
+            with the rest of the page, marginTop pushes clear of the
+            orbiting-doctor avatars (which are absolute-positioned and
+            spill outside the circleSection's flow box). */}
+        <View style={{ paddingHorizontal: 16, marginTop: 24 }}>
+          <QuickActionButtons />
+        </View>
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
@@ -3076,7 +3082,10 @@ const styles = StyleSheet.create({
   appointmentsSection: {
     width: '100%',
     paddingHorizontal: 24,
-    paddingTop: 60,
+    // Was 60; reduced because the QuickActionButtons row now sits
+    // between this section and the Circle of Support, providing
+    // its own vertical separation.
+    paddingTop: 16,
     paddingBottom: 20,
     gap: 12,
   },
