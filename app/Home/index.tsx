@@ -28,6 +28,7 @@ import {
   processAndStoreFiles,
   type NonEhrProvider,
 } from '@/services/non-ehr-processor';
+import { QuickActionButtons } from '@/components/home/quick-action-buttons';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2609,6 +2610,10 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
+        {/* Three primary quick-action buttons. First-tap captures the
+            contact info; subsequent taps go straight to dialer / pharmacy. */}
+        <QuickActionButtons />
+
         <View style={styles.circleSection}>
           <View style={styles.titleRow}>
             <Text style={[
