@@ -2610,10 +2610,6 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
-        {/* Three primary quick-action buttons. First-tap captures the
-            contact info; subsequent taps go straight to dialer / pharmacy. */}
-        <QuickActionButtons />
-
         <View style={styles.circleSection}>
           <View style={styles.titleRow}>
             <Text style={[
@@ -2751,6 +2747,11 @@ export default function HomeScreen() {
             />
           )}
         </View>
+
+        {/* Three primary quick-action buttons. First-tap captures the
+            contact info; subsequent taps go straight to dialer / pharmacy.
+            Positioned below the Circle of Support per user request. */}
+        <QuickActionButtons />
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
