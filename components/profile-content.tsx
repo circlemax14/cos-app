@@ -213,6 +213,15 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            <DrawerRow
+              iconName="medication"
+              label="Medications"
+              onPress={() => router.push('/Home/medications' as never)}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
             {onEmergencyContactPress && (
               <DrawerRow
                 iconName="contact-phone"

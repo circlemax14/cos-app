@@ -384,6 +384,7 @@ export default function DoctorDetailScreen() {
   const tabs = [
     { id: 'treatment', label: 'Diagnosis & Treatment Plan' },
     { id: 'progress', label: 'Progress Notes' },
+    { id: 'medications', label: 'Medications' },
     { id: 'share', label: 'Share Data' },
     { id: 'appointments', label: 'Appointments' },
   ];
@@ -822,6 +823,121 @@ export default function DoctorDetailScreen() {
     </ScrollView>
   );
 
+  // Per-provider Medications tab. Shows only the medications attributed
+  // to THIS provider (recorder/asserter/requester ref or via encounter
+  // linkage), sorted active-first then by authoredOn date.
+  const renderProviderMedications = () => {
+    const meds = treatmentPlans.medications;
+    const ACTIVE = new Set(['active', 'on-hold']);
+    const sorted = [...meds].sort((a, b) => {
+      const aActive = ACTIVE.has((a.status ?? '').toLowerCase()) ? 0 : 1;
+      const bActive = ACTIVE.has((b.status ?? '').toLowerCase()) ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      const aDate = a.authoredOn ? new Date(a.authoredOn).getTime() : 0;
+      const bDate = b.authoredOn ? new Date(b.authoredOn).getTime() : 0;
+      return bDate - aDate;
+    });
+    const STATUS_STYLES: Record<string, { label: string; bg: string; fg: string }> = {
+      active: { label: 'Active', bg: '#DCFCE7', fg: '#166534' },
+      'on-hold': { label: 'On Hold', bg: '#FEF3C7', fg: '#92400E' },
+      completed: { label: 'Completed', bg: '#E5E7EB', fg: '#374151' },
+      stopped: { label: 'Stopped', bg: '#FEE2E2', fg: '#991B1B' },
+      cancelled: { label: 'Cancelled', bg: '#FEE2E2', fg: '#991B1B' },
+      unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
+    };
+    return (
+      <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+        {isLoadingData ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14) }}>Loading medications…</Text>
+          </View>
+        ) : sorted.length === 0 ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
+              No medications recorded by this provider in your EHR.
+            </Text>
+          </View>
+        ) : (
+          sorted.map((m) => {
+            const statusStyle = STATUS_STYLES[(m.status ?? '').toLowerCase()] ?? STATUS_STYLES.unknown;
+            const sig = [m.dose, m.frequency].filter(Boolean).join(' · ');
+            return (
+              <Card key={m.id} style={{ marginBottom: 8, backgroundColor: colors.card }}>
+                <Card.Content>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                    <Text
+                      style={{
+                        flex: 1,
+                        color: colors.text,
+                        fontSize: getScaledFontSize(15),
+                        fontWeight: getScaledFontWeight(700) as any,
+                        lineHeight: getScaledFontSize(20),
+                      }}
+                      numberOfLines={2}
+                    >
+                      {m.name}
+                    </Text>
+                    <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: statusStyle.bg }}>
+                      <Text
+                        style={{
+                          color: statusStyle.fg,
+                          fontSize: getScaledFontSize(11),
+                          fontWeight: getScaledFontWeight(700) as any,
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        {statusStyle.label}
+                      </Text>
+                    </View>
+                  </View>
+                  {sig && (
+                    <Text
+                      style={{
+                        marginTop: 6,
+                        color: colors.text,
+                        fontSize: getScaledFontSize(13),
+                        fontWeight: getScaledFontWeight(500) as any,
+                      }}
+                      numberOfLines={2}
+                    >
+                      {sig}
+                    </Text>
+                  )}
+                  {m.reason && (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(400) as any,
+                      }}
+                      numberOfLines={2}
+                    >
+                      For {m.reason}
+                    </Text>
+                  )}
+                  {m.authoredOn && (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(11),
+                        fontWeight: getScaledFontWeight(400) as any,
+                      }}
+                    >
+                      {ACTIVE.has((m.status ?? '').toLowerCase()) ? 'Started' : 'Last filled'}{' '}
+                      {new Date(m.authoredOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  )}
+                </Card.Content>
+              </Card>
+            );
+          })
+        )}
+      </ScrollView>
+    );
+  };
+
   const renderAppointments = () => (
     <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
       {/* Past / Recommended sub-tab toggle */}
@@ -1118,6 +1234,7 @@ export default function DoctorDetailScreen() {
           patient level (home or a dedicated screen). */}
       {activeTab === 'treatment' && renderTreatmentPlan()}
       {activeTab === 'progress' && renderProgressNotes()}
+      {activeTab === 'medications' && renderProviderMedications()}
       {activeTab === 'share' && renderShareData()}
       {activeTab === 'appointments' && renderAppointments()}
     </ScrollView>
