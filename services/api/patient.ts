@@ -138,14 +138,23 @@ export async function fetchMedications(): Promise<Medication[]> {
 }
 
 /**
- * Fetch currently active medications with structured dose/frequency.
+ * Fetch medications with structured dose/frequency. By default returns
+ * only currently active meds prescribed within the last 6 months. Pass
+ * `{ includePast: true }` to also receive historical (stopped /
+ * completed / cancelled) entries — used by the Medications tab which
+ * tags active vs past.
  */
-export async function fetchMedicationsSummary(): Promise<MedicationSummary[]> {
+export async function fetchMedicationsSummary(
+  opts: { includePast?: boolean } = {},
+): Promise<MedicationSummary[]> {
   try {
+    const url = opts.includePast
+      ? '/v1/patients/me/medications?includePast=true'
+      : '/v1/patients/me/medications';
     const res = await apiClient.get<{
       success: boolean;
       data: { medications: MedicationSummary[] };
-    }>('/v1/patients/me/medications');
+    }>(url);
     return res.data.data.medications;
   } catch {
     return [];

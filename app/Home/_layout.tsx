@@ -91,6 +91,15 @@ export default function TabLayout() {
         />
       )}
       <Tabs.Screen
+        name="medications"
+        options={{
+          title: 'Medications',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="pills.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="today-schedule"
         options={{
           title: "Today's Schedule",
