@@ -76,6 +76,31 @@ export default function DoctorDetailScreen() {
     );
   }, [allRecommended, provider?.name]);
 
+  // Past Visits should describe the same set of encounters that the
+  // Treatment tab's diagnosis cards came from, so the two screens can't
+  // disagree on how many times the user has seen this provider. The
+  // appointments endpoint name-matches the provider, which can drag in
+  // scheduling stubs that have no clinical content. Filter them out by
+  // intersecting with the encounter IDs the diagnoses pointed at.
+  // If diagnoses haven't loaded yet (or this provider recorded none),
+  // fall back to the raw appointment list so we don't briefly flash an
+  // empty Past Visits panel.
+  const pastVisits = useMemo(() => {
+    const diagnosisEncounterIds = new Set(
+      treatmentPlans.diagnoses
+        .map((d) => d.encounterId)
+        .filter((id): id is string => !!id),
+    );
+    if (diagnosisEncounterIds.size === 0) return appointments;
+    return appointments.filter((a) => {
+      // Encounter rows: id IS the encounter id.
+      if (a.resourceType === 'Encounter') return diagnosisEncounterIds.has(a.id);
+      // Appointment rows have no encounterId surfaced today, so keep
+      // them out of the count once we know which encounters matter.
+      return false;
+    });
+  }, [appointments, treatmentPlans.diagnoses]);
+
   const loadAiInsight = useCallback(
     async (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
       if (!providerId) return;
@@ -1047,7 +1072,7 @@ export default function DoctorDetailScreen() {
       <View style={styles.subTabRow}>
         {(['past', 'recommended'] as const).map((key) => {
           const active = appointmentSubTab === key;
-          const count = key === 'past' ? appointments.length : recommendedForProvider.length;
+          const count = key === 'past' ? pastVisits.length : recommendedForProvider.length;
           const label = key === 'past' ? 'Past Visits' : 'Recommended';
           return (
             <TouchableOpacity
@@ -1081,14 +1106,14 @@ export default function DoctorDetailScreen() {
         </View>
       ) : appointmentSubTab === 'past' ? (
         <>
-          {appointments.length === 0 ? (
+          {pastVisits.length === 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
                 No appointments or encounters on record with this provider yet.
               </Text>
             </View>
           ) : (
-            appointments.map((appointment) => (
+            pastVisits.map((appointment) => (
               <AppointmentCard
                 key={appointment.id}
                 appointment={appointment}
