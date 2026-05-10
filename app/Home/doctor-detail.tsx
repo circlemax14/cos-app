@@ -8,12 +8,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
 import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, RecommendedAppointment } from '@/services/api/types';
 import { groupTreatmentByEncounter } from '@/services/treatment-timeline';
-import {
-  WhatChangedCard,
-  ActiveConditionsRow,
-  TreatmentPlanCard,
-} from '@/components/doctor-detail';
-import { buildTreatmentPlanCards } from '@/services/treatment-plan-cards';
+import { WhatChangedCard } from '@/components/doctor-detail';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { InitialsAvatar } from '@/utils/avatar-utils';
@@ -540,33 +535,57 @@ export default function DoctorDetailScreen() {
     [treatmentPlans, appointments],
   );
 
-  // Build per-visit "Current / Previous" treatment-plan cards by joining
-  // diagnoses + medications + appointment dates. Restores the legacy card
-  // layout users recognized before the encounter-timeline overlay landed.
-  const treatmentPlanCards = useMemo(
-    () =>
-      buildTreatmentPlanCards({
-        diagnoses: treatmentPlans.diagnoses,
-        medications: treatmentPlans.medications,
-        appointments,
-      }),
-    [treatmentPlans, appointments],
-  );
+  // Per-visit "Current / Previous" treatment-plan cards were dropped
+  // when the Treatment tab was rebuilt for web parity (per-diagnosis
+  // cards now). Keeping the comment so future readers know this is
+  // intentional, not an accidental deletion.
 
+  // Web parity: doctor-detail Treatment tab shows per-diagnosis cards
+  // sorted active-first, each with name + status pill + onset / recorded
+  // date + clinician notes. Replaces the prior per-visit aggregated
+  // TreatmentPlanCards layout per user feedback ("I like the way we
+  // show diagnosis cards based on visits or recorded date, we lack
+  // this in app"). Medications moved to their own provider tab in
+  // SCRUM-155 so they're intentionally absent here.
   const renderTreatmentPlan = () => {
-    const { activeConditions, resolvedConditions } = treatmentTimeline;
+    const diagnoses = treatmentPlans.diagnoses;
+    const isEmpty = diagnoses.length === 0;
 
-    const isEmpty =
-      activeConditions.length === 0 &&
-      resolvedConditions.length === 0 &&
-      treatmentPlanCards.length === 0;
+    const ACTIVE_STATUSES = new Set(['active', 'recurrence', 'relapse']);
+    const sortedDiagnoses = [...diagnoses].sort((a, b) => {
+      const aActive = ACTIVE_STATUSES.has((a.clinicalStatus ?? '').toLowerCase()) ? 0 : 1;
+      const bActive = ACTIVE_STATUSES.has((b.clinicalStatus ?? '').toLowerCase()) ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      const aDate = a.onsetDate ?? a.recordedDate;
+      const bDate = b.onsetDate ?? b.recordedDate;
+      const aTs = aDate ? new Date(aDate).getTime() : 0;
+      const bTs = bDate ? new Date(bDate).getTime() : 0;
+      return bTs - aTs;
+    });
+
+    const STATUS_PILL: Record<string, { label: string; bg: string; fg: string }> = {
+      active: { label: 'Active', bg: '#DCFCE7', fg: '#15803D' },
+      recurrence: { label: 'Recurrence', bg: '#FEF3C7', fg: '#92400E' },
+      relapse: { label: 'Relapse', bg: '#FEF3C7', fg: '#92400E' },
+      inactive: { label: 'Inactive', bg: '#E5E7EB', fg: '#374151' },
+      remission: { label: 'In Remission', bg: '#E0F2FE', fg: '#075985' },
+      resolved: { label: 'Resolved', bg: '#E5E7EB', fg: '#374151' },
+      unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
+    };
+
+    const formatDate = (iso: string | null | undefined) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    };
 
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
         {isLoadingData ? (
           <View style={{ padding: 20, alignItems: 'center' }}>
             <Text style={{ color: colors.text, fontSize: getScaledFontSize(14) }}>
-              Loading diagnoses and medications…
+              Loading diagnoses…
             </Text>
           </View>
         ) : (
@@ -581,28 +600,95 @@ export default function DoctorDetailScreen() {
             {isEmpty ? (
               <View style={{ padding: 20, alignItems: 'center' }}>
                 <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
-                  No diagnoses or prescriptions recorded by this provider in your EHR.
+                  No diagnoses recorded by this provider in your EHR.
                 </Text>
               </View>
             ) : (
               <>
-                <ActiveConditionsRow
-                  active={activeConditions}
-                  resolved={resolvedConditions}
-                  colors={colors}
-                  getScaledFontSize={getScaledFontSize}
-                  getScaledFontWeight={getScaledFontWeight}
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 8 }}>
+                  <Text style={{ flex: 1, color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+                    Diagnoses
+                  </Text>
+                  <View style={{ paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: colors.subtext + '40' }}>
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }}>
+                      {sortedDiagnoses.length}
+                    </Text>
+                  </View>
+                </View>
 
-                {treatmentPlanCards.map((card) => (
-                  <TreatmentPlanCard
-                    key={card.id}
-                    item={card}
-                    colors={colors}
-                    getScaledFontSize={getScaledFontSize}
-                    getScaledFontWeight={getScaledFontWeight}
-                  />
-                ))}
+                {sortedDiagnoses.map((d) => {
+                  const pill = STATUS_PILL[(d.clinicalStatus ?? '').toLowerCase()] ?? STATUS_PILL.unknown;
+                  return (
+                    <Card key={d.id} style={{ marginBottom: 10, backgroundColor: colors.card }}>
+                      <Card.Content>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                          <Text
+                            style={{
+                              flex: 1,
+                              color: colors.text,
+                              fontSize: getScaledFontSize(16),
+                              fontWeight: getScaledFontWeight(600) as any,
+                              lineHeight: getScaledFontSize(22),
+                            }}
+                          >
+                            {d.name}
+                          </Text>
+                          <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: pill.bg }}>
+                            <Text
+                              style={{
+                                color: pill.fg,
+                                fontSize: getScaledFontSize(11),
+                                fontWeight: getScaledFontWeight(700) as any,
+                                letterSpacing: 0.4,
+                              }}
+                            >
+                              {pill.label}
+                            </Text>
+                          </View>
+                        </View>
+                        {(d.onsetDate || d.recordedDate) && (
+                          <Text
+                            style={{
+                              marginTop: 6,
+                              color: colors.subtext,
+                              fontSize: getScaledFontSize(12),
+                              fontWeight: getScaledFontWeight(400) as any,
+                            }}
+                          >
+                            {d.onsetDate ? `Onset ${formatDate(d.onsetDate)}` : ''}
+                            {d.onsetDate && d.recordedDate ? ' · ' : ''}
+                            {d.recordedDate ? `Recorded ${formatDate(d.recordedDate)}` : ''}
+                          </Text>
+                        )}
+                        {d.notes.length > 0 && (
+                          <View
+                            style={{
+                              marginTop: 10,
+                              paddingTop: 10,
+                              borderTopWidth: StyleSheet.hairlineWidth,
+                              borderTopColor: colors.subtext + '30',
+                              gap: 6,
+                            }}
+                          >
+                            {d.notes.map((note, idx) => (
+                              <Text
+                                key={idx}
+                                style={{
+                                  color: colors.text,
+                                  fontSize: getScaledFontSize(13),
+                                  lineHeight: getScaledFontSize(20),
+                                  fontWeight: getScaledFontWeight(400) as any,
+                                }}
+                              >
+                                {note}
+                              </Text>
+                            ))}
+                          </View>
+                        )}
+                      </Card.Content>
+                    </Card>
+                  );
+                })}
               </>
             )}
           </>
