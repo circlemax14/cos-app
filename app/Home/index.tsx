@@ -2754,8 +2754,12 @@ export default function HomeScreen() {
             paddingHorizontal mirrors circleSection so the buttons align
             with the rest of the page, marginTop pushes clear of the
             orbiting-doctor avatars (which are absolute-positioned and
-            spill outside the circleSection's flow box). */}
-        <View style={{ paddingHorizontal: 16, marginTop: 24 }}>
+            spill outside the circleSection's flow box).
+            Geometry: center y = 160, orbit radius = 158, avatar wrapper
+            extends 60 below its anchor → bottom-most avatar reaches y=378
+            in a 320-tall container, i.e. ~58 px below the circleSection's
+            flow end. 80 px clear keeps a comfortable air gap. */}
+        <View style={{ paddingHorizontal: 16, marginTop: 80 }}>
           <QuickActionButtons />
         </View>
 
