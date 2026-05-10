@@ -5,8 +5,10 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
 import { Avatar, Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderProgressNotes, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
-import type { Provider, ProgressNote, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, RecommendedAppointment } from '@/services/api/types';
+import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
+import { fetchProviderProgressNotesNarrative, type ProviderProgressNotes } from '@/services/api/progress-notes';
+import { inferMedicationStatus } from '@/utils/treatment-status';
+import type { Provider, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, RecommendedAppointment } from '@/services/api/types';
 import { groupTreatmentByEncounter } from '@/services/treatment-timeline';
 import { WhatChangedCard } from '@/components/doctor-detail';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
@@ -28,7 +30,9 @@ export default function DoctorDetailScreen() {
     diagnoses: [],
     medications: [],
   });
-  const [progressNotes, setProgressNotes] = useState<ProgressNote[]>([]);
+  const [aiProgressNotes, setAiProgressNotes] = useState<ProviderProgressNotes | null>(null);
+  const [aiProgressLoading, setAiProgressLoading] = useState(false);
+  const [aiProgressError, setAiProgressError] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<ProviderAppointment[]>([]);
   const [carePlans, setCarePlans] = useState<CarePlanItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -111,6 +115,32 @@ export default function DoctorDetailScreen() {
     }
   }, [providerId, activeTab, isLoadingData, loadAiInsight]);
 
+  // Lazy-load the AI progress-notes narrative when the user lands on
+  // the Progress Notes tab. Cached server-side for 7 days, so subsequent
+  // tab visits return instantly with fromCache=true.
+  const loadAiProgressNotes = useCallback(
+    async (refresh = false) => {
+      if (!providerId) return;
+      setAiProgressLoading(true);
+      setAiProgressError(null);
+      try {
+        const data = await fetchProviderProgressNotesNarrative(providerId, { refresh });
+        setAiProgressNotes(data);
+      } catch (err) {
+        setAiProgressError(err instanceof Error ? err.message : 'Unable to generate progress notes');
+      } finally {
+        setAiProgressLoading(false);
+      }
+    },
+    [providerId],
+  );
+
+  useEffect(() => {
+    if (!providerId || activeTab !== 'progress') return;
+    if (aiProgressNotes || aiProgressLoading) return;
+    loadAiProgressNotes();
+  }, [providerId, activeTab, aiProgressNotes, aiProgressLoading, loadAiProgressNotes]);
+
   const [otherProviders, setOtherProviders] = useState<Provider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [doctorShares, setDoctorShares] = useState<{ [key: string]: boolean }>({});
@@ -160,15 +190,13 @@ export default function DoctorDetailScreen() {
           }
           
           // Load provider-specific data
-          const [plans, notes, apts, carePlanData] = await Promise.all([
+          const [plans, apts, carePlanData] = await Promise.all([
             fetchProviderTreatmentPlans(providerId, providerData?.name),
-            fetchProviderProgressNotes(providerId, providerData?.name),
             fetchProviderAppointments(providerData?.name ?? ''),
             fetchCarePlans(),
           ]);
 
           setTreatmentPlans(plans);
-          setProgressNotes(notes);
           setAppointments(apts);
           setCarePlans(carePlanData);
         } catch (error) {
@@ -189,7 +217,6 @@ export default function DoctorDetailScreen() {
         });
         // Set empty arrays for data when no provider ID
         setTreatmentPlans({ diagnoses: [], medications: [] });
-        setProgressNotes([]);
         setAppointments([]);
         setCarePlans([]);
       }
@@ -240,9 +267,8 @@ export default function DoctorDetailScreen() {
     try {
       if (providerId && providerId !== 'unknown') {
         const providerData = await fetchProviderById(providerId);
-        const [plans, notes, apts, carePlanData, allProviders, existingShares] = await Promise.all([
+        const [plans, apts, carePlanData, allProviders, existingShares] = await Promise.all([
           fetchProviderTreatmentPlans(providerId, providerData?.name),
-          fetchProviderProgressNotes(providerId, providerData?.name),
           fetchProviderAppointments(providerData?.name ?? ''),
           fetchCarePlans(),
           fetchProviders(),
@@ -250,7 +276,6 @@ export default function DoctorDetailScreen() {
         ]);
         if (providerData) setProvider(providerData);
         setTreatmentPlans(plans);
-        setProgressNotes(notes);
         setAppointments(apts);
         setCarePlans(carePlanData);
         const filtered = allProviders.filter(p => p.id !== providerId);
@@ -697,91 +722,88 @@ export default function DoctorDetailScreen() {
     );
   };
 
+  // Web parity (cos-frontend ProgressNotesTab): render the AI-generated
+  // narrative from /v1/patients/me/providers/:id/progress-notes.
   const renderProgressNotes = () => {
-    // Each encounter this provider participated in gets its own progress
-    // card summarizing what happened at that visit. Report-backed notes
-    // (DiagnosticReport) come first, then any remaining encounters get a
-    // synthesised card so there is a full timeline rather than gaps.
-    const encounterAppointments = appointments.filter((a) => a.resourceType === 'Encounter');
-
-    if (isLoadingData) {
-      return (
-        <ScrollView style={styles.tabContent}>
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading progress notes…</Text>
-          </View>
-        </ScrollView>
-      );
-    }
-
-    if (progressNotes.length === 0 && encounterAppointments.length === 0) {
-      return (
-        <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }]}>
-              No progress notes or visits with this provider yet.
-            </Text>
-          </View>
-        </ScrollView>
-      );
-    }
-
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-        {progressNotes.map((note) => (
-          <Card key={note.id} style={styles.progressNoteCard}>
-            <Card.Content>
-              <View style={styles.progressNoteHeader}>
-                <View>
-                  <Text
-                    style={[
-                      styles.progressNoteDate,
-                      { fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any },
-                    ]}
-                  >
-                    {formatShortDate(note.date)}
-                  </Text>
-                  {note.time ? (
-                    <Text
-                      style={[
-                        styles.progressNoteTime,
-                        { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any },
-                      ]}
-                    >
-                      {note.time}
-                    </Text>
-                  ) : null}
-                </View>
+        <Card style={[styles.progressNoteCard, { backgroundColor: colors.card }]}>
+          <Card.Content>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color={colors.tint} />
+              <Text
+                style={{
+                  flex: 1,
+                  color: colors.text,
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(700) as any,
+                }}
+              >
+                AI Progress Notes
+              </Text>
+              <TouchableOpacity
+                onPress={() => loadAiProgressNotes(true)}
+                disabled={aiProgressLoading}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
                 <Text
-                  style={[
-                    styles.progressNoteAuthor,
-                    { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any },
-                  ]}
+                  style={{
+                    color: aiProgressLoading ? colors.subtext : colors.tint,
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
                 >
-                  {note.author}
+                  {aiProgressLoading ? 'Refreshing…' : 'Refresh'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {aiProgressLoading && !aiProgressNotes ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 }}>
+                <ActivityIndicator size="small" color={colors.tint} />
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                  Generating progress notes…
                 </Text>
               </View>
-              <Text
-                style={[
-                  styles.progressNoteText,
-                  { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any },
-                ]}
-              >
-                {note.note}
+            ) : aiProgressError ? (
+              <View>
+                <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(13), marginBottom: 6 }}>
+                  Couldn&apos;t generate progress notes. Tap Refresh to try again.
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
+                  {aiProgressError}
+                </Text>
+              </View>
+            ) : aiProgressNotes && aiProgressNotes.narrative ? (
+              <>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(14),
+                    lineHeight: getScaledFontSize(22),
+                    fontWeight: getScaledFontWeight(400) as any,
+                  }}
+                >
+                  {aiProgressNotes.narrative}
+                </Text>
+                <Text
+                  style={{
+                    marginTop: 10,
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(400) as any,
+                  }}
+                >
+                  Generated {new Date(aiProgressNotes.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  {aiProgressNotes.fromCache ? ' · cached' : ''}
+                </Text>
+              </>
+            ) : (
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                No progress notes yet for this provider.
               </Text>
-            </Card.Content>
-          </Card>
-        ))}
-
-        {encounterAppointments.map((apt) => (
-          <EncounterProgressCard
-            key={apt.id}
-            encounter={apt}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
-        ))}
+            )}
+          </Card.Content>
+        </Card>
       </ScrollView>
     );
   };
@@ -914,23 +936,18 @@ export default function DoctorDetailScreen() {
   // linkage), sorted active-first then by authoredOn date.
   const renderProviderMedications = () => {
     const meds = treatmentPlans.medications;
-    const ACTIVE = new Set(['active', 'on-hold']);
+    const isActiveLike = (m: typeof meds[number]) => {
+      const code = inferMedicationStatus(m).code;
+      return code === 'active' || code === 'on-hold';
+    };
     const sorted = [...meds].sort((a, b) => {
-      const aActive = ACTIVE.has((a.status ?? '').toLowerCase()) ? 0 : 1;
-      const bActive = ACTIVE.has((b.status ?? '').toLowerCase()) ? 0 : 1;
+      const aActive = isActiveLike(a) ? 0 : 1;
+      const bActive = isActiveLike(b) ? 0 : 1;
       if (aActive !== bActive) return aActive - bActive;
       const aDate = a.authoredOn ? new Date(a.authoredOn).getTime() : 0;
       const bDate = b.authoredOn ? new Date(b.authoredOn).getTime() : 0;
       return bDate - aDate;
     });
-    const STATUS_STYLES: Record<string, { label: string; bg: string; fg: string }> = {
-      active: { label: 'Active', bg: '#DCFCE7', fg: '#166534' },
-      'on-hold': { label: 'On Hold', bg: '#FEF3C7', fg: '#92400E' },
-      completed: { label: 'Completed', bg: '#E5E7EB', fg: '#374151' },
-      stopped: { label: 'Stopped', bg: '#FEE2E2', fg: '#991B1B' },
-      cancelled: { label: 'Cancelled', bg: '#FEE2E2', fg: '#991B1B' },
-      unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
-    };
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
         {isLoadingData ? (
@@ -945,7 +962,7 @@ export default function DoctorDetailScreen() {
           </View>
         ) : (
           sorted.map((m) => {
-            const statusStyle = STATUS_STYLES[(m.status ?? '').toLowerCase()] ?? STATUS_STYLES.unknown;
+            const statusStyle = inferMedicationStatus(m);
             const sig = [m.dose, m.frequency].filter(Boolean).join(' · ');
             return (
               <Card key={m.id} style={{ marginBottom: 8, backgroundColor: colors.card }}>
@@ -1011,7 +1028,7 @@ export default function DoctorDetailScreen() {
                         fontWeight: getScaledFontWeight(400) as any,
                       }}
                     >
-                      {ACTIVE.has((m.status ?? '').toLowerCase()) ? 'Started' : 'Last filled'}{' '}
+                      {isActiveLike(m) ? 'Started' : 'Last filled'}{' '}
                       {new Date(m.authoredOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </Text>
                   )}
@@ -1665,162 +1682,6 @@ const URGENCY_STYLE: Record<
   soon: { label: 'Soon', bg: '#FEF3C7', fg: '#B45309' },
   routine: { label: 'Routine', bg: '#E5E7EB', fg: '#374151' },
 };
-
-interface EncounterProgressCardProps {
-  encounter: ProviderAppointment;
-  colors: typeof Colors.light;
-  getScaledFontSize: (n: number) => number;
-  getScaledFontWeight: (n: number) => string;
-}
-
-function EncounterProgressCard({
-  encounter,
-  colors,
-  getScaledFontSize,
-  getScaledFontWeight,
-}: EncounterProgressCardProps) {
-  const narrativeQuery = useEncounterNarrative(encounter.id);
-  const narrative = narrativeQuery.data;
-
-  return (
-    <Card style={styles.progressNoteCard}>
-      <Card.Content>
-        <View style={styles.progressNoteHeader}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(15),
-                fontWeight: getScaledFontWeight(700) as any,
-              }}
-            >
-              {formatShortDate(encounter.date)}
-              {encounter.time ? ` · ${encounter.time}` : ''}
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(12),
-                marginTop: 2,
-              }}
-            >
-              {encounter.type || 'Visit'}
-              {encounter.clinicName ? ` · ${encounter.clinicName}` : ''}
-            </Text>
-          </View>
-        </View>
-
-        {encounter.diagnosis && (
-          <Text
-            style={{
-              marginTop: 10,
-              fontSize: getScaledFontSize(13),
-              color: colors.text,
-            }}
-          >
-            <Text style={{ fontWeight: getScaledFontWeight(600) as any }}>Reason: </Text>
-            {encounter.diagnosis}
-          </Text>
-        )}
-
-        {narrativeQuery.isLoading ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 10,
-            }}
-          >
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
-              Reading this visit record…
-            </Text>
-          </View>
-        ) : narrative ? (
-          <View style={{ marginTop: 10, gap: 10 }}>
-            {narrative.summary && (
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: getScaledFontSize(14),
-                  lineHeight: getScaledFontSize(21),
-                }}
-              >
-                {narrative.summary}
-              </Text>
-            )}
-            {narrative.keyFindings?.length > 0 && (
-              <View style={{ gap: 4 }}>
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    letterSpacing: 1.2,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Key findings
-                </Text>
-                {narrative.keyFindings.map((k, i) => (
-                  <Text
-                    key={i}
-                    style={{
-                      color: colors.text,
-                      fontSize: getScaledFontSize(13),
-                      lineHeight: getScaledFontSize(19),
-                    }}
-                  >
-                    • {k}
-                  </Text>
-                ))}
-              </View>
-            )}
-            {narrative.followUps?.length > 0 && (
-              <View style={{ gap: 4 }}>
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    letterSpacing: 1.2,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Follow up
-                </Text>
-                {narrative.followUps.map((f, i) => (
-                  <Text
-                    key={i}
-                    style={{
-                      color: colors.text,
-                      fontSize: getScaledFontSize(13),
-                      lineHeight: getScaledFontSize(19),
-                    }}
-                  >
-                    • {f}
-                  </Text>
-                ))}
-              </View>
-            )}
-          </View>
-        ) : encounter.notes ? (
-          <Text
-            style={{
-              marginTop: 10,
-              color: colors.text,
-              fontSize: getScaledFontSize(13),
-              lineHeight: getScaledFontSize(19),
-            }}
-          >
-            {encounter.notes}
-          </Text>
-        ) : null}
-      </Card.Content>
-    </Card>
-  );
-}
 
 interface RecommendedCardProps {
   rec: RecommendedAppointment;

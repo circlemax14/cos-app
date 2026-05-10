@@ -14,34 +14,13 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { fetchMedicationsSummary } from '@/services/api/patient';
 import type { MedicationSummary } from '@/services/api/types';
-
-const ACTIVE_STATUSES = new Set(['active', 'on-hold']);
-
-interface StatusStyle {
-  label: string;
-  bg: string;
-  fg: string;
-}
-
-const STATUS_STYLES: Record<string, StatusStyle> = {
-  active: { label: 'Active', bg: '#DCFCE7', fg: '#166534' },
-  'on-hold': { label: 'On Hold', bg: '#FEF3C7', fg: '#92400E' },
-  completed: { label: 'Completed', bg: '#E5E7EB', fg: '#374151' },
-  stopped: { label: 'Stopped', bg: '#FEE2E2', fg: '#991B1B' },
-  cancelled: { label: 'Cancelled', bg: '#FEE2E2', fg: '#991B1B' },
-  'entered-in-error': { label: 'Entered in error', bg: '#E5E7EB', fg: '#374151' },
-  unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
-};
+import { inferMedicationStatus } from '@/utils/treatment-status';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function getStatusStyle(status: string): StatusStyle {
-  return STATUS_STYLES[status.toLowerCase()] ?? STATUS_STYLES.unknown;
 }
 
 export default function MedicationsScreen() {
@@ -77,7 +56,8 @@ export default function MedicationsScreen() {
     const a: MedicationSummary[] = [];
     const p: MedicationSummary[] = [];
     for (const m of meds) {
-      if (ACTIVE_STATUSES.has((m.status ?? '').toLowerCase())) a.push(m);
+      const code = inferMedicationStatus(m).code;
+      if (code === 'active' || code === 'on-hold') a.push(m);
       else p.push(m);
     }
     return { active: a, past: p };
@@ -234,8 +214,9 @@ interface MedRowProps {
 }
 
 function MedRow({ med, colors, getScaledFontSize, getScaledFontWeight }: MedRowProps) {
-  const statusStyle = getStatusStyle(med.status ?? '');
+  const statusStyle = inferMedicationStatus(med);
   const showSig = (med.dosage || med.frequency || med.rawDosageText) ?? '';
+  const isActiveLike = statusStyle.code === 'active' || statusStyle.code === 'on-hold';
   return (
     <Card style={styles.card}>
       <Card.Content>
@@ -289,7 +270,7 @@ function MedRow({ med, colors, getScaledFontSize, getScaledFontWeight }: MedRowP
               { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(400) as any },
             ]}
           >
-            {ACTIVE_STATUSES.has((med.status ?? '').toLowerCase()) ? 'Started' : 'Last filled'}{' '}{formatDate(med.authoredOn)}
+            {isActiveLike ? 'Started' : 'Last filled'}{' '}{formatDate(med.authoredOn)}
           </Text>
         )}
         {!showSig && !med.authoredOn && (
