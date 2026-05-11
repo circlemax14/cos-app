@@ -22,6 +22,14 @@ type GateState = 'loading' | 'no-internet' | 'done';
  * Determine the correct destination based on user onboarding state.
  * Reads permissions_requested and isPinSetup in parallel to avoid serial
  * AsyncStorage/SecureStore latency.
+ *
+ * Backend = source of truth: termsAccepted, fastenConnected, dataReady, and
+ * hasSeenWelcome all come from /v1/auth/me. The only legitimately-local
+ * gates are device-specific (PIN setup) or one-time UX prompts (notification
+ * permission rationale). If the backend says a user is already fully
+ * onboarded, an empty AsyncStorage (reinstall, "clear app data", device
+ * migration) must NOT trap them in the onboarding loop. Backfill the local
+ * flag so subsequent cold-starts behave normally too.
  */
 async function getDestination(user: UserProfile, isLocked: boolean): Promise<string> {
   // Terms acceptance is required for all users
@@ -32,7 +40,19 @@ async function getDestination(user: UserProfile, isLocked: boolean): Promise<str
     isPinSetup(),
   ]);
 
-  if (!permissionsRequested) return '/(onboarding)/permissions';
+  const fullyOnboardedServerSide =
+    user.fastenConnected && user.dataReady;
+
+  if (!permissionsRequested) {
+    if (fullyOnboardedServerSide) {
+      // Returning user with cleared local state — silently mark the
+      // permission prompt as already shown so we don't loop them through
+      // onboarding screens whose backend equivalents already say "done".
+      AsyncStorage.setItem('permissions_requested', 'true').catch(() => {});
+    } else {
+      return '/(onboarding)/permissions';
+    }
+  }
 
   const finalHome = (): string => {
     if (!pinConfigured) return '/(security)/setup-pin';

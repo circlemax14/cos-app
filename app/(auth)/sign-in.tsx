@@ -71,11 +71,19 @@ export default function SignInScreen() {
       return;
     }
 
-    // Check if device permissions have been requested
+    // Check if device permissions have been requested. Skip when the
+    // backend already says the user is fully onboarded — otherwise a
+    // reinstall / "clear app data" / device migration would replay the
+    // entire onboarding flow even though their account is complete.
     const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
+    const fullyOnboardedServerSide = user.fastenConnected && user.dataReady;
     if (!permissionsRequested) {
-      router.replace('/(onboarding)/permissions' as never);
-      return;
+      if (fullyOnboardedServerSide) {
+        AsyncStorage.setItem('permissions_requested', 'true').catch(() => {});
+      } else {
+        router.replace('/(onboarding)/permissions' as never);
+        return;
+      }
     }
 
     if (!user.fastenConnected) {
