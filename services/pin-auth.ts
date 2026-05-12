@@ -67,7 +67,11 @@ export async function clearPinData(): Promise<void> {
 
 export async function getLockTimeout(): Promise<number> {
   const result = await SecureStore.getItemAsync(LOCK_TIMEOUT_KEY);
-  return result ? parseInt(result, 10) : 30000; // Default 30 seconds
+  // Default: lock IMMEDIATELY whenever the app leaves the foreground.
+  // Healthcare app — minimize blast radius if the device is unlocked but
+  // unattended. Users who want a grace period can set their own via
+  // Security settings.
+  return result ? parseInt(result, 10) : 0;
 }
 
 export async function setLockTimeout(ms: number): Promise<void> {
