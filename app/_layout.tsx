@@ -21,7 +21,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { PaperProvider } from 'react-native-paper';
+import { View } from 'react-native';
 import 'react-native-reanimated';
+import { rootIdleActivityHandlers } from '@/hooks/use-app-lock';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -55,6 +57,13 @@ function RootLayout() {
   const colorScheme = useColorScheme();
   useNotifications();
 
+  // Capture every touch at the root so the idle-lock timer (15 min) is
+  // reset whenever the user actually interacts with the app. The
+  // PanResponder sits at the capture phase and returns false from both
+  // onStartShouldSetPanResponderCapture / onMoveShouldSetPanResponderCapture
+  // so it never consumes the gesture — it only observes it.
+  const idleHandlers = rootIdleActivityHandlers().panHandlers;
+
   return (
     <QueryProvider>
       <AccessibilityProvider>
@@ -64,7 +73,7 @@ function RootLayout() {
             <UserPhotoProvider>
             <PaperProvider>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                {/* ... Stack and other children ... */}
+                <View style={{ flex: 1 }} {...idleHandlers}>
                 <Stack>
                   <Stack.Screen name="index" options={{ headerShown: false }} />
                   <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -108,6 +117,7 @@ function RootLayout() {
                   />
                 </Stack>
                 <StatusBar style="auto" />
+                </View>
               </ThemeProvider>
             </PaperProvider>
             </UserPhotoProvider>
