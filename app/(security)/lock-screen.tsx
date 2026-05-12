@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { NumberPad } from '@/components/ui/number-pad';
 import { PinDots } from '@/components/ui/pin-dots';
 import {
@@ -11,7 +12,6 @@ import {
   isBiometricEnabled,
   incrementFailedAttempts,
   resetFailedAttempts,
-  getFailedAttempts,
   clearPinData,
 } from '@/services/pin-auth';
 import { useSecurity } from '@/stores/security-store';
@@ -20,9 +20,17 @@ import { getColors, Spacing, Typography } from '@/constants/design-system';
 
 const MAX_ATTEMPTS = 5;
 
+// Redesigned lock screen. The previous version had a tiny logo + 🔒 emoji
+// + plain header — felt like a stub. New layout is one branded surface
+// (rounded card on a soft gradient backdrop) with the logo at top, an
+// inline shield-lock icon in brand color, a confident header, the
+// existing PIN dots + number pad, and clear failure / biometric hints.
+// Components reused from the design system so theming + scaling still
+// follow the accessibility store.
 export default function LockScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = getColors(settings.isDarkTheme);
+  const isDark = settings.isDarkTheme;
+  const colors = getColors(isDark);
   const { setIsLocked } = useSecurity();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
@@ -37,18 +45,13 @@ export default function LockScreen() {
     const enabled = await isBiometricEnabled();
     if (enabled) {
       setShowBiometric(true);
-      // Race PIN entry against Face ID / Touch ID. The lock screen (with
-      // the number pad) is rendered first so the user can start typing
-      // immediately; the biometric sheet layers on top and either succeeds
-      // (unlocks) or the user taps "Use PIN" and falls back to what they
-      // already see behind it. Whichever finishes first wins.
       attemptBiometric();
     }
   };
 
   const attemptBiometric = async () => {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Unlock BrightFuture',
+      promptMessage: 'Unlock Circle Support Health',
       cancelLabel: 'Use PIN',
       disableDeviceFallback: true,
     });
@@ -106,67 +109,116 @@ export default function LockScreen() {
     setPin(prev => prev.slice(0, -1));
   };
 
+  const backdrop = isDark ? '#0F172A' : '#EEF2FF';
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.content}>
-        <Image
-          source={require('@/assets/images/logo.png')}
-          style={{ width: getScaledFontSize(180), height: getScaledFontSize(110), marginBottom: Spacing.sm }}
-          contentFit="contain"
-          accessibilityLabel="Circle Support Health logo"
-        />
-        <Text style={styles.icon}>🔒</Text>
-        <Text
-          style={[
-            styles.title,
-            {
-              color: colors.text,
-              fontSize: getScaledFontSize(Typography.title2.fontSize),
-              fontWeight: getScaledFontWeight(600) as any,
-            },
-          ]}
-          accessibilityRole="header"
-        >
-          Enter Your PIN
-        </Text>
-        <Text
-          style={[
-            styles.subtitle,
-            {
-              color: colors.secondary,
-              fontSize: getScaledFontSize(Typography.callout.fontSize),
-            },
-          ]}
-        >
-          {showBiometric ? 'Enter PIN or use Face ID' : '6-digit security code'}
-        </Text>
-        <PinDots length={6} filled={pin.length} error={error} />
-        {error && (
+    <View style={[styles.gradient, { backgroundColor: backdrop }]}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.headerArea}>
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={{ width: getScaledFontSize(140), height: getScaledFontSize(70) }}
+            contentFit="contain"
+            accessibilityLabel="Circle Support Health logo"
+          />
+        </View>
+
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.shieldBadge, { backgroundColor: colors.primary + '14' }]}>
+            <Ionicons
+              name="lock-closed"
+              size={getScaledFontSize(28)}
+              color={colors.primary}
+              accessibilityLabel="Locked"
+            />
+          </View>
           <Text
-            style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(14) }]}
-            accessibilityRole="alert"
+            style={[
+              styles.title,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(Typography.title1.fontSize),
+                fontWeight: getScaledFontWeight(700) as any,
+              },
+            ]}
+            accessibilityRole="header"
           >
-            Wrong PIN. {attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining.
+            Welcome back
           </Text>
-        )}
-      </View>
-      <NumberPad
-        onDigit={handleDigit}
-        onDelete={handleDelete}
-        showBiometric={showBiometric}
-        onBiometric={attemptBiometric}
-      />
-      <View style={styles.bottomPadding} />
-    </SafeAreaView>
+          <Text
+            style={[
+              styles.subtitle,
+              {
+                color: colors.secondary,
+                fontSize: getScaledFontSize(Typography.callout.fontSize),
+              },
+            ]}
+          >
+            {showBiometric ? 'Enter PIN or use Face ID' : 'Enter your 6-digit PIN to continue'}
+          </Text>
+          <PinDots length={6} filled={pin.length} error={error} />
+          {error && (
+            <Text
+              style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(13) }]}
+              accessibilityRole="alert"
+            >
+              Wrong PIN. {attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining.
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.padArea}>
+          <NumberPad
+            onDigit={handleDigit}
+            onDelete={handleDelete}
+            showBiometric={showBiometric}
+            onBiometric={attemptBiometric}
+          />
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { alignItems: 'center', paddingTop: 20, paddingHorizontal: Spacing.screenPadding },
-  icon: { fontSize: 48, marginBottom: Spacing.md },
+  gradient: { flex: 1 },
+  safeArea: { flex: 1 },
+  headerArea: {
+    alignItems: 'center',
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  card: {
+    marginHorizontal: Spacing.screenPadding,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    // Soft elevation so the card lifts off the gradient on both themes
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  shieldBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
   title: { textAlign: 'center', marginBottom: Spacing.xs },
-  subtitle: { textAlign: 'center', marginBottom: Spacing.sm },
-  errorText: { marginTop: -8, marginBottom: 8 },
-  bottomPadding: { height: 40 },
+  subtitle: { textAlign: 'center', marginBottom: Spacing.xs },
+  errorText: { marginTop: -4, marginBottom: 4 },
+  padArea: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: Spacing.sm,
+  },
 });

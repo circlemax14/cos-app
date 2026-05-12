@@ -18,10 +18,11 @@ export function useAppLock() {
       }
 
       if (appState.current.match(/background/) && nextState === 'active') {
-        if (backgroundTime.current) {
+        if (backgroundTime.current !== null) {
           const elapsed = Date.now() - backgroundTime.current;
           const timeout = await getLockTimeout();
-          if (elapsed > timeout) {
+          // `>=` so a 0-ms timeout (default) locks on any background tick.
+          if (elapsed >= timeout) {
             const pinSetup = await isPinSetup();
             if (pinSetup) {
               setIsLocked(true);
