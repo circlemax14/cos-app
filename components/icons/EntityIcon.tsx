@@ -63,6 +63,7 @@ export function EntityIcon({
         source={{ uri: imageUrl }}
         accessibilityLabel={altOrLabel}
         testID="entity-icon-root"
+        {...({ 'data-entity-icon': `image:${type}` } as Record<string, string>)}
         style={imageStyle}
       />
     )
@@ -79,6 +80,7 @@ export function EntityIcon({
       accessibilityRole="image"
       accessibilityLabel={altOrLabel}
       testID="entity-icon-root"
+      {...({ 'data-entity-icon': specialtyName ? `specialty:${specialtyName}` : `type:${type}`, 'data-accent': accent } as Record<string, string>)}
       style={[
         { width: px, height: px, alignItems: 'center', justifyContent: 'center' },
         style,
