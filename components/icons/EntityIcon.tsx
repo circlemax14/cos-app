@@ -6,6 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native'
+import { SvgUri } from 'react-native-svg'
 import {
   ENTITY_ICON,
   SPECIALTY_ICON,
@@ -33,6 +34,13 @@ export interface EntityIconProps {
   type: EntityType
   specialty?: string | null
   imageUrl?: string | null
+  /**
+   * Designer-uploaded custom SVG, served from our S3 icon bucket. Takes
+   * priority over the built-in specialty + entity-type fallback but loses
+   * to imageUrl (per-instance photo). SVG must use `currentColor` so the
+   * `color={RING_COLOR}` prop tints it to the active theme.
+   */
+  iconUrl?: string | null
   size?: 'sm' | 'md' | 'lg' | number
   name?: string
   style?: ViewStyle
@@ -56,6 +64,7 @@ export function EntityIcon({
   type,
   specialty,
   imageUrl,
+  iconUrl,
   size = 'md',
   name,
   style,
@@ -79,6 +88,38 @@ export function EntityIcon({
         {...({ 'data-entity-icon': `image:${type}` } as Record<string, string>)}
         style={imageStyle}
       />
+    )
+  }
+
+  if (iconUrl) {
+    const innerPx = Math.round(px * 0.58)
+    return (
+      <View
+        accessibilityRole="image"
+        accessibilityLabel={altOrLabel}
+        testID="entity-icon-root"
+        {...({ 'data-entity-icon': `icon-url:${type}` } as Record<string, string>)}
+        style={[
+          {
+            width: px,
+            height: px,
+            borderRadius: px / 2,
+            borderWidth: 1.5,
+            borderColor: RING_COLOR,
+            backgroundColor: 'transparent',
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          style,
+        ]}
+      >
+        <SvgUri
+          uri={iconUrl}
+          width={innerPx}
+          height={innerPx}
+          color={RING_COLOR}
+        />
+      </View>
     )
   }
 
