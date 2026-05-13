@@ -5,9 +5,8 @@ import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useUserPhoto } from '@/stores/user-photo-store';
-import { InitialsAvatar } from '@/utils/avatar-utils';
+import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
@@ -159,15 +158,12 @@ export function ProfileContent({
             <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 12 }} />
           ) : (
             <View style={styles.headerRow}>
-              {patientPhotoUrl ? (
-                <Image
-                  source={{ uri: patientPhotoUrl }}
-                  style={{ width: 64, height: 64, borderRadius: 32 }}
-                  contentFit="cover"
-                />
-              ) : (
-                <InitialsAvatar name={patientName} size={64} />
-              )}
+              <EntityIcon
+                type="patient"
+                imageUrl={patientPhotoUrl ?? null}
+                name={patientName ?? 'Patient'}
+                size={64}
+              />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text
                   numberOfLines={1}

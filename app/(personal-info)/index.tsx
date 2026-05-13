@@ -6,8 +6,7 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, S
 import { Icon, TextInput as PaperTextInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchPatientInfo } from '@/services/api/patient';
-import { InitialsAvatar } from '@/utils/avatar-utils';
-import { Image } from 'expo-image';
+import { EntityIcon } from '@/components/icons';
 import * as ImagePicker from 'expo-image-picker';
 // expo-file-system v19 split off uploadAsync into the /legacy subpath; the
 // new top-level API is sync/scoped and doesn't include uploads. Use legacy.
@@ -287,22 +286,12 @@ export default function PersonalInfoScreen() {
             {/* Avatar Section */}
             <View style={styles.avatarSection}>
               <View style={styles.avatarWrapper}>
-                {photoUri ? (
-                  <Image
-                    source={{ uri: photoUri }}
-                    style={{
-                      width: getScaledFontSize(120),
-                      height: getScaledFontSize(120),
-                      borderRadius: getScaledFontSize(60),
-                    }}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <InitialsAvatar
-                    name={formData.name}
-                    size={getScaledFontSize(120)}
-                  />
-                )}
+                <EntityIcon
+                  type="patient"
+                  imageUrl={photoUri ?? null}
+                  name={formData.name ?? 'Patient'}
+                  size={getScaledFontSize(120)}
+                />
                 {isUploading && (
                   <View style={[styles.uploadingOverlay, { width: getScaledFontSize(120), height: getScaledFontSize(120), borderRadius: getScaledFontSize(60) }]}>
                     <ActivityIndicator size="small" color="#fff" />

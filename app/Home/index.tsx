@@ -19,7 +19,7 @@ import { fetchPendingTaskCount } from '@/services/api/ai-health-plan';
 import { fetchRecommendedAppointments } from '@/services/api/recommended-appointments';
 import type { RecommendedAppointment } from '@/services/api/types';
 import type { Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
-import { InitialsAvatar } from '@/utils/avatar-utils';
+import { EntityIcon } from '@/components/icons';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
@@ -165,11 +165,13 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           activeOpacity={0.8}
           style={{ position: 'relative' }}
         >
-          {patientPhotoUrl ? (
-            <Image source={{ uri: patientPhotoUrl }} style={[styles.centerAvatarImage, { width: getScaledFontSize(centerAvatarSize), height: getScaledFontSize(centerAvatarSize), borderRadius: getScaledFontSize(centerAvatarSize) / 2 }]} contentFit="cover" />
-          ) : (
-            <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
-          )}
+          <EntityIcon
+            type="patient"
+            imageUrl={patientPhotoUrl ?? null}
+            name={patientName ?? 'Patient'}
+            size={getScaledFontSize(centerAvatarSize)}
+            style={styles.centerAvatarImage}
+          />
           {pendingTaskCount > 0 && (
             <View
               style={[
@@ -317,10 +319,12 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                 </>
               ) : (
                 <>
-                  <InitialsAvatar
-                    name={item.name}
+                  <EntityIcon
+                    type="provider"
+                    specialty={item.specialty ?? undefined}
+                    imageUrl={doctorPhotos.get(item.id) ?? null}
+                    name={item.name ?? 'Provider'}
                     size={getScaledFontSize(avatarSize)}
-                    image={doctorPhotos.get(item.id) ? { uri: doctorPhotos.get(item.id)! } : undefined}
                   />
                   <Text
                     numberOfLines={3}
@@ -461,11 +465,13 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           activeOpacity={0.8}
           style={{ position: 'relative' }}
         >
-          {patientPhotoUrl ? (
-            <Image source={{ uri: patientPhotoUrl }} style={[styles.centerAvatarImage, { width: getScaledFontSize(centerAvatarSize), height: getScaledFontSize(centerAvatarSize), borderRadius: getScaledFontSize(centerAvatarSize) / 2 }]} contentFit="cover" />
-          ) : (
-            <InitialsAvatar name={patientName} size={getScaledFontSize(centerAvatarSize)} style={styles.centerAvatarImage} />
-          )}
+          <EntityIcon
+            type="patient"
+            imageUrl={patientPhotoUrl ?? null}
+            name={patientName ?? 'Patient'}
+            size={getScaledFontSize(centerAvatarSize)}
+            style={styles.centerAvatarImage}
+          />
           {pendingTaskCount > 0 && (
             <View
               style={[
@@ -617,10 +623,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                 </>
               ) : (
                 <>
-                  <InitialsAvatar
-                    name={item.name}
+                  <EntityIcon
+                    type="provider"
+                    specialty={item.specialty ?? undefined}
+                    imageUrl={doctorPhotos.get(item.id) ?? null}
+                    name={item.name ?? 'Provider'}
                     size={getScaledFontSize(avatarSize)}
-                    image={doctorPhotos.get(item.id) ? { uri: doctorPhotos.get(item.id)! } : undefined}
                   />
                   <Text
                     style={[
@@ -653,11 +661,12 @@ interface CircleProvidersListViewProps {
   getScaledFontSize: (size: number) => number;
   getScaledFontWeight: (weight: number) => string | number;
   patientName?: string;
+  patientPhotoUrl?: string | null;
   hasUpcomingAppointments: boolean;
   isCircleComplete: boolean;
 }
 
-function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', hasUpcomingAppointments, isCircleComplete }: CircleProvidersListViewProps) {
+function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, hasUpcomingAppointments, isCircleComplete }: CircleProvidersListViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
@@ -694,7 +703,13 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
           onPress={() => router.push('/Home/today-schedule' as any)}
           activeOpacity={0.7}
         >
-          <InitialsAvatar name={patientName} size={getScaledFontSize(56)} style={styles.listAvatar} />
+          <EntityIcon
+          type="patient"
+          imageUrl={patientPhotoUrl ?? null}
+          name={patientName ?? 'Patient'}
+          size={getScaledFontSize(56)}
+          style={styles.listAvatar}
+        />
           <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
             <Text style={[
               styles.listItemName,
@@ -746,11 +761,13 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               }}
               activeOpacity={provider.isManual ? 1 : 0.7}
             >
-              <InitialsAvatar
-                name={provider.name}
+              <EntityIcon
+                type="provider"
+                specialty={provider.specialty ?? undefined}
+                imageUrl={doctorPhotos.get(provider.id) ?? null}
+                name={provider.name ?? 'Provider'}
                 size={getScaledFontSize(56)}
                 style={styles.listAvatar}
-                image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : undefined}
               />
               <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
                 <Text style={[
@@ -817,6 +834,7 @@ interface ListViewProps {
   getScaledFontWeight: (weight: number) => string | number;
   onItemPress: (categoryId?: string, subCategoryId?: string) => void;
   patientName?: string;
+  patientPhotoUrl?: string | null;
   hasUpcomingAppointments: boolean;
   selectedProviderIds: Set<string>;
   onAddProvider: (provider: SelectedProvider) => void;
@@ -826,7 +844,7 @@ interface ListViewProps {
 
 type ListViewLevel = 'categories' | 'sub-categories' | 'providers';
 
-function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onItemPress, patientName = '', hasUpcomingAppointments, selectedProviderIds, onAddProvider, onRemoveProvider, maxCircleProviders }: ListViewProps) {
+function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onItemPress, patientName = '', patientPhotoUrl, hasUpcomingAppointments, selectedProviderIds, onAddProvider, onRemoveProvider, maxCircleProviders }: ListViewProps) {
   // Calculate max height to push appointments to bottom of screen
   const screenHeight = Dimensions.get('window').height;
   // Use larger percentage to push appointments section to bottom
@@ -1114,7 +1132,13 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
         onPress={() => router.push('/Home/today-schedule' as any)}
         activeOpacity={0.7}
       >
-        <InitialsAvatar name={patientName} size={getScaledFontSize(56)} style={styles.listAvatar} />
+        <EntityIcon
+          type="patient"
+          imageUrl={patientPhotoUrl ?? null}
+          name={patientName ?? 'Patient'}
+          size={getScaledFontSize(56)}
+          style={styles.listAvatar}
+        />
         <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
           <Text style={[
             styles.listItemName,
@@ -1584,8 +1608,11 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                 onPress={() => router.push({ pathname: '/Home/non-ehr-provider-detail', params: { id: provider.id } })}
                 activeOpacity={0.7}
               >
-                <InitialsAvatar
-                  name={provider.providerName}
+                <EntityIcon
+                  type="provider"
+                  specialty={provider.specialty ?? undefined}
+                  imageUrl={null}
+                  name={provider.providerName ?? 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.listAvatar}
                 />
@@ -1986,11 +2013,13 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                 }}
                 activeOpacity={provider.isManual ? 1 : 0.7}
               >
-                <InitialsAvatar
-                  name={provider.name}
+                <EntityIcon
+                  type="provider"
+                  specialty={provider.specialty ?? undefined}
+                  imageUrl={doctorPhotos.get(provider.id) ?? null}
+                  name={provider.name ?? 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.listAvatar}
-                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : undefined}
                 />
                 <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
                   <Text style={[
@@ -2230,11 +2259,13 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
             }}
             activeOpacity={0.7}
           >
-            <InitialsAvatar
-              name={doc.name}
+            <EntityIcon
+              type="provider"
+              specialty={(doc as any).specialty ?? undefined}
+              imageUrl={doctorPhotos.get(doc.id) ?? null}
+              name={doc.name ?? 'Provider'}
               size={getScaledFontSize(56)}
               style={styles.listAvatar}
-              image={doctorPhotos.get(doc.id) ? { uri: doctorPhotos.get(doc.id)! } : undefined}
             />
             <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
               <Text style={[
@@ -2701,6 +2732,7 @@ export default function HomeScreen() {
                     console.log(`Selected category: ${categoryId}, sub-category: ${subCategoryId}`);
                   }}
                   patientName={patientName}
+                  patientPhotoUrl={patientPhotoUrl}
                   hasUpcomingAppointments={upcomingAppointments.length > 0}
                   selectedProviderIds={selectedProviderIds}
                   onAddProvider={addProvider}
@@ -2742,6 +2774,7 @@ export default function HomeScreen() {
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
               patientName={patientName}
+              patientPhotoUrl={patientPhotoUrl}
               hasUpcomingAppointments={upcomingAppointments.length > 0}
               isCircleComplete={isCircleComplete}
             />
