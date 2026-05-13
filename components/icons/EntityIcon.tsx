@@ -75,12 +75,13 @@ export function EntityIcon({
   const accentKey = specialtyName ? 'delivery' : typeAccent
   const accent = ACCENT_COLOR[accentKey]
 
-  // Soft accent-tinted background — matches the old InitialsAvatar's
-  // circular tinted disc so a list row that previously showed a colored
-  // initials disc and one that now shows an icon are visually the same
-  // shape + size. Hex + alpha suffix `~14%`; RN doesn't have CSS
-  // color-mix() so we encode the alpha directly on the hex.
-  const tint = `${accent}22` // 0x22 ≈ 0.13 → 13% opacity
+  // Accent-tinted background — matches the old InitialsAvatar's circular
+  // disc so a row that previously showed a colored initials disc and one
+  // that now shows an icon are visually the same shape + size. RN has no
+  // CSS color-mix() so the alpha is encoded on the hex.
+  // 0x42 ≈ 26% opacity (was 0x22/13% initially — reported as too pale,
+  // bumped 2026-05-13). Stay in sync with the web side's color-mix 26%.
+  const tint = `${accent}42`
   // The glyph sits inside the disc at ~58% of the disc diameter, matching
   // the visual weight of the old initials inside InitialsAvatar.
   const innerPx = Math.round(px * 0.58)
