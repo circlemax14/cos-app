@@ -75,6 +75,16 @@ export function EntityIcon({
   const accentKey = specialtyName ? 'delivery' : typeAccent
   const accent = ACCENT_COLOR[accentKey]
 
+  // Soft accent-tinted background — matches the old InitialsAvatar's
+  // circular tinted disc so a list row that previously showed a colored
+  // initials disc and one that now shows an icon are visually the same
+  // shape + size. Hex + alpha suffix `~14%`; RN doesn't have CSS
+  // color-mix() so we encode the alpha directly on the hex.
+  const tint = `${accent}22` // 0x22 ≈ 0.13 → 13% opacity
+  // The glyph sits inside the disc at ~58% of the disc diameter, matching
+  // the visual weight of the old initials inside InitialsAvatar.
+  const innerPx = Math.round(px * 0.58)
+
   return (
     <View
       accessibilityRole="image"
@@ -82,11 +92,18 @@ export function EntityIcon({
       testID="entity-icon-root"
       {...({ 'data-entity-icon': specialtyName ? `specialty:${specialtyName}` : `type:${type}`, 'data-accent': accent } as Record<string, string>)}
       style={[
-        { width: px, height: px, alignItems: 'center', justifyContent: 'center' },
+        {
+          width: px,
+          height: px,
+          borderRadius: px / 2,
+          backgroundColor: tint,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
         style,
       ]}
     >
-      <Lucide width={px} height={px} strokeWidth={1.5} color={accent} />
+      <Lucide width={innerPx} height={innerPx} strokeWidth={1.75} color={accent} />
     </View>
   )
 }
