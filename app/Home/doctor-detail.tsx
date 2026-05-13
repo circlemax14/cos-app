@@ -2,8 +2,9 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Image, Modal as RNModal } from 'react-native';
-import { Avatar, Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Modal as RNModal } from 'react-native';
+import { Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
+import { EntityIcon } from '@/components/icons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
 import { fetchProviderProgressNotesNarrative, type ProviderProgressNotes } from '@/services/api/progress-notes';
@@ -13,7 +14,6 @@ import { groupTreatmentByEncounter } from '@/services/treatment-timeline';
 import { WhatChangedCard } from '@/components/doctor-detail';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
-import { InitialsAvatar } from '@/utils/avatar-utils';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { AppWrapper } from '@/components/app-wrapper';
@@ -912,11 +912,13 @@ export default function DoctorDetailScreen() {
               ]}
             >
               <View style={styles.providerShareContent}>
-                <InitialsAvatar
-                  name={provider.name}
+                <EntityIcon
+                  type="provider"
+                  specialty={provider.specialty ?? undefined}
+                  imageUrl={doctorPhotos.get(provider.id) ?? null}
+                  name={provider.name ?? 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.providerShareAvatar}
-                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : undefined}
                 />
                 <View style={[styles.providerShareInfo, { marginLeft: getScaledFontSize(16) }]}>
                   <Text style={[
@@ -1258,15 +1260,14 @@ export default function DoctorDetailScreen() {
         {/* Doctor Header */}
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            {doctorData?.photoUrl ? (
-              <Avatar.Image 
-                size={getScaledFontSize(120)} 
-                source={{ uri: doctorData.photoUrl }} 
-                style={styles.doctorAvatar} 
-              />
-            ) : (
-              <InitialsAvatar name={doctorName} size={getScaledFontSize(120)} style={styles.doctorAvatar} />
-            )}
+            <EntityIcon
+              type="provider"
+              specialty={doctorSpecialty ?? undefined}
+              imageUrl={doctorData?.photoUrl ?? null}
+              name={doctorName ?? 'Provider'}
+              size={getScaledFontSize(120)}
+              style={styles.doctorAvatar}
+            />
             <TouchableOpacity
               style={[styles.editButton, { backgroundColor: colors.tint, width: getScaledFontSize(40), height: getScaledFontSize(40), borderRadius: getScaledFontSize(20) }]}
               onPress={handleEditPress}
@@ -1414,14 +1415,13 @@ export default function DoctorDetailScreen() {
               accessibilityLabel={editedData.photoUrl ? 'Change photo' : 'Add photo'}
               style={{ position: 'relative' }}
             >
-              {editedData.photoUrl ? (
-                <Image
-                  source={{ uri: editedData.photoUrl }}
-                  style={styles.editAvatarImage}
-                />
-              ) : (
-                <InitialsAvatar name={editedData.name} size={getScaledFontSize(112)} />
-              )}
+              <EntityIcon
+                type="provider"
+                specialty={editedData.specialty ?? undefined}
+                imageUrl={editedData.photoUrl || null}
+                name={editedData.name ?? 'Provider'}
+                size={getScaledFontSize(112)}
+              />
               <View
                 style={[
                   styles.editAvatarCameraChip,

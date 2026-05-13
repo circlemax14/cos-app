@@ -1,8 +1,8 @@
 import { useAccessibility } from '@/stores/accessibility-store';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Avatar, Card, Switch, Text } from 'react-native-paper';
-import { InitialsAvatar } from '@/utils/avatar-utils';
+import { Card, Switch, Text } from 'react-native-paper';
+import { EntityIcon } from '@/components/icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 interface DoctorCardProps {
@@ -10,6 +10,7 @@ interface DoctorCardProps {
   name: string;
   qualifications: string;
   image: number | { uri: string } | null;
+  specialty?: string | null;
   showSwitch?: boolean;
   switchValue?: boolean;
   onSwitchChange?: (value: boolean) => void;
@@ -26,6 +27,7 @@ export function DoctorCard({
   name,
   qualifications,
   image,
+  specialty,
   showSwitch = false,
   switchValue = false,
   onSwitchChange,
@@ -46,19 +48,14 @@ export function DoctorCard({
     <Card style={[styles.card, highlighted ? styles.cardHighlighted : null, { marginBottom: cardMargin }]} onPress={onPress}>
       <Card.Content style={[styles.cardContent, { padding: dynamicPadding }]}>
         <View style={styles.contentRow}>
-          {image ? (
-            <Avatar.Image
-              size={avatarSize}
-              source={image}
-              style={[styles.avatar, { marginRight: dynamicPadding }]}
-            />
-          ) : (
-            <InitialsAvatar
-              name={name}
-              size={avatarSize}
-              style={[styles.avatar, { marginRight: dynamicPadding }]}
-            />
-          )}
+          <EntityIcon
+            type="provider"
+            specialty={specialty ?? undefined}
+            imageUrl={image && typeof image === 'object' && 'uri' in image ? image.uri : null}
+            name={name ?? 'Provider'}
+            size={avatarSize}
+            style={{ ...styles.avatar, marginRight: dynamicPadding }}
+          />
           <View style={styles.textContainer}>
             <Text
               style={[

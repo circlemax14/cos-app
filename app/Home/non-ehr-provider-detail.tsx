@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Button, Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { InitialsAvatar } from '@/utils/avatar-utils';
+import { EntityIcon } from '@/components/icons';
 import {
     getNonEhrProviders,
     getFilesForProvider,
@@ -460,7 +460,13 @@ export default function NonEhrProviderDetailScreen() {
                 {/* ── Header ── */}
                 <View style={[styles.header, { backgroundColor: colors.background }]}>
                     <View style={styles.headerAvatarRow}>
-                        <InitialsAvatar name={provider.providerName} size={72} />
+                        <EntityIcon
+                            type="provider"
+                            specialty={provider.specialty ?? undefined}
+                            imageUrl={null}
+                            name={provider.providerName ?? 'Provider'}
+                            size={72}
+                        />
                         <View style={styles.headerInfo}>
                             <Text style={[styles.providerName, { color: colors.text, fontSize: getScaledFontSize(20) }]}>
                                 {provider.providerName}
