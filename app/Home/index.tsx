@@ -3180,7 +3180,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   centerAvatarImage: {
-    // backgroundColor removed - let InitialsAvatar handle it
+    // backgroundColor removed - EntityIcon handles its own fill
   },
   centerAvatarText: {
     fontSize: 16,
