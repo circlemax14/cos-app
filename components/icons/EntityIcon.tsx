@@ -9,12 +9,25 @@ import {
 import {
   ENTITY_ICON,
   SPECIALTY_ICON,
-  ACCENT_COLOR,
   type EntityType,
 } from './icon-map'
 import { specialtyToIcon } from '@/utils/specialty-to-icon'
+import { Colors } from '@/constants/theme'
 
 const SIZE_PX: Record<'sm' | 'md' | 'lg', number> = { sm: 32, md: 48, lg: 96 }
+
+/**
+ * Single theme color for both the ring border and the icon stroke —
+ * mirrors the web side's use of `var(--p-primary)`. Per-entity-type
+ * accents (the old recipient/delivery/organization palette) are dropped:
+ * the icon glyph alone differentiates patient from provider from agency,
+ * and layering color variation on top read as busy in the dev build
+ * (2026-05-13).
+ *
+ * If/when cos-app gains a light/dark theme switcher, swap this for
+ * `useColorScheme()` → `Colors[scheme].primary`.
+ */
+const RING_COLOR = Colors.light.primary
 
 export interface EntityIconProps {
   type: EntityType
@@ -70,19 +83,10 @@ export function EntityIcon({
   }
 
   const specialtyName = type === 'provider' ? specialtyToIcon(specialty ?? null) : null
-  const { lucide: TypeLucide, accent: typeAccent } = ENTITY_ICON[type]
+  const { lucide: TypeLucide } = ENTITY_ICON[type]
   const Lucide = specialtyName ? SPECIALTY_ICON[specialtyName] : TypeLucide
-  const accentKey = specialtyName ? 'delivery' : typeAccent
-  const accent = ACCENT_COLOR[accentKey]
 
-  // Accent-tinted background — matches the old InitialsAvatar's circular
-  // disc so a row that previously showed a colored initials disc and one
-  // that now shows an icon are visually the same shape + size. RN has no
-  // CSS color-mix() so the alpha is encoded on the hex.
-  // 0x42 ≈ 26% opacity (was 0x22/13% initially — reported as too pale,
-  // bumped 2026-05-13). Stay in sync with the web side's color-mix 26%.
-  const tint = `${accent}42`
-  // The glyph sits inside the disc at ~58% of the disc diameter, matching
+  // Glyph sits inside the ring at ~58% of the disc diameter, matching
   // the visual weight of the old initials inside InitialsAvatar.
   const innerPx = Math.round(px * 0.58)
 
@@ -91,20 +95,22 @@ export function EntityIcon({
       accessibilityRole="image"
       accessibilityLabel={altOrLabel}
       testID="entity-icon-root"
-      {...({ 'data-entity-icon': specialtyName ? `specialty:${specialtyName}` : `type:${type}`, 'data-accent': accent } as Record<string, string>)}
+      {...({ 'data-entity-icon': specialtyName ? `specialty:${specialtyName}` : `type:${type}` } as Record<string, string>)}
       style={[
         {
           width: px,
           height: px,
           borderRadius: px / 2,
-          backgroundColor: tint,
+          borderWidth: 1.5,
+          borderColor: RING_COLOR,
+          backgroundColor: 'transparent',
           alignItems: 'center',
           justifyContent: 'center',
         },
         style,
       ]}
     >
-      <Lucide width={innerPx} height={innerPx} strokeWidth={1.75} color={accent} />
+      <Lucide width={innerPx} height={innerPx} strokeWidth={1.75} color={RING_COLOR} />
     </View>
   )
 }
