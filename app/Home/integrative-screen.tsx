@@ -34,7 +34,7 @@ import {
     RefreshControl,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { InitialsAvatar } from '@/utils/avatar-utils';
+import { EntityIcon } from '@/components/icons';
 import {
     getNonEhrProviders,
     processAndStoreFiles,
@@ -560,7 +560,12 @@ export function IntegrativeScreen({
                         onPress={() => router.push({ pathname: '/Home/non-ehr-provider-detail', params: { id: provider.id } })}
                         activeOpacity={0.7}
                     >
-                        <InitialsAvatar name={provider.providerName} size={getScaledFontSize(48)} />
+                        <EntityIcon
+                            type="provider"
+                            specialty={provider.specialty ?? null}
+                            name={provider.providerName}
+                            size={getScaledFontSize(48)}
+                        />
                         <View style={dataStyles.providerInfo}>
                             <Text style={[dataStyles.providerName, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
                                 {provider.providerName}
