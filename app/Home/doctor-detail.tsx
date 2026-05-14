@@ -57,6 +57,7 @@ export default function DoctorDetailScreen() {
     phone: doctorData?.phone || provider?.phone || '',
     email: doctorData?.email || provider?.email || '',
     photoUrl: doctorData?.photoUrl || '',
+    iconUrl: doctorData?.iconUrl ?? null as string | null,
   });
 
   const [activeTab, setActiveTab] = useState('treatment');
@@ -188,6 +189,7 @@ export default function DoctorDetailScreen() {
         phone: doctorData.phone || '',
         email: doctorData.email || '',
         photoUrl: doctorData.photoUrl || '',
+        iconUrl: doctorData.iconUrl ?? null,
       });
     } else if (provider) {
       setEditedData({
@@ -196,6 +198,7 @@ export default function DoctorDetailScreen() {
         phone: provider.phone || '',
         email: provider.email || '',
         photoUrl: '',
+        iconUrl: provider.iconUrl ?? null,
       });
     }
   }, [doctorData, provider, providerSpecialty]);
@@ -517,6 +520,7 @@ export default function DoctorDetailScreen() {
         phone: doctorData.phone || '',
         email: doctorData.email || '',
         photoUrl: doctorData.photoUrl || '',
+        iconUrl: doctorData.iconUrl ?? null,
       });
     } else if (provider) {
       setEditedData({
@@ -525,6 +529,7 @@ export default function DoctorDetailScreen() {
         phone: provider.phone || '',
         email: provider.email || '',
         photoUrl: '',
+        iconUrl: provider.iconUrl ?? null,
       });
     }
     setIsEditModalVisible(false);
@@ -916,6 +921,7 @@ export default function DoctorDetailScreen() {
                   type="provider"
                   specialty={provider.specialty ?? undefined}
                   imageUrl={doctorPhotos.get(provider.id) ?? null}
+                  iconUrl={provider.iconUrl ?? null}
                   name={provider.name ?? 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.providerShareAvatar}
@@ -1264,6 +1270,7 @@ export default function DoctorDetailScreen() {
               type="provider"
               specialty={doctorSpecialty ?? undefined}
               imageUrl={doctorData?.photoUrl ?? null}
+              iconUrl={doctorData?.iconUrl ?? null}
               name={doctorName ?? 'Provider'}
               size={getScaledFontSize(120)}
               style={styles.doctorAvatar}
@@ -1419,6 +1426,7 @@ export default function DoctorDetailScreen() {
                 type="provider"
                 specialty={editedData.specialty ?? undefined}
                 imageUrl={editedData.photoUrl || null}
+                iconUrl={editedData.iconUrl ?? null}
                 name={editedData.name ?? 'Provider'}
                 size={getScaledFontSize(112)}
               />

@@ -11,6 +11,7 @@ export interface DoctorData {
   email?: string;
   address?: string;
   photoUrl?: string;
+  iconUrl?: string | null;
   providerId?: string;
   clinicId?: string;
   clinicName?: string;

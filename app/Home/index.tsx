@@ -323,6 +323,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                     type="provider"
                     specialty={item.specialty ?? undefined}
                     imageUrl={doctorPhotos.get(item.id) ?? null}
+                    iconUrl={item.iconUrl ?? null}
                     name={item.name ?? 'Provider'}
                     size={getScaledFontSize(avatarSize)}
                   />
@@ -627,6 +628,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     type="provider"
                     specialty={item.specialty ?? undefined}
                     imageUrl={doctorPhotos.get(item.id) ?? null}
+                    iconUrl={item.iconUrl ?? null}
                     name={item.name ?? 'Provider'}
                     size={getScaledFontSize(avatarSize)}
                   />
@@ -765,6 +767,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
                 type="provider"
                 specialty={provider.specialty ?? undefined}
                 imageUrl={doctorPhotos.get(provider.id) ?? null}
+                iconUrl={provider.iconUrl ?? null}
                 name={provider.name ?? 'Provider'}
                 size={getScaledFontSize(56)}
                 style={styles.listAvatar}
@@ -2017,6 +2020,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   type="provider"
                   specialty={provider.specialty ?? undefined}
                   imageUrl={doctorPhotos.get(provider.id) ?? null}
+                  iconUrl={provider.iconUrl ?? null}
                   name={provider.name ?? 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.listAvatar}
@@ -2194,6 +2198,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
         qualifications: provider.qualifications || 'Healthcare Provider',
         specialty: provider.specialty || 'General',
         image: undefined,
+        iconUrl: provider.iconUrl ?? null,
       }));
     }
 
@@ -2263,6 +2268,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
               type="provider"
               specialty={(doc as any).specialty ?? undefined}
               imageUrl={doctorPhotos.get(doc.id) ?? null}
+              iconUrl={doc.iconUrl ?? null}
               name={doc.name ?? 'Provider'}
               size={getScaledFontSize(56)}
               style={styles.listAvatar}

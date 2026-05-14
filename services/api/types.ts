@@ -6,6 +6,7 @@ export interface Provider {
   specialty?: string;
   image?: number | { uri: string };
   photoUrl?: string;
+  iconUrl?: string | null;
   phone?: string;
   email?: string;
   category?: string;
@@ -107,6 +108,7 @@ export interface Patient {
   country?: string;
   maritalStatus?: string;
   photoUrl?: string;
+  iconUrl?: string | null;
   emergencyContact?: {
     name?: string;
     relationship?: string;
