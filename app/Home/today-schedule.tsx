@@ -8,8 +8,7 @@ import { getTodayHealthMetrics, initializeHealthKit, HealthMetrics } from '@/ser
 import { fetchPatientInfo, fetchMedicationsSummary } from '@/services/api/patient';
 import type { MedicationSummary, TaskOccurrence, TaskType } from '@/services/api/types';
 import { fetchTasksForDate, completeTask, skipTask } from '@/services/api/ai-health-plan';
-import { InitialsAvatar } from '@/utils/avatar-utils';
-import { Image } from 'expo-image';
+import { EntityIcon } from '@/components/icons';
 import { getPhotoDownloadUrl } from '@/services/user-photo';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
@@ -404,15 +403,12 @@ export default function TodayScheduleScreen() {
               <ActivityIndicator size="large" color={colors.tint} style={{ marginVertical: 16 }} />
             ) : (
             <>
-            {patientPhotoUrl ? (
-              <Image
-                source={{ uri: patientPhotoUrl }}
-                style={{ width: getScaledFontSize(80), height: getScaledFontSize(80), borderRadius: getScaledFontSize(40) }}
-                contentFit="cover"
-              />
-            ) : (
-              <InitialsAvatar name={patientName} size={getScaledFontSize(80)} />
-            )}
+            <EntityIcon
+              type="patient"
+              imageUrl={patientPhotoUrl ?? null}
+              name={patientName || 'Patient'}
+              size={getScaledFontSize(80)}
+            />
             <View style={styles.profileInfo}>
               <Text style={[
                 styles.profileName,

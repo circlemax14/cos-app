@@ -10,12 +10,12 @@ import {
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
-    Image,
     Keyboard,
     ListRenderItem,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { EntityIcon } from '@/components/icons';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
 
@@ -156,15 +156,12 @@ export function CustomChat({
                 ]}>
                     {showAvatar && !isMyMessage && !isSameUserAsPrev && (
                         <View style={styles.avatarContainer}>
-                            {typeof item.user.avatar === 'string' ? (
-                                <Image source={{ uri: item.user.avatar }} style={styles.avatar} />
-                            ) : (
-                                <View style={[styles.avatar, { backgroundColor: colors.tint || '#008080' }]}>
-                                    <Text style={styles.avatarText}>
-                                        {item.user.name ? item.user.name.charAt(0).toUpperCase() : '?'}
-                                    </Text>
-                                </View>
-                            )}
+                            <EntityIcon
+                                type="provider"
+                                imageUrl={typeof item.user.avatar === 'string' ? item.user.avatar : null}
+                                name={item.user.name || 'Assistant'}
+                                size={32}
+                            />
                         </View>
                     )}
                     {showAvatar && !isMyMessage && isSameUserAsPrev && <View style={styles.avatarSpacer} />}
