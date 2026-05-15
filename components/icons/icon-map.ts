@@ -2,6 +2,7 @@ import {
   Stethoscope, User, Building2, ClipboardList, HeartHandshake, Hospital,
   Heart, Hand, Brain, Bone, Baby, Ribbon, Drumstick, HeartPulse,
   Ear, Eye, BrainCircuit, Activity, Wind, ScanLine, Scissors, Microscope,
+  Cross,
   HelpCircle,
   type LucideIcon,
 } from 'lucide-react-native'
@@ -33,6 +34,7 @@ export const ENTITY_ICON: Record<EntityType, { lucide: LucideIcon; accent: Accen
 // describe a provider's sub-type. We keep the accent here so future
 // re-theming touches one table.
 export const SPECIALTY_ICON: Record<IconName, LucideIcon> = {
+  'nursing':                  Cross,
   'cardiology':               Heart,
   'dermatology':              Hand,
   'neurology':                Brain,

@@ -12,6 +12,9 @@
 // matches scoped to known roots so e.g. "rheumatology" doesn't accidentally
 // match "dermatology".
 const KEYWORD_TABLE = [
+  // nursing precedes everything so "Pediatric Nurse Practitioner" maps to
+  // the nursing icon (role wins over patient population for nursing roles).
+  { icon: 'nursing',                  needles: ['nurse', 'nursing', 'registered nurse', 'nurse practitioner', 'rn ', ' rn', 'np ', ' np', 'pa-c', 'physician assistant'] },
   // pediatrics precedes cardiology so a "Pediatric Cardiology" string maps to
   // the pediatrics icon (general pediatric care wins for the child-patient case).
   { icon: 'pediatrics',               needles: ['pediatric', 'pediatrics', 'pediatrician'] },
