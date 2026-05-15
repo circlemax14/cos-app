@@ -16,50 +16,6 @@ Sentry.init({
   // (more tags added in app/index.tsx after the JS bundle finishes loading)
 });
 
-// SCRUM-181 diagnostic: wrap the global JS error handler so the underlying
-// JS error is logged to NSLog (visible in Console.app filtered by process
-// "CSH") BEFORE React Native dispatches RCTExceptionsManager.reportException.
-// On iOS 26 that native reporter itself crashes (NSException →
-// CPPExceptionTerminate → abort), wiping out Sentry's chance to ship the
-// event. Logging via console.error before the native dispatch gives us a
-// breadcrumb the device console captures regardless.
-const __defaultHandler =
-  (global as any).ErrorUtils?.getGlobalHandler?.();
-(global as any).ErrorUtils?.setGlobalHandler?.((error: unknown, isFatal?: boolean) => {
-  try {
-    const err = error as Error & { message?: string; stack?: string };
-    const message = err?.message ?? String(error);
-    const stack = err?.stack ?? '<no stack>';
-    // Single-line prefix makes this trivial to grep in Console.app
-    // (filter: process:CSH and message starts with "[CSH-JS-ERROR]")
-    console.error(`[CSH-JS-ERROR] fatal=${!!isFatal} ${message}\n${stack}`);
-  } catch {
-    // never let the error handler itself throw
-  }
-  // Hand control back to the original handler (Sentry's, RN's, etc.)
-  if (typeof __defaultHandler === 'function') {
-    __defaultHandler(error, isFatal);
-  }
-});
-
-// Also capture unhandled Promise rejections — same console.error breadcrumb.
-// React Native + Hermes routes these through the same RCTExceptionsManager
-// path, so they hit the same iOS 26 crash and we want them logged too.
-const __processHpr = (global as any).HermesInternal?.hasPromise?.()
-  ? (global as any).HermesInternal
-  : null;
-if (__processHpr) {
-  (__processHpr as any).enablePromiseRejectionTracker?.({
-    allRejections: true,
-    onUnhandled: (id: number, reason: unknown) => {
-      const err = reason as Error & { message?: string; stack?: string };
-      const message = err?.message ?? String(reason);
-      const stack = err?.stack ?? '<no stack>';
-      console.error(`[CSH-JS-REJECT] id=${id} ${message}\n${stack}`);
-    },
-  });
-}
-
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
