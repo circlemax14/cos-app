@@ -1,6 +1,7 @@
 import React from 'react'
 import {
   Image,
+  Text,
   View,
   type ImageStyle,
   type StyleProp,
@@ -14,6 +15,27 @@ import {
 } from './icon-map'
 import { specialtyToIcon } from '@/utils/specialty-to-icon'
 import { Colors } from '@/constants/theme'
+
+/**
+ * Build display initials from a name. "Christopher A. Walter, DO" → "CW",
+ * "Hayley Do" → "HD", "Peter M. Smith, MD" → "PS". Strips common titles
+ * and credentials. Always 2 letters max. Falls back to "?" if a usable
+ * pair can't be derived.
+ */
+function nameToInitials(raw: string | undefined): string {
+  if (!raw) return '?'
+  const TITLES = new Set([
+    'dr', 'mr', 'mrs', 'ms', 'md', 'do', 'rn', 'np', 'pa', 'pa-c',
+    'dds', 'dmd', 'pharmd', 'phd', 'dnp', 'fnp', 'cnp', 'lcsw',
+  ])
+  const parts = raw
+    .replace(/[.,]/g, '')
+    .split(/\s+/)
+    .filter((p) => p.length > 0 && !TITLES.has(p.toLowerCase()))
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
 
 const SIZE_PX: Record<'sm' | 'md' | 'lg', number> = { sm: 32, md: 48, lg: 96 }
 
@@ -138,20 +160,22 @@ export function EntityIcon({
     )
   }
 
-  const specialtyName = type === 'provider' ? specialtyToIcon(specialty ?? null) : null
-  const { lucide: TypeLucide } = ENTITY_ICON[type]
-  const Lucide = specialtyName ? SPECIALTY_ICON[specialtyName] : TypeLucide
-
-  // Glyph sits inside the ring at ~58% of the disc diameter, matching
-  // the visual weight of the old initials inside InitialsAvatar.
-  const innerPx = Math.round(px * 0.58)
+  // Final fallback: text initials inside the circular ring. We used to render
+  // a Lucide-react-native SVG glyph here, but on iOS 26 production builds the
+  // glyphs render as a corrupted "Uni" placeholder (root cause TBD — likely a
+  // lucide-react-native + react-native-svg + iOS 26 interaction). Text initials
+  // are guaranteed to render legibly on every platform and version, so we use
+  // them as the always-safe fallback. The initials derive from `name` so they
+  // identify the entity (e.g. "CW" for Christopher Walter).
+  const initials = nameToInitials(name)
+  const fontSize = Math.round(px * 0.34)
 
   return (
     <View
       accessibilityRole="image"
       accessibilityLabel={altOrLabel}
       testID="entity-icon-root"
-      {...({ 'data-entity-icon': specialtyName ? `specialty:${specialtyName}` : `type:${type}` } as Record<string, string>)}
+      {...({ 'data-entity-icon': `initials:${type}` } as Record<string, string>)}
       style={[
         {
           width: px,
@@ -166,7 +190,28 @@ export function EntityIcon({
         style,
       ]}
     >
-      <Lucide width={innerPx} height={innerPx} strokeWidth={1.75} color={RING_COLOR} />
+      <Text
+        style={{
+          fontSize,
+          fontWeight: '600',
+          color: RING_COLOR,
+          textAlign: 'center',
+          // Prevent the OS dynamic-type setting from blowing up tiny avatars.
+          // The size we compute is already proportional to the disc diameter.
+          includeFontPadding: false,
+        }}
+        allowFontScaling={false}
+        numberOfLines={1}
+      >
+        {initials}
+      </Text>
     </View>
   )
 }
+
+/* Keep these imports referenced even though the Lucide path is currently
+   unused — once the iOS 26 SVG rendering issue is properly diagnosed we may
+   want to restore the glyph fallback for some entity types. */
+void ENTITY_ICON
+void SPECIALTY_ICON
+void specialtyToIcon

@@ -13,6 +13,10 @@ export interface Provider {
   subCategory?: string;
   subCategories?: string[];
   lastVisited?: string;
+  /** Whether this provider has any clinical records (encounters, meds, reports). */
+  hasData?: boolean;
+  /** How many clinical records reference this provider. */
+  recordCount?: number;
 }
 
 // ─── Report ──────────────────────────────────────────────────────────────────
