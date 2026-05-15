@@ -27,6 +27,8 @@ interface FhirPractitioner {
   name?: FhirName[];
   telecom?: { system?: string; value?: string }[];
   qualification?: { code?: { text?: string; coding?: { display?: string }[] } }[];
+  hasData?: boolean;
+  recordCount?: number;
 }
 
 interface FhirPractitionerRole {
@@ -78,6 +80,8 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
     category: cat.category.toLowerCase(),
     subCategory: cat.subCategory,
     subCategories: cat.subCategories,
+    hasData: practitioner.hasData ?? true,
+    recordCount: practitioner.recordCount ?? 0,
   };
 }
 
