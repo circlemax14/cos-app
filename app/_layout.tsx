@@ -16,38 +16,6 @@ Sentry.init({
   // (more tags added in app/index.tsx after the JS bundle finishes loading)
 });
 
-// SCRUM-181 diagnostic: emit a boot log so we can verify console.log reaches
-// the iOS device console at all. If the user sees this line in Console.app
-// (filter "CSH-JS-BOOT") but no later [CSH-JS-ERROR], the issue is the error
-// handler not being called — not the logging mechanism. Cheap sanity check.
-console.log(`[CSH-JS-BOOT] diagnostic loaded at ${new Date().toISOString()}`);
-
-// Also intercept the global ExceptionsManager native module — RN's JS
-// runtime calls ExceptionsManager.reportException directly (bypassing
-// ErrorUtils.setGlobalHandler in some code paths). Wrapping it here means
-// any error reported to the native side gets logged first.
-try {
-  const NativeModules = require('react-native').NativeModules;
-  const orig = NativeModules?.ExceptionsManager?.reportException;
-  if (NativeModules?.ExceptionsManager && typeof orig === 'function') {
-    NativeModules.ExceptionsManager.reportException = function (data: unknown) {
-      try {
-        const d = data as { message?: string; stack?: unknown; isFatal?: boolean };
-        const msg = d?.message ?? '<no message>';
-        const isFatal = !!d?.isFatal;
-        const stackStr = JSON.stringify(d?.stack ?? '<no stack>').slice(0, 4000);
-        console.log(`[CSH-JS-NATIVE] fatal=${isFatal} ${msg} stack=${stackStr}`);
-      } catch {
-        // swallow
-      }
-      // Do NOT forward to the native method — it's the broken path on iOS 26.
-      // We've already logged the error, so silently swallow further reporting.
-    };
-  }
-} catch {
-  // swallow
-}
-
 // SCRUM-181 diagnostic: wrap the global JS error handler to log the underlying
 // JS error to NSLog (visible in Console.app filtered by "CSH-JS") BEFORE the
 // React Native dispatches it to RCTExceptionsManager.reportException. On
