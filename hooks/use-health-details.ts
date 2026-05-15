@@ -7,7 +7,7 @@ export function useHealthDetails() {
   return useQuery({
     queryKey: ['health-details'],
     queryFn: async () => {
-      const res = await apiClient.get('/patients/me/health-details')
+      const res = await apiClient.get('/v1/patients/me/health-details')
       return res.data.data as HealthDetails
     },
     staleTime: 5 * 60 * 1000,
@@ -18,7 +18,7 @@ export function useUpdateHealthDetails() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: Partial<HealthDetails>) => {
-      const res = await apiClient.put('/patients/me/health-details', input)
+      const res = await apiClient.put('/v1/patients/me/health-details', input)
       return res.data.data as HealthDetails
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['health-details'] }),

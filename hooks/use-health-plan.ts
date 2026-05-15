@@ -10,7 +10,7 @@ export function useHealthPlan() {
   return useQuery({
     queryKey: ['health-plan'],
     queryFn: async () => {
-      const res = await apiClient.get('/patients/me/health-plan')
+      const res = await apiClient.get('/v1/patients/me/health-plan')
       return res.data.data as HealthPlan
     },
     staleTime: 2 * 60 * 1000,
@@ -21,7 +21,7 @@ export function useRefreshAiInsights() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async () => {
-      const res = await apiClient.post('/patients/me/health-plan/ai-refresh')
+      const res = await apiClient.post('/v1/patients/me/health-plan/ai-refresh')
       return res.data.data
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['health-plan'] }),
