@@ -72,7 +72,20 @@ export function EntityIcon({
   const px = resolveSize(size)
   const altOrLabel = name ?? type
 
-  if (imageUrl) {
+  // Track when remote sources fail to load so we fall back to the built-in
+  // Lucide glyph instead of showing a half-rendered SVG (e.g., a pink box
+  // with stray text — see SCRUM-181 real-device repro). One-way state: once
+  // a source has failed for this instance, we don't retry it on re-render.
+  const [imageFailed, setImageFailed] = React.useState(false)
+  const [svgFailed, setSvgFailed] = React.useState(false)
+
+  // Reset failure state if the URL itself changes (e.g., user uploads a new
+  // photo, or the parent passes a new presigned URL after the previous one
+  // expired). Without this, a one-time failure would stick across URL swaps.
+  React.useEffect(() => { setImageFailed(false) }, [imageUrl])
+  React.useEffect(() => { setSvgFailed(false) }, [iconUrl])
+
+  if (imageUrl && !imageFailed) {
     // ViewStyle and ImageStyle overlap on the props we care about (size,
     // borderRadius). Cast so callers can pass a single `style` prop without
     // juggling two style types — RN ignores any leftover ViewStyle-only keys.
@@ -87,11 +100,12 @@ export function EntityIcon({
         testID="entity-icon-root"
         {...({ 'data-entity-icon': `image:${type}` } as Record<string, string>)}
         style={imageStyle}
+        onError={() => setImageFailed(true)}
       />
     )
   }
 
-  if (iconUrl) {
+  if (iconUrl && !svgFailed) {
     const innerPx = Math.round(px * 0.58)
     return (
       <View
@@ -118,6 +132,7 @@ export function EntityIcon({
           width={innerPx}
           height={innerPx}
           color={RING_COLOR}
+          onError={() => setSvgFailed(true)}
         />
       </View>
     )
