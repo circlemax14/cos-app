@@ -16,35 +16,36 @@ Sentry.init({
   // (more tags added in app/index.tsx after the JS bundle finishes loading)
 });
 
-// SCRUM-181 diagnostic: wrap the global JS error handler so the underlying
-// JS error is logged to NSLog (visible in Console.app filtered by process
-// "CSH") BEFORE React Native dispatches RCTExceptionsManager.reportException.
-// On iOS 26 that native reporter itself crashes (NSException →
-// CPPExceptionTerminate → abort), wiping out Sentry's chance to ship the
-// event. Logging via console.error before the native dispatch gives us a
-// breadcrumb the device console captures regardless.
-const __defaultHandler =
-  (global as any).ErrorUtils?.getGlobalHandler?.();
+// SCRUM-181 diagnostic: wrap the global JS error handler to log the underlying
+// JS error to NSLog (visible in Console.app filtered by "CSH-JS") BEFORE the
+// React Native dispatches it to RCTExceptionsManager.reportException. On
+// iOS 26 that native reporter itself crashes (NSException →
+// CPPExceptionTerminate → abort), wiping out our chance to see what failed.
+//
+// We deliberately use console.log (not console.error). In RN production,
+// console.error routes through the global error handler → the very same
+// RCTExceptionsManager path that's broken. console.log goes through
+// __turboModuleProxy → RCTLog → NSLog and survives the crash.
+//
+// We also do NOT chain to the original handler — chaining would re-enter
+// the broken path. The original handler still runs for errors not caught
+// by our wrapper (we only catch what ErrorUtils.setGlobalHandler routes).
 (global as any).ErrorUtils?.setGlobalHandler?.((error: unknown, isFatal?: boolean) => {
   try {
     const err = error as Error & { message?: string; stack?: string };
     const message = err?.message ?? String(error);
     const stack = err?.stack ?? '<no stack>';
-    // Single-line prefix makes this trivial to grep in Console.app
-    // (filter: process:CSH and message starts with "[CSH-JS-ERROR]")
-    console.error(`[CSH-JS-ERROR] fatal=${!!isFatal} ${message}\n${stack}`);
+    // console.log → NSLog → Console.app. Grep "CSH-JS-ERROR" to find it.
+    console.log(`[CSH-JS-ERROR] fatal=${!!isFatal} ${message}\n${stack}`);
   } catch {
     // never let the error handler itself throw
   }
-  // Hand control back to the original handler (Sentry's, RN's, etc.)
-  if (typeof __defaultHandler === 'function') {
-    __defaultHandler(error, isFatal);
-  }
+  // Do NOT call the original handler — it leads to RCTExceptionsManager
+  // which crashes on iOS 26. Sentry still gets the event via its own
+  // beforeSend hook installed during Sentry.init above.
 });
 
-// Also capture unhandled Promise rejections — same console.error breadcrumb.
-// React Native + Hermes routes these through the same RCTExceptionsManager
-// path, so they hit the same iOS 26 crash and we want them logged too.
+// Also capture unhandled Promise rejections via Hermes' tracker.
 const __processHpr = (global as any).HermesInternal?.hasPromise?.()
   ? (global as any).HermesInternal
   : null;
@@ -52,10 +53,14 @@ if (__processHpr) {
   (__processHpr as any).enablePromiseRejectionTracker?.({
     allRejections: true,
     onUnhandled: (id: number, reason: unknown) => {
-      const err = reason as Error & { message?: string; stack?: string };
-      const message = err?.message ?? String(reason);
-      const stack = err?.stack ?? '<no stack>';
-      console.error(`[CSH-JS-REJECT] id=${id} ${message}\n${stack}`);
+      try {
+        const err = reason as Error & { message?: string; stack?: string };
+        const message = err?.message ?? String(reason);
+        const stack = err?.stack ?? '<no stack>';
+        console.log(`[CSH-JS-REJECT] id=${id} ${message}\n${stack}`);
+      } catch {
+        // swallow
+      }
     },
   });
 }
