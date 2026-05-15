@@ -2171,47 +2171,40 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
     loadProviders();
   }, [departmentId]);
 
-  // Flatten all doctors from all departments into a single list.
-  // Providers with clinical data (`hasData`) are sorted first as the active
-  // care team. Providers without data (mentioned in records but with no
-  // encounters/medications/reports) are grouped after them as "Mentioned"
-  // and rendered greyed-out without a navigable detail screen.
+  // Flatten all doctors from all departments into a single list
   const allProviders = React.useMemo(() => {
-    if (fastenProviders.length === 0) return [];
+    // Use Fasten Health providers if available, otherwise use default
+    if (fastenProviders.length > 0) {
+      // Sort by lastVisited in descending order (most recently visited first)
+      const sortedProviders = [...fastenProviders].sort((a, b) => {
+        const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
+        const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
 
-    const sortedProviders = [...fastenProviders].sort((a, b) => {
-      // hasData first (true before false)
-      const dataA = a.hasData !== false ? 1 : 0;
-      const dataB = b.hasData !== false ? 1 : 0;
-      if (dataA !== dataB) return dataB - dataA;
+        // If both have dates, sort by date descending
+        if (dateA > 0 && dateB > 0) {
+          return dateB - dateA; // Descending order (most recent first)
+        }
+        // If only one has a date, prioritize it
+        if (dateA > 0 && dateB === 0) return -1;
+        if (dateB > 0 && dateA === 0) return 1;
 
-      // Then by lastVisited (most recent first)
-      const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
-      const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-      if (dateA > 0 && dateB > 0) return dateB - dateA;
-      if (dateA > 0 && dateB === 0) return -1;
-      if (dateB > 0 && dateA === 0) return 1;
-      return 0;
-    });
+        // If neither has a date, maintain original order
+        return 0;
+      });
 
-    return sortedProviders.map(provider => ({
-      id: provider.id,
-      name: provider.name,
-      qualifications: provider.qualifications || 'Healthcare Provider',
-      specialty: provider.specialty || 'General',
-      image: undefined,
-      iconUrl: provider.iconUrl ?? null,
-      hasData: provider.hasData !== false,
-      recordCount: provider.recordCount ?? 0,
-    }));
+      return sortedProviders.map(provider => ({
+        id: provider.id,
+        name: provider.name,
+        qualifications: provider.qualifications || 'Healthcare Provider',
+        specialty: provider.specialty || 'General',
+        image: undefined,
+        iconUrl: provider.iconUrl ?? null,
+      }));
+    }
+
+    // No providers available
+    return [];
   }, [fastenProviders]);
-
-  // Index where mentioned providers (no clinical data) begin. Used to
-  // insert a section header before the first one. -1 if there are none.
-  const firstMentionedIdx = React.useMemo(
-    () => allProviders.findIndex(p => !p.hasData),
-    [allProviders],
-  );
 
   return (
     <View style={styles.listContainer}>
@@ -2254,98 +2247,56 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
         showsVerticalScrollIndicator={true}
         nestedScrollEnabled={true}
       >
-        {allProviders.map((doc, idx) => (
-          <React.Fragment key={doc.id}>
-            {idx === firstMentionedIdx && (
-              <View
-                style={{
-                  paddingHorizontal: getScaledFontSize(16),
-                  paddingTop: getScaledFontSize(16),
-                  paddingBottom: getScaledFontSize(8),
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    color: colors.text + '80',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  Mentioned in records
-                </Text>
-                <Text
-                  style={{
-                    fontSize: getScaledFontSize(12),
-                    color: colors.text + '60',
-                    marginTop: getScaledFontSize(2),
-                  }}
-                >
-                  Providers without visit history available.
-                </Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={[
-                styles.listItem,
+        {allProviders.map((doc) => (
+          <TouchableOpacity
+            key={doc.id}
+            style={[
+              styles.listItem,
+              {
+                borderBottomColor: colors.text + '20',
+                paddingVertical: getScaledFontSize(16),
+                paddingHorizontal: getScaledFontSize(16),
+              }
+            ]}
+            onPress={() => {
+              const specialty = (doc as any).specialty || '';
+              router.push(`/Home/doctor-detail?id=${encodeURIComponent(doc.id)}&name=${encodeURIComponent(doc.name)}&qualifications=${encodeURIComponent(doc.qualifications || '')}&specialty=${encodeURIComponent(specialty)}`);
+            }}
+            activeOpacity={0.7}
+          >
+            <EntityIcon
+              type="provider"
+              specialty={(doc as any).specialty ?? undefined}
+              imageUrl={doctorPhotos.get(doc.id) ?? null}
+              iconUrl={doc.iconUrl ?? null}
+              name={doc.name ?? 'Provider'}
+              size={getScaledFontSize(56)}
+              style={styles.listAvatar}
+            />
+            <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
+              <Text style={[
+                styles.listItemName,
                 {
-                  borderBottomColor: colors.text + '20',
-                  paddingVertical: getScaledFontSize(16),
-                  paddingHorizontal: getScaledFontSize(16),
-                  opacity: doc.hasData ? 1 : 0.5,
-                },
-              ]}
-              onPress={() => {
-                if (!doc.hasData) return;
-                const specialty = doc.specialty || '';
-                router.push(
-                  `/Home/doctor-detail?id=${encodeURIComponent(doc.id)}&name=${encodeURIComponent(doc.name)}&qualifications=${encodeURIComponent(doc.qualifications || '')}&specialty=${encodeURIComponent(specialty)}`,
-                );
-              }}
-              activeOpacity={doc.hasData ? 0.7 : 1}
-              disabled={!doc.hasData}
-            >
-              <EntityIcon
-                type="provider"
-                specialty={doc.specialty ?? undefined}
-                imageUrl={doctorPhotos.get(doc.id) ?? null}
-                iconUrl={doc.iconUrl ?? null}
-                name={doc.name ?? 'Provider'}
-                size={getScaledFontSize(56)}
-                style={styles.listAvatar}
-              />
-              <View style={[styles.listItemContent, { marginLeft: getScaledFontSize(16) }]}>
-                <Text
-                  style={[
-                    styles.listItemName,
-                    {
-                      fontSize: getScaledFontSize(16),
-                      fontWeight: getScaledFontWeight(600) as any,
-                      color: colors.text,
-                      marginBottom: getScaledFontSize(4),
-                    },
-                  ]}
-                >
-                  {doc.name}
-                </Text>
-                <Text
-                  style={[
-                    styles.listItemRole,
-                    {
-                      fontSize: getScaledFontSize(14),
-                      fontWeight: getScaledFontWeight(400) as any,
-                      color: colors.text + '80',
-                    },
-                  ]}
-                >
-                  {doc.hasData
-                    ? doc.qualifications
-                    : `${doc.qualifications} · no clinical records`}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </React.Fragment>
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  color: colors.text,
+                  marginBottom: getScaledFontSize(4),
+                }
+              ]}>
+                {doc.name}
+              </Text>
+              <Text style={[
+                styles.listItemRole,
+                {
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(400) as any,
+                  color: colors.text + '80',
+                }
+              ]}>
+                {doc.qualifications}
+              </Text>
+            </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     </View>
