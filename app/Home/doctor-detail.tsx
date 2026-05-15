@@ -1262,6 +1262,16 @@ export default function DoctorDetailScreen() {
 
   return (
     <AppWrapper>
+      {/*
+        Portal.Host wrapper — SCRUM-181 fix. The PaperProvider at the root
+        of _layout.tsx normally provides the PortalManager, but on iOS 26
+        the context apparently doesn't propagate to this screen (PortalConsumer's
+        componentDidMount fires before the root PortalHost is reachable, throwing
+        "forgot to wrap your root component with Provider"). Wrapping locally with
+        Portal.Host guarantees the <Portal> below registers with a known host,
+        regardless of upstream context state.
+      */}
+      <Portal.Host>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Doctor Header */}
         <View style={styles.header}>
@@ -1691,6 +1701,7 @@ export default function DoctorDetailScreen() {
         </View>
       </View>
     </RNModal>
+    </Portal.Host>
     </AppWrapper>
   );
 }
