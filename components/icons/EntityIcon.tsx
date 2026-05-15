@@ -7,13 +7,14 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native'
-import { SvgUri } from 'react-native-svg'
+import { SvgUri, SvgXml } from 'react-native-svg'
 import {
   ENTITY_ICON,
   SPECIALTY_ICON,
   type EntityType,
 } from './icon-map'
 import { specialtyToIcon } from '@/utils/specialty-to-icon'
+import { useSpecialtyIcons } from '@/hooks/use-specialty-icons'
 import { Colors } from '@/constants/theme'
 
 /**
@@ -107,6 +108,15 @@ export function EntityIcon({
   React.useEffect(() => { setImageFailed(false) }, [imageUrl])
   React.useEffect(() => { setSvgFailed(false) }, [iconUrl])
 
+  // Backend-served specialty SVG map. Fetched once, cached 1h. We resolve the
+  // specialty string to an icon key (e.g. "Registered Nurse" → "nursing") and
+  // look up inline SVG content. We deliberately use <SvgXml/> here instead of
+  // lucide-react-native because lucide glyphs render as a corrupted "Uni"
+  // placeholder on iOS 26 production builds (see project_app_debugging_playbook.md).
+  const { data: specialtyIcons } = useSpecialtyIcons()
+  const iconKey = specialtyToIcon(specialty)
+  const specialtySvg = iconKey ? specialtyIcons?.[iconKey]?.svg : undefined
+
   if (imageUrl && !imageFailed) {
     // ViewStyle and ImageStyle overlap on the props we care about (size,
     // borderRadius). Cast so callers can pass a single `style` prop without
@@ -155,6 +165,38 @@ export function EntityIcon({
           height={innerPx}
           color={RING_COLOR}
           onError={() => setSvgFailed(true)}
+        />
+      </View>
+    )
+  }
+
+  if (specialtySvg) {
+    const innerPx = Math.round(px * 0.58)
+    return (
+      <View
+        accessibilityRole="image"
+        accessibilityLabel={altOrLabel}
+        testID="entity-icon-root"
+        {...({ 'data-entity-icon': `specialty-svg:${iconKey}` } as Record<string, string>)}
+        style={[
+          {
+            width: px,
+            height: px,
+            borderRadius: px / 2,
+            borderWidth: 1.5,
+            borderColor: RING_COLOR,
+            backgroundColor: 'transparent',
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          style,
+        ]}
+      >
+        <SvgXml
+          xml={specialtySvg}
+          width={innerPx}
+          height={innerPx}
+          color={RING_COLOR}
         />
       </View>
     )
