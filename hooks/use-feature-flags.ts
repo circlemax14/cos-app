@@ -11,7 +11,7 @@ export function useFeatureFlags() {
   return useQuery({
     queryKey: ['feature-flags'],
     queryFn: async () => {
-      const res = await apiClient.get('/feature-flags')
+      const res = await apiClient.get('/v1/feature-flags')
       return res.data.data.flags as FeatureFlags
     },
     staleTime: 10 * 60 * 1000, // cache 10 min — these change rarely

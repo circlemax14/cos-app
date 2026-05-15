@@ -36,7 +36,7 @@ export function useFeaturePermissions() {
   return useQuery({
     queryKey: ['feature-permissions'],
     queryFn: async () => {
-      const res = await apiClient.get('/patients/me/feature-permissions')
+      const res = await apiClient.get('/v1/patients/me/feature-permissions')
       return res.data.data.permissions as Record<Feature, PermissionEntry>
     },
     staleTime: 5 * 60 * 1000,
