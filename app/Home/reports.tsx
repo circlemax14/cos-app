@@ -331,6 +331,9 @@ export default function Reports() {
         findings: selectedReport.findings,
         impression: selectedReport.impression,
         interpretedBy: selectedReport.interpretedBy,
+        performingFacility: selectedReport.performingFacility?.name,
+        accessionNumber: selectedReport.accessionNumber,
+        orderNumber: selectedReport.orderNumber,
       });
       setReportSummary(summary);
     } catch (error) {
