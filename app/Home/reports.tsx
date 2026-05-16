@@ -168,13 +168,21 @@ export default function Reports() {
     [fastenReports],
   );
 
+  // Filter key per report: facility first, fall back to ordering provider.
+  // Users want the filter to surface the labs/imaging centers their reports
+  // came from (LabCorp, Quest, hospital imaging) rather than the same handful
+  // of doctors who ordered the tests — see SCRUM-192.
+  const getReportFilterKey = (report: Report): string | undefined => {
+    const facility = report.performingFacility?.name?.trim();
+    return facility || report.provider || undefined;
+  };
+
   const providers = useMemo(() => {
-    const reportsToUse = fastenReports;
     return Array.from(
       new Set(
-        reportsToUse
-          .map(report => report.provider)
-          .filter((provider): provider is string => Boolean(provider))
+        fastenReports
+          .map(getReportFilterKey)
+          .filter((key): key is string => Boolean(key))
       )
     ).sort();
   }, [fastenReports]);
@@ -257,9 +265,13 @@ export default function Reports() {
       filtered = filtered.filter(report => report.category === categoryName);
     }
 
-    // Filter by selected providers
+    // Filter by selected providers — match against the same facility-first
+    // key used to build the filter list (see getReportFilterKey).
     if (selectedProviders.length > 0) {
-      filtered = filtered.filter(report => selectedProviders.includes(report.provider));
+      filtered = filtered.filter((report) => {
+        const key = getReportFilterKey(report);
+        return key !== undefined && selectedProviders.includes(key);
+      });
     }
 
     // Filter by selected categories
@@ -559,7 +571,7 @@ export default function Reports() {
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {report.provider}
+                      {report.performingFacility?.name?.trim() || report.provider}
                     </Text>
                   </View>
                   <View style={styles.metaItem}>
