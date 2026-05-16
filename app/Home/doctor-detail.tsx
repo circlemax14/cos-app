@@ -8,8 +8,9 @@ import { EntityIcon } from '@/components/icons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviderById, fetchProviders, fetchProviderTreatmentPlans, fetchProviderAppointments, fetchCarePlans, fetchAiInsight } from '@/services/api/providers';
 import { fetchProviderProgressNotesNarrative, type ProviderProgressNotes } from '@/services/api/progress-notes';
+import { fetchReports } from '@/services/api/reports';
 import { inferMedicationStatus } from '@/utils/treatment-status';
-import type { Provider, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, RecommendedAppointment } from '@/services/api/types';
+import type { Provider, ProviderAppointment, CarePlanItem, ProviderTreatmentPlan, RecommendedAppointment, Report } from '@/services/api/types';
 import { groupTreatmentByEncounter } from '@/services/treatment-timeline';
 import { WhatChangedCard } from '@/components/doctor-detail';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
@@ -33,6 +34,13 @@ export default function DoctorDetailScreen() {
   const [aiProgressNotes, setAiProgressNotes] = useState<ProviderProgressNotes | null>(null);
   const [aiProgressLoading, setAiProgressLoading] = useState(false);
   const [aiProgressError, setAiProgressError] = useState<string | null>(null);
+  // Structured DiagnosticReport cards rendered above the AI narrative (SCRUM-187).
+  // Provides users a direct view of the source clinical documents — the AI
+  // summary alone hid date / category / raw conclusion which auditors and
+  // clinically-savvy users explicitly wanted to see.
+  const [providerReports, setProviderReports] = useState<Report[]>([]);
+  const [providerReportsLoading, setProviderReportsLoading] = useState(false);
+  const [expandedReportIds, setExpandedReportIds] = useState<Set<string>>(new Set());
   const [appointments, setAppointments] = useState<ProviderAppointment[]>([]);
   const [carePlans, setCarePlans] = useState<CarePlanItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -166,6 +174,37 @@ export default function DoctorDetailScreen() {
     if (aiProgressNotes || aiProgressLoading) return;
     loadAiProgressNotes();
   }, [providerId, activeTab, aiProgressNotes, aiProgressLoading, loadAiProgressNotes]);
+
+  // Load raw DiagnosticReport cards for the Progress Notes tab. Filter by
+  // performer name OR facility-name substring match against the provider's
+  // name. Same heuristic used by fetchProviderProgressNotes — string match
+  // isn't ideal but is what the dataset supports today.
+  useEffect(() => {
+    if (!providerId || activeTab !== 'progress') return;
+    if (providerReports.length > 0 || providerReportsLoading) return;
+    const targetName = (doctorData?.name ?? providerName ?? '').toLowerCase().trim();
+    if (!targetName) return;
+    setProviderReportsLoading(true);
+    fetchReports()
+      .then((all) => {
+        const filtered = all.filter((r) => {
+          const performer = (r.provider ?? '').toLowerCase();
+          const facility = (r.performingFacility?.name ?? '').toLowerCase();
+          return performer.includes(targetName) || facility.includes(targetName);
+        });
+        setProviderReports(filtered);
+      })
+      .catch(() => setProviderReports([]))
+      .finally(() => setProviderReportsLoading(false));
+  }, [providerId, activeTab, providerReports.length, providerReportsLoading, doctorData?.name, providerName]);
+
+  const toggleReportExpanded = useCallback((id: string) => {
+    setExpandedReportIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const [otherProviders, setOtherProviders] = useState<Provider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
@@ -753,10 +792,91 @@ export default function DoctorDetailScreen() {
   };
 
   // Web parity (cos-frontend ProgressNotesTab): render the AI-generated
-  // narrative from /v1/patients/me/providers/:id/progress-notes.
+  // narrative from /v1/patients/me/providers/:id/progress-notes, preceded
+  // by structured DiagnosticReport cards so users can audit the source
+  // clinical documents (SCRUM-187).
   const renderProgressNotes = () => {
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+        {providerReportsLoading && providerReports.length === 0 ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 4 }}>
+            <ActivityIndicator size="small" color={colors.tint} />
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+              Loading clinical notes…
+            </Text>
+          </View>
+        ) : null}
+
+        {providerReports.map((r) => {
+          const expanded = expandedReportIds.has(r.id);
+          const text = r.impression ?? r.description ?? '';
+          const hasMore = text.length > 200;
+          return (
+            <TouchableOpacity
+              key={r.id}
+              onPress={() => hasMore && toggleReportExpanded(r.id)}
+              activeOpacity={hasMore ? 0.7 : 1}
+              style={{ marginBottom: 10 }}
+            >
+              <Card style={{ backgroundColor: colors.card }}>
+                <Card.Content>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
+                      {r.date || '—'}
+                    </Text>
+                    {r.category ? (
+                      <View
+                        style={{
+                          backgroundColor: colors.tint + '22',
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderRadius: 999,
+                        }}
+                      >
+                        <Text style={{ color: colors.tint, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }}>
+                          {r.category}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {r.status ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
+                        · {r.status}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any, marginBottom: 4 }}>
+                    {r.title}
+                  </Text>
+                  {(r.performingFacility?.name || r.provider) ? (
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginBottom: 6 }}>
+                      {r.performingFacility?.name || r.provider}
+                    </Text>
+                  ) : null}
+                  {text ? (
+                    <Text
+                      style={{ color: colors.text, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(20) }}
+                      numberOfLines={expanded ? undefined : 3}
+                    >
+                      {text}
+                    </Text>
+                  ) : null}
+                  {hasMore ? (
+                    <Text style={{ color: colors.tint, fontSize: getScaledFontSize(11), marginTop: 4 }}>
+                      {expanded ? 'Show less' : 'Show more'}
+                    </Text>
+                  ) : null}
+                </Card.Content>
+              </Card>
+            </TouchableOpacity>
+          );
+        })}
+
+        {!providerReportsLoading && providerReports.length === 0 && providerId ? (
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontStyle: 'italic', marginBottom: 14, paddingHorizontal: 4 }}>
+            No clinical notes from this provider yet.
+          </Text>
+        ) : null}
+
         <Card style={[styles.progressNoteCard, { backgroundColor: colors.card }]}>
           <Card.Content>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -769,7 +889,7 @@ export default function DoctorDetailScreen() {
                   fontWeight: getScaledFontWeight(700) as any,
                 }}
               >
-                AI Progress Notes
+                AI summary
               </Text>
               <TouchableOpacity
                 onPress={() => loadAiProgressNotes(true)}
