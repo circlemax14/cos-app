@@ -21,6 +21,7 @@ import {
   skipTask,
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, TaskOccurrence, TaskType } from '@/services/api/types';
+import { useBadgeNotifier } from '@/hooks/use-badge-notifier';
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {
@@ -52,6 +53,11 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
 export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // Watch the user's badge progress and fire celebration overlays for any
+  // newly-earned ones since last visit. First-install heuristic in the hook
+  // prevents a stack of celebrations on fresh login.
+  useBadgeNotifier();
 
   const [plan, setPlan] = useState<AiHealthPlan | null>(null);
   const [tasks, setTasks] = useState<TaskOccurrence[]>([]);

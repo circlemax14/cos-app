@@ -21,6 +21,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { PaperProvider } from 'react-native-paper';
+import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers } from '@/hooks/use-app-lock';
@@ -73,6 +74,7 @@ function RootLayout() {
             <UserPhotoProvider>
             <PaperProvider>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <BadgeCelebrationProvider>
                 <View style={{ flex: 1 }} {...idleHandlers}>
                 <Stack>
                   <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -118,6 +120,7 @@ function RootLayout() {
                 </Stack>
                 <StatusBar style="auto" />
                 </View>
+                </BadgeCelebrationProvider>
               </ThemeProvider>
             </PaperProvider>
             </UserPhotoProvider>
