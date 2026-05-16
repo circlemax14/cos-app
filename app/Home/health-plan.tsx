@@ -22,6 +22,12 @@ import {
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, TaskOccurrence, TaskType } from '@/services/api/types';
 import { useBadgeNotifier } from '@/hooks/use-badge-notifier';
+import { useQuery } from '@tanstack/react-query';
+import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
+import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
+import { ProgressTab } from '@/components/health-plan/ProgressTab';
+import { AllBadgesModal } from '@/components/health-plan/AllBadgesModal';
+import { Pressable } from 'react-native';
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {
@@ -64,6 +70,48 @@ export default function HealthPlanScreen() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Health Plan v2: Plan / Progress tabs + plan-type chooser
+  const [activeTab, setActiveTab] = useState<'plan' | 'progress'>('plan');
+  const [showAllBadges, setShowAllBadges] = useState(false);
+  const [showChooser, setShowChooser] = useState(false);
+
+  const planTypeQuery = useQuery({
+    queryKey: ['plan-type'],
+    queryFn: fetchPlanType,
+    staleTime: 5 * 60 * 1000,
+  });
+  const currentPlanType: PlanType | undefined = planTypeQuery.data;
+
+  // Surface the chooser on first visit (no record on disk → "first-visit"
+  // is signaled by the chooser session flag below). We mark it shown
+  // exactly once per app launch so users aren't re-prompted by remounts.
+  const promptedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (promptedRef.current) return;
+    if (planTypeQuery.isLoading) return;
+    if (planTypeQuery.data === undefined) return;
+    // Heuristic: backend defaults to 'basic' for users with no stored
+    // choice. We can't distinguish "user explicitly picked basic" from
+    // "user never chose" purely from the response. So we only auto-prompt
+    // when the React Query first lands with a value AND the local
+    // already-prompted flag in AsyncStorage is unset. The hook layer
+    // would be cleaner, but inlining keeps the diff focused.
+    promptedRef.current = true;
+    void (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const KEY = 'health-plan.chooser.acknowledged';
+        const acked = await AsyncStorage.getItem(KEY);
+        if (!acked) {
+          setShowChooser(true);
+          await AsyncStorage.setItem(KEY, '1');
+        }
+      } catch {
+        /* ignore — failing to prompt is preferable to crashing the screen */
+      }
+    })();
+  }, [planTypeQuery.isLoading, planTypeQuery.data]);
 
   const load = useCallback(async () => {
     const [p, t] = await Promise.all([fetchAiHealthPlan(), fetchTasksForDate(todayISO())]);
@@ -235,8 +283,69 @@ export default function HealthPlanScreen() {
     );
   }
 
+  // Stats surfaced to the Progress tab — computed once from existing state
+  const completedToday = tasks.filter((t) => t.status === 'completed').length;
+  const totalToday = tasks.length;
+  const adherencePercent = totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
+
   return (
     <AppWrapper>
+      <PlanTypeChooser
+        visible={showChooser}
+        currentType={currentPlanType}
+        hasAgency
+        onClose={() => setShowChooser(false)}
+      />
+      <AllBadgesModal visible={showAllBadges} onClose={() => setShowAllBadges(false)} />
+
+      {/* Tab bar */}
+      <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
+        {(['plan', 'progress'] as const).map((tab) => {
+          const active = activeTab === tab;
+          return (
+            <Pressable
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              style={[
+                v2Styles.tabItem,
+                active && { borderBottomColor: colors.tint as string },
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text
+                style={{
+                  color: active ? (colors.tint as string) : colors.subtext,
+                  fontWeight: getScaledFontWeight(active ? 700 : 500) as any,
+                  fontSize: getScaledFontSize(14),
+                  textTransform: 'capitalize',
+                }}
+              >
+                {tab}
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Pressable
+          onPress={() => setShowChooser(true)}
+          hitSlop={10}
+          style={v2Styles.changeTypeBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Change plan type"
+        >
+          <MaterialIcons name="tune" size={20} color={colors.subtext} />
+        </Pressable>
+      </View>
+
+      {activeTab === 'progress' ? (
+        <ProgressTab
+          streakDays={0 /* TODO: surface from /v1/.../analytics in a follow-up */}
+          adherencePercent={adherencePercent}
+          completedToday={completedToday}
+          totalToday={totalToday}
+          onOpenAllBadges={() => setShowAllBadges(true)}
+        />
+      ) : (
       <ScrollView
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
@@ -558,9 +667,26 @@ export default function HealthPlanScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }
+
+const v2Styles = StyleSheet.create({
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tabItem: {
+    paddingVertical: 12,
+    marginRight: 24,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  changeTypeBtn: { marginLeft: 'auto', padding: 8 },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
