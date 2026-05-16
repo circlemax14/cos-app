@@ -108,14 +108,24 @@ export function EntityIcon({
   React.useEffect(() => { setImageFailed(false) }, [imageUrl])
   React.useEffect(() => { setSvgFailed(false) }, [iconUrl])
 
-  // Backend-served specialty SVG map. Fetched once, cached 1h. We resolve the
+  // Backend-served specialty icon map. Fetched once, cached 1h. We resolve the
   // specialty string to an icon key (e.g. "Registered Nurse" → "nursing") and
-  // look up inline SVG content. We deliberately use <SvgXml/> here instead of
-  // lucide-react-native because lucide glyphs render as a corrupted "Uni"
-  // placeholder on iOS 26 production builds (see project_app_debugging_playbook.md).
+  // look up the record — which carries *either* inline SVG content *or* an
+  // image URL (set by the admin in the dashboard). SVG path uses <SvgXml/>
+  // (lucide-react-native renders as a corrupted "Uni" placeholder on iOS 26
+  // production builds — see project_app_debugging_playbook.md); image-URL
+  // path uses <Image> just like an entity photo.
   const { data: specialtyIcons } = useSpecialtyIcons()
   const iconKey = specialtyToIcon(specialty)
-  const specialtySvg = iconKey ? specialtyIcons?.[iconKey]?.svg : undefined
+  const specialtyRecord = iconKey ? specialtyIcons?.[iconKey] : undefined
+  const specialtyImageUrl = specialtyRecord?.imageUrl
+  const specialtySvg = specialtyRecord?.svg
+
+  // Independent failure flag for the specialty-image branch so a one-time
+  // load failure doesn't stick across record swaps (e.g. admin replaces the
+  // image URL while the app is running).
+  const [specialtyImageFailed, setSpecialtyImageFailed] = React.useState(false)
+  React.useEffect(() => { setSpecialtyImageFailed(false) }, [specialtyImageUrl])
 
   if (imageUrl && !imageFailed) {
     // ViewStyle and ImageStyle overlap on the props we care about (size,
@@ -165,6 +175,40 @@ export function EntityIcon({
           height={innerPx}
           color={RING_COLOR}
           onError={() => setSvgFailed(true)}
+        />
+      </View>
+    )
+  }
+
+  if (specialtyImageUrl && !specialtyImageFailed) {
+    const innerPx = Math.round(px * 0.66)
+    return (
+      <View
+        accessibilityRole="image"
+        accessibilityLabel={altOrLabel}
+        testID="entity-icon-root"
+        {...({ 'data-entity-icon': `specialty-image:${iconKey}` } as Record<string, string>)}
+        style={[
+          {
+            width: px,
+            height: px,
+            borderRadius: px / 2,
+            borderWidth: 1.5,
+            borderColor: RING_COLOR,
+            backgroundColor: 'transparent',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          },
+          style,
+        ]}
+      >
+        <Image
+          source={{ uri: specialtyImageUrl }}
+          accessibilityLabel={altOrLabel}
+          style={{ width: innerPx, height: innerPx }}
+          resizeMode="contain"
+          onError={() => setSpecialtyImageFailed(true)}
         />
       </View>
     )

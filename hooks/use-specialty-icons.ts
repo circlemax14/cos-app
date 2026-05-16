@@ -11,8 +11,13 @@ import { apiClient } from '@/lib/api-client';
  * returns an empty map and EntityIcon falls back to text initials.
  */
 
+/**
+ * Each specialty record is *either* inline SVG content *or* an image URL —
+ * never both, never neither. EntityIcon picks the render path based on
+ * which field is present.
+ */
 export interface SpecialtyIconMap {
-  [specialty: string]: { svg: string };
+  [specialty: string]: { svg?: string; imageUrl?: string };
 }
 
 export function useSpecialtyIcons() {
