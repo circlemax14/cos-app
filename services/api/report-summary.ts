@@ -10,6 +10,12 @@ export interface ReportSummaryRequest {
   findings?: string;
   impression?: string;
   interpretedBy?: string;
+  /** Performing organization — lab/imaging center name (e.g. "LabCorp"). */
+  performingFacility?: string;
+  /** Filler identifier — lab/imaging center's internal study ID. */
+  accessionNumber?: string;
+  /** Placer identifier — ordering provider's order number. */
+  orderNumber?: string;
 }
 
 export interface ReportSummary {

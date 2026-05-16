@@ -148,6 +148,11 @@ export interface ProviderMedication {
    *  Extracted from FHIR `MedicationRequest.encounter.reference`.
    *  Used by the timeline view to bucket meds by visit. */
   encounterId: string | null;
+  /** Refills remaining (FHIR dispenseRequest.numberOfRepeatsAllowed). */
+  refillsRemaining: number | null;
+  /** Categorization of an inactive med: "completed" (course finished) vs
+   *  a free-text statusReason describing why a provider stopped it. */
+  endedReason: string | null;
 }
 
 /**
@@ -179,12 +184,24 @@ export interface ProgressNote {
   note: string;
 }
 
+/** Normalized status the backend collapses FHIR Encounter.status into. */
+export type AppointmentNormalizedStatus =
+  | 'planned' | 'arrived' | 'in-progress' | 'finished' | 'cancelled';
+
 export interface ProviderAppointment {
   id: string;
   date: string;
   time: string;
   type: string;
   status: 'Confirmed' | 'Pending' | 'Completed';
+  /** Backend-collapsed status (Encounter-only). Drives the chip pill in the UI. */
+  normalizedStatus?: AppointmentNormalizedStatus;
+  /** Minutes between start and end of an Encounter, when both are present. */
+  durationMinutes?: number;
+  /** Visit location (clinic + room when present). */
+  location?: string;
+  /** Why a cancelled encounter was cancelled (FHIR statusReason). */
+  cancelationReason?: string;
   /**
    * Underlying FHIR resource kind. `Encounter` entries support an
    * AI-generated "Explain this visit" narrative pulled from
