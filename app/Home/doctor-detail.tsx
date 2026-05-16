@@ -1172,6 +1172,32 @@ export default function DoctorDetailScreen() {
                       For {m.reason}
                     </Text>
                   )}
+                  {typeof m.refillsRemaining === 'number' && m.refillsRemaining > 0 && (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(400) as any,
+                      }}
+                    >
+                      {m.refillsRemaining} refill{m.refillsRemaining === 1 ? '' : 's'} remaining
+                    </Text>
+                  )}
+                  {m.endedReason && m.endedReason !== 'completed' && (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(400) as any,
+                        fontStyle: 'italic',
+                      }}
+                      numberOfLines={2}
+                    >
+                      Stopped: {m.endedReason}
+                    </Text>
+                  )}
                   {m.authoredOn && (
                     <Text
                       style={{
@@ -1975,7 +2001,7 @@ function AppointmentCard({
               {formatShortDate(appointment.date)}
               {appointment.time ? ` · ${appointment.time}` : ''}
             </Text>
-            {(appointment.clinicName || appointment.encounterClass) && (
+            {(appointment.location || appointment.clinicName || appointment.encounterClass) && (
               <Text
                 style={{
                   color: colors.subtext,
@@ -1983,7 +2009,35 @@ function AppointmentCard({
                   marginTop: 2,
                 }}
               >
-                {[appointment.clinicName, appointment.encounterClass].filter(Boolean).join(' · ')}
+                {[appointment.location || appointment.clinicName, appointment.encounterClass]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Text>
+            )}
+            {typeof appointment.durationMinutes === 'number' && (
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(11),
+                  marginTop: 2,
+                }}
+              >
+                {appointment.durationMinutes < 60
+                  ? `${appointment.durationMinutes} min`
+                  : `${Math.floor(appointment.durationMinutes / 60)}h ${appointment.durationMinutes % 60}m`}
+              </Text>
+            )}
+            {appointment.normalizedStatus === 'cancelled' && appointment.cancelationReason && (
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(11),
+                  marginTop: 2,
+                  fontStyle: 'italic',
+                }}
+                numberOfLines={2}
+              >
+                Cancelled: {appointment.cancelationReason}
               </Text>
             )}
           </View>

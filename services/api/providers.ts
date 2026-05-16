@@ -151,6 +151,13 @@ interface RawMedicationRequest {
   }>;
   reasonCode?: { text?: string; coding?: { display?: string }[] }[];
   reasonReference?: { reference?: string; display?: string }[];
+  /** Why a stopped/cancelled prescription ended (FHIR statusReason). */
+  statusReason?: { text?: string; coding?: { display?: string }[] };
+  /** Dispense instructions — refill count etc. */
+  dispenseRequest?: {
+    numberOfRepeatsAllowed?: number;
+    quantity?: { value?: number; unit?: string };
+  };
 }
 
 const CLINICAL_STATUS_CODES: ClinicalStatus[] = [
@@ -328,16 +335,33 @@ export async function fetchProviderTreatmentPlans(
         isFromProvider(undefined, undefined, m.requester?.reference, providerRef) ||
         (m.encounter?.reference != null && providerEncounterRefs.has(m.encounter.reference)),
     )
-    .map((m) => ({
-      id: m.id,
-      name: medicationName(m),
-      status: m.status ?? 'unknown',
-      dose: formatDose(m),
-      frequency: formatFrequency(m),
-      authoredOn: m.authoredOn ?? null,
-      reason: formatReason(m),
-      encounterId: extractEncounterId(m.encounter?.reference),
-    }));
+    .map((m) => {
+      // Categorize inactive meds for the UI: "completed" when course finished;
+      // statusReason text when provider stopped/cancelled. Active meds get null.
+      const status = m.status ?? 'unknown';
+      let endedReason: string | null = null;
+      if (status === 'completed') {
+        endedReason = 'completed';
+      } else if (status === 'stopped' || status === 'cancelled') {
+        endedReason =
+          m.statusReason?.text?.trim() ||
+          m.statusReason?.coding?.find((c) => c.display)?.display ||
+          'stopped';
+      }
+      const refills = m.dispenseRequest?.numberOfRepeatsAllowed;
+      return {
+        id: m.id,
+        name: medicationName(m),
+        status,
+        dose: formatDose(m),
+        frequency: formatFrequency(m),
+        authoredOn: m.authoredOn ?? null,
+        reason: formatReason(m),
+        encounterId: extractEncounterId(m.encounter?.reference),
+        refillsRemaining: typeof refills === 'number' ? refills : null,
+        endedReason,
+      };
+    });
 
   return { diagnoses, medications: meds };
 }
@@ -414,6 +438,10 @@ export async function fetchProviderAppointments(providerName: string): Promise<P
         encounterClassDisplay?: string;
         notes?: string;
         diagnosis?: string;
+        normalizedStatus?: 'planned' | 'arrived' | 'in-progress' | 'finished' | 'cancelled';
+        durationMinutes?: number;
+        location?: string;
+        cancelationReason?: string;
       }[];
     };
   }>('/v1/patients/me/appointments');
@@ -436,6 +464,10 @@ export async function fetchProviderAppointments(providerName: string): Promise<P
       diagnosis: a.diagnosis,
       clinicName: a.clinicName,
       doctorSpecialty: a.doctorSpecialty,
+      normalizedStatus: a.normalizedStatus,
+      durationMinutes: a.durationMinutes,
+      location: a.location,
+      cancelationReason: a.cancelationReason,
     }));
 }
 
