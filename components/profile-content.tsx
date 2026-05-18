@@ -218,6 +218,15 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            <DrawerRow
+              iconName="emoji-events"
+              label="Badges"
+              onPress={() => router.push('/Home/badges' as never)}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
             {onEmergencyContactPress && (
               <DrawerRow
                 iconName="contact-phone"
