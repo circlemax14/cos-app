@@ -13,12 +13,31 @@ interface PlanTypeChooserProps {
   onClose: () => void
 }
 
+type AssessmentLevel = 'light' | 'standard' | 'clinical'
+
 interface PlanCardSpec {
   type: PlanType
   title: string
   description: string
-  detail: string
+  assessmentLevel: AssessmentLevel
+  features: {
+    assessment: string
+    updates: string
+    support: string
+    bestFor: string
+  }
   icon: keyof typeof MaterialIcons.glyphMap
+}
+
+const ASSESSMENT_COLOR: Record<AssessmentLevel, string> = {
+  light:    '#6B7280',
+  standard: '#5B47CC',
+  clinical: '#0E7490',
+}
+const ASSESSMENT_LABEL: Record<AssessmentLevel, string> = {
+  light:    'Light assessment',
+  standard: 'Standard + EHR assessment',
+  clinical: 'Full clinical assessment',
 }
 
 const PLAN_CARDS: PlanCardSpec[] = [
@@ -26,21 +45,39 @@ const PLAN_CARDS: PlanCardSpec[] = [
     type: 'basic',
     title: 'Basic',
     description: 'A simple, steady plan tailored to your records today.',
-    detail: 'Generated once and stays the same until you ask for an update.',
+    assessmentLevel: 'light',
+    features: {
+      assessment: 'Quick onboarding survey',
+      updates:    'Generated once — stays as-is',
+      support:    'Self-directed',
+      bestFor:    'Stable conditions, self-managed care',
+    },
     icon: 'check-circle-outline',
   },
   {
     type: 'advanced',
     title: 'Advanced',
     description: 'An adaptive plan that updates as your health record changes.',
-    detail: 'AI refines tasks when you add new conditions, meds, or visits. Your care team can adjust too.',
+    assessmentLevel: 'standard',
+    features: {
+      assessment: 'Quick survey + EHR-derived baseline',
+      updates:    'AI auto-updates on new conditions, meds, or labs',
+      support:    'AI + light agency oversight',
+      bestFor:    'Complex care, multiple specialists',
+    },
     icon: 'auto-awesome',
   },
   {
     type: 'agency',
     title: 'Agency-managed',
     description: 'Your care management agency designs and updates your plan.',
-    detail: 'Available when you have an active care management agency.',
+    assessmentLevel: 'clinical',
+    features: {
+      assessment: 'Full clinical assessment by care team',
+      updates:    'Care manager updates anytime',
+      support:    'Full care management',
+      bestFor:    'Patients needing active coordination',
+    },
     icon: 'workspaces',
   },
 ]
@@ -142,14 +179,67 @@ export function PlanTypeChooser({
                     <ActivityIndicator color={colors.tint as string} />
                   ) : null}
                 </View>
-                <Text style={[styles.cardDescription, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+                <View
+                  style={[
+                    styles.assessmentBadge,
+                    { backgroundColor: ASSESSMENT_COLOR[card.assessmentLevel] + '22', borderColor: ASSESSMENT_COLOR[card.assessmentLevel] },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="assignment"
+                    size={12}
+                    color={ASSESSMENT_COLOR[card.assessmentLevel]}
+                  />
+                  <Text
+                    style={{
+                      color: ASSESSMENT_COLOR[card.assessmentLevel],
+                      fontSize: getScaledFontSize(10),
+                      fontWeight: getScaledFontWeight(700) as any,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                      marginLeft: 4,
+                    }}
+                  >
+                    {ASSESSMENT_LABEL[card.assessmentLevel]}
+                  </Text>
+                </View>
+                <Text style={[styles.cardDescription, { color: colors.text, fontSize: getScaledFontSize(14), marginTop: 8 }]}>
                   {card.description}
                 </Text>
-                <Text style={[styles.cardDetail, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-                  {card.detail}
-                </Text>
+
+                <View style={styles.includedList}>
+                  <FeatureRow
+                    icon="health-and-safety"
+                    label="Assessment"
+                    value={card.features.assessment}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                  />
+                  <FeatureRow
+                    icon="autorenew"
+                    label="Updates"
+                    value={card.features.updates}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                  />
+                  <FeatureRow
+                    icon="support-agent"
+                    label="Support"
+                    value={card.features.support}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                  />
+                  <FeatureRow
+                    icon="favorite"
+                    label="Best for"
+                    value={card.features.bestFor}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                  />
+                </View>
+
                 {isAgencyDisabled ? (
-                  <Text style={[styles.cardDetail, { color: '#C0392B', marginTop: 6, fontSize: getScaledFontSize(12) }]}>
+                  <Text style={[styles.cardDetail, { color: '#C0392B', marginTop: 10, fontSize: getScaledFontSize(12) }]}>
                     Connect a care-management agency to enable this plan.
                   </Text>
                 ) : null}
@@ -159,6 +249,47 @@ export function PlanTypeChooser({
         </ScrollView>
       </View>
     </Modal>
+  )
+}
+
+/** Single attribute row inside a plan card: icon + label + value. */
+function FeatureRow({
+  icon,
+  label,
+  value,
+  colors,
+  getScaledFontSize,
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap
+  label: string
+  value: string
+  colors: { text: string; subtext: string; tint: string | undefined }
+  getScaledFontSize: (n: number) => number
+}): React.JSX.Element {
+  return (
+    <View style={styles.featureRow}>
+      <MaterialIcons name={icon} size={16} color={colors.subtext} />
+      <Text
+        style={{
+          width: 92,
+          marginLeft: 8,
+          color: colors.subtext,
+          fontSize: getScaledFontSize(12),
+        }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{
+          flex: 1,
+          color: colors.text,
+          fontSize: getScaledFontSize(12),
+          lineHeight: getScaledFontSize(18),
+        }}
+      >
+        {value}
+      </Text>
+    </View>
   )
 }
 
@@ -183,4 +314,16 @@ const styles = StyleSheet.create({
   cardDetail: { lineHeight: 18 },
   currentPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   currentPillText: { color: '#fff', letterSpacing: 0.5 },
+  assessmentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  includedList: { marginTop: 10, gap: 6 },
+  featureRow: { flexDirection: 'row', alignItems: 'flex-start' },
 })
