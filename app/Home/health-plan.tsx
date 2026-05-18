@@ -554,92 +554,10 @@ export default function HealthPlanScreen() {
           </>
         )}
 
-        {/* Today's tasks */}
-        <View style={styles.secHead}>
-          <Text style={[styles.secLabel, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
-            TODAY
-          </Text>
-          <Text style={[styles.secProgress, { color: colors.tint, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }]}>
-            {completedCount} / {tasks.length} done
-          </Text>
-        </View>
-
-        {tasks.length === 0 ? (
-          <View style={[styles.emptyTasksRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.emptyTasksText, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-              No tasks scheduled for today.
-            </Text>
-          </View>
-        ) : (
-          tasks.map((task) => {
-            const icon = TASK_ICON[task.type];
-            const { time, meridiem } = formatTime(task.scheduledTime);
-            const done = task.status === 'completed';
-            const skipped = task.status === 'skipped';
-            return (
-              <TouchableOpacity
-                key={`${task.id}#${task.scheduledFor}`}
-                activeOpacity={0.7}
-                onLongPress={() => onSkip(task)}
-                onPress={() => toggleTask(task)}
-                style={[
-                  styles.taskRow,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    opacity: done || skipped ? 0.55 : 1,
-                  },
-                ]}>
-                <View
-                  style={[
-                    styles.taskCheck,
-                    {
-                      borderColor: done ? colors.tint : colors.subtext,
-                      backgroundColor: done ? colors.tint : 'transparent',
-                    },
-                  ]}>
-                  {done && <MaterialIcons name="check" size={14} color="#fff" />}
-                  {skipped && <MaterialIcons name="close" size={14} color={colors.subtext} />}
-                </View>
-                <View style={[styles.taskIcon, { backgroundColor: icon.bg }]}>
-                  <MaterialIcons name={icon.name} size={18} color={icon.color} />
-                </View>
-                <View style={styles.taskBody}>
-                  <Text
-                    style={[
-                      styles.taskTitle,
-                      {
-                        color: colors.text,
-                        fontSize: getScaledFontSize(14),
-                        fontWeight: getScaledFontWeight(600) as any,
-                        textDecorationLine: done ? 'line-through' : 'none',
-                      },
-                    ]}
-                    numberOfLines={1}>
-                    {task.title}
-                  </Text>
-                  {!!task.description && (
-                    <Text style={[styles.taskSub, { color: colors.subtext, fontSize: getScaledFontSize(12) }]} numberOfLines={1}>
-                      {task.description}
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.taskTime}>
-                  <Text style={[styles.taskTimeVal, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}>
-                    {time}
-                  </Text>
-                  <Text style={[styles.taskTimeMeridiem, { color: colors.subtext, fontSize: getScaledFontSize(10) }]}>
-                    {meridiem}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-
-        <Text style={[styles.hint, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>
-          Tap a task to complete · Long-press to skip
-        </Text>
+        {/* Today's task list is intentionally NOT rendered here — it lives on
+            the Today's Schedule screen. Showing it twice was the stakeholder
+            complaint (2026-05-18). The progress-bar card above still shows
+            today's completion ratio at a glance. */}
 
         {/* Full plan — all tasks grouped by type */}
         {plan.tasks.length > 0 && (
