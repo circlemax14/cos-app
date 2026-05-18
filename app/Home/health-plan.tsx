@@ -43,6 +43,17 @@ function formatTime(hhmm: string): { time: string; meridiem: string } {
   return { time: `${display}:${m}`, meridiem };
 }
 
+/** User-friendly label for a plan type. Undefined → "Basic" so the pill
+ *  never shows blank during the initial query load. */
+function planTypeLabel(t: PlanType | undefined): string {
+  switch (t) {
+    case 'advanced': return 'Advanced';
+    case 'agency':   return 'Agency';
+    case 'basic':
+    default:         return 'Basic';
+  }
+}
+
 const TASK_ICON: Record<TaskType, { name: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }> = {
   medication: { name: 'medication', color: '#8B5CF6', bg: 'rgba(139,92,246,0.12)' },
   exercise: { name: 'directions-walk', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
@@ -328,12 +339,41 @@ export default function HealthPlanScreen() {
         })}
         <Pressable
           onPress={() => setShowChooser(true)}
-          hitSlop={10}
-          style={v2Styles.changeTypeBtn}
+          hitSlop={8}
+          style={[v2Styles.planTypePill, { borderColor: colors.tint as string }]}
           accessibilityRole="button"
-          accessibilityLabel="Change plan type"
+          accessibilityLabel={`Plan type: ${currentPlanType ?? 'Basic'}. Tap to change.`}
         >
-          <MaterialIcons name="tune" size={20} color={colors.subtext} />
+          <Text
+            style={{
+              color: colors.tint as string,
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as any,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            Plan
+          </Text>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(13),
+              fontWeight: getScaledFontWeight(700) as any,
+              textTransform: 'capitalize',
+              marginLeft: 6,
+              maxWidth: 100,
+            }}
+            numberOfLines={1}
+          >
+            {planTypeLabel(currentPlanType)}
+          </Text>
+          <MaterialIcons
+            name="edit"
+            size={14}
+            color={colors.subtext}
+            style={{ marginLeft: 6 }}
+          />
         </Pressable>
       </View>
 
@@ -685,7 +725,15 @@ const v2Styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  changeTypeBtn: { marginLeft: 'auto', padding: 8 },
+  planTypePill: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
 });
 
 const styles = StyleSheet.create({
