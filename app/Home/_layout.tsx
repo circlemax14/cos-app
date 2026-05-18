@@ -255,6 +255,14 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="reminder-settings"
+        options={{
+          title: 'Reminders',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );
