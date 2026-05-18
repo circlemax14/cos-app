@@ -4,6 +4,8 @@ import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useQuery } from '@tanstack/react-query'
 import { fetchBadgeProgress, type EarnedBadge, type BadgeTier } from '@/services/api/badges'
+import { fetchProgressSummary, type ProgressSummary } from '@/services/api/progress-summary'
+import { ActivityIndicator } from 'react-native'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 
@@ -67,6 +69,23 @@ export function ProgressTab({
     staleTime: 60_000,
   })
 
+  // AI qualitative narrative — companion to the quantitative stats below.
+  // Server caches for 1h per user; calling fetchProgressSummary(true) bypasses.
+  const summaryQuery = useQuery<ProgressSummary>({
+    queryKey: ['progress-summary'],
+    queryFn: () => fetchProgressSummary(false),
+    staleTime: 60 * 60 * 1000,
+  })
+  const refreshSummary = React.useCallback(() => {
+    void fetchProgressSummary(true).then((fresh) => {
+      summaryQuery.refetch()
+      // Optimistic update so the UI snaps to fresh immediately while
+      // React Query's own refetch lands; harmless if refetch returns
+      // identical data.
+      void fresh
+    })
+  }, [summaryQuery])
+
   const tierOrder: Record<BadgeTier, number> = { gold: 0, silver: 1, bronze: 2 }
   const topBadges: EarnedBadge[] = React.useMemo(() => {
     const earned = badgesQuery.data?.earned ?? []
@@ -112,6 +131,75 @@ export function ProgressTab({
           )
         })}
       </ScrollView>
+
+      {/* AI qualitative summary (SCRUM-206) — sits above the numeric stats
+       *  because the stakeholder feedback prioritized narrative-first reading. */}
+      <Card style={[styles.summaryCard, { backgroundColor: colors.card }]}>
+        <Card.Content>
+          <View style={styles.summaryHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+              <MaterialIcons name="auto-awesome" size={getScaledFontSize(16)} color={colors.tint as string} />
+              <Text
+                style={{
+                  color: colors.tint as string,
+                  fontSize: getScaledFontSize(11),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}
+              >
+                AI summary
+              </Text>
+            </View>
+            <Pressable
+              onPress={refreshSummary}
+              disabled={summaryQuery.isFetching}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh AI summary"
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              {summaryQuery.isFetching ? (
+                <ActivityIndicator size="small" color={colors.tint as string} />
+              ) : (
+                <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={colors.subtext} />
+              )}
+            </Pressable>
+          </View>
+          {summaryQuery.isLoading && !summaryQuery.data ? (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), paddingVertical: 6 }}>
+              Generating your summary…
+            </Text>
+          ) : summaryQuery.error ? (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), paddingVertical: 6 }}>
+              Couldn&apos;t load the summary. Tap refresh to try again.
+            </Text>
+          ) : (
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(14),
+                lineHeight: getScaledFontSize(22),
+                marginTop: 8,
+              }}
+            >
+              {summaryQuery.data?.summary}
+            </Text>
+          )}
+          {summaryQuery.data ? (
+            <Text
+              style={{
+                marginTop: 8,
+                color: colors.subtext,
+                fontSize: getScaledFontSize(11),
+              }}
+            >
+              Generated {new Date(summaryQuery.data.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              {summaryQuery.data.fromCache ? ' · cached' : ''}
+            </Text>
+          ) : null}
+        </Card.Content>
+      </Card>
 
       {/* Stats card */}
       <Card style={[styles.statsCard, { backgroundColor: colors.card }]}>
@@ -282,6 +370,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statsCard: { marginTop: 12 },
+  summaryCard: { marginTop: 12 },
+  summaryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   statRow: { flexDirection: 'row', justifyContent: 'space-between' },
   statBlock: { alignItems: 'center', flex: 1 },
   sectionHeader: {
