@@ -247,6 +247,14 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="badges"
+        options={{
+          title: 'Badges',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );
