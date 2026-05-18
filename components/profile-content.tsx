@@ -227,6 +227,15 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            <DrawerRow
+              iconName="notifications-active"
+              label="Reminders"
+              onPress={() => router.push('/Home/reminder-settings' as never)}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
             {onEmergencyContactPress && (
               <DrawerRow
                 iconName="contact-phone"
