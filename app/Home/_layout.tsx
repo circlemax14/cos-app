@@ -263,6 +263,14 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="assessment-intake"
+        options={{
+          title: 'Health check-in',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );

@@ -236,6 +236,15 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            <DrawerRow
+              iconName="assignment"
+              label="Health check-in"
+              onPress={() => router.push('/Home/assessment-intake' as never)}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
             {onEmergencyContactPress && (
               <DrawerRow
                 iconName="contact-phone"
