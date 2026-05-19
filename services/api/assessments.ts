@@ -1,10 +1,21 @@
 import { apiClient } from '@/lib/api-client'
 
+/**
+ * Known instrument IDs. The list is informational only — the backend
+ * is the source of truth and validates against `INSTRUMENT_IDS`
+ * server-side, and agency-authored instruments can have arbitrary IDs.
+ * Callers may pass any string; this union just powers autocomplete for
+ * common system instruments.
+ */
 export type InstrumentId =
   | 'phq-2' | 'phq-9' | 'gad-7'
   | 'adl' | 'iadl'
   | 'lifestyle' | 'goals' | 'wellbeing' | 'sleep' | 'pain'
   | 'moca-xpresso'
+  | 'wellbeing-5' | 'alcohol-3' | 'loneliness-3'
+  | 'sleep-4' | 'pain-4' | 'physical-function-4'
+  | 'falls-12' | 'nutrition-5' | 'cognition-8'
+  | (string & {})
 
 export type AssessmentSource = 'self' | 'care-manager' | 'ehr-pre-fill'
 
