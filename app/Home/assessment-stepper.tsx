@@ -1,6 +1,7 @@
 import React from 'react'
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
@@ -20,6 +22,42 @@ import {
   type InstrumentItem,
 } from '@/services/api/instruments'
 import { submitAssessment } from '@/services/api/assessments'
+
+const DRAFT_KEY_PREFIX = 'assessment-draft:'
+interface Draft {
+  stepIdx: number
+  answers: Record<string, unknown>
+}
+
+async function loadDraft(instrumentId: string): Promise<Draft | null> {
+  try {
+    const raw = await AsyncStorage.getItem(DRAFT_KEY_PREFIX + instrumentId)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Draft
+    if (typeof parsed.stepIdx === 'number' && parsed.answers && typeof parsed.answers === 'object') {
+      return parsed
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function saveDraft(instrumentId: string, draft: Draft): Promise<void> {
+  try {
+    await AsyncStorage.setItem(DRAFT_KEY_PREFIX + instrumentId, JSON.stringify(draft))
+  } catch {
+    /* ignore — draft is best-effort */
+  }
+}
+
+async function clearDraft(instrumentId: string): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(DRAFT_KEY_PREFIX + instrumentId)
+  } catch {
+    /* ignore */
+  }
+}
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
@@ -53,10 +91,42 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
 
   const [answers, setAnswers] = React.useState<Record<string, unknown>>({})
   const [stepIdx, setStepIdx] = React.useState(0)
+  const [draftLoaded, setDraftLoaded] = React.useState(false)
+
+  // Restore in-progress draft (SCRUM-227). User can cancel mid-flow and
+  // resume without losing answers. Draft is cleared on successful submit.
+  React.useEffect(() => {
+    if (!instrumentId) {
+      setDraftLoaded(true)
+      return
+    }
+    let cancelled = false
+    void loadDraft(instrumentId).then((d) => {
+      if (cancelled) return
+      if (d) {
+        setAnswers(d.answers)
+        setStepIdx(d.stepIdx)
+      }
+      setDraftLoaded(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [instrumentId])
+
+  // Persist draft as the user advances or edits. Debounce-by-effect:
+  // the next change triggers another save, so worst-case the user can
+  // lose one tap if they kill the app instantly. Acceptable for v1.
+  React.useEffect(() => {
+    if (!instrumentId || !draftLoaded) return
+    if (Object.keys(answers).length === 0 && stepIdx === 0) return
+    void saveDraft(instrumentId, { stepIdx, answers })
+  }, [instrumentId, stepIdx, answers, draftLoaded])
 
   const submit = useMutation({
     mutationFn: () => submitAssessment(instrumentId, answers),
     onSuccess: () => {
+      void clearDraft(instrumentId)
       queryClient.invalidateQueries({ queryKey: ['assessments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
       router.replace('/Home/assessments-catalog' as never)
@@ -147,7 +217,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
           Question {stepIdx + 1} of {total}
         </Text>
 
-        <View style={[styles.questionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.questionCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
           <Text
             style={{
               color: colors.text,
@@ -218,6 +288,79 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   )
 }
 
+/**
+ * Tap-bounce + color transition on each option row. Gives the user a
+ * crisp confirmation that their tap registered. Pure RN Animated —
+ * no extra deps.
+ */
+function AnimatedOptionRow({
+  label,
+  iconActive,
+  iconInactive,
+  active,
+  onPress,
+  accessibilityRole,
+  colors,
+  fontSize,
+  fontWeight,
+}: {
+  label: string
+  iconActive: keyof typeof MaterialIcons.glyphMap
+  iconInactive: keyof typeof MaterialIcons.glyphMap
+  active: boolean
+  onPress: () => void
+  accessibilityRole: 'radio' | 'checkbox'
+  colors: Palette
+  fontSize: (n: number) => number
+  fontWeight: (n: number) => number | string
+}): React.JSX.Element {
+  const scale = React.useRef(new Animated.Value(1)).current
+
+  const tap = () => {
+    onPress()
+    // Bounce: shrink then spring back. Tuned to feel responsive but
+    // never block the underlying state change.
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.96, duration: 80, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: true }),
+    ]).start()
+  }
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        onPress={tap}
+        accessibilityRole={accessibilityRole}
+        accessibilityState={accessibilityRole === 'radio' ? { selected: active } : { checked: active }}
+        style={[
+          styles.optionRow,
+          {
+            backgroundColor: active ? (colors.tint as string) : (colors.card as string) + 'CC',
+            borderColor: active ? (colors.tint as string) : colors.border,
+          },
+        ]}
+      >
+        <MaterialIcons
+          name={active ? iconActive : iconInactive}
+          size={fontSize(20)}
+          color={active ? '#fff' : colors.subtext}
+        />
+        <Text
+          style={{
+            marginLeft: 10,
+            color: active ? '#fff' : colors.text,
+            fontSize: fontSize(14),
+            fontWeight: fontWeight(active ? 600 : 500) as any,
+            flex: 1,
+          }}
+        >
+          {label}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  )
+}
+
 function ProgressBar({
   current,
   total,
@@ -258,41 +401,20 @@ function ItemControl({
   if ((item.kind === 'likert' || item.kind === 'choice') && Array.isArray(item.options)) {
     return (
       <View style={{ gap: 8 }}>
-        {item.options.map((opt) => {
-          const active = value === opt.value
-          return (
-            <Pressable
-              key={String(opt.value)}
-              onPress={() => onChange(opt.value)}
-              style={[
-                styles.optionRow,
-                {
-                  backgroundColor: active ? (colors.tint as string) : 'transparent',
-                  borderColor: active ? (colors.tint as string) : colors.border,
-                },
-              ]}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: active }}
-            >
-              <MaterialIcons
-                name={active ? 'radio-button-checked' : 'radio-button-unchecked'}
-                size={fontSize(20)}
-                color={active ? '#fff' : colors.subtext}
-              />
-              <Text
-                style={{
-                  marginLeft: 10,
-                  color: active ? '#fff' : colors.text,
-                  fontSize: fontSize(14),
-                  fontWeight: fontWeight(active ? 600 : 500) as any,
-                  flex: 1,
-                }}
-              >
-                {opt.label}
-              </Text>
-            </Pressable>
-          )
-        })}
+        {item.options.map((opt) => (
+          <AnimatedOptionRow
+            key={String(opt.value)}
+            label={opt.label}
+            iconActive="radio-button-checked"
+            iconInactive="radio-button-unchecked"
+            active={value === opt.value}
+            onPress={() => onChange(opt.value)}
+            accessibilityRole="radio"
+            colors={colors}
+            fontSize={fontSize}
+            fontWeight={fontWeight}
+          />
+        ))}
       </View>
     )
   }
@@ -303,38 +425,20 @@ function ItemControl({
         {item.options.map((opt) => {
           const active = selected.includes(opt.value)
           return (
-            <Pressable
+            <AnimatedOptionRow
               key={String(opt.value)}
+              label={opt.label}
+              iconActive="check-box"
+              iconInactive="check-box-outline-blank"
+              active={active}
               onPress={() =>
                 onChange(active ? selected.filter((v) => v !== opt.value) : [...selected, opt.value])
               }
-              style={[
-                styles.optionRow,
-                {
-                  backgroundColor: active ? (colors.tint as string) : 'transparent',
-                  borderColor: active ? (colors.tint as string) : colors.border,
-                },
-              ]}
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: active }}
-            >
-              <MaterialIcons
-                name={active ? 'check-box' : 'check-box-outline-blank'}
-                size={fontSize(20)}
-                color={active ? '#fff' : colors.subtext}
-              />
-              <Text
-                style={{
-                  marginLeft: 10,
-                  color: active ? '#fff' : colors.text,
-                  fontSize: fontSize(14),
-                  fontWeight: fontWeight(active ? 600 : 500) as any,
-                  flex: 1,
-                }}
-              >
-                {opt.label}
-              </Text>
-            </Pressable>
+              colors={colors}
+              fontSize={fontSize}
+              fontWeight={fontWeight}
+            />
           )
         })}
       </View>

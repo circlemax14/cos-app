@@ -37,6 +37,30 @@ const ORDER: readonly string[] = [
   'cognition-8',
 ]
 
+// Per-instrument MaterialIcons (and a sensible accent color) so each
+// catalog card reads at a glance. Anything not in the map falls back
+// to a generic 'assignment' icon + the screen's tint colour.
+const ICON_BY_ID: Record<string, { name: keyof typeof MaterialIcons.glyphMap; color: string }> = {
+  'wellbeing-5':         { name: 'sentiment-satisfied', color: '#10B981' },
+  'phq-2':               { name: 'psychology',          color: '#6366F1' },
+  'phq-9':               { name: 'psychology',          color: '#6366F1' },
+  'gad-7':               { name: 'spa',                 color: '#8B5CF6' },
+  'sleep-4':             { name: 'bedtime',             color: '#0EA5E9' },
+  'pain-4':              { name: 'healing',             color: '#EF4444' },
+  'loneliness-3':        { name: 'groups',              color: '#F59E0B' },
+  'alcohol-3':           { name: 'local-bar',           color: '#A855F7' },
+  'physical-function-4': { name: 'directions-run',      color: '#22C55E' },
+  'adl':                 { name: 'accessible',          color: '#0891B2' },
+  'iadl':                { name: 'home',                color: '#0D9488' },
+  'falls-12':            { name: 'warning-amber',       color: '#F97316' },
+  'nutrition-5':         { name: 'restaurant',          color: '#84CC16' },
+  'cognition-8':         { name: 'memory',              color: '#DB2777' },
+}
+
+function iconFor(id: string, tint: string): { name: keyof typeof MaterialIcons.glyphMap; color: string } {
+  return ICON_BY_ID[id] ?? { name: 'assignment', color: tint }
+}
+
 // User can build their AI plan once at least this many DB instruments
 // are complete. Picked to be permissive — the AI generator does its
 // best with whatever it gets and getting started early is the goal.
@@ -249,6 +273,7 @@ function CatalogRow({
 }) {
   const status = statusFor(record)
   const ownerLabel = item.ownerType === 'system' ? 'System' : 'Your agency'
+  const icon = iconFor(item.instrumentId, colors.tint as string)
 
   return (
     <Pressable
@@ -263,12 +288,16 @@ function CatalogRow({
       style={({ pressed }) => [
         styles.row,
         {
-          backgroundColor: colors.card,
+          // Translucent card — bubble effect over the screen background.
+          backgroundColor: (colors.card as string) + 'D9',
           borderColor: colors.border,
           opacity: pressed ? 0.85 : 1,
         },
       ]}
     >
+      <View style={[styles.iconBubble, { backgroundColor: icon.color + '22', borderColor: icon.color + '55' }]}>
+        <MaterialIcons name={icon.name} size={fontSize(22)} color={icon.color} />
+      </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.rowHeader}>
           <Text
@@ -363,9 +392,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
     marginBottom: 10,
+  },
+  iconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   rowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statusBadge: {
