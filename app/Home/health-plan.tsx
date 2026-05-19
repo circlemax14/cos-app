@@ -407,7 +407,7 @@ export default function HealthPlanScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
         {needsAssessment ? (
           <Pressable
-            onPress={() => router.push('/Home/assessment-intake?source=plan-upgrade' as never)}
+            onPress={() => router.push('/Home/assessments-catalog?source=plan-upgrade' as never)}
             accessibilityRole="button"
             accessibilityLabel="Complete your health check-in"
             style={[v2Styles.assessmentBanner, { backgroundColor: (colors.tint as string) + '14', borderColor: colors.tint as string }]}
