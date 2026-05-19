@@ -20,6 +20,7 @@ import {
   submitAssessment,
   type PrefillSummary,
 } from '@/services/api/assessments'
+import { usePlanType, meetsTier } from '@/hooks/use-plan-type'
 
 // PHQ-2 has 2 items, each 0-3. Sum ≥3 triggers PHQ-9.
 const PHQ2_ITEMS = [
@@ -76,9 +77,16 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
 
+  // Plan-tier gate — basic users land on the upgrade prompt instead of
+  // the form. Backend also returns 403 on the prefill / submit endpoints,
+  // so this is purely a UX layer.
+  const { planType, isLoading: planLoading } = usePlanType()
+  const canAccessAssessments = meetsTier(planType, 'advanced')
+
   const prefillQuery = useQuery({
     queryKey: ['assessment-prefill'],
     queryFn: fetchAssessmentPrefill,
+    enabled: canAccessAssessments,
   })
 
   // Local UI state per section
@@ -120,6 +128,48 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
     phqAnswers.length === phqItems.length &&
     phqAnswers.every((v) => v !== undefined) &&
     goals.length > 0
+
+  if (planLoading) {
+    return (
+      <AppWrapper>
+        <View style={[styles.completeWrap, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint as string} />
+        </View>
+      </AppWrapper>
+    )
+  }
+
+  if (!canAccessAssessments) {
+    return (
+      <AppWrapper>
+        <View style={[styles.completeWrap, { backgroundColor: colors.background }]}>
+          <MaterialIcons name="lock-outline" size={getScaledFontSize(56)} color={colors.tint as string} />
+          <Text style={[styles.completeTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as any }]}>
+            Health check-ins are an Advanced feature
+          </Text>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'center', marginTop: 8, paddingHorizontal: 24 }}>
+            Upgrade to the Advanced plan to access guided check-ins, AI-personalized plans, and care-team insights.
+          </Text>
+          <Pressable
+            onPress={() => router.replace('/Home/health-plan' as never)}
+            style={[styles.doneBtn, { backgroundColor: colors.tint as string }]}
+            accessibilityRole="button"
+            accessibilityLabel="View plans"
+          >
+            <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>View plans</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.back()}
+            style={{ marginTop: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>Back</Text>
+          </Pressable>
+        </View>
+      </AppWrapper>
+    )
+  }
 
   if (submitted) {
     return (
