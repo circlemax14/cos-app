@@ -1,6 +1,7 @@
 import React from 'react'
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -11,7 +12,11 @@ import { router } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
-import { fetchInstruments, type InstrumentSummary } from '@/services/api/instruments'
+import {
+  fetchInstruments,
+  fetchRecommendedInstruments,
+  type InstrumentSummary,
+} from '@/services/api/instruments'
 import { fetchAssessments, type AssessmentRecord } from '@/services/api/assessments'
 import { generateAiHealthPlan } from '@/services/api/ai-health-plan'
 
@@ -76,9 +81,22 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
 
+  // SCRUM-231: prefer the AI-recommended subset (per-patient) over the
+  // raw list. Backend already falls back to the full set on any AI
+  // failure, so this is a soft swap — the client always gets useful
+  // data. We additionally have our own client-side fallback to
+  // fetchInstruments if the /recommended call fails outright (network
+  // error, route 404, etc.).
   const instrumentsQuery = useQuery({
-    queryKey: ['instruments'],
-    queryFn: fetchInstruments,
+    queryKey: ['instruments-recommended'],
+    queryFn: async () => {
+      try {
+        return await fetchRecommendedInstruments()
+      } catch {
+        const fallback = await fetchInstruments()
+        return { instruments: fallback, rationale: {}, cached: false }
+      }
+    },
     staleTime: 5 * 60 * 1000,
   })
   const assessmentsQuery = useQuery({
@@ -108,16 +126,29 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
     (typeof phq2?.responses?.q2 === 'number' ? phq2.responses.q2 : 0)
   const phq9Eligible = phq2Sum >= 3
 
+  const rationaleById = instrumentsQuery.data?.rationale ?? {}
+
   const visible = React.useMemo<InstrumentSummary[]>(() => {
-    const all = instrumentsQuery.data ?? []
+    const all = instrumentsQuery.data?.instruments ?? []
     const byId = new Map(all.map((it) => [it.instrumentId, it]))
     const ordered: InstrumentSummary[] = []
+    // The backend returns AI-ordered ids; preserve that ordering by
+    // iterating `all` first, then applying client-side skip-logic for
+    // PHQ-9. ORDER is no longer the primary sort — it's a backstop for
+    // ids the AI didn't include but that still exist (e.g. agency
+    // additions that weren't in the recommendation context).
+    for (const it of all) {
+      if (it.instrumentId === 'phq-9' && !phq9Eligible) continue
+      ordered.push(it)
+    }
+    // Any in-order ids we haven't already shown — keep them visible
+    // so users with no AI recommendation still get the full library.
     for (const id of ORDER) {
       if (id === 'phq-9' && !phq9Eligible) continue
-      const found = byId.get(id)
-      if (found) ordered.push(found)
+      if (!byId.has(id)) continue
+      if (ordered.find((o) => o.instrumentId === id)) continue
+      ordered.push(byId.get(id) as InstrumentSummary)
     }
-    for (const it of all) if (!ORDER.includes(it.instrumentId)) ordered.push(it)
     return ordered
   }, [instrumentsQuery.data, phq9Eligible])
 
@@ -165,6 +196,7 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
             key={it.id}
             item={it}
             record={completedById.get(it.instrumentId)}
+            rationale={rationaleById[it.instrumentId]}
             colors={colors}
             fontSize={getScaledFontSize}
             fontWeight={getScaledFontWeight}
@@ -215,18 +247,22 @@ function statusFor(record: AssessmentRecord | undefined): { label: string; color
 function CatalogCard({
   item,
   record,
+  rationale,
   colors,
   fontSize,
   fontWeight,
 }: {
   item: InstrumentSummary
   record: AssessmentRecord | undefined
+  /** AI-generated reason this check-in was recommended for this user (SCRUM-231). */
+  rationale: string | undefined
   colors: Palette
   fontSize: (n: number) => number
   fontWeight: (n: number) => number | string
 }) {
   const status = statusFor(record)
   const icon = iconFor(item.instrumentId, colors.tint as string)
+  const [showRationale, setShowRationale] = React.useState(false)
 
   return (
     <Pressable
@@ -247,6 +283,20 @@ function CatalogCard({
         },
       ]}
     >
+      {rationale ? (
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation?.()
+            setShowRationale(true)
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Why this check-in was recommended"
+          style={styles.infoBtn}
+        >
+          <MaterialIcons name="info-outline" size={fontSize(16)} color={colors.subtext} />
+        </Pressable>
+      ) : null}
       <View style={[styles.iconBubble, { backgroundColor: icon.color + '22', borderColor: icon.color + '55' }]}>
         <MaterialIcons name={icon.name} size={fontSize(28)} color={icon.color} />
       </View>
@@ -277,6 +327,45 @@ function CatalogCard({
           {status.label}
         </Text>
       </View>
+
+      <Modal
+        visible={showRationale}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRationale(false)}
+      >
+        <Pressable
+          onPress={() => setShowRationale(false)}
+          style={styles.rationaleBackdrop}
+        >
+          <Pressable
+            onPress={() => { /* swallow taps on the sheet itself */ }}
+            style={[styles.rationaleSheet, { backgroundColor: (colors.card as string) + 'F2', borderColor: colors.border }]}
+          >
+            <View style={[styles.iconBubble, { backgroundColor: icon.color + '22', borderColor: icon.color + '55', alignSelf: 'center' }]}>
+              <MaterialIcons name={icon.name} size={fontSize(28)} color={icon.color} />
+            </View>
+            <Text style={{ color: colors.text, fontSize: fontSize(16), fontWeight: fontWeight(700) as any, textAlign: 'center', marginTop: 12 }}>
+              {item.name}
+            </Text>
+            <Text style={{ color: colors.subtext, fontSize: fontSize(11), letterSpacing: 1, textAlign: 'center', marginTop: 6, textTransform: 'uppercase' }}>
+              Why this check-in
+            </Text>
+            <Text style={{ color: colors.text, fontSize: fontSize(14), lineHeight: 20, textAlign: 'center', marginTop: 12 }}>
+              {rationale}
+            </Text>
+            <Pressable
+              onPress={() => setShowRationale(false)}
+              style={[styles.rationaleClose, { backgroundColor: colors.tint as string }]}
+              accessibilityRole="button"
+            >
+              <Text style={{ color: '#fff', fontSize: fontSize(14), fontWeight: fontWeight(700) as any }}>
+                Got it
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Pressable>
   )
 }
@@ -330,6 +419,36 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingVertical: 14,
     borderRadius: 12,
+    alignItems: 'center',
+  },
+  infoBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rationaleBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  rationaleSheet: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 20,
+  },
+  rationaleClose: {
+    marginTop: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
     alignItems: 'center',
   },
 })
