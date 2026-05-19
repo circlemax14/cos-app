@@ -271,6 +271,22 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="assessments-catalog"
+        options={{
+          title: 'Health check-ins',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="assessment-stepper"
+        options={{
+          title: 'Check-in',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );

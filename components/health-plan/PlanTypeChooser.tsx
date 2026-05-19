@@ -101,26 +101,44 @@ export function PlanTypeChooser({
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
+  // Two-step confirm: tap a card → show consent modal → user acknowledges →
+  // we send `consent: { acknowledged: true }` with the API call (SCRUM-224).
+  const [pendingType, setPendingType] = React.useState<PlanType | null>(null)
+  const [consentAck, setConsentAck] = React.useState(false)
 
   const mutation = useMutation({
-    mutationFn: (type: PlanType) => updatePlanType(type),
+    mutationFn: (type: PlanType) =>
+      updatePlanType(type, { consent: { acknowledged: true, consentVersion: 'v1' } }),
     onSuccess: (_record, type) => {
       queryClient.invalidateQueries({ queryKey: ['plan-type'] })
+      setPendingType(null)
+      setConsentAck(false)
       onClose()
-      // Advanced + Agency choices kick off the assessment that personalizes
-      // the AI care plan. Basic stays as-is — no assessment required.
+      // Advanced + Agency open the assessment catalog so users can pick
+      // which check-ins to take. Basic stays as-is.
       if (type === 'advanced' || type === 'agency') {
-        router.push('/Home/assessment-intake?source=plan-upgrade' as never)
+        router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
       }
     },
     onError: (err: Error & { code?: string }) => {
       if (err.code === 'NO_AGENCY') {
         setErrorMsg('Agency plan requires an active care-management agency. Connect one in settings first.')
+      } else if (err.code === 'CONSENT_REQUIRED') {
+        setErrorMsg('Please acknowledge consent to switch your plan.')
       } else {
         setErrorMsg(err.message || 'Unable to update plan type. Try again.')
       }
     },
   })
+
+  const consentCopyForType: Record<PlanType, string> = {
+    basic:
+      'Your plan will be generated once from your existing records. No new health data is collected.',
+    advanced:
+      'We’ll ask you a series of short health check-ins. Your answers are stored in your account and used to personalize your AI plan. You can retake or update them any time.',
+    agency:
+      'Your linked care management agency can see your check-in results and tailor your plan. Your responses are stored in your account and shared with them.',
+  }
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -152,7 +170,13 @@ export function PlanTypeChooser({
             return (
               <Pressable
                 key={card.type}
-                onPress={() => { if (!disabled) { setErrorMsg(null); mutation.mutate(card.type) } }}
+                onPress={() => {
+                  if (!disabled) {
+                    setErrorMsg(null)
+                    setConsentAck(false)
+                    setPendingType(card.type)
+                  }
+                }}
                 disabled={disabled}
                 style={({ pressed }) => [
                   styles.card,
@@ -254,6 +278,77 @@ export function PlanTypeChooser({
           })}
         </ScrollView>
       </View>
+
+      {/* Consent confirmation modal (SCRUM-224) */}
+      <Modal
+        visible={pendingType !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => { setPendingType(null); setConsentAck(false) }}
+      >
+        <View style={styles.consentBackdrop}>
+          <View style={[styles.consentSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.consentTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
+              Switching to {pendingType ? PLAN_CARDS.find((c) => c.type === pendingType)?.title : ''}
+            </Text>
+            <Text style={[styles.consentBody, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+              {pendingType ? consentCopyForType[pendingType] : ''}
+            </Text>
+            <Pressable
+              onPress={() => setConsentAck((v) => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: consentAck }}
+              style={styles.consentCheckRow}
+            >
+              <MaterialIcons
+                name={consentAck ? 'check-box' : 'check-box-outline-blank'}
+                size={getScaledFontSize(22)}
+                color={consentAck ? (colors.tint as string) : colors.subtext}
+              />
+              <Text style={{ marginLeft: 8, color: colors.text, fontSize: getScaledFontSize(13), flex: 1 }}>
+                I understand and agree.
+              </Text>
+            </Pressable>
+            <View style={styles.consentActions}>
+              <Pressable
+                onPress={() => { setPendingType(null); setConsentAck(false) }}
+                style={[styles.consentBtn, { borderColor: colors.border }]}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (pendingType && consentAck) {
+                    setErrorMsg(null)
+                    mutation.mutate(pendingType)
+                  }
+                }}
+                disabled={!consentAck || mutation.isPending}
+                style={[
+                  styles.consentBtn,
+                  styles.consentBtnPrimary,
+                  {
+                    backgroundColor: consentAck ? (colors.tint as string) : (colors.subtext + '60'),
+                    opacity: mutation.isPending ? 0.6 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+              >
+                {mutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                    Confirm
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   )
 }
@@ -332,4 +427,26 @@ const styles = StyleSheet.create({
   },
   includedList: { marginTop: 10, gap: 6 },
   featureRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  consentBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  consentSheet: {
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+  },
+  consentTitle: { marginBottom: 8 },
+  consentBody: { lineHeight: 20, marginBottom: 14 },
+  consentCheckRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  consentActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  consentBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  consentBtnPrimary: { borderColor: 'transparent' },
 })
