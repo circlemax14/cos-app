@@ -22,7 +22,16 @@ export async function generateAiHealthPlan(force = false): Promise<AiHealthPlan 
       data: { plan: AiHealthPlan };
     }>('/v1/patients/me/health-plan/ai/generate', { force });
     return res.data.data.plan;
-  } catch {
+  } catch (err) {
+    // SCRUM-228: surface AI_AWAITING_ASSESSMENTS so callers (Plan tab,
+    // catalog) can route the user to the catalog instead of silently
+    // swallowing the failure as a no-op.
+    const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
+    if (code === 'AI_AWAITING_ASSESSMENTS') {
+      const wrapped = new Error('Complete at least one assessment to build your plan');
+      (wrapped as Error & { code?: string }).code = code;
+      throw wrapped;
+    }
     return null;
   }
 }
