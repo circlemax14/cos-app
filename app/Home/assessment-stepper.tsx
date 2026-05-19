@@ -123,15 +123,28 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     void saveDraft(instrumentId, { stepIdx, answers })
   }, [instrumentId, stepIdx, answers, draftLoaded])
 
+  const [celebrating, setCelebrating] = React.useState(false)
+
   const submit = useMutation({
     mutationFn: () => submitAssessment(instrumentId, answers),
     onSuccess: () => {
       void clearDraft(instrumentId)
       queryClient.invalidateQueries({ queryKey: ['assessments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
-      router.replace('/Home/assessments-catalog' as never)
+      // Show the celebration overlay (SCRUM-230) for ~1.5s, then return
+      // to the catalog. The overlay handles its own dismiss timer.
+      setCelebrating(true)
     },
   })
+
+  // Auto-dismiss the celebration and route back when it ends.
+  React.useEffect(() => {
+    if (!celebrating) return
+    const t = setTimeout(() => {
+      router.replace('/Home/assessments-catalog' as never)
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [celebrating])
 
   if (instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)) {
     return (
@@ -192,6 +205,14 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     } else {
       setStepIdx((i) => Math.max(i - 1, 0))
     }
+  }
+
+  if (celebrating) {
+    return (
+      <AppWrapper>
+        <CompletionCelebration colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
+      </AppWrapper>
+    )
   }
 
   return (
@@ -315,15 +336,19 @@ function AnimatedOptionRow({
   fontWeight: (n: number) => number | string
 }): React.JSX.Element {
   const scale = React.useRef(new Animated.Value(1)).current
+  // SCRUM-230: sparkle burst on each tap. We trigger 3 small sparkles
+  // animating from the row out to short random offsets, then fade.
+  const [burstId, setBurstId] = React.useState(0)
 
   const tap = () => {
     onPress()
-    // Bounce: shrink then spring back. Tuned to feel responsive but
-    // never block the underlying state change.
+    // Bounce + sparkle. Bounce uses native driver for smoothness;
+    // sparkles run independently via their own component.
     Animated.sequence([
       Animated.timing(scale, { toValue: 0.96, duration: 80, useNativeDriver: true }),
       Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: true }),
     ]).start()
+    setBurstId((n) => n + 1)
   }
 
   return (
@@ -356,7 +381,174 @@ function AnimatedOptionRow({
         >
           {label}
         </Text>
+        {/* Sparkle burst sits overlaid; re-renders on each tap via key */}
+        <SparkleBurst key={burstId} active={burstId > 0} color={active ? '#fff' : (colors.tint as string)} />
       </Pressable>
+    </Animated.View>
+  )
+}
+
+/**
+ * Three small auto-awesome sparkles that fade in + scale up + drift
+ * outward, then fade out. Positioned absolutely over the parent.
+ */
+function SparkleBurst({ active, color }: { active: boolean; color: string }): React.JSX.Element | null {
+  if (!active) return null
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {[0, 1, 2].map((i) => (
+        <Sparkle key={i} index={i} color={color} />
+      ))}
+    </View>
+  )
+}
+
+function Sparkle({ index, color }: { index: number; color: string }): React.JSX.Element {
+  const opacity = React.useRef(new Animated.Value(0)).current
+  const scale = React.useRef(new Animated.Value(0.6)).current
+  const translateX = React.useRef(new Animated.Value(0)).current
+  const translateY = React.useRef(new Animated.Value(0)).current
+
+  React.useEffect(() => {
+    const dx = [-26, 0, 26][index] ?? 0
+    const dy = [-12, -22, -12][index] ?? -20
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 120, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0, duration: 380, useNativeDriver: true }),
+      ]),
+      Animated.timing(scale, { toValue: 1.1, duration: 500, useNativeDriver: true }),
+      Animated.timing(translateX, { toValue: dx, duration: 500, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: dy, duration: 500, useNativeDriver: true }),
+    ]).start()
+  }, [index, opacity, scale, translateX, translateY])
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        opacity,
+        transform: [{ translateX }, { translateY }, { scale }],
+      }}
+    >
+      <MaterialIcons name="auto-awesome" size={14} color={color} />
+    </Animated.View>
+  )
+}
+
+/**
+ * Full-screen completion celebration after the user submits the final
+ * answer. Fades in, holds, fades out via the parent's timer.
+ */
+function CompletionCelebration({
+  colors,
+  fontSize,
+  fontWeight,
+}: {
+  colors: Palette
+  fontSize: (n: number) => number
+  fontWeight: (n: number) => number | string
+}): React.JSX.Element {
+  const opacity = React.useRef(new Animated.Value(0)).current
+  const checkScale = React.useRef(new Animated.Value(0.4)).current
+
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(checkScale, { toValue: 1, friction: 4, tension: 160, useNativeDriver: true }),
+    ]).start()
+  }, [opacity, checkScale])
+
+  return (
+    <Animated.View
+      style={[
+        StyleSheet.absoluteFill,
+        styles.celebrateWrap,
+        { backgroundColor: colors.background + 'F2', opacity },
+      ]}
+    >
+      <View style={[styles.celebrateBubble, { backgroundColor: (colors.tint as string) + '22', borderColor: (colors.tint as string) + '55' }]}>
+        <Animated.View style={{ transform: [{ scale: checkScale }] }}>
+          <MaterialIcons name="check-circle" size={92} color={colors.tint as string} />
+        </Animated.View>
+        {/* Surrounding sparkles */}
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <CelebrationSparkle key={i} index={i} color={colors.tint as string} />
+          ))}
+        </View>
+      </View>
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: fontSize(22),
+          fontWeight: fontWeight(700) as any,
+          marginTop: 18,
+        }}
+      >
+        Nicely done!
+      </Text>
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: fontSize(14),
+          textAlign: 'center',
+          marginTop: 6,
+          paddingHorizontal: 32,
+        }}
+      >
+        Your answers are saved.
+      </Text>
+    </Animated.View>
+  )
+}
+
+function CelebrationSparkle({ index, color }: { index: number; color: string }): React.JSX.Element {
+  const opacity = React.useRef(new Animated.Value(0)).current
+  const scale = React.useRef(new Animated.Value(0.4)).current
+  const angle = (index / 6) * Math.PI * 2
+  const distance = 70
+  const dx = Math.cos(angle) * distance
+  const dy = Math.sin(angle) * distance
+  const translateX = React.useRef(new Animated.Value(0)).current
+  const translateY = React.useRef(new Animated.Value(0)).current
+
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.sequence([
+        Animated.delay(index * 50),
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.delay(300),
+        Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.delay(index * 50),
+        Animated.timing(scale, { toValue: 1, duration: 220, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.delay(index * 50),
+        Animated.timing(translateX, { toValue: dx, duration: 700, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.delay(index * 50),
+        Animated.timing(translateY, { toValue: dy, duration: 700, useNativeDriver: true }),
+      ]),
+    ]).start()
+  }, [index, dx, dy, opacity, scale, translateX, translateY])
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        opacity,
+        transform: [{ translateX }, { translateY }, { scale }],
+      }}
+    >
+      <MaterialIcons name="auto-awesome" size={22} color={color} />
     </Animated.View>
   )
 }
@@ -520,5 +712,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
+  },
+  celebrateWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  celebrateBubble: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 })

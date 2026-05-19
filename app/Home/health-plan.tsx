@@ -27,6 +27,7 @@ import { router } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { fetchAssessments } from '@/services/api/assessments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
+import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { AllBadgesModal } from '@/components/health-plan/AllBadgesModal';
 import { Pressable } from 'react-native';
@@ -283,16 +284,35 @@ export default function HealthPlanScreen() {
 
   // Empty state — no plan yet. Three flavours:
   //   - basic                              → auto-gen via "Generate plan"
-  //   - advanced/agency + no assessments   → route to catalog (backend would
-  //                                          400 AI_AWAITING_ASSESSMENTS anyway,
-  //                                          and the mobile API swallows that
-  //                                          to null — making a Generate button
-  //                                          here look broken: SCRUM-228)
+  //   - advanced/agency + no assessments   → render the catalog INLINE so
+  //                                          users can start any check-in
+  //                                          directly with no intermediate
+  //                                          screen (SCRUM-230)
   //   - advanced/agency + has assessments  → auto-gen via "Generate plan"
   //     (will use those assessments as context)
   if (!plan) {
     const isNonBasic = currentPlanType === 'advanced' || currentPlanType === 'agency';
-    const showCatalogEmptyState = isNonBasic && needsAssessment;
+    const showInlineCatalog = isNonBasic && needsAssessment;
+    if (showInlineCatalog) {
+      return (
+        <AppWrapper>
+          <ScrollView
+            style={[styles.container, { backgroundColor: colors.background }]}
+            contentContainerStyle={{ paddingBottom: 32 }}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+            <View style={{ paddingTop: 12, paddingHorizontal: 16 }}>
+              <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any, textAlign: 'left', marginBottom: 4 }]}>
+                Your check-ins
+              </Text>
+              <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'left', marginBottom: 16, paddingHorizontal: 0 }]}>
+                Pick any to start. Complete two to build your AI plan.
+              </Text>
+              <AssessmentCatalogContent />
+            </View>
+          </ScrollView>
+        </AppWrapper>
+      );
+    }
     return (
       <AppWrapper>
         <ScrollView
@@ -301,42 +321,24 @@ export default function HealthPlanScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.tint + '18' }]}>
-              <MaterialIcons
-                name={showCatalogEmptyState ? 'assignment' : 'auto-awesome'}
-                size={32}
-                color={colors.tint}
-              />
+              <MaterialIcons name="auto-awesome" size={32} color={colors.tint} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
-              {showCatalogEmptyState ? 'Take your check-ins first' : 'Generate your Health Plan'}
+              Generate your Health Plan
             </Text>
             <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-              {showCatalogEmptyState
-                ? 'Your plan personalizes itself from your health check-in answers. Take a few quick ones, then come back to build your plan.'
-                : 'We’ll analyze your connected health records and build a personalized daily plan with goals and tasks tailored to your care.'}
+              We’ll analyze your connected health records and build a personalized daily plan with goals and tasks tailored to your care.
             </Text>
             <TouchableOpacity
               style={[styles.generateBtn, { backgroundColor: colors.tint }]}
-              onPress={() => {
-                if (showCatalogEmptyState) {
-                  router.push('/Home/assessments-catalog?source=plan-upgrade' as never);
-                } else {
-                  onGenerate(false);
-                }
-              }}
+              onPress={() => onGenerate(false)}
               disabled={generating}>
               {generating ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <MaterialIcons
-                    name={showCatalogEmptyState ? 'arrow-forward' : 'auto-awesome'}
-                    size={16}
-                    color="#fff"
-                  />
-                  <Text style={[styles.generateBtnText, { fontSize: getScaledFontSize(14) }]}>
-                    {showCatalogEmptyState ? 'Take check-ins' : 'Generate plan'}
-                  </Text>
+                  <MaterialIcons name="auto-awesome" size={16} color="#fff" />
+                  <Text style={[styles.generateBtnText, { fontSize: getScaledFontSize(14) }]}>Generate plan</Text>
                 </>
               )}
             </TouchableOpacity>
