@@ -179,6 +179,14 @@ export default function HealthPlanScreen() {
         const t = await fetchTasksForDate(todayISO());
         setTasks(t);
       }
+    } catch (err) {
+      // SCRUM-228: advanced/agency users without assessments can't
+      // generate a plan — route them to the catalog so they can take
+      // their check-ins first.
+      const code = (err as { code?: string }).code;
+      if (code === 'AI_AWAITING_ASSESSMENTS') {
+        router.push('/Home/assessments-catalog?source=plan-upgrade' as never);
+      }
     } finally {
       setGenerating(false);
     }
@@ -273,8 +281,18 @@ export default function HealthPlanScreen() {
     );
   }
 
-  // Empty state — no plan yet
+  // Empty state — no plan yet. Three flavours:
+  //   - basic                              → auto-gen via "Generate plan"
+  //   - advanced/agency + no assessments   → route to catalog (backend would
+  //                                          400 AI_AWAITING_ASSESSMENTS anyway,
+  //                                          and the mobile API swallows that
+  //                                          to null — making a Generate button
+  //                                          here look broken: SCRUM-228)
+  //   - advanced/agency + has assessments  → auto-gen via "Generate plan"
+  //     (will use those assessments as context)
   if (!plan) {
+    const isNonBasic = currentPlanType === 'advanced' || currentPlanType === 'agency';
+    const showCatalogEmptyState = isNonBasic && needsAssessment;
     return (
       <AppWrapper>
         <ScrollView
@@ -283,24 +301,42 @@ export default function HealthPlanScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.tint + '18' }]}>
-              <MaterialIcons name="auto-awesome" size={32} color={colors.tint} />
+              <MaterialIcons
+                name={showCatalogEmptyState ? 'assignment' : 'auto-awesome'}
+                size={32}
+                color={colors.tint}
+              />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
-              Generate your Health Plan
+              {showCatalogEmptyState ? 'Take your check-ins first' : 'Generate your Health Plan'}
             </Text>
             <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-              We&apos;ll analyze your connected health records and build a personalized daily plan with goals and tasks tailored to your care.
+              {showCatalogEmptyState
+                ? 'Your plan personalizes itself from your health check-in answers. Take a few quick ones, then come back to build your plan.'
+                : 'We’ll analyze your connected health records and build a personalized daily plan with goals and tasks tailored to your care.'}
             </Text>
             <TouchableOpacity
               style={[styles.generateBtn, { backgroundColor: colors.tint }]}
-              onPress={() => onGenerate(false)}
+              onPress={() => {
+                if (showCatalogEmptyState) {
+                  router.push('/Home/assessments-catalog?source=plan-upgrade' as never);
+                } else {
+                  onGenerate(false);
+                }
+              }}
               disabled={generating}>
               {generating ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <MaterialIcons name="auto-awesome" size={16} color="#fff" />
-                  <Text style={[styles.generateBtnText, { fontSize: getScaledFontSize(14) }]}>Generate plan</Text>
+                  <MaterialIcons
+                    name={showCatalogEmptyState ? 'arrow-forward' : 'auto-awesome'}
+                    size={16}
+                    color="#fff"
+                  />
+                  <Text style={[styles.generateBtnText, { fontSize: getScaledFontSize(14) }]}>
+                    {showCatalogEmptyState ? 'Take check-ins' : 'Generate plan'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
