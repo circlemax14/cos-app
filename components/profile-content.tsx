@@ -244,15 +244,26 @@ export function ProfileContent({
               getScaledFontWeight={getScaledFontWeight}
             />
             {canAccessAssessments && (
-              <DrawerRow
-                iconName="assignment"
-                label="Health check-in"
-                onPress={() => router.push('/Home/assessment-intake' as never)}
-                divider
-                colors={colors}
-                getScaledFontSize={getScaledFontSize}
-                getScaledFontWeight={getScaledFontWeight}
-              />
+              <>
+                <DrawerRow
+                  iconName="assignment"
+                  label="Health check-in"
+                  onPress={() => router.push('/Home/assessment-intake' as never)}
+                  divider
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                />
+                <DrawerRow
+                  iconName="list-alt"
+                  label="Available check-ins"
+                  onPress={() => router.push('/Home/assessments-catalog' as never)}
+                  divider
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                />
+              </>
             )}
             {onEmergencyContactPress && (
               <DrawerRow
