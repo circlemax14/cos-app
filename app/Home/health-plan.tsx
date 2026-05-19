@@ -292,7 +292,12 @@ export default function HealthPlanScreen() {
   //     (will use those assessments as context)
   if (!plan) {
     const isNonBasic = currentPlanType === 'advanced' || currentPlanType === 'agency';
-    const showInlineCatalog = isNonBasic && needsAssessment;
+    // Non-basic users always land on the inline catalog when no plan
+    // exists, even if they have past assessments. They can take new
+    // check-ins or tap "Build my plan" once 2+ are complete. Showing
+    // "Generate plan" here was misleading — the plan is always built
+    // from check-in answers for non-basic users.
+    const showInlineCatalog = isNonBasic;
     if (showInlineCatalog) {
       return (
         <AppWrapper>
@@ -476,7 +481,7 @@ export default function HealthPlanScreen() {
             </View>
           </View>
           <TouchableOpacity
-            style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+            style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}
             onPress={() => onGenerate(true)}
             disabled={generating}>
             {generating ? (
@@ -500,7 +505,7 @@ export default function HealthPlanScreen() {
 
         {/* Progress report */}
         {tasks.length > 0 && (
-          <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.progressCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
             <View style={styles.progressTop}>
               <Text style={[styles.progressLabel, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }]}>
                 Today&apos;s progress
@@ -542,7 +547,7 @@ export default function HealthPlanScreen() {
         )}
 
         {/* Plan overview — breakdown of all tasks in the plan */}
-        <View style={[styles.planOverview, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.planOverview, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
           <Text style={[styles.planOverviewTitle, { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
             COMPLETE PLAN OVERVIEW
           </Text>
@@ -602,7 +607,7 @@ export default function HealthPlanScreen() {
             {plan.goals.map((g) => {
               const pstyle = PRIORITY_STYLE[g.priority];
               return (
-                <View key={g.id} style={[styles.goal, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View key={g.id} style={[styles.goal, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
                   <View style={[styles.goalIcon, { backgroundColor: pstyle.bg }]}>
                     <MaterialIcons name="flag" size={16} color={pstyle.color} />
                   </View>
@@ -671,7 +676,7 @@ export default function HealthPlanScreen() {
                       return (
                         <View
                           key={t.id}
-                          style={[styles.fullPlanRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          style={[styles.fullPlanRow, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
                           <View style={[styles.taskIcon, { backgroundColor: icon.bg }]}>
                             <MaterialIcons name={icon.name} size={16} color={icon.color} />
                           </View>
