@@ -165,11 +165,13 @@ export function PlanTypeChooser({
 
           {PLAN_CARDS.map((card) => {
             const isCurrent = card.type === currentType
+            // SCRUM-232: chooser is fully open again — users can pick any of
+            // Basic / Advanced / Agency. Agency still requires a linked
+            // care-management agency (data gate, not subscription gate).
+            // The subscription paywall, when built, will sit BEFORE the
+            // consent dialog rather than locking cards here.
             const isAgencyDisabled = card.type === 'agency' && !hasAgency
-            // SCRUM-229: Advanced + Agency require a subscription, which
-            // isn't built yet. Lock both in the chooser until it ships.
-            const isSubscriptionLocked = card.type === 'advanced' || card.type === 'agency'
-            const isLocked = isSubscriptionLocked || isAgencyDisabled
+            const isLocked = isAgencyDisabled
             const disabled = mutation.isPending || isLocked || isCurrent
             return (
               <Pressable
@@ -193,7 +195,7 @@ export function PlanTypeChooser({
                 ]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isCurrent, disabled }}
-                accessibilityLabel={`${card.title} plan. ${card.description}${isCurrent ? '. Currently selected.' : ''}${isSubscriptionLocked ? '. Coming soon with subscription.' : ''}`}
+                accessibilityLabel={`${card.title} plan. ${card.description}${isCurrent ? '. Currently selected.' : ''}`}
               >
                 <View style={styles.cardHeader}>
                   <MaterialIcons name={card.icon} size={28} color={colors.tint as string} />
@@ -272,15 +274,7 @@ export function PlanTypeChooser({
                   />
                 </View>
 
-                {isSubscriptionLocked ? (
-                  <View style={styles.lockedRow}>
-                    <MaterialIcons name="lock-outline" size={getScaledFontSize(14)} color={colors.subtext} />
-                    <Text style={[styles.cardDetail, { color: colors.subtext, marginLeft: 6, fontSize: getScaledFontSize(12) }]}>
-                      Available with a subscription — launching soon
-                    </Text>
-                  </View>
-                ) : null}
-                {isAgencyDisabled && !isSubscriptionLocked ? (
+                {isAgencyDisabled ? (
                   <Text style={[styles.cardDetail, { color: '#C0392B', marginTop: 10, fontSize: getScaledFontSize(12) }]}>
                     Connect a care-management agency to enable this plan.
                   </Text>
