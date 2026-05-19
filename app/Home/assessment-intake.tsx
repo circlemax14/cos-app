@@ -20,31 +20,38 @@ import {
   submitAssessment,
   type PrefillSummary,
 } from '@/services/api/assessments'
+import {
+  fetchInstruments,
+  type InstrumentSummary,
+  type InstrumentItem as DefinitionItem,
+} from '@/services/api/instruments'
 import { usePlanType, meetsTier } from '@/hooks/use-plan-type'
 
-// PHQ-2 has 2 items, each 0-3. Sum ≥3 triggers PHQ-9.
-const PHQ2_ITEMS = [
-  'Little interest or pleasure in doing things?',
-  'Feeling down, depressed, or hopeless?',
-] as const
+// All instrument items + scoring now live in the DB (SCRUM-217/223). The
+// screen renders whatever the active instrument list returns. Two
+// hardcoded sections remain because they have no DB entry yet: smoking +
+// exercise (single-question lifestyle screen) and goals (free-form
+// selection + open text).
 
-// PHQ-9 adds 7 more items (we deliver the full 9 when PHQ-2 is positive)
-const PHQ9_EXTRA_ITEMS = [
-  'Trouble falling or staying asleep, or sleeping too much?',
-  'Feeling tired or having little energy?',
-  'Poor appetite or overeating?',
-  'Feeling bad about yourself — or that you are a failure?',
-  'Trouble concentrating on things like reading or watching TV?',
-  'Moving or speaking slowly, or being fidgety / restless?',
-  'Thoughts that you would be better off dead, or hurting yourself?',
-] as const
-
-const FREQ_OPTIONS = [
-  { value: 0, label: 'Not at all' },
-  { value: 1, label: 'Several days' },
-  { value: 2, label: 'More than half the days' },
-  { value: 3, label: 'Nearly every day' },
-] as const
+// Explicit display order — clinical sense: well-being first, mood next,
+// then sleep/pain/social, then alcohol, function, falls, nutrition,
+// cognition. PHQ-9 is only included when PHQ-2 sum >= 3.
+const INSTRUMENT_DISPLAY_ORDER: readonly string[] = [
+  'wellbeing-5',
+  'phq-2',
+  'phq-9',
+  'gad-7',
+  'sleep-4',
+  'pain-4',
+  'loneliness-3',
+  'alcohol-3',
+  'physical-function-4',
+  'adl',
+  'iadl',
+  'falls-12',
+  'nutrition-5',
+  'cognition-8',
+]
 
 const GOAL_CHOICES = [
   'Better sleep',
@@ -95,33 +102,70 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
     enabled: canAccessAssessments,
   })
 
-  // Local UI state per section
-  const [wellbeing, setWellbeing] = React.useState<number>(7)
+  const instrumentsQuery = useQuery({
+    queryKey: ['instruments'],
+    queryFn: fetchInstruments,
+    enabled: canAccessAssessments,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Hardcoded sections (no DB entry yet): smoking, exercise, goals.
   const [smoking, setSmoking] = React.useState<string>('never')
-  const [alcohol, setAlcohol] = React.useState<string>('rarely')
   const [exercise, setExercise] = React.useState<string>('1-2x/week')
-  const [sleepHours, setSleepHours] = React.useState<number>(7)
-  const [phqAnswers, setPhqAnswers] = React.useState<number[]>([])
   const [goals, setGoals] = React.useState<string[]>([])
   const [goalFreeText, setGoalFreeText] = React.useState<string>('')
+
+  // DB-driven instrument responses, keyed by instrumentId → itemId → value.
+  type ResponseMap = Record<string, Record<string, unknown>>
+  const [responses, setResponses] = React.useState<ResponseMap>({})
   const [submitted, setSubmitted] = React.useState<boolean>(false)
 
-  const phq2Sum = (phqAnswers[0] ?? 0) + (phqAnswers[1] ?? 0)
+  const setAnswer = React.useCallback((instrumentId: string, itemId: string, value: unknown) => {
+    setResponses((prev) => ({
+      ...prev,
+      [instrumentId]: { ...(prev[instrumentId] ?? {}), [itemId]: value },
+    }))
+  }, [])
+
+  // Skip-logic gate: PHQ-9 only fires when PHQ-2 sum >= 3.
+  const phq2 = responses['phq-2']
+  const phq2Sum =
+    (typeof phq2?.q1 === 'number' ? phq2.q1 : 0) +
+    (typeof phq2?.q2 === 'number' ? phq2.q2 : 0)
   const needsPhq9 = phq2Sum >= 3
-  const phqItems = needsPhq9 ? [...PHQ2_ITEMS, ...PHQ9_EXTRA_ITEMS] : PHQ2_ITEMS
+
+  // Ordered, filtered list of visible instruments for this user.
+  const visibleInstruments = React.useMemo<InstrumentSummary[]>(() => {
+    const all = instrumentsQuery.data ?? []
+    const byId = new Map(all.map((it) => [it.instrumentId, it]))
+    const ordered: InstrumentSummary[] = []
+    for (const id of INSTRUMENT_DISPLAY_ORDER) {
+      if (id === 'phq-9' && !needsPhq9) continue
+      const found = byId.get(id)
+      if (found) ordered.push(found)
+    }
+    // Append anything in the API list we don't have an explicit order for
+    // (so newly added instruments still surface without a mobile push).
+    for (const it of all) {
+      if (!INSTRUMENT_DISPLAY_ORDER.includes(it.instrumentId)) ordered.push(it)
+    }
+    return ordered
+  }, [instrumentsQuery.data, needsPhq9])
 
   const submit = useMutation({
     mutationFn: async () => {
-      // Submit each instrument independently. The plan generator will pick
-      // them all up on the next regen.
-      await Promise.all([
-        submitAssessment('wellbeing', { value: wellbeing }),
-        submitAssessment('lifestyle', { smoking, alcohol, exercise, sleepHours }),
-        submitAssessment(needsPhq9 ? 'phq-9' : 'phq-2', phqAnswers.reduce<Record<string, number>>(
-          (acc, v, i) => { acc[`q${i + 1}`] = v; return acc }, {},
-        )),
-        submitAssessment('goals', { selected: goals, freeText: goalFreeText.trim() }),
-      ])
+      const calls: Promise<unknown>[] = []
+      // DB-driven instruments — submit answered ones in parallel.
+      for (const inst of visibleInstruments) {
+        const answers = responses[inst.instrumentId]
+        if (answers && Object.keys(answers).length > 0) {
+          calls.push(submitAssessment(inst.instrumentId, answers))
+        }
+      }
+      // Hardcoded screens (no DB entry).
+      calls.push(submitAssessment('lifestyle', { smoking, exercise }))
+      calls.push(submitAssessment('goals', { selected: goals, freeText: goalFreeText.trim() }))
+      await Promise.all(calls)
     },
     onSuccess: () => {
       setSubmitted(true)
@@ -130,10 +174,17 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
     },
   })
 
-  const allRequiredAnswered =
-    phqAnswers.length === phqItems.length &&
-    phqAnswers.every((v) => v !== undefined) &&
-    goals.length > 0
+  // Every visible instrument needs every item answered + at least one goal picked.
+  const allRequiredAnswered = React.useMemo(() => {
+    if (goals.length === 0) return false
+    for (const inst of visibleInstruments) {
+      const answers = responses[inst.instrumentId] ?? {}
+      for (const item of inst.items) {
+        if (answers[item.id] === undefined || answers[item.id] === null) return false
+      }
+    }
+    return true
+  }, [visibleInstruments, responses, goals.length])
 
   if (planLoading) {
     return (
@@ -225,65 +276,29 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
         {/* Pre-fill review */}
         <PrefillSection prefill={prefillQuery.data} loading={prefillQuery.isLoading} colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
 
-        {/* Well-being */}
-        <Section title="How are you feeling today?" colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight}>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginBottom: 8 }}>
-            Tap a number from 1 (rough) to 10 (great).
-          </Text>
-          <ScaleRow value={wellbeing} onChange={setWellbeing} colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
-        </Section>
+        {/* DB-driven instruments — one Section per instrument */}
+        {instrumentsQuery.isLoading ? (
+          <View style={{ alignItems: 'center', padding: 24 }}>
+            <ActivityIndicator color={colors.tint as string} />
+          </View>
+        ) : (
+          visibleInstruments.map((inst) => (
+            <InstrumentSection
+              key={inst.instrumentId}
+              instrument={inst}
+              answers={responses[inst.instrumentId] ?? {}}
+              onAnswer={(itemId, value) => setAnswer(inst.instrumentId, itemId, value)}
+              colors={colors}
+              fontSize={getScaledFontSize}
+              fontWeight={getScaledFontWeight}
+            />
+          ))
+        )}
 
-        {/* Lifestyle */}
+        {/* Hardcoded lifestyle bookend (smoking + exercise) — no DB entry yet */}
         <Section title="A few lifestyle questions" colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight}>
           <ChoiceRow label="Smoking" options={['never', 'former', 'occasional', 'daily']} value={smoking} onChange={setSmoking} colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
-          <ChoiceRow label="Alcohol" options={['never', 'rarely', 'weekly', 'daily']} value={alcohol} onChange={setAlcohol} colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
           <ChoiceRow label="Exercise" options={['none', '1-2x/week', '3-4x/week', 'daily']} value={exercise} onChange={setExercise} colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-            <Text style={{ width: 110, color: colors.text, fontSize: getScaledFontSize(13) }}>Sleep (hrs)</Text>
-            <ScaleRow value={sleepHours} min={4} max={12} onChange={setSleepHours} colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
-          </View>
-        </Section>
-
-        {/* PHQ-2 / PHQ-9 */}
-        <Section title="Over the last 2 weeks, how often have you been bothered by…" colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight}>
-          {phqItems.map((q, i) => (
-            <View key={i} style={{ marginBottom: 12 }}>
-              <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), marginBottom: 6 }}>{i + 1}. {q}</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {FREQ_OPTIONS.map((opt) => {
-                  const active = phqAnswers[i] === opt.value
-                  return (
-                    <Pressable
-                      key={opt.value}
-                      onPress={() => setPhqAnswers((prev) => {
-                        const next = [...prev]
-                        next[i] = opt.value
-                        return next
-                      })}
-                      style={[
-                        styles.choiceChip,
-                        {
-                          backgroundColor: active ? (colors.tint as string) : 'transparent',
-                          borderColor: active ? (colors.tint as string) : (colors.text + '30'),
-                        },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: active }}
-                    >
-                      <Text style={{ color: active ? '#fff' : colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(active ? 600 : 500) as any }}>
-                        {opt.label}
-                      </Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            </View>
-          ))}
-          {needsPhq9 ? (
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), fontStyle: 'italic', marginTop: 6 }}>
-              We added a few more questions based on your earlier responses.
-            </Text>
-          ) : null}
         </Section>
 
         {/* Goals */}
@@ -436,45 +451,153 @@ function PrefillSection({
   )
 }
 
-function ScaleRow({
-  value, min = 1, max = 10, onChange, colors, fontSize, fontWeight,
+// ScaleRow removed — generic ItemControl handles likert/choice rendering now.
+
+/**
+ * Renders a DB-defined instrument (SCRUM-217/223) generically. Each item
+ * is rendered based on its `kind` and the chosen value is reported back
+ * via `onAnswer`.
+ */
+function InstrumentSection({
+  instrument,
+  answers,
+  onAnswer,
+  colors,
+  fontSize,
+  fontWeight,
 }: {
-  value: number
-  min?: number
-  max?: number
-  onChange: (n: number) => void
-  colors: { text: string; tint: string | undefined }
+  instrument: InstrumentSummary
+  answers: Record<string, unknown>
+  onAnswer: (itemId: string, value: unknown) => void
+  colors: { text: string; subtext: string; card: string; tint: string | undefined }
   fontSize: (n: number) => number
   fontWeight: (n: number) => string
 }): React.JSX.Element {
-  const cells = []
-  for (let i = min; i <= max; i++) cells.push(i)
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-      {cells.map((n) => {
-        const active = value === n
-        return (
-          <Pressable
-            key={n}
-            onPress={() => onChange(n)}
-            style={[
-              styles.scaleCell,
-              {
-                backgroundColor: active ? (colors.tint as string) : 'transparent',
-                borderColor: active ? (colors.tint as string) : (colors.text + '30'),
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`${n}`}
-            accessibilityState={{ selected: active }}
-          >
-            <Text style={{ color: active ? '#fff' : colors.text, fontSize: fontSize(13), fontWeight: fontWeight(active ? 700 : 500) as any }}>
-              {n}
-            </Text>
-          </Pressable>
-        )
-      })}
-    </View>
+    <Section title={instrument.name} colors={colors} fontSize={fontSize} fontWeight={fontWeight}>
+      {instrument.description ? (
+        <Text style={{ color: colors.subtext, fontSize: fontSize(12), marginBottom: 10 }}>
+          {instrument.description}
+        </Text>
+      ) : null}
+      {instrument.items.map((item, idx) => (
+        <View key={item.id} style={{ marginBottom: 14 }}>
+          <Text style={{ color: colors.text, fontSize: fontSize(13), marginBottom: 6 }}>
+            {idx + 1}. {item.text}
+          </Text>
+          <ItemControl
+            item={item}
+            value={answers[item.id]}
+            onChange={(v) => onAnswer(item.id, v)}
+            colors={colors}
+            fontSize={fontSize}
+            fontWeight={fontWeight}
+          />
+        </View>
+      ))}
+    </Section>
+  )
+}
+
+function ItemControl({
+  item,
+  value,
+  onChange,
+  colors,
+  fontSize,
+  fontWeight,
+}: {
+  item: DefinitionItem
+  value: unknown
+  onChange: (v: unknown) => void
+  colors: { text: string; subtext: string; card: string; tint: string | undefined }
+  fontSize: (n: number) => number
+  fontWeight: (n: number) => string
+}): React.JSX.Element {
+  if ((item.kind === 'likert' || item.kind === 'choice') && Array.isArray(item.options)) {
+    return (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {item.options.map((opt) => {
+          const active = value === opt.value
+          return (
+            <Pressable
+              key={String(opt.value)}
+              onPress={() => onChange(opt.value)}
+              style={[
+                styles.choiceChip,
+                {
+                  backgroundColor: active ? (colors.tint as string) : 'transparent',
+                  borderColor: active ? (colors.tint as string) : (colors.text + '30'),
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={{ color: active ? '#fff' : colors.text, fontSize: fontSize(12), fontWeight: fontWeight(active ? 600 : 500) as any }}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>
+    )
+  }
+  if (item.kind === 'multi' && Array.isArray(item.options)) {
+    const selected = Array.isArray(value) ? (value as unknown[]) : []
+    return (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {item.options.map((opt) => {
+          const active = selected.includes(opt.value)
+          return (
+            <Pressable
+              key={String(opt.value)}
+              onPress={() =>
+                onChange(active ? selected.filter((v) => v !== opt.value) : [...selected, opt.value])
+              }
+              style={[
+                styles.choiceChip,
+                {
+                  backgroundColor: active ? (colors.tint as string) : 'transparent',
+                  borderColor: active ? (colors.tint as string) : (colors.text + '30'),
+                },
+              ]}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: active }}
+            >
+              <Text style={{ color: active ? '#fff' : colors.text, fontSize: fontSize(12), fontWeight: fontWeight(active ? 600 : 500) as any }}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>
+    )
+  }
+  if (item.kind === 'number') {
+    return (
+      <TextInput
+        keyboardType="numeric"
+        value={typeof value === 'number' ? String(value) : ''}
+        onChangeText={(t) => {
+          const n = Number.parseFloat(t)
+          onChange(Number.isFinite(n) ? n : undefined)
+        }}
+        placeholder={item.min != null && item.max != null ? `${item.min}–${item.max}` : 'Enter a number'}
+        placeholderTextColor={colors.subtext}
+        style={[styles.textInput, { color: colors.text, borderColor: colors.text + '30', backgroundColor: colors.card, minHeight: 40 }]}
+      />
+    )
+  }
+  // text
+  return (
+    <TextInput
+      value={typeof value === 'string' ? value : ''}
+      onChangeText={onChange}
+      placeholder="Type your answer"
+      placeholderTextColor={colors.subtext}
+      multiline
+      style={[styles.textInput, { color: colors.text, borderColor: colors.text + '30', backgroundColor: colors.card }]}
+    />
   )
 }
 
@@ -527,14 +650,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-  },
-  scaleCell: {
-    minWidth: 32,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
   },
   textInput: {
     marginTop: 10,
