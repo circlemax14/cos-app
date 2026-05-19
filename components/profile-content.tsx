@@ -4,7 +4,6 @@ import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
-import { usePlanType, meetsTier } from '@/hooks/use-plan-type';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
@@ -73,12 +72,6 @@ export function ProfileContent({
   // never flashes to a restricted user.
   const { data: permissions } = useFeaturePermissions();
   const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
-
-  // Assessments are an Advanced-plan feature (SCRUM-216). Hide the row
-  // for basic users; the backend also enforces this with a 403, so even
-  // a direct deep link will land on the upgrade prompt in assessment-intake.
-  const { planType } = usePlanType();
-  const canAccessAssessments = meetsTier(planType, 'advanced');
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
@@ -243,28 +236,14 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
-            {canAccessAssessments && (
-              <>
-                <DrawerRow
-                  iconName="assignment"
-                  label="Health check-in"
-                  onPress={() => router.push('/Home/assessment-intake' as never)}
-                  divider
-                  colors={colors}
-                  getScaledFontSize={getScaledFontSize}
-                  getScaledFontWeight={getScaledFontWeight}
-                />
-                <DrawerRow
-                  iconName="list-alt"
-                  label="Available check-ins"
-                  onPress={() => router.push('/Home/assessments-catalog' as never)}
-                  divider
-                  colors={colors}
-                  getScaledFontSize={getScaledFontSize}
-                  getScaledFontWeight={getScaledFontWeight}
-                />
-              </>
-            )}
+            {/*
+              Assessment entry points live on the Plan tab now:
+              - PlanTypeChooser routes new Advanced/Agency users into the intake
+              - A banner on the Plan tab surfaces a Resume CTA if the user
+                hasn't completed the intake yet
+              Keeping the assessment-intake screen reachable for retake via
+              the banner; no drawer entry needed.
+            */}
             {onEmergencyContactPress && (
               <DrawerRow
                 iconName="contact-phone"

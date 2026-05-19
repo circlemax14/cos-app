@@ -271,14 +271,6 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
-      <Tabs.Screen
-        name="assessments-catalog"
-        options={{
-          title: 'Available check-ins',
-          href: null,
-          headerShown: false,
-        }}
-      />
     </Tabs>
     </View>
   );
