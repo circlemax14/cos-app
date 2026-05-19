@@ -1,6 +1,7 @@
 import React from 'react'
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
+import { router } from 'expo-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updatePlanType, type PlanType } from '@/services/api/plan-type'
 import { Colors } from '@/constants/theme'
@@ -103,9 +104,14 @@ export function PlanTypeChooser({
 
   const mutation = useMutation({
     mutationFn: (type: PlanType) => updatePlanType(type),
-    onSuccess: () => {
+    onSuccess: (_record, type) => {
       queryClient.invalidateQueries({ queryKey: ['plan-type'] })
       onClose()
+      // Advanced + Agency choices kick off the assessment that personalizes
+      // the AI care plan. Basic stays as-is — no assessment required.
+      if (type === 'advanced' || type === 'agency') {
+        router.push('/Home/assessment-intake?source=plan-upgrade' as never)
+      }
     },
     onError: (err: Error & { code?: string }) => {
       if (err.code === 'NO_AGENCY') {

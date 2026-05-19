@@ -10,7 +10,7 @@ import {
 } from 'react-native'
 import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
@@ -76,6 +76,12 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
+
+  // When source=plan-upgrade the user just picked Advanced/Agency and is
+  // expected to land on the Plan tab after submitting (where their new AI
+  // plan, regenerated with the assessment context, will be visible).
+  const params = useLocalSearchParams<{ source?: string }>()
+  const fromPlanUpgrade = params.source === 'plan-upgrade'
 
   // Plan-tier gate — basic users land on the upgrade prompt instead of
   // the form. Backend also returns 403 on the prefill / submit endpoints,
@@ -183,11 +189,13 @@ export default function AssessmentIntakeScreen(): React.JSX.Element {
             Your plan will refresh with these inputs in a few moments.
           </Text>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => router.replace('/Home/health-plan' as never)}
             style={[styles.doneBtn, { backgroundColor: colors.tint as string }]}
             accessibilityRole="button"
           >
-            <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Done</Text>
+            <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+              {fromPlanUpgrade ? 'See my plan' : 'Done'}
+            </Text>
           </Pressable>
         </View>
       </AppWrapper>

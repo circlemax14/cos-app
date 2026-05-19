@@ -23,7 +23,9 @@ import {
 import type { AiHealthPlan, TaskOccurrence, TaskType } from '@/services/api/types';
 import { useBadgeNotifier } from '@/hooks/use-badge-notifier';
 import { useQuery } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
+import { fetchAssessments } from '@/services/api/assessments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { AllBadgesModal } from '@/components/health-plan/AllBadgesModal';
@@ -93,6 +95,20 @@ export default function HealthPlanScreen() {
     staleTime: 5 * 60 * 1000,
   });
   const currentPlanType: PlanType | undefined = planTypeQuery.data;
+
+  // Banner safety net: a user on Advanced/Agency who never finished the
+  // intake assessment lands here with no responses. The AI plan can't
+  // personalize without that data — surface a Resume CTA.
+  const assessmentsQuery = useQuery({
+    queryKey: ['assessments'],
+    queryFn: fetchAssessments,
+    enabled: currentPlanType === 'advanced' || currentPlanType === 'agency',
+    staleTime: 60 * 1000,
+  });
+  const needsAssessment =
+    (currentPlanType === 'advanced' || currentPlanType === 'agency') &&
+    !assessmentsQuery.isLoading &&
+    (assessmentsQuery.data?.length ?? 0) === 0;
 
   // Surface the chooser on first visit (no record on disk → "first-visit"
   // is signaled by the chooser session flag below). We mark it shown
@@ -389,6 +405,25 @@ export default function HealthPlanScreen() {
       <ScrollView
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+        {needsAssessment ? (
+          <Pressable
+            onPress={() => router.push('/Home/assessment-intake?source=plan-upgrade' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Complete your health check-in"
+            style={[v2Styles.assessmentBanner, { backgroundColor: (colors.tint as string) + '14', borderColor: colors.tint as string }]}
+          >
+            <MaterialIcons name="assignment" size={getScaledFontSize(20)} color={colors.tint as string} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                Personalize your plan
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                Finish your health check-in so your AI plan reflects how you&apos;re actually doing.
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.tint as string} />
+          </Pressable>
+        ) : null}
         {/* Header */}
         <View style={styles.screenHead}>
           <View>
@@ -651,6 +686,15 @@ const v2Styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+  },
+  assessmentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 12,
   },
 });
 
