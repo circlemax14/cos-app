@@ -287,7 +287,15 @@ export function PlanTypeChooser({
         onRequestClose={() => { setPendingType(null); setConsentAck(false) }}
       >
         <View style={styles.consentBackdrop}>
-          <View style={[styles.consentSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.consentSheet,
+              {
+                backgroundColor: (colors.card as string) + 'F2',
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <Text style={[styles.consentTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
               Switching to {pendingType ? PLAN_CARDS.find((c) => c.type === pendingType)?.title : ''}
             </Text>
