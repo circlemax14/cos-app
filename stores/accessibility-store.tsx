@@ -129,10 +129,20 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
   };
 
   // Use the LARGER of system font scale or in-app scale
-  const effectiveFontScale = Math.max(
+  const rawFontScale = Math.max(
     systemFontScale,
     settings.fontSizeScale / 100
   );
+
+  // SCRUM-234: dampen the over-1.0 portion of the scale on phones so
+  // "Larger text" doesn't blow up layouts on small screens. Tablets and
+  // iPads (≥768 wide) keep the full effect because there's room for it.
+  // Anything ≤ 1.0 passes through untouched so users who SHRINK text
+  // still get the requested reduction.
+  const effectiveFontScale =
+    isTablet() || rawFontScale <= 1
+      ? rawFontScale
+      : 1 + (rawFontScale - 1) * 0.5;
 
   const accessibilityMultiplier = settings.isAccessibilityMode ? 1.3 : 1;
 
