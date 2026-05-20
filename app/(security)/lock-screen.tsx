@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   heroArea: {
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm,
   },
   // Concentric circles around the lock icon for the halo / glow effect.
   lockWrap: {
@@ -305,8 +305,11 @@ const styles = StyleSheet.create({
   },
   errorText: { marginLeft: 2 },
   padArea: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: Spacing.sm,
+    // SCRUM-237: keypad moves up near the PIN dots instead of being
+    // pinned to the bottom of the screen. The dots and the keypad now
+    // read as a single input cluster with just a comfortable gap
+    // between them; remaining bottom space is shared.
+    marginTop: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
 });
