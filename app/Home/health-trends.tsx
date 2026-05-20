@@ -1,494 +1,551 @@
-import { AppWrapper } from '@/components/app-wrapper';
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
-import { useTrends, useTrendExplanation } from '@/hooks/use-trends';
-import type { LongitudinalTrend } from '@/services/api/types';
-import React, { useCallback, useMemo, useState } from 'react';
+import { AppWrapper } from '@/components/app-wrapper'
+import { Colors } from '@/constants/theme'
+import { useAccessibility } from '@/stores/accessibility-store'
+import { useTrends } from '@/hooks/use-trends'
+import { TrendLineChart } from '@/components/health/TrendLineChart'
+import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
+import MaterialIcons from '@expo/vector-icons/MaterialIcons'
+import { router } from 'expo-router'
+import React, { useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Dimensions,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-} from 'react-native';
+} from 'react-native'
 
-// ─── Direction config ─────────────────────────────────────────────────────────
+/**
+ * Result Trends — redesigned (SCRUM-237).
+ *
+ * Mirrors the stakeholder reference screenshots from the web:
+ *   - Time-period filter chips at the top
+ *   - Component multi-select (compact, collapsible on mobile)
+ *   - Per-metric cards with a real line chart + green-shaded normal-range
+ *     band + "Data table" disclosure
+ *   - Download results footer card (placeholder until the backend
+ *     /trends/export endpoint lands)
+ *
+ * Chart rendering lives in <TrendLineChart /> so the home compact card
+ * and this full screen share the same SVG primitive.
+ */
 
-const DIRECTION_CONFIG: Record<
-  LongitudinalTrend['trendDirection'],
-  { label: string; indicator: string; color: string; bg: string }
-> = {
-  improving: { label: 'Improving', indicator: '↓', color: '#16a34a', bg: 'rgba(22,163,74,0.1)' },
-  worsening: { label: 'Worsening', indicator: '↑', color: '#dc2626', bg: 'rgba(220,38,38,0.1)' },
-  stable: { label: 'Stable', indicator: '→', color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
-  insufficient_data: { label: 'Insufficient Data', indicator: '?', color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
-};
+type TimeFilter = 'most-recent' | 'all' | 'month' | 'year'
+const TIME_FILTERS: { id: TimeFilter; label: string }[] = [
+  { id: 'most-recent', label: 'Most Recent' },
+  { id: 'all',         label: 'All Data' },
+  { id: 'month',       label: 'Month' },
+  { id: 'year',        label: 'Year' },
+]
 
-// ─── Category config ──────────────────────────────────────────────────────────
+const MAX_SELECTED = 10
+const MOST_RECENT_LIMIT = 10
 
-const CATEGORY_CONFIG: Record<
-  LongitudinalTrend['category'],
-  { label: string }
-> = {
-  lab: { label: 'Lab Results' },
-  vital: { label: 'Vitals' },
-  score: { label: 'Health Scores' },
-};
-
-// ─── Explanation sub-component ────────────────────────────────────────────────
-
-function TrendExplanationPanel({
-  metricCode,
-  colors,
-  getScaledFontSize,
-}: {
-  metricCode: string;
-  colors: (typeof Colors)['light'];
-  getScaledFontSize: (size: number) => number;
-}) {
-  const { data, isLoading } = useTrendExplanation(metricCode);
-
-  if (isLoading) {
-    return (
-      <View style={[styles.explanationPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <ActivityIndicator size="small" color={colors.tint} />
-      </View>
-    );
-  }
-
-  if (!data) {
-    return (
-      <View style={[styles.explanationPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={{ color: '#dc2626', fontSize: getScaledFontSize(13) }}>
-          Could not load explanation. Please try again.
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.explanationPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: '600', marginBottom: 4 }}>
-        What this means
-      </Text>
-      <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), marginBottom: 12, lineHeight: getScaledFontSize(20) }}>
-        {data.explanation}
-      </Text>
-
-      {data.factors.length > 0 && (
-        <>
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: '600', marginBottom: 4 }}>
-            Contributing factors
-          </Text>
-          {data.factors.map((factor, i) => (
-            <Text
-              key={i}
-              style={{ color: colors.text, fontSize: getScaledFontSize(13), marginBottom: 4, lineHeight: getScaledFontSize(20) }}
-            >
-              • {factor}
-            </Text>
-          ))}
-          <View style={{ marginBottom: 8 }} />
-        </>
-      )}
-
-      <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: '600', marginBottom: 4 }}>
-        Recommendation
-      </Text>
-      <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(20) }}>
-        {data.recommendation}
-      </Text>
-    </View>
-  );
-}
-
-// ─── Data points list (chart replacement for RN) ──────────────────────────────
-
-function DataPointsList({
-  trend,
-  colors,
-  getScaledFontSize,
-}: {
-  trend: LongitudinalTrend;
-  colors: (typeof Colors)['light'];
-  getScaledFontSize: (size: number) => number;
-}) {
-  // Show most recent 5 data points
-  const recent = useMemo(
-    () => [...trend.dataPoints].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5),
-    [trend.dataPoints],
-  );
-
-  if (recent.length === 0) return null;
-
-  return (
-    <View style={[styles.dataPointsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text
-        style={{
-          color: colors.subtext,
-          fontSize: getScaledFontSize(11),
-          fontWeight: '600',
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          marginBottom: 8,
-        }}
-      >
-        Recent values
-      </Text>
-      {recent.map((dp, i) => {
-        const interpColor =
-          dp.interpretation === 'high' || dp.interpretation === 'critical'
-            ? '#dc2626'
-            : dp.interpretation === 'low'
-            ? '#f59e0b'
-            : colors.text;
-
-        return (
-          <View key={i} style={styles.dataPointRow}>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), flex: 1 }}>
-              {dp.date.slice(0, 10)}
-            </Text>
-            <Text
-              style={{
-                color: interpColor,
-                fontSize: getScaledFontSize(14),
-                fontWeight: '600',
-              }}
-            >
-              {dp.value} {dp.unit}
-            </Text>
-            {dp.referenceRange && (
-              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginLeft: 6 }}>
-                ({dp.referenceRange.low}–{dp.referenceRange.high})
-              </Text>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Trend card ───────────────────────────────────────────────────────────────
-
-function TrendCard({
-  trend,
-  colors,
-  getScaledFontSize,
-  getScaledFontWeight,
-}: {
-  trend: LongitudinalTrend;
-  colors: (typeof Colors)['light'];
-  getScaledFontSize: (size: number) => number;
-  getScaledFontWeight: (weight: number) => string;
-}) {
-  const [explanationOpen, setExplanationOpen] = useState(false);
-  const dir = DIRECTION_CONFIG[trend.trendDirection];
-
-  return (
-    <View
-      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-      accessibilityLabel={`${trend.metricName}: ${dir.label}`}
-    >
-      {/* Header */}
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(16),
-              fontWeight: getScaledFontWeight(700) as any,
-              marginBottom: 2,
-            }}
-          >
-            {trend.metricName}
-          </Text>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
-            {trend.trendPeriod}
-          </Text>
-        </View>
-
-        {/* Direction badge */}
-        <View style={[styles.badge, { backgroundColor: dir.bg }]}>
-          <Text style={{ color: dir.color, fontSize: getScaledFontSize(12), fontWeight: '600' }}>
-            {dir.indicator} {dir.label}
-            {trend.trendPercentage !== undefined
-              ? `  ${trend.trendPercentage > 0 ? '+' : ''}${trend.trendPercentage}%`
-              : ''}
-          </Text>
-        </View>
-      </View>
-
-      {/* Data points list */}
-      <DataPointsList trend={trend} colors={colors} getScaledFontSize={getScaledFontSize} />
-
-      {/* Explanation panel */}
-      {explanationOpen && (
-        <TrendExplanationPanel
-          metricCode={trend.metricCode}
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-        />
-      )}
-
-      {/* Explain button */}
-      <TouchableOpacity
-        onPress={() => setExplanationOpen((prev) => !prev)}
-        style={[styles.explainButton, { borderColor: colors.border }]}
-        accessibilityRole="button"
-        accessibilityLabel={
-          explanationOpen
-            ? `Hide explanation for ${trend.metricName}`
-            : `Explain trend for ${trend.metricName}`
-        }
-      >
-        <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
-          {explanationOpen ? 'Hide Explanation' : 'Explain This Trend'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ─── Main screen ──────────────────────────────────────────────────────────────
+type Palette = typeof Colors['light'] | typeof Colors['dark']
 
 export default function HealthTrendsScreen() {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const [refreshing, setRefreshing] = useState(false);
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const [refreshing, setRefreshing] = useState(false)
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('most-recent')
+  const [selectedCodes, setSelectedCodes] = useState<Set<string> | null>(null)
+  const [selectorOpen, setSelectorOpen] = useState(false)
 
-  const { data, isLoading, isError, refetch } = useTrends();
+  const { data, isLoading, isError, refetch } = useTrends()
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  }, [refetch]);
+    setRefreshing(true)
+    await refetch()
+    setRefreshing(false)
+  }, [refetch])
 
-  const grouped = useMemo(() => {
-    const items = data ?? [];
-    const groups: Partial<Record<LongitudinalTrend['category'], LongitudinalTrend[]>> = {};
-    for (const trend of items) {
-      if (!groups[trend.category]) groups[trend.category] = [];
-      groups[trend.category]!.push(trend);
-    }
-    return (['lab', 'vital', 'score'] as const)
-      .filter((cat) => (groups[cat]?.length ?? 0) > 0)
-      .map((cat) => ({ category: cat, trends: groups[cat]! }));
-  }, [data]);
+  const allTrends = useMemo<LongitudinalTrend[]>(() => (data ?? []) as LongitudinalTrend[], [data])
+
+  // First render: auto-pick the most "interesting" trends as the
+  // initial selection — anything with out-of-range points or
+  // improving/worsening direction, up to MAX_SELECTED.
+  const effectiveSelection = useMemo<Set<string>>(() => {
+    if (selectedCodes !== null) return selectedCodes
+    const auto = pickInitialSelection(allTrends, MAX_SELECTED)
+    return auto
+  }, [selectedCodes, allTrends])
+
+  const visible = useMemo<LongitudinalTrend[]>(() => {
+    return allTrends
+      .filter((t) => effectiveSelection.has(t.metricCode))
+      .map((t) => applyTimeFilter(t, timeFilter))
+      .filter((t) => t.dataPoints.length > 0)
+  }, [allTrends, effectiveSelection, timeFilter])
+
+  const toggleCode = useCallback((code: string) => {
+    setSelectedCodes((prev) => {
+      const next = new Set(prev ?? pickInitialSelection(allTrends, MAX_SELECTED))
+      if (next.has(code)) {
+        next.delete(code)
+      } else if (next.size < MAX_SELECTED) {
+        next.add(code)
+      }
+      return next
+    })
+  }, [allTrends])
+
+  const clearSelections = useCallback(() => setSelectedCodes(new Set()), [])
 
   if (isLoading) {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
+          <ActivityIndicator size="large" color={colors.tint as string} />
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>
-            Loading health trends...
+            Loading health trends…
           </Text>
         </View>
       </AppWrapper>
-    );
+    )
   }
 
   if (isError) {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>😔</Text>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(16),
-              fontWeight: getScaledFontWeight(600) as any,
-              marginBottom: 8,
-            }}
-          >
+          <MaterialIcons name="error-outline" size={48} color={colors.subtext as string} />
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 12 }}>
             Failed to load health trends
           </Text>
           <TouchableOpacity
             onPress={() => refetch()}
-            style={[styles.retryButton, { backgroundColor: colors.tint }]}
+            style={[styles.retryButton, { backgroundColor: colors.tint as string }]}
             accessibilityRole="button"
-            accessibilityLabel="Retry loading health trends"
           >
-            <Text style={{ color: '#fff', fontSize: getScaledFontSize(16) }}>Retry</Text>
+            <Text style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>Retry</Text>
           </TouchableOpacity>
         </View>
       </AppWrapper>
-    );
+    )
   }
+
+  const screenWidth = Dimensions.get('window').width
+  const chartWidth = Math.min(screenWidth - 64, 520)
 
   return (
     <AppWrapper>
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
-        {/* Header */}
-        <View style={styles.headerSection}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>📈</Text>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(22),
-              fontWeight: getScaledFontWeight(700) as any,
-              textAlign: 'center',
-              marginBottom: 4,
-            }}
-            accessibilityRole="header"
-          >
-            Health Trends
-          </Text>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'center' }}>
-            Longitudinal view of your key health metrics
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
+            <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text as string} />
+          </Pressable>
+          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
+            Result Trends
           </Text>
         </View>
 
-        {grouped.length === 0 ? (
-          <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
-            <Text style={{ fontSize: 48, marginBottom: 16 }}>📊</Text>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(600) as any,
-                textAlign: 'center',
-                marginBottom: 6,
-              }}
-            >
-              No trend data available yet
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(14),
-                textAlign: 'center',
-                lineHeight: getScaledFontSize(20),
-              }}
-            >
-              As more lab results come in, trends will appear here.
+        {/* Time period filter chips */}
+        <View style={[styles.filterCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+          <View style={styles.filterRow}>
+            {TIME_FILTERS.map((f) => {
+              const active = timeFilter === f.id
+              return (
+                <Pressable
+                  key={f.id}
+                  onPress={() => setTimeFilter(f.id)}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: active ? (colors.tint as string) : 'transparent',
+                      borderColor: active ? (colors.tint as string) : colors.border,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={{ color: active ? '#fff' : (colors.text as string), fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(active ? 700 : 500) as any }}>
+                    {f.label}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 10 }}>
+            {filterSubtitle(timeFilter)}
+          </Text>
+        </View>
+
+        {/* Component selector — collapsible */}
+        <View style={[styles.selectorCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+          <Pressable
+            onPress={() => setSelectorOpen((v) => !v)}
+            style={styles.selectorHeader}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: selectorOpen }}
+          >
+            <View>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+                Select components
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                {effectiveSelection.size} of {Math.min(MAX_SELECTED, allTrends.length)} selected
+              </Text>
+            </View>
+            <MaterialIcons
+              name={selectorOpen ? 'expand-less' : 'expand-more'}
+              size={getScaledFontSize(22)}
+              color={colors.subtext as string}
+            />
+          </Pressable>
+          {selectorOpen ? (
+            <View style={{ marginTop: 10 }}>
+              {allTrends.length === 0 ? (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>No components yet.</Text>
+              ) : (
+                <>
+                  <View style={styles.chipWrap}>
+                    {allTrends.map((t) => {
+                      const checked = effectiveSelection.has(t.metricCode)
+                      const disabledNew = !checked && effectiveSelection.size >= MAX_SELECTED
+                      return (
+                        <Pressable
+                          key={t.metricCode}
+                          onPress={() => toggleCode(t.metricCode)}
+                          disabled={disabledNew}
+                          style={[
+                            styles.selChip,
+                            {
+                              backgroundColor: checked ? (colors.tint as string) + '22' : 'transparent',
+                              borderColor: checked ? (colors.tint as string) : colors.border,
+                              opacity: disabledNew ? 0.4 : 1,
+                            },
+                          ]}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked }}
+                        >
+                          <MaterialIcons
+                            name={checked ? 'check-box' : 'check-box-outline-blank'}
+                            size={getScaledFontSize(14)}
+                            color={checked ? (colors.tint as string) : (colors.subtext as string)}
+                          />
+                          <Text style={{ marginLeft: 6, color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(checked ? 600 : 500) as any }}>
+                            {t.metricName}
+                          </Text>
+                        </Pressable>
+                      )
+                    })}
+                  </View>
+                  <Pressable
+                    onPress={clearSelections}
+                    style={[styles.clearBtn, { borderColor: colors.border }]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
+                      Clear selections
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          ) : null}
+        </View>
+
+        {/* Trend cards */}
+        {visible.length === 0 ? (
+          <View style={[styles.emptyCard, { borderColor: colors.border }]}>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
+              Nothing in this view. Pick components above or expand the time range.
             </Text>
           </View>
         ) : (
-          grouped.map(({ category, trends }) => (
-            <View key={category} style={styles.categoryGroup}>
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(13),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.5,
-                  marginBottom: 10,
-                  paddingLeft: 4,
-                }}
-                accessibilityRole="header"
-              >
-                {CATEGORY_CONFIG[category].label}
-              </Text>
-              {trends.map((trend) => (
-                <TrendCard
-                  key={trend.id}
-                  trend={trend}
-                  colors={colors}
-                  getScaledFontSize={getScaledFontSize}
-                  getScaledFontWeight={getScaledFontWeight}
-                />
-              ))}
-            </View>
+          visible.map((t) => (
+            <TrendCard
+              key={t.id}
+              trend={t}
+              chartWidth={chartWidth}
+              colors={colors}
+              fontSize={getScaledFontSize}
+              fontWeight={getScaledFontWeight}
+            />
           ))
         )}
 
-        <View style={{ height: 40 }} />
+        {/* Download results footer */}
+        <View style={[styles.downloadCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={styles.downloadHeaderRow}>
+              <MaterialIcons name="description" size={getScaledFontSize(18)} color={colors.tint as string} />
+              <Text style={{ marginLeft: 8, color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+                Download results
+              </Text>
+            </View>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 4 }}>
+              Save a table of your results as a PDF document.
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => {/* TODO: wire to /trends/export when backend lands */}}
+            style={[styles.downloadBtn, { backgroundColor: colors.tint as string }]}
+            accessibilityRole="button"
+            accessibilityLabel="Download results"
+          >
+            <MaterialIcons name="download" size={getScaledFontSize(16)} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any, marginLeft: 6 }}>
+              Download
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </AppWrapper>
-  );
+  )
+}
+
+// ─── Per-card with chart + data-table disclosure ────────────────────────────
+
+function TrendCard({
+  trend,
+  chartWidth,
+  colors,
+  fontSize,
+  fontWeight,
+}: {
+  trend: LongitudinalTrend
+  chartWidth: number
+  colors: Palette
+  fontSize: (n: number) => number
+  fontWeight: (n: number) => number | string
+}) {
+  const [tableOpen, setTableOpen] = useState(false)
+  const ref = trend.dataPoints[0]?.referenceRange
+  const unit = trend.dataPoints[0]?.unit ?? ''
+
+  // Newest first for the data table.
+  const rows = [...trend.dataPoints].sort((a, b) => b.date.localeCompare(a.date))
+
+  return (
+    <View style={[styles.trendCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+      <Text style={{ color: colors.text, fontSize: fontSize(16), fontWeight: fontWeight(700) as any }}>
+        {trend.metricName}
+      </Text>
+      {ref ? (
+        <Text style={{ color: colors.subtext, fontSize: fontSize(12), marginTop: 2 }}>
+          Normal range: {ref.low}–{ref.high} {unit}
+        </Text>
+      ) : null}
+
+      <View style={{ marginTop: 12, alignItems: 'center' }}>
+        <TrendLineChart
+          points={trend.dataPoints}
+          referenceRange={ref}
+          width={chartWidth}
+          height={170}
+          textColor={colors.text as string}
+          subtleColor={colors.subtext as string}
+          lineColor={colors.tint as string}
+        />
+      </View>
+
+      <Pressable
+        onPress={() => setTableOpen((v) => !v)}
+        style={styles.tableToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: tableOpen }}
+      >
+        <Text style={{ color: colors.tint as string, fontSize: fontSize(13), fontWeight: fontWeight(600) as any }}>
+          Data table
+        </Text>
+        <MaterialIcons
+          name={tableOpen ? 'expand-less' : 'expand-more'}
+          size={fontSize(18)}
+          color={colors.tint as string}
+        />
+      </Pressable>
+
+      {tableOpen ? (
+        <View style={styles.dataTable}>
+          <View style={[styles.dataRow, styles.dataHeaderRow]}>
+            <Text style={[styles.dataCellLeft, { color: colors.subtext, fontSize: fontSize(11), fontWeight: fontWeight(600) as any }]}>Date</Text>
+            <Text style={[styles.dataCellMid, { color: colors.subtext, fontSize: fontSize(11), fontWeight: fontWeight(600) as any }]}>Value</Text>
+            <Text style={[styles.dataCellRight, { color: colors.subtext, fontSize: fontSize(11), fontWeight: fontWeight(600) as any }]}>Normal Range</Text>
+          </View>
+          {rows.map((p, i) => (
+            <View key={i} style={[styles.dataRow, { borderTopColor: colors.border }]}>
+              <Text style={[styles.dataCellLeft, { color: colors.text, fontSize: fontSize(13) }]}>{formatRowDate(p.date)}</Text>
+              <View style={styles.dataCellMid}>
+                <Text style={{ color: colors.text, fontSize: fontSize(13), fontWeight: fontWeight(700) as any }}>
+                  {p.value} {p.unit}
+                </Text>
+                {p.interpretation && p.interpretation !== 'normal' ? (
+                  <Text style={[
+                    styles.interpPill,
+                    {
+                      color: '#A16207',
+                      backgroundColor: '#FDE68A',
+                      fontSize: fontSize(10),
+                      fontWeight: fontWeight(700) as any,
+                    },
+                  ]}>
+                    {capitalize(p.interpretation)}
+                  </Text>
+                ) : null}
+              </View>
+              <Text style={[styles.dataCellRight, { color: colors.subtext, fontSize: fontSize(12) }]}>
+                {p.referenceRange ? `${p.referenceRange.low}–${p.referenceRange.high} ${p.unit}` : '—'}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function pickInitialSelection(trends: LongitudinalTrend[], cap: number): Set<string> {
+  const score = (t: LongitudinalTrend): number => {
+    let s = 0
+    for (const p of t.dataPoints) {
+      if (p.interpretation && p.interpretation !== 'normal') s += 2
+    }
+    if (t.trendDirection === 'worsening') s += 3
+    else if (t.trendDirection === 'improving') s += 2
+    return s
+  }
+  return new Set(
+    [...trends]
+      .sort((a, b) => score(b) - score(a) || a.metricName.localeCompare(b.metricName))
+      .slice(0, cap)
+      .map((t) => t.metricCode),
+  )
+}
+
+function applyTimeFilter(trend: LongitudinalTrend, filter: TimeFilter): LongitudinalTrend {
+  if (filter === 'all' || trend.dataPoints.length === 0) return trend
+  const sorted = [...trend.dataPoints].sort((a, b) => a.date.localeCompare(b.date))
+  let kept: TrendDataPoint[] = sorted
+  if (filter === 'most-recent') {
+    kept = sorted.slice(-MOST_RECENT_LIMIT)
+  } else if (filter === 'month' || filter === 'year') {
+    const now = Date.now()
+    const cutoff = now - (filter === 'month' ? 30 : 365) * 24 * 60 * 60 * 1000
+    kept = sorted.filter((p) => new Date(p.date).getTime() >= cutoff)
+  }
+  return { ...trend, dataPoints: kept }
+}
+
+function filterSubtitle(filter: TimeFilter): string {
+  switch (filter) {
+    case 'most-recent': return `Showing up to ${MOST_RECENT_LIMIT} most recent results`
+    case 'all':         return 'Showing all available results'
+    case 'month':       return 'Showing results from the last month'
+    case 'year':        return 'Showing results from the last year'
+    default:            return ''
+  }
+}
+
+function formatRowDate(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function capitalize(s: string): string {
+  if (!s) return s
+  return s[0].toUpperCase() + s.slice(1)
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  retryButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 24,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerSection: {
-    alignItems: 'center',
-    paddingTop: 16,
-    marginBottom: 20,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 32,
-    borderRadius: 16,
-  },
-  categoryGroup: {
-    marginBottom: 24,
-  },
-  card: {
+  container: { flex: 1, paddingHorizontal: 16 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  retryButton: { marginTop: 18, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 12 },
+  title: { marginLeft: 12, flex: 1, letterSpacing: 0.2 },
+  filterCard: {
+    borderWidth: 1,
     borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginBottom: 12,
-    flexWrap: 'wrap',
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  dataPointsContainer: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-  },
-  dataPointRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
-  },
-  explanationPanel: {
-    borderWidth: 1,
-    borderRadius: 8,
     padding: 12,
     marginBottom: 12,
   },
-  explainButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
     borderWidth: 1,
+  },
+  selectorCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  selectorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  selChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  clearBtn: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  emptyCard: { borderWidth: 1, borderRadius: 14, padding: 18, marginTop: 4 },
+  trendCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+  },
+  tableToggle: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
     marginTop: 4,
   },
-});
+  dataTable: { marginTop: 4 },
+  dataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  dataHeaderRow: { borderTopWidth: 0 },
+  dataCellLeft: { flex: 1.2 },
+  dataCellMid: { flex: 1.4, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dataCellRight: { flex: 1.4, textAlign: 'right' },
+  interpPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    textTransform: 'capitalize',
+  },
+  downloadCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 6,
+    gap: 12,
+  },
+  downloadHeaderRow: { flexDirection: 'row', alignItems: 'center' },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+})
