@@ -309,15 +309,15 @@ function ActionButton({
       accessibilityLabel={primaryLabel}
     >
       <View style={[styles.iconCircle, { backgroundColor: accent }]}>
-        <MaterialIcons name={icon} size={getScaledFontSize(20)} color="white" />
+        <MaterialIcons name={icon} size={getScaledFontSize(18)} color="white" />
       </View>
       <Text
         style={{
           color: colors.text,
-          fontSize: getScaledFontSize(13),
+          fontSize: getScaledFontSize(12),
           fontWeight: getScaledFontWeight(700) as any,
           textAlign: 'center',
-          marginTop: 8,
+          marginTop: 6,
         }}
         numberOfLines={1}
       >
@@ -326,12 +326,12 @@ function ActionButton({
       <Text
         style={{
           color: colors.subtext,
-          fontSize: getScaledFontSize(10),
+          fontSize: getScaledFontSize(9),
           fontWeight: getScaledFontWeight(600) as any,
           textAlign: 'center',
           textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          marginTop: 2,
+          letterSpacing: 0.4,
+          marginTop: 1,
         }}
         numberOfLines={1}
       >
@@ -567,24 +567,29 @@ function PharmacyPickerModal({ visible, onClose, onPick }: PharmacyPickerModalPr
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 12,
     paddingHorizontal: 4,
   },
+  // SCRUM-234: compact the three quick-action cards. The old layout
+  // (minHeight 100, big icon circle, two stacked labels) felt too tall
+  // on phones; trimming vertical padding and shrinking the icon bubble
+  // brings it closer to the web QuickActionButtons profile while keeping
+  // the same primary+secondary text hierarchy.
   button: {
     flex: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    minHeight: 100,
+    minHeight: 76,
   },
   iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

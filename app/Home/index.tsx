@@ -2696,60 +2696,53 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
-        {/* Centered heading (matches the web Patient Home layout in
-            cos-frontend/src/pages/patient/Home.tsx). The view-mode toggle
-            used to sit inline next to the title; we moved it to a small
-            right-aligned control just above the circle so the heading
-            reads cleanly. */}
-        <View style={{ paddingHorizontal: 16, paddingTop: 8, alignItems: 'center' }}>
+        {/* Title row — heading + inline view-mode toggle, mirroring the
+            classic layout the stakeholder asked us to keep. SCRUM-234
+            moved the toggle back inline (it had been hoisted to a slot
+            just above the circle in SCRUM-233). The toggle stays small
+            so the title still reads as the dominant element. */}
+        <View style={[styles.titleRow, { paddingHorizontal: 16, paddingTop: 8 }]}>
           <Text style={[
             styles.sectionTitle,
             {
               fontSize: getScaledFontSize(24),
               fontWeight: getScaledFontWeight(600) as any,
               color: colors.text,
-              textAlign: 'center',
+              flex: 1,
             }
           ]}>
             {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
           </Text>
+          <TouchableOpacity
+            onPress={toggleViewMode}
+            style={[
+              styles.toggleButton,
+              {
+                backgroundColor: colors.text + '10',
+                padding: getScaledFontSize(8),
+                borderRadius: getScaledFontSize(8),
+                marginLeft: 8,
+              }
+            ]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle view"
+          >
+            <IconSymbol
+              name={getToggleIcon()}
+              size={getScaledFontSize(20)}
+              color={colors.tint || '#008080'}
+            />
+          </TouchableOpacity>
         </View>
 
-        {/* Quick actions row — moved ABOVE the circle to match the web
-            layout. Drops the +80 marginTop hack that previously cleared
-            the orbiting-avatar overhang because they're no longer above. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 16, marginBottom: 4 }}>
+        {/* Quick actions row — between title and circle, matches the web
+            layout. */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 4 }}>
           <QuickActionButtons />
         </View>
 
         <View style={styles.circleSection}>
-          <View style={{
-            flexDirection: 'row',
-            justifyContent: 'flex-end',
-            paddingHorizontal: 16,
-            paddingBottom: 4,
-          }}>
-            <TouchableOpacity
-              onPress={toggleViewMode}
-              style={[
-                styles.toggleButton,
-                {
-                  backgroundColor: colors.text + '10',
-                  padding: getScaledFontSize(8),
-                  borderRadius: getScaledFontSize(8),
-                }
-              ]}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Toggle view"
-            >
-              <IconSymbol
-                name={getToggleIcon()}
-                size={getScaledFontSize(20)}
-                color={colors.tint || '#008080'}
-              />
-            </TouchableOpacity>
-          </View>
           {viewMode === 'circle' ? (
             isTabletDevice ? (
               <TabletCircleView
@@ -3099,6 +3092,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 8,
     paddingHorizontal: 24,
+    // SCRUM-234: clear gap between the Circle and the next section
+    // (Upcoming Appointments / Recommended). The orbiting avatars are
+    // absolute-positioned and spill below the circleSection's flow box;
+    // 32 below the circle's own visual end lands ~comfortably below
+    // the bottom-most avatar.
+    marginBottom: 32,
   },
   background: {
     position: 'absolute',
