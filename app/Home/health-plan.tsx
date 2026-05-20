@@ -21,7 +21,6 @@ import {
   skipTask,
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, TaskOccurrence, TaskType } from '@/services/api/types';
-import { useBadgeNotifier } from '@/hooks/use-badge-notifier';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
@@ -29,7 +28,6 @@ import { fetchAssessments } from '@/services/api/assessments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
-import { AllBadgesModal } from '@/components/health-plan/AllBadgesModal';
 import { Pressable } from 'react-native';
 
 // Today's ISO date in the patient's local timezone
@@ -74,11 +72,6 @@ export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  // Watch the user's badge progress and fire celebration overlays for any
-  // newly-earned ones since last visit. First-install heuristic in the hook
-  // prevents a stack of celebrations on fresh login.
-  useBadgeNotifier();
-
   const [plan, setPlan] = useState<AiHealthPlan | null>(null);
   const [tasks, setTasks] = useState<TaskOccurrence[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +80,6 @@ export default function HealthPlanScreen() {
 
   // Health Plan v2: Plan / Progress tabs + plan-type chooser
   const [activeTab, setActiveTab] = useState<'plan' | 'progress'>('plan');
-  const [showAllBadges, setShowAllBadges] = useState(false);
   const [showChooser, setShowChooser] = useState(false);
 
   const planTypeQuery = useQuery({
@@ -366,7 +358,6 @@ export default function HealthPlanScreen() {
         hasAgency
         onClose={() => setShowChooser(false)}
       />
-      <AllBadgesModal visible={showAllBadges} onClose={() => setShowAllBadges(false)} />
 
       {/* Tab bar */}
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
@@ -442,7 +433,6 @@ export default function HealthPlanScreen() {
           adherencePercent={adherencePercent}
           completedToday={completedToday}
           totalToday={totalToday}
-          onOpenAllBadges={() => setShowAllBadges(true)}
         />
       ) : (
       <ScrollView

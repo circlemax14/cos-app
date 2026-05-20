@@ -90,11 +90,27 @@ export function useNotifications() {
 
 /**
  * Request notification permissions and register the device token with the backend.
+ *
+ * SCRUM-249: users were silently losing daily task reminders because the
+ * earlier implementation only proceeded when permissions were already
+ * `granted`. Users who skipped the onboarding permission prompt, denied
+ * once, or onboarded before that gate landed would never re-prompt and
+ * therefore never have a device token written to their backend record.
+ * Without a `deviceTokens` entry, the EventBridge-driven reminder lambda
+ * (`healthPlanReminders`) skips them entirely.
+ *
+ * Fix: when permissions are still `undetermined`, proactively request
+ * them on every app launch until the user makes an explicit choice.
+ * `denied` users still no-op (we don't keep nagging them).
  */
 async function registerPushToken() {
   try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    if (existingStatus !== 'granted') {
+    let { status } = await Notifications.getPermissionsAsync();
+    if (status === 'undetermined') {
+      const requested = await Notifications.requestPermissionsAsync();
+      status = requested.status;
+    }
+    if (status !== 'granted') {
       return;
     }
 
