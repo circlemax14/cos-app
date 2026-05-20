@@ -26,14 +26,17 @@ const DIRECTION_BADGE: Record<
 }
 
 /**
- * Compact Health Trends section for the Home screen (SCRUM-237).
- * Surfaces up to 3 of the patient's most relevant trends as mini
- * line charts with a normal-range band + direction badge, with
- * a "View all" CTA into the full /Home/health-trends screen.
+ * Compact Health Trends section for the Home screen (SCRUM-237 +
+ * SCRUM-238 visibility fix).
  *
- * Renders nothing when the patient has no trends yet (cold FHIR).
+ * Always renders the section header + a "View all →" CTA so users
+ * have a discoverable entry point into the trends screen even before
+ * any FHIR data has resolved into longitudinal trends. When trends
+ * exist, surfaces up to 3 most relevant as mini line charts; otherwise
+ * shows a small empty-state stub that still routes into the full
+ * trends screen.
  */
-export function HomeTrendsCard(): React.JSX.Element | null {
+export function HomeTrendsCard(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const trendsQuery = useTrends()
@@ -68,8 +71,8 @@ export function HomeTrendsCard(): React.JSX.Element | null {
       .slice(0, 3)
   }, [trendsQuery.data])
 
-  if (trendsQuery.isLoading) return null
-  if (top.length === 0) return null
+  const goToFullScreen = () => router.push('/Home/health-trends' as never)
+  const isLoading = trendsQuery.isLoading
 
   return (
     <View style={styles.wrap}>
@@ -87,7 +90,7 @@ export function HomeTrendsCard(): React.JSX.Element | null {
           Health Trends
         </Text>
         <Pressable
-          onPress={() => router.push('/Home/health-trends' as never)}
+          onPress={goToFullScreen}
           accessibilityRole="button"
           accessibilityLabel="View all health trends"
           hitSlop={8}
@@ -98,17 +101,51 @@ export function HomeTrendsCard(): React.JSX.Element | null {
         </Pressable>
       </View>
 
-      <View style={{ gap: 10 }}>
-        {top.map((t) => (
-          <TrendMiniCard
-            key={t.id}
-            trend={t}
-            colors={colors}
-            fontSize={getScaledFontSize}
-            fontWeight={getScaledFontWeight}
-          />
-        ))}
-      </View>
+      {top.length > 0 ? (
+        <View style={{ gap: 10 }}>
+          {top.map((t) => (
+            <TrendMiniCard
+              key={t.id}
+              trend={t}
+              colors={colors}
+              fontSize={getScaledFontSize}
+              fontWeight={getScaledFontWeight}
+            />
+          ))}
+        </View>
+      ) : (
+        // Empty / loading state. Still tappable so users can open the full
+        // trends screen, where the same empty-state copy renders with
+        // pull-to-refresh.
+        <Pressable
+          onPress={goToFullScreen}
+          accessibilityRole="button"
+          accessibilityLabel="Open Health Trends"
+          style={({ pressed }) => [
+            styles.emptyCard,
+            {
+              backgroundColor: (colors.card as string) + 'D9',
+              borderColor: colors.border,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View style={[styles.emptyIcon, { backgroundColor: (colors.tint as string) + '18' }]}>
+            <MaterialIcons name="show-chart" size={getScaledFontSize(20)} color={colors.tint as string} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+              {isLoading ? 'Loading your trends…' : 'No trends yet'}
+            </Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+              {isLoading
+                ? 'Hang tight while we line up your latest results.'
+                : 'We’ll surface lab and vital trends here as your records flow in. Tap to open the full view.'}
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.subtext as string} />
+        </Pressable>
+      )}
     </View>
   )
 }
@@ -222,5 +259,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 999,
     marginLeft: 8,
+  },
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  emptyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 })
