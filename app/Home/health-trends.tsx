@@ -6,13 +6,17 @@ import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
+import * as FileSystem from 'expo-file-system/legacy'
 import React, { useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -64,38 +68,45 @@ export default function HealthTrendsScreen() {
     setRefreshing(false)
   }, [refetch, refetchHealthKit])
 
-  // Merge FHIR-sourced (backend) and HealthKit-sourced trends, preferring
-  // FHIR if the same metricCode appears in both (clinic-recorded data wins
-  // over on-device samples for the same measurement). SCRUM-240.
-  const allTrends = useMemo<LongitudinalTrend[]>(() => {
-    const fhir = ((data ?? []) as LongitudinalTrend[]).map((t) => ({
+  // Split trends by provenance — Apple Health goes in the carousel at the
+  // top, clinic-sourced (FHIR) trends go in the selector + full-card layout
+  // below. If the same metricCode appears in both, FHIR wins (clinic-
+  // recorded data > on-device samples for the same measurement). SCRUM-244.
+  const clinicTrends = useMemo<LongitudinalTrend[]>(() => {
+    return ((data ?? []) as LongitudinalTrend[]).map((t) => ({
       ...t,
       source: t.source ?? ('fhir' as const),
     }))
-    const hk = (healthKitTrends ?? []) as LongitudinalTrend[]
-    const codes = new Set(fhir.map((t) => t.metricCode))
-    return [...fhir, ...hk.filter((t) => !codes.has(t.metricCode))]
-  }, [data, healthKitTrends])
+  }, [data])
 
-  // First render: auto-pick the most "interesting" trends as the
-  // initial selection — anything with out-of-range points or
-  // improving/worsening direction, up to MAX_SELECTED.
+  const appleHealthTrends = useMemo<LongitudinalTrend[]>(() => {
+    const hk = (healthKitTrends ?? []) as LongitudinalTrend[]
+    const clinicCodes = new Set(clinicTrends.map((t) => t.metricCode))
+    return hk
+      .filter((t) => !clinicCodes.has(t.metricCode))
+      .map((t) => applyTimeFilter(t, timeFilter))
+      .filter((t) => t.dataPoints.length > 0)
+  }, [healthKitTrends, clinicTrends, timeFilter])
+
+  // First render: auto-pick the most "interesting" *clinic* trends as the
+  // initial selection — anything with out-of-range points or improving/
+  // worsening direction, up to MAX_SELECTED. The carousel always shows
+  // every Apple Health trend, no selector needed.
   const effectiveSelection = useMemo<Set<string>>(() => {
     if (selectedCodes !== null) return selectedCodes
-    const auto = pickInitialSelection(allTrends, MAX_SELECTED)
-    return auto
-  }, [selectedCodes, allTrends])
+    return pickInitialSelection(clinicTrends, MAX_SELECTED)
+  }, [selectedCodes, clinicTrends])
 
-  const visible = useMemo<LongitudinalTrend[]>(() => {
-    return allTrends
+  const visibleClinic = useMemo<LongitudinalTrend[]>(() => {
+    return clinicTrends
       .filter((t) => effectiveSelection.has(t.metricCode))
       .map((t) => applyTimeFilter(t, timeFilter))
       .filter((t) => t.dataPoints.length > 0)
-  }, [allTrends, effectiveSelection, timeFilter])
+  }, [clinicTrends, effectiveSelection, timeFilter])
 
   const toggleCode = useCallback((code: string) => {
     setSelectedCodes((prev) => {
-      const next = new Set(prev ?? pickInitialSelection(allTrends, MAX_SELECTED))
+      const next = new Set(prev ?? pickInitialSelection(clinicTrends, MAX_SELECTED))
       if (next.has(code)) {
         next.delete(code)
       } else if (next.size < MAX_SELECTED) {
@@ -103,9 +114,38 @@ export default function HealthTrendsScreen() {
       }
       return next
     })
-  }, [allTrends])
+  }, [clinicTrends])
 
   const clearSelections = useCallback(() => setSelectedCodes(new Set()), [])
+
+  // Download results — build a CSV of everything currently on-screen
+  // (Apple Health carousel + visible clinic trends) and hand it to the
+  // OS share sheet. No backend round-trip needed.
+  const onDownloadResults = useCallback(async () => {
+    const allVisible = [...appleHealthTrends, ...visibleClinic]
+    if (allVisible.length === 0) {
+      Alert.alert('Nothing to download', 'Pick or expand some components first.')
+      return
+    }
+    try {
+      const csv = buildTrendsCsv(allVisible)
+      const filename = `trends-${new Date().toISOString().slice(0, 10)}.csv`
+      const path = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${filename}`
+      await FileSystem.writeAsStringAsync(path, csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+      })
+      if (Platform.OS === 'ios') {
+        await Share.share({ url: path, title: 'Result Trends' })
+      } else {
+        // Android Share doesn't honor file: URLs from cacheDirectory in
+        // the same way iOS does; fall back to sharing CSV text directly.
+        await Share.share({ message: csv, title: 'Result Trends' })
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to export trends.'
+      Alert.alert('Download failed', msg)
+    }
+  }, [appleHealthTrends, visibleClinic])
 
   if (isLoading) {
     return (
@@ -187,100 +227,151 @@ export default function HealthTrendsScreen() {
           </Text>
         </View>
 
-        {/* Component selector — collapsible */}
-        <View style={[styles.selectorCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-          <Pressable
-            onPress={() => setSelectorOpen((v) => !v)}
-            style={styles.selectorHeader}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: selectorOpen }}
-          >
-            <View>
-              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
-                Select components
-              </Text>
-              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
-                {effectiveSelection.size} of {Math.min(MAX_SELECTED, allTrends.length)} selected
+        {/* Apple Health — horizontal carousel of every available metric.
+            No selector — the slider IS the picker. Only renders when we
+            actually have data (iOS only; Android returns []). */}
+        {appleHealthTrends.length > 0 ? (
+          <View style={{ marginTop: 4 }}>
+            <View style={styles.sectionHeaderRow}>
+              <MaterialIcons
+                name="favorite"
+                size={getScaledFontSize(16)}
+                color={colors.text as string}
+              />
+              <Text style={[styles.sectionHeader, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }]}>
+                Apple Health
               </Text>
             </View>
-            <MaterialIcons
-              name={selectorOpen ? 'expand-less' : 'expand-more'}
-              size={getScaledFontSize(22)}
-              color={colors.subtext as string}
-            />
-          </Pressable>
-          {selectorOpen ? (
-            <View style={{ marginTop: 10 }}>
-              {allTrends.length === 0 ? (
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>No components yet.</Text>
-              ) : (
-                <>
-                  <View style={styles.chipWrap}>
-                    {allTrends.map((t) => {
-                      const checked = effectiveSelection.has(t.metricCode)
-                      const disabledNew = !checked && effectiveSelection.size >= MAX_SELECTED
-                      return (
-                        <Pressable
-                          key={t.metricCode}
-                          onPress={() => toggleCode(t.metricCode)}
-                          disabled={disabledNew}
-                          style={[
-                            styles.selChip,
-                            {
-                              backgroundColor: checked ? (colors.tint as string) + '22' : 'transparent',
-                              borderColor: checked ? (colors.tint as string) : colors.border,
-                              opacity: disabledNew ? 0.4 : 1,
-                            },
-                          ]}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked }}
-                        >
-                          <MaterialIcons
-                            name={checked ? 'check-box' : 'check-box-outline-blank'}
-                            size={getScaledFontSize(14)}
-                            color={checked ? (colors.tint as string) : (colors.subtext as string)}
-                          />
-                          <Text style={{ marginLeft: 6, color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(checked ? 600 : 500) as any }}>
-                            {t.metricName}
-                          </Text>
-                        </Pressable>
-                      )
-                    })}
-                  </View>
-                  <Pressable
-                    onPress={clearSelections}
-                    style={[styles.clearBtn, { borderColor: colors.border }]}
-                    accessibilityRole="button"
-                  >
-                    <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
-                      Clear selections
-                    </Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          ) : null}
-        </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.carouselContent}
+              decelerationRate="fast"
+            >
+              {appleHealthTrends.map((t) => (
+                <AppleHealthMiniCard
+                  key={t.id}
+                  trend={t}
+                  colors={colors}
+                  fontSize={getScaledFontSize}
+                  fontWeight={getScaledFontWeight}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
-        {/* Trend cards */}
-        {visible.length === 0 ? (
+        {/* From Your Clinic — full-card layout with multi-select. */}
+        {clinicTrends.length > 0 ? (
+          <View style={styles.sectionHeaderRow}>
+            <MaterialIcons
+              name="local-hospital"
+              size={getScaledFontSize(16)}
+              color={colors.text as string}
+            />
+            <Text style={[styles.sectionHeader, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }]}>
+              From Your Clinic
+            </Text>
+          </View>
+        ) : null}
+
+        {clinicTrends.length > 0 ? (
+          <View style={[styles.selectorCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+            <Pressable
+              onPress={() => setSelectorOpen((v) => !v)}
+              style={styles.selectorHeader}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: selectorOpen }}
+            >
+              <View>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+                  Select components
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                  {effectiveSelection.size} of {Math.min(MAX_SELECTED, clinicTrends.length)} selected
+                </Text>
+              </View>
+              <MaterialIcons
+                name={selectorOpen ? 'expand-less' : 'expand-more'}
+                size={getScaledFontSize(22)}
+                color={colors.subtext as string}
+              />
+            </Pressable>
+            {selectorOpen ? (
+              <View style={{ marginTop: 10 }}>
+                <View style={styles.chipWrap}>
+                  {clinicTrends.map((t) => {
+                    const checked = effectiveSelection.has(t.metricCode)
+                    const disabledNew = !checked && effectiveSelection.size >= MAX_SELECTED
+                    return (
+                      <Pressable
+                        key={t.metricCode}
+                        onPress={() => toggleCode(t.metricCode)}
+                        disabled={disabledNew}
+                        style={[
+                          styles.selChip,
+                          {
+                            backgroundColor: checked ? (colors.tint as string) + '22' : 'transparent',
+                            borderColor: checked ? (colors.tint as string) : colors.border,
+                            opacity: disabledNew ? 0.4 : 1,
+                          },
+                        ]}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked }}
+                      >
+                        <MaterialIcons
+                          name={checked ? 'check-box' : 'check-box-outline-blank'}
+                          size={getScaledFontSize(14)}
+                          color={checked ? (colors.tint as string) : (colors.subtext as string)}
+                        />
+                        <Text style={{ marginLeft: 6, color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(checked ? 600 : 500) as any }}>
+                          {t.metricName}
+                        </Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+                <Pressable
+                  onPress={clearSelections}
+                  style={[styles.clearBtn, { borderColor: colors.border }]}
+                  accessibilityRole="button"
+                >
+                  <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
+                    Clear selections
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Clinic trend cards */}
+        {clinicTrends.length > 0 && visibleClinic.length === 0 ? (
           <View style={[styles.emptyCard, { borderColor: colors.border }]}>
             <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
               Nothing in this view. Pick components above or expand the time range.
             </Text>
           </View>
-        ) : (
-          visible.map((t) => (
-            <TrendCard
-              key={t.id}
-              trend={t}
-              chartWidth={chartWidth}
-              colors={colors}
-              fontSize={getScaledFontSize}
-              fontWeight={getScaledFontWeight}
-            />
-          ))
-        )}
+        ) : null}
+        {visibleClinic.map((t) => (
+          <TrendCard
+            key={t.id}
+            trend={t}
+            chartWidth={chartWidth}
+            colors={colors}
+            fontSize={getScaledFontSize}
+            fontWeight={getScaledFontWeight}
+          />
+        ))}
+
+        {/* Truly empty — no Apple Health AND no Clinic data. */}
+        {clinicTrends.length === 0 && appleHealthTrends.length === 0 ? (
+          <View style={[styles.emptyCard, { borderColor: colors.border }]}>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
+              No trends yet. Lab values and Apple Health data will appear here as your records flow in.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Download results footer */}
         <View style={[styles.downloadCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
@@ -292,11 +383,11 @@ export default function HealthTrendsScreen() {
               </Text>
             </View>
             <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 4 }}>
-              Save a table of your results as a PDF document.
+              Save the data on this screen as a CSV file.
             </Text>
           </View>
           <Pressable
-            onPress={() => {/* TODO: wire to /trends/export when backend lands */}}
+            onPress={onDownloadResults}
             style={[styles.downloadBtn, { backgroundColor: colors.tint as string }]}
             accessibilityRole="button"
             accessibilityLabel="Download results"
@@ -443,6 +534,102 @@ function TrendCard({
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// ─── Apple Health mini card (horizontal carousel) ───────────────────────────
+
+function AppleHealthMiniCard({
+  trend,
+  colors,
+  fontSize,
+  fontWeight,
+}: {
+  trend: LongitudinalTrend
+  colors: Palette
+  fontSize: (n: number) => number
+  fontWeight: (n: number) => number | string
+}) {
+  const sorted = [...trend.dataPoints].sort((a, b) => a.date.localeCompare(b.date))
+  const latest = sorted[sorted.length - 1]
+  const latestDate = latest?.date
+  const unit = latest?.unit ?? ''
+  const outOfRange =
+    latest?.interpretation === 'high' ||
+    latest?.interpretation === 'low' ||
+    latest?.interpretation === 'critical'
+
+  return (
+    <View
+      style={[
+        styles.miniCard,
+        {
+          backgroundColor: (colors.card as string) + 'D9',
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={{
+          color: colors.subtext,
+          fontSize: fontSize(11),
+          fontWeight: fontWeight(600) as any,
+          letterSpacing: 0.4,
+          textTransform: 'uppercase',
+        }}
+      >
+        {trend.metricName}
+      </Text>
+      <View style={styles.miniValueRow}>
+        <Text
+          style={{
+            color: outOfRange ? '#A16207' : (colors.text as string),
+            fontSize: fontSize(22),
+            fontWeight: fontWeight(700) as any,
+          }}
+        >
+          {latest?.value ?? '—'}
+        </Text>
+        {unit ? (
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: fontSize(11),
+              fontWeight: fontWeight(500) as any,
+              marginLeft: 4,
+              marginBottom: 4,
+            }}
+          >
+            {unit}
+          </Text>
+        ) : null}
+      </View>
+      <View style={{ marginTop: 6 }}>
+        <TrendLineChart
+          points={sorted}
+          referenceRange={latest?.referenceRange}
+          width={MINI_CHART_WIDTH}
+          height={56}
+          showAxisLabels={false}
+          textColor={colors.text as string}
+          subtleColor={colors.subtext as string}
+          lineColor={colors.tint as string}
+        />
+      </View>
+      <Text
+        numberOfLines={1}
+        style={{
+          color: colors.subtext,
+          fontSize: fontSize(10),
+          marginTop: 6,
+        }}
+      >
+        {latestDate ? formatRowDate(latestDate) : ''}
+      </Text>
+    </View>
+  )
+}
+
+const MINI_CHART_WIDTH = 156
+
 function pickInitialSelection(trends: LongitudinalTrend[], cap: number): Set<string> {
   const score = (t: LongitudinalTrend): number => {
     let s = 0
@@ -489,6 +676,43 @@ function formatRowDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function buildTrendsCsv(trends: LongitudinalTrend[]): string {
+  const escape = (v: string | number | undefined | null): string => {
+    if (v === undefined || v === null) return ''
+    const s = String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const header = [
+    'Source',
+    'Metric',
+    'Date',
+    'Value',
+    'Unit',
+    'Normal Low',
+    'Normal High',
+    'Interpretation',
+  ].join(',')
+  const rows: string[] = [header]
+  for (const t of trends) {
+    const source = t.source === 'apple-health' ? 'Apple Health' : 'Clinic'
+    for (const p of t.dataPoints) {
+      rows.push(
+        [
+          escape(source),
+          escape(t.metricName),
+          escape(p.date),
+          escape(p.value),
+          escape(p.unit),
+          escape(p.referenceRange?.low),
+          escape(p.referenceRange?.high),
+          escape(p.interpretation ?? ''),
+        ].join(','),
+      )
+    }
+  }
+  return rows.join('\n') + '\n'
 }
 
 function capitalize(s: string): string {
@@ -539,6 +763,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   emptyCard: { borderWidth: 1, borderRadius: 14, padding: 18, marginTop: 4 },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  sectionHeader: {
+    letterSpacing: 0.2,
+  },
+  carouselContent: {
+    paddingRight: 4,
+    paddingBottom: 4,
+    gap: 10,
+  },
+  miniCard: {
+    width: 180,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  miniValueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 6,
+  },
   trendCard: {
     borderWidth: 1,
     borderRadius: 16,
