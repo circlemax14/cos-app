@@ -1219,7 +1219,14 @@ export const getHealthKitVitalTrend = (
         resolve(null)
         return
       }
-      const points: TrendDataPoint[] = []
+      // Bucket samples by calendar day and reduce to one representative
+      // (mean) per day. HealthKit can return tens of thousands of samples
+      // for high-frequency metrics like heart rate or SpO2 from Apple
+      // Watch — rendering one chart point per raw sample swamps both the
+      // SVG renderer and the data table. Day-level aggregation caps the
+      // series at ~daysBack points and keeps the trend visualization
+      // truthful for clinical interpretation.
+      const dayBuckets = new Map<string, { sum: number; count: number; lastDate: string }>()
       for (const sample of raw as Record<string, unknown>[]) {
         const rawValue =
           metric === 'blood-pressure-systolic'
@@ -1229,16 +1236,32 @@ export const getHealthKitVitalTrend = (
               : (sample.value as number | undefined)
         if (rawValue === undefined || rawValue === null || Number.isNaN(rawValue)) continue
         const value = spec.scale ? spec.scale(rawValue) : rawValue
-        const date = (sample.startDate as string | undefined) ?? ''
-        if (!date) continue
+        const dateIso = (sample.startDate as string | undefined) ?? ''
+        if (!dateIso) continue
+        const dayKey = dateIso.slice(0, 10)
+        const bucket = dayBuckets.get(dayKey)
+        if (bucket) {
+          bucket.sum += value
+          bucket.count += 1
+          // keep the latest within-day timestamp so the chart's x-axis
+          // is still anchored on a real sample time, not midnight.
+          if (dateIso > bucket.lastDate) bucket.lastDate = dateIso
+        } else {
+          dayBuckets.set(dayKey, { sum: value, count: 1, lastDate: dateIso })
+        }
+      }
+      const points: TrendDataPoint[] = []
+      for (const [, bucket] of dayBuckets) {
+        const avg = bucket.sum / bucket.count
         points.push({
-          date,
-          value: Math.round(value * 10) / 10,
+          date: bucket.lastDate,
+          value: Math.round(avg * 10) / 10,
           unit: spec.unit,
           referenceRange: spec.refRange,
-          interpretation: interpretPoint(value, spec.refRange),
+          interpretation: interpretPoint(avg, spec.refRange),
         })
       }
+      points.sort((a, b) => a.date.localeCompare(b.date))
 
       if (points.length === 0) {
         resolve(null)
