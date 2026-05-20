@@ -1,5 +1,5 @@
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,8 +10,64 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import {
   fetchHealthPlanReminderPrefs,
   updateHealthPlanReminderPrefs,
+  fetchTimezonePref,
+  updateTimezonePref,
   type HealthPlanReminderPrefs,
 } from '@/services/api/notification-prefs'
+
+// Top-30 IANA timezones surfaced in the picker. Anything outside this
+// list falls back to the device-detected default — the picker can't
+// cover the full 600+ IANA registry on a phone-sized screen, but
+// these cover the vast majority of our users.
+const TIMEZONE_OPTIONS: { id: string; label: string }[] = [
+  { id: 'America/Los_Angeles', label: 'Pacific Time (US)' },
+  { id: 'America/Denver',      label: 'Mountain Time (US)' },
+  { id: 'America/Phoenix',     label: 'Arizona (US)' },
+  { id: 'America/Chicago',     label: 'Central Time (US)' },
+  { id: 'America/New_York',    label: 'Eastern Time (US)' },
+  { id: 'America/Anchorage',   label: 'Alaska (US)' },
+  { id: 'Pacific/Honolulu',    label: 'Hawaii (US)' },
+  { id: 'America/Toronto',     label: 'Toronto' },
+  { id: 'America/Vancouver',   label: 'Vancouver' },
+  { id: 'America/Mexico_City', label: 'Mexico City' },
+  { id: 'America/Sao_Paulo',   label: 'São Paulo' },
+  { id: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires' },
+  { id: 'Europe/London',       label: 'London' },
+  { id: 'Europe/Dublin',       label: 'Dublin' },
+  { id: 'Europe/Paris',        label: 'Paris' },
+  { id: 'Europe/Berlin',       label: 'Berlin' },
+  { id: 'Europe/Madrid',       label: 'Madrid' },
+  { id: 'Europe/Rome',         label: 'Rome' },
+  { id: 'Europe/Amsterdam',    label: 'Amsterdam' },
+  { id: 'Europe/Stockholm',    label: 'Stockholm' },
+  { id: 'Europe/Athens',       label: 'Athens' },
+  { id: 'Europe/Istanbul',     label: 'Istanbul' },
+  { id: 'Africa/Cairo',        label: 'Cairo' },
+  { id: 'Africa/Lagos',        label: 'Lagos' },
+  { id: 'Asia/Dubai',          label: 'Dubai' },
+  { id: 'Asia/Kolkata',        label: 'India (IST)' },
+  { id: 'Asia/Bangkok',        label: 'Bangkok' },
+  { id: 'Asia/Singapore',      label: 'Singapore' },
+  { id: 'Asia/Hong_Kong',      label: 'Hong Kong' },
+  { id: 'Asia/Tokyo',          label: 'Tokyo' },
+  { id: 'Asia/Seoul',          label: 'Seoul' },
+  { id: 'Australia/Sydney',    label: 'Sydney' },
+  { id: 'Pacific/Auckland',    label: 'Auckland' },
+]
+
+function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+function timezoneDisplayLabel(tzId: string | null | undefined): string {
+  if (!tzId) return 'Use device time'
+  const known = TIMEZONE_OPTIONS.find((o) => o.id === tzId)
+  return known ? known.label : tzId
+}
 
 interface SlotSpec {
   key: keyof HealthPlanReminderPrefs
@@ -49,6 +105,35 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
       queryClient.setQueryData(['reminder-prefs'], updated)
     },
   })
+
+  // SCRUM-257: timezone preference for per-user reminder routing.
+  const tzQuery = useQuery({
+    queryKey: ['timezone-pref'],
+    queryFn: fetchTimezonePref,
+  })
+  const tzMutation = useMutation({
+    mutationFn: (timezone: string | null) => updateTimezonePref(timezone),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['timezone-pref'], updated)
+      setPickerOpen(false)
+    },
+  })
+  const [pickerOpen, setPickerOpen] = React.useState(false)
+  const storedTz = tzQuery.data?.timezone ?? null
+  const effectiveTz = storedTz ?? deviceTimezone()
+
+  // On first launch (and any time the user has no stored TZ), auto-write
+  // the device-detected TZ so the new sweeper has something to work with
+  // without forcing the user to discover the settings screen.
+  React.useEffect(() => {
+    if (tzQuery.isLoading) return
+    if (tzQuery.data === undefined) return
+    if (tzQuery.data.timezone) return
+    const detected = deviceTimezone()
+    if (!detected || detected === 'UTC') return
+    tzMutation.mutate(detected)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tzQuery.isLoading, tzQuery.data?.timezone])
 
   const prefs = query.data ?? { am: true, midday: true, eod: true }
 
@@ -103,10 +188,114 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
             )
           })}
 
+          {/* SCRUM-257: timezone picker. Surfaces the effective TZ (stored
+              if the user picked one, else the device-detected default) and
+              lets the user override. */}
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any, marginTop: 22, marginBottom: 10, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+            Timezone
+          </Text>
+          <Pressable
+            onPress={() => setPickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Change reminder timezone"
+            style={({ pressed }) => [
+              { opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Card style={[styles.row, { backgroundColor: colors.card }]}>
+              <Card.Content style={styles.rowContent}>
+                <View style={[styles.iconWrap, { backgroundColor: (colors.tint as string) + '22' }]}>
+                  <MaterialIcons name="public" size={20} color={colors.tint as string} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
+                    {timezoneDisplayLabel(effectiveTz)}
+                  </Text>
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                    Reminders will fire in your local morning / midday / evening
+                  </Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color={colors.subtext} />
+              </Card.Content>
+            </Card>
+          </Pressable>
+
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 18, lineHeight: 18 }}>
             Reminders use device push notifications. Allow notifications in your iOS / Android settings to receive them.
           </Text>
         </ScrollView>
+
+        {/* Timezone picker modal */}
+        <Modal
+          visible={pickerOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setPickerOpen(false)}
+        >
+          <View style={[{ flex: 1, backgroundColor: colors.background }]}>
+            <View style={[styles.header, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(20),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  flex: 1,
+                }}
+              >
+                Choose timezone
+              </Text>
+              <Pressable onPress={() => setPickerOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
+                <MaterialIcons name="close" size={getScaledFontSize(22)} color={colors.text} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+              {/* "Use device timezone" reset */}
+              <Pressable
+                onPress={() => tzMutation.mutate(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Use device timezone"
+                style={({ pressed }) => [styles.tzRow, { opacity: pressed ? 0.85 : 1, borderColor: colors.border }]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
+                    Use device timezone
+                  </Text>
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                    Currently {deviceTimezone()}
+                  </Text>
+                </View>
+                {storedTz === null ? (
+                  <MaterialIcons name="check-circle" size={22} color={colors.tint as string} />
+                ) : null}
+              </Pressable>
+
+              {TIMEZONE_OPTIONS.map((opt) => {
+                const selected = storedTz === opt.id
+                return (
+                  <Pressable
+                    key={opt.id}
+                    onPress={() => tzMutation.mutate(opt.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Use ${opt.label}`}
+                    style={({ pressed }) => [styles.tzRow, { opacity: pressed ? 0.85 : 1, borderColor: colors.border }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(selected ? 700 : 500) as any }}>
+                        {opt.label}
+                      </Text>
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 2 }}>
+                        {opt.id}
+                      </Text>
+                    </View>
+                    {selected ? (
+                      <MaterialIcons name="check-circle" size={22} color={colors.tint as string} />
+                    ) : null}
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
       </View>
     </AppWrapper>
   )
@@ -120,5 +309,11 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
+  },
+  tzRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 })
