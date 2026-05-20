@@ -131,6 +131,9 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
       void clearDraft(instrumentId)
       queryClient.invalidateQueries({ queryKey: ['assessments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
+      // SCRUM-254: refresh the per-plan-type assigned-set progress so
+      // the Health Plan screen's "Y of X complete" updates immediately.
+      queryClient.invalidateQueries({ queryKey: ['health-plan-assignments'] })
       // Show the celebration overlay (SCRUM-230) for ~1.5s, then return
       // to the catalog. The overlay handles its own dismiss timer.
       setCelebrating(true)

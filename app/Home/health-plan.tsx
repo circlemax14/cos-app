@@ -25,6 +25,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { fetchAssessments } from '@/services/api/assessments';
+import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
@@ -112,10 +113,21 @@ export default function HealthPlanScreen() {
     enabled: currentPlanType === 'advanced' || currentPlanType === 'agency',
     staleTime: 60 * 1000,
   });
+  // SCRUM-254: backend-driven progress against the per-plan-type
+  // assigned set. Drives the "X of Y assessments" copy, the empty
+  // state copy, and the Generate Plan gate.
+  const assignmentsQuery = useHealthPlanAssignments();
+  const assignments = assignmentsQuery.data;
+  const assignedCount = assignments?.assignedInstrumentIds.length ?? 0;
+  const completedAssignedCount = assignments
+    ? assignments.assignedInstrumentIds.length - assignments.remainingInstrumentIds.length
+    : 0;
+  const canGeneratePlan = assignments?.canGenerate ?? (currentPlanType === 'basic');
+
   const needsAssessment =
     (currentPlanType === 'advanced' || currentPlanType === 'agency') &&
     !assessmentsQuery.isLoading &&
-    (assessmentsQuery.data?.length ?? 0) === 0;
+    !canGeneratePlan;
 
   // Surface the chooser on first visit (no record on disk → "first-visit"
   // is signaled by the chooser session flag below). We mark it shown
@@ -305,6 +317,24 @@ export default function HealthPlanScreen() {
     // from check-in answers for non-basic users.
     const showInlineCatalog = isNonBasic;
     if (showInlineCatalog) {
+      // SCRUM-254: copy now reflects the real per-plan-type assigned
+      // set returned by /v1/patients/me/health-plan/assignments.
+      // Three flavours:
+      //   - assigned > 0 + remaining > 0  → "Y of X assessments complete"
+      //   - assigned > 0 + remaining == 0 → ready to generate (shouldn't
+      //     fall into this branch since canGenerate would be true)
+      //   - agency w/ assigned == 0       → "Your care team will assign"
+      const isAgencyEmpty = currentPlanType === 'agency' && assignedCount === 0;
+      const headline = isAgencyEmpty
+        ? 'Assessments coming'
+        : assignedCount > 0
+          ? 'Your check-ins'
+          : 'Your check-ins';
+      const subhead = isAgencyEmpty
+        ? 'Your care team will assign assessments here. Check back later or message your agency.'
+        : assignedCount > 0
+          ? `Complete the ${assignedCount} assessment${assignedCount === 1 ? '' : 's'} ${currentPlanType === 'advanced' ? 'your AI plan selected' : 'your care team assigned'} for you. ${completedAssignedCount} of ${assignedCount} complete.`
+          : 'Pick any to start. Complete the ones aligned to your plan to generate it.';
       return (
         <AppWrapper>
           <ScrollView
@@ -313,12 +343,12 @@ export default function HealthPlanScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
             <View style={{ paddingTop: 12, paddingHorizontal: 16 }}>
               <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any, textAlign: 'left', marginBottom: 4 }]}>
-                Your check-ins
+                {headline}
               </Text>
               <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'left', marginBottom: 16, paddingHorizontal: 0 }]}>
-                Pick any to start. Complete two to build your AI plan.
+                {subhead}
               </Text>
-              <AssessmentCatalogContent />
+              {!isAgencyEmpty ? <AssessmentCatalogContent /> : null}
             </View>
           </ScrollView>
         </AppWrapper>
