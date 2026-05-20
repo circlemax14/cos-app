@@ -24,7 +24,7 @@ import { PaperProvider } from 'react-native-paper';
 import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
 import { View } from 'react-native';
 import 'react-native-reanimated';
-import { rootIdleActivityHandlers } from '@/hooks/use-app-lock';
+import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -54,6 +54,62 @@ export const unstable_settings = {
   anchor: '(tabs)',
 };
 
+/**
+ * Inner stack — runs INSIDE <SecurityProvider> so useAppLock can read
+ * the security context. Previously useAppLock was called from
+ * app/index.tsx (the splash gate) which unmounted as soon as the user
+ * navigated past `/`, killing the AppState subscription that locks the
+ * app on background→foreground. Hoisted to the root layout (SCRUM-235)
+ * so it stays mounted for the lifetime of the app process.
+ */
+function StackWithAppLock() {
+  useAppLock();
+  return (
+    <Stack>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
+      <Stack.Screen name="(security)" options={{ headerShown: false }} />
+      <Stack.Screen name="Home" options={{ headerShown: false }} />
+      <Stack.Screen name="(personal-info)" options={{ headerShown: false }} />
+      <Stack.Screen name="(care-manager-detail)" options={{ headerShown: false }} />
+      <Stack.Screen name="(doctor-detail)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="modal"
+        options={{
+          presentation: 'modal',
+          title: 'Doctors',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="agency-detail"
+        options={{
+          presentation: 'modal',
+          title: 'Agency Details',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="appointments-modal"
+        options={{
+          presentation: 'modal',
+          title: 'All Appointments',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="today-schedule"
+        options={{
+          title: "Today's Schedule",
+          headerShown: false,
+          autoHideHomeIndicator: true,
+        }}
+      />
+    </Stack>
+  );
+}
+
 function RootLayout() {
   const colorScheme = useColorScheme();
   useNotifications();
@@ -76,48 +132,7 @@ function RootLayout() {
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                 <BadgeCelebrationProvider>
                 <View style={{ flex: 1 }} {...idleHandlers}>
-                <Stack>
-                  <Stack.Screen name="index" options={{ headerShown: false }} />
-                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(security)" options={{ headerShown: false }} />
-                  <Stack.Screen name="Home" options={{ headerShown: false }} />
-                  <Stack.Screen name="(personal-info)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(care-manager-detail)" options={{ headerShown: false }} />
-                  <Stack.Screen name="(doctor-detail)" options={{ headerShown: false }} />
-                  <Stack.Screen
-                    name="modal"
-                    options={{
-                      presentation: 'modal',
-                      title: 'Doctors',
-                      headerShown: false,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="agency-detail"
-                    options={{
-                      presentation: 'modal',
-                      title: 'Agency Details',
-                      headerShown: false,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="appointments-modal"
-                    options={{
-                      presentation: 'modal',
-                      title: 'All Appointments',
-                      headerShown: false,
-                    }}
-                  />
-                  <Stack.Screen
-                    name="today-schedule"
-                    options={{
-                      title: "Today's Schedule",
-                      headerShown: false,
-                      autoHideHomeIndicator: true,
-                    }}
-                  />
-                </Stack>
+                <StackWithAppLock />
                 <StatusBar style="auto" />
                 </View>
                 </BadgeCelebrationProvider>

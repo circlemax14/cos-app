@@ -12,7 +12,9 @@ import { isPinSetup } from '@/services/pin-auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSecurity } from '@/stores/security-store';
-import { useAppLock } from '@/hooks/use-app-lock';
+// useAppLock now mounts at the root layout (app/_layout.tsx) so the
+// AppState lock listener stays alive after navigating away from this
+// splash gate (SCRUM-235).
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -118,7 +120,6 @@ function revalidateInBackground(previousDestination: string, isLocked: boolean) 
 export default function SplashGate() {
   const { settings, getScaledFontSize } = useAccessibility();
   const { isLocked } = useSecurity();
-  useAppLock();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [state, setState] = useState<GateState>('loading');
   const [retryKey, setRetryKey] = useState(0);
