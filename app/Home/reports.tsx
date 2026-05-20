@@ -505,24 +505,6 @@ export default function Reports() {
 
   const renderReports = () => (
     <ScrollView style={styles.tabContent}>
-      {/* Trends quick-link — deep links to the existing Health Trends screen */}
-      <TouchableOpacity
-        style={styles.trendsBanner}
-        onPress={() => router.push('/Home/health-trends' as never)}
-      >
-        <View style={styles.trendsBannerIcon}>
-          <MaterialIcons name="show-chart" size={getScaledFontSize(22)} color="#008080" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.trendsBannerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }]}>
-            View Health Trends
-          </Text>
-          <Text style={[styles.trendsBannerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
-            Track lab values + vitals over time
-          </Text>
-        </View>
-        <MaterialIcons name="arrow-forward" size={getScaledFontSize(20)} color="#008080" />
-      </TouchableOpacity>
       {isLoadingReports ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={colors.tint} />
@@ -1590,25 +1572,6 @@ const styles = StyleSheet.create({
   },
   attachmentTitle: { marginBottom: 2 },
   attachmentMeta: {},
-  trendsBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#F0FAFA',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  trendsBannerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  trendsBannerTitle: { marginBottom: 2 },
-  trendsBannerSubtitle: { letterSpacing: 0.2 },
   reportModalCard: {
     padding: 16,
     borderRadius: 8,

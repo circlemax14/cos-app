@@ -5,7 +5,6 @@ import { useTrends } from '@/hooks/use-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
-import { router } from 'expo-router'
 import React, { useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -139,9 +138,6 @@ export default function HealthTrendsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
-            <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text as string} />
-          </Pressable>
           <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
             Result Trends
           </Text>
@@ -463,7 +459,7 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   retryButton: { marginTop: 18, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999 },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 12 },
-  title: { marginLeft: 12, flex: 1, letterSpacing: 0.2 },
+  title: { flex: 1, letterSpacing: 0.2 },
   filterCard: {
     borderWidth: 1,
     borderRadius: 14,

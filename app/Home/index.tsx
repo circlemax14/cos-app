@@ -29,7 +29,6 @@ import {
   type NonEhrProvider,
 } from '@/services/non-ehr-processor';
 import { QuickActionButtons } from '@/components/home/quick-action-buttons';
-import { HomeTrendsCard } from '@/components/health/HomeTrendsCard';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2854,10 +2853,29 @@ export default function HomeScreen() {
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
 
-        {/* SCRUM-237: compact Health Trends section between the Circle
-            and Recommended/Upcoming. Renders nothing if the patient has
-            no trends data yet, so it never leaves an empty gap. */}
-        <HomeTrendsCard />
+        {/* SCRUM-238: lightweight entry point to the full Health Trends
+            screen. Replaces the old in-line trends card so Home stays
+            compact; the trends screen has its own data fetching, filtering,
+            and AI-driven analysis. */}
+        <TouchableOpacity
+          style={styles.trendsBanner}
+          onPress={() => router.push('/Home/health-trends' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="View health trends"
+        >
+          <View style={styles.trendsBannerIcon}>
+            <MaterialIcons name="show-chart" size={getScaledFontSize(22)} color="#008080" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.trendsBannerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }]}>
+              View Health Trends
+            </Text>
+            <Text style={[styles.trendsBannerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
+              Track lab values + vitals over time
+            </Text>
+          </View>
+          <MaterialIcons name="arrow-forward" size={getScaledFontSize(20)} color="#008080" />
+        </TouchableOpacity>
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
@@ -3092,6 +3110,26 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flex: 1,
   },
+  trendsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0FAFA',
+    padding: 14,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  trendsBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trendsBannerTitle: { marginBottom: 2 },
+  trendsBannerSubtitle: { letterSpacing: 0.2 },
   scrollContent: {
     paddingBottom: 20,
   },
