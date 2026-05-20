@@ -2737,8 +2737,9 @@ export default function HomeScreen() {
         </View>
 
         {/* Quick actions row — between title and circle, matches the web
-            layout. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 4 }}>
+            layout. SCRUM-235: extra marginBottom so the Circle below has
+            breathing room above it. */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 24 }}>
           <QuickActionButtons />
         </View>
 
@@ -3092,12 +3093,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 8,
     paddingHorizontal: 24,
-    // SCRUM-234: clear gap between the Circle and the next section
+    // SCRUM-234/235: clear gap between the Circle and the next section
     // (Upcoming Appointments / Recommended). The orbiting avatars are
     // absolute-positioned and spill below the circleSection's flow box;
-    // 32 below the circle's own visual end lands ~comfortably below
-    // the bottom-most avatar.
-    marginBottom: 32,
+    // 64 below the circle's own visual end lands ~comfortably below
+    // the bottom-most avatar with stakeholder-requested extra air.
+    marginBottom: 64,
   },
   background: {
     position: 'absolute',
