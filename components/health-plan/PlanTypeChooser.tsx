@@ -111,6 +111,12 @@ export function PlanTypeChooser({
       updatePlanType(type, { consent: { acknowledged: true, consentVersion: 'v1' } }),
     onSuccess: (_record, type) => {
       queryClient.invalidateQueries({ queryKey: ['plan-type'] })
+      // SCRUM-254: server may have just picked new AI-assigned
+      // assessments for an Advanced plan, or cleared them for Basic.
+      // Refetch the assignment progress + the AI plan so the Health
+      // Plan screen reflects the switch immediately.
+      queryClient.invalidateQueries({ queryKey: ['health-plan-assignments'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
       setPendingType(null)
       setConsentAck(false)
       onClose()
