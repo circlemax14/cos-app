@@ -12,9 +12,11 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
+  SafeAreaView,
   ScrollView,
   Share,
   StyleSheet,
@@ -58,6 +60,7 @@ export default function HealthTrendsScreen() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('most-recent')
   const [selectedCodes, setSelectedCodes] = useState<Set<string> | null>(null)
   const [selectorOpen, setSelectorOpen] = useState(false)
+  const [activeTrend, setActiveTrend] = useState<LongitudinalTrend | null>(null)
 
   const { data, isLoading, isError, refetch } = useTrends()
   const { data: healthKitTrends, refetch: refetchHealthKit } = useHealthKitTrends()
@@ -255,6 +258,7 @@ export default function HealthTrendsScreen() {
                   colors={colors}
                   fontSize={getScaledFontSize}
                   fontWeight={getScaledFontWeight}
+                  onPress={() => setActiveTrend(t)}
                 />
               ))}
             </ScrollView>
@@ -399,6 +403,75 @@ export default function HealthTrendsScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      {/* Apple Health card detail modal — slide-up sheet hosting the full
+          TrendCard (line chart + data-table disclosure). Tapping a card
+          in the carousel opens this; tapping the X dismisses. */}
+      <Modal
+        visible={activeTrend !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setActiveTrend(null)}
+      >
+        <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
+          {activeTrend ? (
+            <>
+              <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                <View style={[
+                  styles.miniIconChip,
+                  { backgroundColor: metricVisual(activeTrend.metricCode).accent + '1A', marginRight: 12 },
+                ]}>
+                  <MaterialIcons
+                    name={metricVisual(activeTrend.metricCode).icon}
+                    size={getScaledFontSize(20)}
+                    color={metricVisual(activeTrend.metricCode).accent}
+                  />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.text as string,
+                      fontSize: getScaledFontSize(18),
+                      fontWeight: getScaledFontWeight(700) as any,
+                    }}
+                  >
+                    {activeTrend.metricName}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(12),
+                      marginTop: 2,
+                    }}
+                  >
+                    Apple Health · {activeTrend.dataPoints.length} {activeTrend.dataPoints.length === 1 ? 'reading' : 'readings'}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setActiveTrend(null)}
+                  style={[styles.modalCloseBtn, { backgroundColor: (colors.card as string) + 'D9' }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close details"
+                  hitSlop={8}
+                >
+                  <MaterialIcons name="close" size={getScaledFontSize(20)} color={colors.text as string} />
+                </Pressable>
+              </View>
+              <ScrollView contentContainerStyle={styles.modalContent}>
+                <TrendCard
+                  trend={activeTrend}
+                  chartWidth={chartWidth}
+                  colors={colors}
+                  fontSize={getScaledFontSize}
+                  fontWeight={getScaledFontWeight}
+                />
+              </ScrollView>
+            </>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </AppWrapper>
   )
 }
@@ -536,16 +609,48 @@ function TrendCard({
 
 // ─── Apple Health mini card (horizontal carousel) ───────────────────────────
 
+/**
+ * Per-metric icon + accent colour. Drives the small icon chip at the top
+ * of each Apple Health card and the modal-header chip. Keys are the
+ * `metricCode` values from VITAL_SPECS in services/health.ts.
+ */
+const METRIC_VISUAL: Record<string, { icon: keyof typeof MaterialIcons.glyphMap; accent: string }> = {
+  'hk-heart-rate':       { icon: 'favorite',         accent: '#DC2626' },
+  'hk-resting-hr':       { icon: 'favorite-border',  accent: '#DC2626' },
+  'hk-walking-hr':       { icon: 'directions-walk',  accent: '#F97316' },
+  'hk-hrv':              { icon: 'show-chart',       accent: '#DC2626' },
+  'hk-bp-systolic':      { icon: 'monitor-heart',    accent: '#DC2626' },
+  'hk-bp-diastolic':     { icon: 'monitor-heart',    accent: '#DC2626' },
+  'hk-glucose':          { icon: 'bloodtype',        accent: '#B91C1C' },
+  'hk-body-temp':        { icon: 'thermostat',       accent: '#F59E0B' },
+  'hk-spo2':             { icon: 'air',              accent: '#0EA5E9' },
+  'hk-resp-rate':        { icon: 'air',              accent: '#0EA5E9' },
+  'hk-weight':           { icon: 'monitor-weight',   accent: '#16A34A' },
+  'hk-bmi':              { icon: 'monitor-weight',   accent: '#16A34A' },
+  'hk-steps':            { icon: 'directions-walk',  accent: '#F97316' },
+  'hk-active-energy':    { icon: 'local-fire-department', accent: '#F97316' },
+  'hk-distance-walking': { icon: 'place',            accent: '#F97316' },
+  'hk-flights':          { icon: 'stairs',           accent: '#F97316' },
+  'hk-exercise-time':    { icon: 'fitness-center',   accent: '#F97316' },
+  'hk-sleep':            { icon: 'bedtime',          accent: '#6366F1' },
+}
+
+function metricVisual(metricCode: string): { icon: keyof typeof MaterialIcons.glyphMap; accent: string } {
+  return METRIC_VISUAL[metricCode] ?? { icon: 'show-chart', accent: '#008080' }
+}
+
 function AppleHealthMiniCard({
   trend,
   colors,
   fontSize,
   fontWeight,
+  onPress,
 }: {
   trend: LongitudinalTrend
   colors: Palette
   fontSize: (n: number) => number
   fontWeight: (n: number) => number | string
+  onPress: () => void
 }) {
   const sorted = [...trend.dataPoints].sort((a, b) => a.date.localeCompare(b.date))
   const latest = sorted[sorted.length - 1]
@@ -555,35 +660,74 @@ function AppleHealthMiniCard({
     latest?.interpretation === 'high' ||
     latest?.interpretation === 'low' ||
     latest?.interpretation === 'critical'
+  const visual = metricVisual(trend.metricCode)
+  const dir = trend.trendDirection
+  const statusLabel =
+    dir === 'improving' ? 'Improving' :
+    dir === 'worsening' ? 'Worsening' :
+    dir === 'stable' ? 'Stable' :
+    'New'
+  const statusIcon: keyof typeof MaterialIcons.glyphMap =
+    dir === 'improving' ? 'trending-down' :
+    dir === 'worsening' ? 'trending-up' :
+    dir === 'stable' ? 'trending-flat' :
+    'help-outline'
+  // For metrics where "up = better" (steps, distance, sleep, exercise time,
+  // HRV), invert the improving/worsening colour so users see green on the
+  // right cue. For most clinical vitals "improving = toward range" → green.
+  const upIsGood = ['hk-steps', 'hk-distance-walking', 'hk-flights', 'hk-active-energy', 'hk-exercise-time', 'hk-sleep', 'hk-hrv'].includes(trend.metricCode)
+  let statusColor = '#6B7280'
+  if (dir === 'improving') statusColor = '#16A34A'
+  else if (dir === 'worsening') statusColor = '#DC2626'
+  if (upIsGood && (dir === 'improving' || dir === 'worsening')) {
+    // For up-is-good metrics, the slope sign carries different meaning —
+    // re-derive from latest vs earliest value.
+    const earliest = sorted[0]?.value ?? 0
+    const last = latest?.value ?? 0
+    statusColor = last > earliest ? '#16A34A' : last < earliest ? '#DC2626' : '#6B7280'
+  }
 
   return (
-    <View
-      style={[
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${trend.metricName} details`}
+      style={({ pressed }) => [
         styles.miniCard,
         {
-          backgroundColor: (colors.card as string) + 'D9',
+          backgroundColor: colors.card as string,
           borderColor: colors.border,
+          opacity: pressed ? 0.85 : 1,
         },
       ]}
     >
-      <Text
-        numberOfLines={1}
-        style={{
-          color: colors.subtext,
-          fontSize: fontSize(11),
-          fontWeight: fontWeight(600) as any,
-          letterSpacing: 0.4,
-          textTransform: 'uppercase',
-        }}
-      >
-        {trend.metricName}
-      </Text>
+      {/* Header: icon chip + metric name */}
+      <View style={styles.miniHeaderRow}>
+        <View style={[styles.miniIconChip, { backgroundColor: visual.accent + '1A' }]}>
+          <MaterialIcons name={visual.icon} size={fontSize(18)} color={visual.accent} />
+        </View>
+        <Text
+          numberOfLines={2}
+          style={{
+            color: colors.text as string,
+            fontSize: fontSize(13),
+            fontWeight: fontWeight(700) as any,
+            flex: 1,
+            marginLeft: 10,
+          }}
+        >
+          {trend.metricName}
+        </Text>
+      </View>
+
+      {/* Latest value */}
       <View style={styles.miniValueRow}>
         <Text
           style={{
             color: outOfRange ? '#A16207' : (colors.text as string),
-            fontSize: fontSize(22),
+            fontSize: fontSize(28),
             fontWeight: fontWeight(700) as any,
+            letterSpacing: -0.3,
           }}
         >
           {latest?.value ?? '—'}
@@ -592,43 +736,75 @@ function AppleHealthMiniCard({
           <Text
             style={{
               color: colors.subtext,
-              fontSize: fontSize(11),
+              fontSize: fontSize(12),
               fontWeight: fontWeight(500) as any,
-              marginLeft: 4,
-              marginBottom: 4,
+              marginLeft: 5,
+              marginBottom: 6,
             }}
           >
             {unit}
           </Text>
         ) : null}
       </View>
-      <View style={{ marginTop: 6 }}>
+
+      {/* Status pill */}
+      <View style={[styles.miniStatusPill, { backgroundColor: statusColor + '18', alignSelf: 'flex-start' }]}>
+        <MaterialIcons name={statusIcon} size={fontSize(12)} color={statusColor} />
+        <Text
+          style={{
+            color: statusColor,
+            fontSize: fontSize(11),
+            fontWeight: fontWeight(700) as any,
+            marginLeft: 4,
+          }}
+        >
+          {statusLabel}
+        </Text>
+      </View>
+
+      {/* Sparkline */}
+      <View style={{ marginTop: 12, alignItems: 'center' }}>
         <TrendLineChart
           points={sorted}
           referenceRange={latest?.referenceRange}
           width={MINI_CHART_WIDTH}
-          height={56}
+          height={70}
           showAxisLabels={false}
           textColor={colors.text as string}
           subtleColor={colors.subtext as string}
-          lineColor={colors.tint as string}
+          lineColor={visual.accent}
         />
       </View>
-      <Text
-        numberOfLines={1}
-        style={{
-          color: colors.subtext,
-          fontSize: fontSize(10),
-          marginTop: 6,
-        }}
-      >
-        {latestDate ? formatRowDate(latestDate) : ''}
-      </Text>
-    </View>
+
+      {/* Footer: last-updated date + View details affordance */}
+      <View style={styles.miniFooterRow}>
+        <Text
+          numberOfLines={1}
+          style={{
+            color: colors.subtext,
+            fontSize: fontSize(11),
+            fontWeight: fontWeight(500) as any,
+            flex: 1,
+          }}
+        >
+          {latestDate ? formatRowDate(latestDate) : ''}
+        </Text>
+        <Text
+          style={{
+            color: visual.accent,
+            fontSize: fontSize(11),
+            fontWeight: fontWeight(700) as any,
+          }}
+        >
+          Details ›
+        </Text>
+      </View>
+    </Pressable>
   )
 }
 
-const MINI_CHART_WIDTH = 156
+const MINI_CARD_WIDTH = 260
+const MINI_CHART_WIDTH = MINI_CARD_WIDTH - 24
 
 function pickInitialSelection(trends: LongitudinalTrend[], cap: number): Set<string> {
   const score = (t: LongitudinalTrend): number => {
@@ -779,15 +955,69 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   miniCard: {
-    width: 180,
+    width: 260,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 18,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  miniHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 36,
+  },
+  miniIconChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   miniValueRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginTop: 6,
+    marginTop: 14,
+  },
+  miniStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginTop: 8,
+  },
+  miniFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  modalSafe: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
   },
   trendCard: {
     borderWidth: 1,
