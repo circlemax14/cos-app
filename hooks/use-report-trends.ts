@@ -1,46 +1,47 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchReports } from '@/services/api/reports'
+import { fetchProviderLabReports } from '@/services/api/providers'
 import type {
   LongitudinalTrend,
   TrendDataPoint,
-  Report,
-  ReportResultEntry,
+  LabReport,
 } from '@/services/api/types'
 
 /**
- * Pivots the structured `results[]` data already returned by
- * `/v1/patients/me/reports` into longitudinal trends, grouped by metric
- * name across all reports the user has.
+ * Pivots structured lab values from `/v1/patients/me/lab-reports` into
+ * longitudinal trends grouped by metric name across every report the
+ * user has.
  *
- * Why this exists: the backend `/v1/patients/me/trends` endpoint only
- * computes trends from FHIR Observations directly attached to the
- * patient, and for many users our cos-integrative / cos-webhook pipeline
- * lands data as DiagnosticReports with embedded result arrays rather
- * than as standalone Observation resources. Those structured results
- * never make it into the trends endpoint, so users see an empty Clinic
- * section even when they have lab values on the Reports screen.
+ * Why this endpoint specifically: the backend has two report-fetching
+ * paths. `/v1/patients/me/reports` (the LIST endpoint) returns
+ * DiagnosticReport metadata only — it does NOT resolve Observation
+ * references into `results[]`. Only the detail endpoint
+ * `/v1/patients/me/reports/:id` does that, via N round-trips per
+ * report. The dedicated `/v1/patients/me/lab-reports` endpoint
+ * (cos-backend `lab.service.ts`) is purpose-built: it lists all lab
+ * DiagnosticReports for the patient AND resolves their linked
+ * Observations into structured `results: LabResultValue[]` in one
+ * call.
  *
- * This hook fills that gap entirely client-side — no backend change
- * required. The trends produced here are merged into the Clinic
- * section on the Result Trends screen.
+ * This is the right pivot source. Our earlier SCRUM-246 attempt used
+ * the wrong list endpoint and silently produced zero trends because
+ * `results` was always undefined.
  *
- * Limitations: report `value` and `referenceRange` arrive as strings
- * from the backend; we parse "70-100" / "70 - 100" style ranges and
- * skip results whose value isn't a parseable number ("Negative",
- * "Positive", text-only results).
+ * Limitations: values arrive as strings, so non-numeric results
+ * ("Negative", "Positive", text-only) are skipped — they can't render
+ * on a line chart.
  */
 export function useReportTrends() {
   return useQuery({
-    queryKey: ['report-trends'],
+    queryKey: ['report-trends-v2-lab'],
     queryFn: async (): Promise<LongitudinalTrend[]> => {
-      const reports = await fetchReports()
-      return buildReportTrends(reports)
+      const labReports = await fetchProviderLabReports()
+      return buildLabReportTrends(labReports)
     },
     staleTime: 60_000,
   })
 }
 
-export function buildReportTrends(reports: Report[]): LongitudinalTrend[] {
+export function buildLabReportTrends(reports: LabReport[]): LongitudinalTrend[] {
   type Accum = { points: TrendDataPoint[]; unit?: string }
   const byMetric = new Map<string, Accum>()
 
@@ -98,7 +99,7 @@ function parseLabValue(raw: string | undefined | null): number | null {
   if (raw === undefined || raw === null) return null
   const trimmed = String(raw).trim()
   if (trimmed.length === 0) return null
-  // Strip leading "<", ">", "≤", "≥" qualifiers — for trending we treat
+  // Strip leading qualifiers ("<", ">", "≤", "≥") — for trending we treat
   // them as the bare number (good-enough approximation for line charts).
   const cleaned = trimmed.replace(/^[<>≤≥]\s*/, '').replace(/,/g, '')
   const n = parseFloat(cleaned)
@@ -110,7 +111,8 @@ function parseReferenceRange(
 ): { low: number; high: number } | null {
   if (!raw) return null
   const trimmed = raw.trim()
-  // Common formats: "70-100", "70 - 100", "70 to 100", "70 – 100" (en dash)
+  // Common formats: "70-100", "70 - 100", "70 to 100", "70 – 100" (en dash),
+  // "70 - 100 mg/dL" (trailing unit ignored by the numeric match).
   const match = trimmed.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(-?\d+(?:\.\d+)?)/i)
   if (match) {
     const low = parseFloat(match[1])
@@ -122,18 +124,31 @@ function parseReferenceRange(
   return null
 }
 
+/**
+ * Map the interpretation string into our four-state enum. The lab-reports
+ * endpoint returns display text (e.g. "High", "Critical Low") because it
+ * resolves the FHIR Observation interpretation through `.text` /
+ * coding `.display`. We also accept raw HL7 v2 codes (H/HH/L/LL/A/AA/N)
+ * for safety — different feeds expose either form.
+ */
 function mapInterpretation(
   raw: string | undefined | null,
 ): TrendDataPoint['interpretation'] | undefined {
   if (!raw) return undefined
-  // Per HL7 v2: H/HH (high/critical high), L/LL (low/critical low),
-  // A/AA (abnormal/critical abnormal), N (normal). Map to the same
-  // four-state enum the trends type uses.
-  const code = raw.trim().toUpperCase()
-  if (code === 'HH' || code === 'LL' || code === 'AA') return 'critical'
-  if (code === 'H' || code === 'A') return 'high'
-  if (code === 'L') return 'low'
-  if (code === 'N' || code === '') return 'normal'
+  const trimmed = String(raw).trim()
+  if (trimmed.length === 0) return undefined
+  const lower = trimmed.toLowerCase()
+  // Plain HL7 v2 codes
+  const upper = trimmed.toUpperCase()
+  if (upper === 'HH' || upper === 'LL' || upper === 'AA') return 'critical'
+  if (upper === 'H' || upper === 'A') return 'high'
+  if (upper === 'L') return 'low'
+  if (upper === 'N') return 'normal'
+  // Display text variants — order matters (critical before high/low)
+  if (lower.includes('critical')) return 'critical'
+  if (lower.includes('abnormal high') || lower === 'high' || lower === 'abnormal') return 'high'
+  if (lower.includes('abnormal low') || lower === 'low') return 'low'
+  if (lower === 'normal') return 'normal'
   return undefined
 }
 
@@ -144,21 +159,31 @@ function computeDirection(
   const first = points[0]
   const last = points[points.length - 1]
   const range = first.referenceRange
-  // Same heuristic the HealthKit trend builder uses — "improving" if the
-  // latest point is closer to (or within) the normal range than the earliest.
+  // Same heuristic as the HealthKit trend builder — "improving" if the
+  // latest point is closer to (or within) the normal range than the
+  // earliest. For points with no reference range we fall back to the raw
+  // delta sign which is rarely meaningful for labs, but keeps the badge
+  // populated rather than always "insufficient_data".
   const distance = (v: number, r?: { low: number; high: number }): number => {
-    if (!r) return 0
+    if (!r) return Math.abs(v)
     if (v < r.low) return r.low - v
     if (v > r.high) return v - r.high
     return 0
   }
-  const distFirst = distance(first.value, range)
-  const distLast = distance(last.value, range)
-  const delta = distLast - distFirst
-  // Stability band: 5% of the value magnitude — anything smaller is "stable".
+  if (range) {
+    const distFirst = distance(first.value, range)
+    const distLast = distance(last.value, range)
+    const delta = distLast - distFirst
+    const stableBand = Math.abs(first.value) * 0.05
+    if (Math.abs(delta) < stableBand) return 'stable'
+    return delta < 0 ? 'improving' : 'worsening'
+  }
+  const delta = last.value - first.value
   const stableBand = Math.abs(first.value) * 0.05
   if (Math.abs(delta) < stableBand) return 'stable'
-  return delta < 0 ? 'improving' : 'worsening'
+  // Without a reference range, we can't tell direction-meaning, so just
+  // call any movement "stable" to avoid misleading badges.
+  return 'stable'
 }
 
 function titleCaseMetric(raw: string): string {
