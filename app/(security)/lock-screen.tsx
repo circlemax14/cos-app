@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
@@ -20,13 +20,15 @@ import { getColors, Spacing, Typography } from '@/constants/design-system';
 
 const MAX_ATTEMPTS = 5;
 
-// Redesigned lock screen. The previous version had a tiny logo + 🔒 emoji
-// + plain header — felt like a stub. New layout is one branded surface
-// (rounded card on a soft gradient backdrop) with the logo at top, an
-// inline shield-lock icon in brand color, a confident header, the
-// existing PIN dots + number pad, and clear failure / biometric hints.
-// Components reused from the design system so theming + scaling still
-// follow the accessibility store.
+/**
+ * Lock screen redesign (SCRUM-236). Removes the heavy "card" chrome
+ * and lets the elements float over an ambient backdrop: two soft
+ * colored blobs faked with absolute-positioned circles (no
+ * expo-linear-gradient dep), a halo-ringed lock icon with a slow
+ * breathing pulse so the screen feels alive, a confident title, the
+ * existing PIN dots + number pad. Behavior is identical to the
+ * previous version — only the visual treatment changes.
+ */
 export default function LockScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const isDark = settings.isDarkTheme;
@@ -36,6 +38,19 @@ export default function LockScreen() {
   const [error, setError] = useState(false);
   const [showBiometric, setShowBiometric] = useState(false);
   const [attemptsLeft, setAttemptsLeft] = useState(MAX_ATTEMPTS);
+
+  // Ambient halo pulse around the lock icon — scale + opacity loop.
+  const halo = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(halo, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(halo, { toValue: 0, duration: 1800, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [halo]);
 
   useEffect(() => {
     checkBiometric();
@@ -109,36 +124,63 @@ export default function LockScreen() {
     setPin(prev => prev.slice(0, -1));
   };
 
-  const backdrop = isDark ? '#0F172A' : '#EEF2FF';
+  // Ambient backdrop palette — base color + two off-screen accent blobs
+  // for a gradient-y depth feel without a LinearGradient dep.
+  const base = isDark ? '#0B1220' : '#F1F5FF';
+  const blobA = colors.primary + (isDark ? '33' : '22'); // brand tint, top-right
+  const blobB = isDark ? '#1E1B4B66' : '#C7D2FE55';      // cool secondary, bottom-left
 
   return (
-    <View style={[styles.gradient, { backgroundColor: backdrop }]}>
+    <View style={[styles.root, { backgroundColor: base }]}>
+      {/* Ambient blobs — pointer-events: none so they don't intercept taps */}
+      <View pointerEvents="none" style={[styles.blob, styles.blobTopRight, { backgroundColor: blobA }]} />
+      <View pointerEvents="none" style={[styles.blob, styles.blobBottomLeft, { backgroundColor: blobB }]} />
+
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.headerArea}>
           <Image
             source={require('@/assets/images/logo.png')}
-            style={{ width: getScaledFontSize(140), height: getScaledFontSize(70) }}
+            style={{ width: getScaledFontSize(140), height: getScaledFontSize(56) }}
             contentFit="contain"
             accessibilityLabel="Circle Support Health logo"
           />
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.shieldBadge, { backgroundColor: colors.primary + '14' }]}>
-            <Ionicons
-              name="lock-closed"
-              size={getScaledFontSize(28)}
-              color={colors.primary}
-              accessibilityLabel="Locked"
+        <View style={styles.heroArea}>
+          {/* Concentric halo + lock icon. Inner ring solid brand fill,
+              outer ring animated translucent pulse. */}
+          <View style={styles.lockWrap}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.haloOuter,
+                {
+                  backgroundColor: colors.primary + '22',
+                  transform: [{
+                    scale: halo.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.1] }),
+                  }],
+                  opacity: halo.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.15] }),
+                },
+              ]}
             />
+            <View style={[styles.haloInner, { backgroundColor: colors.primary + '1A', borderColor: colors.primary + '55' }]} />
+            <View style={[styles.lockBadge, { backgroundColor: colors.primary }]}>
+              <Ionicons
+                name="lock-closed"
+                size={getScaledFontSize(28)}
+                color="#FFFFFF"
+                accessibilityLabel="Locked"
+              />
+            </View>
           </View>
+
           <Text
             style={[
               styles.title,
               {
                 color: colors.text,
-                fontSize: getScaledFontSize(Typography.title1.fontSize),
-                fontWeight: getScaledFontWeight(700) as any,
+                fontSize: getScaledFontSize(Typography.title1.fontSize + 2),
+                fontWeight: getScaledFontWeight(800) as any,
               },
             ]}
             accessibilityRole="header"
@@ -151,20 +193,28 @@ export default function LockScreen() {
               {
                 color: colors.secondary,
                 fontSize: getScaledFontSize(Typography.callout.fontSize),
+                fontWeight: getScaledFontWeight(500) as any,
               },
             ]}
           >
-            {showBiometric ? 'Enter PIN or use Face ID' : 'Enter your 6-digit PIN to continue'}
+            {showBiometric ? 'Use Face ID or enter your 6-digit PIN' : 'Enter your 6-digit PIN to continue'}
           </Text>
-          <PinDots length={6} filled={pin.length} error={error} />
-          {error && (
-            <Text
-              style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(13) }]}
-              accessibilityRole="alert"
-            >
-              Wrong PIN. {attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining.
-            </Text>
-          )}
+
+          <View style={styles.dotsRow}>
+            <PinDots length={6} filled={pin.length} error={error} />
+          </View>
+
+          {error ? (
+            <View style={[styles.errorPill, { backgroundColor: colors.error + '14', borderColor: colors.error + '55' }]}>
+              <Ionicons name="alert-circle" size={getScaledFontSize(14)} color={colors.error} />
+              <Text
+                style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }]}
+                accessibilityRole="alert"
+              >
+                Wrong PIN — {attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} left
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.padArea}>
@@ -180,42 +230,80 @@ export default function LockScreen() {
   );
 }
 
+const BLOB_SIZE = 360;
+
 const styles = StyleSheet.create({
-  gradient: { flex: 1 },
+  root: { flex: 1 },
   safeArea: { flex: 1 },
+  // Ambient backdrop blobs — large soft circles positioned off-screen
+  // so only their feathered edges show through. backgroundColor is set
+  // inline (uses theme + alpha).
+  blob: {
+    position: 'absolute',
+    width: BLOB_SIZE,
+    height: BLOB_SIZE,
+    borderRadius: BLOB_SIZE / 2,
+  },
+  blobTopRight: { top: -BLOB_SIZE * 0.45, right: -BLOB_SIZE * 0.4 },
+  blobBottomLeft: { bottom: -BLOB_SIZE * 0.55, left: -BLOB_SIZE * 0.5 },
   headerArea: {
     alignItems: 'center',
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.sm,
   },
-  card: {
-    marginHorizontal: Spacing.screenPadding,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderRadius: 24,
-    borderWidth: 1,
+  heroArea: {
     alignItems: 'center',
-    // Soft elevation so the card lifts off the gradient on both themes
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
-    elevation: 4,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
   },
-  shieldBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  // Concentric circles around the lock icon for the halo / glow effect.
+  lockWrap: {
+    width: 116,
+    height: 116,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
-  title: { textAlign: 'center', marginBottom: Spacing.xs },
-  subtitle: { textAlign: 'center', marginBottom: Spacing.xs },
-  errorText: { marginTop: -4, marginBottom: 4 },
+  haloOuter: {
+    position: 'absolute',
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+  },
+  haloInner: {
+    position: 'absolute',
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1,
+  },
+  lockBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Soft brand-coloured glow underneath the badge
+    shadowColor: '#0D9488',
+    shadowOpacity: 0.32,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  title: { textAlign: 'center', marginBottom: 4, letterSpacing: 0.2 },
+  subtitle: { textAlign: 'center', marginBottom: Spacing.md, opacity: 0.85 },
+  dotsRow: { marginBottom: 8 },
+  errorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  errorText: { marginLeft: 2 },
   padArea: {
     flex: 1,
     justifyContent: 'flex-end',
