@@ -3,6 +3,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useTrends } from '@/hooks/use-trends'
 import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
+import { useReportTrends } from '@/hooks/use-report-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
@@ -64,23 +65,41 @@ export default function HealthTrendsScreen() {
 
   const { data, isLoading, isError, refetch } = useTrends()
   const { data: healthKitTrends, refetch: refetchHealthKit } = useHealthKitTrends()
+  const { data: reportTrends, refetch: refetchReportTrends } = useReportTrends()
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await Promise.all([refetch(), refetchHealthKit()])
+    await Promise.all([refetch(), refetchHealthKit(), refetchReportTrends()])
     setRefreshing(false)
-  }, [refetch, refetchHealthKit])
+  }, [refetch, refetchHealthKit, refetchReportTrends])
 
   // Split trends by provenance — Apple Health goes in the carousel at the
-  // top, clinic-sourced (FHIR) trends go in the selector + full-card layout
-  // below. If the same metricCode appears in both, FHIR wins (clinic-
-  // recorded data > on-device samples for the same measurement). SCRUM-244.
+  // top, clinic-sourced (FHIR + report-derived) trends go in the selector
+  // + full-card layout below. SCRUM-244 / SCRUM-246.
+  //
+  // Two sources contribute to the clinic section:
+  //   1. /v1/patients/me/trends — backend-computed from FHIR Observations
+  //      attached directly to the patient.
+  //   2. /v1/patients/me/reports — structured `results[]` arrays from the
+  //      Reports tab, pivoted client-side into trends grouped by metric
+  //      name. Fills the gap when reports land as DiagnosticReports with
+  //      embedded results that never make it into Observation form.
+  //
+  // Backend trends win on metricCode conflict (it's higher-fidelity), so
+  // report-derived trends only contribute metric names not already covered.
   const clinicTrends = useMemo<LongitudinalTrend[]>(() => {
-    return ((data ?? []) as LongitudinalTrend[]).map((t) => ({
+    const backend = ((data ?? []) as LongitudinalTrend[]).map((t) => ({
       ...t,
       source: t.source ?? ('fhir' as const),
     }))
-  }, [data])
+    const fromReports = (reportTrends ?? []) as LongitudinalTrend[]
+    const codes = new Set(backend.map((t) => t.metricCode.toLowerCase()))
+    const names = new Set(backend.map((t) => t.metricName.toLowerCase()))
+    const extras = fromReports.filter(
+      (t) => !codes.has(t.metricCode.toLowerCase()) && !names.has(t.metricName.toLowerCase()),
+    )
+    return [...backend, ...extras]
+  }, [data, reportTrends])
 
   const appleHealthTrends = useMemo<LongitudinalTrend[]>(() => {
     const hk = (healthKitTrends ?? []) as LongitudinalTrend[]
