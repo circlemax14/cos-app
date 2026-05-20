@@ -2696,36 +2696,56 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
+        {/* Centered heading (matches the web Patient Home layout in
+            cos-frontend/src/pages/patient/Home.tsx). The view-mode toggle
+            used to sit inline next to the title; we moved it to a small
+            right-aligned control just above the circle so the heading
+            reads cleanly. */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 8, alignItems: 'center' }}>
+          <Text style={[
+            styles.sectionTitle,
+            {
+              fontSize: getScaledFontSize(24),
+              fontWeight: getScaledFontWeight(600) as any,
+              color: colors.text,
+              textAlign: 'center',
+            }
+          ]}>
+            {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
+          </Text>
+        </View>
+
+        {/* Quick actions row — moved ABOVE the circle to match the web
+            layout. Drops the +80 marginTop hack that previously cleared
+            the orbiting-avatar overhang because they're no longer above. */}
+        <View style={{ paddingHorizontal: 16, marginTop: 16, marginBottom: 4 }}>
+          <QuickActionButtons />
+        </View>
+
         <View style={styles.circleSection}>
-          <View style={styles.titleRow}>
-            <Text style={[
-              styles.sectionTitle,
-              {
-                fontSize: getScaledFontSize(24),
-                fontWeight: getScaledFontWeight(600) as any,
-                color: colors.text,
-                paddingBottom: 50,
-                flex: 1,
-              }
-            ]}>
-              {isLoadingPatient ? 'Loading...' : `${getFirstName(patientName)}'s Circle of Support`}
-            </Text>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'flex-end',
+            paddingHorizontal: 16,
+            paddingBottom: 4,
+          }}>
             <TouchableOpacity
               onPress={toggleViewMode}
               style={[
                 styles.toggleButton,
                 {
                   backgroundColor: colors.text + '10',
-                  padding: getScaledFontSize(10),
+                  padding: getScaledFontSize(8),
                   borderRadius: getScaledFontSize(8),
-                  marginBottom: 50,
                 }
               ]}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle view"
             >
               <IconSymbol
                 name={getToggleIcon()}
-                size={getScaledFontSize(24)}
+                size={getScaledFontSize(20)}
                 color={colors.tint || '#008080'}
               />
             </TouchableOpacity>
@@ -2836,20 +2856,8 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Three primary quick-action buttons. First-tap captures the
-            contact info; subsequent taps go straight to dialer / pharmacy.
-            Positioned below the Circle of Support per user request.
-            paddingHorizontal mirrors circleSection so the buttons align
-            with the rest of the page, marginTop pushes clear of the
-            orbiting-doctor avatars (which are absolute-positioned and
-            spill outside the circleSection's flow box).
-            Geometry: center y = 160, orbit radius = 158, avatar wrapper
-            extends 60 below its anchor → bottom-most avatar reaches y=378
-            in a 320-tall container, i.e. ~58 px below the circleSection's
-            flow end. 80 px clear keeps a comfortable air gap. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 80 }}>
-          <QuickActionButtons />
-        </View>
+        {/* QuickActionButtons used to live here, below the Circle. Moved
+            above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
