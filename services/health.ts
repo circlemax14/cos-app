@@ -1017,6 +1017,17 @@ export type HealthKitVitalMetric =
   | 'heart-rate'
   | 'weight'
   | 'body-mass-index'
+  // SCRUM-244: fitness + sleep metrics surfaced as part of the Apple Health
+  // carousel at the top of the Result Trends screen.
+  | 'steps'
+  | 'active-energy'
+  | 'distance-walking-running'
+  | 'flights-climbed'
+  | 'exercise-time'
+  | 'resting-heart-rate'
+  | 'walking-heart-rate'
+  | 'heart-rate-variability'
+  | 'sleep-hours'
 
 interface VitalSpec {
   metricCode: string
@@ -1026,6 +1037,16 @@ interface VitalSpec {
   refRange: { low: number; high: number }
   // healthkit returns SpO2 as a 0..1 fraction — we need to scale it to a %.
   scale?: (v: number) => number
+  // Which react-native-health method to call. Defaults are inferred from the
+  // metric key for clinical vitals (`getBloodPressureSamples`, etc.); fitness
+  // metrics are explicit because their HealthKit method names don't share
+  // the `get<Metric>Samples` convention.
+  fetcher?: string
+  // How to reduce multiple samples in a calendar day to one point. Default
+  // 'mean' is correct for vitals (BP, HR, glucose). Fitness counters that
+  // are inherently cumulative use 'sum' (steps, kcal, distance, flights,
+  // exercise minutes).
+  dayReducer?: 'mean' | 'sum'
 }
 
 const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
@@ -1092,6 +1113,91 @@ const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     permission: 'BodyMassIndex',
     unit: 'kg/m²',
     refRange: { low: 18.5, high: 24.9 },
+  },
+  // ── Fitness / activity metrics ─────────────────────────────────────────
+  steps: {
+    metricCode: 'hk-steps',
+    metricName: 'Steps',
+    permission: 'StepCount',
+    unit: 'steps',
+    refRange: { low: 7000, high: 12000 },
+    fetcher: 'getDailyStepCountSamples',
+    dayReducer: 'sum',
+  },
+  'active-energy': {
+    metricCode: 'hk-active-energy',
+    metricName: 'Active Calories',
+    permission: 'ActiveEnergyBurned',
+    unit: 'kcal',
+    refRange: { low: 250, high: 600 },
+    fetcher: 'getActiveEnergyBurned',
+    dayReducer: 'sum',
+  },
+  'distance-walking-running': {
+    metricCode: 'hk-distance-walking',
+    metricName: 'Distance',
+    permission: 'DistanceWalkingRunning',
+    unit: 'km',
+    refRange: { low: 5, high: 10 },
+    fetcher: 'getDailyDistanceWalkingRunningSamples',
+    dayReducer: 'sum',
+    // HealthKit returns distance in metres — convert to km for display.
+    scale: (v) => v / 1000,
+  },
+  'flights-climbed': {
+    metricCode: 'hk-flights',
+    metricName: 'Flights Climbed',
+    permission: 'FlightsClimbed',
+    unit: 'floors',
+    refRange: { low: 5, high: 20 },
+    fetcher: 'getDailyFlightsClimbedSamples',
+    dayReducer: 'sum',
+  },
+  'exercise-time': {
+    metricCode: 'hk-exercise-time',
+    metricName: 'Exercise Time',
+    permission: 'AppleExerciseTime',
+    unit: 'min',
+    refRange: { low: 30, high: 60 },
+    fetcher: 'getAppleExerciseTime',
+    dayReducer: 'sum',
+  },
+  'resting-heart-rate': {
+    metricCode: 'hk-resting-hr',
+    metricName: 'Resting Heart Rate',
+    permission: 'RestingHeartRate',
+    unit: 'bpm',
+    refRange: { low: 50, high: 70 },
+    fetcher: 'getRestingHeartRateSamples',
+  },
+  'walking-heart-rate': {
+    metricCode: 'hk-walking-hr',
+    metricName: 'Walking Heart Rate',
+    permission: 'WalkingHeartRateAverage',
+    unit: 'bpm',
+    refRange: { low: 90, high: 130 },
+    fetcher: 'getWalkingHeartRateAverage',
+  },
+  'heart-rate-variability': {
+    metricCode: 'hk-hrv',
+    metricName: 'Heart Rate Variability',
+    permission: 'HeartRateVariability',
+    unit: 'ms',
+    refRange: { low: 30, high: 80 },
+    fetcher: 'getHeartRateVariabilitySamples',
+  },
+  // Sleep is special: each sample carries start/end timestamps representing
+  // a sleep segment, and we want to express total sleep duration per day.
+  // The fetcher below is wired but the fetcherName never actually triggers
+  // the generic path — getHealthKitVitalTrend short-circuits to the sleep
+  // path when metric === 'sleep-hours' so the duration is summed correctly.
+  'sleep-hours': {
+    metricCode: 'hk-sleep',
+    metricName: 'Sleep',
+    permission: 'SleepAnalysis',
+    unit: 'hours',
+    refRange: { low: 7, high: 9 },
+    fetcher: 'getSleepSamples',
   },
 }
 
@@ -1173,7 +1279,18 @@ export const getHealthKitVitalTrend = (
     const nativeModule = NativeModules.AppleHealthKit || NativeModules.RNAppleHealthKit
     const wrapper = AppleHealthKit as unknown as Record<string, unknown>
 
-    const fetcherName =
+    // Sleep is a special case — values come from start/end pairs and we
+    // want total sleep duration per day, not the per-sample value. Delegate
+    // to the dedicated sleep path.
+    if (metric === 'sleep-hours') {
+      getHealthKitSleepTrend(daysBack).then(resolve).catch(() => resolve(null))
+      return
+    }
+
+    // Inferred default fetcher names for the original 9 clinical vitals.
+    // Fitness metrics declare `spec.fetcher` explicitly because their
+    // names don't follow the get<Metric>Samples convention.
+    const inferredFetcher =
       metric === 'blood-pressure-systolic' || metric === 'blood-pressure-diastolic'
         ? 'getBloodPressureSamples'
         : metric === 'blood-glucose'
@@ -1188,7 +1305,10 @@ export const getHealthKitVitalTrend = (
                   ? 'getHeartRateSamples'
                   : metric === 'weight'
                     ? 'getWeightSamples'
-                    : 'getBmiSamples'
+                    : metric === 'body-mass-index'
+                      ? 'getBmiSamples'
+                      : ''
+    const fetcherName = spec.fetcher ?? inferredFetcher
 
     const fetcher =
       (typeof wrapper[fetcherName] === 'function' && (wrapper[fetcherName] as Function)) ||
@@ -1250,15 +1370,19 @@ export const getHealthKitVitalTrend = (
           dayBuckets.set(dayKey, { sum: value, count: 1, lastDate: dateIso })
         }
       }
+      // For cumulative daily counters (steps, kcal, distance, flights,
+      // exercise minutes), the daily representative is the SUM of intra-day
+      // samples — not the mean. The `dayReducer` on the spec controls which.
+      const reducer = spec.dayReducer ?? 'mean'
       const points: TrendDataPoint[] = []
       for (const [, bucket] of dayBuckets) {
-        const avg = bucket.sum / bucket.count
+        const value = reducer === 'sum' ? bucket.sum : bucket.sum / bucket.count
         points.push({
           date: bucket.lastDate,
-          value: Math.round(avg * 10) / 10,
+          value: Math.round(value * 10) / 10,
           unit: spec.unit,
           referenceRange: spec.refRange,
-          interpretation: interpretPoint(avg, spec.refRange),
+          interpretation: interpretPoint(value, spec.refRange),
         })
       }
       points.sort((a, b) => a.date.localeCompare(b.date))
@@ -1296,5 +1420,102 @@ export const getAllHealthKitVitalTrends = async (
   const metrics = Object.keys(VITAL_SPECS) as HealthKitVitalMetric[]
   const results = await Promise.all(metrics.map((m) => getHealthKitVitalTrend(m, daysBack)))
   return results.filter((t): t is LongitudinalTrend => t !== null)
+}
+
+/**
+ * Sleep trend — each HealthKit sleep sample carries start/end times that
+ * represent a sleep segment (asleep, in-bed, deep, REM, etc.). The user-
+ * facing trend is total sleep duration per day, in hours. We sum segment
+ * durations per calendar day (keyed by the *start* date so an overnight
+ * sleep ending after midnight is bucketed under the day it began).
+ */
+const getHealthKitSleepTrend = (
+  daysBack: number = 90,
+): Promise<LongitudinalTrend | null> => {
+  return new Promise((resolve) => {
+    if (Platform.OS !== 'ios') {
+      resolve(null)
+      return
+    }
+    const spec = VITAL_SPECS['sleep-hours']
+    const nativeModule = NativeModules.AppleHealthKit || NativeModules.RNAppleHealthKit
+    const wrapper = AppleHealthKit as unknown as Record<string, unknown>
+
+    const fetcher =
+      (typeof wrapper.getSleepSamples === 'function' && (wrapper.getSleepSamples as Function)) ||
+      (nativeModule && typeof nativeModule.getSleepSamples === 'function' && nativeModule.getSleepSamples) ||
+      null
+    if (!fetcher) {
+      resolve(null)
+      return
+    }
+
+    const end = new Date()
+    const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000)
+    const options: HealthInputOptions = {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      ascending: true,
+      includeManuallyAdded: true,
+    }
+
+    fetcher(options, (err: string | Error | null, results: unknown) => {
+      if (err) {
+        resolve(null)
+        return
+      }
+      const raw = Array.isArray(results) ? (results as Record<string, unknown>[]) : []
+      if (raw.length === 0) {
+        resolve(null)
+        return
+      }
+      // Sum sleep-segment hours per day (keyed by the day the segment began).
+      const byDay = new Map<string, { hours: number; lastDate: string }>()
+      for (const sample of raw) {
+        const startIso = sample.startDate as string | undefined
+        const endIso = sample.endDate as string | undefined
+        if (!startIso || !endIso) continue
+        const startTs = new Date(startIso).getTime()
+        const endTs = new Date(endIso).getTime()
+        if (Number.isNaN(startTs) || Number.isNaN(endTs) || endTs <= startTs) continue
+        const hours = (endTs - startTs) / (1000 * 60 * 60)
+        const dayKey = startIso.slice(0, 10)
+        const bucket = byDay.get(dayKey)
+        if (bucket) {
+          bucket.hours += hours
+          if (startIso > bucket.lastDate) bucket.lastDate = startIso
+        } else {
+          byDay.set(dayKey, { hours, lastDate: startIso })
+        }
+      }
+      const points: TrendDataPoint[] = []
+      for (const [, bucket] of byDay) {
+        points.push({
+          date: bucket.lastDate,
+          value: Math.round(bucket.hours * 10) / 10,
+          unit: spec.unit,
+          referenceRange: spec.refRange,
+          interpretation: interpretPoint(bucket.hours, spec.refRange),
+        })
+      }
+      if (points.length === 0) {
+        resolve(null)
+        return
+      }
+      points.sort((a, b) => a.date.localeCompare(b.date))
+      resolve({
+        id: spec.metricCode,
+        metricCode: spec.metricCode,
+        metricName: spec.metricName,
+        category: 'vital',
+        dataPoints: points,
+        trendDirection: computeTrendDirection(points, spec.refRange),
+        trendPeriod: `${daysBack}d`,
+        relatedConditions: [],
+        relatedMedications: [],
+        source: 'apple-health',
+      })
+    })
+  })
 }
 
