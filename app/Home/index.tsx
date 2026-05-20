@@ -29,6 +29,7 @@ import {
   type NonEhrProvider,
 } from '@/services/non-ehr-processor';
 import { QuickActionButtons } from '@/components/home/quick-action-buttons';
+import { HomeTrendsCard } from '@/components/health/HomeTrendsCard';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2852,6 +2853,11 @@ export default function HomeScreen() {
 
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
+
+        {/* SCRUM-237: compact Health Trends section between the Circle
+            and Recommended/Upcoming. Renders nothing if the patient has
+            no trends data yet, so it never leaves an empty gap. */}
+        <HomeTrendsCard />
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
