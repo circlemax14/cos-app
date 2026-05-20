@@ -212,6 +212,11 @@ export const initializeHealthKit = (): Promise<boolean> => {
           Constants.Permissions.HeartRate as HealthPermission,
           Constants.Permissions.SleepAnalysis as HealthPermission,
           Constants.Permissions.ActiveEnergyBurned as HealthPermission,
+          // SCRUM-240: additional vital reads for the Result Trends screen.
+          // Failing to add a permission here causes the matching trend to
+          // silently resolve to null, so the chart is missing but the rest
+          // of the screen keeps working.
+          ...(getHealthKitVitalPermissions() as HealthPermission[]),
         ],
         write: [], // We only need read permissions
       },
@@ -985,4 +990,288 @@ export const getTodayHealthMetrics = async (): Promise<HealthMetrics> => {
     };
   }
 };
+
+// ─── Longitudinal vitals series (SCRUM-240) ───────────────────────────────────
+//
+// Fetches HealthKit samples for vitals over a date window and returns them as
+// TrendDataPoint[] — the same shape the backend serves under
+// /v1/patients/me/trends — so the Result Trends screen can render HealthKit-
+// sourced trends side-by-side with FHIR-sourced ones.
+//
+// Reference ranges below are conservative adult-population defaults sourced
+// from common clinical practice. They are NOT personalised. Their only role
+// is to draw the "normal range" band on the chart so the visualisation is
+// useful when HealthKit (which has no concept of reference ranges) supplies
+// the data. Out-of-range *interpretation* is computed the same way the
+// backend does it.
+
+import type { TrendDataPoint, LongitudinalTrend } from './api/types'
+
+export type HealthKitVitalMetric =
+  | 'blood-pressure-systolic'
+  | 'blood-pressure-diastolic'
+  | 'blood-glucose'
+  | 'body-temperature'
+  | 'oxygen-saturation'
+  | 'respiratory-rate'
+  | 'heart-rate'
+  | 'weight'
+  | 'body-mass-index'
+
+interface VitalSpec {
+  metricCode: string
+  metricName: string
+  permission: string
+  unit: string
+  refRange: { low: number; high: number }
+  // healthkit returns SpO2 as a 0..1 fraction — we need to scale it to a %.
+  scale?: (v: number) => number
+}
+
+const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
+  'blood-pressure-systolic': {
+    metricCode: 'hk-bp-systolic',
+    metricName: 'Blood Pressure (Systolic)',
+    permission: 'BloodPressureSystolic',
+    unit: 'mmHg',
+    refRange: { low: 90, high: 120 },
+  },
+  'blood-pressure-diastolic': {
+    metricCode: 'hk-bp-diastolic',
+    metricName: 'Blood Pressure (Diastolic)',
+    permission: 'BloodPressureDiastolic',
+    unit: 'mmHg',
+    refRange: { low: 60, high: 80 },
+  },
+  'blood-glucose': {
+    metricCode: 'hk-glucose',
+    metricName: 'Blood Glucose',
+    permission: 'BloodGlucose',
+    unit: 'mg/dL',
+    refRange: { low: 70, high: 100 },
+  },
+  'body-temperature': {
+    metricCode: 'hk-body-temp',
+    metricName: 'Body Temperature',
+    permission: 'BodyTemperature',
+    unit: '°C',
+    refRange: { low: 36.1, high: 37.2 },
+  },
+  'oxygen-saturation': {
+    metricCode: 'hk-spo2',
+    metricName: 'Oxygen Saturation',
+    permission: 'OxygenSaturation',
+    unit: '%',
+    refRange: { low: 95, high: 100 },
+    scale: (v) => v * 100,
+  },
+  'respiratory-rate': {
+    metricCode: 'hk-resp-rate',
+    metricName: 'Respiratory Rate',
+    permission: 'RespiratoryRate',
+    unit: 'breaths/min',
+    refRange: { low: 12, high: 20 },
+  },
+  'heart-rate': {
+    metricCode: 'hk-heart-rate',
+    metricName: 'Heart Rate',
+    permission: 'HeartRate',
+    unit: 'bpm',
+    refRange: { low: 60, high: 100 },
+  },
+  weight: {
+    metricCode: 'hk-weight',
+    metricName: 'Weight',
+    permission: 'Weight',
+    unit: 'kg',
+    refRange: { low: 50, high: 100 },
+  },
+  'body-mass-index': {
+    metricCode: 'hk-bmi',
+    metricName: 'Body Mass Index',
+    permission: 'BodyMassIndex',
+    unit: 'kg/m²',
+    refRange: { low: 18.5, high: 24.9 },
+  },
+}
+
+const interpretPoint = (
+  value: number,
+  range: { low: number; high: number },
+): TrendDataPoint['interpretation'] => {
+  if (value < range.low) return 'low'
+  if (value > range.high) return 'high'
+  return 'normal'
+}
+
+const computeTrendDirection = (
+  points: TrendDataPoint[],
+  range: { low: number; high: number },
+): LongitudinalTrend['trendDirection'] => {
+  if (points.length < 2) return 'insufficient_data'
+  // simple linear fit slope over time
+  const xs = points.map((_, i) => i)
+  const ys = points.map((p) => p.value)
+  const meanX = xs.reduce((s, v) => s + v, 0) / xs.length
+  const meanY = ys.reduce((s, v) => s + v, 0) / ys.length
+  let num = 0
+  let den = 0
+  for (let i = 0; i < xs.length; i++) {
+    num += (xs[i] - meanX) * (ys[i] - meanY)
+    den += (xs[i] - meanX) ** 2
+  }
+  if (den === 0) return 'stable'
+  const slope = num / den
+  // No-slope band: <1% of range per sample step is "stable".
+  const stableBand = Math.max(0.5, (range.high - range.low) * 0.01)
+  if (Math.abs(slope) < stableBand) return 'stable'
+  // Whether slope-up is "improving" or "worsening" depends on the metric —
+  // for blood pressure, falling toward range is improving; for SpO2, rising
+  // toward range is improving. We use the latest point's distance to the
+  // normal range as the truth: if latest is in-range or moving into range,
+  // call it improving; otherwise worsening.
+  const latest = points[points.length - 1].value
+  const earliest = points[0].value
+  const distLatest = latest < range.low ? range.low - latest : latest > range.high ? latest - range.high : 0
+  const distEarliest = earliest < range.low ? range.low - earliest : earliest > range.high ? earliest - range.high : 0
+  if (distLatest < distEarliest) return 'improving'
+  if (distLatest > distEarliest) return 'worsening'
+  return 'stable'
+}
+
+/**
+ * Returns the union of HealthKit Permissions constants for every vital we
+ * read in `getHealthKitVitalTrend`, so `initializeHealthKit` can request
+ * them up-front and avoid per-metric permission prompts later.
+ */
+export const getHealthKitVitalPermissions = (): string[] => {
+  const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
+    | Record<string, string>
+    | undefined
+  return Object.values(VITAL_SPECS).map((spec) => {
+    return constants?.[spec.permission] ?? spec.permission
+  })
+}
+
+/**
+ * Pulls samples for one vital metric over the last `daysBack` days and
+ * returns them as a LongitudinalTrend in the same shape the backend serves.
+ *
+ * Returns null if HealthKit is unavailable (Android), the user has not
+ * granted permission for this metric, or no samples exist in the window.
+ */
+export const getHealthKitVitalTrend = (
+  metric: HealthKitVitalMetric,
+  daysBack: number = 90,
+): Promise<LongitudinalTrend | null> => {
+  return new Promise((resolve) => {
+    if (Platform.OS !== 'ios') {
+      resolve(null)
+      return
+    }
+    const spec = VITAL_SPECS[metric]
+    const nativeModule = NativeModules.AppleHealthKit || NativeModules.RNAppleHealthKit
+    const wrapper = AppleHealthKit as unknown as Record<string, unknown>
+
+    const fetcherName =
+      metric === 'blood-pressure-systolic' || metric === 'blood-pressure-diastolic'
+        ? 'getBloodPressureSamples'
+        : metric === 'blood-glucose'
+          ? 'getBloodGlucoseSamples'
+          : metric === 'body-temperature'
+            ? 'getBodyTemperatureSamples'
+            : metric === 'oxygen-saturation'
+              ? 'getOxygenSaturationSamples'
+              : metric === 'respiratory-rate'
+                ? 'getRespiratoryRateSamples'
+                : metric === 'heart-rate'
+                  ? 'getHeartRateSamples'
+                  : metric === 'weight'
+                    ? 'getWeightSamples'
+                    : 'getBmiSamples'
+
+    const fetcher =
+      (typeof wrapper[fetcherName] === 'function' && (wrapper[fetcherName] as Function)) ||
+      (nativeModule && typeof nativeModule[fetcherName] === 'function' && nativeModule[fetcherName]) ||
+      null
+
+    if (!fetcher) {
+      resolve(null)
+      return
+    }
+
+    const end = new Date()
+    const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000)
+    const options: HealthInputOptions = {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      ascending: true,
+      includeManuallyAdded: true,
+    }
+
+    fetcher(options, (err: string | Error | null, results: unknown) => {
+      if (err) {
+        resolve(null)
+        return
+      }
+      const raw = Array.isArray(results) ? results : []
+      if (raw.length === 0) {
+        resolve(null)
+        return
+      }
+      const points: TrendDataPoint[] = []
+      for (const sample of raw as Record<string, unknown>[]) {
+        const rawValue =
+          metric === 'blood-pressure-systolic'
+            ? (sample.bloodPressureSystolicValue as number | undefined)
+            : metric === 'blood-pressure-diastolic'
+              ? (sample.bloodPressureDiastolicValue as number | undefined)
+              : (sample.value as number | undefined)
+        if (rawValue === undefined || rawValue === null || Number.isNaN(rawValue)) continue
+        const value = spec.scale ? spec.scale(rawValue) : rawValue
+        const date = (sample.startDate as string | undefined) ?? ''
+        if (!date) continue
+        points.push({
+          date,
+          value: Math.round(value * 10) / 10,
+          unit: spec.unit,
+          referenceRange: spec.refRange,
+          interpretation: interpretPoint(value, spec.refRange),
+        })
+      }
+
+      if (points.length === 0) {
+        resolve(null)
+        return
+      }
+
+      resolve({
+        id: spec.metricCode,
+        metricCode: spec.metricCode,
+        metricName: spec.metricName,
+        category: 'vital',
+        dataPoints: points,
+        trendDirection: computeTrendDirection(points, spec.refRange),
+        trendPeriod: `${daysBack}d`,
+        relatedConditions: [],
+        relatedMedications: [],
+        source: 'apple-health',
+      })
+    })
+  })
+}
+
+/**
+ * Convenience wrapper: pulls all vitals in parallel and returns the
+ * non-empty trends. Failures and "no data" for a given metric are silent —
+ * the caller just sees fewer trends.
+ */
+export const getAllHealthKitVitalTrends = async (
+  daysBack: number = 90,
+): Promise<LongitudinalTrend[]> => {
+  if (Platform.OS !== 'ios') return []
+  const metrics = Object.keys(VITAL_SPECS) as HealthKitVitalMetric[]
+  const results = await Promise.all(metrics.map((m) => getHealthKitVitalTrend(m, daysBack)))
+  return results.filter((t): t is LongitudinalTrend => t !== null)
+}
 

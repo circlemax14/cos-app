@@ -2,6 +2,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useTrends } from '@/hooks/use-trends'
+import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
@@ -55,14 +56,26 @@ export default function HealthTrendsScreen() {
   const [selectorOpen, setSelectorOpen] = useState(false)
 
   const { data, isLoading, isError, refetch } = useTrends()
+  const { data: healthKitTrends, refetch: refetchHealthKit } = useHealthKitTrends()
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await refetch()
+    await Promise.all([refetch(), refetchHealthKit()])
     setRefreshing(false)
-  }, [refetch])
+  }, [refetch, refetchHealthKit])
 
-  const allTrends = useMemo<LongitudinalTrend[]>(() => (data ?? []) as LongitudinalTrend[], [data])
+  // Merge FHIR-sourced (backend) and HealthKit-sourced trends, preferring
+  // FHIR if the same metricCode appears in both (clinic-recorded data wins
+  // over on-device samples for the same measurement). SCRUM-240.
+  const allTrends = useMemo<LongitudinalTrend[]>(() => {
+    const fhir = ((data ?? []) as LongitudinalTrend[]).map((t) => ({
+      ...t,
+      source: t.source ?? ('fhir' as const),
+    }))
+    const hk = (healthKitTrends ?? []) as LongitudinalTrend[]
+    const codes = new Set(fhir.map((t) => t.metricCode))
+    return [...fhir, ...hk.filter((t) => !codes.has(t.metricCode))]
+  }, [data, healthKitTrends])
 
   // First render: auto-pick the most "interesting" trends as the
   // initial selection — anything with out-of-range points or
@@ -321,11 +334,40 @@ function TrendCard({
   // Newest first for the data table.
   const rows = [...trend.dataPoints].sort((a, b) => b.date.localeCompare(a.date))
 
+  const isAppleHealth = trend.source === 'apple-health'
+
   return (
     <View style={[styles.trendCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-      <Text style={{ color: colors.text, fontSize: fontSize(16), fontWeight: fontWeight(700) as any }}>
-        {trend.metricName}
-      </Text>
+      <View style={styles.trendCardTitleRow}>
+        <Text style={{ color: colors.text, fontSize: fontSize(16), fontWeight: fontWeight(700) as any, flexShrink: 1 }}>
+          {trend.metricName}
+        </Text>
+        <View
+          style={[
+            styles.sourceBadge,
+            {
+              backgroundColor: isAppleHealth ? '#0F172A18' : '#00808018',
+              borderColor: isAppleHealth ? '#0F172A33' : '#00808033',
+            },
+          ]}
+        >
+          <MaterialIcons
+            name={isAppleHealth ? 'favorite' : 'local-hospital'}
+            size={fontSize(11)}
+            color={isAppleHealth ? '#0F172A' : '#008080'}
+          />
+          <Text
+            style={{
+              marginLeft: 4,
+              color: isAppleHealth ? '#0F172A' : '#008080',
+              fontSize: fontSize(10),
+              fontWeight: fontWeight(600) as any,
+            }}
+          >
+            {isAppleHealth ? 'Apple Health' : 'Clinic'}
+          </Text>
+        </View>
+      </View>
       {ref ? (
         <Text style={{ color: colors.subtext, fontSize: fontSize(12), marginTop: 2 }}>
           Normal range: {ref.low}–{ref.high} {unit}
@@ -502,6 +544,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 14,
     marginBottom: 14,
+  },
+  trendCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   tableToggle: {
     alignSelf: 'center',

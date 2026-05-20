@@ -524,6 +524,9 @@ export interface LongitudinalTrend {
   trendPeriod: string;
   relatedConditions: string[];
   relatedMedications: string[];
+  // Provenance: omitted/`fhir` for trends sourced from the clinical backend,
+  // `apple-health` for trends derived from on-device HealthKit samples.
+  source?: 'fhir' | 'apple-health';
 }
 
 export interface TrendExplanation {
