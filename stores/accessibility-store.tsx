@@ -134,15 +134,22 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     settings.fontSizeScale / 100
   );
 
-  // SCRUM-234: dampen the over-1.0 portion of the scale on phones so
-  // "Larger text" doesn't blow up layouts on small screens. Tablets and
-  // iPads (≥768 wide) keep the full effect because there's room for it.
-  // Anything ≤ 1.0 passes through untouched so users who SHRINK text
-  // still get the requested reduction.
+  // SCRUM-248: dampen the over-1.0 portion of the scale on phones so
+  // "Larger text" doesn't blow up layouts on small screens. The earlier
+  // 0.5 dampening (SCRUM-234) wasn't enough — users on max accessibility
+  // text still saw layouts break. Two tightenings:
+  //   (1) Dampen by 0.3 instead of 0.5 — a 3x system request becomes
+  //       1 + 2.0 * 0.3 = 1.6x in-app (vs 2.0x before).
+  //   (2) Hard cap at 1.4 so even extreme accessibility settings stay
+  //       within a layout-safe envelope.
+  // Tablets/iPads (≥768 wide) keep the full pass-through because there's
+  // room for it. Anything ≤ 1.0 passes through untouched so users who
+  // deliberately SHRINK text still get the reduction they asked for.
+  const PHONE_MAX_SCALE = 1.4;
   const effectiveFontScale =
     isTablet() || rawFontScale <= 1
       ? rawFontScale
-      : 1 + (rawFontScale - 1) * 0.5;
+      : Math.min(PHONE_MAX_SCALE, 1 + (rawFontScale - 1) * 0.3);
 
   const accessibilityMultiplier = settings.isAccessibilityMode ? 1.3 : 1;
 

@@ -3,7 +3,6 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useQuery } from '@tanstack/react-query'
-import { fetchBadgeProgress, type EarnedBadge, type BadgeTier } from '@/services/api/badges'
 import { fetchProgressSummary, type ProgressSummary } from '@/services/api/progress-summary'
 import { ActivityIndicator } from 'react-native'
 import { Colors } from '@/constants/theme'
@@ -20,12 +19,6 @@ const CADENCE_OPTIONS: { key: Cadence; label: string; days: number }[] = [
   { key: 'year',       label: 'Year',   days: 365 },
 ]
 
-const TIER_COLORS: Record<BadgeTier, string> = {
-  bronze: '#CD7F32',
-  silver: '#C0C0C0',
-  gold: '#FFD700',
-}
-
 interface ProgressTabProps {
   /** Streak in days, surfaced by the parent screen via existing analytics. */
   streakDays: number
@@ -35,8 +28,6 @@ interface ProgressTabProps {
   completedToday: number
   /** Total tasks scheduled today (for the "day" cadence quick stat). */
   totalToday: number
-  /** Callback to drill into the full badge gallery. */
-  onOpenAllBadges: () => void
 }
 
 /**
@@ -57,17 +48,10 @@ export function ProgressTab({
   adherencePercent,
   completedToday,
   totalToday,
-  onOpenAllBadges,
 }: ProgressTabProps): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const [cadence, setCadence] = React.useState<Cadence>('week')
-
-  const badgesQuery = useQuery({
-    queryKey: ['badge-progress'],
-    queryFn: fetchBadgeProgress,
-    staleTime: 60_000,
-  })
 
   // AI qualitative narrative — companion to the quantitative stats below.
   // Server caches for 1h per user; calling fetchProgressSummary(true) bypasses.
@@ -79,19 +63,9 @@ export function ProgressTab({
   const refreshSummary = React.useCallback(() => {
     void fetchProgressSummary(true).then((fresh) => {
       summaryQuery.refetch()
-      // Optimistic update so the UI snaps to fresh immediately while
-      // React Query's own refetch lands; harmless if refetch returns
-      // identical data.
       void fresh
     })
   }, [summaryQuery])
-
-  const tierOrder: Record<BadgeTier, number> = { gold: 0, silver: 1, bronze: 2 }
-  const topBadges: EarnedBadge[] = React.useMemo(() => {
-    const earned = badgesQuery.data?.earned ?? []
-    return [...earned].sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]).slice(0, 4)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [badgesQuery.data])
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
@@ -245,62 +219,6 @@ export function ProgressTab({
           </Text>
         </Card.Content>
       </Card>
-
-      {/* Badge gallery preview */}
-      <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: colors.text, fontSize: getScaledFontSize(17), fontWeight: getScaledFontWeight(700) as any }]}>
-          Badges
-        </Text>
-        <Pressable onPress={onOpenAllBadges} hitSlop={10} accessibilityRole="button" accessibilityLabel="View all badges">
-          <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
-            View all
-          </Text>
-        </Pressable>
-      </View>
-
-      {topBadges.length === 0 ? (
-        <Card style={{ backgroundColor: colors.card }}>
-          <Card.Content>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center', paddingVertical: 6 }}>
-              Complete tasks to start earning badges. Your first badge will appear here.
-            </Text>
-          </Card.Content>
-        </Card>
-      ) : (
-        <View style={styles.badgeGrid}>
-          {topBadges.map((b) => (
-            <View key={`${b.id}#${b.tier}`} style={styles.badgeTile}>
-              <View style={[styles.badgeMedallion, { backgroundColor: TIER_COLORS[b.tier] }]}>
-                <Text style={styles.badgeMedallionInitial}>
-                  {b.name.slice(0, 1).toUpperCase()}
-                </Text>
-              </View>
-              <Text
-                numberOfLines={2}
-                style={{
-                  color: colors.text,
-                  fontSize: getScaledFontSize(12),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  textAlign: 'center',
-                  marginTop: 6,
-                }}
-              >
-                {b.name}
-              </Text>
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(10),
-                  textTransform: 'capitalize',
-                  marginTop: 2,
-                }}
-              >
-                {b.tier}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
     </ScrollView>
   )
 }
@@ -383,20 +301,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   sectionTitle: {},
-  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
-  badgeTile: {
-    width: '47%',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    backgroundColor: 'transparent',
-  },
-  badgeMedallion: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeMedallionInitial: { color: '#fff', fontSize: 24, fontWeight: '800' },
 })
