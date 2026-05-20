@@ -55,6 +55,20 @@ function planTypeLabel(t: PlanType | undefined): string {
   }
 }
 
+/** One-line description of what each plan type does. Powers the
+ *  subhead on the prominent plan-type card (SCRUM-252). */
+function planTypeDescription(t: PlanType | undefined): string {
+  switch (t) {
+    case 'advanced':
+      return 'AI-driven plan tailored to your health records.';
+    case 'agency':
+      return 'Managed by your care agency.';
+    case 'basic':
+    default:
+      return 'Self-managed, no assessments required.';
+  }
+}
+
 const TASK_ICON: Record<TaskType, { name: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }> = {
   medication: { name: 'medication', color: '#8B5CF6', bg: 'rgba(139,92,246,0.12)' },
   exercise: { name: 'directions-walk', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
@@ -378,7 +392,7 @@ export default function HealthPlanScreen() {
                 style={{
                   color: active ? (colors.tint as string) : colors.subtext,
                   fontWeight: getScaledFontWeight(active ? 700 : 500) as any,
-                  fontSize: getScaledFontSize(14),
+                  fontSize: getScaledFontSize(15),
                   textTransform: 'capitalize',
                 }}
               >
@@ -387,44 +401,6 @@ export default function HealthPlanScreen() {
             </Pressable>
           );
         })}
-        <Pressable
-          onPress={() => setShowChooser(true)}
-          hitSlop={8}
-          style={[v2Styles.planTypePill, { borderColor: colors.tint as string }]}
-          accessibilityRole="button"
-          accessibilityLabel={`Plan type: ${currentPlanType ?? 'Basic'}. Tap to change.`}
-        >
-          <Text
-            style={{
-              color: colors.tint as string,
-              fontSize: getScaledFontSize(11),
-              fontWeight: getScaledFontWeight(700) as any,
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}
-          >
-            Plan
-          </Text>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(13),
-              fontWeight: getScaledFontWeight(700) as any,
-              textTransform: 'capitalize',
-              marginLeft: 6,
-              maxWidth: 100,
-            }}
-            numberOfLines={1}
-          >
-            {planTypeLabel(currentPlanType)}
-          </Text>
-          <MaterialIcons
-            name="edit"
-            size={14}
-            color={colors.subtext}
-            style={{ marginLeft: 6 }}
-          />
-        </Pressable>
       </View>
 
       {activeTab === 'progress' ? (
@@ -482,7 +458,148 @@ export default function HealthPlanScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* AI Summary banner */}
+        {/* Plan-type card — prominent so users can see and switch their
+            plan at a glance, instead of buried as a tiny pill in the tab
+            bar. SCRUM-252. */}
+        <Pressable
+          onPress={() => setShowChooser(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType)}. Tap to change.`}
+          style={({ pressed }) => [
+            styles.planTypeCard,
+            {
+              backgroundColor: (colors.tint as string) + '14',
+              borderColor: (colors.tint as string) + '33',
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View style={[styles.planTypeIcon, { backgroundColor: (colors.tint as string) + '26' }]}>
+            <MaterialIcons
+              name={
+                currentPlanType === 'advanced'
+                  ? 'auto-awesome'
+                  : currentPlanType === 'agency'
+                    ? 'groups'
+                    : 'check-circle-outline'
+              }
+              size={getScaledFontSize(22)}
+              color={colors.tint as string}
+            />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              style={{
+                color: colors.tint as string,
+                fontSize: getScaledFontSize(11),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+              }}
+            >
+              Current plan
+            </Text>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(17),
+                fontWeight: getScaledFontWeight(800) as any,
+                marginTop: 2,
+              }}
+              numberOfLines={1}
+            >
+              {planTypeLabel(currentPlanType)}
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: 2,
+              }}
+              numberOfLines={2}
+            >
+              {planTypeDescription(currentPlanType)}
+            </Text>
+          </View>
+          <View style={[styles.planTypeChevron, { backgroundColor: (colors.tint as string) + '1A' }]}>
+            <MaterialIcons name="swap-horiz" size={getScaledFontSize(18)} color={colors.tint as string} />
+          </View>
+        </Pressable>
+
+        {/* Today hero card — replaces the older progress bar / report-stats
+            split with a single big focal card. Combines the % done with
+            a thick progress bar and the done / pending / skipped triplet.
+            SCRUM-252. */}
+        {tasks.length > 0 && (
+          <View style={[styles.heroCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+            <View style={styles.heroTopRow}>
+              <View>
+                <Text style={[styles.heroLabel, { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
+                  TODAY
+                </Text>
+                <Text style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(40),
+                  fontWeight: getScaledFontWeight(800) as any,
+                  letterSpacing: -0.5,
+                  marginTop: 4,
+                }}>
+                  {Math.round(progressPct * 100)}%
+                </Text>
+                <Text style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(13),
+                  marginTop: 2,
+                }}>
+                  {completedCount} of {tasks.length} task{tasks.length === 1 ? '' : 's'} done
+                </Text>
+              </View>
+              <View style={[styles.heroBadge, { backgroundColor: progressPct === 1 ? '#16A34A18' : (colors.tint as string) + '18' }]}>
+                <MaterialIcons
+                  name={progressPct === 1 ? 'check-circle' : 'today'}
+                  size={getScaledFontSize(28)}
+                  color={progressPct === 1 ? '#16A34A' : (colors.tint as string)}
+                />
+              </View>
+            </View>
+            <View style={[styles.heroProgressBar, { backgroundColor: colors.border }]}>
+              <View
+                style={[
+                  styles.heroProgressFill,
+                  {
+                    backgroundColor: progressPct === 1 ? '#16A34A' : (colors.tint as string),
+                    width: `${Math.max(2, progressPct * 100)}%`,
+                  },
+                ]}
+              />
+            </View>
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStat}>
+                <View style={[styles.heroStatDot, { backgroundColor: '#16A34A' }]} />
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}>
+                  {completedCount}
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginLeft: 4 }}>done</Text>
+              </View>
+              <View style={styles.heroStat}>
+                <View style={[styles.heroStatDot, { backgroundColor: colors.tint as string }]} />
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}>
+                  {tasks.length - completedCount - skippedCount}
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginLeft: 4 }}>to go</Text>
+              </View>
+              <View style={styles.heroStat}>
+                <View style={[styles.heroStatDot, { backgroundColor: '#9CA3AF' }]} />
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}>
+                  {skippedCount}
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginLeft: 4 }}>skipped</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* AI Summary banner — kept but de-emphasized below the hero */}
         <View style={[styles.aiBanner, { backgroundColor: colors.tint + '14', borderColor: colors.tint + '30' }]}>
           <View style={styles.aiBannerTop}>
             <MaterialIcons name="auto-awesome" size={16} color={colors.tint} />
@@ -492,49 +609,6 @@ export default function HealthPlanScreen() {
             {plan.summary}
           </Text>
         </View>
-
-        {/* Progress report */}
-        {tasks.length > 0 && (
-          <View style={[styles.progressCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-            <View style={styles.progressTop}>
-              <Text style={[styles.progressLabel, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }]}>
-                Today&apos;s progress
-              </Text>
-              <Text style={[styles.progressCount, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-                {completedCount} of {tasks.length} completed
-              </Text>
-            </View>
-            <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-              <View style={[styles.progressBarFill, { backgroundColor: colors.tint, width: `${progressPct * 100}%` }]} />
-            </View>
-            <View style={styles.reportStatsRow}>
-              <View style={styles.reportStat}>
-                <Text style={[styles.reportStatValue, { color: '#059669', fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
-                  {completedCount}
-                </Text>
-                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Done</Text>
-              </View>
-              <View style={styles.reportStat}>
-                <Text style={[styles.reportStatValue, { color: colors.tint, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
-                  {tasks.length - completedCount - skippedCount}
-                </Text>
-                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Pending</Text>
-              </View>
-              <View style={styles.reportStat}>
-                <Text style={[styles.reportStatValue, { color: '#9CA3AF', fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
-                  {skippedCount}
-                </Text>
-                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Skipped</Text>
-              </View>
-              <View style={styles.reportStat}>
-                <Text style={[styles.reportStatValue, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(800) as any }]}>
-                  {Math.round(progressPct * 100)}%
-                </Text>
-                <Text style={[styles.reportStatLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Adherence</Text>
-              </View>
-            </View>
-          </View>
-        )}
 
         {/* Plan overview — breakdown of all tasks in the plan */}
         <View style={[styles.planOverview, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
@@ -650,9 +724,17 @@ export default function HealthPlanScreen() {
                 };
                 return (
                   <View key={group.type} style={styles.groupBlock}>
-                    <Text style={[styles.groupHeader, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}>
-                      {groupLabels[group.type]} · {group.tasks.length}
-                    </Text>
+                    <View style={styles.groupHeaderRow}>
+                      <View style={[styles.groupHeaderIcon, { backgroundColor: icon.bg }]}>
+                        <MaterialIcons name={icon.name} size={getScaledFontSize(14)} color={icon.color} />
+                      </View>
+                      <Text style={[styles.groupHeader, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}>
+                        {groupLabels[group.type]}
+                      </Text>
+                      <Text style={[styles.groupHeaderCount, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                        {group.tasks.length}
+                      </Text>
+                    </View>
                     {group.tasks.map((t) => {
                       const { time, meridiem } = formatTime(t.scheduledTime);
                       const recurLabel =
@@ -667,19 +749,30 @@ export default function HealthPlanScreen() {
                         <View
                           key={t.id}
                           style={[styles.fullPlanRow, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-                          <View style={[styles.taskIcon, { backgroundColor: icon.bg }]}>
-                            <MaterialIcons name={icon.name} size={16} color={icon.color} />
+                          {/* Left color rail — color matches task type */}
+                          <View style={[styles.taskRail, { backgroundColor: icon.color }]} />
+                          <View style={[styles.taskIcon, { backgroundColor: icon.bg, marginLeft: 10 }]}>
+                            <MaterialIcons name={icon.name} size={getScaledFontSize(18)} color={icon.color} />
                           </View>
                           <View style={styles.taskBody}>
                             <Text
-                              style={[styles.taskTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}
+                              style={[styles.taskTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}
                               numberOfLines={1}>
                               {t.title}
                             </Text>
                             <Text
-                              style={[styles.taskSub, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}
+                              style={[styles.taskSub, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}
                               numberOfLines={1}>
-                              {recurLabel} · {time} {meridiem}
+                              {recurLabel}
+                            </Text>
+                          </View>
+                          {/* Time block, right-aligned, gives the row a clear schedule cue */}
+                          <View style={styles.taskTimeBlock}>
+                            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                              {time}
+                            </Text>
+                            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(10), marginTop: 1, fontWeight: getScaledFontWeight(600) as any }}>
+                              {meridiem}
                             </Text>
                           </View>
                         </View>
@@ -755,6 +848,48 @@ const styles = StyleSheet.create({
   metaText: {},
   refreshBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 
+  // Plan-type card (SCRUM-252) — leads the screen, highlights the current
+  // plan, taps open the chooser.
+  planTypeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  planTypeIcon: {
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
+  },
+  planTypeChevron: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 10,
+  },
+
+  // Today hero (SCRUM-252) — replaces the older progressCard split.
+  heroCard: {
+    marginHorizontal: 20,
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  heroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  heroLabel: { letterSpacing: 0.6, textTransform: 'uppercase' },
+  heroBadge: {
+    width: 56, height: 56, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroProgressBar: { height: 8, borderRadius: 4, overflow: 'hidden' },
+  heroProgressFill: { height: '100%', borderRadius: 4 },
+  heroStatsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 2 },
+  heroStat: { flexDirection: 'row', alignItems: 'center' },
+  heroStatDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+
   // AI banner
   aiBanner: { marginHorizontal: 20, padding: 16, borderRadius: 18, borderWidth: 1, marginBottom: 16 },
   aiBannerTop: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
@@ -817,11 +952,33 @@ const styles = StyleSheet.create({
   planOverviewLabel: { textAlign: 'center' },
 
   // Full plan section
-  groupBlock: { marginBottom: 12 },
-  groupHeader: { marginHorizontal: 20, marginTop: 12, marginBottom: 8, letterSpacing: -0.2 },
+  groupBlock: { marginBottom: 14 },
+  groupHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  groupHeaderIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  groupHeader: { letterSpacing: -0.2, flex: 1 },
+  groupHeaderCount: { fontWeight: '600' },
+  taskRail: { width: 4, height: 36, borderRadius: 2 },
+  taskTimeBlock: {
+    alignItems: 'flex-end',
+    minWidth: 48,
+    marginLeft: 8,
+  },
   fullPlanRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 10, paddingHorizontal: 12,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 10,
     marginHorizontal: 20, marginBottom: 6,
     borderRadius: 12, borderWidth: 1,
   },
