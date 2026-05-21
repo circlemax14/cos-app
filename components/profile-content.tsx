@@ -7,6 +7,10 @@ import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
+import {
+  getCachedUserSummary,
+  setCachedUserSummary,
+} from '@/lib/cached-user-summary';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
@@ -79,34 +83,56 @@ export function ProfileContent({
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
-    const loadPatientData = async () => {
-      try {
-        const patient = await fetchPatientInfo();
-        if (patient) {
-          setPatientName(patient.name || 'User');
-          setPatientEmail(patient.email || '');
-
-          // Fallback: if email is empty, try getting from auth /me endpoint
-          if (!patient.email) {
-            try {
-              const meResponse = await apiClient.get('/v1/auth/me');
-              const meData = meResponse.data?.data;
-              if (meData?.email) {
-                setPatientEmail(meData.email);
-              }
-            } catch {
-              // ignore — email fallback is best-effort
-            }
-          }
-        }
-      } catch {
-        // Patient data failed to load — keep defaults
-      } finally {
+    // SCRUM-265 #16: hydrate from the local cache on first paint so the
+    // drawer renders the user's name + email + photo instantly. The API
+    // round-trip still runs in the background and refreshes both the UI
+    // and the cache when fresh data lands.
+    let cancelled = false;
+    void (async () => {
+      const cached = await getCachedUserSummary();
+      if (cached && !cancelled) {
+        setPatientName(cached.name || 'User');
+        setPatientEmail(cached.email || '');
         setIsLoadingProfile(false);
       }
-    };
 
-    loadPatientData();
+      try {
+        const patient = await fetchPatientInfo();
+        if (cancelled || !patient) return;
+        const freshName = patient.name || 'User';
+        let freshEmail = patient.email || '';
+
+        // Fallback: if email is empty, try getting from auth /me endpoint
+        if (!freshEmail) {
+          try {
+            const meResponse = await apiClient.get('/v1/auth/me');
+            const meData = meResponse.data?.data;
+            if (meData?.email) freshEmail = meData.email;
+          } catch {
+            // ignore — email fallback is best-effort
+          }
+        }
+
+        setPatientName(freshName);
+        setPatientEmail(freshEmail);
+        await setCachedUserSummary({
+          name: freshName,
+          email: freshEmail,
+          photoUrl: patientPhotoUrl ?? cached?.photoUrl,
+        });
+      } catch {
+        // Network failure — keep whatever (cached or default) values are showing.
+      } finally {
+        if (!cancelled) setIsLoadingProfile(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // patientPhotoUrl is intentionally omitted from deps — we don't want a
+    // photo store update to re-trigger a full profile refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const ehrCountLabel = useMemo(() => {
