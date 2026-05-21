@@ -88,8 +88,8 @@ apiClient.interceptors.response.use(
           throw error;
         }
 
-        // Check if this is a social auth token (app-signed JWT, not Cognito)
-        // Social tokens have tokenType: 'social' in the payload
+        // Check if this is a social auth token (app-signed JWT, not Cognito).
+        // Social tokens have tokenType: 'social' in the payload.
         const currentToken = await getAccessToken();
         let isSocialToken = false;
         if (currentToken) {
@@ -101,32 +101,54 @@ apiClient.interceptors.response.use(
           }
         }
 
+        let newAccess: string;
+        let newRefresh: string;
+        let newId: string;
+
         if (isSocialToken) {
-          // Social tokens can't be refreshed via Cognito — force re-authentication
-          await forceSignOut();
-          throw error;
+          // SCRUM-260: social tokens are app-signed JWTs (Apple / Google
+          // sign-in). The backend's POST /v1/auth/refresh accepts the
+          // refresh token in the request body and returns new access/id/
+          // refresh tokens in the response body. Use a separate axios
+          // instance with no auth interceptor so this call can't loop on
+          // its own 401.
+          const publicHttp = axios.create({
+            baseURL: API_BASE,
+            timeout: 30_000,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const refreshRes = await publicHttp.post<{
+            success: boolean;
+            data?: { accessToken?: string; idToken?: string; refreshToken?: string };
+          }>('/v1/auth/refresh', { refreshToken });
+          const data = refreshRes.data?.data;
+          if (!data?.accessToken || !data.refreshToken || !data.idToken) {
+            throw new Error('Refresh response missing tokens');
+          }
+          newAccess = data.accessToken;
+          newRefresh = data.refreshToken;
+          newId = data.idToken;
+        } else {
+          // Cognito email/password path — refresh via amazon-cognito-identity-js
+          // directly, no backend round-trip. Dynamic import avoids circular dep.
+          const { refreshCognitoTokens } = await import('./cognito');
+          const storedUsername = await import('expo-secure-store').then((m) =>
+            m.getItemAsync('cos_username'),
+          );
+          const newTokens = await refreshCognitoTokens(storedUsername ?? '', refreshToken);
+          newAccess = newTokens.accessToken;
+          newRefresh = refreshToken; // Cognito doesn't rotate the refresh token
+          newId = newTokens.idToken;
         }
 
-        // Dynamic import to avoid circular dependency
-        const { refreshCognitoTokens } = await import('./cognito');
-        // We need a username for refresh — stored separately or decoded from id token
-        const storedUsername = await import('expo-secure-store').then((m) =>
-          m.getItemAsync('cos_username'),
-        );
+        await storeTokens(newAccess, newRefresh, newId);
 
-        const newTokens = await refreshCognitoTokens(storedUsername ?? '', refreshToken);
-        await storeTokens(
-          newTokens.accessToken,
-          refreshToken,
-          newTokens.idToken,
-        );
-
-        pendingRequests.forEach((cb) => cb(newTokens.accessToken));
+        pendingRequests.forEach((cb) => cb(newAccess));
         pendingRequests = [];
 
         if (originalRequest) {
           originalRequest.headers = originalRequest.headers ?? {};
-          originalRequest.headers.Authorization = `Bearer ${newTokens.accessToken}`;
+          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
           return apiClient(originalRequest);
         }
       } catch {
