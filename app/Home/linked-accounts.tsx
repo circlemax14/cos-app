@@ -3,7 +3,6 @@ import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Card, List, Text } from 'react-native-paper';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import * as AppleAuthentication from 'expo-apple-authentication';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -66,7 +65,7 @@ export default function LinkedAccountsScreen() {
       }
       // cancel / dismiss / locked — user bailed, no error message needed
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [googleResponse]);
 
   const handleLinkGoogleToken = async (idToken: string) => {

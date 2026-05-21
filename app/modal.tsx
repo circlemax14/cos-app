@@ -4,14 +4,13 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
 import { Button, Menu, Portal, Text, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs, TabScreen, TabsProvider } from 'react-native-paper-tabs';
 import { fetchProviders } from '@/services/api/providers';
 import type { Provider } from '@/services/api/types';
-import { getAllCategories, getAllMedicalSubcategories, groupProvidersByCategory, getProvidersByCategory, getProvidersByMedicalSubcategory } from '@/services/provider-categorization';
-import { SUPPORT_CATEGORIES, getCategoryById, matchProviderToSubCategory } from '@/constants/categories';
+import { SUPPORT_CATEGORIES, matchProviderToSubCategory } from '@/constants/categories';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
@@ -22,9 +21,7 @@ import {
   processAndStoreFiles,
   clearAllNonEhrData,
   type NonEhrProvider,
-  type NonEhrFile
 } from '@/services/non-ehr-processor';
-import { ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
 
 
 interface CategoryGroup {

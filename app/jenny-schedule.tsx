@@ -21,7 +21,7 @@ export default function JennyScheduleScreen() {
     day: 'numeric'
   });
 
-  const [scheduleItems, setScheduleItems] = useState<Array<{
+  const [scheduleItems, setScheduleItems] = useState<{
     id: string;
     time: string;
     title: string;
@@ -29,7 +29,7 @@ export default function JennyScheduleScreen() {
     icon: string;
     completed: boolean;
     category: string;
-  }>>([]);
+  }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import {
   Text,
   TouchableOpacity,
   View,
-} from 'react-native';
+ Pressable } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -29,7 +29,6 @@ import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
-import { Pressable } from 'react-native';
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {

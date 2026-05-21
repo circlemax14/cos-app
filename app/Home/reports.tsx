@@ -7,7 +7,6 @@ import { Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
-import { router } from 'expo-router';
 import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
 import { fetchReports } from '@/services/api/reports';

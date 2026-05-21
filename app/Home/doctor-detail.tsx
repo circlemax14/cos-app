@@ -2,7 +2,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Modal as RNModal } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Platform, Modal as RNModal } from 'react-native';
 import { Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
 import { EntityIcon } from '@/components/icons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';

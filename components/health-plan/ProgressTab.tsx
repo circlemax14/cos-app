@@ -1,10 +1,9 @@
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View , ActivityIndicator } from 'react-native'
 import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useQuery } from '@tanstack/react-query'
 import { fetchProgressSummary, type ProgressSummary } from '@/services/api/progress-summary'
-import { ActivityIndicator } from 'react-native'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 

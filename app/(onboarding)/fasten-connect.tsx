@@ -299,7 +299,7 @@ function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
     router.replace('/(auth)/sign-in' as never);
   };
 
-  const benefits: Array<{ icon: keyof typeof MaterialIcons.glyphMap; text: string }> = [
+  const benefits: { icon: keyof typeof MaterialIcons.glyphMap; text: string }[] = [
     { icon: 'medical-services', text: 'See diagnoses, conditions, and visit notes' },
     { icon: 'medication', text: 'Track medications and refills in one place' },
     { icon: 'event-available', text: 'Review appointments and upcoming care' },
