@@ -6,7 +6,7 @@ import { useConnectedEhrs } from '@/hooks/use-connected-ehrs';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface AppWrapperProps {
@@ -71,16 +71,45 @@ export function AppWrapper({
   };
 
   const closeDrawerMenu = () => {
+    // SCRUM-265 #17: drop the state update inside the animation callback —
+    // when a menu item triggers router.push(), the screen unmounts before
+    // the 200ms animation finishes, the callback never fires, and
+    // isDrawerMenuVisible stays true. On router.back() the drawer was
+    // therefore visibly still open. Setting state immediately fixes the
+    // race; the animation still plays out visually while it's mounted.
+    setIsDrawerMenuVisible(false);
     Animated.timing(drawerTranslateX, {
       toValue: -drawerWidth,
       duration: 200,
       useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setIsDrawerMenuVisible(false);
-      }
-    });
+    }).start();
   };
+
+  // SCRUM-265 #18: edge-swipe gesture to open the drawer. Only responds
+  // when the touch starts within the left 20px of the screen AND moves
+  // horizontally — keeps horizontal-scrollable surfaces (carousels,
+  // tabs) un-impacted because they're never touched at x<20.
+  const drawerSwipeResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => {
+        return !isDrawerMenuVisible && evt.nativeEvent.pageX < 20;
+      },
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return (
+          !isDrawerMenuVisible &&
+          evt.nativeEvent.pageX < 20 &&
+          gestureState.dx > 12 &&
+          Math.abs(gestureState.dy) < 30
+        );
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        // Right-swipe with meaningful horizontal travel → open drawer.
+        if (gestureState.dx > 50 && Math.abs(gestureState.dy) < 60) {
+          handleHamburgerPress();
+        }
+      },
+    }),
+  ).current;
 
   const handleConnectEHR = () => {
     closeDrawerMenu();
@@ -88,7 +117,11 @@ export function AppWrapper({
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['top', 'left', 'right']}
+      {...drawerSwipeResponder.panHandlers}
+    >
       {/* Decorative soft bubbles — accent-tinted background motif from
           the Welcome / Connect-a-Clinic screens, muted so the main
           content stays the focus. Positioned absolute behind
