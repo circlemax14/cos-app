@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,

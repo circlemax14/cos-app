@@ -7,7 +7,7 @@ import {
   Text,
   TouchableOpacity,
   View,
-} from 'react-native';
+ Modal } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { AppWrapper } from '@/components/app-wrapper';
@@ -27,7 +27,6 @@ import {
 } from '@/services/pin-auth';
 import { NumberPad } from '@/components/ui/number-pad';
 import { PinDots } from '@/components/ui/pin-dots';
-import { Modal } from 'react-native';
 
 const TIMEOUT_OPTIONS = [
   { label: '30 seconds', value: 30000 },

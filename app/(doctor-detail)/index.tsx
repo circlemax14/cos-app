@@ -1,7 +1,6 @@
-import { DoctorCard } from '@/components/ui/doctor-card';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Linking, Alert, Platform, Modal as RNModal } from 'react-native';
 import { Card, Button, Portal, Modal, Switch } from 'react-native-paper';
@@ -225,7 +224,7 @@ export default function DoctorDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to make a phone call');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to make a phone call');
     }
   };
@@ -239,7 +238,7 @@ export default function DoctorDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to send a message');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to send a message');
     }
   };
@@ -298,7 +297,7 @@ export default function DoctorDetailScreen() {
           'No video calling apps found. Please install a video calling app like Zoom, Google Meet, or Skype.',
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to start a video call');
     }
   };
@@ -312,7 +311,7 @@ export default function DoctorDetailScreen() {
       } else {
         Alert.alert('Error', 'Unable to send an email');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Unable to send an email');
     }
   };
@@ -391,7 +390,7 @@ export default function DoctorDetailScreen() {
       });
       setIsEditModalVisible(false);
       Alert.alert('Success', 'Doctor information updated successfully');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save doctor information. Please try again.');
     } finally {
       setIsSaving(false);

@@ -1,21 +1,5 @@
 import * as Sentry from '@sentry/react-native';
 
-// Initialize Sentry as early as possible — before any other imports run side
-// effects — so we capture errors thrown during module load + provider setup.
-// The DSN is public (that's how Sentry's threat model works); the secret is
-// the auth token, which is only used at build time for source-map upload.
-Sentry.init({
-  dsn: 'https://e355f7946736032baf6d1b47c7dec51c@o4511341366345728.ingest.us.sentry.io/4511341368115200',
-  // Adjust this value in production, or use tracesSampler for greater control
-  tracesSampleRate: 0.1,
-  // Capture warnings + errors
-  enableNativeCrashHandling: true,
-  enableAutoSessionTracking: true,
-  // Tag every event with the runtime info we already track in About so we
-  // can filter by build / OTA group when triaging
-  // (more tags added in app/index.tsx after the JS bundle finishes loading)
-});
-
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -34,6 +18,22 @@ import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
+
+// Initialize Sentry as early as possible — before any other imports run side
+// effects — so we capture errors thrown during module load + provider setup.
+// The DSN is public (that's how Sentry's threat model works); the secret is
+// the auth token, which is only used at build time for source-map upload.
+Sentry.init({
+  dsn: 'https://e355f7946736032baf6d1b47c7dec51c@o4511341366345728.ingest.us.sentry.io/4511341368115200',
+  // Adjust this value in production, or use tracesSampler for greater control
+  tracesSampleRate: 0.1,
+  // Capture warnings + errors
+  enableNativeCrashHandling: true,
+  enableAutoSessionTracking: true,
+  // Tag every event with the runtime info we already track in About so we
+  // can filter by build / OTA group when triaging
+  // (more tags added in app/index.tsx after the JS bundle finishes loading)
+});
 
 // Hold the native splash up as early as possible — at module load,
 // before any layout mount — so there is no flash of blank white

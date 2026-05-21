@@ -2,7 +2,6 @@ import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput as RNTextInput, TouchableOpacity, View } from 'react-native';
-import { Button } from 'react-native-paper';
 
 import { Colors } from '@/constants/theme';
 import { confirmSignUp, resendCode, signIn } from '@/services/auth';
