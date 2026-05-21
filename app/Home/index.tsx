@@ -364,8 +364,11 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
 
   // Base width for iPhone (375 is typical iPhone width)
   const baseWidth = 375;
-  // Calculate scale factor, but cap it for very large screens (max 2.2x for iPad)
-  const scaleFactor = Math.min(screenWidth / baseWidth, 2.2);
+  // SCRUM-265 #15: cap reduced 2.2 → 1.7 — the circle was visually overwhelming
+  // the rest of the home screen on iPads / large tablets. 1.7 still gives
+  // iPad users a comfortably larger graphic than phones without it
+  // dominating the layout.
+  const scaleFactor = Math.min(screenWidth / baseWidth, 1.7);
 
   // Base radius for orbit - original design value
   const baseRadius = 144 * 1.1; // ~158.4
@@ -2718,8 +2721,12 @@ export default function HomeScreen() {
               styles.toggleButton,
               {
                 backgroundColor: colors.text + '10',
-                padding: getScaledFontSize(8),
-                borderRadius: getScaledFontSize(8),
+                // SCRUM-265 #20: chrome controls don't scale with accessibility
+                // mode the way body text does — the toggle was ballooning past
+                // 50px and crowding the title on max accessibility. Hold these
+                // at the design values; the icon stays readable at 20pt.
+                padding: 8,
+                borderRadius: 8,
                 marginLeft: 8,
               }
             ]}
@@ -2729,7 +2736,7 @@ export default function HomeScreen() {
           >
             <IconSymbol
               name={getToggleIcon()}
-              size={getScaledFontSize(20)}
+              size={20}
               color={colors.tint || '#008080'}
             />
           </TouchableOpacity>
