@@ -151,7 +151,14 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
       ? rawFontScale
       : Math.min(PHONE_MAX_SCALE, 1 + (rawFontScale - 1) * 0.3);
 
-  const accessibilityMultiplier = settings.isAccessibilityMode ? 1.3 : 1;
+  // SCRUM-265 #14: the previous 1.3 (30% boost) blew up phone layouts when
+  // combined with the system text-scale dampening (SCRUM-248). Halving the
+  // boost on phones — 30% → 15% — keeps screens readable for users in
+  // accessibility mode without breaking line wraps. Tablets keep the
+  // original 1.3 because they have room for it.
+  const accessibilityMultiplier = settings.isAccessibilityMode
+    ? (isTablet() ? 1.3 : 1.15)
+    : 1;
 
   const getScaledFontSize = (baseFontSize: number) => {
     const scaled = Math.round(baseFontSize * effectiveFontScale * accessibilityMultiplier);
