@@ -59,13 +59,11 @@ export default function HealthTrendsScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const [refreshing, setRefreshing] = useState(false)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('most-recent')
-  const [selectedCodes, setSelectedCodes] = useState<Set<string> | null>(null)
-  const [selectorOpen, setSelectorOpen] = useState(false)
   const [activeTrend, setActiveTrend] = useState<LongitudinalTrend | null>(null)
 
   const { data, isLoading, isError, refetch } = useTrends()
   const { data: healthKitTrends, refetch: refetchHealthKit } = useHealthKitTrends()
-  const { data: reportTrends, refetch: refetchReportTrends } = useReportTrends()
+  const { data: reportTrends, isLoading: isLoadingReportTrends, refetch: refetchReportTrends } = useReportTrends()
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -110,41 +108,23 @@ export default function HealthTrendsScreen() {
       .filter((t) => t.dataPoints.length > 0)
   }, [healthKitTrends, clinicTrends, timeFilter])
 
-  // First render: auto-pick the most "interesting" *clinic* trends as the
-  // initial selection — anything with out-of-range points or improving/
-  // worsening direction, up to MAX_SELECTED. The carousel always shows
-  // every Apple Health trend, no selector needed.
-  const effectiveSelection = useMemo<Set<string>>(() => {
-    if (selectedCodes !== null) return selectedCodes
-    return pickInitialSelection(clinicTrends, MAX_SELECTED)
-  }, [selectedCodes, clinicTrends])
-
-  const visibleClinic = useMemo<LongitudinalTrend[]>(() => {
+  // SCRUM-265 #13: the clinic section is a horizontal slider now, no
+  // multi-select. Auto-pick the top MAX_SELECTED most interesting trends
+  // (out-of-range points or improving/worsening direction). Tapping a
+  // card opens the full TrendCard modal — same UX as Apple Health.
+  const clinicSliderTrends = useMemo<LongitudinalTrend[]>(() => {
+    const selected = pickInitialSelection(clinicTrends, MAX_SELECTED)
     return clinicTrends
-      .filter((t) => effectiveSelection.has(t.metricCode))
+      .filter((t) => selected.has(t.metricCode))
       .map((t) => applyTimeFilter(t, timeFilter))
       .filter((t) => t.dataPoints.length > 0)
-  }, [clinicTrends, effectiveSelection, timeFilter])
-
-  const toggleCode = useCallback((code: string) => {
-    setSelectedCodes((prev) => {
-      const next = new Set(prev ?? pickInitialSelection(clinicTrends, MAX_SELECTED))
-      if (next.has(code)) {
-        next.delete(code)
-      } else if (next.size < MAX_SELECTED) {
-        next.add(code)
-      }
-      return next
-    })
-  }, [clinicTrends])
-
-  const clearSelections = useCallback(() => setSelectedCodes(new Set()), [])
+  }, [clinicTrends, timeFilter])
 
   // Download results — build a CSV of everything currently on-screen
   // (Apple Health carousel + visible clinic trends) and hand it to the
   // OS share sheet. No backend round-trip needed.
   const onDownloadResults = useCallback(async () => {
-    const allVisible = [...appleHealthTrends, ...visibleClinic]
+    const allVisible = [...appleHealthTrends, ...clinicSliderTrends]
     if (allVisible.length === 0) {
       Alert.alert('Nothing to download', 'Pick or expand some components first.')
       return
@@ -157,17 +137,17 @@ export default function HealthTrendsScreen() {
         encoding: FileSystem.EncodingType.UTF8,
       })
       if (Platform.OS === 'ios') {
-        await Share.share({ url: path, title: 'Result Trends' })
+        await Share.share({ url: path, title: 'Health Trends' })
       } else {
         // Android Share doesn't honor file: URLs from cacheDirectory in
         // the same way iOS does; fall back to sharing CSV text directly.
-        await Share.share({ message: csv, title: 'Result Trends' })
+        await Share.share({ message: csv, title: 'Health Trends' })
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to export trends.'
       Alert.alert('Download failed', msg)
     }
-  }, [appleHealthTrends, visibleClinic])
+  }, [appleHealthTrends, clinicSliderTrends])
 
   if (isLoading) {
     return (
@@ -212,10 +192,20 @@ export default function HealthTrendsScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
+        {/* SCRUM-265 #10: renamed "Result Trends" → "Health Trends", more
+            attractive header with an accent icon chip + subtitle. */}
         <View style={styles.headerRow}>
-          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
-            Result Trends
-          </Text>
+          <View style={[styles.headerIcon, { backgroundColor: (colors.tint as string) + '1A' }]}>
+            <MaterialIcons name="insights" size={getScaledFontSize(22)} color={colors.tint as string} />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(800) as any }]}>
+              Health Trends
+            </Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+              Labs, vitals and Apple Health, over time
+            </Text>
+          </View>
         </View>
 
         {/* Time period filter chips */}
@@ -284,8 +274,12 @@ export default function HealthTrendsScreen() {
           </View>
         ) : null}
 
-        {/* From Your Clinic — full-card layout with multi-select. */}
-        {clinicTrends.length > 0 ? (
+        {/* From Your Clinic header. SCRUM-265 #13: replaced the
+            select-components + full-card layout with a horizontal slider
+            of mini cards, matching the Apple Health carousel pattern.
+            Capped at the top 10 most-interesting metrics; tap any card
+            to open the same TrendCard modal Apple Health uses. */}
+        {(clinicTrends.length > 0 || isLoading || isLoadingReportTrends) ? (
           <View style={styles.sectionHeaderRow}>
             <MaterialIcons
               name="local-hospital"
@@ -298,94 +292,40 @@ export default function HealthTrendsScreen() {
           </View>
         ) : null}
 
-        {clinicTrends.length > 0 ? (
-          <View style={[styles.selectorCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-            <Pressable
-              onPress={() => setSelectorOpen((v) => !v)}
-              style={styles.selectorHeader}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: selectorOpen }}
-            >
-              <View>
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
-                  Select components
-                </Text>
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
-                  {effectiveSelection.size} of {Math.min(MAX_SELECTED, clinicTrends.length)} selected
-                </Text>
-              </View>
-              <MaterialIcons
-                name={selectorOpen ? 'expand-less' : 'expand-more'}
-                size={getScaledFontSize(22)}
-                color={colors.subtext as string}
-              />
-            </Pressable>
-            {selectorOpen ? (
-              <View style={{ marginTop: 10 }}>
-                <View style={styles.chipWrap}>
-                  {clinicTrends.map((t) => {
-                    const checked = effectiveSelection.has(t.metricCode)
-                    const disabledNew = !checked && effectiveSelection.size >= MAX_SELECTED
-                    return (
-                      <Pressable
-                        key={t.metricCode}
-                        onPress={() => toggleCode(t.metricCode)}
-                        disabled={disabledNew}
-                        style={[
-                          styles.selChip,
-                          {
-                            backgroundColor: checked ? (colors.tint as string) + '22' : 'transparent',
-                            borderColor: checked ? (colors.tint as string) : colors.border,
-                            opacity: disabledNew ? 0.4 : 1,
-                          },
-                        ]}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked }}
-                      >
-                        <MaterialIcons
-                          name={checked ? 'check-box' : 'check-box-outline-blank'}
-                          size={getScaledFontSize(14)}
-                          color={checked ? (colors.tint as string) : (colors.subtext as string)}
-                        />
-                        <Text style={{ marginLeft: 6, color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(checked ? 600 : 500) as any }}>
-                          {t.metricName}
-                        </Text>
-                      </Pressable>
-                    )
-                  })}
-                </View>
-                <Pressable
-                  onPress={clearSelections}
-                  style={[styles.clearBtn, { borderColor: colors.border }]}
-                  accessibilityRole="button"
-                >
-                  <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
-                    Clear selections
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* Clinic trend cards */}
-        {clinicTrends.length > 0 && visibleClinic.length === 0 ? (
-          <View style={[styles.emptyCard, { borderColor: colors.border }]}>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
-              Nothing in this view. Pick components above or expand the time range.
+        {/* SCRUM-265 #12: per-section loader while lab + report trends
+            are still being fetched. Today's top-level isLoading gate
+            already covers the initial /trends call, but report-trends
+            via /lab-reports can be slow on accounts with many reports
+            — surface a clear "Loading lab trends…" instead of an empty
+            section. */}
+        {clinicTrends.length === 0 && (isLoading || isLoadingReportTrends) ? (
+          <View style={[styles.clinicLoadingCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+            <ActivityIndicator color={colors.tint as string} />
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginLeft: 12 }}>
+              Loading lab trends…
             </Text>
           </View>
         ) : null}
-        {visibleClinic.map((t) => (
-          <TrendCard
-            key={t.id}
-            trend={t}
-            chartWidth={chartWidth}
-            colors={colors}
-            fontSize={getScaledFontSize}
-            fontWeight={getScaledFontWeight}
-          />
-        ))}
+
+        {clinicTrends.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.carouselContent}
+            decelerationRate="fast"
+          >
+            {clinicSliderTrends.map((t) => (
+              <AppleHealthMiniCard
+                key={t.id}
+                trend={t}
+                colors={colors}
+                fontSize={getScaledFontSize}
+                fontWeight={getScaledFontWeight}
+                onPress={() => setActiveTrend(t)}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* Truly empty — no Apple Health AND no Clinic data. */}
         {clinicTrends.length === 0 && appleHealthTrends.length === 0 ? (
@@ -919,8 +859,23 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   retryButton: { marginTop: 18, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 12 },
-  title: { flex: 1, letterSpacing: 0.2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 14, paddingBottom: 14 },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { letterSpacing: -0.3 },
+  clinicLoadingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
   filterCard: {
     borderWidth: 1,
     borderRadius: 14,
