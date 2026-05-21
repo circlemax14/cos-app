@@ -20,6 +20,15 @@ interface DoctorCardProps {
   actionDisabled?: boolean;
   onActionPress?: () => void;
   actionColor?: string;
+  /**
+   * SCRUM-265 #6: when true, render the card as grey + non-tappable.
+   * Used for providers without clinical records and for indirect-care
+   * specialties (pharmacy, lab, imaging) that don't make sense as
+   * Circle-of-Support entries but should still be visible in the
+   * list so users know they're recognized.
+   */
+  inactive?: boolean;
+  inactiveReason?: string;
 }
 
 export function DoctorCard({
@@ -37,6 +46,8 @@ export function DoctorCard({
   actionDisabled = false,
   onActionPress,
   actionColor = '#008080',
+  inactive = false,
+  inactiveReason,
 }: DoctorCardProps) {
   const { getScaledFontSize, getScaledFontWeight } = useAccessibility();
 
@@ -44,8 +55,15 @@ export function DoctorCard({
   const avatarSize = getScaledFontSize(48);
   const cardMargin = getScaledFontSize(12);
 
+  // SCRUM-265 #6: inactive providers swallow the press and the action,
+  // and visually fade. We still render them so users can see the card —
+  // they just can't drill in or add to circle.
+  const effectiveOnPress = inactive ? undefined : onPress;
+  const effectiveOnActionPress = inactive ? undefined : onActionPress;
+  const effectiveActionDisabled = inactive || actionDisabled;
+
   return (
-    <Card style={[styles.card, highlighted ? styles.cardHighlighted : null, { marginBottom: cardMargin }]} onPress={onPress}>
+    <Card style={[styles.card, highlighted ? styles.cardHighlighted : null, { marginBottom: cardMargin, opacity: inactive ? 0.55 : 1 }]} onPress={effectiveOnPress}>
       <Card.Content style={[styles.cardContent, { padding: dynamicPadding }]}>
         <View style={styles.contentRow}>
           <EntityIcon
@@ -82,17 +100,32 @@ export function DoctorCard({
             >
               {qualifications}
             </Text>
+            {inactive && inactiveReason ? (
+              <Text
+                style={{
+                  fontSize: getScaledFontSize(10),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  color: '#9CA3AF',
+                  marginTop: 4,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                }}
+                numberOfLines={1}
+              >
+                {inactiveReason}
+              </Text>
+            ) : null}
           </View>
           {actionIconName && (
             <TouchableOpacity
-              style={[styles.actionButton, actionDisabled ? styles.actionButtonDisabled : null]}
+              style={[styles.actionButton, effectiveActionDisabled ? styles.actionButtonDisabled : null]}
               onPress={(event) => {
                 event?.stopPropagation?.();
-                if (!actionDisabled) {
-                  onActionPress?.();
+                if (!effectiveActionDisabled) {
+                  effectiveOnActionPress?.();
                 }
               }}
-              disabled={actionDisabled}
+              disabled={effectiveActionDisabled}
             >
               <IconSymbol name={actionIconName as any} size={getScaledFontSize(18)} color={actionColor} />
             </TouchableOpacity>
