@@ -2859,28 +2859,46 @@ export default function HomeScreen() {
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
 
-        {/* SCRUM-238: lightweight entry point to the full Health Trends
-            screen. Replaces the old in-line trends card so Home stays
-            compact; the trends screen has its own data fetching, filtering,
-            and AI-driven analysis. */}
+        {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
+            an accent gradient overlay, four illustrative metric icons,
+            and a prominent CTA. The plain banner felt forgettable next
+            to the rest of the home cards; the new layout treats trends
+            as a feature surface, not a row link. */}
         <TouchableOpacity
-          style={styles.trendsBanner}
+          style={[styles.trendsHeroCard, { backgroundColor: colors.tint as string }]}
           onPress={() => router.push('/Home/health-trends' as never)}
           accessibilityRole="button"
           accessibilityLabel="View health trends"
+          activeOpacity={0.92}
         >
-          <View style={styles.trendsBannerIcon}>
-            <MaterialIcons name="show-chart" size={getScaledFontSize(22)} color="#008080" />
+          {/* Soft gradient bubble in the corner for depth */}
+          <View style={styles.trendsHeroBlob} pointerEvents="none" />
+          <View style={styles.trendsHeroHeader}>
+            <View style={styles.trendsHeroBadge}>
+              <MaterialIcons name="show-chart" size={getScaledFontSize(20)} color={colors.tint as string} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.trendsHeroTitle, { fontSize: getScaledFontSize(17), fontWeight: getScaledFontWeight(800) as any }]}>
+                Health Trends
+              </Text>
+              <Text style={[styles.trendsHeroSubtitle, { fontSize: getScaledFontSize(12) }]}>
+                Labs + vitals + Apple Health over time
+              </Text>
+            </View>
+            <View style={styles.trendsHeroArrow}>
+              <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#FFFFFF" />
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.trendsBannerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }]}>
-              View Health Trends
-            </Text>
-            <Text style={[styles.trendsBannerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
-              Track lab values + vitals over time
+          <View style={styles.trendsHeroIconRow}>
+            {(['favorite', 'bloodtype', 'directions-walk', 'bedtime'] as const).map((iconName) => (
+              <View key={iconName} style={styles.trendsHeroChip}>
+                <MaterialIcons name={iconName} size={getScaledFontSize(15)} color="#FFFFFF" />
+              </View>
+            ))}
+            <Text style={[styles.trendsHeroChipsTrailing, { fontSize: getScaledFontSize(12) }]}>
+              + 14 more
             </Text>
           </View>
-          <MaterialIcons name="arrow-forward" size={getScaledFontSize(20)} color="#008080" />
         </TouchableOpacity>
 
         {upcomingAppointments.length > 0 && (
@@ -3115,6 +3133,71 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   scrollContainer: {
     flex: 1,
+  },
+  // SCRUM-265 #9: refreshed Health Trends hero tile.
+  trendsHeroCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    paddingHorizontal: 14,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  trendsHeroBlob: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    top: -60,
+    right: -60,
+  },
+  trendsHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendsHeroBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trendsHeroTitle: { color: '#FFFFFF', letterSpacing: 0.2 },
+  trendsHeroSubtitle: { color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  trendsHeroArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trendsHeroIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  trendsHeroChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  trendsHeroChipsTrailing: {
+    color: 'rgba(255,255,255,0.85)',
+    marginLeft: 6,
+    fontWeight: '600',
   },
   trendsBanner: {
     flexDirection: 'row',
