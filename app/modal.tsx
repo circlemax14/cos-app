@@ -1,4 +1,5 @@
 import { DoctorCard } from '@/components/ui/doctor-card';
+import { providerInactiveReason, inactiveLabel } from '@/utils/provider-direct-care';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -968,6 +969,10 @@ export default function ModalScreen() {
                                       const isSelected = selectedProviderIds.has(String(provider.id));
                                       const canAdd = !isSelected && !isCircleFull;
                                       const showAction = isSelected || !isCircleFull;
+                                      // SCRUM-265 #6: indirect-care + records-missing → inactive
+                                      const inactiveReason = !provider.isManual
+                                        ? providerInactiveReason(provider)
+                                        : null;
                                       return (
                                         <DoctorCard
                                           key={provider.id}
@@ -977,6 +982,8 @@ export default function ModalScreen() {
                                             ? (provider.relationship || provider.qualifications || 'Member')
                                             : (provider.qualifications || 'Healthcare Provider')}
                                           image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
+                                          inactive={!!inactiveReason}
+                                          inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
                                           onPress={provider.isManual ? undefined : () => {
                                             router.back();
                                             setTimeout(() => {
@@ -1040,6 +1047,7 @@ export default function ModalScreen() {
                               const isSelected = selectedProviderIds.has(String(provider.id));
                               const canAdd = !isSelected && !isCircleFull;
                               const showAction = isSelected || !isCircleFull;
+                              const inactiveReason = providerInactiveReason(provider);
                               return (
                                 <DoctorCard
                                   key={provider.id}
@@ -1047,6 +1055,8 @@ export default function ModalScreen() {
                                   name={provider.name}
                                   qualifications={provider.qualifications || 'Healthcare Provider'}
                                   image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
+                                  inactive={!!inactiveReason}
+                                  inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
                                   onPress={() => {
                                     router.back();
                                     setTimeout(() => {

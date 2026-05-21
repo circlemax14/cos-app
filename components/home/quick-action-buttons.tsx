@@ -129,8 +129,7 @@ async function openPharmacy(p: PharmacyChoice): Promise<void> {
 /* ─── Main component ──────────────────────────────────────────────── */
 
 export function QuickActionButtons() {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { getScaledFontSize, getScaledFontWeight } = useAccessibility();
 
   const [pcp, setPcp] = useState<ContactInfo | null>(null);
   const [urgent, setUrgent] = useState<ContactInfo | null>(null);
@@ -189,7 +188,6 @@ export function QuickActionButtons() {
         accent="#008080"
         onPress={handlePcpPress}
         loading={loading}
-        colors={colors}
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
       />
@@ -200,7 +198,6 @@ export function QuickActionButtons() {
         accent="#7C3AED"
         onPress={handlePharmacyPress}
         loading={loading}
-        colors={colors}
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
       />
@@ -211,7 +208,6 @@ export function QuickActionButtons() {
         accent="#DC2626"
         onPress={handleUrgentPress}
         loading={loading}
-        colors={colors}
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
       />
@@ -277,7 +273,6 @@ interface ActionButtonProps {
   accent: string;
   onPress: () => void;
   loading: boolean;
-  colors: (typeof Colors)['light'];
   getScaledFontSize: (n: number) => number;
   getScaledFontWeight: (n: number) => string;
 }
@@ -289,10 +284,13 @@ function ActionButton({
   accent,
   onPress,
   loading,
-  colors,
   getScaledFontSize,
   getScaledFontWeight,
 }: ActionButtonProps) {
+  // SCRUM-265 #19: filled-card design replaces the pale-tint pill. Solid
+  // accent background, white icon pill in the top-left corner, larger
+  // labels in white. Soft shadow + decorative blob give the card real
+  // visual weight on the home grid.
   return (
     <Pressable
       onPress={onPress}
@@ -300,24 +298,26 @@ function ActionButton({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: pressed ? accent + '20' : accent + '10',
-          borderColor: accent + '40',
-          opacity: loading ? 0.6 : 1,
+          backgroundColor: accent,
+          opacity: loading ? 0.6 : pressed ? 0.9 : 1,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
         },
       ]}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}
     >
-      <View style={[styles.iconCircle, { backgroundColor: accent }]}>
-        <MaterialIcons name={icon} size={getScaledFontSize(18)} color="white" />
+      <View style={styles.buttonBlob} pointerEvents="none" />
+      <View style={[styles.iconCircle, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
+        <MaterialIcons name={icon} size={getScaledFontSize(20)} color="white" />
       </View>
       <Text
         style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(12),
-          fontWeight: getScaledFontWeight(700) as any,
+          color: '#FFFFFF',
+          fontSize: getScaledFontSize(13),
+          fontWeight: getScaledFontWeight(800) as any,
           textAlign: 'center',
-          marginTop: 6,
+          marginTop: 10,
+          letterSpacing: 0.2,
         }}
         numberOfLines={1}
       >
@@ -325,13 +325,13 @@ function ActionButton({
       </Text>
       <Text
         style={{
-          color: colors.subtext,
-          fontSize: getScaledFontSize(9),
+          color: 'rgba(255,255,255,0.78)',
+          fontSize: getScaledFontSize(10),
           fontWeight: getScaledFontWeight(600) as any,
           textAlign: 'center',
           textTransform: 'uppercase',
-          letterSpacing: 0.4,
-          marginTop: 1,
+          letterSpacing: 0.5,
+          marginTop: 2,
         }}
         numberOfLines={1}
       >
@@ -571,25 +571,37 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 4,
   },
-  // SCRUM-234: compact the three quick-action cards. The old layout
-  // (minHeight 100, big icon circle, two stacked labels) felt too tall
-  // on phones; trimming vertical padding and shrinking the icon bubble
-  // brings it closer to the web QuickActionButtons profile while keeping
-  // the same primary+secondary text hierarchy.
+  // SCRUM-265 #19: filled-card quick-action design.
+  // Solid accent fill, white icon pill, white labels, decorative blob
+  // in the corner, soft shadow. Visual weight balances the home grid.
   button: {
     flex: 1,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    minHeight: 76,
+    minHeight: 96,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  buttonBlob: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    top: -40,
+    right: -30,
   },
   iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
