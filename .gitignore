@@ -13,6 +13,10 @@ expo-env.d.ts
 # Expo local state
 .expo/
 
+# EAS Update / `expo export` build artifacts — regenerated on every
+# `eas-cli update` invocation, no reason to track them.
+dist/
+
 # Superpowers brainstorm session artifacts (mockups, state)
 .superpowers/
 
