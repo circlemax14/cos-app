@@ -190,14 +190,18 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
             </View>
           )}
         </TouchableOpacity>
-        <Text style={[
-          styles.centerAvatarText,
-          {
-            fontSize: getScaledFontSize(16),
-            fontWeight: getScaledFontWeight(600) as any,
-            color: colors.text,
-          }
-        ]}>{patientName}</Text>
+        <Text
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+          style={[
+            styles.centerAvatarText,
+            {
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(600) as any,
+              color: colors.text,
+            }
+          ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
         <Button
@@ -302,7 +306,9 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                     </View>
                   )}
                   <Text
-                    numberOfLines={3}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
                     style={[
                       styles.orbitAvatarText,
                       {
@@ -327,7 +333,9 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                     size={getScaledFontSize(avatarSize)}
                   />
                   <Text
-                    numberOfLines={3}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
                     style={[
                       styles.orbitAvatarText,
                       {
@@ -494,14 +502,18 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
             </View>
           )}
         </TouchableOpacity>
-        <Text style={[
-          styles.centerAvatarText,
-          {
-            fontSize: getScaledFontSize(16 * Math.min(scaleFactor, 1.5)),
-            fontWeight: getScaledFontWeight(600) as any,
-            color: colors.text,
-          }
-        ]}>{patientName}</Text>
+        <Text
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+          style={[
+            styles.centerAvatarText,
+            {
+              fontSize: getScaledFontSize(16 * Math.min(scaleFactor, 1.5)),
+              fontWeight: getScaledFontWeight(600) as any,
+              color: colors.text,
+            }
+          ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
         <Button
@@ -612,6 +624,9 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     </View>
                   )}
                   <Text
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
                     style={[
                       styles.orbitAvatarText,
                       {
@@ -635,6 +650,9 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     size={getScaledFontSize(avatarSize)}
                   />
                   <Text
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
                     style={[
                       styles.orbitAvatarText,
                       {
@@ -2704,15 +2722,19 @@ export default function HomeScreen() {
             just above the circle in SCRUM-233). The toggle stays small
             so the title still reads as the dominant element. */}
         <View style={[styles.titleRow, { paddingHorizontal: 16, paddingTop: 8 }]}>
-          <Text style={[
-            styles.sectionTitle,
-            {
-              fontSize: getScaledFontSize(24),
-              fontWeight: getScaledFontWeight(600) as any,
-              color: colors.text,
-              flex: 1,
-            }
-          ]}>
+          <Text
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            style={[
+              styles.sectionTitle,
+              {
+                fontSize: getScaledFontSize(24),
+                fontWeight: getScaledFontWeight(600) as any,
+                color: colors.text,
+                flex: 1,
+              }
+            ]}>
             {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
           </Text>
           <TouchableOpacity
