@@ -160,10 +160,15 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
   //       1 + 2.0 * 0.3 = 1.6x in-app (vs 2.0x before).
   //   (2) Hard cap at 1.4 so even extreme accessibility settings stay
   //       within a layout-safe envelope.
+  // SCRUM-266: cap tightened further (1.4 → 1.2) after Ken's iPhone 16 Pro
+  // Max screenshot showed home title wrapping and quick-action card labels
+  // truncating when iOS Dynamic Type is in the AX range. 1.2 keeps text
+  // visibly larger for accessibility users while letting tight layouts
+  // (quick-action cards, circle name labels) still fit on one line.
   // Tablets/iPads (≥768 wide) keep the full pass-through because there's
   // room for it. Anything ≤ 1.0 passes through untouched so users who
   // deliberately SHRINK text still get the reduction they asked for.
-  const PHONE_MAX_SCALE = 1.4;
+  const PHONE_MAX_SCALE = 1.2;
   const effectiveFontScale =
     isTablet() || rawFontScale <= 1
       ? rawFontScale

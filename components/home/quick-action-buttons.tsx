@@ -320,6 +320,8 @@ function ActionButton({
           letterSpacing: 0.2,
         }}
         numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
       >
         {primaryLabel}
       </Text>
@@ -334,6 +336,8 @@ function ActionButton({
           marginTop: 2,
         }}
         numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
       >
         {secondaryLabel}
       </Text>
