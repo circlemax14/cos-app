@@ -38,6 +38,10 @@ const AccessibilityContext = createContext<AccessibilityContextType | undefined>
 
 const STORAGE_KEY = 'accessibility_settings';
 const SMART_DEFAULTS_KEY = 'accessibility_smart_defaults_applied';
+// SCRUM-299: one-shot reset of isAccessibilityMode for users who had it
+// auto-enabled by the smart-defaults logic without opting in themselves.
+// Bumping this key forces the reset to re-run for everyone.
+const ACCESSIBILITY_MODE_RESET_KEY = 'accessibility_mode_reset_v1';
 
 const isTablet = () => {
   const { width } = Dimensions.get('window');
@@ -107,10 +111,24 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
           Math.max(parsedSettings.fontSizeScale || defaultSettings.fontSizeScale, 50),
           maxLimit
         );
+
+        // SCRUM-299: one-shot reset of isAccessibilityMode. The smart-defaults
+        // logic auto-enabled accessibility mode for any user whose iOS
+        // Dynamic Type was > 135% on first launch — without asking. That
+        // pushed users like Ken into a layout they never opted into. Force
+        // it off once per device so users land on a clean default and can
+        // re-enable themselves from the side-menu toggle if they want it.
+        const alreadyReset = await AsyncStorage.getItem(ACCESSIBILITY_MODE_RESET_KEY);
+        const isAccessibilityMode = alreadyReset ? !!parsedSettings.isAccessibilityMode : false;
+        if (!alreadyReset) {
+          await AsyncStorage.setItem(ACCESSIBILITY_MODE_RESET_KEY, 'true');
+        }
+
         setSettings({
           ...defaultSettings,
           ...parsedSettings,
           fontSizeScale: clampedFontSizeScale,
+          isAccessibilityMode,
         });
       }
     } catch (error) {
