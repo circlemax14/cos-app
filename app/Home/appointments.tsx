@@ -6,37 +6,11 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 type AppointmentTab = 'past' | 'recommended';
 type DateRange = 'all' | 'day' | 'week' | 'month';
-
-/**
- * SCRUM-269 Phase A: opens the device's native calendar app.
- *  - iOS: `calshow:` URL scheme jumps straight into Calendar.app.
- *  - Android: ContentResolver URI used by Google Calendar / Samsung
- *    Calendar; a generic intent-based fallback would need expo-intent-launcher
- *    which is a native dep (Phase B). For now, fall back to the App Store
- *    google-calendar deep link if the content URI isn't openable.
- */
-async function openDeviceCalendar(): Promise<void> {
-  if (Platform.OS === 'ios') {
-    await Linking.openURL('calshow:').catch(() => {
-      Alert.alert('Calendar', 'Could not open the Calendar app.');
-    });
-    return;
-  }
-  const androidUri = 'content://com.android.calendar/time/';
-  const canOpen = await Linking.canOpenURL(androidUri).catch(() => false);
-  if (canOpen) {
-    await Linking.openURL(androidUri);
-    return;
-  }
-  await Linking.openURL('https://calendar.google.com').catch(() => {
-    Alert.alert('Calendar', 'Could not open a calendar app.');
-  });
-}
 
 /** Inclusive end of the given range starting from today (00:00). */
 function rangeEnd(range: DateRange, now: Date = new Date()): Date | null {
@@ -239,27 +213,6 @@ export default function AppointmentsScreen() {
           >
             {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
           </Text>
-          {/* SCRUM-269 Phase A: deep-link to the device calendar so users
-              can see + manage personal appointments alongside their
-              medical ones. Phase B will pull events back into this view. */}
-          <TouchableOpacity
-            onPress={openDeviceCalendar}
-            style={[styles.openCalendarBtn, { borderColor: colors.tint as string, backgroundColor: (colors.tint as string) + '12' }]}
-            accessibilityRole="button"
-            accessibilityLabel="Open device calendar"
-          >
-            <IconSymbol name="calendar" size={getScaledFontSize(18)} color={colors.tint as string} />
-            <Text
-              style={{
-                marginLeft: 8,
-                color: colors.tint as string,
-                fontSize: getScaledFontSize(13),
-                fontWeight: getScaledFontWeight(700) as any,
-              }}
-            >
-              Open {Platform.OS === 'ios' ? 'Apple' : 'Google'} Calendar
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {/* Tab toggle: Past Visits | Recommended */}
@@ -535,15 +488,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 16,
-  },
-  openCalendarBtn: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
   },
   rangeRow: {
     flexDirection: 'row',
