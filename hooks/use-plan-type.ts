@@ -6,7 +6,8 @@ export const PLAN_TYPE_QUERY_KEY = ['plan-type'] as const
 const TIER_RANK: Record<PlanType, number> = {
   basic: 0,
   advanced: 1,
-  agency: 2,
+  'agency-supported': 2,
+  'agency-managed': 3,
 }
 
 export function meetsTier(actual: PlanType | undefined, required: PlanType): boolean {

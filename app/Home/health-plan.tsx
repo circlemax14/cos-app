@@ -48,24 +48,27 @@ function formatTime(hhmm: string): { time: string; meridiem: string } {
  *  never shows blank during the initial query load. */
 function planTypeLabel(t: PlanType | undefined): string {
   switch (t) {
-    case 'advanced': return 'Advanced';
-    case 'agency':   return 'Agency';
+    case 'advanced':         return 'Advanced';
+    case 'agency-supported': return 'Agency Supported';
+    case 'agency-managed':   return 'Agency Managed';
     case 'basic':
-    default:         return 'Basic';
+    default:                 return 'Basic';
   }
 }
 
 /** One-line description of what each plan type does. Powers the
- *  subhead on the prominent plan-type card (SCRUM-252). */
+ *  subhead on the prominent plan-type card (SCRUM-252 / SCRUM-268). */
 function planTypeDescription(t: PlanType | undefined): string {
   switch (t) {
     case 'advanced':
       return 'AI-driven plan tailored to your health records.';
-    case 'agency':
-      return 'Managed by your care agency.';
+    case 'agency-supported':
+      return 'AI-driven plan with extra functional + cognitive screens, supported by your care team.';
+    case 'agency-managed':
+      return 'Managed by your care agency with full intake and cognitive assessment.';
     case 'basic':
     default:
-      return 'Self-managed, no assessments required.';
+      return 'Self-managed with light AI-picked screeners.';
   }
 }
 
@@ -106,10 +109,17 @@ export default function HealthPlanScreen() {
   // Banner safety net: a user on Advanced/Agency who never finished the
   // intake assessment lands here with no responses. The AI plan can't
   // personalize without that data — surface a Resume CTA.
+  // SCRUM-268: any non-basic tier (advanced / agency-supported / agency-managed)
+  // needs assessment context to personalize the AI plan.
+  const isNonBasicPlan =
+    currentPlanType === 'advanced' ||
+    currentPlanType === 'agency-supported' ||
+    currentPlanType === 'agency-managed';
+
   const assessmentsQuery = useQuery({
     queryKey: ['assessments'],
     queryFn: fetchAssessments,
-    enabled: currentPlanType === 'advanced' || currentPlanType === 'agency',
+    enabled: isNonBasicPlan,
     staleTime: 60 * 1000,
   });
   // SCRUM-254: backend-driven progress against the per-plan-type
@@ -124,7 +134,7 @@ export default function HealthPlanScreen() {
   const canGeneratePlan = assignments?.canGenerate ?? (currentPlanType === 'basic');
 
   const needsAssessment =
-    (currentPlanType === 'advanced' || currentPlanType === 'agency') &&
+    isNonBasicPlan &&
     !assessmentsQuery.isLoading &&
     !canGeneratePlan;
 
@@ -308,7 +318,7 @@ export default function HealthPlanScreen() {
   //   - advanced/agency + has assessments  → auto-gen via "Generate plan"
   //     (will use those assessments as context)
   if (!plan) {
-    const isNonBasic = currentPlanType === 'advanced' || currentPlanType === 'agency';
+    const isNonBasic = isNonBasicPlan;
     // Non-basic users always land on the inline catalog when no plan
     // exists, even if they have past assessments. They can take new
     // check-ins or tap "Build my plan" once 2+ are complete. Showing
@@ -318,12 +328,11 @@ export default function HealthPlanScreen() {
     if (showInlineCatalog) {
       // SCRUM-254: copy now reflects the real per-plan-type assigned
       // set returned by /v1/patients/me/health-plan/assignments.
-      // Three flavours:
-      //   - assigned > 0 + remaining > 0  → "Y of X assessments complete"
-      //   - assigned > 0 + remaining == 0 → ready to generate (shouldn't
-      //     fall into this branch since canGenerate would be true)
-      //   - agency w/ assigned == 0       → "Your care team will assign"
-      const isAgencyEmpty = currentPlanType === 'agency' && assignedCount === 0;
+      // SCRUM-268: any agency tier is treated the same way as the
+      // single 'agency' tier was.
+      const isAgencyTier =
+        currentPlanType === 'agency-supported' || currentPlanType === 'agency-managed';
+      const isAgencyEmpty = isAgencyTier && assignedCount === 0;
       const headline = isAgencyEmpty
         ? 'Assessments coming'
         : assignedCount > 0
@@ -332,7 +341,7 @@ export default function HealthPlanScreen() {
       const subhead = isAgencyEmpty
         ? 'Your care team will assign assessments here. Check back later or message your agency.'
         : assignedCount > 0
-          ? `Complete the ${assignedCount} assessment${assignedCount === 1 ? '' : 's'} ${currentPlanType === 'advanced' ? 'your AI plan selected' : 'your care team assigned'} for you. ${completedAssignedCount} of ${assignedCount} complete.`
+          ? `Complete the ${assignedCount} assessment${assignedCount === 1 ? '' : 's'} ${isAgencyTier ? 'your care team assigned' : 'your AI plan selected'} for you. ${completedAssignedCount} of ${assignedCount} complete.`
           : 'Pick any to start. Complete the ones aligned to your plan to generate it.';
       return (
         <AppWrapper>
@@ -508,9 +517,11 @@ export default function HealthPlanScreen() {
               name={
                 currentPlanType === 'advanced'
                   ? 'auto-awesome'
-                  : currentPlanType === 'agency'
+                  : currentPlanType === 'agency-supported'
                     ? 'groups'
-                    : 'check-circle-outline'
+                    : currentPlanType === 'agency-managed'
+                      ? 'medical-services'
+                      : 'check-circle-outline'
               }
               size={getScaledFontSize(22)}
               color={colors.tint as string}

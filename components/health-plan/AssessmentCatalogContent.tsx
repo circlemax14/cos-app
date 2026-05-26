@@ -263,27 +263,34 @@ function CatalogCard({
   const status = statusFor(record)
   const icon = iconFor(item.instrumentId, colors.tint as string)
   const [showRationale, setShowRationale] = React.useState(false)
+  // SCRUM-268: instruments seeded with `comingSoon: true` show in the
+  // catalog but aren't tappable until the underlying capability ships
+  // (MOCA license, clock-draw UI, full-intake question set).
+  const isComingSoon = !!item.comingSoon
 
   return (
     <Pressable
-      onPress={() =>
+      onPress={() => {
+        if (isComingSoon) return
         router.push({
           pathname: '/Home/assessment-stepper' as never,
           params: { instrumentId: item.instrumentId } as never,
         })
-      }
+      }}
+      disabled={isComingSoon}
       accessibilityRole="button"
-      accessibilityLabel={`Open ${item.name}`}
+      accessibilityLabel={isComingSoon ? `${item.name}. Coming soon.` : `Open ${item.name}`}
+      accessibilityState={{ disabled: isComingSoon }}
       style={({ pressed }) => [
         styles.card,
         {
           backgroundColor: (colors.card as string) + 'D9',
           borderColor: colors.border,
-          opacity: pressed ? 0.85 : 1,
+          opacity: isComingSoon ? 0.6 : pressed ? 0.85 : 1,
         },
       ]}
     >
-      {rationale ? (
+      {rationale && !isComingSoon ? (
         <Pressable
           onPress={(e) => {
             e.stopPropagation?.()
@@ -313,20 +320,36 @@ function CatalogCard({
       >
         {item.name}
       </Text>
-      <View style={[styles.statusBadge, { borderColor: status.color }]}>
-        <View style={[styles.statusDot, { backgroundColor: status.color }]} />
-        <Text
-          style={{
-            color: status.color,
-            fontSize: fontSize(10),
-            fontWeight: fontWeight(700) as any,
-            textTransform: 'uppercase',
-            letterSpacing: 0.5,
-          }}
-        >
-          {status.label}
-        </Text>
-      </View>
+      {isComingSoon ? (
+        <View style={[styles.statusBadge, { borderColor: '#9CA3AF', backgroundColor: '#9CA3AF22' }]}>
+          <Text
+            style={{
+              color: '#6B7280',
+              fontSize: fontSize(10),
+              fontWeight: fontWeight(700) as any,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            Coming Soon
+          </Text>
+        </View>
+      ) : (
+        <View style={[styles.statusBadge, { borderColor: status.color }]}>
+          <View style={[styles.statusDot, { backgroundColor: status.color }]} />
+          <Text
+            style={{
+              color: status.color,
+              fontSize: fontSize(10),
+              fontWeight: fontWeight(700) as any,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            {status.label}
+          </Text>
+        </View>
+      )}
 
       <Modal
         visible={showRationale}
