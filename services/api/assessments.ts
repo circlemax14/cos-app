@@ -19,11 +19,25 @@ export type InstrumentId =
 
 export type AssessmentSource = 'self' | 'care-manager' | 'ehr-pre-fill'
 
+/**
+ * SCRUM-268 Phase 2: snapshot of the risk band that was computed at
+ * completion. Backed by the matching entry in the instrument
+ * definition's `riskBands`. May be missing for legacy records, free-form
+ * instruments, or instruments with no bands.
+ */
+export interface BandSnapshot {
+  label: string
+  severity?: 'low' | 'moderate' | 'high'
+  careAction?: string
+}
+
 export interface AssessmentRecord {
   instrumentId: InstrumentId
   version: number
   responses: Record<string, unknown>
   scores: Record<string, number>
+  /** SCRUM-268 Phase 2: descriptive interpretation frozen at completion. */
+  band?: BandSnapshot
   source: AssessmentSource
   completedAt: string
   expiresAt: string
@@ -82,4 +96,22 @@ export async function submitAssessment(
     { responses, source },
   )
   return res.data.data
+}
+
+/**
+ * SCRUM-268 Phase 3: fetch the full history (latest + all retake
+ * snapshots) of one instrument for the current user, sorted newest
+ * first. Used by the Self-Assessments trend view.
+ */
+export async function fetchAssessmentHistory(
+  instrumentId: InstrumentId,
+): Promise<AssessmentRecord[]> {
+  try {
+    const res = await apiClient.get<{ success: boolean; data: { records: AssessmentRecord[] } }>(
+      `/v1/patients/me/assessments/${instrumentId}/history`,
+    )
+    return res.data.data.records ?? []
+  } catch {
+    return []
+  }
 }

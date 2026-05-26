@@ -38,6 +38,11 @@ export default function AgencyDetailScreen() {
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
   const [, setPatientAgencyId] = useState<string | null>(null);
+  // SCRUM-268 Phase 4: tier the patient is requesting. 'agency-supported'
+  // is the default — the lighter-touch option where the AI plan still
+  // runs the show and the care team supplements. 'agency-managed' lets
+  // the care team direct the cadence + add the heavier instruments.
+  const [requestedTier, setRequestedTier] = useState<'agency-supported' | 'agency-managed'>('agency-supported');
 
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
@@ -92,7 +97,7 @@ export default function AgencyDetailScreen() {
     setShowConsentModal(false);
     setIsRequesting(true);
     try {
-      await apiClient.post('/v1/patients/me/agency-request', { agencyId });
+      await apiClient.post('/v1/patients/me/agency-request', { agencyId, requestedTier });
       setRequestStatus('pending');
       Alert.alert(
         'Request Submitted',
@@ -387,6 +392,60 @@ export default function AgencyDetailScreen() {
                   </Text>
                 </View>
 
+                {/* SCRUM-268 Phase 4: which level of service is the patient
+                    asking for? Carries through as `requestedTier` on the
+                    agency-request payload and becomes the patient's plan
+                    type once the agency approves. */}
+                <View style={styles.tierSection}>
+                  <Text style={[styles.consentQuestion, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginBottom: 8 }]}>
+                    Level of service
+                  </Text>
+                  {([
+                    {
+                      value: 'agency-supported' as const,
+                      title: 'Agency Supported',
+                      desc: 'Keep your AI-driven plan; your care team adds extra check-ins (ADL, IADL, Mini-Cog) and provides oversight.',
+                    },
+                    {
+                      value: 'agency-managed' as const,
+                      title: 'Agency Managed',
+                      desc: 'Your care team actively directs your plan with full intake and cognitive assessment (MoCA + Full Intake coming soon).',
+                    },
+                  ]).map((opt) => {
+                    const selected = requestedTier === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        onPress={() => setRequestedTier(opt.value)}
+                        style={[
+                          styles.tierOption,
+                          {
+                            borderColor: selected ? (colors.tint as string) : colors.text + '30',
+                            backgroundColor: selected ? (colors.tint as string) + '12' : 'transparent',
+                          },
+                        ]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                      >
+                        <MaterialIcons
+                          name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
+                          size={getScaledFontSize(20)}
+                          color={selected ? (colors.tint as string) : colors.text + '60'}
+                          style={{ marginTop: 2 }}
+                        />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+                            {opt.title}
+                          </Text>
+                          <Text style={{ color: colors.text + 'BB', fontSize: getScaledFontSize(12), marginTop: 4, lineHeight: getScaledFontSize(18) }}>
+                            {opt.desc}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
                 <View style={styles.termsSection}>
                   <Text style={[styles.termsTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
                     Terms and Conditions:
@@ -662,6 +721,17 @@ const styles = StyleSheet.create({
   consentDescription: {
     fontSize: 14,
     flexShrink: 1,
+  },
+  tierSection: {
+    marginBottom: 24,
+  },
+  tierOption: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
   },
   termsSection: {
     marginTop: 8,

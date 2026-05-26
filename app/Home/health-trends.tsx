@@ -5,6 +5,7 @@ import { useTrends } from '@/hooks/use-trends'
 import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
 import { useReportTrends } from '@/hooks/use-report-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
+import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTrends'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import * as FileSystem from 'expo-file-system/legacy'
@@ -273,6 +274,22 @@ export default function HealthTrendsScreen() {
             </ScrollView>
           </View>
         ) : null}
+
+        {/* SCRUM-268 Phase 3: Self-Assessments trend section. Shows
+            the latest result + descriptive band for every check-in the
+            user has completed; tap a card to open per-instrument
+            history in a follow-up. */}
+        <View style={styles.sectionHeaderRow}>
+          <MaterialIcons
+            name="assignment"
+            size={getScaledFontSize(16)}
+            color={colors.text as string}
+          />
+          <Text style={[styles.sectionHeader, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }]}>
+            Self-Assessments
+          </Text>
+        </View>
+        <SelfAssessmentTrends />
 
         {/* From Your Clinic header. SCRUM-265 #13: replaced the
             select-components + full-card layout with a horizontal slider
