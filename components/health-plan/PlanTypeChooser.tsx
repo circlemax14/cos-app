@@ -45,11 +45,11 @@ const PLAN_CARDS: PlanCardSpec[] = [
   {
     type: 'basic',
     title: 'Basic',
-    description: 'A simple, steady plan tailored to your records today.',
+    description: 'Light AI-picked screeners + analytics from your records and wearables.',
     assessmentLevel: 'light',
     features: {
-      assessment: 'Quick onboarding survey',
-      updates:    'Generated once — stays as-is',
+      assessment: '1–3 brief screeners (mood, sleep, wellbeing)',
+      updates:    'AI re-picks screeners as your health record evolves',
       support:    'Self-directed',
       bestFor:    'Stable conditions, self-managed care',
     },
@@ -58,28 +58,41 @@ const PLAN_CARDS: PlanCardSpec[] = [
   {
     type: 'advanced',
     title: 'Advanced',
-    description: 'An adaptive plan that updates as your health record changes.',
+    description: 'Clinical screeners (PHQ-9, GAD-7, PSS, pain, sleep) personalized by AI.',
     assessmentLevel: 'standard',
     features: {
-      assessment: 'Quick survey + EHR-derived baseline',
-      updates:    'AI auto-updates on new conditions, meds, or labs',
+      assessment: '3–5 AI-picked clinical screeners',
+      updates:    'AI re-selects as conditions, meds, or labs change',
       support:    'AI + light agency oversight',
       bestFor:    'Complex care, multiple specialists',
     },
     icon: 'auto-awesome',
   },
   {
-    type: 'agency',
-    title: 'Agency-managed',
-    description: 'Your care management agency designs and updates your plan.',
+    type: 'agency-supported',
+    title: 'Agency Supported',
+    description: 'Advanced plan plus functional + light cognitive screens, supported by your care team.',
     assessmentLevel: 'clinical',
     features: {
-      assessment: 'Full clinical assessment by care team',
-      updates:    'Care manager updates anytime',
+      assessment: '4–7 AI-picked screeners including ADL/IADL and Mini-Cog',
+      updates:    'AI updates + your care team can override',
+      support:    'Shared with your care team',
+      bestFor:    'Patients with functional or cognitive change',
+    },
+    icon: 'workspaces',
+  },
+  {
+    type: 'agency-managed',
+    title: 'Agency Managed',
+    description: 'Full intake + full cognitive (MOCA) for active care-team management.',
+    assessmentLevel: 'clinical',
+    features: {
+      assessment: 'Full intake + 5–8 AI-picked clinical screeners (MOCA + full intake coming soon)',
+      updates:    'Care manager directs assessment cadence',
       support:    'Full care management',
       bestFor:    'Patients needing active coordination',
     },
-    icon: 'workspaces',
+    icon: 'medical-services',
   },
 ]
 
@@ -120,9 +133,11 @@ export function PlanTypeChooser({
       setPendingType(null)
       setConsentAck(false)
       onClose()
-      // Advanced + Agency open the assessment catalog so users can pick
-      // which check-ins to take. Basic stays as-is.
-      if (type === 'advanced' || type === 'agency') {
+      // Any non-basic tier opens the assessment catalog so users can see
+      // their AI-picked check-ins. Basic stays on the plan screen — it
+      // also gets AI picks now (SCRUM-268) but they're light enough that
+      // we don't force the user into the catalog.
+      if (type !== 'basic') {
         router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
       }
     },
@@ -139,11 +154,13 @@ export function PlanTypeChooser({
 
   const consentCopyForType: Record<PlanType, string> = {
     basic:
-      'Your plan will be generated once from your existing records. No new health data is collected.',
+      'You’ll see a small set of AI-picked screeners (mood, sleep, wellbeing). Your answers personalize your plan and you can retake them monthly.',
     advanced:
       'We’ll ask you a series of short health check-ins. Your answers are stored in your account and used to personalize your AI plan. You can retake or update them any time.',
-    agency:
-      'Your linked care management agency can see your check-in results and tailor your plan. Your responses are stored in your account and shared with them.',
+    'agency-supported':
+      'Your linked care management agency can see your check-in results and add their own screens (Mini-Cog and others) alongside the AI-picked set.',
+    'agency-managed':
+      'Your linked care management agency manages your full intake and cognitive assessment. MOCA + Full Intake are coming soon; until then the AI-picked clinical set still applies.',
   }
 
   return (
@@ -171,12 +188,12 @@ export function PlanTypeChooser({
 
           {PLAN_CARDS.map((card) => {
             const isCurrent = card.type === currentType
-            // SCRUM-232: chooser is fully open again — users can pick any of
-            // Basic / Advanced / Agency. Agency still requires a linked
-            // care-management agency (data gate, not subscription gate).
-            // The subscription paywall, when built, will sit BEFORE the
-            // consent dialog rather than locking cards here.
-            const isAgencyDisabled = card.type === 'agency' && !hasAgency
+            // SCRUM-232: chooser is fully open — users can pick any tier.
+            // Agency tiers still require a linked care-management agency
+            // (data gate, not subscription gate). SCRUM-268: both
+            // agency-supported and agency-managed share the same data gate.
+            const isAgencyTier = card.type === 'agency-supported' || card.type === 'agency-managed'
+            const isAgencyDisabled = isAgencyTier && !hasAgency
             const isLocked = isAgencyDisabled
             const disabled = mutation.isPending || isLocked || isCurrent
             return (

@@ -46,6 +46,12 @@ export interface InstrumentSummary {
   ownerType: OwnerType
   agencyId?: string
   status: InstrumentStatus
+  /**
+   * SCRUM-268: when true, the instrument is visible in the catalog as a
+   * planned offering but can't actually be assigned or taken. UI should
+   * render it disabled with a "Coming Soon" badge.
+   */
+  comingSoon?: boolean
   createdAt: string
   updatedAt: string
 }

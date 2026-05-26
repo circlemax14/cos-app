@@ -1,6 +1,25 @@
 import { apiClient } from '@/lib/api-client'
 
-export type PlanType = 'basic' | 'advanced' | 'agency'
+/**
+ * SCRUM-268: 4-tier plan model.
+ *   - basic            — light screeners (AI picks 1-3)
+ *   - advanced         — clinical screeners (AI picks 3-5)
+ *   - agency-supported — adds ADL/IADL/Mini-Cog (Mini-Cog is currently Coming Soon)
+ *   - agency-managed   — adds full MOCA + Full Intake (both currently Coming Soon)
+ *
+ * Legacy 'agency' is still accepted at the API boundary; the backend
+ * normalizes it to 'agency-supported' on write.
+ */
+export type PlanType = 'basic' | 'advanced' | 'agency-supported' | 'agency-managed'
+
+/** Tier value as it arrives from older endpoints / older backend deploys. */
+export type AcceptedPlanType = PlanType | 'agency'
+
+export function normalizePlanType(t: string | undefined | null): PlanType {
+  if (t === 'agency') return 'agency-supported'
+  if (t === 'basic' || t === 'advanced' || t === 'agency-supported' || t === 'agency-managed') return t
+  return 'basic'
+}
 
 export interface PlanTypeConsent {
   acknowledged: true
@@ -20,10 +39,12 @@ export interface UpdatePlanTypeOpts {
 }
 
 export async function fetchPlanType(): Promise<PlanType> {
-  const res = await apiClient.get<{ success: boolean; data: { type: PlanType } }>(
+  const res = await apiClient.get<{ success: boolean; data: { type: string } }>(
     '/v1/patients/me/health-plan/type',
   )
-  return res.data.data.type
+  // SCRUM-268: normalize on the client too so older backends returning
+  // legacy 'agency' don't reach UI code that doesn't expect it.
+  return normalizePlanType(res.data.data.type)
 }
 
 /**
