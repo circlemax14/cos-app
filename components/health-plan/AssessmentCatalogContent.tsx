@@ -239,7 +239,18 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
 function statusFor(record: AssessmentRecord | undefined): { label: string; color: string } {
   if (!record) return { label: 'Not started', color: '#6B7280' }
   if (record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()) {
-    return { label: 'Due', color: '#F59E0B' }
+    return { label: 'Retake', color: '#F59E0B' }
+  }
+  // SCRUM-268 Phase 2: if the record has a frozen band, surface it in
+  // place of the generic "Done" label so users see the result at a glance.
+  if (record.band?.label) {
+    const severityColor =
+      record.band.severity === 'high'
+        ? '#DC2626'
+        : record.band.severity === 'moderate'
+          ? '#F59E0B'
+          : '#10B981'
+    return { label: record.band.label, color: severityColor }
   }
   return { label: 'Done', color: '#10B981' }
 }
