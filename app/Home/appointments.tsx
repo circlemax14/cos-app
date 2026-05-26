@@ -6,10 +6,71 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 type AppointmentTab = 'past' | 'recommended';
+type DateRange = 'all' | 'day' | 'week' | 'month';
+
+/**
+ * SCRUM-269 Phase A: opens the device's native calendar app.
+ *  - iOS: `calshow:` URL scheme jumps straight into Calendar.app.
+ *  - Android: ContentResolver URI used by Google Calendar / Samsung
+ *    Calendar; a generic intent-based fallback would need expo-intent-launcher
+ *    which is a native dep (Phase B). For now, fall back to the App Store
+ *    google-calendar deep link if the content URI isn't openable.
+ */
+async function openDeviceCalendar(): Promise<void> {
+  if (Platform.OS === 'ios') {
+    await Linking.openURL('calshow:').catch(() => {
+      Alert.alert('Calendar', 'Could not open the Calendar app.');
+    });
+    return;
+  }
+  const androidUri = 'content://com.android.calendar/time/';
+  const canOpen = await Linking.canOpenURL(androidUri).catch(() => false);
+  if (canOpen) {
+    await Linking.openURL(androidUri);
+    return;
+  }
+  await Linking.openURL('https://calendar.google.com').catch(() => {
+    Alert.alert('Calendar', 'Could not open a calendar app.');
+  });
+}
+
+/** Inclusive end of the given range starting from today (00:00). */
+function rangeEnd(range: DateRange, now: Date = new Date()): Date | null {
+  if (range === 'all') return null;
+  const end = new Date(now);
+  end.setHours(0, 0, 0, 0);
+  if (range === 'day') {
+    // Today only — same day window.
+    end.setDate(end.getDate() + 1);
+  } else if (range === 'week') {
+    end.setDate(end.getDate() + 7);
+  } else if (range === 'month') {
+    end.setMonth(end.getMonth() + 1);
+  }
+  return end;
+}
+
+function rangeStart(range: DateRange, now: Date = new Date()): Date | null {
+  if (range === 'all') return null;
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  // Day/Week/Month all look BOTH directions — past + upcoming within the
+  // window. So start = now - same span back.
+  if (range === 'day') {
+    // Today's appointments only.
+    return start;
+  }
+  if (range === 'week') {
+    start.setDate(start.getDate() - 7);
+  } else if (range === 'month') {
+    start.setMonth(start.getMonth() - 1);
+  }
+  return start;
+}
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
   booked: { bg: '#E3F2FD', text: '#1565C0', icon: '📅' },
@@ -50,14 +111,27 @@ export default function AppointmentsScreen() {
   const [activeTab, setActiveTab] = useState<AppointmentTab>(
     searchParams.tab === 'recommended' ? 'recommended' : 'past',
   );
+  // SCRUM-269 Phase A: scope the past-visits list to a date window so
+  // users can drill into a day / week / month view of their medical
+  // appointments. "All" keeps the original full-list behavior.
+  const [dateRange, setDateRange] = useState<DateRange>('all');
 
   const { data, isLoading, isError, refetch } = useAppointments();
 
   const appointments = useMemo(() => {
     const all = data ?? [];
-    if (!searchQuery.trim()) return all;
+    const start = rangeStart(dateRange);
+    const end = rangeEnd(dateRange);
+    const inRange = start && end
+      ? all.filter((apt) => {
+          if (!apt.date) return false;
+          const d = new Date(apt.date.slice(0, 10));
+          return d >= start && d < end;
+        })
+      : all;
+    if (!searchQuery.trim()) return inRange;
     const q = searchQuery.toLowerCase();
-    return all.filter((apt) =>
+    return inRange.filter((apt) =>
       (apt.type?.toLowerCase().includes(q)) ||
       (apt.doctorName?.toLowerCase().includes(q)) ||
       (apt.clinicName?.toLowerCase().includes(q)) ||
@@ -66,7 +140,7 @@ export default function AppointmentsScreen() {
       (apt.resourceType?.toLowerCase().includes(q)) ||
       (apt.encounterClass?.toLowerCase().includes(q))
     );
-  }, [data, searchQuery]);
+  }, [data, searchQuery, dateRange]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -165,6 +239,27 @@ export default function AppointmentsScreen() {
           >
             {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
           </Text>
+          {/* SCRUM-269 Phase A: deep-link to the device calendar so users
+              can see + manage personal appointments alongside their
+              medical ones. Phase B will pull events back into this view. */}
+          <TouchableOpacity
+            onPress={openDeviceCalendar}
+            style={[styles.openCalendarBtn, { borderColor: colors.tint as string, backgroundColor: (colors.tint as string) + '12' }]}
+            accessibilityRole="button"
+            accessibilityLabel="Open device calendar"
+          >
+            <IconSymbol name="calendar" size={getScaledFontSize(18)} color={colors.tint as string} />
+            <Text
+              style={{
+                marginLeft: 8,
+                color: colors.tint as string,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(700) as any,
+              }}
+            >
+              Open {Platform.OS === 'ios' ? 'Apple' : 'Google'} Calendar
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Tab toggle: Past Visits | Recommended */}
@@ -215,6 +310,42 @@ export default function AppointmentsScreen() {
           <RecommendedAppointmentsList />
         ) : (
           <>
+        {/* SCRUM-269 Phase A: date-range chips. "All" keeps the original
+            full-list behavior; Day = today, Week = +/- 7 days, Month =
+            +/- 1 month. A full calendar-grid view + device-event merge
+            land in Phase B (binary cut). */}
+        <View style={styles.rangeRow}>
+          {(['all', 'day', 'week', 'month'] as const).map((r) => {
+            const selected = dateRange === r;
+            const label = r === 'all' ? 'All' : r.charAt(0).toUpperCase() + r.slice(1);
+            return (
+              <Pressable
+                key={r}
+                onPress={() => setDateRange(r)}
+                style={[
+                  styles.rangeChip,
+                  {
+                    backgroundColor: selected ? (colors.tint as string) : 'transparent',
+                    borderColor: selected ? (colors.tint as string) : colors.border,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+              >
+                <Text
+                  style={{
+                    color: selected ? '#fff' : colors.text,
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(selected ? 700 : 500) as any,
+                  }}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         {/* Search bar */}
         <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <IconSymbol name="magnifyingglass" size={getScaledFontSize(18)} color={colors.subtext} />
@@ -404,6 +535,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 16,
+  },
+  openCalendarBtn: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  rangeChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   tabToggleItem: {
     flex: 1,
