@@ -373,10 +373,13 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // Base width for iPhone (375 is typical iPhone width)
   const baseWidth = 375;
   // SCRUM-265 #15: cap reduced 2.2 → 1.7 — the circle was visually overwhelming
-  // the rest of the home screen on iPads / large tablets. 1.7 still gives
-  // iPad users a comfortably larger graphic than phones without it
-  // dominating the layout.
-  const scaleFactor = Math.min(screenWidth / baseWidth, 1.7);
+  // the rest of the home screen on iPads / large tablets.
+  // SCRUM-267: Ken asked for another ~20% reduction on tablet. Cap lowered
+  // 1.7 → 1.36 (1.7 × 0.8). Drives radius via `desiredRadius = baseRadius *
+  // scaleFactor * adaptiveMultiplier`, so a 20% cap reduction translates
+  // to a 20% smaller circle diameter on screens that were hitting the cap.
+  // Phones aren't affected (their scaleFactor is well below 1).
+  const scaleFactor = Math.min(screenWidth / baseWidth, 1.36);
 
   // Base radius for orbit - original design value
   const baseRadius = 144 * 1.1; // ~158.4
