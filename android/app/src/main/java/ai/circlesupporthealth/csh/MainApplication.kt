@@ -1,4 +1,4 @@
-package com.joinabrightfuture.cos
+package ai.circlesupporthealth.csh
 
 import android.app.Application
 import android.content.res.Configuration
