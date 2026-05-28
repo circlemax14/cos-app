@@ -4,10 +4,32 @@ import { RecommendedAppointmentsList } from '@/components/recommended-appointmen
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useAppointments } from '@/hooks/use-appointments';
+import { useDeviceCalendar } from '@/hooks/use-device-calendar';
 import type { Appointment } from '@/services/api/types';
+import type { DeviceEvent } from '@/services/device-calendar';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+
+/**
+ * SCRUM-269 Phase B: device-calendar events from Apple/Google/Outlook
+ * appear in this feed alongside medical visits. A "PersonalRow" wraps
+ * the raw DeviceEvent into the same date-grouped layout the existing
+ * EHR appointments use.
+ */
+interface PersonalRow {
+  kind: 'personal';
+  id: string;
+  date: string; // YYYY-MM-DD
+  event: DeviceEvent;
+}
+interface MedicalRow {
+  kind: 'medical';
+  id: string;
+  date: string;
+  appointment: Appointment;
+}
+type FeedRow = MedicalRow | PersonalRow;
 
 type AppointmentTab = 'past' | 'recommended';
 type DateRange = 'all' | 'day' | 'week' | 'month';
@@ -91,6 +113,8 @@ export default function AppointmentsScreen() {
   const [dateRange, setDateRange] = useState<DateRange>('all');
 
   const { data, isLoading, isError, refetch } = useAppointments();
+  // SCRUM-269 Phase B: device-calendar events merged into the same feed.
+  const deviceCalendar = useDeviceCalendar();
 
   const appointments = useMemo(() => {
     const all = data ?? [];
@@ -122,15 +146,43 @@ export default function AppointmentsScreen() {
     setRefreshing(false);
   }, [refetch]);
 
+  // Filter the device events to the same date range + search query as
+  // the medical list so toggling the chips / typing in search affects
+  // both feeds together.
+  const personalEvents = useMemo(() => {
+    if (!deviceCalendar.granted) return [] as DeviceEvent[];
+    const start = rangeStart(dateRange);
+    const end = rangeEnd(dateRange);
+    const filtered = deviceCalendar.events.filter((ev) => {
+      if (!ev.startDate) return false;
+      const d = new Date(ev.startDate.slice(0, 10));
+      if (start && end && (d < start || d >= end)) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        ev.title.toLowerCase().includes(q) ||
+        ev.location?.toLowerCase().includes(q) ||
+        ev.source.title.toLowerCase().includes(q) ||
+        ev.source.source.toLowerCase().includes(q)
+      );
+    });
+    return filtered;
+  }, [deviceCalendar.events, deviceCalendar.granted, dateRange, searchQuery]);
+
   const groupedByDate = useMemo(() => {
-    const groups: Record<string, Appointment[]> = {};
+    const groups: Record<string, FeedRow[]> = {};
     for (const apt of appointments) {
       const date = apt.date || 'Unknown';
       if (!groups[date]) groups[date] = [];
-      groups[date].push(apt);
+      groups[date].push({ kind: 'medical', id: apt.id, date, appointment: apt });
+    }
+    for (const ev of personalEvents) {
+      const date = ev.startDate.slice(0, 10);
+      if (!groups[date]) groups[date] = [];
+      groups[date].push({ kind: 'personal', id: `device-${ev.id}`, date, event: ev });
     }
     return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
-  }, [appointments]);
+  }, [appointments, personalEvents]);
 
   const handleCardPress = (appointment: Appointment) => {
     router.push({
@@ -211,7 +263,7 @@ export default function AppointmentsScreen() {
               textAlign: 'center',
             }}
           >
-            {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
+            {appointments.length} medical{personalEvents.length > 0 ? ` · ${personalEvents.length} personal` : ''}
           </Text>
         </View>
 
@@ -263,10 +315,38 @@ export default function AppointmentsScreen() {
           <RecommendedAppointmentsList />
         ) : (
           <>
+        {/* SCRUM-269 Phase B: prompt to connect device calendar so
+            personal events flow into the same feed. Hidden once granted. */}
+        {!deviceCalendar.granted ? (
+          <View style={[styles.permissionBanner, { backgroundColor: (colors.tint as string) + '14', borderColor: (colors.tint as string) + '40' }]}>
+            <IconSymbol name="calendar" size={getScaledFontSize(20)} color={colors.tint as string} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                See personal appointments here
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                {deviceCalendar.prompted
+                  ? 'Calendar access is off. Enable it in Settings to fold personal events into this view.'
+                  : 'Allow read access to your device calendar and personal events appear here alongside medical visits. Details stay on this device.'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => { void deviceCalendar.requestPermission(); }}
+              style={[styles.permissionButton, { backgroundColor: colors.tint as string }]}
+              accessibilityRole="button"
+              accessibilityLabel={deviceCalendar.prompted ? 'Open Settings' : 'Allow calendar access'}
+            >
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(700) as any }}>
+                {deviceCalendar.prompted ? 'Settings' : 'Allow'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* SCRUM-269 Phase A: date-range chips. "All" keeps the original
             full-list behavior; Day = today, Week = +/- 7 days, Month =
-            +/- 1 month. A full calendar-grid view + device-event merge
-            land in Phase B (binary cut). */}
+            +/- 1 month. Phase B merges device-calendar events into the
+            same list with source-app badges. */}
         <View style={styles.rangeRow}>
           {(['all', 'day', 'week', 'month'] as const).map((r) => {
             const selected = dateRange === r;
@@ -323,7 +403,7 @@ export default function AppointmentsScreen() {
           ) : null}
         </View>
 
-        {appointments.length === 0 ? (
+        {appointments.length === 0 && personalEvents.length === 0 ? (
           <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
             <Text style={{ fontSize: 48, marginBottom: 16 }}>📅</Text>
             <Text
@@ -363,7 +443,19 @@ export default function AppointmentsScreen() {
               >
                 {formatDate(date)}
               </Text>
-              {items.map((apt) => {
+              {items.map((row) => {
+                if (row.kind === 'personal') {
+                  return (
+                    <PersonalEventCard
+                      key={row.id}
+                      event={row.event}
+                      colors={colors}
+                      fontSize={getScaledFontSize}
+                      fontWeight={getScaledFontWeight}
+                    />
+                  );
+                }
+                const apt = row.appointment;
                 const resStyle = RESOURCE_TYPE_STYLES[apt.resourceType ?? 'Encounter'];
                 const statusStyle = STATUS_COLORS[apt.status] ?? STATUS_COLORS.finished;
 
@@ -458,6 +550,90 @@ export default function AppointmentsScreen() {
   );
 }
 
+/**
+ * SCRUM-269 Phase B: a personal event from the device calendar. Renders
+ * with a teal "from {Source}" pill so users can tell which calendar
+ * each entry came from at a glance. Tapping is a no-op for v1 — editing
+ * lives in the native calendar app, not here.
+ */
+function PersonalEventCard({
+  event,
+  colors,
+  fontSize,
+  fontWeight,
+}: {
+  event: DeviceEvent;
+  colors: { card: string; border: string; text: string; subtext: string; tint: string };
+  fontSize: (n: number) => number;
+  fontWeight: (n: number) => string | number;
+}): React.JSX.Element {
+  const start = new Date(event.startDate);
+  const end = event.endDate ? new Date(event.endDate) : null;
+  const timeStr = event.allDay
+    ? 'All day'
+    : `${start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${
+        end && !event.allDay && Math.abs(end.getTime() - start.getTime()) > 0
+          ? ` – ${end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+          : ''
+      }`;
+  const sourceColor = event.source.color ?? (colors.tint as string);
+  return (
+    <View
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+      accessibilityRole="text"
+      accessibilityLabel={`Personal event: ${event.title}, from ${event.source.title}, ${timeStr}`}
+    >
+      <View style={styles.badgeRow}>
+        <View style={[styles.badge, { backgroundColor: sourceColor + '22', borderWidth: 1, borderColor: sourceColor + '66' }]}>
+          <Text style={[styles.badgeText, { color: sourceColor, fontSize: fontSize(12) }]}>
+            📅 {event.source.source}
+          </Text>
+        </View>
+        <View style={[styles.badge, { backgroundColor: '#F3E5F5' }]}>
+          <Text style={[styles.badgeText, { color: '#6A1B9A', fontSize: fontSize(12) }]}>
+            Personal
+          </Text>
+        </View>
+      </View>
+
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: fontSize(16),
+          fontWeight: fontWeight(600) as any,
+          marginBottom: 8,
+        }}
+        numberOfLines={2}
+      >
+        {event.title}
+      </Text>
+
+      <View style={styles.infoRow}>
+        <IconSymbol name="clock" size={fontSize(16)} color={colors.subtext} />
+        <Text style={{ color: colors.subtext, fontSize: fontSize(14), flex: 1 }}>
+          {timeStr}
+        </Text>
+      </View>
+
+      {event.location ? (
+        <View style={styles.infoRow}>
+          <IconSymbol name="location" size={fontSize(16)} color={colors.subtext} />
+          <Text style={{ color: colors.subtext, fontSize: fontSize(14), flex: 1 }} numberOfLines={1}>
+            {event.location}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.infoRow}>
+        <IconSymbol name="info.circle" size={fontSize(16)} color={colors.subtext} />
+        <Text style={{ color: colors.subtext, fontSize: fontSize(12), flex: 1 }}>
+          From {event.source.title}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -493,6 +669,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 12,
+  },
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 16,
+  },
+  permissionButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    marginLeft: 8,
   },
   rangeChip: {
     paddingHorizontal: 14,

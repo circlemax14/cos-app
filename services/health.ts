@@ -1028,6 +1028,25 @@ export type HealthKitVitalMetric =
   | 'walking-heart-rate'
   | 'heart-rate-variability'
   | 'sleep-hours'
+  // SCRUM-271: expanded HealthKit coverage. These types are all standard
+  // HKQuantityTypeIdentifier / HKCategoryTypeIdentifier values supported
+  // by react-native-health@1.19+.
+  | 'vo2-max'
+  | 'walking-speed'
+  | 'walking-step-length'
+  | 'six-minute-walk-distance'
+  | 'stair-ascent-speed'
+  | 'stair-descent-speed'
+  | 'apple-stand-time'
+  | 'mindful-minutes'
+  | 'water-intake'
+  | 'caffeine-intake'
+  | 'headphone-audio-exposure'
+  | 'environmental-audio-exposure'
+  | 'body-fat-percentage'
+  | 'lean-body-mass'
+  | 'height'
+  | 'waist-circumference'
 
 interface VitalSpec {
   metricCode: string
@@ -1198,6 +1217,142 @@ const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     unit: 'hours',
     refRange: { low: 7, high: 9 },
     fetcher: 'getSleepSamples',
+  },
+  // ── SCRUM-271: expanded HealthKit coverage ─────────────────────────────
+  'vo2-max': {
+    metricCode: 'hk-vo2-max',
+    metricName: 'VO₂ Max',
+    permission: 'Vo2Max',
+    unit: 'mL/(kg·min)',
+    refRange: { low: 30, high: 50 },
+    fetcher: 'getVo2MaxSamples',
+  },
+  'walking-speed': {
+    metricCode: 'hk-walking-speed',
+    metricName: 'Walking Speed',
+    permission: 'WalkingSpeed',
+    unit: 'm/s',
+    refRange: { low: 1.0, high: 1.4 },
+    fetcher: 'getWalkingSpeedSamples',
+  },
+  'walking-step-length': {
+    metricCode: 'hk-walking-step-length',
+    metricName: 'Walking Step Length',
+    permission: 'WalkingStepLength',
+    unit: 'cm',
+    refRange: { low: 60, high: 80 },
+    fetcher: 'getWalkingStepLengthSamples',
+  },
+  'six-minute-walk-distance': {
+    metricCode: 'hk-six-min-walk',
+    metricName: '6-Minute Walk Distance',
+    permission: 'SixMinuteWalkTestDistance',
+    unit: 'm',
+    refRange: { low: 400, high: 700 },
+    fetcher: 'getSixMinuteWalkTestDistance',
+  },
+  'stair-ascent-speed': {
+    metricCode: 'hk-stair-ascent-speed',
+    metricName: 'Stair Ascent Speed',
+    permission: 'StairAscentSpeed',
+    unit: 'm/s',
+    refRange: { low: 0.4, high: 0.7 },
+    fetcher: 'getStairAscentSpeedSamples',
+  },
+  'stair-descent-speed': {
+    metricCode: 'hk-stair-descent-speed',
+    metricName: 'Stair Descent Speed',
+    permission: 'StairDescentSpeed',
+    unit: 'm/s',
+    refRange: { low: 0.4, high: 0.7 },
+    fetcher: 'getStairDescentSpeedSamples',
+  },
+  'apple-stand-time': {
+    metricCode: 'hk-stand-time',
+    metricName: 'Stand Time',
+    permission: 'AppleStandTime',
+    unit: 'min',
+    refRange: { low: 60, high: 600 },
+    fetcher: 'getAppleStandTime',
+    dayReducer: 'sum',
+  },
+  'mindful-minutes': {
+    metricCode: 'hk-mindful',
+    metricName: 'Mindful Minutes',
+    permission: 'MindfulSession',
+    unit: 'min',
+    refRange: { low: 5, high: 30 },
+    fetcher: 'getMindfulSession',
+    dayReducer: 'sum',
+  },
+  'water-intake': {
+    metricCode: 'hk-water',
+    metricName: 'Water Intake',
+    permission: 'Water',
+    unit: 'L',
+    refRange: { low: 2, high: 3 },
+    fetcher: 'getWater',
+    dayReducer: 'sum',
+  },
+  'caffeine-intake': {
+    metricCode: 'hk-caffeine',
+    metricName: 'Caffeine',
+    permission: 'Caffeine',
+    unit: 'mg',
+    refRange: { low: 0, high: 400 },
+    fetcher: 'getCaffeine',
+    dayReducer: 'sum',
+  },
+  'headphone-audio-exposure': {
+    metricCode: 'hk-headphone-audio',
+    metricName: 'Headphone Audio',
+    permission: 'HeadphoneAudioExposure',
+    unit: 'dB SPL',
+    refRange: { low: 0, high: 80 },
+    fetcher: 'getHeadphoneAudioExposure',
+  },
+  'environmental-audio-exposure': {
+    metricCode: 'hk-environmental-audio',
+    metricName: 'Environmental Sound',
+    permission: 'EnvironmentalAudioExposure',
+    unit: 'dB SPL',
+    refRange: { low: 0, high: 70 },
+    fetcher: 'getEnvironmentalAudioExposure',
+  },
+  'body-fat-percentage': {
+    metricCode: 'hk-body-fat',
+    metricName: 'Body Fat %',
+    permission: 'BodyFatPercentage',
+    unit: '%',
+    refRange: { low: 8, high: 24 },
+    fetcher: 'getBodyFatPercentageSamples',
+    scale: (v) => v * 100,
+  },
+  'lean-body-mass': {
+    metricCode: 'hk-lean-body-mass',
+    metricName: 'Lean Body Mass',
+    permission: 'LeanBodyMass',
+    unit: 'kg',
+    refRange: { low: 40, high: 80 },
+    fetcher: 'getLeanBodyMass',
+  },
+  height: {
+    metricCode: 'hk-height',
+    metricName: 'Height',
+    permission: 'Height',
+    unit: 'cm',
+    refRange: { low: 150, high: 200 },
+    fetcher: 'getHeightSamples',
+    scale: (v) => v * 100, // HealthKit returns metres
+  },
+  'waist-circumference': {
+    metricCode: 'hk-waist',
+    metricName: 'Waist',
+    permission: 'WaistCircumference',
+    unit: 'cm',
+    refRange: { low: 70, high: 95 },
+    fetcher: 'getWaistCircumferenceSamples',
+    scale: (v) => v * 100, // HealthKit returns metres
   },
 }
 
