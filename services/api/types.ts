@@ -525,8 +525,10 @@ export interface LongitudinalTrend {
   relatedConditions: string[];
   relatedMedications: string[];
   // Provenance: omitted/`fhir` for trends sourced from the clinical backend,
-  // `apple-health` for trends derived from on-device HealthKit samples.
-  source?: 'fhir' | 'apple-health';
+  // `apple-health` for trends derived from on-device HealthKit samples,
+  // `health-connect` for the Android Google Health Connect equivalent
+  // (SCRUM-272).
+  source?: 'fhir' | 'apple-health' | 'health-connect';
 }
 
 export interface TrendExplanation {
