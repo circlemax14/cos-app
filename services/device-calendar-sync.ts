@@ -22,21 +22,34 @@ export const DEVICE_CALENDAR_SYNC_TASK = 'device-calendar-hourly-sync'
 // One-time registration of the headless task. The OS persists the
 // registration across launches, but defining the task itself must happen
 // at module load so JS can pick it up after a background wake.
-if (!TaskManager.isTaskDefined(DEVICE_CALENDAR_SYNC_TASK)) {
-  TaskManager.defineTask(DEVICE_CALENDAR_SYNC_TASK, async () => {
-    try {
-      const status = await getPermissionStatus()
-      if (!status.granted) {
-        return BackgroundFetch.BackgroundFetchResult.NoData
+//
+// SCRUM-269 hotfix: wrap the module-load native call in try/catch. If
+// expo-task-manager's native bridge isn't ready (mis-configured native
+// build, missing manifest entry, mismatched runtime), throwing here
+// would crash app launch BEFORE any UI renders. Safer to silently no-op
+// — the only consequence is that the hourly background sync doesn't
+// register, which is already a best-effort feature.
+try {
+  if (!TaskManager.isTaskDefined(DEVICE_CALENDAR_SYNC_TASK)) {
+    TaskManager.defineTask(DEVICE_CALENDAR_SYNC_TASK, async () => {
+      try {
+        const status = await getPermissionStatus()
+        if (!status.granted) {
+          return BackgroundFetch.BackgroundFetchResult.NoData
+        }
+        const events = await fetchDeviceEvents()
+        return events.length > 0
+          ? BackgroundFetch.BackgroundFetchResult.NewData
+          : BackgroundFetch.BackgroundFetchResult.NoData
+      } catch {
+        return BackgroundFetch.BackgroundFetchResult.Failed
       }
-      const events = await fetchDeviceEvents()
-      return events.length > 0
-        ? BackgroundFetch.BackgroundFetchResult.NewData
-        : BackgroundFetch.BackgroundFetchResult.NoData
-    } catch {
-      return BackgroundFetch.BackgroundFetchResult.Failed
-    }
-  })
+    })
+  }
+} catch {
+  // Module-load failure (e.g. native bridge unavailable) — silently
+  // skip task definition. registerHourlySync() also try/catches so
+  // nothing downstream throws either.
 }
 
 /**
