@@ -1401,17 +1401,36 @@ const computeTrendDirection = (
 }
 
 /**
+ * SCRUM-271 hotfix (2026-05-29): some VITAL_SPECS reference permission
+ * constants that don't exist in react-native-health@1.19 (added in
+ * newer versions): WalkingSpeed, WalkingStepLength, SixMinuteWalkTestDistance,
+ * StairAscentSpeed, StairDescentSpeed. When Constants.Permissions[X]
+ * is undefined and we still pass the raw string literal through to the
+ * native init call, the native side throws and the app crashes on
+ * launch. Filter to only metrics whose constant actually resolves so
+ * unsupported types are skipped silently instead of crashing.
+ */
+function isMetricSupportedInRNHealth(spec: VitalSpec): boolean {
+  const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
+    | Record<string, string>
+    | undefined
+  return typeof constants?.[spec.permission] === 'string'
+}
+
+/**
  * Returns the union of HealthKit Permissions constants for every vital we
  * read in `getHealthKitVitalTrend`, so `initializeHealthKit` can request
- * them up-front and avoid per-metric permission prompts later.
+ * them up-front and avoid per-metric permission prompts later. Filters
+ * out any constant that doesn't exist in the installed react-native-health
+ * version (see hotfix note above).
  */
 export const getHealthKitVitalPermissions = (): string[] => {
   const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
     | Record<string, string>
     | undefined
-  return Object.values(VITAL_SPECS).map((spec) => {
-    return constants?.[spec.permission] ?? spec.permission
-  })
+  return Object.values(VITAL_SPECS)
+    .map((spec) => constants?.[spec.permission])
+    .filter((p): p is string => typeof p === 'string')
 }
 
 /**
@@ -1431,6 +1450,14 @@ export const getHealthKitVitalTrend = (
       return
     }
     const spec = VITAL_SPECS[metric]
+    // SCRUM-271 hotfix: skip metrics whose permission constant doesn't
+    // exist in the installed react-native-health version (see note on
+    // getHealthKitVitalPermissions). Avoids native-side crashes from
+    // unrecognized identifiers.
+    if (!isMetricSupportedInRNHealth(spec)) {
+      resolve(null)
+      return
+    }
     const nativeModule = NativeModules.AppleHealthKit || NativeModules.RNAppleHealthKit
     const wrapper = AppleHealthKit as unknown as Record<string, unknown>
 
