@@ -58,19 +58,40 @@ export interface DeviceCalendarStatus {
   prompted: boolean
 }
 
+/**
+ * SCRUM-269 Phase B hotfix (2026-05-29): wrap every native-bridge call
+ * in try/catch. The 1.4.0 build 10 binary that shipped to TestFlight
+ * was missing `NSCalendarsFullAccessUsageDescription` in Info.plist —
+ * the iOS-17+ replacement for `NSCalendarsUsageDescription`. On iOS 17+
+ * devices the expo-calendar native module throws
+ * `ExpoCalendar.MissingCalendarPListValueException` from
+ * `getCalendarPermissionsAsync`, which RN promotes to a fatal crash.
+ *
+ * The next binary cut adds the missing key. Until then, this OTA-able
+ * defense ensures the app *never* crashes from a calendar call — the
+ * worst case is the personal-events feed shows nothing.
+ */
 export async function getPermissionStatus(): Promise<DeviceCalendarStatus> {
-  const status = await Calendar.getCalendarPermissionsAsync()
-  return {
-    granted: status.status === 'granted',
-    prompted: status.status !== 'undetermined',
+  try {
+    const status = await Calendar.getCalendarPermissionsAsync()
+    return {
+      granted: status.status === 'granted',
+      prompted: status.status !== 'undetermined',
+    }
+  } catch {
+    return { granted: false, prompted: false }
   }
 }
 
 export async function requestPermission(): Promise<DeviceCalendarStatus> {
-  const status = await Calendar.requestCalendarPermissionsAsync()
-  return {
-    granted: status.status === 'granted',
-    prompted: status.status !== 'undetermined',
+  try {
+    const status = await Calendar.requestCalendarPermissionsAsync()
+    return {
+      granted: status.status === 'granted',
+      prompted: status.status !== 'undetermined',
+    }
+  } catch {
+    return { granted: false, prompted: false }
   }
 }
 
@@ -96,15 +117,26 @@ export async function fetchDeviceEvents(opts?: {
   endDate.setHours(23, 59, 59, 999)
 
   // Read all calendars the OS will let us see. Filtering per-calendar is
-  // a Phase C settings concern.
-  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)
+  // a Phase C settings concern. Defense-in-depth (see header) — any
+  // throw from the native bridge degrades gracefully to an empty feed.
+  let calendars: Calendar.Calendar[]
+  try {
+    calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)
+  } catch {
+    return []
+  }
   if (calendars.length === 0) return []
 
-  const events = await Calendar.getEventsAsync(
-    calendars.map((c) => c.id),
-    startDate,
-    endDate,
-  )
+  let events: Calendar.Event[]
+  try {
+    events = await Calendar.getEventsAsync(
+      calendars.map((c) => c.id),
+      startDate,
+      endDate,
+    )
+  } catch {
+    return []
+  }
 
   const calendarById = new Map(calendars.map((c) => [c.id, c]))
   const mapped: DeviceEvent[] = events.map((event) => {

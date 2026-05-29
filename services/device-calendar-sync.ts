@@ -47,15 +47,22 @@ if (!TaskManager.isTaskDefined(DEVICE_CALENDAR_SYNC_TASK)) {
  * Safe to call repeatedly — registerTaskAsync is idempotent.
  */
 export async function registerHourlySync(): Promise<void> {
-  const status = await BackgroundFetch.getStatusAsync()
-  if (status === BackgroundFetch.BackgroundFetchStatus.Denied || status === BackgroundFetch.BackgroundFetchStatus.Restricted) {
-    return
+  try {
+    const status = await BackgroundFetch.getStatusAsync()
+    if (status === BackgroundFetch.BackgroundFetchStatus.Denied || status === BackgroundFetch.BackgroundFetchStatus.Restricted) {
+      return
+    }
+    await BackgroundFetch.registerTaskAsync(DEVICE_CALENDAR_SYNC_TASK, {
+      minimumInterval: 60 * 60, // 1 hour
+      stopOnTerminate: false,
+      startOnBoot: true,
+    })
+  } catch {
+    // SCRUM-269 hotfix (2026-05-29): swallow any native-bridge failure
+    // so the calling component (useDeviceCalendar) doesn't propagate a
+    // throw to React's render path. The background task is best-effort
+    // anyway; foreground sync still works.
   }
-  await BackgroundFetch.registerTaskAsync(DEVICE_CALENDAR_SYNC_TASK, {
-    minimumInterval: 60 * 60, // 1 hour
-    stopOnTerminate: false,
-    startOnBoot: true,
-  })
 }
 
 /**
