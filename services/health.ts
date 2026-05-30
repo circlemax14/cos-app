@@ -1418,6 +1418,33 @@ function isMetricSupportedInRNHealth(spec: VitalSpec): boolean {
 }
 
 /**
+ * SCRUM-271 hotfix v2 (2026-05-30): the new HealthKit metrics added in
+ * SCRUM-271 are crashing Health Trends with an NSInvalidArgumentException
+ * during native dict construction. Disabling them at the source until we
+ * can identify which specific fetcher returns a nil field. Original 18
+ * metrics (pre-SCRUM-271) keep working. Re-enable one-at-a-time after
+ * isolating the culprit.
+ */
+const SCRUM_271_DISABLED_METRICS = new Set<HealthKitVitalMetric>([
+  'vo2-max',
+  'walking-speed',
+  'walking-step-length',
+  'six-minute-walk-distance',
+  'stair-ascent-speed',
+  'stair-descent-speed',
+  'apple-stand-time',
+  'mindful-minutes',
+  'water-intake',
+  'caffeine-intake',
+  'headphone-audio-exposure',
+  'environmental-audio-exposure',
+  'body-fat-percentage',
+  'lean-body-mass',
+  'height',
+  'waist-circumference',
+])
+
+/**
  * Returns the union of HealthKit Permissions constants for every vital we
  * read in `getHealthKitVitalTrend`, so `initializeHealthKit` can request
  * them up-front and avoid per-metric permission prompts later. Filters
@@ -1428,8 +1455,9 @@ export const getHealthKitVitalPermissions = (): string[] => {
   const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
     | Record<string, string>
     | undefined
-  return Object.values(VITAL_SPECS)
-    .map((spec) => constants?.[spec.permission])
+  return (Object.entries(VITAL_SPECS) as [HealthKitVitalMetric, VitalSpec][])
+    .filter(([key]) => !SCRUM_271_DISABLED_METRICS.has(key))
+    .map(([, spec]) => constants?.[spec.permission])
     .filter((p): p is string => typeof p === 'string')
 }
 
@@ -1446,6 +1474,13 @@ export const getHealthKitVitalTrend = (
 ): Promise<LongitudinalTrend | null> => {
   return new Promise((resolve) => {
     if (Platform.OS !== 'ios') {
+      resolve(null)
+      return
+    }
+    // SCRUM-271 hotfix v2: hard-disable the new metrics added in
+    // SCRUM-271 until we isolate which fetcher returns nil and crashes
+    // the native dict construction.
+    if (SCRUM_271_DISABLED_METRICS.has(metric)) {
       resolve(null)
       return
     }
