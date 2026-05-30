@@ -1028,25 +1028,6 @@ export type HealthKitVitalMetric =
   | 'walking-heart-rate'
   | 'heart-rate-variability'
   | 'sleep-hours'
-  // SCRUM-271: expanded HealthKit coverage. These types are all standard
-  // HKQuantityTypeIdentifier / HKCategoryTypeIdentifier values supported
-  // by react-native-health@1.19+.
-  | 'vo2-max'
-  | 'walking-speed'
-  | 'walking-step-length'
-  | 'six-minute-walk-distance'
-  | 'stair-ascent-speed'
-  | 'stair-descent-speed'
-  | 'apple-stand-time'
-  | 'mindful-minutes'
-  | 'water-intake'
-  | 'caffeine-intake'
-  | 'headphone-audio-exposure'
-  | 'environmental-audio-exposure'
-  | 'body-fat-percentage'
-  | 'lean-body-mass'
-  | 'height'
-  | 'waist-circumference'
 
 interface VitalSpec {
   metricCode: string
@@ -1218,142 +1199,6 @@ const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     refRange: { low: 7, high: 9 },
     fetcher: 'getSleepSamples',
   },
-  // ── SCRUM-271: expanded HealthKit coverage ─────────────────────────────
-  'vo2-max': {
-    metricCode: 'hk-vo2-max',
-    metricName: 'VO₂ Max',
-    permission: 'Vo2Max',
-    unit: 'mL/(kg·min)',
-    refRange: { low: 30, high: 50 },
-    fetcher: 'getVo2MaxSamples',
-  },
-  'walking-speed': {
-    metricCode: 'hk-walking-speed',
-    metricName: 'Walking Speed',
-    permission: 'WalkingSpeed',
-    unit: 'm/s',
-    refRange: { low: 1.0, high: 1.4 },
-    fetcher: 'getWalkingSpeedSamples',
-  },
-  'walking-step-length': {
-    metricCode: 'hk-walking-step-length',
-    metricName: 'Walking Step Length',
-    permission: 'WalkingStepLength',
-    unit: 'cm',
-    refRange: { low: 60, high: 80 },
-    fetcher: 'getWalkingStepLengthSamples',
-  },
-  'six-minute-walk-distance': {
-    metricCode: 'hk-six-min-walk',
-    metricName: '6-Minute Walk Distance',
-    permission: 'SixMinuteWalkTestDistance',
-    unit: 'm',
-    refRange: { low: 400, high: 700 },
-    fetcher: 'getSixMinuteWalkTestDistance',
-  },
-  'stair-ascent-speed': {
-    metricCode: 'hk-stair-ascent-speed',
-    metricName: 'Stair Ascent Speed',
-    permission: 'StairAscentSpeed',
-    unit: 'm/s',
-    refRange: { low: 0.4, high: 0.7 },
-    fetcher: 'getStairAscentSpeedSamples',
-  },
-  'stair-descent-speed': {
-    metricCode: 'hk-stair-descent-speed',
-    metricName: 'Stair Descent Speed',
-    permission: 'StairDescentSpeed',
-    unit: 'm/s',
-    refRange: { low: 0.4, high: 0.7 },
-    fetcher: 'getStairDescentSpeedSamples',
-  },
-  'apple-stand-time': {
-    metricCode: 'hk-stand-time',
-    metricName: 'Stand Time',
-    permission: 'AppleStandTime',
-    unit: 'min',
-    refRange: { low: 60, high: 600 },
-    fetcher: 'getAppleStandTime',
-    dayReducer: 'sum',
-  },
-  'mindful-minutes': {
-    metricCode: 'hk-mindful',
-    metricName: 'Mindful Minutes',
-    permission: 'MindfulSession',
-    unit: 'min',
-    refRange: { low: 5, high: 30 },
-    fetcher: 'getMindfulSession',
-    dayReducer: 'sum',
-  },
-  'water-intake': {
-    metricCode: 'hk-water',
-    metricName: 'Water Intake',
-    permission: 'Water',
-    unit: 'L',
-    refRange: { low: 2, high: 3 },
-    fetcher: 'getWater',
-    dayReducer: 'sum',
-  },
-  'caffeine-intake': {
-    metricCode: 'hk-caffeine',
-    metricName: 'Caffeine',
-    permission: 'Caffeine',
-    unit: 'mg',
-    refRange: { low: 0, high: 400 },
-    fetcher: 'getCaffeine',
-    dayReducer: 'sum',
-  },
-  'headphone-audio-exposure': {
-    metricCode: 'hk-headphone-audio',
-    metricName: 'Headphone Audio',
-    permission: 'HeadphoneAudioExposure',
-    unit: 'dB SPL',
-    refRange: { low: 0, high: 80 },
-    fetcher: 'getHeadphoneAudioExposure',
-  },
-  'environmental-audio-exposure': {
-    metricCode: 'hk-environmental-audio',
-    metricName: 'Environmental Sound',
-    permission: 'EnvironmentalAudioExposure',
-    unit: 'dB SPL',
-    refRange: { low: 0, high: 70 },
-    fetcher: 'getEnvironmentalAudioExposure',
-  },
-  'body-fat-percentage': {
-    metricCode: 'hk-body-fat',
-    metricName: 'Body Fat %',
-    permission: 'BodyFatPercentage',
-    unit: '%',
-    refRange: { low: 8, high: 24 },
-    fetcher: 'getBodyFatPercentageSamples',
-    scale: (v) => v * 100,
-  },
-  'lean-body-mass': {
-    metricCode: 'hk-lean-body-mass',
-    metricName: 'Lean Body Mass',
-    permission: 'LeanBodyMass',
-    unit: 'kg',
-    refRange: { low: 40, high: 80 },
-    fetcher: 'getLeanBodyMass',
-  },
-  height: {
-    metricCode: 'hk-height',
-    metricName: 'Height',
-    permission: 'Height',
-    unit: 'cm',
-    refRange: { low: 150, high: 200 },
-    fetcher: 'getHeightSamples',
-    scale: (v) => v * 100, // HealthKit returns metres
-  },
-  'waist-circumference': {
-    metricCode: 'hk-waist',
-    metricName: 'Waist',
-    permission: 'WaistCircumference',
-    unit: 'cm',
-    refRange: { low: 70, high: 95 },
-    fetcher: 'getWaistCircumferenceSamples',
-    scale: (v) => v * 100, // HealthKit returns metres
-  },
 }
 
 const interpretPoint = (
@@ -1401,63 +1246,18 @@ const computeTrendDirection = (
 }
 
 /**
- * SCRUM-271 hotfix (2026-05-29): some VITAL_SPECS reference permission
- * constants that don't exist in react-native-health@1.19 (added in
- * newer versions): WalkingSpeed, WalkingStepLength, SixMinuteWalkTestDistance,
- * StairAscentSpeed, StairDescentSpeed. When Constants.Permissions[X]
- * is undefined and we still pass the raw string literal through to the
- * native init call, the native side throws and the app crashes on
- * launch. Filter to only metrics whose constant actually resolves so
- * unsupported types are skipped silently instead of crashing.
- */
-function isMetricSupportedInRNHealth(spec: VitalSpec): boolean {
-  const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
-    | Record<string, string>
-    | undefined
-  return typeof constants?.[spec.permission] === 'string'
-}
-
-/**
- * SCRUM-271 hotfix v2 (2026-05-30): the new HealthKit metrics added in
- * SCRUM-271 are crashing Health Trends with an NSInvalidArgumentException
- * during native dict construction. Disabling them at the source until we
- * can identify which specific fetcher returns a nil field. Original 18
- * metrics (pre-SCRUM-271) keep working. Re-enable one-at-a-time after
- * isolating the culprit.
- */
-const SCRUM_271_DISABLED_METRICS = new Set<HealthKitVitalMetric>([
-  'vo2-max',
-  'walking-speed',
-  'walking-step-length',
-  'six-minute-walk-distance',
-  'stair-ascent-speed',
-  'stair-descent-speed',
-  'apple-stand-time',
-  'mindful-minutes',
-  'water-intake',
-  'caffeine-intake',
-  'headphone-audio-exposure',
-  'environmental-audio-exposure',
-  'body-fat-percentage',
-  'lean-body-mass',
-  'height',
-  'waist-circumference',
-])
-
-/**
  * Returns the union of HealthKit Permissions constants for every vital we
  * read in `getHealthKitVitalTrend`, so `initializeHealthKit` can request
- * them up-front and avoid per-metric permission prompts later. Filters
- * out any constant that doesn't exist in the installed react-native-health
- * version (see hotfix note above).
+ * them up-front and avoid per-metric permission prompts later. Skips any
+ * constant the installed react-native-health version doesn't expose so a
+ * missing identifier degrades silently instead of throwing on init.
  */
 export const getHealthKitVitalPermissions = (): string[] => {
   const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
     | Record<string, string>
     | undefined
-  return (Object.entries(VITAL_SPECS) as [HealthKitVitalMetric, VitalSpec][])
-    .filter(([key]) => !SCRUM_271_DISABLED_METRICS.has(key))
-    .map(([, spec]) => constants?.[spec.permission])
+  return Object.values(VITAL_SPECS)
+    .map((spec) => constants?.[spec.permission])
     .filter((p): p is string => typeof p === 'string')
 }
 
@@ -1477,22 +1277,7 @@ export const getHealthKitVitalTrend = (
       resolve(null)
       return
     }
-    // SCRUM-271 hotfix v2: hard-disable the new metrics added in
-    // SCRUM-271 until we isolate which fetcher returns nil and crashes
-    // the native dict construction.
-    if (SCRUM_271_DISABLED_METRICS.has(metric)) {
-      resolve(null)
-      return
-    }
     const spec = VITAL_SPECS[metric]
-    // SCRUM-271 hotfix: skip metrics whose permission constant doesn't
-    // exist in the installed react-native-health version (see note on
-    // getHealthKitVitalPermissions). Avoids native-side crashes from
-    // unrecognized identifiers.
-    if (!isMetricSupportedInRNHealth(spec)) {
-      resolve(null)
-      return
-    }
     const nativeModule = NativeModules.AppleHealthKit || NativeModules.RNAppleHealthKit
     const wrapper = AppleHealthKit as unknown as Record<string, unknown>
 
