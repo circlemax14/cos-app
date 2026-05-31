@@ -23,8 +23,14 @@
         "NSFaceIDUsageDescription": "Circle Support Health uses Face ID to securely unlock your health information.",
         "NSHealthShareUsageDescription": "Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.",
         "NSHealthUpdateUsageDescription": "Circle Support Health updates your health data so your care team has the latest information.",
+        "NSCalendarsUsageDescription": "Circle Support Health reads your calendars so all your appointments — medical, work, and personal — appear together in one view.",
+        "NSCalendarsFullAccessUsageDescription": "Circle Support Health reads and writes calendar events so you can manage all your appointments in one place. Events you create here will appear in your other calendar apps.",
+        "NSCalendarsWriteOnlyAccessUsageDescription": "Circle Support Health writes calendar events so the appointments you create here appear in your other calendar apps.",
+        "NSRemindersUsageDescription": "Circle Support Health uses reminders so you don't miss your appointments.",
+        "NSRemindersFullAccessUsageDescription": "Circle Support Health uses reminders so you don't miss your appointments.",
         "UIBackgroundModes": [
-          "remote-notification"
+          "remote-notification",
+          "fetch"
         ],
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -60,7 +66,11 @@
       ],
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "com.google.android.gms.permission.AD_ID"
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
       ]
     },
     "web": {
@@ -105,13 +115,20 @@
       "expo-tracking-transparency",
       "expo-web-browser",
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "Circle Support Health reads your calendars so all your appointments — medical, work, and personal — appear together in one view."
+        }
+      ],
+      [
         "@sentry/react-native/expo",
         {
           "url": "https://sentry.io",
           "organization": "circle-support-health",
           "project": "cos-app"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,0 +1,418 @@
+/**
+ * SCRUM-279 / COS-308 — Full calendar service.
+ *
+ * Builds on top of `expo-calendar` to provide a high-level Apple-Calendar-
+ * style API: read events from all device calendars (Apple, iCloud, Google,
+ * Outlook, Teams via Exchange), create/edit/delete events that propagate
+ * back to the source calendar via EventKit/CalendarContract, and merge
+ * our app's own appointments as a virtual overlay.
+ *
+ * Privacy stance:
+ *  - READ — event data stays on device. We never forward titles/notes
+ *    from device calendars to the cos-backend.
+ *  - WRITE — events the USER creates from inside our app are written to
+ *    the OS calendar they pick. That OS calendar may sync to a cloud
+ *    service (iCloud, Google, Exchange) by the user's existing
+ *    configuration — we do not initiate that sync, but we do enable it.
+ *    The UI layer (see app/Home/calendar.tsx) must surface a one-time
+ *    HIPAA disclosure before the first write-back so the user understands
+ *    medical content they create here may sync to their other devices.
+ *  - The OS calendar permission prompt happens just-in-time when the
+ *    calendar screen first mounts; if denied we render a Grant button
+ *    that deep-links to Settings.
+ *
+ * Defensive coding: every native bridge call is wrapped in try/catch.
+ * react-native-health / expo-calendar both have a history of throwing
+ * fatal NSException from the native side on iOS 26.5; until the SCRUM-269
+ * launch crash bisection is done we hard-defense every entry point so
+ * one bad call cannot tear down the JS bridge or the app.
+ */
+
+import * as Calendar from 'expo-calendar'
+import { Platform } from 'react-native'
+
+// ── Public types ──────────────────────────────────────────────────────────
+
+export interface CalendarSource {
+  id: string
+  /** Human-readable name as the OS reports it ("Calendar", "Work", etc.). */
+  title: string
+  /** Account/source ("iCloud", "Google", "Outlook", "Local"). */
+  source: string
+  /** Hex color the OS suggested for this calendar. */
+  color: string
+  /**
+   * Whether this calendar accepts NEW events from us. Some calendars
+   * (subscribed / read-only) are display-only.
+   */
+  allowsWrite: boolean
+}
+
+export interface CalendarEvent {
+  /** Stable OS id. For app-injected virtual events (past visits) this
+   *  is `app:visit:${visitId}` etc. so the UI can disambiguate. */
+  id: string
+  /** Event title as the user wrote it (or our app's appointment title). */
+  title: string
+  /** ISO start (timezone preserved as the device reported it). */
+  startDate: string
+  /** ISO end. */
+  endDate: string
+  /** All-day flag from the source calendar. */
+  allDay: boolean
+  /** Optional location string. */
+  location?: string
+  /** Optional notes / description. */
+  notes?: string
+  /** Source calendar id (`calendarId` on EKEvent). */
+  calendarId: string
+  /** Resolved source calendar (color, name, source) — for the UI to
+   *  render a dot or badge without an extra lookup. Falls back to a
+   *  best-effort placeholder if the calendar isn't in our cache yet. */
+  source: CalendarSource
+  /** Where the event came from. `device` = OS-stored; `app` = virtual
+   *  injected from our backend (past visit, appointment, etc.). */
+  origin: 'device' | 'app'
+  /** If origin === 'app', what kind of app entity this represents. */
+  appKind?: 'past-visit' | 'appointment' | 'task'
+  /** Per-event reminders (offset minutes BEFORE startDate). */
+  alarms: number[]
+}
+
+export interface PermissionState {
+  granted: boolean
+  /** True once the OS prompt has been shown at least once. iOS only
+   *  shows it once — after that we have to deep-link to Settings. */
+  prompted: boolean
+  /** True if the user can WRITE events. Distinct from read on iOS 17+
+   *  where there's a separate "full access" tier. */
+  canWrite: boolean
+}
+
+export interface CreateEventInput {
+  title: string
+  startDate: Date
+  endDate: Date
+  allDay?: boolean
+  location?: string
+  notes?: string
+  /** Which device calendar this should be written to (id from
+   *  `listCalendars()`). Required so we don't guess. */
+  calendarId: string
+  /** Reminder offsets in minutes before start. e.g. [15, 60]. */
+  alarms?: number[]
+}
+
+export type UpdateEventInput = Partial<Omit<CreateEventInput, 'calendarId'>> & {
+  id: string
+}
+
+// ── Permissions ───────────────────────────────────────────────────────────
+
+/**
+ * Read the current calendar permission state without prompting.
+ * Returns granted=false on any native error — see file header.
+ */
+export async function getPermissionStatus(): Promise<PermissionState> {
+  try {
+    const status = await Calendar.getCalendarPermissionsAsync()
+    return {
+      granted: status.status === 'granted',
+      prompted: status.status !== 'undetermined',
+      // iOS 17+ exposes a granular `accessLevel`. expo-calendar normalises
+      // to "granted" when either full or write-only is held. Without an
+      // explicit way to distinguish we treat any granted state as
+      // writable; if the actual createEventAsync call fails with a
+      // write-denied error, we surface that to the UI.
+      canWrite: status.status === 'granted',
+    }
+  } catch {
+    return { granted: false, prompted: false, canWrite: false }
+  }
+}
+
+/**
+ * Trigger the OS permission prompt. On iOS this only shows the system
+ * dialog the FIRST time it is called; subsequent calls just return the
+ * cached answer. The UI should detect `prompted && !granted` and offer a
+ * "Grant Permission" button that opens iOS Settings.
+ */
+export async function requestPermission(): Promise<PermissionState> {
+  try {
+    const status = await Calendar.requestCalendarPermissionsAsync()
+    return {
+      granted: status.status === 'granted',
+      prompted: status.status !== 'undetermined',
+      canWrite: status.status === 'granted',
+    }
+  } catch {
+    return { granted: false, prompted: false, canWrite: false }
+  }
+}
+
+// ── Calendar listing ──────────────────────────────────────────────────────
+
+/**
+ * List all device calendars (Apple Calendar, iCloud, Google, Outlook,
+ * Exchange-backed Teams, local). Returns `[]` if permission is missing
+ * or the native call throws.
+ */
+export async function listCalendars(): Promise<CalendarSource[]> {
+  const status = await getPermissionStatus()
+  if (!status.granted) return []
+  try {
+    const raw = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)
+    return raw.map(mapCalendarToSource)
+  } catch {
+    return []
+  }
+}
+
+function mapCalendarToSource(c: Calendar.Calendar): CalendarSource {
+  return {
+    id: c.id,
+    title: c.title ?? 'Calendar',
+    source: c.source?.name ?? 'Device',
+    color: c.color ?? '#2E78F8',
+    allowsWrite: c.allowsModifications ?? false,
+  }
+}
+
+// ── Reading events ────────────────────────────────────────────────────────
+
+export interface ReadEventsOptions {
+  /** Inclusive lower bound. Defaults to 90 days ago. */
+  windowStart?: Date
+  /** Inclusive upper bound. Defaults to 365 days from now. */
+  windowEnd?: Date
+  /** If provided, only events from these calendar ids are returned;
+   *  otherwise all calendars the user granted access to. */
+  calendarIds?: string[]
+}
+
+/**
+ * Read events from device calendars within the requested window. Always
+ * returns a sorted-by-start array; never throws.
+ *
+ * Performance: a user with a busy calendar can have thousands of events
+ * over a year. We cap the default window at 90d back / 365d forward —
+ * callers asking for wider should expect proportionally more memory.
+ */
+export async function readEvents(opts: ReadEventsOptions = {}): Promise<CalendarEvent[]> {
+  const status = await getPermissionStatus()
+  if (!status.granted) return []
+
+  const windowStart = opts.windowStart ?? defaultWindowStart()
+  const windowEnd = opts.windowEnd ?? defaultWindowEnd()
+
+  let calendars: Calendar.Calendar[]
+  try {
+    calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)
+  } catch {
+    return []
+  }
+  if (calendars.length === 0) return []
+
+  const sourceById = new Map(calendars.map((c) => [c.id, mapCalendarToSource(c)]))
+  const calendarIds = (opts.calendarIds && opts.calendarIds.length > 0)
+    ? opts.calendarIds
+    : calendars.map((c) => c.id)
+
+  let raw: Calendar.Event[]
+  try {
+    raw = await Calendar.getEventsAsync(calendarIds, windowStart, windowEnd)
+  } catch {
+    return []
+  }
+
+  const events: CalendarEvent[] = raw.map((e) => mapEventToCalendarEvent(e, sourceById))
+  events.sort((a, b) => a.startDate.localeCompare(b.startDate))
+  return events
+}
+
+function mapEventToCalendarEvent(
+  e: Calendar.Event,
+  sourceById: Map<string, CalendarSource>,
+): CalendarEvent {
+  const source = sourceById.get(e.calendarId) ?? {
+    id: e.calendarId,
+    title: 'Calendar',
+    source: 'Device',
+    color: '#2E78F8',
+    allowsWrite: false,
+  }
+  return {
+    id: e.id,
+    title: e.title ?? '(No title)',
+    startDate: isoOf(e.startDate),
+    endDate: isoOf(e.endDate),
+    allDay: !!e.allDay,
+    location: e.location ?? undefined,
+    notes: e.notes ?? undefined,
+    calendarId: e.calendarId,
+    source,
+    origin: 'device',
+    alarms: Array.isArray(e.alarms)
+      ? e.alarms.map((a) => Math.round(a.relativeOffset ?? 0)).filter((m) => m <= 0).map((m) => -m)
+      : [],
+  }
+}
+
+function isoOf(d: string | Date | number): string {
+  if (typeof d === 'string') return d
+  return new Date(d).toISOString()
+}
+
+function defaultWindowStart(): Date {
+  const d = new Date()
+  d.setDate(d.getDate() - 90)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function defaultWindowEnd(): Date {
+  const d = new Date()
+  d.setDate(d.getDate() + 365)
+  d.setHours(23, 59, 59, 999)
+  return d
+}
+
+// ── Writing events ────────────────────────────────────────────────────────
+
+/**
+ * Create a new event in the chosen device calendar. Returns the new
+ * event id on success, null on failure. The created event will appear
+ * in the source calendar app (Apple Calendar, Google, Outlook, etc.)
+ * via the OS's normal sync.
+ *
+ * HIPAA-aware callers: if `notes` may contain medical content, the UI
+ * must have already shown the disclosure that this event will sync to
+ * the user's other calendar apps and any cloud accounts behind them.
+ */
+export async function createEvent(input: CreateEventInput): Promise<string | null> {
+  const status = await getPermissionStatus()
+  if (!status.granted || !status.canWrite) return null
+
+  try {
+    const eventId = await Calendar.createEventAsync(input.calendarId, {
+      title: input.title,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      allDay: input.allDay ?? false,
+      location: input.location,
+      notes: input.notes,
+      alarms: (input.alarms ?? []).map((minutesBefore) => ({
+        relativeOffset: -Math.abs(minutesBefore),
+        method: Calendar.AlarmMethod.ALERT,
+      })),
+      timeZone: input.allDay ? undefined : intlTimeZone(),
+    })
+    return eventId
+  } catch {
+    return null
+  }
+}
+
+export async function updateEvent(input: UpdateEventInput): Promise<boolean> {
+  const status = await getPermissionStatus()
+  if (!status.granted || !status.canWrite) return false
+  try {
+    const patch: Partial<Calendar.Event> = {}
+    if (input.title !== undefined) patch.title = input.title
+    if (input.startDate !== undefined) patch.startDate = input.startDate
+    if (input.endDate !== undefined) patch.endDate = input.endDate
+    if (input.allDay !== undefined) patch.allDay = input.allDay
+    if (input.location !== undefined) patch.location = input.location
+    if (input.notes !== undefined) patch.notes = input.notes
+    if (input.alarms !== undefined) {
+      patch.alarms = input.alarms.map((minutesBefore) => ({
+        relativeOffset: -Math.abs(minutesBefore),
+        method: Calendar.AlarmMethod.ALERT,
+      }))
+    }
+    await Calendar.updateEventAsync(input.id, patch)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function deleteEvent(id: string): Promise<boolean> {
+  const status = await getPermissionStatus()
+  if (!status.granted || !status.canWrite) return false
+  try {
+    await Calendar.deleteEventAsync(id)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function intlTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return undefined
+  }
+}
+
+// ── App-injected virtual events (past visits, appointments) ───────────────
+
+/**
+ * Convert a backend appointment / past visit into a virtual `CalendarEvent`
+ * that the calendar UI can render alongside device events. These are NOT
+ * written to the device calendar — they live only in our UI layer.
+ *
+ * Callers pass a minimal shape; we fill in stable id, source badge, etc.
+ */
+export interface AppEventLike {
+  id: string
+  title: string
+  startDate: string
+  endDate: string
+  location?: string
+  notes?: string
+  kind: 'past-visit' | 'appointment' | 'task'
+}
+
+export function virtualEventFromAppEntity(e: AppEventLike): CalendarEvent {
+  const kindLabel = e.kind === 'past-visit' ? 'Past Visit'
+    : e.kind === 'appointment' ? 'Appointment'
+    : 'Task'
+  return {
+    id: `app:${e.kind}:${e.id}`,
+    title: e.title,
+    startDate: e.startDate,
+    endDate: e.endDate,
+    allDay: false,
+    location: e.location,
+    notes: e.notes,
+    calendarId: `app:${e.kind}`,
+    source: {
+      id: `app:${e.kind}`,
+      title: kindLabel,
+      source: 'Circle Support Health',
+      color: e.kind === 'past-visit' ? '#5C8AC6' : e.kind === 'appointment' ? '#2E78F8' : '#7A6FF0',
+      allowsWrite: false,
+    },
+    origin: 'app',
+    appKind: e.kind,
+    alarms: [],
+  }
+}
+
+/**
+ * Merge device events + app virtual events into a single time-sorted
+ * stream. Callers fetch each side independently and pass them here.
+ */
+export function mergeEvents(deviceEvents: CalendarEvent[], appEvents: CalendarEvent[]): CalendarEvent[] {
+  const merged = [...deviceEvents, ...appEvents]
+  merged.sort((a, b) => a.startDate.localeCompare(b.startDate))
+  return merged
+}
+
+// ── Platform guard ────────────────────────────────────────────────────────
+
+export function isPlatformSupported(): boolean {
+  return Platform.OS === 'ios' || Platform.OS === 'android'
+}

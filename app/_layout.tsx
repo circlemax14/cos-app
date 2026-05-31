@@ -106,6 +106,22 @@ function StackWithAppLock() {
           autoHideHomeIndicator: true,
         }}
       />
+      <Stack.Screen
+        name="calendar-event-editor"
+        options={{
+          presentation: 'modal',
+          title: 'New Event',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="calendar-event-detail"
+        options={{
+          presentation: 'modal',
+          title: 'Event Detail',
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
