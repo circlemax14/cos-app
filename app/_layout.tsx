@@ -30,6 +30,16 @@ Sentry.init({
   // Capture warnings + errors
   enableNativeCrashHandling: true,
   enableAutoSessionTracking: true,
+  // Register the mobile-replay integration without enabling any session
+  // recording (no replaysSessionSampleRate / replaysOnErrorSampleRate set).
+  // The integration instance must exist so RNSentryReplay.postInit's
+  // breadcrumb converter finds a live replay reference on iOS 16+. Without
+  // it, sentry-react-native 7.x throws an unhandled NSException from a
+  // void TurboModule on a background dispatch queue during launch — see
+  // getsentry/sentry-react-native#5679 (fixed in @sentry/react-native 8.6.0).
+  // Until we migrate to 8.x this defaults-only integration is the smallest
+  // safe workaround. PHI defaults (maskAllText/Images/Vectors=true) hold.
+  integrations: [Sentry.mobileReplayIntegration()],
   // Tag every event with the runtime info we already track in About so we
   // can filter by build / OTA group when triaging
   // (more tags added in app/index.tsx after the JS bundle finishes loading)
