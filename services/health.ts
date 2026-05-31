@@ -1007,15 +1007,26 @@ export const getTodayHealthMetrics = async (): Promise<HealthMetrics> => {
 
 import type { TrendDataPoint, LongitudinalTrend } from './api/types'
 
-// Health Trends carousel — minimum-viable 4-metric set (per user scope
-// decision on 2026-05-31). All clinical vitals and the expanded fitness
-// set were removed after the SCRUM-271 expansion caused HealthKit native
-// crashes; this is the original "lab result trends" + Apple Health summary
-// set: Steps, Heart Rate, Sleep, Calories Burned (active energy).
 export type HealthKitVitalMetric =
+  | 'blood-pressure-systolic'
+  | 'blood-pressure-diastolic'
+  | 'blood-glucose'
+  | 'body-temperature'
+  | 'oxygen-saturation'
+  | 'respiratory-rate'
   | 'heart-rate'
+  | 'weight'
+  | 'body-mass-index'
+  // SCRUM-244: fitness + sleep metrics surfaced as part of the Apple Health
+  // carousel at the top of the Result Trends screen.
   | 'steps'
   | 'active-energy'
+  | 'distance-walking-running'
+  | 'flights-climbed'
+  | 'exercise-time'
+  | 'resting-heart-rate'
+  | 'walking-heart-rate'
+  | 'heart-rate-variability'
   | 'sleep-hours'
 
 interface VitalSpec {
@@ -1039,6 +1050,49 @@ interface VitalSpec {
 }
 
 const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
+  'blood-pressure-systolic': {
+    metricCode: 'hk-bp-systolic',
+    metricName: 'Blood Pressure (Systolic)',
+    permission: 'BloodPressureSystolic',
+    unit: 'mmHg',
+    refRange: { low: 90, high: 120 },
+  },
+  'blood-pressure-diastolic': {
+    metricCode: 'hk-bp-diastolic',
+    metricName: 'Blood Pressure (Diastolic)',
+    permission: 'BloodPressureDiastolic',
+    unit: 'mmHg',
+    refRange: { low: 60, high: 80 },
+  },
+  'blood-glucose': {
+    metricCode: 'hk-glucose',
+    metricName: 'Blood Glucose',
+    permission: 'BloodGlucose',
+    unit: 'mg/dL',
+    refRange: { low: 70, high: 100 },
+  },
+  'body-temperature': {
+    metricCode: 'hk-body-temp',
+    metricName: 'Body Temperature',
+    permission: 'BodyTemperature',
+    unit: '°C',
+    refRange: { low: 36.1, high: 37.2 },
+  },
+  'oxygen-saturation': {
+    metricCode: 'hk-spo2',
+    metricName: 'Oxygen Saturation',
+    permission: 'OxygenSaturation',
+    unit: '%',
+    refRange: { low: 95, high: 100 },
+    scale: (v) => v * 100,
+  },
+  'respiratory-rate': {
+    metricCode: 'hk-resp-rate',
+    metricName: 'Respiratory Rate',
+    permission: 'RespiratoryRate',
+    unit: 'breaths/min',
+    refRange: { low: 12, high: 20 },
+  },
   'heart-rate': {
     metricCode: 'hk-heart-rate',
     metricName: 'Heart Rate',
@@ -1046,6 +1100,21 @@ const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     unit: 'bpm',
     refRange: { low: 60, high: 100 },
   },
+  weight: {
+    metricCode: 'hk-weight',
+    metricName: 'Weight',
+    permission: 'Weight',
+    unit: 'kg',
+    refRange: { low: 50, high: 100 },
+  },
+  'body-mass-index': {
+    metricCode: 'hk-bmi',
+    metricName: 'Body Mass Index',
+    permission: 'BodyMassIndex',
+    unit: 'kg/m²',
+    refRange: { low: 18.5, high: 24.9 },
+  },
+  // ── Fitness / activity metrics ─────────────────────────────────────────
   steps: {
     metricCode: 'hk-steps',
     metricName: 'Steps',
@@ -1063,6 +1132,59 @@ const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     refRange: { low: 250, high: 600 },
     fetcher: 'getActiveEnergyBurned',
     dayReducer: 'sum',
+  },
+  'distance-walking-running': {
+    metricCode: 'hk-distance-walking',
+    metricName: 'Distance',
+    permission: 'DistanceWalkingRunning',
+    unit: 'km',
+    refRange: { low: 5, high: 10 },
+    fetcher: 'getDailyDistanceWalkingRunningSamples',
+    dayReducer: 'sum',
+    // HealthKit returns distance in metres — convert to km for display.
+    scale: (v) => v / 1000,
+  },
+  'flights-climbed': {
+    metricCode: 'hk-flights',
+    metricName: 'Flights Climbed',
+    permission: 'FlightsClimbed',
+    unit: 'floors',
+    refRange: { low: 5, high: 20 },
+    fetcher: 'getDailyFlightsClimbedSamples',
+    dayReducer: 'sum',
+  },
+  'exercise-time': {
+    metricCode: 'hk-exercise-time',
+    metricName: 'Exercise Time',
+    permission: 'AppleExerciseTime',
+    unit: 'min',
+    refRange: { low: 30, high: 60 },
+    fetcher: 'getAppleExerciseTime',
+    dayReducer: 'sum',
+  },
+  'resting-heart-rate': {
+    metricCode: 'hk-resting-hr',
+    metricName: 'Resting Heart Rate',
+    permission: 'RestingHeartRate',
+    unit: 'bpm',
+    refRange: { low: 50, high: 70 },
+    fetcher: 'getRestingHeartRateSamples',
+  },
+  'walking-heart-rate': {
+    metricCode: 'hk-walking-hr',
+    metricName: 'Walking Heart Rate',
+    permission: 'WalkingHeartRateAverage',
+    unit: 'bpm',
+    refRange: { low: 90, high: 130 },
+    fetcher: 'getWalkingHeartRateAverage',
+  },
+  'heart-rate-variability': {
+    metricCode: 'hk-hrv',
+    metricName: 'Heart Rate Variability',
+    permission: 'HeartRateVariability',
+    unit: 'ms',
+    refRange: { low: 30, high: 80 },
+    fetcher: 'getHeartRateVariabilitySamples',
   },
   // Sleep is special: each sample carries start/end timestamps representing
   // a sleep segment, and we want to express total sleep duration per day.
@@ -1126,17 +1248,15 @@ const computeTrendDirection = (
 /**
  * Returns the union of HealthKit Permissions constants for every vital we
  * read in `getHealthKitVitalTrend`, so `initializeHealthKit` can request
- * them up-front and avoid per-metric permission prompts later. Skips any
- * constant the installed react-native-health version doesn't expose so a
- * missing identifier degrades silently instead of throwing on init.
+ * them up-front and avoid per-metric permission prompts later.
  */
 export const getHealthKitVitalPermissions = (): string[] => {
   const constants = (AppleHealthKit as unknown as HealthKitExtended)?.Constants?.Permissions as
     | Record<string, string>
     | undefined
-  return Object.values(VITAL_SPECS)
-    .map((spec) => constants?.[spec.permission])
-    .filter((p): p is string => typeof p === 'string')
+  return Object.values(VITAL_SPECS).map((spec) => {
+    return constants?.[spec.permission] ?? spec.permission
+  })
 }
 
 /**
@@ -1167,11 +1287,27 @@ export const getHealthKitVitalTrend = (
       return
     }
 
-    // Only heart-rate uses an inferred default fetcher; steps + active-energy
-    // declare `spec.fetcher` explicitly because their HealthKit method names
-    // don't follow the get<Metric>Samples convention. Sleep is handled by
-    // the dedicated path above.
-    const inferredFetcher = metric === 'heart-rate' ? 'getHeartRateSamples' : ''
+    // Inferred default fetcher names for the original 9 clinical vitals.
+    // Fitness metrics declare `spec.fetcher` explicitly because their
+    // names don't follow the get<Metric>Samples convention.
+    const inferredFetcher =
+      metric === 'blood-pressure-systolic' || metric === 'blood-pressure-diastolic'
+        ? 'getBloodPressureSamples'
+        : metric === 'blood-glucose'
+          ? 'getBloodGlucoseSamples'
+          : metric === 'body-temperature'
+            ? 'getBodyTemperatureSamples'
+            : metric === 'oxygen-saturation'
+              ? 'getOxygenSaturationSamples'
+              : metric === 'respiratory-rate'
+                ? 'getRespiratoryRateSamples'
+                : metric === 'heart-rate'
+                  ? 'getHeartRateSamples'
+                  : metric === 'weight'
+                    ? 'getWeightSamples'
+                    : metric === 'body-mass-index'
+                      ? 'getBmiSamples'
+                      : ''
     const fetcherName = spec.fetcher ?? inferredFetcher
 
     const fetcher =
@@ -1212,7 +1348,12 @@ export const getHealthKitVitalTrend = (
       // truthful for clinical interpretation.
       const dayBuckets = new Map<string, { sum: number; count: number; lastDate: string }>()
       for (const sample of raw as Record<string, unknown>[]) {
-        const rawValue = sample.value as number | undefined
+        const rawValue =
+          metric === 'blood-pressure-systolic'
+            ? (sample.bloodPressureSystolicValue as number | undefined)
+            : metric === 'blood-pressure-diastolic'
+              ? (sample.bloodPressureDiastolicValue as number | undefined)
+              : (sample.value as number | undefined)
         if (rawValue === undefined || rawValue === null || Number.isNaN(rawValue)) continue
         const value = spec.scale ? spec.scale(rawValue) : rawValue
         const dateIso = (sample.startDate as string | undefined) ?? ''

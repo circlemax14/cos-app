@@ -35,7 +35,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>16</string>
+	<string>17</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -49,10 +49,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSCalendarsUsageDescription</key>
-	<string>Circle Support Health reads your calendar so personal appointments appear alongside your medical visits in one place. Event details stay on this device.</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Circle Support Health reads your calendar so personal appointments appear alongside your medical visits in one place. Event details stay on this device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Circle Support Health needs camera access to photograph documents and prescriptions.</string>
 	<key>NSContactsUsageDescription</key>
@@ -76,7 +72,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
-		<string>fetch</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>

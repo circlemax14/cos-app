@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "16",
+      "buildNumber": "17",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"
@@ -23,10 +23,8 @@
         "NSFaceIDUsageDescription": "Circle Support Health uses Face ID to securely unlock your health information.",
         "NSHealthShareUsageDescription": "Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.",
         "NSHealthUpdateUsageDescription": "Circle Support Health updates your health data so your care team has the latest information.",
-        "NSCalendarsUsageDescription": "Circle Support Health reads your calendar so personal appointments appear alongside your medical visits in one place. Event details stay on this device.",
         "UIBackgroundModes": [
-          "remote-notification",
-          "fetch"
+          "remote-notification"
         ],
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -62,32 +60,7 @@
       ],
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "com.google.android.gms.permission.AD_ID",
-        "android.permission.READ_CALENDAR",
-        "android.permission.health.READ_STEPS",
-        "android.permission.health.READ_HEART_RATE",
-        "android.permission.health.READ_RESTING_HEART_RATE",
-        "android.permission.health.READ_HEART_RATE_VARIABILITY",
-        "android.permission.health.READ_BLOOD_PRESSURE",
-        "android.permission.health.READ_BLOOD_GLUCOSE",
-        "android.permission.health.READ_BODY_TEMPERATURE",
-        "android.permission.health.READ_OXYGEN_SATURATION",
-        "android.permission.health.READ_RESPIRATORY_RATE",
-        "android.permission.health.READ_WEIGHT",
-        "android.permission.health.READ_HEIGHT",
-        "android.permission.health.READ_BODY_FAT",
-        "android.permission.health.READ_LEAN_BODY_MASS",
-        "android.permission.health.READ_DISTANCE",
-        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
-        "android.permission.health.READ_TOTAL_CALORIES_BURNED",
-        "android.permission.health.READ_FLOORS_CLIMBED",
-        "android.permission.health.READ_EXERCISE",
-        "android.permission.health.READ_SLEEP",
-        "android.permission.health.READ_VO2_MAX",
-        "android.permission.health.READ_SPEED",
-        "android.permission.health.READ_HYDRATION",
-        "android.permission.health.READ_NUTRITION",
-        "android.permission.health.READ_MINDFULNESS"
+        "com.google.android.gms.permission.AD_ID"
       ]
     },
     "web": {
@@ -132,20 +105,13 @@
       "expo-tracking-transparency",
       "expo-web-browser",
       [
-        "expo-calendar",
-        {
-          "calendarPermission": "Circle Support Health reads your calendar so personal appointments appear alongside your medical visits in one place. Event details stay on this device."
-        }
-      ],
-      [
         "@sentry/react-native/expo",
         {
           "url": "https://sentry.io",
           "organization": "circle-support-health",
           "project": "cos-app"
         }
-      ],
-      "react-native-health-connect"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

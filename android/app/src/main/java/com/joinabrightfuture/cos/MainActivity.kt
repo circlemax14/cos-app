@@ -1,4 +1,4 @@
-package ai.circlesupporthealth.csh
+package com.joinabrightfuture.cos
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build
