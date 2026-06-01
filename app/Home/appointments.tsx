@@ -42,6 +42,7 @@ import { CalendarPermissionGate } from '@/components/calendar/CalendarPermission
 import { CalendarMonthView, type MonthDensityMode } from '@/components/calendar/CalendarMonthView'
 import { CalendarYearView } from '@/components/calendar/CalendarYearView'
 import { CalendarDayTimeline } from '@/components/calendar/CalendarDayTimeline'
+import { CalendarWeekTimeline } from '@/components/calendar/CalendarWeekTimeline'
 import { EventListItem } from '@/components/calendar/EventListItem'
 import { useCalendar } from '@/hooks/use-calendar'
 import { useCalendarPermissions } from '@/hooks/use-calendar-permissions'
@@ -59,8 +60,26 @@ import { hapticSelection, hapticImpact } from '@/utils/haptics'
 import { addRecentSearch, clearRecentSearches, getRecentSearches } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
 
-// iPhone Apple Calendar has only these four — no Week view.
-type CalendarViewMode = 'year' | 'month' | 'day' | 'list'
+// Year / Month / Week / Day / List — Week was added in v7 at Ken's
+// request (Apple's iPad + Mac Calendar both include Week; iPhone's
+// doesn't because of screen width, but we support it everywhere now).
+type CalendarViewMode = 'year' | 'month' | 'week' | 'day' | 'list'
+
+/** Shift an ISO date by N weeks (positive or negative), returning ISO. */
+function addWeeks(dayIso: string, delta: number): string {
+  const d = new Date(`${dayIso}T00:00:00`)
+  d.setDate(d.getDate() + delta * 7)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Returns the Sun..Sat ISO range for the week containing dayIso. */
+function weekRangeForDay(dayIso: string): { startIso: string; endIso: string } {
+  const start = new Date(`${dayIso}T00:00:00`)
+  start.setDate(start.getDate() - start.getDay())
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return { startIso: start.toISOString().slice(0, 10), endIso: end.toISOString().slice(0, 10) }
+}
 
 const SEARCH_HEIGHT = 44 // pixel height of the slide-in search bar
 
@@ -128,6 +147,15 @@ function isViewingToday(dayIso: string, view: CalendarViewMode): boolean {
     if (view === 'day') return d.toDateString() === today.toDateString()
     if (view === 'month') {
       return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth()
+    }
+    if (view === 'week') {
+      // True if today falls in the same Sun–Sat range as selectedDay.
+      const dayStart = new Date(d)
+      dayStart.setDate(d.getDate() - d.getDay())
+      const dayEnd = new Date(dayStart)
+      dayEnd.setDate(dayStart.getDate() + 6)
+      const t = today.getTime()
+      return t >= dayStart.getTime() && t <= dayEnd.getTime() + 24 * 60 * 60_000
     }
     if (view === 'year') return d.getFullYear() === today.getFullYear()
     // List view always shows upcoming events; "Today" is always relevant.
@@ -303,6 +331,15 @@ export default function CalendarScreen() {
     switch (activeView) {
       case 'year': return String(new Date(`${selectedDay}T00:00:00`).getFullYear())
       case 'month': return fmtMonthYear(selectedDay)
+      case 'week': {
+        // "Sep 7 – Sep 13, 2026" or "September 7–13, 2026" if same month
+        const { startIso, endIso } = weekRangeForDay(selectedDay)
+        const s = new Date(`${startIso}T00:00:00`)
+        const e = new Date(`${endIso}T00:00:00`)
+        const sameMonth = s.getMonth() === e.getMonth()
+        if (sameMonth) return `${s.toLocaleString(undefined, { month: 'long' })} ${s.getDate()}–${e.getDate()}`
+        return `${s.toLocaleString(undefined, { month: 'short' })} ${s.getDate()} – ${e.toLocaleString(undefined, { month: 'short' })} ${e.getDate()}`
+      }
       case 'day': return fmtDayHeader(selectedDay)
       case 'list': return 'All Events'
     }
@@ -470,6 +507,17 @@ export default function CalendarScreen() {
                 </Text>
               }
               refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />}
+            />
+          ) : activeView === 'week' ? (
+            <CalendarWeekTimeline
+              key={selectedDay}
+              dateIso={selectedDay}
+              events={filteredEvents}
+              onPressEvent={openDetail}
+              onLongPressEmptyHour={(dayIso, h) => openEditor(dayIso, h)}
+              onPressPrevWeek={() => setSelectedDay(addWeeks(selectedDay, -1))}
+              onPressNextWeek={() => setSelectedDay(addWeeks(selectedDay, 1))}
+              onSelectDate={(iso) => { setSelectedDay(iso); setActiveView('day') }}
             />
           ) : activeView === 'day' ? (
             <CalendarDayTimeline
@@ -694,6 +742,7 @@ function CalendarHeader({
   const views: { id: CalendarViewMode; label: string }[] = [
     { id: 'year', label: 'Year' },
     { id: 'month', label: 'Month' },
+    { id: 'week', label: 'Week' },
     { id: 'day', label: 'Day' },
     { id: 'list', label: 'List' },
   ]
