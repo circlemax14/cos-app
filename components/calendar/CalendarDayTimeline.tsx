@@ -19,6 +19,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { IconSymbol } from '@/components/ui/icon-symbol'
 import type { CalendarEvent } from '@/services/calendar'
+import { hapticSelection, hapticImpact } from '@/utils/haptics'
 
 const HOUR_HEIGHT = 56 // px per hour row
 const HOUR_LABEL_WIDTH = 56
@@ -29,7 +30,8 @@ interface Props {
   dateIso: string // YYYY-MM-DD (the day being shown)
   events: CalendarEvent[] // already filtered to this day
   onPressEvent: (event: CalendarEvent) => void
-  onPressEmptyHour?: (hour: number) => void
+  /** Long-press an empty hour → "New Event" prefilled at that hour. */
+  onLongPressEmptyHour?: (hour: number) => void
   /** Optional day-nav handlers — if omitted the arrows are hidden. */
   onPressPrevDay?: () => void
   onPressNextDay?: () => void
@@ -41,7 +43,7 @@ export function CalendarDayTimeline({
   dateIso,
   events,
   onPressEvent,
-  onPressEmptyHour,
+  onLongPressEmptyHour,
   onPressPrevDay,
   onPressNextDay,
   onSelectDate,
@@ -97,7 +99,7 @@ export function CalendarDayTimeline({
         <View style={[styles.dayNavRow, { borderBottomColor: colors.border }]}>
           {onPressPrevDay && (
             <Pressable
-              onPress={onPressPrevDay}
+              onPress={() => { hapticSelection(); onPressPrevDay() }}
               hitSlop={10}
               style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
               accessibilityRole="button"
@@ -111,7 +113,7 @@ export function CalendarDayTimeline({
           </Text>
           {onPressNextDay && (
             <Pressable
-              onPress={onPressNextDay}
+              onPress={() => { hapticSelection(); onPressNextDay() }}
               hitSlop={10}
               style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
               accessibilityRole="button"
@@ -136,7 +138,7 @@ export function CalendarDayTimeline({
             return (
               <Pressable
                 key={d.iso}
-                onPress={() => onSelectDate(d.iso)}
+                onPress={() => { hapticSelection(); onSelectDate(d.iso) }}
                 style={styles.weekDayCol}
                 accessibilityRole="button"
                 accessibilityLabel={`Select ${d.long}`}
@@ -200,10 +202,19 @@ export function CalendarDayTimeline({
           {hours.map((h) => (
             <Pressable
               key={h}
-              onPress={() => onPressEmptyHour?.(h)}
+              // Apple uses long-press to create at this hour. Short-tap
+              // on an empty hour does nothing (so the user can scroll
+              // without accidental creates).
+              onLongPress={() => {
+                if (!onLongPressEmptyHour) return
+                hapticImpact('medium')
+                onLongPressEmptyHour(h)
+              }}
+              delayLongPress={350}
               style={[styles.hourRow, { borderBottomColor: colors.border, height: HOUR_HEIGHT }]}
               accessibilityRole="button"
-              accessibilityLabel={`Create event at ${formatHourLabel(h)}`}
+              accessibilityLabel={`${formatHourLabel(h)} slot`}
+              accessibilityHint={onLongPressEmptyHour ? 'Long press to create event at this hour' : undefined}
             >
               <View style={[styles.hourLabel, { width: HOUR_LABEL_WIDTH }]}>
                 <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textAlign: 'right' }}>

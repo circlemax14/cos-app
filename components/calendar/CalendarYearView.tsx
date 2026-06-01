@@ -31,6 +31,10 @@ interface Props {
   year: number
   events: CalendarEvent[]
   onJumpToMonth: (yyyyMmDd: string) => void
+  /** Tap a day inside a mini grid → jump to Day view at that day. */
+  onJumpToDay?: (yyyyMmDd: string) => void
+  /** Long-press a day inside a mini grid → "New Event" prefilled there. */
+  onLongPressDay?: (yyyyMmDd: string) => void
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -43,7 +47,7 @@ const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 // virtualization keeps memory low: only on-screen years actually render.
 const YEAR_RANGE = 50
 
-export function CalendarYearView({ year, events, onJumpToMonth }: Props) {
+export function CalendarYearView({ year, events, onJumpToMonth, onJumpToDay, onLongPressDay }: Props) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
@@ -75,6 +79,8 @@ export function CalendarYearView({ year, events, onJumpToMonth }: Props) {
           daysWithEvents={daysWithEvents}
           todayIso={todayIso}
           onJumpToMonth={onJumpToMonth}
+          onJumpToDay={onJumpToDay}
+          onLongPressDay={onLongPressDay}
           getScaledFontSize={getScaledFontSize}
           textColor={colors.text}
           subColor={colors.subtext}
@@ -114,6 +120,8 @@ interface YearSectionProps {
   daysWithEvents: Set<string>
   todayIso: string
   onJumpToMonth: (yyyyMmDd: string) => void
+  onJumpToDay?: (yyyyMmDd: string) => void
+  onLongPressDay?: (yyyyMmDd: string) => void
   getScaledFontSize: (n: number) => number
   textColor: string
   subColor: string
@@ -122,7 +130,7 @@ interface YearSectionProps {
 }
 
 function YearSection({
-  year, daysWithEvents, todayIso, onJumpToMonth,
+  year, daysWithEvents, todayIso, onJumpToMonth, onJumpToDay, onLongPressDay,
   getScaledFontSize, textColor, subColor, accentColor, borderColor,
 }: YearSectionProps) {
   const { width } = useWindowDimensions()
@@ -163,6 +171,8 @@ function YearSection({
             onPress={() =>
               onJumpToMonth(`${year}-${String(idx + 1).padStart(2, '0')}-01`)
             }
+            onJumpToDay={onJumpToDay}
+            onLongPressDay={onLongPressDay}
           />
         ))}
       </View>
@@ -184,11 +194,14 @@ interface MonthMiniCardProps {
   accentColor: string
   borderColor: string
   onPress: () => void
+  onJumpToDay?: (yyyyMmDd: string) => void
+  onLongPressDay?: (yyyyMmDd: string) => void
 }
 
 function MonthMiniCard({
   name, longName, year, monthIndex, width, daysWithEvents, todayIso,
   getScaledFontSize, textColor, subColor, accentColor, borderColor, onPress,
+  onJumpToDay, onLongPressDay,
 }: MonthMiniCardProps) {
   const grid = useMemo(() => buildMonthGrid(year, monthIndex), [year, monthIndex])
   const currentMonth = year === new Date().getFullYear() && monthIndex === new Date().getMonth()
@@ -231,7 +244,8 @@ function MonthMiniCard({
             </View>
           ))}
         </View>
-        {/* Day cells */}
+        {/* Day cells — each in-month cell is tappable (jump to Day view)
+            and long-pressable (New Event prefilled). */}
         {grid.map((row, ri) => (
           <View key={ri} style={{ flexDirection: 'row' }}>
             {row.map((cell, ci) => {
@@ -241,17 +255,14 @@ function MonthMiniCard({
               const dateIso = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(cell).padStart(2, '0')}`
               const isToday = dateIso === todayIso
               const hasEvents = daysWithEvents.has(dateIso)
-              return (
-                <View
-                  key={ci}
-                  style={{ width: cellSize, height: cellSize, alignItems: 'center', justifyContent: 'center' }}
-                >
+              const cellInner = (
+                <>
                   <View
                     style={{
                       width: cellSize * 0.7,
                       height: cellSize * 0.7,
                       borderRadius: cellSize,
-                      backgroundColor: isToday ? '#FF3B30' : 'transparent', // Apple's "today" red
+                      backgroundColor: isToday ? '#FF3B30' : 'transparent',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
@@ -271,14 +282,43 @@ function MonthMiniCard({
                       style={{
                         position: 'absolute',
                         bottom: 0,
+                        // Apple uses a neutral gray dot (~50% gray) for
+                        // "events present" — accentColor (blue) is too
+                        // loud for a 1×1 indicator.
                         width: 3,
                         height: 3,
                         borderRadius: 2,
-                        backgroundColor: accentColor,
+                        backgroundColor: subColor,
                       }}
                     />
                   )}
-                </View>
+                </>
+              )
+
+              // If either gesture handler is provided, wrap in Pressable;
+              // otherwise plain View (no extra render cost).
+              if (!onJumpToDay && !onLongPressDay) {
+                return (
+                  <View
+                    key={ci}
+                    style={{ width: cellSize, height: cellSize, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {cellInner}
+                  </View>
+                )
+              }
+              return (
+                <Pressable
+                  key={ci}
+                  onPress={onJumpToDay ? () => onJumpToDay(dateIso) : undefined}
+                  onLongPress={onLongPressDay ? () => onLongPressDay(dateIso) : undefined}
+                  delayLongPress={350}
+                  style={{ width: cellSize, height: cellSize, alignItems: 'center', justifyContent: 'center' }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${longName} ${cell}, ${year}${isToday ? ', today' : ''}`}
+                >
+                  {cellInner}
+                </Pressable>
               )
             })}
           </View>

@@ -52,6 +52,7 @@ import {
 import { registerCalendarSync } from '@/services/calendar-sync'
 import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
+import { hapticSelection, hapticImpact } from '@/utils/haptics'
 
 // iPhone Apple Calendar has only these four — no Week view.
 type CalendarViewMode = 'year' | 'month' | 'day' | 'list'
@@ -89,6 +90,44 @@ function fmtMonthYear(dayIso: string): string {
 function fmtDayHeader(dayIso: string): string {
   try { return new Date(dayIso).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }
   catch { return dayIso }
+}
+
+/** Returns a small day-of-week subtitle that complements the big title. */
+function fmtDaySubtitle(dayIso: string, view: CalendarViewMode): string {
+  if (view === 'day' || view === 'list') return '' // already in main title
+  try {
+    const d = new Date(`${dayIso}T00:00:00`)
+    if (view === 'month') {
+      // Apple shows "Today, June 1" or "Selected: June 1" — we keep
+      // it compact: only show when selected day != today.
+      const todayD = new Date()
+      if (d.toDateString() === todayD.toDateString()) return 'Today'
+      return d.toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+    }
+    if (view === 'year') {
+      const now = new Date()
+      if (d.getFullYear() === now.getFullYear()) return 'This year'
+      if (d.getFullYear() === now.getFullYear() + 1) return 'Next year'
+      if (d.getFullYear() === now.getFullYear() - 1) return 'Last year'
+      return ''
+    }
+    return ''
+  } catch { return '' }
+}
+
+/** Is the currently-selected day today? Drives the "Today" button visibility. */
+function isViewingToday(dayIso: string, view: CalendarViewMode): boolean {
+  try {
+    const today = new Date()
+    const d = new Date(`${dayIso}T00:00:00`)
+    if (view === 'day') return d.toDateString() === today.toDateString()
+    if (view === 'month') {
+      return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth()
+    }
+    if (view === 'year') return d.getFullYear() === today.getFullYear()
+    // List view always shows upcoming events; "Today" is always relevant.
+    return false
+  } catch { return false }
 }
 
 function groupByDay(events: CalendarEvent[]): { day: string; items: CalendarEvent[] }[] {
@@ -215,6 +254,16 @@ export default function CalendarScreen() {
     }
   }, [activeView, selectedDay])
 
+  const headerSubtitle = useMemo(
+    () => fmtDaySubtitle(selectedDay, activeView),
+    [selectedDay, activeView],
+  )
+
+  const viewingToday = useMemo(
+    () => isViewingToday(selectedDay, activeView),
+    [selectedDay, activeView],
+  )
+
   return (
     <AppWrapper showFooter showHamburgerIcon showBellIcon>
       <CalendarPermissionGate permissions={permissions}>
@@ -223,6 +272,8 @@ export default function CalendarScreen() {
             activeView={activeView}
             onChangeView={setActiveView}
             label={headerLabel}
+            subtitle={headerSubtitle}
+            viewingToday={viewingToday}
             onJumpToday={() => setSelectedDay(todayIso())}
             onToggleSearch={() => setShowSearch((p) => !p)}
             onOpenSettings={() => router.push('/Home/calendar-settings' as never)}
@@ -244,8 +295,18 @@ export default function CalendarScreen() {
               year={new Date(`${selectedDay}T00:00:00`).getFullYear()}
               events={filteredEvents}
               onJumpToMonth={(iso) => {
+                hapticImpact('light')
                 setSelectedDay(iso)
                 setActiveView('month')
+              }}
+              onJumpToDay={(iso) => {
+                hapticImpact('light')
+                setSelectedDay(iso)
+                setActiveView('day')
+              }}
+              onLongPressDay={(iso) => {
+                hapticImpact('medium')
+                openEditor(iso)
               }}
             />
           ) : activeView === 'month' ? (
@@ -262,6 +323,8 @@ export default function CalendarScreen() {
                   onSelectDate={setSelectedDay}
                   onMonthChange={(iso) => setSelectedDay(iso)}
                   density={monthDensity}
+                  onLongPressDate={(iso) => openEditor(iso)}
+                  onJumpToDayView={(iso) => { setSelectedDay(iso); setActiveView('day') }}
                 />
               }
               ListEmptyComponent={
@@ -277,7 +340,7 @@ export default function CalendarScreen() {
               dateIso={selectedDay}
               events={eventsForSelectedDay}
               onPressEvent={openDetail}
-              onPressEmptyHour={(h) => openEditor(selectedDay, h)}
+              onLongPressEmptyHour={(h) => openEditor(selectedDay, h)}
               onPressPrevDay={() => setSelectedDay(addDays(selectedDay, -1))}
               onPressNextDay={() => setSelectedDay(addDays(selectedDay, 1))}
               onSelectDate={setSelectedDay}
@@ -389,6 +452,8 @@ interface HeaderProps {
   activeView: CalendarViewMode
   onChangeView: (v: CalendarViewMode) => void
   label: string
+  subtitle: string
+  viewingToday: boolean
   onJumpToday: () => void
   onToggleSearch: () => void
   onOpenSettings: () => void
@@ -403,7 +468,8 @@ interface HeaderProps {
 }
 
 function CalendarHeader({
-  activeView, onChangeView, label, onJumpToday, onToggleSearch, onOpenSettings,
+  activeView, onChangeView, label, subtitle, viewingToday,
+  onJumpToday, onToggleSearch, onOpenSettings,
   showSearch, searchAnim, searchQuery, onSearchChange, onClearSearch,
   density, onChangeDensity, showDensityToggle,
 }: HeaderProps) {
@@ -420,15 +486,26 @@ function CalendarHeader({
   return (
     <View style={[styles.header, { borderBottomColor: colors.border }]}>
       <View style={styles.headerRow}>
-        <Text
-          style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(28) }]}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text
+            style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(34) }]}
+            numberOfLines={1}
+            allowFontScaling={false}
+          >
+            {label}
+          </Text>
+          {subtitle.length > 0 && (
+            <Text
+              style={[styles.headerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}
+              numberOfLines={1}
+            >
+              {subtitle}
+            </Text>
+          )}
+        </View>
         <View style={styles.headerActions}>
           <Pressable
-            onPress={onToggleSearch}
+            onPress={() => { hapticSelection(); onToggleSearch() }}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
             accessibilityRole="button"
@@ -439,7 +516,7 @@ function CalendarHeader({
           </Pressable>
           {showDensityToggle && (
             <Pressable
-              onPress={() => setShowDensityMenu((p) => !p)}
+              onPress={() => { hapticSelection(); setShowDensityMenu((p) => !p) }}
               hitSlop={8}
               style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
               accessibilityRole="button"
@@ -449,17 +526,22 @@ function CalendarHeader({
               <IconSymbol name="square.grid.2x2" size={getScaledFontSize(20)} color={colors.tint} />
             </Pressable>
           )}
+          {/* "Today" only renders when you're NOT already on today —
+              Apple hides it as a small visual cue you're in the current
+              context. Saves header space too. */}
+          {!viewingToday && (
+            <Pressable
+              onPress={() => { hapticSelection(); onJumpToday() }}
+              hitSlop={6}
+              style={({ pressed }) => [styles.todayBtn, { borderColor: colors.tint, opacity: pressed ? 0.5 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to today"
+            >
+              <Text style={[styles.todayText, { color: colors.tint, fontSize: getScaledFontSize(13) }]}>Today</Text>
+            </Pressable>
+          )}
           <Pressable
-            onPress={onJumpToday}
-            hitSlop={6}
-            style={({ pressed }) => [styles.todayBtn, { borderColor: colors.tint, opacity: pressed ? 0.5 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Jump to today"
-          >
-            <Text style={[styles.todayText, { color: colors.tint, fontSize: getScaledFontSize(13) }]}>Today</Text>
-          </Pressable>
-          <Pressable
-            onPress={onOpenSettings}
+            onPress={() => { hapticSelection(); onOpenSettings() }}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
             accessibilityRole="button"
@@ -561,8 +643,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  // Apple's title is 28pt SF Pro Display bold, tight letter spacing
-  headerLabel: { fontWeight: '700', flex: 1, marginRight: 8, letterSpacing: -0.4 },
+  // Apple's iOS 18 Calendar title is 34pt SF Pro Display bold, tight
+  // letter spacing, with a 13pt subtitle below (when meaningful).
+  headerLabel: { fontWeight: '700', letterSpacing: -0.6 },
+  headerSubtitle: { fontWeight: '400', marginTop: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   iconBtn: { paddingHorizontal: 6, paddingVertical: 4 },
   todayBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
