@@ -22,6 +22,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Pressable,
@@ -44,6 +45,7 @@ import { EventListItem } from '@/components/calendar/EventListItem'
 import { useCalendar } from '@/hooks/use-calendar'
 import { useCalendarPermissions } from '@/hooks/use-calendar-permissions'
 import {
+  deleteEvent,
   getReminderPermissionStatus,
   requestReminderPermission,
   virtualEventFromAppEntity,
@@ -243,6 +245,30 @@ export default function CalendarScreen() {
     [filteredEvents, selectedDay],
   )
 
+  const handleDeleteEvent = useCallback(async (ev: CalendarEvent) => {
+    Alert.alert(
+      'Delete event?',
+      `"${ev.title}" will be removed from your calendar. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            hapticImpact('medium')
+            const ok = await deleteEvent(ev.id)
+            if (ok) {
+              hapticImpact('light')
+              void refresh()
+            } else {
+              Alert.alert('Could not delete', 'Check your calendar permissions and try again.')
+            }
+          },
+        },
+      ],
+    )
+  }, [refresh])
+
   const dayGroups = useMemo(() => groupByDay(filteredEvents), [filteredEvents])
 
   const headerLabel = useMemo(() => {
@@ -346,28 +372,73 @@ export default function CalendarScreen() {
               onSelectDate={setSelectedDay}
             />
           ) : (
-            <FlatList
-              data={dayGroups}
-              keyExtractor={(g) => g.day}
-              renderItem={({ item }) => (
-                <View>
-                  <View style={[styles.dayHeader, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.dayHeaderText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-                      {fmtDayHeader(item.day).toUpperCase()}
-                    </Text>
-                  </View>
-                  {item.items.map((event) => (
-                    <EventListItem key={event.id} event={event} onPress={() => openDetail(event)} />
-                  ))}
-                </View>
-              )}
-              ListEmptyComponent={
-                <Text style={[styles.empty, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-                  {searchQuery ? `No events matching "${searchQuery}"` : 'No upcoming events'}
-                </Text>
+            // ── List view ─────────────────────────────────────────────
+            // E1: sticky day headers via stickyHeaderIndices over a
+            // flattened (header + items) array so each header pins as
+            // you scroll past it (Apple behavior).
+            // E2: TODAY's section header is rendered in red.
+            // E3: empty state uses a large gray icon.
+            // E5: writable device events expose swipe-left → Delete.
+            (() => {
+              const flat: Array<{ type: 'header'; day: string } | { type: 'event'; ev: CalendarEvent }> = []
+              const stickyIndices: number[] = []
+              const today = todayIso()
+              for (const g of dayGroups) {
+                stickyIndices.push(flat.length)
+                flat.push({ type: 'header', day: g.day })
+                for (const ev of g.items) flat.push({ type: 'event', ev })
               }
-              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />}
-            />
+              const isWritableDevice = (e: CalendarEvent) =>
+                e.origin === 'device' && (e.source.allowsWrite ?? false)
+              return (
+                <FlatList
+                  data={flat}
+                  keyExtractor={(it, i) => it.type === 'header' ? `h:${it.day}` : `e:${it.ev.id}:${i}`}
+                  stickyHeaderIndices={stickyIndices}
+                  renderItem={({ item }) => {
+                    if (item.type === 'header') {
+                      const isToday = item.day === today
+                      return (
+                        <View style={[
+                          styles.dayHeader,
+                          {
+                            backgroundColor: colors.background,
+                            borderBottomColor: colors.border,
+                          },
+                        ]}>
+                          <Text style={[
+                            styles.dayHeaderText,
+                            {
+                              color: isToday ? '#FF3B30' : colors.subtext,
+                              fontSize: getScaledFontSize(12),
+                            },
+                          ]}>
+                            {(isToday ? 'TODAY · ' : '') + fmtDayHeader(item.day).toUpperCase()}
+                          </Text>
+                        </View>
+                      )
+                    }
+                    const ev = item.ev
+                    return (
+                      <EventListItem
+                        event={ev}
+                        onPress={() => openDetail(ev)}
+                        onDelete={isWritableDevice(ev) ? () => handleDeleteEvent(ev) : undefined}
+                      />
+                    )
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.emptyView}>
+                      <IconSymbol name="calendar" size={getScaledFontSize(56)} color={colors.subtext} />
+                      <Text style={[styles.emptyText, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
+                        {searchQuery ? `No events matching "${searchQuery}"` : 'No upcoming events'}
+                      </Text>
+                    </View>
+                  }
+                  refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />}
+                />
+              )
+            })()
           )}
 
           <Pressable
@@ -667,6 +738,8 @@ const styles = StyleSheet.create({
   viewBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
   viewBtnText: { fontWeight: '500', letterSpacing: -0.1 },
   empty: { textAlign: 'center', padding: 32 },
+  emptyView: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
+  emptyText: { textAlign: 'center', paddingHorizontal: 32 },
   dayHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
   // Positioned ~16px above the bottom nav (footer height ≈ 64px → fab

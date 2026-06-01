@@ -1,5 +1,6 @@
 import React from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Swipeable } from 'react-native-gesture-handler'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import type { CalendarEvent } from '@/services/calendar'
@@ -9,6 +10,13 @@ interface Props {
   onPress?: () => void
   /** Hide the date — useful when the parent already shows the day header. */
   compact?: boolean
+  /**
+   * Swipe-left actions. If provided, the row becomes a Swipeable with
+   * a red "Delete" button revealed on left swipe.
+   * Only writable device-calendar events should expose this — virtual
+   * app events / past visits should be hidden via the parent.
+   */
+  onDelete?: () => void
 }
 
 function formatTime(iso: string): string {
@@ -33,7 +41,7 @@ function formatDuration(start: string, end: string): string {
   }
 }
 
-export function EventListItem({ event, onPress, compact }: Props) {
+export function EventListItem({ event, onPress, compact, onDelete }: Props) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const isAllDay = event.allDay
@@ -42,7 +50,35 @@ export function EventListItem({ event, onPress, compact }: Props) {
 
   const isReminder = event.origin === 'reminder'
   const isCompleted = !!event.completed
-  return (
+
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+    _drag: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const translateX = progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [80, 0],
+    })
+    return (
+      <Animated.View style={{ transform: [{ translateX }] }}>
+        <Pressable
+          onPress={onDelete}
+          style={({ pressed }) => [
+            styles.deleteAction,
+            { backgroundColor: '#FF3B30', opacity: pressed ? 0.85 : 1 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Delete event"
+        >
+          <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: '700' }}>
+            Delete
+          </Text>
+        </Pressable>
+      </Animated.View>
+    )
+  }
+
+  const row = (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
@@ -100,6 +136,18 @@ export function EventListItem({ event, onPress, compact }: Props) {
       </View>
     </Pressable>
   )
+
+  if (!onDelete) return row
+
+  return (
+    <Swipeable
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      rightThreshold={40}
+    >
+      {row}
+    </Swipeable>
+  )
 }
 
 const styles = StyleSheet.create({
@@ -111,4 +159,10 @@ const styles = StyleSheet.create({
   meta: { marginTop: 2 },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   badgeText: { fontWeight: '600', letterSpacing: 0.3 },
+  deleteAction: {
+    width: 80,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 })
