@@ -225,14 +225,15 @@ export function CalendarDayTimeline({
             </Pressable>
           ))}
 
-          {/* Event blocks layered on top */}
+          {/* Event blocks layered on top, with D6 concurrent-column
+              layout: overlapping events sit side-by-side, each occupying
+              1/N of the available column width. */}
           <View
             style={[styles.eventLayer, { left: HOUR_LABEL_WIDTH + 8, right: 8, top: TIMELINE_TOP_PAD }]}
             pointerEvents="box-none"
           >
-            {timed.map((e) => {
-              const layout = computeLayout(e, dateIso)
-              if (!layout) return null
+            {layoutTimedEvents(timed, dateIso).map(({ event: e, layout, columnIndex, columnCount }) => {
+              const widthPct = 100 / columnCount
               return (
                 <Pressable
                   key={e.id}
@@ -242,6 +243,8 @@ export function CalendarDayTimeline({
                     {
                       top: layout.top,
                       height: layout.height,
+                      left: `${columnIndex * widthPct}%`,
+                      width: `${widthPct}%`,
                       backgroundColor: e.source.color + '22',
                       borderLeftColor: e.source.color,
                     },
@@ -255,7 +258,7 @@ export function CalendarDayTimeline({
                   >
                     {e.title}
                   </Text>
-                  {layout.height >= 40 && (
+                  {layout.height >= 40 && columnCount === 1 && (
                     <Text style={[styles.eventTime, { color: colors.subtext, fontSize: getScaledFontSize(11) }]} numberOfLines={1}>
                       {layout.timeLabel}
                       {e.location ? ` · ${e.location}` : ''}
@@ -326,6 +329,92 @@ interface BlockLayout {
   top: number
   height: number
   timeLabel: string
+}
+
+interface PositionedEvent {
+  event: CalendarEvent
+  layout: BlockLayout
+  columnIndex: number
+  columnCount: number
+}
+
+/**
+ * Lay out timed events for a day, handling concurrent events by
+ * assigning each overlapping group a column index + total column count.
+ * Implementation:
+ *   1. Compute (top, bottom) y-pixel range per event.
+ *   2. Sort by top, then by bottom.
+ *   3. Scan top-to-bottom; events whose top is before any prior
+ *      event's bottom belong to the same "cluster". Within the cluster,
+ *      greedily assign each new event to the lowest free column.
+ *   4. After the scan, every event in a cluster knows its column index
+ *      and the cluster's total column count.
+ */
+function layoutTimedEvents(events: CalendarEvent[], dayIso: string): PositionedEvent[] {
+  type Computed = { event: CalendarEvent; layout: BlockLayout; top: number; bottom: number }
+  const computed: Computed[] = []
+  for (const e of events) {
+    const layout = computeLayout(e, dayIso)
+    if (!layout) continue
+    computed.push({ event: e, layout, top: layout.top, bottom: layout.top + layout.height })
+  }
+  computed.sort((a, b) => (a.top - b.top) || (a.bottom - b.bottom))
+
+  // Greedy cluster + column assignment
+  const result: PositionedEvent[] = []
+  let cluster: Computed[] = []
+  let clusterEnd = -1
+  const flushCluster = () => {
+    if (cluster.length === 0) return
+    // Assign columns greedily by scanning sorted-by-top.
+    // columnEnds[i] = bottom of last event placed in column i.
+    const columnEnds: number[] = []
+    const columnByIndex: number[] = []
+    for (let i = 0; i < cluster.length; i++) {
+      const item = cluster[i]
+      let placed = false
+      for (let c = 0; c < columnEnds.length; c++) {
+        if (columnEnds[c] <= item.top) {
+          columnByIndex[i] = c
+          columnEnds[c] = item.bottom
+          placed = true
+          break
+        }
+      }
+      if (!placed) {
+        columnByIndex[i] = columnEnds.length
+        columnEnds.push(item.bottom)
+      }
+    }
+    const columnCount = columnEnds.length
+    for (let i = 0; i < cluster.length; i++) {
+      const item = cluster[i]
+      result.push({
+        event: item.event,
+        layout: item.layout,
+        columnIndex: columnByIndex[i],
+        columnCount,
+      })
+    }
+    cluster = []
+    clusterEnd = -1
+  }
+
+  for (const item of computed) {
+    if (cluster.length === 0) {
+      cluster.push(item)
+      clusterEnd = item.bottom
+    } else if (item.top < clusterEnd) {
+      cluster.push(item)
+      clusterEnd = Math.max(clusterEnd, item.bottom)
+    } else {
+      flushCluster()
+      cluster.push(item)
+      clusterEnd = item.bottom
+    }
+  }
+  flushCluster()
+  return result
 }
 
 function computeLayout(event: CalendarEvent, dayIso: string): BlockLayout | null {

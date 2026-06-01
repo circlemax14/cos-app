@@ -109,7 +109,12 @@ function StackWithAppLock() {
       <Stack.Screen
         name="calendar-event-editor"
         options={{
-          presentation: 'modal',
+          // K5: Apple uses a half-sheet (formSheet on iOS 15+) for
+          // the New Event flow — the user can dismiss with a downward
+          // swipe. formSheet falls back gracefully on Android.
+          presentation: 'formSheet',
+          sheetAllowedDetents: [0.6, 1.0],
+          sheetGrabberVisible: true,
           title: 'New Event',
           headerShown: false,
         }}

@@ -54,6 +54,22 @@ interface DayEventSummary {
   titles: { color: string; title: string }[]
 }
 
+/**
+ * One slice of a multi-day event landing on a given day. The same
+ * underlying event yields one MultiDayLane entry per day in its span;
+ * laneIndex is shared across all slices of the same event so the bar
+ * renders at the same Y offset on each consecutive day → visually
+ * continuous bar across the week row.
+ */
+interface MultiDayLane {
+  eventId: string
+  title: string
+  color: string
+  laneIndex: number
+  isStart: boolean
+  isEnd: boolean
+}
+
 export function CalendarMonthView({
   events,
   selectedDate,
@@ -83,6 +99,63 @@ export function CalendarMonthView({
       }
       map.set(day, bucket)
     }
+    return map
+  }, [events])
+
+  // C2: multi-day event spans. For every event whose start and end
+  // dates differ, place it in a lane (= vertical row within the cell's
+  // event area). Slices of the same event share the lane index, so
+  // adjacent day cells render bars at the same Y offset and visually
+  // form one continuous bar across the week row.
+  const multiDayByDay = useMemo(() => {
+    const multi = events.filter((e) => e.startDate.slice(0, 10) !== e.endDate.slice(0, 10))
+    // Sort by start; ties broken by longer-event-first (visually preferred).
+    multi.sort((a, b) => {
+      const cmp = a.startDate.localeCompare(b.startDate)
+      if (cmp !== 0) return cmp
+      return b.endDate.localeCompare(a.endDate)
+    })
+    // Greedy lane assignment.
+    const laneEnd: string[] = [] // ISO date when each lane is "free" again
+    const eventLane = new Map<string, number>()
+    for (const e of multi) {
+      const s = e.startDate.slice(0, 10)
+      const en = e.endDate.slice(0, 10)
+      let lane = -1
+      for (let i = 0; i < laneEnd.length; i++) {
+        if (laneEnd[i] < s) { lane = i; break }
+      }
+      if (lane === -1) { lane = laneEnd.length; laneEnd.push(en) }
+      else { laneEnd[lane] = en }
+      eventLane.set(e.id, lane)
+    }
+    // Expand: emit one MultiDayLane entry per day in the span.
+    const map = new Map<string, MultiDayLane[]>()
+    for (const e of multi) {
+      const sIso = e.startDate.slice(0, 10)
+      const eIso = e.endDate.slice(0, 10)
+      const lane = eventLane.get(e.id) ?? 0
+      const startD = new Date(`${sIso}T00:00:00`)
+      const endD = new Date(`${eIso}T00:00:00`)
+      // Inclusive day iteration. Cap to a reasonable max (366 days)
+      // so a malformed event with a runaway end date can't loop forever.
+      let guard = 0
+      for (let d = new Date(startD); d.getTime() <= endD.getTime() && guard < 366; d.setDate(d.getDate() + 1), guard++) {
+        const iso = d.toISOString().slice(0, 10)
+        const bucket = map.get(iso) ?? []
+        bucket.push({
+          eventId: e.id,
+          title: e.title,
+          color: e.source.color,
+          laneIndex: lane,
+          isStart: iso === sIso,
+          isEnd: iso === eIso,
+        })
+        map.set(iso, bucket)
+      }
+    }
+    // Sort each day's lanes by laneIndex so render order is stable.
+    for (const arr of map.values()) arr.sort((a, b) => a.laneIndex - b.laneIndex)
     return map
   }, [events])
 
@@ -123,6 +196,7 @@ export function CalendarMonthView({
             isToday={(date?.dateString ?? '') === todayIso}
             isSelected={(date?.dateString ?? '') === selectedDate}
             summary={eventsByDay.get(date?.dateString ?? '')}
+            lanes={multiDayByDay.get(date?.dateString ?? '')}
             density={density}
             colors={colors}
             getScaledFontSize={getScaledFontSize}
@@ -144,6 +218,7 @@ interface DayCellProps {
   isToday: boolean
   isSelected: boolean
   summary: DayEventSummary | undefined
+  lanes: MultiDayLane[] | undefined
   density: MonthDensityMode
   colors: typeof Colors.light
   getScaledFontSize: (n: number) => number
@@ -157,7 +232,7 @@ const DOUBLE_TAP_WINDOW_MS = 300
 
 function DayCell(props: DayCellProps) {
   const {
-    iso, day, disabled, isToday, isSelected, summary, density,
+    iso, day, disabled, isToday, isSelected, summary, lanes, density,
     colors, getScaledFontSize, selectedDate, onSelectDate,
     onLongPressDate, onJumpToDayView,
   } = props
@@ -190,7 +265,12 @@ function DayCell(props: DayCellProps) {
       ? colors.tint
       : 'transparent'
 
-  const cellHeight = density === 'details' ? 84 : density === 'stacked' ? 64 : 56
+  // Cell height grows with density so multi-day lane bars + single-day
+  // indicators don't clip each other. Bumped in v6.10 to accommodate
+  // the C2 multi-day spans on top of the existing per-day visuals.
+  const laneCount = Math.min(lanes?.length ?? 0, 3)
+  const extraForLanes = density === 'details' ? laneCount * 16 : laneCount * 6
+  const cellHeight = (density === 'details' ? 84 : density === 'stacked' ? 64 : 56) + extraForLanes
 
   const handlePress = () => {
     const now = Date.now()
@@ -242,7 +322,51 @@ function DayCell(props: DayCellProps) {
         </Text>
       </View>
 
-      {/* Density-specific event indicators */}
+      {/* C2: Multi-day event spans render BEFORE the single-day
+          indicators so the most-prominent visual is the connected bar
+          across cells. Each lane is a full-width bar with no
+          horizontal margin so adjacent days' bars visually touch.
+          Skipped in Compact density (Apple's Compact mode doesn't
+          show event titles or bars; just a dot). */}
+      {!disabled && lanes && lanes.length > 0 && density !== 'compact' && (
+        <View style={{ width: '100%', paddingHorizontal: 0, marginTop: 2, gap: 2 }}>
+          {lanes.slice(0, 3).map((ln) => (
+            <View
+              key={ln.eventId}
+              style={{
+                width: '100%',
+                // Slightly taller than single-day bars so multi-day
+                // events read as more substantial.
+                height: density === 'details' ? 14 : 6,
+                backgroundColor: ln.color,
+                // Bars meet edge-to-edge across adjacent cells.
+                borderTopLeftRadius: ln.isStart ? 3 : 0,
+                borderBottomLeftRadius: ln.isStart ? 3 : 0,
+                borderTopRightRadius: ln.isEnd ? 3 : 0,
+                borderBottomRightRadius: ln.isEnd ? 3 : 0,
+                justifyContent: 'center',
+                paddingHorizontal: density === 'details' ? 3 : 0,
+              }}
+            >
+              {density === 'details' && ln.isStart && (
+                <Text
+                  style={{ color: '#fff', fontSize: getScaledFontSize(9), fontWeight: '600' }}
+                  numberOfLines={1}
+                >
+                  {ln.title}
+                </Text>
+              )}
+            </View>
+          ))}
+          {lanes.length > 3 && (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(8), textAlign: 'left' }}>
+              +{lanes.length - 3} more
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* Density-specific single-day indicators (after multi-day bars). */}
       {!disabled && summary && (
         <View style={{ width: '100%', alignItems: 'center', paddingHorizontal: 4, marginTop: 2 }}>
           {density === 'compact' && (
