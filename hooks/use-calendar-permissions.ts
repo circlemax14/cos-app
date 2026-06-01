@@ -19,6 +19,7 @@ import { Linking } from 'react-native'
 import {
   getPermissionStatus,
   requestPermission,
+  requestReminderPermission,
   type PermissionState,
 } from '@/services/calendar'
 
@@ -61,6 +62,13 @@ export function useCalendarPermissions(): UseCalendarPermissions {
   const request = useCallback(async () => {
     const next = await requestPermission()
     setState(next)
+    // Also prompt for Reminders permission in the same flow. iOS shows
+    // two sequential dialogs. We don't gate the screen on this — if the
+    // user denies, the calendar still renders, reminders just won't
+    // appear. (NSRemindersFullAccessUsageDescription ships in Info.plist.)
+    if (next.granted) {
+      try { await requestReminderPermission() } catch { /* non-fatal */ }
+    }
   }, [])
 
   const openSettings = useCallback(() => {

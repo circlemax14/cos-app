@@ -41,7 +41,9 @@ export default function CalendarSettingsScreen() {
           style={[styles.root, { backgroundColor: colors.background }]}
           contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
         >
-          <Pressable onPress={() => router.back()} style={styles.backRow}>
+          {/* router.back() from a hidden sibling tab falls through to the
+              Home index, not to the Calendar tab. Route explicitly. */}
+          <Pressable onPress={() => router.replace('/Home/appointments' as never)} style={styles.backRow}>
             <Text style={[styles.backText, { color: colors.tint, fontSize: getScaledFontSize(15) }]}>
               ← Back
             </Text>

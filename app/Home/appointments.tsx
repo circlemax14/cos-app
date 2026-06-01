@@ -43,7 +43,12 @@ import { CalendarDayTimeline } from '@/components/calendar/CalendarDayTimeline'
 import { EventListItem } from '@/components/calendar/EventListItem'
 import { useCalendar } from '@/hooks/use-calendar'
 import { useCalendarPermissions } from '@/hooks/use-calendar-permissions'
-import { virtualEventFromAppEntity, type CalendarEvent } from '@/services/calendar'
+import {
+  getReminderPermissionStatus,
+  requestReminderPermission,
+  virtualEventFromAppEntity,
+  type CalendarEvent,
+} from '@/services/calendar'
 import { registerCalendarSync } from '@/services/calendar-sync'
 import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
@@ -167,6 +172,22 @@ export default function CalendarScreen() {
     if (permissions.state.granted) void registerCalendarSync()
   }, [permissions.state.granted])
 
+  // One-shot Reminders permission prompt for users who already granted
+  // Calendar in a prior build (build 22 shipped without this prompt).
+  // iOS only shows the dialog once; if reminders was never asked we ask
+  // now, otherwise this no-ops.
+  useEffect(() => {
+    if (!permissions.state.granted) return
+    void (async () => {
+      const r = await getReminderPermissionStatus()
+      if (!r.prompted) {
+        try { await requestReminderPermission(); void refresh() } catch { /* non-fatal */ }
+      }
+    })()
+    // refresh ref is stable from useCalendar
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissions.state.granted])
+
   useEffect(() => {
     if (permissions.state.granted && events.length > 0) {
       void reconcileEventNotifications(events, notificationDisabledCalendarIds)
@@ -210,6 +231,9 @@ export default function CalendarScreen() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             onClearSearch={() => { setSearchQuery(''); setShowSearch(false) }}
+            density={monthDensity}
+            onChangeDensity={setMonthDensity}
+            showDensityToggle={activeView === 'month'}
           />
           {isLoading ? (
             <View style={styles.center}>
@@ -232,21 +256,13 @@ export default function CalendarScreen() {
                 <EventListItem event={item} compact onPress={() => openDetail(item)} />
               )}
               ListHeaderComponent={
-                <View>
-                  <DensitySwitcher
-                    density={monthDensity}
-                    onChange={setMonthDensity}
-                    colors={colors}
-                    getScaledFontSize={getScaledFontSize}
-                  />
-                  <CalendarMonthView
-                    events={filteredEvents}
-                    selectedDate={selectedDay}
-                    onSelectDate={setSelectedDay}
-                    onMonthChange={(iso) => setSelectedDay(iso)}
-                    density={monthDensity}
-                  />
-                </View>
+                <CalendarMonthView
+                  events={filteredEvents}
+                  selectedDate={selectedDay}
+                  onSelectDate={setSelectedDay}
+                  onMonthChange={(iso) => setSelectedDay(iso)}
+                  density={monthDensity}
+                />
               }
               ListEmptyComponent={
                 <Text style={[styles.empty, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
@@ -306,53 +322,55 @@ export default function CalendarScreen() {
 }
 
 /**
- * Apple Calendar's Month-density toggle. Apple uses pinch-to-zoom; we
- * surface it as a small segmented chip just above the grid because
- * pinch on a calendar grid is a non-obvious gesture.
+ * Apple Calendar's Month-density dropdown. Apple opens it via a chevron
+ * next to the search icon — we mirror that placement. The menu is an
+ * absolutely-positioned popover anchored to the trigger button.
  */
-function DensitySwitcher({
-  density, onChange, colors, getScaledFontSize,
+function DensityMenu({
+  density, onChange, colors, getScaledFontSize, onClose,
 }: {
   density: MonthDensityMode
   onChange: (m: MonthDensityMode) => void
   colors: typeof Colors.light
   getScaledFontSize: (n: number) => number
+  onClose: () => void
 }) {
-  const modes: { id: MonthDensityMode; label: string }[] = [
-    { id: 'compact', label: 'Compact' },
-    { id: 'stacked', label: 'Stacked' },
-    { id: 'details', label: 'Details' },
+  const modes: { id: MonthDensityMode; label: string; sublabel: string }[] = [
+    { id: 'compact', label: 'Compact', sublabel: 'Day numbers only' },
+    { id: 'stacked', label: 'Stacked', sublabel: 'Color bars by event' },
+    { id: 'details', label: 'Details', sublabel: 'Event titles' },
   ]
   return (
-    <View style={styles.densityRow}>
-      <View style={[styles.densityChip, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-        {modes.map((m) => {
-          const active = m.id === density
-          return (
-            <Pressable
-              key={m.id}
-              onPress={() => onChange(m.id)}
-              style={[
-                styles.densitySegment,
-                { backgroundColor: active ? colors.background : 'transparent' },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`Switch to ${m.label} density`}
-              accessibilityState={{ selected: active }}
-            >
-              <Text
-                style={{
-                  color: active ? colors.text : colors.subtext,
-                  fontSize: getScaledFontSize(12),
-                  fontWeight: active ? '600' : '500',
-                }}
-              >
+    <View style={[styles.densityMenu, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+      {modes.map((m, i) => {
+        const active = m.id === density
+        return (
+          <Pressable
+            key={m.id}
+            onPress={() => { onChange(m.id); onClose() }}
+            style={({ pressed }) => [
+              styles.densityMenuRow,
+              i < modes.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+            accessibilityRole="menuitem"
+            accessibilityLabel={`Switch to ${m.label} density`}
+            accessibilityState={{ selected: active }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: active ? '700' : '500' }}>
                 {m.label}
               </Text>
-            </Pressable>
-          )
-        })}
-      </View>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 1 }}>
+                {m.sublabel}
+              </Text>
+            </View>
+            {active && (
+              <Text style={{ color: colors.tint, fontSize: getScaledFontSize(16), fontWeight: '700' }}>✓</Text>
+            )}
+          </Pressable>
+        )
+      })}
     </View>
   )
 }
@@ -379,14 +397,19 @@ interface HeaderProps {
   searchQuery: string
   onSearchChange: (q: string) => void
   onClearSearch: () => void
+  density: MonthDensityMode
+  onChangeDensity: (m: MonthDensityMode) => void
+  showDensityToggle: boolean
 }
 
 function CalendarHeader({
   activeView, onChangeView, label, onJumpToday, onToggleSearch, onOpenSettings,
   showSearch, searchAnim, searchQuery, onSearchChange, onClearSearch,
+  density, onChangeDensity, showDensityToggle,
 }: HeaderProps) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const [showDensityMenu, setShowDensityMenu] = useState(false)
   const views: { id: CalendarViewMode; label: string }[] = [
     { id: 'year', label: 'Year' },
     { id: 'month', label: 'Month' },
@@ -414,6 +437,18 @@ function CalendarHeader({
           >
             <IconSymbol name="magnifyingglass" size={getScaledFontSize(20)} color={colors.tint} />
           </Pressable>
+          {showDensityToggle && (
+            <Pressable
+              onPress={() => setShowDensityMenu((p) => !p)}
+              hitSlop={8}
+              style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Month view density"
+              accessibilityState={{ expanded: showDensityMenu }}
+            >
+              <IconSymbol name="square.grid.2x2" size={getScaledFontSize(20)} color={colors.tint} />
+            </Pressable>
+          )}
           <Pressable
             onPress={onJumpToday}
             hitSlop={6}
@@ -434,6 +469,28 @@ function CalendarHeader({
           </Pressable>
         </View>
       </View>
+
+      {/* Density dropdown — anchored under the trigger button. Rendered
+          conditionally so it doesn't interfere with header layout. */}
+      {showDensityMenu && showDensityToggle && (
+        <>
+          {/* Tap-outside backdrop dismisses the menu */}
+          <Pressable
+            onPress={() => setShowDensityMenu(false)}
+            style={StyleSheet.absoluteFillObject as never}
+            accessibilityLabel="Dismiss density menu"
+          />
+          <View style={{ alignItems: 'flex-end', paddingHorizontal: 16 }}>
+            <DensityMenu
+              density={density}
+              onChange={onChangeDensity}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              onClose={() => setShowDensityMenu(false)}
+            />
+          </View>
+        </>
+      )}
 
       {/* Animated search bar — slides down when activated. */}
       <Animated.View
@@ -528,20 +585,28 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', padding: 32 },
   dayHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
-  fab: { position: 'absolute', right: 20, bottom: 100, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
+  // Positioned ~16px above the bottom nav (footer height ≈ 64px → fab
+  // bottom ≈ 80px). Closer to the screen edge than v4 (was 100), with
+  // breathing room above the tab bar.
+  fab: { position: 'absolute', right: 20, bottom: 80, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   fabPlus: { color: '#fff', fontSize: 30, fontWeight: '300', lineHeight: 32 },
-  // Density switcher (Apple Month-view pinch alternative)
-  densityRow: { alignItems: 'center', paddingVertical: 8 },
-  densityChip: {
-    flexDirection: 'row',
-    borderRadius: 999,
+  // Density dropdown — anchored under the header trigger icon.
+  densityMenu: {
+    marginTop: 4,
+    minWidth: 200,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    padding: 2,
-    gap: 2,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
-  densitySegment: {
+  densityMenuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 999,
+    paddingVertical: 10,
   },
 })

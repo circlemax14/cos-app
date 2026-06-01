@@ -208,19 +208,36 @@ export default function CalendarEventEditor() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.root, { backgroundColor: colors.background }]}
     >
-      {/* Header */}
+      {/* Header — Apple Calendar's New-Event header is wider (≈56pt total
+          height) with a 17pt centered title and 17pt action buttons. The
+          earlier 12pt vertical padding felt cramped. */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Cancel">
-          <Text style={[styles.headerBtn, { color: colors.tint, fontSize: getScaledFontSize(15) }]}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={({ pressed }) => [styles.headerSide, { opacity: pressed ? 0.5 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+        >
+          <Text style={[styles.headerBtn, { color: colors.tint, fontSize: getScaledFontSize(17) }]}>
             Cancel
           </Text>
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16) }]}>
+        <Text
+          style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(17) }]}
+          numberOfLines={1}
+        >
           {isEditMode ? 'Edit Event' : 'New Event'}
         </Text>
         <Pressable
           onPress={handleSave}
           disabled={!canSave}
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.headerSide,
+            styles.headerSideRight,
+            { opacity: !canSave ? 1 : pressed ? 0.5 : 1 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Save event"
         >
@@ -228,10 +245,10 @@ export default function CalendarEventEditor() {
             style={[
               styles.headerBtn,
               styles.headerBtnPrimary,
-              { color: canSave ? colors.tint : colors.disabled, fontSize: getScaledFontSize(15) },
+              { color: canSave ? colors.tint : colors.disabled, fontSize: getScaledFontSize(17) },
             ]}
           >
-            {isSaving ? 'Saving…' : 'Add'}
+            {isSaving ? 'Saving…' : isEditMode ? 'Save' : 'Add'}
           </Text>
         </Pressable>
       </View>
@@ -544,14 +561,20 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 18,
+    paddingBottom: 16,
+    minHeight: 56,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontWeight: '700' },
-  headerBtn: {},
-  headerBtnPrimary: { fontWeight: '700' },
+  // Left + right halves get equal width so the title can truly center
+  // even when the labels differ ("Cancel" vs "Save"). Apple's iOS UIKit
+  // navbar does the same.
+  headerSide: { flex: 1, alignItems: 'flex-start', paddingVertical: 4 },
+  headerSideRight: { alignItems: 'flex-end' },
+  headerTitle: { fontWeight: '700', textAlign: 'center', flexShrink: 1, letterSpacing: -0.2 },
+  headerBtn: { paddingVertical: 2 },
+  headerBtnPrimary: { fontWeight: '600' },
   field: {
     borderRadius: 12,
     paddingHorizontal: 14,

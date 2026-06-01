@@ -5,6 +5,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NumberPad } from '@/components/ui/number-pad';
 import { PinDots } from '@/components/ui/pin-dots';
 import {
@@ -17,6 +18,25 @@ import {
 import { useSecurity } from '@/stores/security-store';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { getColors, Spacing, Typography } from '@/constants/design-system';
+import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
+
+/**
+ * Resolve the route to land on after a successful unlock. Defaults to
+ * /Home, but if useAppLock captured a pre-lock path we restore that so
+ * the user lands back where they were (Calendar, Reports, etc.) instead
+ * of always bouncing to the Home tab.
+ */
+async function resumeAfterUnlock() {
+  let target = '/Home';
+  try {
+    const saved = await AsyncStorage.getItem(PRE_LOCK_ROUTE_KEY);
+    if (saved && saved.startsWith('/')) target = saved;
+    await AsyncStorage.removeItem(PRE_LOCK_ROUTE_KEY);
+  } catch {
+    // Best-effort; fall through to /Home.
+  }
+  router.replace(target as never);
+}
 
 const MAX_ATTEMPTS = 5;
 
@@ -73,7 +93,7 @@ export default function LockScreen() {
     if (result.success) {
       await resetFailedAttempts();
       setIsLocked(false);
-      router.replace('/Home' as never);
+      await resumeAfterUnlock();
     }
   };
 
@@ -92,7 +112,7 @@ export default function LockScreen() {
     if (valid) {
       await resetFailedAttempts();
       setIsLocked(false);
-      router.replace('/Home' as never);
+      await resumeAfterUnlock();
     } else {
       const attempts = await incrementFailedAttempts();
       const remaining = MAX_ATTEMPTS - attempts;

@@ -14,7 +14,7 @@
  *   - Tap a month → jump to Month view at that month's first day
  */
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef } from 'react'
 import {
   FlatList,
   Pressable,
@@ -37,14 +37,23 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
+// Apple's Year view spans far past + far future as a single continuous
+// scroll. We pre-seed a 100-year range (current ± 50) so the user just
+// scrolls naturally to past or future years — no tap-to-load. FlatList's
+// virtualization keeps memory low: only on-screen years actually render.
+const YEAR_RANGE = 50
+
 export function CalendarYearView({ year, events, onJumpToMonth }: Props) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
-  // Multi-year buffer. We seed with three years around the requested one
-  // and grow via the onEnd / onStart reached callbacks as the user
-  // scrolls. Apple does the same — infinite both directions.
-  const [yearList, setYearList] = useState<number[]>(() => [year - 1, year, year + 1])
+  const yearList = useMemo<number[]>(() => {
+    const list: number[] = []
+    for (let y = year - YEAR_RANGE; y <= year + YEAR_RANGE; y++) list.push(y)
+    return list
+  }, [year])
+
+  const initialScrollIndex = YEAR_RANGE // = position of `year` in yearList
 
   const daysWithEvents = useMemo(() => {
     const set = new Set<string>()
@@ -53,9 +62,11 @@ export function CalendarYearView({ year, events, onJumpToMonth }: Props) {
   }, [events])
 
   const todayIso = new Date().toISOString().slice(0, 10)
+  const listRef = useRef<FlatList<number>>(null)
 
   return (
     <FlatList
+      ref={listRef}
       data={yearList}
       keyExtractor={(y) => String(y)}
       renderItem={({ item: y }) => (
@@ -71,39 +82,32 @@ export function CalendarYearView({ year, events, onJumpToMonth }: Props) {
           borderColor={colors.border}
         />
       )}
-      onEndReached={() => {
-        setYearList((prev) => {
-          const next = prev[prev.length - 1] + 1
-          return prev.includes(next) ? prev : [...prev, next]
-        })
+      initialScrollIndex={initialScrollIndex}
+      // Section heights are roughly the same (title + 4x3 grid), so we
+      // can give FlatList a reasonable getItemLayout for fast jump-scroll.
+      // The exact value is approximate — virtualization tolerates drift.
+      getItemLayout={(_, index) => ({
+        length: ESTIMATED_YEAR_HEIGHT,
+        offset: ESTIMATED_YEAR_HEIGHT * index,
+        index,
+      })}
+      onScrollToIndexFailed={(info) => {
+        // Fallback for the rare case where layout hasn't measured yet.
+        const wait = new Promise((r) => setTimeout(r, 100))
+        wait.then(() => listRef.current?.scrollToIndex({ index: info.index, animated: false }))
       }}
-      onEndReachedThreshold={0.4}
-      // FlatList doesn't natively support "load previous" — when the user
-      // scrolls to the very top we prepend two earlier years and rely on
-      // maintainVisibleContentPosition (iOS) to keep the scroll anchored.
-      maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
-      ListHeaderComponent={
-        <Pressable
-          onPress={() => {
-            setYearList((prev) => {
-              const earliest = prev[0]
-              if (earliest <= 1970) return prev // sanity guard
-              return [earliest - 1, ...prev]
-            })
-          }}
-          style={{ paddingVertical: 12, alignItems: 'center' }}
-          accessibilityRole="button"
-          accessibilityLabel="Load previous year"
-        >
-          <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
-            ↑ Previous year
-          </Text>
-        </Pressable>
-      }
+      // Keep the visually-anchored year stable as cells layout in the bg.
+      maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
       contentContainerStyle={{ paddingBottom: 60 }}
+      removeClippedSubviews
+      windowSize={5}
     />
   )
 }
+
+// Year section ≈ title (50px) + 4 rows × ~110px (3-col mini cards) +
+// padding. ~500px is a fine virtualization estimate.
+const ESTIMATED_YEAR_HEIGHT = 500
 
 interface YearSectionProps {
   year: number
