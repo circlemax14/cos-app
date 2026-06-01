@@ -27,6 +27,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -55,6 +56,7 @@ import { registerCalendarSync } from '@/services/calendar-sync'
 import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
+import { addRecentSearch, clearRecentSearches, getRecentSearches } from '@/services/calendar-recents'
 
 // iPhone Apple Calendar has only these four — no Week view.
 type CalendarViewMode = 'year' | 'month' | 'day' | 'list'
@@ -164,6 +166,7 @@ export default function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<string>(todayIso())
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
   // Apple's Month-view density toggle (pinch-to-zoom on Apple — we
   // expose it as a small chip in the title bar).
   const [monthDensity, setMonthDensity] = useState<MonthDensityMode>('compact')
@@ -179,6 +182,22 @@ export default function CalendarScreen() {
       useNativeDriver: false,
     }).start()
   }, [showSearch, searchAnim])
+
+  // Load recents whenever the search bar opens (cheap; AsyncStorage read).
+  useEffect(() => {
+    if (showSearch) void getRecentSearches().then(setRecentSearches)
+  }, [showSearch])
+
+  // When the user submits a search (≥2 chars), persist it as a recent
+  // so the next open shows it. Debounced via a tiny delay so each
+  // keystroke doesn't write.
+  useEffect(() => {
+    if (!showSearch || searchQuery.trim().length < 2) return
+    const id = setTimeout(() => {
+      void addRecentSearch(searchQuery).then(setRecentSearches)
+    }, 800)
+    return () => clearTimeout(id)
+  }, [searchQuery, showSearch])
 
   const { data: appointments } = useAppointments()
   const appEvents = useMemo<CalendarEvent[]>(() => {
@@ -316,6 +335,87 @@ export default function CalendarScreen() {
             <View style={styles.center}>
               <ActivityIndicator color={colors.tint} />
             </View>
+          ) : showSearch && searchQuery.trim().length === 0 ? (
+            // F4: Recent searches list shown when search is open and
+            // the query is empty. Tap a recent to fill the query.
+            <ScrollView contentContainerStyle={{ paddingTop: 12 }}>
+              <View style={{ paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: '700', letterSpacing: 0.5 }}>
+                  RECENT
+                </Text>
+                {recentSearches.length > 0 && (
+                  <Pressable onPress={() => { void clearRecentSearches().then(() => setRecentSearches([])) }}>
+                    <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '500' }}>Clear</Text>
+                  </Pressable>
+                )}
+              </View>
+              {recentSearches.length === 0 ? (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), paddingHorizontal: 16, paddingVertical: 12 }}>
+                  Your recent searches will appear here.
+                </Text>
+              ) : (
+                recentSearches.map((q) => (
+                  <Pressable
+                    key={q}
+                    onPress={() => { hapticSelection(); setSearchQuery(q) }}
+                    style={({ pressed }) => ({
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: colors.border,
+                      backgroundColor: pressed ? colors.cardBackground : 'transparent',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                    })}
+                  >
+                    <IconSymbol name="clock" size={getScaledFontSize(15)} color={colors.subtext} />
+                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), flex: 1 }}>{q}</Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          ) : showSearch && searchQuery.trim().length > 0 ? (
+            // F2: Flat search-results list — date-grouped, sticky day
+            // headers, NOT scoped to the current view. Apple's behavior.
+            (() => {
+              const flat: Array<{ type: 'header'; day: string } | { type: 'event'; ev: CalendarEvent }> = []
+              const stickyIndices: number[] = []
+              for (const g of dayGroups) {
+                stickyIndices.push(flat.length)
+                flat.push({ type: 'header', day: g.day })
+                for (const ev of g.items) flat.push({ type: 'event', ev })
+              }
+              return (
+                <FlatList
+                  data={flat}
+                  keyExtractor={(it, i) => it.type === 'header' ? `h:${it.day}` : `e:${it.ev.id}:${i}`}
+                  stickyHeaderIndices={stickyIndices}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => {
+                    if (item.type === 'header') {
+                      const isToday = item.day === todayIso()
+                      return (
+                        <View style={[styles.dayHeader, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+                          <Text style={[styles.dayHeaderText, { color: isToday ? '#FF3B30' : colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                            {(isToday ? 'TODAY · ' : '') + fmtDayHeader(item.day).toUpperCase()}
+                          </Text>
+                        </View>
+                      )
+                    }
+                    return <EventListItem event={item.ev} onPress={() => openDetail(item.ev)} />
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.emptyView}>
+                      <IconSymbol name="magnifyingglass" size={getScaledFontSize(56)} color={colors.subtext} />
+                      <Text style={[styles.emptyText, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
+                        No events matching "{searchQuery}"
+                      </Text>
+                    </View>
+                  }
+                />
+              )
+            })()
           ) : activeView === 'year' ? (
             <CalendarYearView
               year={new Date(`${selectedDay}T00:00:00`).getFullYear()}
