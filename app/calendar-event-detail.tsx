@@ -88,7 +88,19 @@ export default function CalendarEventDetail() {
         <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16) }]} numberOfLines={1}>
           Event
         </Text>
-        <View style={{ width: 60 }} />
+        {event && event.origin === 'device' && event.source.allowsWrite ? (
+          <Pressable
+            onPress={() => router.push({ pathname: '/calendar-event-editor', params: { eventId: event.id } } as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Edit event"
+          >
+            <Text style={[styles.headerBtn, styles.headerBtnPrimary, { color: colors.tint, fontSize: getScaledFontSize(15) }]}>
+              Edit
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 60 }} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
@@ -193,6 +205,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontWeight: '700', flex: 1, textAlign: 'center', marginHorizontal: 8 },
   headerBtn: { fontWeight: '600', minWidth: 60 },
+  headerBtnPrimary: { fontWeight: '700', textAlign: 'right' },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 24 },
   colorBar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
   title: { fontWeight: '700', flex: 1 },

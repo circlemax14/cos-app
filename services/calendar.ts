@@ -70,13 +70,16 @@ export interface CalendarEvent {
    *  render a dot or badge without an extra lookup. Falls back to a
    *  best-effort placeholder if the calendar isn't in our cache yet. */
   source: CalendarSource
-  /** Where the event came from. `device` = OS-stored; `app` = virtual
-   *  injected from our backend (past visit, appointment, etc.). */
-  origin: 'device' | 'app'
+  /** Where the event came from. `device` = OS-stored event;
+   *  `reminder` = iOS Reminders app entry; `app` = virtual injected
+   *  from our backend (past visit, appointment, etc.). */
+  origin: 'device' | 'app' | 'reminder'
   /** If origin === 'app', what kind of app entity this represents. */
   appKind?: 'past-visit' | 'appointment' | 'task'
   /** Per-event reminders (offset minutes BEFORE startDate). */
   alarms: number[]
+  /** For reminders: whether marked complete in iOS Reminders. */
+  completed?: boolean
 }
 
 export interface PermissionState {
@@ -409,6 +412,126 @@ export function mergeEvents(deviceEvents: CalendarEvent[], appEvents: CalendarEv
   const merged = [...deviceEvents, ...appEvents]
   merged.sort((a, b) => a.startDate.localeCompare(b.startDate))
   return merged
+}
+
+// ── iOS Reminders integration ─────────────────────────────────────────────
+//
+// iOS keeps Calendar Events and Reminders in two separate EventKit stores.
+// Apple's own Calendar app doesn't normally show Reminders alongside
+// events, but Ken wants them merged. We read both stores and tag each
+// item with `origin` so the UI can render them differently if needed.
+
+export async function getReminderPermissionStatus(): Promise<PermissionState> {
+  try {
+    const status = await Calendar.getRemindersPermissionsAsync()
+    return {
+      granted: status.status === 'granted',
+      prompted: status.status !== 'undetermined',
+      canWrite: status.status === 'granted',
+    }
+  } catch {
+    return { granted: false, prompted: false, canWrite: false }
+  }
+}
+
+export async function requestReminderPermission(): Promise<PermissionState> {
+  try {
+    const status = await Calendar.requestRemindersPermissionsAsync()
+    return {
+      granted: status.status === 'granted',
+      prompted: status.status !== 'undetermined',
+      canWrite: status.status === 'granted',
+    }
+  } catch {
+    return { granted: false, prompted: false, canWrite: false }
+  }
+}
+
+/**
+ * Read iOS Reminders within the window. Reminders without a due date
+ * are EXCLUDED — they'd have nowhere to render on the calendar.
+ */
+export async function readReminders(opts: ReadEventsOptions = {}): Promise<CalendarEvent[]> {
+  if (Platform.OS !== 'ios') return [] // expo-calendar reminders are iOS-only
+  const status = await getReminderPermissionStatus()
+  if (!status.granted) return []
+
+  const windowStart = opts.windowStart ?? defaultWindowStart()
+  const windowEnd = opts.windowEnd ?? defaultWindowEnd()
+
+  let calendars: Calendar.Calendar[]
+  try {
+    calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.REMINDER)
+  } catch {
+    return []
+  }
+  if (calendars.length === 0) return []
+
+  const sourceById = new Map<string, CalendarSource>()
+  for (const c of calendars) {
+    sourceById.set(c.id, {
+      id: c.id,
+      title: c.title ?? 'Reminders',
+      source: c.source?.name ?? 'Reminders',
+      color: c.color ?? '#FF9500', // Apple Reminders orange
+      allowsWrite: c.allowsModifications ?? false,
+    })
+  }
+
+  // Reminders API: pass every calendar id we discovered (rather than
+  // null) so the type checker is happy across expo-calendar 55 minor
+  // versions. Pull incomplete + completed in the window separately so
+  // we can render completed items struck-through (Apple Reminders UX).
+  const calendarIds = calendars.map((c) => c.id)
+  let raw: Calendar.Reminder[]
+  try {
+    const incomplete = await Calendar.getRemindersAsync(
+      calendarIds,
+      Calendar.ReminderStatus.INCOMPLETE,
+      windowStart,
+      windowEnd,
+    )
+    const completed = await Calendar.getRemindersAsync(
+      calendarIds,
+      Calendar.ReminderStatus.COMPLETED,
+      windowStart,
+      windowEnd,
+    )
+    raw = [...incomplete, ...completed]
+  } catch {
+    return []
+  }
+
+  const events: CalendarEvent[] = []
+  for (const r of raw) {
+    // Reminders without a due date have nothing to anchor on the calendar.
+    const due = r.dueDate ?? r.startDate
+    if (!due) continue
+    const dueIso = isoOf(due)
+    const source = sourceById.get(r.calendarId ?? '') ?? {
+      id: r.calendarId ?? 'reminders',
+      title: 'Reminders',
+      source: 'Reminders',
+      color: '#FF9500',
+      allowsWrite: false,
+    }
+    events.push({
+      id: `reminder:${r.id}`,
+      title: r.title ?? '(No title)',
+      startDate: dueIso,
+      endDate: dueIso,
+      allDay: true, // reminders don't have explicit duration; render as all-day pill
+      location: r.location ?? undefined,
+      notes: r.notes ?? undefined,
+      calendarId: r.calendarId ?? '',
+      source,
+      origin: 'reminder',
+      alarms: [],
+      completed: !!r.completed,
+    })
+  }
+  events.sort((a, b) => a.startDate.localeCompare(b.startDate))
+  return events
 }
 
 // ── Platform guard ────────────────────────────────────────────────────────

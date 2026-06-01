@@ -44,6 +44,8 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import {
   createEvent,
   listCalendars,
+  readEvents,
+  updateEvent,
   type CalendarSource,
 } from '@/services/calendar'
 
@@ -66,12 +68,14 @@ function startOfNextHour(seed: Date): Date {
 }
 
 export default function CalendarEventEditor() {
-  const { day } = useLocalSearchParams<{ day?: string }>()
+  const { day, eventId } = useLocalSearchParams<{ day?: string; eventId?: string }>()
+  const isEditMode = !!eventId && !eventId.startsWith('app:') && !eventId.startsWith('reminder:')
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
   // Seed start date from `day` param if present (so "+" from a chosen
-  // day pre-fills correctly); fallback to next hour from now.
+  // day pre-fills correctly); fallback to next hour from now. In edit
+  // mode this is overwritten once the existing event loads.
   const seedDate = useMemo(() => {
     if (day) {
       const d = new Date(`${day}T00:00:00`)
@@ -90,6 +94,7 @@ export default function CalendarEventEditor() {
   const [chosenCalendarId, setChosenCalendarId] = useState<string | null>(null)
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([15])
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoadingExisting, setIsLoadingExisting] = useState(isEditMode)
 
   // Date picker visibility (iOS uses inline; Android uses native dialogs)
   const [showStartPicker, setShowStartPicker] = useState(false)
@@ -105,6 +110,23 @@ export default function CalendarEventEditor() {
       setCalendars(writable)
       if (writable.length > 0 && !chosenCalendarId) {
         setChosenCalendarId(writable[0].id)
+      }
+
+      // Prefill from existing event when editing
+      if (isEditMode && eventId) {
+        const all = await readEvents()
+        const found = all.find((e) => e.id === eventId)
+        if (found) {
+          setTitle(found.title)
+          setAllDay(found.allDay)
+          setStart(new Date(found.startDate))
+          setEnd(new Date(found.endDate))
+          setLocation(found.location ?? '')
+          setNotes(found.notes ?? '')
+          setChosenCalendarId(found.calendarId)
+          setSelectedAlarms(found.alarms.length > 0 ? found.alarms : [15])
+        }
+        setIsLoadingExisting(false)
       }
     })()
     // intentionally one-shot; calendar list is stable mid-edit
@@ -134,20 +156,32 @@ export default function CalendarEventEditor() {
     if (!chosenCalendarId) return
     setIsSaving(true)
     try {
-      const newId = await createEvent({
-        title: title.trim(),
-        startDate: start,
-        endDate: end,
-        allDay,
-        location: location.trim() || undefined,
-        notes: notes.trim() || undefined,
-        calendarId: chosenCalendarId,
-        alarms: selectedAlarms,
-      })
-      if (newId) {
-        router.back()
+      if (isEditMode && eventId) {
+        const ok = await updateEvent({
+          id: eventId,
+          title: title.trim(),
+          startDate: start,
+          endDate: end,
+          allDay,
+          location: location.trim() || undefined,
+          notes: notes.trim() || undefined,
+          alarms: selectedAlarms,
+        })
+        if (ok) router.back()
+        else Alert.alert('Could not save', 'The event could not be updated. Please check your calendar permissions and try again.')
       } else {
-        Alert.alert('Could not save', 'The event could not be saved. Please check your calendar permissions and try again.')
+        const newId = await createEvent({
+          title: title.trim(),
+          startDate: start,
+          endDate: end,
+          allDay,
+          location: location.trim() || undefined,
+          notes: notes.trim() || undefined,
+          calendarId: chosenCalendarId,
+          alarms: selectedAlarms,
+        })
+        if (newId) router.back()
+        else Alert.alert('Could not save', 'The event could not be saved. Please check your calendar permissions and try again.')
       }
     } finally {
       setIsSaving(false)
@@ -173,7 +207,7 @@ export default function CalendarEventEditor() {
           </Text>
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16) }]}>
-          New Event
+          {isEditMode ? 'Edit Event' : 'New Event'}
         </Text>
         <Pressable
           onPress={handleSave}

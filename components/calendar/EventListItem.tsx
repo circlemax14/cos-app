@@ -40,6 +40,8 @@ export function EventListItem({ event, onPress, compact }: Props) {
   const startTime = isAllDay ? 'all-day' : formatTime(event.startDate)
   const dur = isAllDay ? '' : formatDuration(event.startDate, event.endDate)
 
+  const isReminder = event.origin === 'reminder'
+  const isCompleted = !!event.completed
   return (
     <Pressable
       onPress={onPress}
@@ -48,20 +50,35 @@ export function EventListItem({ event, onPress, compact }: Props) {
         {
           backgroundColor: pressed ? colors.cardBackground : 'transparent',
           borderBottomColor: colors.border,
+          opacity: isCompleted ? 0.55 : 1,
         },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`${event.title}, ${startTime}${event.location ? `, at ${event.location}` : ''}`}
+      accessibilityLabel={`${event.title}, ${startTime}${event.location ? `, at ${event.location}` : ''}${isCompleted ? ', completed' : ''}`}
     >
       <View style={[styles.colorBar, { backgroundColor: event.source.color }]} />
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <Text
-            style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(15) }]}
+            style={[
+              styles.title,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                textDecorationLine: isCompleted ? 'line-through' : 'none',
+              },
+            ]}
             numberOfLines={1}
           >
             {event.title}
           </Text>
+          {isReminder && (
+            <View style={[styles.badge, { backgroundColor: '#FFF4E5' }]}>
+              <Text style={[styles.badgeText, { color: '#B25400', fontSize: getScaledFontSize(10) }]}>
+                Reminder
+              </Text>
+            </View>
+          )}
           {event.origin === 'app' && event.appKind && (
             <View style={[styles.badge, { backgroundColor: colors.cardBackground }]}>
               <Text style={[styles.badgeText, { color: colors.subtext, fontSize: getScaledFontSize(10) }]}>

@@ -264,6 +264,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="calendar-settings"
+        options={{
+          title: 'Calendar Settings',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
         name="assessment-intake"
         options={{
           title: 'Health check-in',

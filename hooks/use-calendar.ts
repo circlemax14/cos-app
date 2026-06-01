@@ -1,27 +1,23 @@
 /**
  * Core React state hook for the calendar screen. Owns:
- *   - the merged event list (device + our app's virtual events)
+ *   - merged event list (device calendar events + iOS Reminders + our
+ *     app's virtual events)
  *   - the source-calendar list (so the UI can render the colored legend
  *     and the calendar-picker in the event editor)
- *   - the loading / refreshing flags
- *   - one-shot create / update / delete actions that invalidate the cache
- *
- * Usage:
- *   const { events, calendars, isLoading, refresh, create, update, remove }
- *     = useCalendar({ appEvents })
- *
- * `appEvents` is whatever your screen wants to overlay (past visits,
- * appointments, etc.) — already passed through
- * `virtualEventFromAppEntity`. Empty array is fine.
+ *   - loading / refreshing flags
+ *   - create / update / delete actions that invalidate the cache
+ *   - per-calendar visibility filter (driven by user settings)
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   createEvent,
   deleteEvent,
   listCalendars,
   mergeEvents,
   readEvents,
+  readReminders,
   updateEvent,
   type CalendarEvent,
   type CalendarSource,
@@ -30,48 +26,64 @@ import {
 } from '@/services/calendar'
 
 export interface UseCalendarArgs {
-  /** App-side virtual events (past visits, appointments, tasks). */
   appEvents?: CalendarEvent[]
-  /** If set, only these calendar IDs are queried. Defaults to all. */
   enabledCalendarIds?: string[]
-  /** Custom time window. */
   windowStart?: Date
   windowEnd?: Date
+  includeReminders?: boolean
 }
 
 export interface UseCalendar {
   events: CalendarEvent[]
   calendars: CalendarSource[]
+  hiddenCalendarIds: Set<string>
   isLoading: boolean
   isRefreshing: boolean
   refresh: () => Promise<void>
   create: (input: CreateEventInput) => Promise<string | null>
   update: (input: UpdateEventInput) => Promise<boolean>
   remove: (id: string) => Promise<boolean>
+  toggleCalendarVisibility: (calendarId: string) => Promise<void>
 }
 
+const HIDDEN_CALS_KEY = 'csh-calendar-hidden-cals-v1'
+
 export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
-  const { appEvents = [], enabledCalendarIds, windowStart, windowEnd } = args
+  const { appEvents = [], enabledCalendarIds, windowStart, windowEnd, includeReminders = true } = args
   const [deviceEvents, setDeviceEvents] = useState<CalendarEvent[]>([])
+  const [reminders, setReminders] = useState<CalendarEvent[]>([])
   const [calendars, setCalendars] = useState<CalendarSource[]>([])
+  const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // Restore persisted visibility prefs on mount
+  useEffect(() => {
+    void (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(HIDDEN_CALS_KEY)
+        if (raw) setHiddenCalendarIds(new Set(JSON.parse(raw) as string[]))
+      } catch { /* ignore */ }
+    })()
+  }, [])
 
   const fetchAll = useCallback(async (showSpinner: boolean) => {
     if (showSpinner) setIsLoading(true)
     else setIsRefreshing(true)
     try {
-      const [evt, cals] = await Promise.all([
+      const [evt, cals, rems] = await Promise.all([
         readEvents({ windowStart, windowEnd, calendarIds: enabledCalendarIds }),
         listCalendars(),
+        includeReminders ? readReminders({ windowStart, windowEnd }) : Promise.resolve([] as CalendarEvent[]),
       ])
       setDeviceEvents(evt)
       setCalendars(cals)
+      setReminders(rems)
     } finally {
       if (showSpinner) setIsLoading(false)
       else setIsRefreshing(false)
     }
-  }, [enabledCalendarIds, windowStart, windowEnd])
+  }, [enabledCalendarIds, windowStart, windowEnd, includeReminders])
 
   useEffect(() => { void fetchAll(true) }, [fetchAll])
 
@@ -97,19 +109,34 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     return ok
   }, [fetchAll])
 
-  const events = useMemo(
-    () => mergeEvents(deviceEvents, appEvents),
-    [deviceEvents, appEvents],
-  )
+  const toggleCalendarVisibility = useCallback(async (calendarId: string) => {
+    setHiddenCalendarIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(calendarId)) next.delete(calendarId)
+      else next.add(calendarId)
+      AsyncStorage.setItem(HIDDEN_CALS_KEY, JSON.stringify([...next])).catch(() => {})
+      return next
+    })
+  }, [])
+
+  // Merge + filter by hidden-calendar set so the user's toggle preferences
+  // are respected without re-fetching from the OS.
+  const events = useMemo(() => {
+    const all = mergeEvents(mergeEvents(deviceEvents, reminders), appEvents)
+    if (hiddenCalendarIds.size === 0) return all
+    return all.filter((e) => !hiddenCalendarIds.has(e.source.id))
+  }, [deviceEvents, reminders, appEvents, hiddenCalendarIds])
 
   return {
     events,
     calendars,
+    hiddenCalendarIds,
     isLoading,
     isRefreshing,
     refresh,
     create,
     update,
     remove,
+    toggleCalendarVisibility,
   }
 }
