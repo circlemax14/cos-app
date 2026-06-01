@@ -26,9 +26,18 @@ const NOTIFICATION_DATA_TAG = 'csh-calendar-v1'
  * Re-sync the OS notification queue against the current event set.
  * Cancels everything we previously scheduled, then schedules the new set.
  *
+ * `notificationDisabledCalendarIds`, if provided, lets the caller suppress
+ * notifications for specific source calendars (driven by the per-calendar
+ * toggle in calendar-settings.tsx). Events from those calendars are
+ * silently skipped — they still appear in views, they just don't fire
+ * local push notifications.
+ *
  * Safe to call repeatedly; idempotent.
  */
-export async function reconcileEventNotifications(events: CalendarEvent[]): Promise<void> {
+export async function reconcileEventNotifications(
+  events: CalendarEvent[],
+  notificationDisabledCalendarIds?: Set<string>,
+): Promise<void> {
   try {
     await cancelAllAppScheduled()
   } catch {
@@ -40,6 +49,7 @@ export async function reconcileEventNotifications(events: CalendarEvent[]): Prom
     if (event.origin !== 'device') continue
     if (!event.source.allowsWrite) continue // skip subscribed read-only calendars
     if (event.alarms.length === 0) continue
+    if (notificationDisabledCalendarIds?.has(event.source.id)) continue
 
     const startMs = new Date(event.startDate).getTime()
     if (Number.isNaN(startMs)) continue

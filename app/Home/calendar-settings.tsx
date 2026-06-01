@@ -21,7 +21,14 @@ export default function CalendarSettingsScreen() {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const permissions = useCalendarPermissions()
-  const { calendars, hiddenCalendarIds, toggleCalendarVisibility, isLoading } = useCalendar({ includeReminders: true })
+  const {
+    calendars,
+    hiddenCalendarIds,
+    notificationDisabledCalendarIds,
+    toggleCalendarVisibility,
+    toggleCalendarNotifications,
+    isLoading,
+  } = useCalendar({ includeReminders: true })
 
   // Group by source ("iCloud", "Google", "Outlook", "Local", ...) so the
   // list reads like Apple's Settings → Calendar → Accounts view.
@@ -68,6 +75,7 @@ export default function CalendarSettingsScreen() {
                 </Text>
                 {group.items.map((cal) => {
                   const hidden = hiddenCalendarIds.has(cal.id)
+                  const notifOff = notificationDisabledCalendarIds.has(cal.id)
                   return (
                     <View
                       key={cal.id}
@@ -84,11 +92,29 @@ export default function CalendarSettingsScreen() {
                           </Text>
                         )}
                       </View>
-                      <Switch
-                        value={!hidden}
-                        onValueChange={() => void toggleCalendarVisibility(cal.id)}
-                        accessibilityLabel={`Toggle visibility of ${cal.title}`}
-                      />
+                      <View style={styles.rowControls}>
+                        <View style={styles.toggleColumn}>
+                          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(10), fontWeight: '600' }}>
+                            SHOW
+                          </Text>
+                          <Switch
+                            value={!hidden}
+                            onValueChange={() => void toggleCalendarVisibility(cal.id)}
+                            accessibilityLabel={`Toggle visibility of ${cal.title}`}
+                          />
+                        </View>
+                        <View style={styles.toggleColumn}>
+                          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(10), fontWeight: '600' }}>
+                            NOTIFY
+                          </Text>
+                          <Switch
+                            value={!notifOff}
+                            onValueChange={() => void toggleCalendarNotifications(cal.id)}
+                            disabled={hidden}
+                            accessibilityLabel={`Toggle notifications for ${cal.title}`}
+                          />
+                        </View>
+                      </View>
                     </View>
                   )
                 })}
@@ -155,6 +181,8 @@ const styles = StyleSheet.create({
   section: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, marginBottom: 16, paddingTop: 8 },
   sectionHeader: { fontWeight: '700', letterSpacing: 0.6, paddingHorizontal: 14, paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  rowControls: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  toggleColumn: { alignItems: 'center', gap: 4 },
   dot: { width: 14, height: 14, borderRadius: 7 },
   emptyCard: { padding: 16, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, marginBottom: 16 },
   emptyTitle: { fontWeight: '700', marginBottom: 4 },

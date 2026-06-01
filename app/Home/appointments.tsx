@@ -2,17 +2,27 @@
  * SCRUM-279 / COS-308 — main Calendar screen (replaces the old
  * appointments tab).
  *
- * Apple-Calendar-style with five views: Year, Month, Week, Day, List.
- * Search bar in the header filters across all view modes. Past visits
- * from our backend are overlaid as virtual events alongside device
- * calendar events AND iOS Reminders. Settings cog opens the per-calendar
- * visibility screen which also has help text for adding Outlook / Teams /
- * Google accounts.
+ * Apple-iPhone-Calendar replica: Year, Month, Day, List views (we drop
+ * Week view because iPhone's Apple Calendar doesn't have it — only iPad
+ * and Mac do, and porting that hour-grid 5-column UX to iPhone is too
+ * sophisticated for the screen real estate). Search bar slides in from
+ * the top when the magnifying-glass is tapped. Past visits + iOS
+ * Reminders are overlaid alongside device-calendar events. Settings cog
+ * opens per-calendar visibility / notification preferences and the help
+ * card that explains how to surface Outlook / Teams / Google calendars.
+ *
+ * Typography roughly tracks Apple iOS Calendar:
+ *   - Top label (selected month / year): 28pt SF Pro Display bold
+ *   - Tab labels (Year / Month / Day / List): 14pt SF Pro Text medium
+ *   - Event titles: 15pt regular
+ *   - Search input: 16pt regular
+ * Accessibility scale (`getScaledFontSize`) is applied on top of these.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Pressable,
   RefreshControl,
@@ -28,7 +38,6 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { IconSymbol } from '@/components/ui/icon-symbol'
 import { CalendarPermissionGate } from '@/components/calendar/CalendarPermissionGate'
 import { CalendarMonthView } from '@/components/calendar/CalendarMonthView'
-import { CalendarWeekView } from '@/components/calendar/CalendarWeekView'
 import { CalendarYearView } from '@/components/calendar/CalendarYearView'
 import { CalendarDayTimeline } from '@/components/calendar/CalendarDayTimeline'
 import { EventListItem } from '@/components/calendar/EventListItem'
@@ -39,7 +48,10 @@ import { registerCalendarSync } from '@/services/calendar-sync'
 import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
 
-type CalendarViewMode = 'year' | 'month' | 'week' | 'day' | 'list'
+// iPhone Apple Calendar has only these four — no Week view.
+type CalendarViewMode = 'year' | 'month' | 'day' | 'list'
+
+const SEARCH_HEIGHT = 44 // pixel height of the slide-in search bar
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
@@ -65,24 +77,6 @@ function fmtMonthYear(dayIso: string): string {
 function fmtDayHeader(dayIso: string): string {
   try { return new Date(dayIso).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }
   catch { return dayIso }
-}
-
-function fmtWeekRange(weekStartIso: string): string {
-  try {
-    const s = new Date(weekStartIso)
-    const e = new Date(s)
-    e.setDate(s.getDate() + 6)
-    const sm = s.toLocaleString(undefined, { month: 'short', day: 'numeric' })
-    const em = e.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-    return `${sm} – ${em}`
-  } catch { return weekStartIso }
-}
-
-/** Sunday of the week containing the given YYYY-MM-DD. */
-function weekStartOf(dayIso: string): string {
-  const d = new Date(`${dayIso}T00:00:00`)
-  d.setDate(d.getDate() - d.getDay())
-  return d.toISOString().slice(0, 10)
 }
 
 function groupByDay(events: CalendarEvent[]): { day: string; items: CalendarEvent[] }[] {
@@ -118,6 +112,18 @@ export default function CalendarScreen() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
 
+  // Search-bar slide animation (Apple Calendar style: search field
+  // animates down from beneath the header on tap, slides back up on
+  // dismiss). 0 → hidden, SEARCH_HEIGHT → visible.
+  const searchAnim = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    Animated.timing(searchAnim, {
+      toValue: showSearch ? SEARCH_HEIGHT : 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start()
+  }, [showSearch, searchAnim])
+
   const { data: appointments } = useAppointments()
   const appEvents = useMemo<CalendarEvent[]>(() => {
     if (!appointments) return []
@@ -143,7 +149,8 @@ export default function CalendarScreen() {
       .filter((e) => !Number.isNaN(new Date(e.startDate).getTime()))
   }, [appointments])
 
-  const { events, isLoading, isRefreshing, refresh } = useCalendar({ appEvents, includeReminders: true })
+  const { events, isLoading, isRefreshing, refresh, notificationDisabledCalendarIds } =
+    useCalendar({ appEvents, includeReminders: true })
   const filteredEvents = useMemo(() => applySearch(events, searchQuery), [events, searchQuery])
 
   useEffect(() => {
@@ -152,9 +159,9 @@ export default function CalendarScreen() {
 
   useEffect(() => {
     if (permissions.state.granted && events.length > 0) {
-      void reconcileEventNotifications(events)
+      void reconcileEventNotifications(events, notificationDisabledCalendarIds)
     }
-  }, [permissions.state.granted, events])
+  }, [permissions.state.granted, events, notificationDisabledCalendarIds])
 
   const refreshPermissions = permissions.refresh
   useFocusEffect(useCallback(() => {
@@ -172,7 +179,6 @@ export default function CalendarScreen() {
     switch (activeView) {
       case 'year': return String(new Date(`${selectedDay}T00:00:00`).getFullYear())
       case 'month': return fmtMonthYear(selectedDay)
-      case 'week': return fmtWeekRange(weekStartOf(selectedDay))
       case 'day': return fmtDayHeader(selectedDay)
       case 'list': return 'All Events'
     }
@@ -190,8 +196,10 @@ export default function CalendarScreen() {
             onToggleSearch={() => setShowSearch((p) => !p)}
             onOpenSettings={() => router.push('/Home/calendar-settings' as never)}
             showSearch={showSearch}
+            searchAnim={searchAnim}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            onClearSearch={() => { setSearchQuery(''); setShowSearch(false) }}
           />
           {isLoading ? (
             <View style={styles.center}>
@@ -226,14 +234,6 @@ export default function CalendarScreen() {
                 </Text>
               }
               refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />}
-            />
-          ) : activeView === 'week' ? (
-            <CalendarWeekView
-              weekStart={weekStartOf(selectedDay)}
-              events={filteredEvents}
-              selectedDate={selectedDay}
-              onSelectDate={setSelectedDay}
-              onPressEvent={openDetail}
             />
           ) : activeView === 'day' ? (
             <CalendarDayTimeline
@@ -299,20 +299,21 @@ interface HeaderProps {
   onToggleSearch: () => void
   onOpenSettings: () => void
   showSearch: boolean
+  searchAnim: Animated.Value
   searchQuery: string
   onSearchChange: (q: string) => void
+  onClearSearch: () => void
 }
 
 function CalendarHeader({
   activeView, onChangeView, label, onJumpToday, onToggleSearch, onOpenSettings,
-  showSearch, searchQuery, onSearchChange,
+  showSearch, searchAnim, searchQuery, onSearchChange, onClearSearch,
 }: HeaderProps) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const views: { id: CalendarViewMode; label: string }[] = [
     { id: 'year', label: 'Year' },
     { id: 'month', label: 'Month' },
-    { id: 'week', label: 'Week' },
     { id: 'day', label: 'Day' },
     { id: 'list', label: 'List' },
   ]
@@ -320,13 +321,17 @@ function CalendarHeader({
   return (
     <View style={[styles.header, { borderBottomColor: colors.border }]}>
       <View style={styles.headerRow}>
-        <Text style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(20) }]} numberOfLines={1}>
+        <Text
+          style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(28) }]}
+          numberOfLines={1}
+        >
           {label}
         </Text>
         <View style={styles.headerActions}>
           <Pressable
             onPress={onToggleSearch}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.7 : 1 }]}
+            hitSlop={8}
+            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel="Toggle search"
             accessibilityState={{ selected: showSearch }}
@@ -335,15 +340,17 @@ function CalendarHeader({
           </Pressable>
           <Pressable
             onPress={onJumpToday}
-            style={({ pressed }) => [styles.todayBtn, { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 }]}
+            hitSlop={6}
+            style={({ pressed }) => [styles.todayBtn, { borderColor: colors.tint, opacity: pressed ? 0.5 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel="Jump to today"
           >
-            <Text style={[styles.todayText, { color: colors.tint, fontSize: getScaledFontSize(12) }]}>Today</Text>
+            <Text style={[styles.todayText, { color: colors.tint, fontSize: getScaledFontSize(13) }]}>Today</Text>
           </Pressable>
           <Pressable
             onPress={onOpenSettings}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.7 : 1 }]}
+            hitSlop={8}
+            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel="Calendar settings"
           >
@@ -351,22 +358,42 @@ function CalendarHeader({
           </Pressable>
         </View>
       </View>
-      {showSearch && (
-        <View style={[styles.searchRow, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-          <IconSymbol name="magnifyingglass" size={getScaledFontSize(14)} color={colors.subtext} />
+
+      {/* Animated search bar — slides down when activated. */}
+      <Animated.View
+        style={{
+          height: searchAnim,
+          overflow: 'hidden',
+        }}
+      >
+        <View
+          style={[
+            styles.searchRow,
+            { backgroundColor: colors.cardBackground, borderColor: colors.border },
+          ]}
+        >
+          <IconSymbol name="magnifyingglass" size={getScaledFontSize(15)} color={colors.subtext} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text, fontSize: getScaledFontSize(15) }]}
-            placeholder="Search title, location, notes, calendar…"
+            style={[styles.searchInput, { color: colors.text, fontSize: getScaledFontSize(16) }]}
+            placeholder="Search events, locations, notes"
             placeholderTextColor={colors.subtext}
             value={searchQuery}
             onChangeText={onSearchChange}
-            autoFocus
+            autoFocus={showSearch}
             returnKeyType="search"
             clearButtonMode="while-editing"
-            accessibilityLabel="Search calendar events"
+            accessibilityLabel="Search calendar"
           />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={onClearSearch} hitSlop={8} accessibilityRole="button" accessibilityLabel="Cancel search">
+              <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15), fontWeight: '500' }}>
+                Cancel
+              </Text>
+            </Pressable>
+          )}
         </View>
-      )}
+      </Animated.View>
+
       <View style={styles.viewSwitcher}>
         {views.map((v) => {
           const active = v.id === activeView
@@ -378,14 +405,14 @@ function CalendarHeader({
                 styles.viewBtn,
                 {
                   backgroundColor: active ? colors.tint : 'transparent',
-                  opacity: pressed ? 0.7 : 1,
+                  opacity: pressed ? 0.6 : 1,
                 },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`Switch to ${v.label} view`}
               accessibilityState={{ selected: active }}
             >
-              <Text style={[styles.viewBtnText, { color: active ? '#fff' : colors.text, fontSize: getScaledFontSize(12) }]}>
+              <Text style={[styles.viewBtnText, { color: active ? '#fff' : colors.text, fontSize: getScaledFontSize(14) }]}>
                 {v.label}
               </Text>
             </Pressable>
@@ -399,18 +426,29 @@ function CalendarHeader({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerLabel: { fontWeight: '700', flex: 1, marginRight: 8 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Apple's title is 28pt SF Pro Display bold, tight letter spacing
+  headerLabel: { fontWeight: '700', flex: 1, marginRight: 8, letterSpacing: -0.4 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   iconBtn: { paddingHorizontal: 6, paddingVertical: 4 },
-  todayBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
-  todayText: { fontWeight: '600' },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth },
-  searchInput: { flex: 1 },
+  todayBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  todayText: { fontWeight: '500', letterSpacing: -0.1 },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: SEARCH_HEIGHT - 8,
+  },
+  searchInput: { flex: 1, paddingVertical: 0 }, // paddingVertical 0 prevents extra height
   viewSwitcher: { flexDirection: 'row', gap: 4, marginTop: 10 },
-  viewBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  viewBtnText: { fontWeight: '600' },
+  viewBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
+  viewBtnText: { fontWeight: '500', letterSpacing: -0.1 },
   empty: { textAlign: 'center', padding: 32 },
   dayHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
