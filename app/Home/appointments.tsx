@@ -1,577 +1,365 @@
-import { AppWrapper } from '@/components/app-wrapper';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { RecommendedAppointmentsList } from '@/components/recommended-appointments-list';
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
-import { useAppointments } from '@/hooks/use-appointments';
-import type { Appointment } from '@/services/api/types';
-import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+/**
+ * SCRUM-279 / COS-308 — main Calendar screen.
+ *
+ * Apple-Calendar-style screen with:
+ *   - View switcher: Month / Day / List
+ *   - Permission gate (request → settings deep-link)
+ *   - Floating "+" button → opens event editor
+ *   - Tap an event → opens detail screen
+ *   - Pull-to-refresh
+ *   - Past visits overlaid as virtual events (color-coded)
+ *
+ * Past visits come from `useAppointments` and are converted via
+ * `virtualEventFromAppEntity` before being passed to `useCalendar`.
+ * The merged stream is then split per-day for the selected-day list.
+ *
+ * Background sync registration happens on first mount once permission
+ * is granted (idempotent — safe to call repeatedly).
+ */
 
-type AppointmentTab = 'past' | 'recommended';
-type DateRange = 'all' | 'day' | 'week' | 'month';
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+import { router, useFocusEffect } from 'expo-router'
+import { AppWrapper } from '@/components/app-wrapper'
+import { Colors } from '@/constants/theme'
+import { useAccessibility } from '@/stores/accessibility-store'
+import { CalendarPermissionGate } from '@/components/calendar/CalendarPermissionGate'
+import { CalendarMonthView } from '@/components/calendar/CalendarMonthView'
+import { EventListItem } from '@/components/calendar/EventListItem'
+import { useCalendar } from '@/hooks/use-calendar'
+import { useCalendarPermissions } from '@/hooks/use-calendar-permissions'
+import { virtualEventFromAppEntity, type CalendarEvent } from '@/services/calendar'
+import { registerCalendarSync } from '@/services/calendar-sync'
+import { reconcileEventNotifications } from '@/services/calendar-notifications'
+import { useAppointments } from '@/hooks/use-appointments'
 
-/** Inclusive end of the given range starting from today (00:00). */
-function rangeEnd(range: DateRange, now: Date = new Date()): Date | null {
-  if (range === 'all') return null;
-  const end = new Date(now);
-  end.setHours(0, 0, 0, 0);
-  if (range === 'day') {
-    // Today only — same day window.
-    end.setDate(end.getDate() + 1);
-  } else if (range === 'week') {
-    end.setDate(end.getDate() + 7);
-  } else if (range === 'month') {
-    end.setMonth(end.getMonth() + 1);
-  }
-  return end;
+type CalendarViewMode = 'month' | 'day' | 'list'
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
 }
 
-function rangeStart(range: DateRange, now: Date = new Date()): Date | null {
-  if (range === 'all') return null;
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  // Day/Week/Month all look BOTH directions — past + upcoming within the
-  // window. So start = now - same span back.
-  if (range === 'day') {
-    // Today's appointments only.
-    return start;
-  }
-  if (range === 'week') {
-    start.setDate(start.getDate() - 7);
-  } else if (range === 'month') {
-    start.setMonth(start.getMonth() - 1);
-  }
-  return start;
+/**
+ * Combine a YYYY-MM-DD date string with an optional HH:mm[:ss] time into
+ * a full ISO timestamp. Treats missing time as midnight local. Returns the
+ * input as-is if parsing fails so downstream filters can reject it.
+ */
+function toIso(date: string, time?: string): string {
+  if (!date) return ''
+  const t = (time ?? '00:00').trim()
+  // Normalize "9:00" → "09:00" and accept HH:mm or HH:mm:ss
+  const m = /^(\d{1,2}):(\d{2})(:(\d{2}))?$/.exec(t)
+  if (!m) return new Date(`${date}T00:00:00`).toISOString()
+  const hh = m[1].padStart(2, '0')
+  const mm = m[2]
+  const ss = m[4] ?? '00'
+  const d = new Date(`${date}T${hh}:${mm}:${ss}`)
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString()
 }
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  booked: { bg: '#E3F2FD', text: '#1565C0', icon: '📅' },
-  arrived: { bg: '#E8F5E9', text: '#2E7D32', icon: '✓' },
-  fulfilled: { bg: '#E8F5E9', text: '#2E7D32', icon: '✓' },
-  finished: { bg: '#F3E5F5', text: '#7B1FA2', icon: '★' },
-  cancelled: { bg: '#FFEBEE', text: '#C62828', icon: '✕' },
-  noshow: { bg: '#FFF3E0', text: '#E65100', icon: '⚠' },
-  'entered-in-error': { bg: '#FFEBEE', text: '#C62828', icon: '✕' },
-  planned: { bg: '#E3F2FD', text: '#1565C0', icon: '📅' },
-  'in-progress': { bg: '#FFF8E1', text: '#F57F17', icon: '⏳' },
-  triaged: { bg: '#FFF8E1', text: '#F57F17', icon: '⏳' },
-  onleave: { bg: '#FFF3E0', text: '#E65100', icon: '⚠' },
-};
-
-const RESOURCE_TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  Appointment: { bg: '#E3F2FD', text: '#1565C0', label: 'Appointment' },
-  Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },
-};
-
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr || typeof dateStr !== 'string') return '';
-  // Accept both "YYYY-MM-DD" and full ISO timestamps by slicing the date part first.
-  const dateOnly = dateStr.slice(0, 10);
-  const d = new Date(`${dateOnly}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+function fmtMonthYear(dayIso: string): string {
+  try {
+    const d = new Date(dayIso)
+    return d.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+  } catch {
+    return dayIso
+  }
 }
 
-export default function AppointmentsScreen() {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  // Initial tab honours ?tab=recommended from deep-links (e.g. the
-  // "Recommended Appointments" card on the Home screen).
-  const searchParams = useLocalSearchParams<{ tab?: string }>();
-  const [activeTab, setActiveTab] = useState<AppointmentTab>(
-    searchParams.tab === 'recommended' ? 'recommended' : 'past',
-  );
-  // SCRUM-269 Phase A: scope the past-visits list to a date window so
-  // users can drill into a day / week / month view of their medical
-  // appointments. "All" keeps the original full-list behavior.
-  const [dateRange, setDateRange] = useState<DateRange>('all');
+function fmtDayHeader(dayIso: string): string {
+  try {
+    const d = new Date(dayIso)
+    return d.toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  } catch {
+    return dayIso
+  }
+}
 
-  const { data, isLoading, isError, refetch } = useAppointments();
+/**
+ * Group merged events by YYYY-MM-DD so the List view can render day-section
+ * headers like Apple Calendar. Sorted ascending.
+ */
+function groupByDay(events: CalendarEvent[]): { day: string; items: CalendarEvent[] }[] {
+  const map = new Map<string, CalendarEvent[]>()
+  for (const e of events) {
+    const day = e.startDate.slice(0, 10)
+    const bucket = map.get(day)
+    if (bucket) bucket.push(e)
+    else map.set(day, [e])
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, items]) => ({ day, items }))
+}
 
-  const appointments = useMemo(() => {
-    const all = data ?? [];
-    const start = rangeStart(dateRange);
-    const end = rangeEnd(dateRange);
-    const inRange = start && end
-      ? all.filter((apt) => {
-          if (!apt.date) return false;
-          const d = new Date(apt.date.slice(0, 10));
-          return d >= start && d < end;
+export default function CalendarScreen() {
+  const { settings, getScaledFontSize } = useAccessibility()
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const permissions = useCalendarPermissions()
+  const [activeView, setActiveView] = useState<CalendarViewMode>('month')
+  const [selectedDay, setSelectedDay] = useState<string>(todayIso())
+
+  // Pull our app's past visits + future appointments from the existing
+  // appointments hook so we can overlay them as virtual events.
+  const { data: appointments } = useAppointments()
+  const appEvents = useMemo<CalendarEvent[]>(() => {
+    if (!appointments) return []
+    const now = Date.now()
+    return appointments
+      .map((a) => {
+        // Backend `Appointment` has split `date` + `time` strings — combine
+        // them into a single ISO timestamp. Best-effort; falls back to date
+        // only if `time` is missing or malformed.
+        const startIso = toIso(a.date, a.time)
+        const endIso = a.endDate
+          ? toIso(a.endDate, a.endTime)
+          : a.endTime
+            ? toIso(a.date, a.endTime)
+            : startIso
+        return virtualEventFromAppEntity({
+          id: a.id,
+          title: a.doctorName ? `${a.type} — ${a.doctorName}` : a.type,
+          startDate: startIso,
+          endDate: endIso,
+          location: a.clinicName,
+          notes: a.notes,
+          kind: new Date(startIso).getTime() < now ? 'past-visit' : 'appointment',
         })
-      : all;
-    if (!searchQuery.trim()) return inRange;
-    const q = searchQuery.toLowerCase();
-    return inRange.filter((apt) =>
-      (apt.type?.toLowerCase().includes(q)) ||
-      (apt.doctorName?.toLowerCase().includes(q)) ||
-      (apt.clinicName?.toLowerCase().includes(q)) ||
-      (apt.diagnosis?.toLowerCase().includes(q)) ||
-      (apt.status?.toLowerCase().includes(q)) ||
-      (apt.resourceType?.toLowerCase().includes(q)) ||
-      (apt.encounterClass?.toLowerCase().includes(q))
-    );
-  }, [data, searchQuery, dateRange]);
+      })
+      .filter((e) => !Number.isNaN(new Date(e.startDate).getTime()))
+  }, [appointments])
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  }, [refetch]);
+  const { events, isLoading, isRefreshing, refresh } = useCalendar({ appEvents })
 
-  const groupedByDate = useMemo(() => {
-    const groups: Record<string, Appointment[]> = {};
-    for (const apt of appointments) {
-      const date = apt.date || 'Unknown';
-      if (!groups[date]) groups[date] = [];
-      groups[date].push(apt);
+  // Register background sync + reconcile local notifications once permission
+  // is granted. Both are idempotent.
+  useEffect(() => {
+    if (permissions.state.granted) {
+      void registerCalendarSync()
     }
-    return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
-  }, [appointments]);
+  }, [permissions.state.granted])
 
-  const handleCardPress = (appointment: Appointment) => {
-    router.push({
-      pathname: '/Home/appointment-detail' as const,
-      params: {
-        id: appointment.id,
-        data: JSON.stringify(appointment),
-      },
-    } as never);
-  };
+  useEffect(() => {
+    if (permissions.state.granted && events.length > 0) {
+      void reconcileEventNotifications(events)
+    }
+  }, [permissions.state.granted, events])
 
-  if (isLoading) {
-    return (
-      <AppWrapper>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>
-            Loading appointments...
-          </Text>
-        </View>
-      </AppWrapper>
-    );
-  }
+  // Re-read permissions when the screen comes back into focus (handles
+  // the "user went to Settings to grant" round-trip). Extract refresh to
+  // a stable local so the lint exhaustive-deps rule is happy without
+  // depending on the whole permissions object (which is a new ref each render).
+  const refreshPermissions = permissions.refresh
+  useFocusEffect(useCallback(() => {
+    void refreshPermissions()
+  }, [refreshPermissions]))
 
-  if (isError) {
-    return (
-      <AppWrapper>
-        <View style={styles.centered}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>😔</Text>
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginBottom: 8 }}>
-            Failed to load appointments
-          </Text>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginBottom: 20, textAlign: 'center' }}>
-            Please check your connection and try again.
-          </Text>
-          <TouchableOpacity
-            onPress={() => refetch()}
-            style={[styles.retryButton, { backgroundColor: colors.tint }]}
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading appointments"
-          >
-            <Text style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }}>
-              Retry
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </AppWrapper>
-    );
-  }
+  const eventsForSelectedDay = useMemo(
+    () => events.filter((e) => e.startDate.slice(0, 10) === selectedDay),
+    [events, selectedDay],
+  )
+
+  const dayGroups = useMemo(() => groupByDay(events), [events])
 
   return (
-    <AppWrapper>
-      <ScrollView
-        style={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
-        }
-      >
-        {/* Header */}
-        <View style={styles.headerSection}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>📋</Text>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(22),
-              fontWeight: getScaledFontWeight(700) as any,
-              textAlign: 'center',
-              marginBottom: 4,
-            }}
-            accessibilityRole="header"
-          >
-            Appointments & Encounters
-          </Text>
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(14),
-              textAlign: 'center',
-            }}
-          >
-            {appointments.length} record{appointments.length !== 1 ? 's' : ''} from your connected EHRs
-          </Text>
-        </View>
-
-        {/* Tab toggle: Past Visits | Recommended */}
-        <View style={[styles.tabToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Pressable
-            onPress={() => setActiveTab('past')}
-            style={[
-              styles.tabToggleItem,
-              activeTab === 'past' && { backgroundColor: colors.tint },
-            ]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'past' }}
-            accessibilityLabel="Past Visits"
-          >
-            <Text
-              style={{
-                color: activeTab === 'past' ? '#fff' : colors.subtext,
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(activeTab === 'past' ? 600 : 400) as any,
-              }}
-            >
-              Past Visits
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setActiveTab('recommended')}
-            style={[
-              styles.tabToggleItem,
-              activeTab === 'recommended' && { backgroundColor: colors.tint },
-            ]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'recommended' }}
-            accessibilityLabel="Recommended"
-          >
-            <Text
-              style={{
-                color: activeTab === 'recommended' ? '#fff' : colors.subtext,
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(activeTab === 'recommended' ? 600 : 400) as any,
-              }}
-            >
-              Recommended
-            </Text>
-          </Pressable>
-        </View>
-
-        {activeTab === 'recommended' ? (
-          <RecommendedAppointmentsList />
-        ) : (
-          <>
-        {/* SCRUM-269 Phase A: date-range chips. "All" keeps the original
-            full-list behavior; Day = today, Week = +/- 7 days, Month =
-            +/- 1 month. A full calendar-grid view + device-event merge
-            land in Phase B (binary cut). */}
-        <View style={styles.rangeRow}>
-          {(['all', 'day', 'week', 'month'] as const).map((r) => {
-            const selected = dateRange === r;
-            const label = r === 'all' ? 'All' : r.charAt(0).toUpperCase() + r.slice(1);
-            return (
-              <Pressable
-                key={r}
-                onPress={() => setDateRange(r)}
-                style={[
-                  styles.rangeChip,
-                  {
-                    backgroundColor: selected ? (colors.tint as string) : 'transparent',
-                    borderColor: selected ? (colors.tint as string) : colors.border,
-                  },
-                ]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-              >
-                <Text
-                  style={{
-                    color: selected ? '#fff' : colors.text,
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(selected ? 700 : 500) as any,
-                  }}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Search bar */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <IconSymbol name="magnifyingglass" size={getScaledFontSize(18)} color={colors.subtext} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text, fontSize: 15 }]}
-            placeholder="Search by type, doctor, clinic..."
-            placeholderTextColor={colors.subtext}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            accessibilityLabel="Search appointments"
-            allowFontScaling
+    <AppWrapper showFooter showHamburgerIcon showBellIcon>
+      <CalendarPermissionGate permissions={permissions}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <CalendarHeader
+            activeView={activeView}
+            onChangeView={setActiveView}
+            label={activeView === 'month' ? fmtMonthYear(selectedDay) : fmtDayHeader(selectedDay)}
+            onJumpToday={() => setSelectedDay(todayIso())}
           />
-          {searchQuery ? (
-            <TouchableOpacity
-              onPress={() => setSearchQuery('')}
-              style={styles.clearButton}
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
-            >
-              <IconSymbol name="xmark.circle.fill" size={getScaledFontSize(18)} color={colors.subtext} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {appointments.length === 0 ? (
-          <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
-            <Text style={{ fontSize: 48, marginBottom: 16 }}>📅</Text>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(600) as any,
-                textAlign: 'center',
-                marginBottom: 6,
-              }}
-            >
-              No appointments or encounters found
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(14),
-                textAlign: 'center',
-                lineHeight: getScaledFontSize(20),
-              }}
-            >
-              Your records will appear here once available from your connected clinics.
-            </Text>
-          </View>
-        ) : (
-          groupedByDate.map(([date, items]) => (
-            <View key={date} style={styles.dateGroup}>
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: getScaledFontSize(16),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  marginBottom: 10,
-                  paddingLeft: 4,
-                }}
-                accessibilityRole="header"
-              >
-                {formatDate(date)}
-              </Text>
-              {items.map((apt) => {
-                const resStyle = RESOURCE_TYPE_STYLES[apt.resourceType ?? 'Encounter'];
-                const statusStyle = STATUS_COLORS[apt.status] ?? STATUS_COLORS.finished;
-
-                return (
-                  <TouchableOpacity
-                    key={apt.id}
-                    activeOpacity={0.7}
-                    onPress={() => handleCardPress(apt)}
-                    style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${apt.type || 'Office Visit'}, ${apt.doctorName || 'Unknown Provider'}, status ${apt.status}. Double tap for details.`}
-                  >
-                    {/* Badges */}
-                    <View style={styles.badgeRow}>
-                      <View style={[styles.badge, { backgroundColor: resStyle.bg }]}>
-                        <Text style={[styles.badgeText, { color: resStyle.text, fontSize: getScaledFontSize(12) }]}>
-                          {resStyle.label}
-                        </Text>
-                      </View>
-                      <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-                        <Text style={[styles.badgeText, { color: statusStyle.text, fontSize: getScaledFontSize(12) }]}>
-                          {statusStyle.icon} {apt.status}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Title */}
-                    <Text
-                      style={{
-                        color: colors.text,
-                        fontSize: getScaledFontSize(16),
-                        fontWeight: getScaledFontWeight(600) as any,
-                        marginBottom: 8,
-                      }}
-                    >
-                      {apt.type || 'Office Visit'}
-                    </Text>
-
-                    {/* Info rows */}
-                    {apt.time ? (
-                      <View style={styles.infoRow}>
-                        <IconSymbol name="clock" size={getScaledFontSize(16)} color={colors.subtext} />
-                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }}>
-                          {apt.time}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {apt.doctorName && apt.doctorName !== 'Unknown Provider' ? (
-                      <View style={styles.infoRow}>
-                        <IconSymbol name="person" size={getScaledFontSize(16)} color={colors.subtext} />
-                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }}>
-                          {apt.doctorName}{apt.doctorSpecialty ? ` — ${apt.doctorSpecialty}` : ''}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {apt.clinicName ? (
-                      <View style={styles.infoRow}>
-                        <IconSymbol name="house" size={getScaledFontSize(16)} color={colors.subtext} />
-                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }}>
-                          {apt.clinicName}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {apt.diagnosis ? (
-                      <View style={styles.infoRow}>
-                        <IconSymbol name="doc.text" size={getScaledFontSize(16)} color={colors.subtext} />
-                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), flex: 1 }} numberOfLines={2}>
-                          {apt.diagnosis}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {/* Chevron */}
-                    <View style={styles.chevron}>
-                      <IconSymbol name="chevron.right" size={getScaledFontSize(16)} color={colors.subtext} />
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+          {isLoading ? (
+            <View style={styles.center}>
+              <ActivityIndicator color={colors.tint} />
             </View>
-          ))
-        )}
-          </>
-        )}
+          ) : activeView === 'month' ? (
+            <FlatList
+              data={eventsForSelectedDay}
+              keyExtractor={(e) => e.id}
+              renderItem={({ item }) => (
+                <EventListItem
+                  event={item}
+                  compact
+                  onPress={() => openDetail(item)}
+                />
+              )}
+              ListHeaderComponent={
+                <CalendarMonthView
+                  events={events}
+                  selectedDate={selectedDay}
+                  onSelectDate={setSelectedDay}
+                />
+              }
+              ListEmptyComponent={
+                <Text style={[styles.empty, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+                  No events on this day
+                </Text>
+              }
+              refreshControl={
+                <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />
+              }
+            />
+          ) : activeView === 'day' ? (
+            <FlatList
+              data={eventsForSelectedDay}
+              keyExtractor={(e) => e.id}
+              renderItem={({ item }) => (
+                <EventListItem event={item} onPress={() => openDetail(item)} />
+              )}
+              ListEmptyComponent={
+                <Text style={[styles.empty, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+                  No events scheduled for {fmtDayHeader(selectedDay)}
+                </Text>
+              }
+              refreshControl={
+                <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />
+              }
+            />
+          ) : (
+            // List view — Apple Calendar's "Inbox"
+            <FlatList
+              data={dayGroups}
+              keyExtractor={(g) => g.day}
+              renderItem={({ item }) => (
+                <View>
+                  <View style={[styles.dayHeader, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.dayHeaderText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                      {fmtDayHeader(item.day).toUpperCase()}
+                    </Text>
+                  </View>
+                  {item.items.map((event) => (
+                    <EventListItem key={event.id} event={event} onPress={() => openDetail(event)} />
+                  ))}
+                </View>
+              )}
+              ListEmptyComponent={
+                <Text style={[styles.empty, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+                  No upcoming events
+                </Text>
+              }
+              refreshControl={
+                <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.tint} />
+              }
+            />
+          )}
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          {/* Floating + button — opens the event editor for the selected day */}
+          <Pressable
+            onPress={() => openEditor(selectedDay)}
+            style={({ pressed }) => [
+              styles.fab,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Create new calendar event"
+          >
+            <Text style={styles.fabPlus}>+</Text>
+          </Pressable>
+        </View>
+      </CalendarPermissionGate>
     </AppWrapper>
-  );
+  )
+}
+
+function openDetail(event: CalendarEvent) {
+  router.push({ pathname: '/calendar-event-detail', params: { eventId: event.id } } as never)
+}
+
+function openEditor(dayIso: string) {
+  router.push({ pathname: '/calendar-event-editor', params: { day: dayIso } } as never)
+}
+
+interface HeaderProps {
+  activeView: CalendarViewMode
+  onChangeView: (v: CalendarViewMode) => void
+  label: string
+  onJumpToday: () => void
+}
+
+function CalendarHeader({ activeView, onChangeView, label, onJumpToday }: HeaderProps) {
+  const { settings, getScaledFontSize } = useAccessibility()
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const views: { id: CalendarViewMode; label: string }[] = [
+    { id: 'month', label: 'Month' },
+    { id: 'day', label: 'Day' },
+    { id: 'list', label: 'List' },
+  ]
+  return (
+    <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={styles.headerRow}>
+        <Text style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(20) }]}>
+          {label}
+        </Text>
+        <Pressable
+          onPress={onJumpToday}
+          style={({ pressed }) => [styles.todayBtn, { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Jump to today"
+        >
+          <Text style={[styles.todayText, { color: colors.tint, fontSize: getScaledFontSize(12) }]}>
+            Today
+          </Text>
+        </Pressable>
+      </View>
+      <View style={styles.viewSwitcher}>
+        {views.map((v) => {
+          const active = v.id === activeView
+          return (
+            <Pressable
+              key={v.id}
+              onPress={() => onChangeView(v.id)}
+              style={({ pressed }) => [
+                styles.viewBtn,
+                {
+                  backgroundColor: active ? colors.tint : 'transparent',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to ${v.label} view`}
+              accessibilityState={{ selected: active }}
+            >
+              <Text
+                style={[
+                  styles.viewBtnText,
+                  { color: active ? '#fff' : colors.text, fontSize: getScaledFontSize(13) },
+                ]}
+              >
+                {v.label}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>
+    </View>
+  )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  retryButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 24,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerSection: {
-    alignItems: 'center',
-    paddingTop: 16,
-    marginBottom: 20,
-  },
-  tabToggle: {
-    flexDirection: 'row',
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  rangeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  rangeChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  tabToggleItem: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    minHeight: 44,
-    marginBottom: 20,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 10,
-  },
-  clearButton: {
-    padding: 4,
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 32,
-    borderRadius: 16,
-  },
-  dateGroup: {
-    marginBottom: 20,
-  },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 10,
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-    flexWrap: 'wrap',
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  badgeText: {
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-  },
-  chevron: {
-    position: 'absolute',
-    right: 16,
-    top: 16,
-  },
-});
+  container: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLabel: { fontWeight: '700' },
+  todayBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  todayText: { fontWeight: '600' },
+  viewSwitcher: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  viewBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999 },
+  viewBtnText: { fontWeight: '600' },
+  empty: { textAlign: 'center', padding: 32 },
+  dayHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
+  fab: { position: 'absolute', right: 20, bottom: 100, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
+  fabPlus: { color: '#fff', fontSize: 30, fontWeight: '300', lineHeight: 32 },
+})

@@ -245,15 +245,6 @@ export function ProfileContent({
               getScaledFontWeight={getScaledFontWeight}
             />
             <DrawerRow
-              iconName="calendar-today"
-              label="Calendar"
-              onPress={() => router.push('/Home/calendar' as never)}
-              divider
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-            />
-            <DrawerRow
               iconName="emoji-events"
               label="Badges"
               onPress={() => router.push('/Home/badges' as never)}
