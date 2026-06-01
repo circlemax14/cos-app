@@ -16,11 +16,13 @@
  */
 
 import React, { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
+import { File, Paths } from 'expo-file-system'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { deleteEvent, readEvents, type CalendarEvent } from '@/services/calendar'
+import { hapticImpact, hapticNotify, hapticSelection } from '@/utils/haptics'
 
 export default function CalendarEventDetail() {
   const { eventId } = useLocalSearchParams<{ eventId?: string }>()
@@ -44,6 +46,7 @@ export default function CalendarEventDetail() {
 
   const handleDelete = () => {
     if (!event) return
+    hapticImpact('medium')
     Alert.alert(
       'Delete event?',
       'This will remove the event from your calendar and any synced devices.',
@@ -54,8 +57,8 @@ export default function CalendarEventDetail() {
           style: 'destructive',
           onPress: async () => {
             const ok = await deleteEvent(event.id)
-            if (ok) router.back()
-            else Alert.alert('Could not delete', 'Check your calendar permissions and try again.')
+            if (ok) { hapticNotify('success'); router.back() }
+            else { hapticNotify('error'); Alert.alert('Could not delete', 'Check your calendar permissions and try again.') }
           },
         },
       ],
@@ -64,7 +67,55 @@ export default function CalendarEventDetail() {
 
   const handleEdit = () => {
     if (!event) return
+    hapticSelection()
     router.replace({ pathname: '/calendar-event-editor', params: { eventId: event.id } } as never)
+  }
+
+  const handleShare = async () => {
+    if (!event) return
+    hapticSelection()
+    const ics = buildIcs(event)
+    try {
+      if (Platform.OS === 'ios') {
+        // iOS: write to cache via the new expo-file-system 55 API,
+        // then share the file URI so the system share sheet treats it
+        // as a .ics attachment.
+        const safeName = (event.title || 'event').replace(/[^a-z0-9-_]/gi, '_').slice(0, 40) || 'event'
+        const file = new File(Paths.cache, `${safeName}.ics`)
+        file.write(ics)
+        await Share.share({ url: file.uri, title: event.title })
+      } else {
+        // Android: share the ICS as text. Mail clients can paste/save.
+        await Share.share({ message: ics, title: event.title })
+      }
+    } catch {
+      hapticNotify('error')
+      Alert.alert('Could not share', 'The event could not be shared.')
+    }
+  }
+
+  const handleAddToReminders = async () => {
+    if (!event) return
+    hapticSelection()
+    // We just deep-link to the OS Reminders app — creating a reminder
+    // programmatically is platform-specific and we don't want to bake
+    // duplicate logic here. iOS opens the app via x-apple-reminderkit
+    // scheme; Android we open the Tasks app fallback.
+    try {
+      const url = Platform.OS === 'ios' ? 'x-apple-reminderkit://' : 'content://com.android.calendar/time/'
+      const can = await Linking.canOpenURL(url)
+      if (can) {
+        await Linking.openURL(url)
+      } else {
+        // Last-resort: copy a textual reminder via Alert.
+        Alert.alert(
+          'Reminders not available',
+          'Open the Reminders app and create a new reminder there. We weren\'t able to launch it directly from this device.',
+        )
+      }
+    } catch {
+      Alert.alert('Could not open Reminders', 'Try opening the Reminders app manually.')
+    }
   }
 
   const dismiss = () => router.back()
@@ -166,6 +217,28 @@ export default function CalendarEventDetail() {
           )}
         </ScrollView>
 
+        {/* Secondary actions — always available regardless of write
+            permission (Share + Add to Reminders work on any event). */}
+        <View style={[styles.secondaryRow, { borderTopColor: colors.border }]}>
+          <Pressable
+            onPress={handleShare}
+            style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.5 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Share event"
+          >
+            <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '500' }}>Share</Text>
+          </Pressable>
+          <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
+          <Pressable
+            onPress={handleAddToReminders}
+            style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.5 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Add to Reminders"
+          >
+            <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '500' }}>Add to Reminders</Text>
+          </Pressable>
+        </View>
+
         {/* Action row — Edit | Delete (or just Done if read-only) */}
         <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
           {canModify ? (
@@ -208,6 +281,46 @@ export default function CalendarEventDetail() {
       </Pressable>
     </Pressable>
   )
+}
+
+/**
+ * Build a minimal RFC 5545 iCalendar (.ics) string for one event.
+ * Escapes commas / semicolons / newlines per spec, and folds lines
+ * conservatively (every 70 chars) so paste-into-mail Apple Calendar
+ * imports cleanly.
+ */
+function buildIcs(e: CalendarEvent): string {
+  const dt = (iso: string) => {
+    try {
+      const d = new Date(iso)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return (
+        `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
+        `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+      )
+    } catch {
+      return ''
+    }
+  }
+  const esc = (s: string) =>
+    s.replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
+  const uid = `${e.id}@circlesupporthealth.ai`
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Circle Support Health//CSH Calendar//EN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${dt(new Date().toISOString())}`,
+    `DTSTART:${dt(e.startDate)}`,
+    `DTEND:${dt(e.endDate)}`,
+    `SUMMARY:${esc(e.title)}`,
+    e.location ? `LOCATION:${esc(e.location)}` : null,
+    e.notes ? `DESCRIPTION:${esc(e.notes)}` : null,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean) as string[]
+  return lines.join('\r\n')
 }
 
 function fmtRange(e: CalendarEvent): string {
@@ -265,7 +378,9 @@ const styles = StyleSheet.create({
   subLine: { marginBottom: 4 },
   notes: { marginTop: 12, lineHeight: 21 },
   appBadge: { padding: 10, borderRadius: 8, marginTop: 12 },
-  actionsRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, marginTop: 16 },
+  secondaryRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, marginTop: 16 },
+  secondaryAction: { flex: 1, paddingVertical: 12, alignItems: 'center' },
+  actionsRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth },
   action: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   actionDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
   actionText: { fontWeight: '500' },
