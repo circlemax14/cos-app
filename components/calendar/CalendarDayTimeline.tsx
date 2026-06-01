@@ -1,122 +1,273 @@
 /**
- * Apple-Calendar-style day timeline: a vertically scrolling hour grid
+ * Apple-Calendar-style Day view: a vertically scrolling hour grid
  * (00:00 → 23:00) with event blocks sized + positioned by their actual
- * start / end times. Tap a block to open detail; tap empty space at an
- * hour to start a new event at that time.
+ * start/end times.
  *
- * Designed for the "Day" view of the calendar screen.
+ * v3 enhancements (matches calendar-mockups.html frame 5):
+ *   - `‹ ›` day-nav arrows in the header
+ *   - 7-day "week strip" with the selected day in black pill,
+ *     today in red pill (matches Apple iOS Calendar's expanded day view)
+ *   - Red "now line" with a small leading dot that slides down the
+ *     timeline at the current minute
+ *   - Auto-scroll to roughly the now-line on first mount so the user
+ *     lands where the action is
  */
 
-import React from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
+import { IconSymbol } from '@/components/ui/icon-symbol'
 import type { CalendarEvent } from '@/services/calendar'
 
 const HOUR_HEIGHT = 56 // px per hour row
 const HOUR_LABEL_WIDTH = 56
 const TIMELINE_TOP_PAD = 8
-const TIMELINE_BOTTOM_PAD = 24
+const TIMELINE_BOTTOM_PAD = 80
 
 interface Props {
-  dateIso: string // YYYY-MM-DD
-  events: CalendarEvent[]
+  dateIso: string // YYYY-MM-DD (the day being shown)
+  events: CalendarEvent[] // already filtered to this day
   onPressEvent: (event: CalendarEvent) => void
   onPressEmptyHour?: (hour: number) => void
+  /** Optional day-nav handlers — if omitted the arrows are hidden. */
+  onPressPrevDay?: () => void
+  onPressNextDay?: () => void
+  /** Optional week-strip selector. Receives the new YYYY-MM-DD. */
+  onSelectDate?: (iso: string) => void
 }
 
-export function CalendarDayTimeline({ dateIso, events, onPressEvent, onPressEmptyHour }: Props) {
+export function CalendarDayTimeline({
+  dateIso,
+  events,
+  onPressEvent,
+  onPressEmptyHour,
+  onPressPrevDay,
+  onPressNextDay,
+  onSelectDate,
+}: Props) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const scrollRef = useRef<ScrollView>(null)
+
+  // Tick every minute so the now-line updates while the user has the
+  // screen open. Cheap (one setState/min), and keeps the indicator honest.
+  const [nowTick, setNowTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   // Bucket: all-day events render at the top; timed events render in the grid.
   const allDay = events.filter((e) => e.allDay)
   const timed = events.filter((e) => !e.allDay)
 
-  const hours = Array.from({ length: 24 }, (_, i) => i)
+  const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), [])
+
+  // Now-line position: only render when viewing TODAY.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const isToday = dateIso === todayIso
+  let nowTop: number | null = null
+  if (isToday) {
+    const now = new Date()
+    nowTop = (now.getHours() + now.getMinutes() / 60) * HOUR_HEIGHT
+  }
+  // Reference nowTick so the dependency array of useEffect below picks up
+  // each minute's render — also satisfies linter without an extra var.
+  void nowTick
+
+  // Auto-scroll to a useful position once mounted.
+  useEffect(() => {
+    if (!scrollRef.current) return
+    const target = (nowTop ?? (8 * HOUR_HEIGHT)) - 120 // 8am or now-120
+    // Defer one frame so the layout is in place.
+    const id = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(target, 0), animated: false })
+    }, 60)
+    return () => clearTimeout(id)
+    // intentional: only on mount; subsequent date changes also scroll
+    // via the parent re-keying the component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateIso])
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: TIMELINE_BOTTOM_PAD }}>
-      {/* All-day strip */}
-      {allDay.length > 0 && (
-        <View style={[styles.allDayStrip, { borderBottomColor: colors.border }]}>
-          {allDay.map((e) => (
+    <View style={{ flex: 1 }}>
+      {/* ── Day-nav header ─────────────────────────────────────────── */}
+      {(onPressPrevDay || onPressNextDay) && (
+        <View style={[styles.dayNavRow, { borderBottomColor: colors.border }]}>
+          {onPressPrevDay && (
             <Pressable
-              key={e.id}
-              onPress={() => onPressEvent(e)}
-              style={({ pressed }) => [
-                styles.allDayPill,
-                { backgroundColor: e.source.color + (pressed ? 'AA' : 'DD') },
-              ]}
+              onPress={onPressPrevDay}
+              hitSlop={10}
+              style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
               accessibilityRole="button"
-              accessibilityLabel={`${e.title}, all-day event`}
+              accessibilityLabel="Previous day"
             >
-              <Text style={[styles.allDayText, { fontSize: getScaledFontSize(12) }]} numberOfLines={1}>
-                {e.title}
-              </Text>
+              <IconSymbol name="chevron.left" size={getScaledFontSize(20)} color={colors.tint} />
             </Pressable>
-          ))}
+          )}
+          <Text style={[styles.dayNavLabel, { color: colors.text, fontSize: getScaledFontSize(17) }]} numberOfLines={1}>
+            {fmtDayHeader(dateIso)}
+          </Text>
+          {onPressNextDay && (
+            <Pressable
+              onPress={onPressNextDay}
+              hitSlop={10}
+              style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Next day"
+            >
+              <IconSymbol name="chevron.right" size={getScaledFontSize(20)} color={colors.tint} />
+            </Pressable>
+          )}
         </View>
       )}
 
-      {/* Hour grid */}
-      <View style={[styles.grid, { paddingTop: TIMELINE_TOP_PAD }]}>
-        {hours.map((h) => (
-          <Pressable
-            key={h}
-            onPress={() => onPressEmptyHour?.(h)}
-            style={[styles.hourRow, { borderBottomColor: colors.border, height: HOUR_HEIGHT }]}
-            accessibilityRole="button"
-            accessibilityLabel={`Create event at ${formatHourLabel(h)}`}
-          >
-            <View style={[styles.hourLabel, { width: HOUR_LABEL_WIDTH }]}>
-              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textAlign: 'right' }}>
-                {formatHourLabel(h)}
-              </Text>
-            </View>
-            <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
-          </Pressable>
-        ))}
-
-        {/* Event blocks layered on top, absolutely positioned by time */}
-        <View style={[styles.eventLayer, { left: HOUR_LABEL_WIDTH + 8, right: 8, top: TIMELINE_TOP_PAD }]} pointerEvents="box-none">
-          {timed.map((e) => {
-            const layout = computeLayout(e, dateIso)
-            if (!layout) return null
+      {/* ── Week strip — 7-day picker around the selected day ──────── */}
+      {onSelectDate && (
+        <View style={[styles.weekStrip, { borderBottomColor: colors.border }]}>
+          {buildWeek(dateIso).map((d) => {
+            const isSel = d.iso === dateIso
+            const isTodayCell = d.iso === todayIso
+            const pillBg = isSel && isTodayCell ? '#FF3B30' // Apple red
+              : isSel ? colors.text
+              : 'transparent'
+            const numColor = (isSel) ? '#fff' : isTodayCell ? '#FF3B30' : colors.text
             return (
               <Pressable
-                key={e.id}
-                onPress={() => onPressEvent(e)}
-                style={[
-                  styles.eventBlock,
-                  {
-                    top: layout.top,
-                    height: layout.height,
-                    backgroundColor: e.source.color + '22',
-                    borderLeftColor: e.source.color,
-                  },
-                ]}
+                key={d.iso}
+                onPress={() => onSelectDate(d.iso)}
+                style={styles.weekDayCol}
                 accessibilityRole="button"
-                accessibilityLabel={`${e.title}, ${layout.timeLabel}`}
+                accessibilityLabel={`Select ${d.long}`}
               >
-                <Text
-                  style={[styles.eventTitle, { color: colors.text, fontSize: getScaledFontSize(13) }]}
-                  numberOfLines={layout.height < 40 ? 1 : 2}
-                >
-                  {e.title}
+                <Text style={[styles.weekWd, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>
+                  {d.wd}
                 </Text>
-                {layout.height >= 40 && (
-                  <Text style={[styles.eventTime, { color: colors.subtext, fontSize: getScaledFontSize(11) }]} numberOfLines={1}>
-                    {layout.timeLabel}
-                    {e.location ? ` · ${e.location}` : ''}
+                <View
+                  style={[
+                    styles.weekPill,
+                    { backgroundColor: pillBg },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: numColor,
+                      fontSize: getScaledFontSize(17),
+                      fontWeight: isSel || isTodayCell ? '700' : '400',
+                    }}
+                  >
+                    {d.num}
                   </Text>
-                )}
+                </View>
               </Pressable>
             )
           })}
         </View>
-      </View>
-    </ScrollView>
+      )}
+
+      {/* ── Scrollable timeline ────────────────────────────────────── */}
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: TIMELINE_BOTTOM_PAD }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* All-day strip */}
+        {allDay.length > 0 && (
+          <View style={[styles.allDayStrip, { borderBottomColor: colors.border, backgroundColor: colors.cardBackground }]}>
+            {allDay.map((e) => (
+              <Pressable
+                key={e.id}
+                onPress={() => onPressEvent(e)}
+                style={({ pressed }) => [
+                  styles.allDayPill,
+                  { backgroundColor: e.source.color + (pressed ? 'AA' : 'DD') },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${e.title}, all-day event`}
+              >
+                <Text style={[styles.allDayText, { fontSize: getScaledFontSize(13) }]} numberOfLines={1}>
+                  {e.title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {/* Hour grid */}
+        <View style={[styles.grid, { paddingTop: TIMELINE_TOP_PAD }]}>
+          {hours.map((h) => (
+            <Pressable
+              key={h}
+              onPress={() => onPressEmptyHour?.(h)}
+              style={[styles.hourRow, { borderBottomColor: colors.border, height: HOUR_HEIGHT }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Create event at ${formatHourLabel(h)}`}
+            >
+              <View style={[styles.hourLabel, { width: HOUR_LABEL_WIDTH }]}>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textAlign: 'right' }}>
+                  {formatHourLabel(h)}
+                </Text>
+              </View>
+              <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+            </Pressable>
+          ))}
+
+          {/* Event blocks layered on top */}
+          <View
+            style={[styles.eventLayer, { left: HOUR_LABEL_WIDTH + 8, right: 8, top: TIMELINE_TOP_PAD }]}
+            pointerEvents="box-none"
+          >
+            {timed.map((e) => {
+              const layout = computeLayout(e, dateIso)
+              if (!layout) return null
+              return (
+                <Pressable
+                  key={e.id}
+                  onPress={() => onPressEvent(e)}
+                  style={[
+                    styles.eventBlock,
+                    {
+                      top: layout.top,
+                      height: layout.height,
+                      backgroundColor: e.source.color + '22',
+                      borderLeftColor: e.source.color,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${e.title}, ${layout.timeLabel}`}
+                >
+                  <Text
+                    style={[styles.eventTitle, { color: colors.text, fontSize: getScaledFontSize(13) }]}
+                    numberOfLines={layout.height < 40 ? 1 : 2}
+                  >
+                    {e.title}
+                  </Text>
+                  {layout.height >= 40 && (
+                    <Text style={[styles.eventTime, { color: colors.subtext, fontSize: getScaledFontSize(11) }]} numberOfLines={1}>
+                      {layout.timeLabel}
+                      {e.location ? ` · ${e.location}` : ''}
+                    </Text>
+                  )}
+                </Pressable>
+              )
+            })}
+          </View>
+
+          {/* Now-line (red horizontal line + dot) — only when viewing today */}
+          {nowTop !== null && (
+            <View
+              pointerEvents="none"
+              style={[styles.nowLine, { top: TIMELINE_TOP_PAD + nowTop }]}
+            >
+              <View style={styles.nowDot} />
+              <View style={styles.nowBar} />
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   )
 }
 
@@ -125,6 +276,39 @@ function formatHourLabel(h: number): string {
   if (h === 12) return '12 PM'
   if (h < 12) return `${h} AM`
   return `${h - 12} PM`
+}
+
+function fmtDayHeader(dayIso: string): string {
+  try {
+    return new Date(`${dayIso}T00:00:00`).toLocaleString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  } catch {
+    return dayIso
+  }
+}
+
+/** Returns the 7 days (Sun-Sat) of the week containing dayIso. */
+function buildWeek(dayIso: string): { iso: string; wd: string; num: number; long: string }[] {
+  const d = new Date(`${dayIso}T00:00:00`)
+  d.setDate(d.getDate() - d.getDay()) // back to Sunday
+  const out: { iso: string; wd: string; num: number; long: string }[] = []
+  const wdShort = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(d)
+    day.setDate(d.getDate() + i)
+    const iso = day.toISOString().slice(0, 10)
+    out.push({
+      iso,
+      wd: wdShort[i],
+      num: day.getDate(),
+      long: day.toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
+    })
+  }
+  return out
 }
 
 interface BlockLayout {
@@ -139,7 +323,6 @@ function computeLayout(event: CalendarEvent, dayIso: string): BlockLayout | null
     const dayEnd = new Date(`${dayIso}T23:59:59.999`)
     const s = new Date(event.startDate)
     const e = new Date(event.endDate)
-    // Clamp to day window (multi-day events get clipped to the visible day)
     const cs = s.getTime() < dayStart.getTime() ? dayStart : s
     const ce = e.getTime() > dayEnd.getTime() ? dayEnd : e
     if (ce.getTime() <= cs.getTime()) return null
@@ -156,6 +339,34 @@ function computeLayout(event: CalendarEvent, dayIso: string): BlockLayout | null
 }
 
 const styles = StyleSheet.create({
+  // Day-nav header
+  dayNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dayNavBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+  dayNavLabel: { fontWeight: '600', flex: 1, textAlign: 'center', letterSpacing: -0.1 },
+  // Week strip
+  weekStrip: {
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  weekDayCol: { flex: 1, alignItems: 'center' },
+  weekWd: { fontWeight: '600', letterSpacing: 0.5, marginBottom: 4 },
+  weekPill: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Timeline
   allDayStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   allDayPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   allDayText: { color: '#fff', fontWeight: '600' },
@@ -167,4 +378,26 @@ const styles = StyleSheet.create({
   eventBlock: { position: 'absolute', left: 0, right: 0, borderLeftWidth: 3, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, overflow: 'hidden' },
   eventTitle: { fontWeight: '600' },
   eventTime: { marginTop: 2 },
+  // Now-line
+  nowLine: {
+    position: 'absolute',
+    left: HOUR_LABEL_WIDTH + 2,
+    right: 0,
+    height: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  nowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30', // Apple system red
+    marginLeft: -4,
+  },
+  nowBar: {
+    flex: 1,
+    height: 1.5,
+    backgroundColor: '#FF3B30',
+  },
 })

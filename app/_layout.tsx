@@ -117,9 +117,12 @@ function StackWithAppLock() {
       <Stack.Screen
         name="calendar-event-detail"
         options={{
-          presentation: 'modal',
+          // Apple-style: dimmed underlying screen visible through the popover
+          presentation: 'transparentModal',
+          animation: 'fade',
           title: 'Event Detail',
           headerShown: false,
+          contentStyle: { backgroundColor: 'transparent' },
         }}
       />
     </Stack>

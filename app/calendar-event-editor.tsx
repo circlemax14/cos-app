@@ -93,6 +93,15 @@ export default function CalendarEventEditor() {
   const [calendars, setCalendars] = useState<CalendarSource[]>([])
   const [chosenCalendarId, setChosenCalendarId] = useState<string | null>(null)
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([15])
+  // Apple-parity additional fields (display-only for picker-heavy ones;
+  // wired for URL + Show As since those are simple).
+  const [url, setUrl] = useState('')
+  const [showAs, setShowAs] = useState<'busy' | 'free'>('busy')
+  const [repeatLabel] = useState('Never')
+  const [travelTimeLabel] = useState('None')
+  const [timeZoneLabel] = useState(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'Device default' }
+  })
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingExisting, setIsLoadingExisting] = useState(isEditMode)
 
@@ -293,6 +302,28 @@ export default function CalendarEventEditor() {
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             />
           )}
+          {/* Time Zone — display-only for now; picker is v4 work */}
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <Row colors={colors} label="Time Zone" labelSize={getScaledFontSize(15)}>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(15) }}>
+              {timeZoneLabel} ›
+            </Text>
+          </Row>
+        </Field>
+
+        {/* Repeat + Travel Time — display rows for visual parity with Apple */}
+        <Field colors={colors}>
+          <Row colors={colors} label="Repeat" labelSize={getScaledFontSize(15)}>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(15) }}>
+              {repeatLabel} ›
+            </Text>
+          </Row>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <Row colors={colors} label="Travel Time" labelSize={getScaledFontSize(15)}>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(15) }}>
+              {travelTimeLabel} ›
+            </Text>
+          </Row>
         </Field>
 
         {/* Calendar picker */}
@@ -346,6 +377,34 @@ export default function CalendarEventEditor() {
             placeholderTextColor={colors.subtext}
             value={location}
             onChangeText={setLocation}
+          />
+        </Field>
+
+        {/* Show As (Free / Busy) */}
+        <Field colors={colors}>
+          <Pressable onPress={() => setShowAs((p) => p === 'busy' ? 'free' : 'busy')}>
+            <Row colors={colors} label="Show As" labelSize={getScaledFontSize(15)}>
+              <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15), textTransform: 'capitalize' }}>
+                {showAs} ›
+              </Text>
+            </Row>
+          </Pressable>
+        </Field>
+
+        {/* URL */}
+        <Field colors={colors}>
+          <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+            URL
+          </Text>
+          <TextInput
+            style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(15) }]}
+            placeholder="https://"
+            placeholderTextColor={colors.subtext}
+            value={url}
+            onChangeText={setUrl}
+            keyboardType="url"
+            autoCapitalize="none"
+            autoCorrect={false}
           />
         </Field>
 
@@ -501,6 +560,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   fieldLabel: { fontWeight: '700', letterSpacing: 0.6, marginTop: 8, marginBottom: 4 },
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: -14 },
   titleInput: { fontWeight: '700', paddingVertical: 12 },
   input: { paddingVertical: 12 },
   multiline: { minHeight: 80, textAlignVertical: 'top' },

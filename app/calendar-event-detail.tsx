@@ -1,10 +1,14 @@
 /**
- * SCRUM-279 / COS-308 — event detail modal.
+ * SCRUM-279 / COS-308 — event detail popover.
  *
- * Read-only display of an event, with Delete action for device-owned
- * events the user can modify. Past visits / app-virtual events render
- * the same fields but the Delete action is hidden (they're not stored
- * in the OS calendar).
+ * Apple-Calendar-style: a translucent card centered over a dimmed
+ * backdrop instead of a full-screen view. Tapping outside the card
+ * dismisses; tapping Edit opens the full editor; tapping Delete prompts
+ * confirmation.
+ *
+ * Route is presented as a transparent modal (see app/_layout.tsx where
+ * `presentation: 'transparentModal'` is set) so the underlying screen
+ * shows through the dim.
  *
  * To find the event we re-read the day's events from the OS rather than
  * passing the full event through the URL — keeps the route URL clean
@@ -58,95 +62,151 @@ export default function CalendarEventDetail() {
     )
   }
 
+  const handleEdit = () => {
+    if (!event) return
+    router.replace({ pathname: '/calendar-event-editor', params: { eventId: event.id } } as never)
+  }
+
+  const dismiss = () => router.back()
+
   if (isLoading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.tint} />
+      <View style={styles.backdrop}>
+        <View style={[styles.card, { backgroundColor: colors.background }]}>
+          <ActivityIndicator color={colors.tint} />
+        </View>
       </View>
     )
   }
 
   if (!event) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}>Event not found</Text>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>Back</Text>
-        </Pressable>
-      </View>
+      <Pressable style={styles.backdrop} onPress={dismiss} accessibilityRole="button" accessibilityLabel="Dismiss">
+        <View style={[styles.card, { backgroundColor: colors.background }]}>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), textAlign: 'center' }}>
+            Event not found
+          </Text>
+        </View>
+      </Pressable>
     )
   }
 
-  const canDelete = event.origin === 'device' && event.source.allowsWrite
+  const canModify = event.origin === 'device' && event.source.allowsWrite
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close">
-          <Text style={[styles.headerBtn, { color: colors.tint, fontSize: getScaledFontSize(15) }]}>Done</Text>
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16) }]} numberOfLines={1}>
-          Event
-        </Text>
-        {event && event.origin === 'device' && event.source.allowsWrite ? (
-          <Pressable
-            onPress={() => router.push({ pathname: '/calendar-event-editor', params: { eventId: event.id } } as never)}
-            accessibilityRole="button"
-            accessibilityLabel="Edit event"
-          >
-            <Text style={[styles.headerBtn, styles.headerBtnPrimary, { color: colors.tint, fontSize: getScaledFontSize(15) }]}>
-              Edit
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 60 }} />
-        )}
-      </View>
-
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
-        <View style={[styles.titleRow]}>
+    <Pressable
+      style={styles.backdrop}
+      onPress={dismiss}
+      accessibilityRole="button"
+      accessibilityLabel="Dismiss event detail"
+    >
+      {/* Inner Pressable swallows the press so taps inside the card don't dismiss */}
+      <Pressable
+        onPress={(e) => e.stopPropagation?.()}
+        style={[styles.card, { backgroundColor: colors.background }]}
+      >
+        {/* Title row — color bar + title */}
+        <View style={styles.titleRow}>
           <View style={[styles.colorBar, { backgroundColor: event.source.color }]} />
-          <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22) }]} selectable>
+          <Text
+            style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22) }]}
+            selectable
+            numberOfLines={3}
+          >
             {event.title}
           </Text>
         </View>
 
-        <Detail colors={colors} label="When" value={fmtRange(event)} size={getScaledFontSize(15)} />
-        {event.location && (
-          <Detail colors={colors} label="Location" value={event.location} size={getScaledFontSize(15)} />
-        )}
-        <Detail colors={colors} label="Calendar" value={`${event.source.title} · ${event.source.source}`} size={getScaledFontSize(15)} />
-        {event.alarms.length > 0 && (
-          <Detail
-            colors={colors}
-            label="Reminders"
-            value={event.alarms.map((m) => fmtAlarm(m)).join(', ')}
-            size={getScaledFontSize(15)}
-          />
-        )}
-        {event.notes && (
-          <Detail colors={colors} label="Notes" value={event.notes} size={getScaledFontSize(15)} multiline />
-        )}
-        {event.origin === 'app' && (
-          <View style={[styles.appBadge, { backgroundColor: colors.cardBackground }]}>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
-              From Circle Support Health — not stored in your device calendar.
-            </Text>
-          </View>
-        )}
+        {/* Source — small line under title (Apple shows "iCloud · Personal" etc.) */}
+        <Text style={[styles.source, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+          {event.source.title} · {event.source.source}
+        </Text>
 
-        {canDelete && (
-          <Pressable
-            onPress={handleDelete}
-            style={({ pressed }) => [styles.deleteBtn, { opacity: pressed ? 0.7 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Delete event"
-          >
-            <Text style={[styles.deleteText, { fontSize: getScaledFontSize(15) }]}>Delete Event</Text>
-          </Pressable>
-        )}
-      </ScrollView>
-    </View>
+        <ScrollView
+          style={{ maxHeight: 280 }}
+          contentContainerStyle={{ paddingVertical: 8 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Time */}
+          <Text style={[styles.bigLine, { color: colors.text, fontSize: getScaledFontSize(17) }]}>
+            {fmtRange(event)}
+          </Text>
+
+          {/* Location */}
+          {event.location && (
+            <Text style={[styles.subLine, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
+              📍 {event.location}
+            </Text>
+          )}
+
+          {/* Alarms */}
+          {event.alarms.length > 0 && (
+            <Text style={[styles.subLine, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
+              🔔 {event.alarms.map((m) => fmtAlarm(m)).join(', ')}
+            </Text>
+          )}
+
+          {/* Notes */}
+          {event.notes && (
+            <Text
+              style={[styles.notes, { color: colors.text, fontSize: getScaledFontSize(15) }]}
+              selectable
+            >
+              {event.notes}
+            </Text>
+          )}
+
+          {/* App-source badge */}
+          {event.origin === 'app' && (
+            <View style={[styles.appBadge, { backgroundColor: colors.cardBackground }]}>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), textAlign: 'center' }}>
+                From Circle Support Health — not stored in your device calendar.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Action row — Edit | Delete (or just Done if read-only) */}
+        <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+          {canModify ? (
+            <>
+              <Pressable
+                onPress={handleEdit}
+                style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Edit event"
+              >
+                <Text style={[styles.actionText, { color: colors.tint, fontSize: getScaledFontSize(16) }]}>
+                  Edit
+                </Text>
+              </Pressable>
+              <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
+              <Pressable
+                onPress={handleDelete}
+                style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Delete event"
+              >
+                <Text style={[styles.actionText, { color: '#FF3B30', fontSize: getScaledFontSize(16) }]}>
+                  Delete
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              onPress={dismiss}
+              style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Done"
+            >
+              <Text style={[styles.actionText, { color: colors.tint, fontSize: getScaledFontSize(16) }]}>
+                Done
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </Pressable>
+    </Pressable>
   )
 }
 
@@ -154,8 +214,10 @@ function fmtRange(e: CalendarEvent): string {
   try {
     const s = new Date(e.startDate)
     const en = new Date(e.endDate)
-    if (e.allDay) return `${s.toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })} (all-day)`
-    const sd = s.toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric' })
+    if (e.allDay) {
+      return `${s.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} (all-day)`
+    }
+    const sd = s.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
     const st = s.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     const et = en.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     const sameDay = s.toDateString() === en.toDateString()
@@ -174,43 +236,37 @@ function fmtAlarm(minutes: number): string {
   return `${Math.round(minutes / 60 / 24)} d before`
 }
 
-interface DetailProps { colors: typeof Colors.light; label: string; value: string; size: number; multiline?: boolean }
-function Detail({ colors, label, value, size, multiline }: DetailProps) {
-  return (
-    <View style={[styles.detailBlock, { borderBottomColor: colors.border }]}>
-      <Text style={{ color: colors.subtext, fontSize: size * 0.8, fontWeight: '700', letterSpacing: 0.5 }}>
-        {label.toUpperCase()}
-      </Text>
-      <Text
-        style={{ color: colors.text, fontSize: size, marginTop: 4, lineHeight: multiline ? size * 1.4 : undefined }}
-        selectable
-      >
-        {value}
-      </Text>
-    </View>
-  )
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  backBtn: { marginTop: 16, padding: 12 },
-  header: {
-    flexDirection: 'row',
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontWeight: '700', flex: 1, textAlign: 'center', marginHorizontal: 8 },
-  headerBtn: { fontWeight: '600', minWidth: 60 },
-  headerBtnPrimary: { fontWeight: '700', textAlign: 'right' },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 24 },
-  colorBar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
-  title: { fontWeight: '700', flex: 1 },
-  detailBlock: { paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  appBadge: { padding: 12, borderRadius: 8, marginTop: 16, alignItems: 'center' },
-  deleteBtn: { marginTop: 32, paddingVertical: 14, alignItems: 'center' },
-  deleteText: { color: '#D04E4E', fontWeight: '600' },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 0,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 12,
+  },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 4 },
+  colorBar: { width: 4, height: 24, borderRadius: 2, marginTop: 4 },
+  title: { fontWeight: '700', flex: 1, letterSpacing: -0.3 },
+  source: { marginBottom: 14, marginLeft: 14 },
+  bigLine: { fontWeight: '500', marginBottom: 4 },
+  subLine: { marginBottom: 4 },
+  notes: { marginTop: 12, lineHeight: 21 },
+  appBadge: { padding: 10, borderRadius: 8, marginTop: 12 },
+  actionsRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, marginTop: 16 },
+  action: { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  actionDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
+  actionText: { fontWeight: '500' },
 })

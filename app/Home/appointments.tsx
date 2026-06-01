@@ -37,7 +37,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { IconSymbol } from '@/components/ui/icon-symbol'
 import { CalendarPermissionGate } from '@/components/calendar/CalendarPermissionGate'
-import { CalendarMonthView } from '@/components/calendar/CalendarMonthView'
+import { CalendarMonthView, type MonthDensityMode } from '@/components/calendar/CalendarMonthView'
 import { CalendarYearView } from '@/components/calendar/CalendarYearView'
 import { CalendarDayTimeline } from '@/components/calendar/CalendarDayTimeline'
 import { EventListItem } from '@/components/calendar/EventListItem'
@@ -55,6 +55,13 @@ const SEARCH_HEIGHT = 44 // pixel height of the slide-in search bar
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+/** Shift an ISO date by N days (positive or negative), returning ISO. */
+function addDays(dayIso: string, delta: number): string {
+  const d = new Date(`${dayIso}T00:00:00`)
+  d.setDate(d.getDate() + delta)
+  return d.toISOString().slice(0, 10)
 }
 
 function toIso(date: string, time?: string): string {
@@ -111,6 +118,9 @@ export default function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<string>(todayIso())
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  // Apple's Month-view density toggle (pinch-to-zoom on Apple — we
+  // expose it as a small chip in the title bar).
+  const [monthDensity, setMonthDensity] = useState<MonthDensityMode>('compact')
 
   // Search-bar slide animation (Apple Calendar style: search field
   // animates down from beneath the header on tap, slides back up on
@@ -222,11 +232,21 @@ export default function CalendarScreen() {
                 <EventListItem event={item} compact onPress={() => openDetail(item)} />
               )}
               ListHeaderComponent={
-                <CalendarMonthView
-                  events={filteredEvents}
-                  selectedDate={selectedDay}
-                  onSelectDate={setSelectedDay}
-                />
+                <View>
+                  <DensitySwitcher
+                    density={monthDensity}
+                    onChange={setMonthDensity}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                  />
+                  <CalendarMonthView
+                    events={filteredEvents}
+                    selectedDate={selectedDay}
+                    onSelectDate={setSelectedDay}
+                    onMonthChange={(iso) => setSelectedDay(iso)}
+                    density={monthDensity}
+                  />
+                </View>
               }
               ListEmptyComponent={
                 <Text style={[styles.empty, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
@@ -237,10 +257,14 @@ export default function CalendarScreen() {
             />
           ) : activeView === 'day' ? (
             <CalendarDayTimeline
+              key={selectedDay} // re-mount on day change so auto-scroll re-runs
               dateIso={selectedDay}
               events={eventsForSelectedDay}
               onPressEvent={openDetail}
               onPressEmptyHour={(h) => openEditor(selectedDay, h)}
+              onPressPrevDay={() => setSelectedDay(addDays(selectedDay, -1))}
+              onPressNextDay={() => setSelectedDay(addDays(selectedDay, 1))}
+              onSelectDate={setSelectedDay}
             />
           ) : (
             <FlatList
@@ -278,6 +302,58 @@ export default function CalendarScreen() {
         </View>
       </CalendarPermissionGate>
     </AppWrapper>
+  )
+}
+
+/**
+ * Apple Calendar's Month-density toggle. Apple uses pinch-to-zoom; we
+ * surface it as a small segmented chip just above the grid because
+ * pinch on a calendar grid is a non-obvious gesture.
+ */
+function DensitySwitcher({
+  density, onChange, colors, getScaledFontSize,
+}: {
+  density: MonthDensityMode
+  onChange: (m: MonthDensityMode) => void
+  colors: typeof Colors.light
+  getScaledFontSize: (n: number) => number
+}) {
+  const modes: { id: MonthDensityMode; label: string }[] = [
+    { id: 'compact', label: 'Compact' },
+    { id: 'stacked', label: 'Stacked' },
+    { id: 'details', label: 'Details' },
+  ]
+  return (
+    <View style={styles.densityRow}>
+      <View style={[styles.densityChip, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+        {modes.map((m) => {
+          const active = m.id === density
+          return (
+            <Pressable
+              key={m.id}
+              onPress={() => onChange(m.id)}
+              style={[
+                styles.densitySegment,
+                { backgroundColor: active ? colors.background : 'transparent' },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to ${m.label} density`}
+              accessibilityState={{ selected: active }}
+            >
+              <Text
+                style={{
+                  color: active ? colors.text : colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                  fontWeight: active ? '600' : '500',
+                }}
+              >
+                {m.label}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>
+    </View>
   )
 }
 
@@ -454,4 +530,18 @@ const styles = StyleSheet.create({
   dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
   fab: { position: 'absolute', right: 20, bottom: 100, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   fabPlus: { color: '#fff', fontSize: 30, fontWeight: '300', lineHeight: 32 },
+  // Density switcher (Apple Month-view pinch alternative)
+  densityRow: { alignItems: 'center', paddingVertical: 8 },
+  densityChip: {
+    flexDirection: 'row',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 2,
+    gap: 2,
+  },
+  densitySegment: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
 })
