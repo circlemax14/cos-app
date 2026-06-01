@@ -48,6 +48,21 @@ import {
   updateEvent,
   type CalendarSource,
 } from '@/services/calendar'
+import {
+  getCalendarPreferences,
+  setCalendarPreferences,
+} from '@/services/calendar-preferences'
+import {
+  SelectionPicker,
+  TimeZonePicker,
+  REPEAT_OPTIONS,
+  TRAVEL_TIME_OPTIONS,
+  labelForRepeat,
+  labelForTravelTime,
+  type RepeatValue,
+  type TravelTimeValue,
+} from '@/components/calendar/pickers'
+import { hapticSelection, hapticNotify } from '@/utils/haptics'
 
 const HIPAA_ACK_KEY = 'csh-calendar-hipaa-ack-v1'
 
@@ -84,6 +99,10 @@ export default function CalendarEventEditor() {
     return startOfNextHour(new Date())
   }, [day])
 
+  const deviceTimeZone = useMemo(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'UTC' }
+  }, [])
+
   const [title, setTitle] = useState('')
   const [allDay, setAllDay] = useState(false)
   const [start, setStart] = useState<Date>(seedDate)
@@ -93,15 +112,13 @@ export default function CalendarEventEditor() {
   const [calendars, setCalendars] = useState<CalendarSource[]>([])
   const [chosenCalendarId, setChosenCalendarId] = useState<string | null>(null)
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([15])
-  // Apple-parity additional fields (display-only for picker-heavy ones;
-  // wired for URL + Show As since those are simple).
+  // H10: optional second alert offset; null = "None"
+  const [secondAlarm, setSecondAlarm] = useState<number | null>(null)
   const [url, setUrl] = useState('')
   const [showAs, setShowAs] = useState<'busy' | 'free'>('busy')
-  const [repeatLabel] = useState('Never')
-  const [travelTimeLabel] = useState('None')
-  const [timeZoneLabel] = useState(() => {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'Device default' }
-  })
+  const [repeatValue, setRepeatValue] = useState<RepeatValue>('never')
+  const [travelTimeValue, setTravelTimeValue] = useState<TravelTimeValue>('none')
+  const [timeZone, setTimeZone] = useState<string>(deviceTimeZone)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingExisting, setIsLoadingExisting] = useState(isEditMode)
 
@@ -109,16 +126,35 @@ export default function CalendarEventEditor() {
   const [showStartPicker, setShowStartPicker] = useState(false)
   const [showEndPicker, setShowEndPicker] = useState(false)
 
+  // Picker modal visibility flags
+  const [showTzPicker, setShowTzPicker] = useState(false)
+  const [showRepeatPicker, setShowRepeatPicker] = useState(false)
+  const [showTravelPicker, setShowTravelPicker] = useState(false)
+
   // HIPAA disclosure
   const [showHipaa, setShowHipaa] = useState(false)
 
   useEffect(() => {
     void (async () => {
-      const cals = await listCalendars()
+      const [cals, prefs] = await Promise.all([
+        listCalendars(),
+        getCalendarPreferences(),
+      ])
       const writable = cals.filter((c) => c.allowsWrite)
       setCalendars(writable)
-      if (writable.length > 0 && !chosenCalendarId) {
-        setChosenCalendarId(writable[0].id)
+
+      // H16: prefer the saved default calendar; otherwise first writable.
+      const preferred = writable.find((c) => c.id === prefs.defaultCalendarId)
+      const initialCal = preferred ?? writable[0]
+      if (initialCal && !chosenCalendarId) setChosenCalendarId(initialCal.id)
+
+      // H16: prefill alarms + repeat + travel + TZ from last-used (when
+      // creating a new event — edits get overwritten below).
+      if (!isEditMode) {
+        setSelectedAlarms(prefs.defaultAlertMinutes)
+        setRepeatValue(prefs.lastUsedRepeat as RepeatValue)
+        setTravelTimeValue(prefs.lastUsedTravelTime as TravelTimeValue)
+        if (prefs.lastUsedTimeZone) setTimeZone(prefs.lastUsedTimeZone)
       }
 
       // Prefill from existing event when editing
@@ -164,9 +200,14 @@ export default function CalendarEventEditor() {
   const commitSave = async () => {
     if (!chosenCalendarId) return
     setIsSaving(true)
+    // Combine primary + optional second alarm into the alarms array
+    const allAlarms = secondAlarm !== null
+      ? Array.from(new Set([...selectedAlarms, secondAlarm])).sort((a, b) => a - b)
+      : selectedAlarms
     try {
+      let ok = false
       if (isEditMode && eventId) {
-        const ok = await updateEvent({
+        ok = await updateEvent({
           id: eventId,
           title: title.trim(),
           startDate: start,
@@ -174,10 +215,8 @@ export default function CalendarEventEditor() {
           allDay,
           location: location.trim() || undefined,
           notes: notes.trim() || undefined,
-          alarms: selectedAlarms,
+          alarms: allAlarms,
         })
-        if (ok) router.back()
-        else Alert.alert('Could not save', 'The event could not be updated. Please check your calendar permissions and try again.')
       } else {
         const newId = await createEvent({
           title: title.trim(),
@@ -187,10 +226,29 @@ export default function CalendarEventEditor() {
           location: location.trim() || undefined,
           notes: notes.trim() || undefined,
           calendarId: chosenCalendarId,
-          alarms: selectedAlarms,
+          alarms: allAlarms,
         })
-        if (newId) router.back()
-        else Alert.alert('Could not save', 'The event could not be saved. Please check your calendar permissions and try again.')
+        ok = !!newId
+      }
+      if (ok) {
+        hapticNotify('success')
+        // H16: remember picks for next-time defaults (non-blocking).
+        void setCalendarPreferences({
+          defaultCalendarId: chosenCalendarId,
+          defaultAlertMinutes: selectedAlarms,
+          lastUsedTimeZone: timeZone,
+          lastUsedRepeat: repeatValue,
+          lastUsedTravelTime: travelTimeValue,
+        })
+        router.back()
+      } else {
+        hapticNotify('error')
+        Alert.alert(
+          'Could not save',
+          isEditMode
+            ? 'The event could not be updated. Please check your calendar permissions and try again.'
+            : 'The event could not be saved. Please check your calendar permissions and try again.',
+        )
       }
     } finally {
       setIsSaving(false)
@@ -254,7 +312,8 @@ export default function CalendarEventEditor() {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
-        {/* Title */}
+        {/* H1: Combined Title + Location field — Apple's signature
+            first-card pattern. Title on top, hairline, location below. */}
         <Field colors={colors}>
           <TextInput
             style={[styles.titleInput, { color: colors.text, fontSize: getScaledFontSize(20) }]}
@@ -263,6 +322,16 @@ export default function CalendarEventEditor() {
             value={title}
             onChangeText={setTitle}
             autoFocus
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <TextInput
+            style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(15) }]}
+            placeholder="Location or Video Call"
+            placeholderTextColor={colors.subtext}
+            value={location}
+            onChangeText={setLocation}
+            autoCorrect
+            autoCapitalize="words"
           />
         </Field>
 
@@ -319,28 +388,34 @@ export default function CalendarEventEditor() {
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             />
           )}
-          {/* Time Zone — display-only for now; picker is v4 work */}
+          {/* H4: Time Zone picker — tappable, opens searchable list */}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Row colors={colors} label="Time Zone" labelSize={getScaledFontSize(15)}>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(15) }}>
-              {timeZoneLabel} ›
-            </Text>
-          </Row>
+          <Pressable onPress={() => { hapticSelection(); setShowTzPicker(true) }}>
+            <Row colors={colors} label="Time Zone" labelSize={getScaledFontSize(15)}>
+              <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
+                {timeZone.replace(/_/g, ' ')} ›
+              </Text>
+            </Row>
+          </Pressable>
         </Field>
 
-        {/* Repeat + Travel Time — display rows for visual parity with Apple */}
+        {/* H5/H6: Repeat + Travel Time — full pickers */}
         <Field colors={colors}>
-          <Row colors={colors} label="Repeat" labelSize={getScaledFontSize(15)}>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(15) }}>
-              {repeatLabel} ›
-            </Text>
-          </Row>
+          <Pressable onPress={() => { hapticSelection(); setShowRepeatPicker(true) }}>
+            <Row colors={colors} label="Repeat" labelSize={getScaledFontSize(15)}>
+              <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
+                {labelForRepeat(repeatValue)} ›
+              </Text>
+            </Row>
+          </Pressable>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Row colors={colors} label="Travel Time" labelSize={getScaledFontSize(15)}>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(15) }}>
-              {travelTimeLabel} ›
-            </Text>
-          </Row>
+          <Pressable onPress={() => { hapticSelection(); setShowTravelPicker(true) }}>
+            <Row colors={colors} label="Travel Time" labelSize={getScaledFontSize(15)}>
+              <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
+                {labelForTravelTime(travelTimeValue)} ›
+              </Text>
+            </Row>
+          </Pressable>
         </Field>
 
         {/* Calendar picker */}
@@ -358,7 +433,7 @@ export default function CalendarEventEditor() {
               return (
                 <Pressable
                   key={c.id}
-                  onPress={() => setChosenCalendarId(c.id)}
+                  onPress={() => { hapticSelection(); setChosenCalendarId(c.id) }}
                   style={({ pressed }) => [
                     styles.calRow,
                     { borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 },
@@ -383,19 +458,31 @@ export default function CalendarEventEditor() {
           )}
         </Field>
 
-        {/* Location */}
-        <Field colors={colors}>
-          <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-            LOCATION
-          </Text>
-          <TextInput
-            style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(15) }]}
-            placeholder="Add location"
-            placeholderTextColor={colors.subtext}
-            value={location}
-            onChangeText={setLocation}
-          />
-        </Field>
+        {/* H17: Non-default-calendar banner — shown when the picked
+            calendar is from a non-iCloud / non-local account so the user
+            understands the event will appear in (and sync to) that
+            account's calendar app. */}
+        {(() => {
+          const chosen = calendars.find((c) => c.id === chosenCalendarId)
+          if (!chosen) return null
+          const lower = (chosen.source ?? '').toLowerCase()
+          const isNonLocal = lower && lower !== 'local' && lower !== 'icloud' && lower !== 'default'
+          if (!isNonLocal) return null
+          return (
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: -8,
+                marginBottom: 14,
+                marginHorizontal: 4,
+                lineHeight: 17,
+              }}
+            >
+              This event will be added to {chosen.source} and will appear in your other {chosen.source} apps.
+            </Text>
+          )
+        })()}
 
         {/* Show As (Free / Busy) */}
         <Field colors={colors}>
@@ -441,10 +528,10 @@ export default function CalendarEventEditor() {
           />
         </Field>
 
-        {/* Reminders */}
+        {/* Alert (first) */}
         <Field colors={colors}>
           <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-            REMINDERS — minutes before
+            ALERT — minutes before
           </Text>
           <View style={styles.chips}>
             {ALARM_OPTIONS.map((opt) => {
@@ -452,14 +539,73 @@ export default function CalendarEventEditor() {
               return (
                 <Pressable
                   key={opt.minutes}
-                  onPress={() => toggleAlarm(opt.minutes)}
+                  onPress={() => { hapticSelection(); toggleAlarm(opt.minutes) }}
                   style={[
                     styles.chip,
                     { borderColor: sel ? colors.tint : colors.border, backgroundColor: sel ? colors.tint : 'transparent' },
                   ]}
                   accessibilityRole="button"
                   accessibilityState={{ selected: sel }}
-                  accessibilityLabel={`${opt.label} reminder`}
+                  accessibilityLabel={`${opt.label} alert`}
+                >
+                  <Text
+                    style={{
+                      color: sel ? '#fff' : colors.text,
+                      fontSize: getScaledFontSize(12),
+                      fontWeight: '600',
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </Field>
+
+        {/* H10: Second Alert — single-select picker (None + the same
+            ALARM_OPTIONS). Apple's "Second Alert" pattern. */}
+        <Field colors={colors}>
+          <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+            SECOND ALERT
+          </Text>
+          <View style={styles.chips}>
+            {/* "None" chip */}
+            <Pressable
+              onPress={() => { hapticSelection(); setSecondAlarm(null) }}
+              style={[
+                styles.chip,
+                {
+                  borderColor: secondAlarm === null ? colors.tint : colors.border,
+                  backgroundColor: secondAlarm === null ? colors.tint : 'transparent',
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: secondAlarm === null }}
+            >
+              <Text
+                style={{
+                  color: secondAlarm === null ? '#fff' : colors.text,
+                  fontSize: getScaledFontSize(12),
+                  fontWeight: '600',
+                }}
+              >
+                None
+              </Text>
+            </Pressable>
+            {ALARM_OPTIONS.map((opt) => {
+              const sel = secondAlarm === opt.minutes
+              return (
+                <Pressable
+                  key={opt.minutes}
+                  onPress={() => { hapticSelection(); setSecondAlarm(opt.minutes) }}
+                  style={[
+                    styles.chip,
+                    { borderColor: sel ? colors.tint : colors.border, backgroundColor: sel ? colors.tint : 'transparent' },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: sel }}
+                  accessibilityLabel={`${opt.label} second alert`}
                 >
                   <Text
                     style={{
@@ -481,6 +627,30 @@ export default function CalendarEventEditor() {
         visible={showHipaa}
         onAccept={acceptHipaa}
         onCancel={() => setShowHipaa(false)}
+      />
+
+      {/* Picker modals */}
+      <TimeZonePicker
+        visible={showTzPicker}
+        selectedZone={timeZone}
+        onSelect={setTimeZone}
+        onClose={() => setShowTzPicker(false)}
+      />
+      <SelectionPicker
+        visible={showRepeatPicker}
+        title="Repeat"
+        options={REPEAT_OPTIONS}
+        selectedValue={repeatValue}
+        onSelect={setRepeatValue}
+        onClose={() => setShowRepeatPicker(false)}
+      />
+      <SelectionPicker
+        visible={showTravelPicker}
+        title="Travel Time"
+        options={TRAVEL_TIME_OPTIONS}
+        selectedValue={travelTimeValue}
+        onSelect={setTravelTimeValue}
+        onClose={() => setShowTravelPicker(false)}
       />
     </KeyboardAvoidingView>
   )

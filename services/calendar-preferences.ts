@@ -1,0 +1,72 @@
+/**
+ * Calendar preferences persisted to AsyncStorage. Read at editor mount
+ * (so "Default Calendar" + "Default Alert" prefill correctly) and at
+ * calendar-settings mount (so the toggles reflect current state).
+ *
+ * Schema is a single JSON blob under one key so reads/writes are atomic
+ * and migration is just a version bump + transform function.
+ *
+ * Keep this file PURE — no React, no UI. Easy to unit-test, easy to
+ * call from any hook or screen.
+ */
+
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+const STORAGE_KEY = 'csh-calendar-prefs-v1'
+
+export type StartWeekDay = 0 | 1 | 6 // Sunday | Monday | Saturday
+
+export interface CalendarPreferences {
+  /** Default calendar ID for new events (used to prefill the editor). */
+  defaultCalendarId: string | null
+  /** Default alarm offsets (minutes before) for new events. */
+  defaultAlertMinutes: number[]
+  /** Day of week to start grid views on (Apple: Settings > Calendar > Start Week On). */
+  startWeekDay: StartWeekDay
+  /** Show iOS Holidays calendar in the calendar list. */
+  showHolidays: boolean
+  /** Whether to surface iOS Reminders alongside calendar events. */
+  showReminders: boolean
+  /** Time zone override — if set, render all event times in this TZ. */
+  timeZoneOverride: string | null
+  /** Last-used per-field state in the editor (so re-creates feel smart). */
+  lastUsedTimeZone: string | null
+  lastUsedRepeat: string
+  lastUsedTravelTime: string
+}
+
+const DEFAULTS: CalendarPreferences = {
+  defaultCalendarId: null,
+  defaultAlertMinutes: [15],
+  startWeekDay: 0,
+  showHolidays: true,
+  showReminders: true,
+  timeZoneOverride: null,
+  lastUsedTimeZone: null,
+  lastUsedRepeat: 'never',
+  lastUsedTravelTime: 'none',
+}
+
+export async function getCalendarPreferences(): Promise<CalendarPreferences> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY)
+    if (!raw) return DEFAULTS
+    const parsed = JSON.parse(raw) as Partial<CalendarPreferences>
+    return { ...DEFAULTS, ...parsed }
+  } catch {
+    return DEFAULTS
+  }
+}
+
+export async function setCalendarPreferences(
+  patch: Partial<CalendarPreferences>,
+): Promise<CalendarPreferences> {
+  const current = await getCalendarPreferences()
+  const next = { ...current, ...patch }
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    // Non-fatal — caller will get the updated in-memory copy regardless.
+  }
+  return next
+}
