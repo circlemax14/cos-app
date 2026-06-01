@@ -57,6 +57,7 @@ import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
 import { addRecentSearch, clearRecentSearches, getRecentSearches } from '@/services/calendar-recents'
+import { getCalendarPreferences } from '@/services/calendar-preferences'
 
 // iPhone Apple Calendar has only these four — no Week view.
 type CalendarViewMode = 'year' | 'month' | 'day' | 'list'
@@ -167,6 +168,7 @@ export default function CalendarScreen() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>([])
+  const [showRemindersPref, setShowRemindersPref] = useState(true)
   // Apple's Month-view density toggle (pinch-to-zoom on Apple — we
   // expose it as a small chip in the title bar).
   const [monthDensity, setMonthDensity] = useState<MonthDensityMode>('compact')
@@ -225,7 +227,7 @@ export default function CalendarScreen() {
   }, [appointments])
 
   const { events, isLoading, isRefreshing, refresh, notificationDisabledCalendarIds } =
-    useCalendar({ appEvents, includeReminders: true })
+    useCalendar({ appEvents, includeReminders: showRemindersPref })
   const filteredEvents = useMemo(() => applySearch(events, searchQuery), [events, searchQuery])
 
   useEffect(() => {
@@ -257,6 +259,10 @@ export default function CalendarScreen() {
   const refreshPermissions = permissions.refresh
   useFocusEffect(useCallback(() => {
     void refreshPermissions()
+    // Re-read the prefs every time the screen focuses (so toggling the
+    // "Show Reminders" pref in Calendar Settings takes effect when the
+    // user comes back here).
+    void getCalendarPreferences().then((p) => setShowRemindersPref(p.showReminders))
   }, [refreshPermissions]))
 
   const eventsForSelectedDay = useMemo(

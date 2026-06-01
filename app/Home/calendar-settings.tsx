@@ -7,7 +7,7 @@
  * help text on this screen explains how to fix that).
  */
 
-import React from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { router } from 'expo-router'
 import { AppWrapper } from '@/components/app-wrapper'
@@ -16,6 +16,33 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { useCalendar } from '@/hooks/use-calendar'
 import { useCalendarPermissions } from '@/hooks/use-calendar-permissions'
 import { CalendarPermissionGate } from '@/components/calendar/CalendarPermissionGate'
+import {
+  getCalendarPreferences,
+  setCalendarPreferences,
+  type CalendarPreferences,
+  type StartWeekDay,
+} from '@/services/calendar-preferences'
+import {
+  SelectionPicker,
+  TimeZonePicker,
+  type SelectionOption,
+} from '@/components/calendar/pickers'
+import { hapticSelection } from '@/utils/haptics'
+
+const START_WEEK_OPTIONS: SelectionOption<string>[] = [
+  { value: '0', label: 'Sunday' },
+  { value: '1', label: 'Monday' },
+  { value: '6', label: 'Saturday' },
+]
+
+const ALARM_OPTIONS: { label: string; minutes: number }[] = [
+  { label: 'At time', minutes: 0 },
+  { label: '5 min', minutes: 5 },
+  { label: '15 min', minutes: 15 },
+  { label: '30 min', minutes: 30 },
+  { label: '1 hour', minutes: 60 },
+  { label: '1 day', minutes: 60 * 24 },
+]
 
 export default function CalendarSettingsScreen() {
   const { settings, getScaledFontSize } = useAccessibility()
@@ -30,9 +57,45 @@ export default function CalendarSettingsScreen() {
     isLoading,
   } = useCalendar({ includeReminders: true })
 
+  // Preferences state. Load on mount, patch on each user action.
+  const [prefs, setPrefs] = useState<CalendarPreferences | null>(null)
+  useEffect(() => { void getCalendarPreferences().then(setPrefs) }, [])
+
+  const updatePref = useCallback(async (patch: Partial<CalendarPreferences>) => {
+    hapticSelection()
+    const next = await setCalendarPreferences(patch)
+    setPrefs(next)
+  }, [])
+
+  // Picker visibility
+  const [showStartWeekPicker, setShowStartWeekPicker] = useState(false)
+  const [showDefaultCalPicker, setShowDefaultCalPicker] = useState(false)
+  const [showTzPicker, setShowTzPicker] = useState(false)
+
   // Group by source ("iCloud", "Google", "Outlook", "Local", ...) so the
   // list reads like Apple's Settings → Calendar → Accounts view.
   const grouped = groupBySource(calendars)
+
+  const writableCalendars = calendars.filter((c) => c.allowsWrite)
+  const defaultCalOptions: SelectionOption<string>[] = writableCalendars.map((c) => ({
+    value: c.id,
+    label: c.title,
+    sublabel: c.source,
+  }))
+  const defaultCalLabel =
+    prefs?.defaultCalendarId
+      ? writableCalendars.find((c) => c.id === prefs.defaultCalendarId)?.title ?? 'Select…'
+      : 'Use first available'
+
+  // Show All / Hide All — toggle every calendar's visibility in one go.
+  const toggleAll = async (show: boolean) => {
+    hapticSelection()
+    for (const c of calendars) {
+      const isHidden = hiddenCalendarIds.has(c.id)
+      if (show && isHidden) await toggleCalendarVisibility(c.id)
+      else if (!show && !isHidden) await toggleCalendarVisibility(c.id)
+    }
+  }
 
   return (
     <AppWrapper showFooter showHamburgerIcon>
@@ -55,6 +118,135 @@ export default function CalendarSettingsScreen() {
           <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
             Show or hide individual calendars. Hidden calendars won't appear in your views or trigger notifications.
           </Text>
+
+          {/* ── PREFERENCES section (I3/I8/I9/I10/I11/J1) ─────────────── */}
+          {prefs && (
+            <View style={[styles.section, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+              <Text style={[styles.sectionHeader, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>
+                PREFERENCES
+              </Text>
+
+              {/* J1: Show Reminders toggle */}
+              <View style={[styles.prefRow, { borderBottomColor: colors.border }]}>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Show iOS Reminders
+                </Text>
+                <Switch
+                  value={prefs.showReminders}
+                  onValueChange={(v) => void updatePref({ showReminders: v })}
+                  accessibilityLabel="Show iOS Reminders alongside events"
+                />
+              </View>
+
+              {/* I6: Holidays toggle */}
+              <View style={[styles.prefRow, { borderBottomColor: colors.border }]}>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Show Holidays
+                </Text>
+                <Switch
+                  value={prefs.showHolidays}
+                  onValueChange={(v) => void updatePref({ showHolidays: v })}
+                  accessibilityLabel="Show holidays calendar"
+                />
+              </View>
+
+              {/* I10: Start Week On */}
+              <Pressable
+                onPress={() => { hapticSelection(); setShowStartWeekPicker(true) }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Choose start of week"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Start Week On
+                </Text>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
+                  {START_WEEK_OPTIONS.find((o) => o.value === String(prefs.startWeekDay))?.label ?? 'Sunday'} ›
+                </Text>
+              </Pressable>
+
+              {/* I8: Default Calendar */}
+              <Pressable
+                onPress={() => { hapticSelection(); setShowDefaultCalPicker(true) }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Choose default calendar"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Default Calendar
+                </Text>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }} numberOfLines={1}>
+                  {defaultCalLabel} ›
+                </Text>
+              </Pressable>
+
+              {/* I11: Time Zone Override */}
+              <Pressable
+                onPress={() => { hapticSelection(); setShowTzPicker(true) }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Choose time zone override"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Time Zone Override
+                </Text>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
+                  {prefs.timeZoneOverride ? prefs.timeZoneOverride.replace(/_/g, ' ') : 'Device'} ›
+                </Text>
+              </Pressable>
+
+              {/* I9: Default Alert Times */}
+              <View style={[styles.prefRow, { borderBottomColor: 'transparent', paddingTop: 12, paddingBottom: 16, flexWrap: 'wrap', alignItems: 'flex-start' }]}>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', width: '100%', marginBottom: 8 }}>
+                  Default Alert Times
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {ALARM_OPTIONS.map((opt) => {
+                    const sel = prefs.defaultAlertMinutes.includes(opt.minutes)
+                    return (
+                      <Pressable
+                        key={opt.minutes}
+                        onPress={() => {
+                          const next = sel
+                            ? prefs.defaultAlertMinutes.filter((m) => m !== opt.minutes)
+                            : [...prefs.defaultAlertMinutes, opt.minutes].sort((a, b) => a - b)
+                          void updatePref({ defaultAlertMinutes: next })
+                        }}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: sel ? colors.tint : colors.border,
+                          backgroundColor: sel ? colors.tint : 'transparent',
+                        }}
+                      >
+                        <Text style={{ color: sel ? '#fff' : colors.text, fontSize: getScaledFontSize(11), fontWeight: '600' }}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* I3: Show All / Hide All quick actions */}
+          {calendars.length > 0 && (
+            <View style={styles.showAllRow}>
+              <Pressable onPress={() => void toggleAll(true)} hitSlop={6}>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '600' }}>
+                  Show All Calendars
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => void toggleAll(false)} hitSlop={6}>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '600' }}>
+                  Hide All
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
           {isLoading ? (
             <View style={{ paddingVertical: 32, alignItems: 'center' }}>
@@ -151,6 +343,31 @@ export default function CalendarSettingsScreen() {
             </Pressable>
           </View>
         </ScrollView>
+
+        {/* Picker modals (rendered outside the ScrollView so they
+            present full-screen). */}
+        <SelectionPicker
+          visible={showStartWeekPicker}
+          title="Start Week On"
+          options={START_WEEK_OPTIONS}
+          selectedValue={String(prefs?.startWeekDay ?? 0)}
+          onSelect={(v) => void updatePref({ startWeekDay: parseInt(v, 10) as StartWeekDay })}
+          onClose={() => setShowStartWeekPicker(false)}
+        />
+        <SelectionPicker
+          visible={showDefaultCalPicker}
+          title="Default Calendar"
+          options={defaultCalOptions}
+          selectedValue={prefs?.defaultCalendarId ?? ''}
+          onSelect={(v) => void updatePref({ defaultCalendarId: v })}
+          onClose={() => setShowDefaultCalPicker(false)}
+        />
+        <TimeZonePicker
+          visible={showTzPicker}
+          selectedZone={prefs?.timeZoneOverride ?? ''}
+          onSelect={(v) => void updatePref({ timeZoneOverride: v || null })}
+          onClose={() => setShowTzPicker(false)}
+        />
       </CalendarPermissionGate>
     </AppWrapper>
   )
@@ -182,6 +399,20 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 6, marginBottom: 16, lineHeight: 18 },
   section: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, marginBottom: 16, paddingTop: 8 },
   sectionHeader: { fontWeight: '700', letterSpacing: 0.6, paddingHorizontal: 14, paddingBottom: 4 },
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  showAllRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 12,
+  },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   rowControls: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   toggleColumn: { alignItems: 'center', gap: 4 },
