@@ -39,6 +39,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { router, useLocalSearchParams } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
@@ -87,6 +88,7 @@ export default function CalendarEventEditor() {
   const isEditMode = !!eventId && !eventId.startsWith('app:') && !eventId.startsWith('reminder:')
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const insets = useSafeAreaInsets()
 
   // Seed start date from `day` param if present (so "+" from a chosen
   // day pre-fills correctly); fallback to next hour from now. In edit
@@ -266,10 +268,22 @@ export default function CalendarEventEditor() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.root, { backgroundColor: colors.background }]}
     >
-      {/* Header — Apple Calendar's New-Event header is wider (≈56pt total
-          height) with a 17pt centered title and 17pt action buttons. The
-          earlier 12pt vertical padding felt cramped. */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      {/* Header — Apple Calendar's New-Event header is wider (≈56pt
+          total height) with a 17pt centered title and 17pt action
+          buttons. We add the safe-area top inset so on iOS formSheet
+          presentation the header stays clear of the sheet grabber +
+          status bar (Ken's testing showed Cancel/Add being clipped). */}
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: colors.border,
+            // Sheet grabber is ~6pt tall; add a small extra so the
+            // header doesn't sit flush against it.
+            paddingTop: Math.max(insets.top, 12) + 8,
+          },
+        ]}
+      >
         <Pressable
           onPress={() => router.back()}
           hitSlop={10}

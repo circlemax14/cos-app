@@ -109,11 +109,12 @@ function StackWithAppLock() {
       <Stack.Screen
         name="calendar-event-editor"
         options={{
-          // K5: Apple uses a half-sheet (formSheet on iOS 15+) for
-          // the New Event flow — the user can dismiss with a downward
-          // swipe. formSheet falls back gracefully on Android.
+          // K5: Apple uses a sheet for the New Event flow — user can
+          // dismiss with a downward swipe. Single full-height detent
+          // (the editor has too many fields to fit at a 0.6 detent;
+          // Ken reported Add/Cancel were hidden behind iOS chrome).
           presentation: 'formSheet',
-          sheetAllowedDetents: [0.6, 1.0],
+          sheetAllowedDetents: [1.0],
           sheetGrabberVisible: true,
           title: 'New Event',
           headerShown: false,

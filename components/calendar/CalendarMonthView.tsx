@@ -265,12 +265,22 @@ function DayCell(props: DayCellProps) {
       ? colors.tint
       : 'transparent'
 
+  // Day-number font + matching pill size. iPad's accessibility-scaled
+  // 20pt font was being clipped by the prior 28x28 pill; we now size
+  // the pill proportionally to the scaled font (1.5x font height) so
+  // there's always vertical room for the character.
+  const dayNumFont = getScaledFontSize(17)
+  const pillSize = Math.max(28, Math.round(dayNumFont * 1.5))
+
   // Cell height grows with density so multi-day lane bars + single-day
-  // indicators don't clip each other. Bumped in v6.10 to accommodate
-  // the C2 multi-day spans on top of the existing per-day visuals.
+  // indicators don't clip each other. Also accounts for the dynamic
+  // pill size so iPad scales never overflow.
   const laneCount = Math.min(lanes?.length ?? 0, 3)
   const extraForLanes = density === 'details' ? laneCount * 16 : laneCount * 6
-  const cellHeight = (density === 'details' ? 84 : density === 'stacked' ? 64 : 56) + extraForLanes
+  const baseHeight = density === 'details' ? 84 : density === 'stacked' ? 64 : 56
+  // 4pt top pad + pill + 4pt gap to indicators below + indicator room.
+  const minRequiredForPill = 4 + pillSize + 4 + (density === 'details' ? 28 : density === 'stacked' ? 18 : 8)
+  const cellHeight = Math.max(baseHeight, minRequiredForPill) + extraForLanes
 
   const handlePress = () => {
     const now = Date.now()
@@ -306,18 +316,24 @@ function DayCell(props: DayCellProps) {
       accessibilityHint={onLongPressDate ? 'Double tap to open day view, long press to create event' : undefined}
       accessibilityState={{ selected: isSelected }}
     >
-      {/* Day number — pill background when selected or today */}
+      {/* Day number — pill auto-sizes to accommodate the scaled font.
+          iPad's accessibility settings were inflating the 20pt font
+          past the prior 28x28 box; now pillSize tracks the font so
+          characters never clip top/bottom. */}
       <View
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: 14,
+          width: pillSize,
+          height: pillSize,
+          borderRadius: pillSize / 2,
           backgroundColor: pillBg,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Text style={{ color: numColor, fontSize: getScaledFontSize(20), fontWeight: numWeight }}>
+        <Text
+          style={{ color: numColor, fontSize: dayNumFont, fontWeight: numWeight, lineHeight: dayNumFont * 1.15 }}
+          allowFontScaling={false}
+        >
           {day}
         </Text>
       </View>

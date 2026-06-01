@@ -169,6 +169,9 @@ export default function CalendarScreen() {
   const [showSearch, setShowSearch] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [showRemindersPref, setShowRemindersPref] = useState(true)
+  // Density dropdown state lifted to screen so the popover can be
+  // absolutely positioned over the grid instead of pushing it down.
+  const [showDensityMenu, setShowDensityMenu] = useState(false)
   // Apple's Month-view density toggle (pinch-to-zoom on Apple — we
   // expose it as a small chip in the title bar).
   const [monthDensity, setMonthDensity] = useState<MonthDensityMode>('compact')
@@ -336,6 +339,8 @@ export default function CalendarScreen() {
             density={monthDensity}
             onChangeDensity={setMonthDensity}
             showDensityToggle={activeView === 'month'}
+            showDensityMenu={showDensityMenu}
+            onToggleDensityMenu={() => setShowDensityMenu((p) => !p)}
           />
           {isLoading ? (
             <View style={styles.center}>
@@ -555,6 +560,33 @@ export default function CalendarScreen() {
           >
             <Text style={styles.fabPlus}>+</Text>
           </Pressable>
+
+          {/* Density dropdown — FLOATING overlay over content (was
+              previously inline in the header which pushed the grid
+              down). Backdrop fills the whole screen so tap-outside
+              dismisses; the menu itself is anchored under the trigger
+              icon at the top-right. */}
+          {showDensityMenu && activeView === 'month' && (
+            <>
+              <Pressable
+                onPress={() => setShowDensityMenu(false)}
+                style={StyleSheet.absoluteFillObject as never}
+                accessibilityLabel="Dismiss density menu"
+              />
+              <View
+                style={styles.densityMenuFloater}
+                pointerEvents="box-none"
+              >
+                <DensityMenu
+                  density={monthDensity}
+                  onChange={setMonthDensity}
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  onClose={() => setShowDensityMenu(false)}
+                />
+              </View>
+            </>
+          )}
         </View>
       </CalendarPermissionGate>
     </AppWrapper>
@@ -642,6 +674,8 @@ interface HeaderProps {
   density: MonthDensityMode
   onChangeDensity: (m: MonthDensityMode) => void
   showDensityToggle: boolean
+  showDensityMenu: boolean
+  onToggleDensityMenu: () => void
 }
 
 function CalendarHeader({
@@ -649,10 +683,14 @@ function CalendarHeader({
   onJumpToday, onToggleSearch, onOpenSettings,
   showSearch, searchAnim, searchQuery, onSearchChange, onClearSearch,
   density, onChangeDensity, showDensityToggle,
+  showDensityMenu, onToggleDensityMenu,
 }: HeaderProps) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
-  const [showDensityMenu, setShowDensityMenu] = useState(false)
+  // intentionally read these to silence unused-arg lints when the
+  // dropdown is rendered by the parent — the props are still needed
+  // for the trigger button's accessibility state.
+  void density; void onChangeDensity
   const views: { id: CalendarViewMode; label: string }[] = [
     { id: 'year', label: 'Year' },
     { id: 'month', label: 'Month' },
@@ -663,11 +701,18 @@ function CalendarHeader({
   return (
     <View style={[styles.header, { borderBottomColor: colors.border }]}>
       <View style={styles.headerRow}>
-        <View style={{ flex: 1, marginRight: 8 }}>
+        <View style={styles.headerTitleCol}>
           <Text
-            style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(34) }]}
+            // Title shrinks aggressively so even long labels like
+            // "Saturday, September 13, 2026" stay on a single line and
+            // never push the action icons off-screen. minimumFontScale
+            // lets RN auto-downsize to fit width. allowFontScaling stays
+            // on so accessibility-large still scales up, but it'll
+            // clamp at the same minimum-scale floor.
+            style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(28) }]}
             numberOfLines={1}
-            allowFontScaling={false}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
           >
             {label}
           </Text>
@@ -693,7 +738,7 @@ function CalendarHeader({
           </Pressable>
           {showDensityToggle && (
             <Pressable
-              onPress={() => { hapticSelection(); setShowDensityMenu((p) => !p) }}
+              onPress={() => { hapticSelection(); onToggleDensityMenu() }}
               hitSlop={8}
               style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
               accessibilityRole="button"
@@ -728,28 +773,6 @@ function CalendarHeader({
           </Pressable>
         </View>
       </View>
-
-      {/* Density dropdown — anchored under the trigger button. Rendered
-          conditionally so it doesn't interfere with header layout. */}
-      {showDensityMenu && showDensityToggle && (
-        <>
-          {/* Tap-outside backdrop dismisses the menu */}
-          <Pressable
-            onPress={() => setShowDensityMenu(false)}
-            style={StyleSheet.absoluteFillObject as never}
-            accessibilityLabel="Dismiss density menu"
-          />
-          <View style={{ alignItems: 'flex-end', paddingHorizontal: 16 }}>
-            <DensityMenu
-              density={density}
-              onChange={onChangeDensity}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              onClose={() => setShowDensityMenu(false)}
-            />
-          </View>
-        </>
-      )}
 
       {/* Animated search bar — slides down when activated. */}
       <Animated.View
@@ -819,14 +842,19 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  // Apple's iOS 18 Calendar title is 34pt SF Pro Display bold, tight
-  // letter spacing, with a 13pt subtitle below (when meaningful).
-  headerLabel: { fontWeight: '700', letterSpacing: -0.6 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // Title column: flex-shrink so the icons row keeps its space.
+  // Ken's iPad testing surfaced the title at 34pt eating the action
+  // icons. Bumped down to 28pt with adjustsFontSizeToFit so long
+  // labels auto-scale rather than truncating; icons always render.
+  headerTitleCol: { flex: 1, flexShrink: 1, minWidth: 0 },
+  headerLabel: { fontWeight: '700', letterSpacing: -0.5 },
   headerSubtitle: { fontWeight: '400', marginTop: 1 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  iconBtn: { paddingHorizontal: 6, paddingVertical: 4 },
-  todayBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  // Action row: never shrinks; aligned center; consistent inter-icon
+  // spacing so the row reads as a single group.
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  iconBtn: { paddingHorizontal: 6, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', minWidth: 36, minHeight: 36 },
+  todayBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   todayText: { fontWeight: '500', letterSpacing: -0.1 },
   searchRow: {
     flexDirection: 'row',
@@ -871,5 +899,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 10,
+  },
+  // Absolute-positioned floating container — sits over the grid so the
+  // dropdown doesn't push content down. Anchored top-right just below
+  // the header (header is ~120pt tall including the title row + view
+  // switcher; that's our top offset).
+  densityMenuFloater: {
+    position: 'absolute',
+    top: 120,
+    right: 16,
+    zIndex: 100,
+    elevation: 12,
   },
 })

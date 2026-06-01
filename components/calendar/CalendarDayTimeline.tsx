@@ -97,31 +97,43 @@ export function CalendarDayTimeline({
       {/* ── Day-nav header ─────────────────────────────────────────── */}
       {(onPressPrevDay || onPressNextDay) && (
         <View style={[styles.dayNavRow, { borderBottomColor: colors.border }]}>
-          {onPressPrevDay && (
-            <Pressable
-              onPress={() => { hapticSelection(); onPressPrevDay() }}
-              hitSlop={10}
-              style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Previous day"
-            >
-              <IconSymbol name="chevron.left" size={getScaledFontSize(20)} color={colors.tint} />
-            </Pressable>
-          )}
-          <Text style={[styles.dayNavLabel, { color: colors.text, fontSize: getScaledFontSize(17) }]} numberOfLines={1}>
+          {/* Fixed-width slots for the chevrons + a flexible middle
+              label. Each chevron Pressable is 44pt wide so the iOS HIG
+              minimum touch target is hit; the prior flex:1 Text was
+              eating into the right Pressable's hit zone on wider
+              devices (iPad). */}
+          <View style={styles.dayNavSlot}>
+            {onPressPrevDay && (
+              <Pressable
+                onPress={() => { hapticSelection(); onPressPrevDay() }}
+                hitSlop={10}
+                style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Previous day"
+              >
+                <IconSymbol name="chevron.left" size={getScaledFontSize(20)} color={colors.tint} />
+              </Pressable>
+            )}
+          </View>
+          <Text
+            style={[styles.dayNavLabel, { color: colors.text, fontSize: getScaledFontSize(17) }]}
+            numberOfLines={1}
+          >
             {fmtDayHeader(dateIso)}
           </Text>
-          {onPressNextDay && (
-            <Pressable
-              onPress={() => { hapticSelection(); onPressNextDay() }}
-              hitSlop={10}
-              style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Next day"
-            >
-              <IconSymbol name="chevron.right" size={getScaledFontSize(20)} color={colors.tint} />
-            </Pressable>
-          )}
+          <View style={[styles.dayNavSlot, { alignItems: 'flex-end' }]}>
+            {onPressNextDay && (
+              <Pressable
+                onPress={() => { hapticSelection(); onPressNextDay() }}
+                hitSlop={10}
+                style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Next day"
+              >
+                <IconSymbol name="chevron.right" size={getScaledFontSize(20)} color={colors.tint} />
+              </Pressable>
+            )}
+          </View>
         </View>
       )}
 
@@ -443,12 +455,14 @@ const styles = StyleSheet.create({
   dayNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  dayNavBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+  // Fixed-width left + right slots for the chevrons so the touch
+  // targets are deterministic on any device width.
+  dayNavSlot: { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
+  dayNavBtn: { paddingHorizontal: 10, paddingVertical: 6, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   dayNavLabel: { fontWeight: '600', flex: 1, textAlign: 'center', letterSpacing: -0.1 },
   // Week strip
   weekStrip: {
