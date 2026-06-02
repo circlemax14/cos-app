@@ -29,6 +29,7 @@ import {
   listServerCalendarEvents,
   type ServerCalendarEvent,
 } from '@/services/api/calendar'
+import { reconcileDeviceMirror } from '@/services/calendar-mirror'
 
 export interface UseCalendarArgs {
   appEvents?: CalendarEvent[]
@@ -109,6 +110,20 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
       setReminders(rems)
       setServerEvents(srv)
       setHealthPlanEvents(hp)
+      // Mirror care-manager-created (visibility='device_sync') events
+      // to the user's device calendar so they sync to iCloud / Google.
+      // Best-effort, non-blocking: we already returned the merged list
+      // to the UI; mirroring runs in the background. Need the original
+      // ServerCalendarEvent[] (with visibility flags), so refetch the
+      // wire shape here — cheap because the backend round-trip was
+      // just done in the Promise.all above. (We could thread it
+      // through but that's brittle.)
+      void (async () => {
+        try {
+          const fresh = await listServerCalendarEvents({ from: fromIso, to: toIso })
+          await reconcileDeviceMirror(fresh)
+        } catch { /* non-fatal */ }
+      })()
     } finally {
       if (showSpinner) setIsLoading(false)
       else setIsRefreshing(false)
