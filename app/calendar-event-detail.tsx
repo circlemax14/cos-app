@@ -21,7 +21,7 @@ import { File, Paths } from 'expo-file-system'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
-import { deleteEvent, readEvents, type CalendarEvent } from '@/services/calendar'
+import { deleteEvent, readEvents, readReminders, type CalendarEvent } from '@/services/calendar'
 import { hapticImpact, hapticNotify, hapticSelection } from '@/utils/haptics'
 
 export default function CalendarEventDetail() {
@@ -37,8 +37,16 @@ export default function CalendarEventDetail() {
         setIsLoading(false)
         return
       }
-      const all = await readEvents()
-      const found = all.find((e) => e.id === eventId) ?? null
+      // Look up across BOTH event sources. Reminders are stored in a
+      // separate EventKit entity store (iOS) so they're never in
+      // readEvents(); the prior code returned 'not found' for any
+      // reminder tap (Ken's list-view bug).
+      const isReminder = eventId.startsWith('reminder:')
+      const [events, reminders] = await Promise.all([
+        isReminder ? Promise.resolve([] as CalendarEvent[]) : readEvents(),
+        isReminder ? readReminders() : Promise.resolve([] as CalendarEvent[]),
+      ])
+      const found = (isReminder ? reminders : events).find((e) => e.id === eventId) ?? null
       setEvent(found)
       setIsLoading(false)
     })()

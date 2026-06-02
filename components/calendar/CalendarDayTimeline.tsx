@@ -95,45 +95,45 @@ export function CalendarDayTimeline({
   return (
     <View style={{ flex: 1 }}>
       {/* ── Day-nav header ─────────────────────────────────────────── */}
+      {/* Built as an absolute-positioned overlay over a base row so the
+          chevron Pressables have UNAMBIGUOUS hit areas — earlier flex
+          layouts (even with explicit width slots) had the right-side
+          chevron's tap registering on the label container on iPad.
+          Now each chevron lives in its own absolutely-positioned 64x44
+          box at the row's left/right edge, while the label sits in the
+          flow without any Pressable competing for touches. */}
       {(onPressPrevDay || onPressNextDay) && (
         <View style={[styles.dayNavRow, { borderBottomColor: colors.border }]}>
-          {/* Fixed-width slots for the chevrons + a flexible middle
-              label. Each chevron Pressable is 44pt wide so the iOS HIG
-              minimum touch target is hit; the prior flex:1 Text was
-              eating into the right Pressable's hit zone on wider
-              devices (iPad). */}
-          <View style={styles.dayNavSlot}>
-            {onPressPrevDay && (
-              <Pressable
-                onPress={() => { hapticSelection(); onPressPrevDay() }}
-                hitSlop={10}
-                style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Previous day"
-              >
-                <IconSymbol name="chevron.left" size={getScaledFontSize(20)} color={colors.tint} />
-              </Pressable>
-            )}
-          </View>
           <Text
             style={[styles.dayNavLabel, { color: colors.text, fontSize: getScaledFontSize(17) }]}
             numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
           >
             {fmtDayHeader(dateIso)}
           </Text>
-          <View style={[styles.dayNavSlot, { alignItems: 'flex-end' }]}>
-            {onPressNextDay && (
-              <Pressable
-                onPress={() => { hapticSelection(); onPressNextDay() }}
-                hitSlop={10}
-                style={({ pressed }) => [styles.dayNavBtn, { opacity: pressed ? 0.5 : 1 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Next day"
-              >
-                <IconSymbol name="chevron.right" size={getScaledFontSize(20)} color={colors.tint} />
-              </Pressable>
-            )}
-          </View>
+          {onPressPrevDay && (
+            <Pressable
+              onPress={() => { hapticSelection(); onPressPrevDay() }}
+              style={({ pressed }) => [styles.dayNavChevronLeft, { opacity: pressed ? 0.4 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Previous day"
+              hitSlop={6}
+            >
+              <IconSymbol name="chevron.left" size={getScaledFontSize(22)} color={colors.tint} />
+            </Pressable>
+          )}
+          {onPressNextDay && (
+            <Pressable
+              onPress={() => { hapticSelection(); onPressNextDay() }}
+              style={({ pressed }) => [styles.dayNavChevronRight, { opacity: pressed ? 0.4 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Next day"
+              hitSlop={6}
+            >
+              <IconSymbol name="chevron.right" size={getScaledFontSize(22)} color={colors.tint} />
+            </Pressable>
+          )}
         </View>
       )}
 
@@ -452,18 +452,39 @@ function computeLayout(event: CalendarEvent, dayIso: string): BlockLayout | null
 
 const styles = StyleSheet.create({
   // Day-nav header
+  // Day-nav row: 56pt tall, label centered within full width. Chevrons
+  // are absolute-positioned overlays at left/right so they NEVER share
+  // hit-test geometry with the label container — earlier flex layouts
+  // (even with width:44 slots) let the right chevron's tap register on
+  // the label on iPad.
   dayNavRow: {
-    flexDirection: 'row',
+    height: 56,
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 64, // leave room for absolute-positioned chevrons
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  // Fixed-width left + right slots for the chevrons so the touch
-  // targets are deterministic on any device width.
-  dayNavSlot: { width: 44, alignItems: 'flex-start', justifyContent: 'center' },
-  dayNavBtn: { paddingHorizontal: 10, paddingVertical: 6, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  dayNavLabel: { fontWeight: '600', flex: 1, textAlign: 'center', letterSpacing: -0.1 },
+  dayNavLabel: { fontWeight: '600', textAlign: 'center', letterSpacing: -0.1 },
+  dayNavChevronLeft: {
+    position: 'absolute',
+    left: 4,
+    top: 0,
+    bottom: 0,
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  dayNavChevronRight: {
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
   // Week strip
   weekStrip: {
     flexDirection: 'row',

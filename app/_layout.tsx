@@ -109,13 +109,13 @@ function StackWithAppLock() {
       <Stack.Screen
         name="calendar-event-editor"
         options={{
-          // K5: Apple uses a sheet for the New Event flow — user can
-          // dismiss with a downward swipe. Single full-height detent
-          // (the editor has too many fields to fit at a 0.6 detent;
-          // Ken reported Add/Cancel were hidden behind iOS chrome).
-          presentation: 'formSheet',
-          sheetAllowedDetents: [1.0],
-          sheetGrabberVisible: true,
+          // formSheet presentation had inconsistent safe-area + status-
+          // bar overlap across iPad / iPhone / orientation, leaving
+          // Cancel/Add hidden behind iOS chrome (Ken reported this
+          // twice). Reverted to fullScreenModal — predictable safe-area
+          // on all surfaces, header always visible. Loses the sheet
+          // grabber but the explicit "Cancel" button covers dismissal.
+          presentation: 'fullScreenModal',
           title: 'New Event',
           headerShown: false,
         }}

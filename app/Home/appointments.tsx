@@ -473,12 +473,7 @@ export default function CalendarScreen() {
                 setSelectedDay(iso)
                 setActiveView('month')
               }}
-              onJumpToDay={(iso) => {
-                hapticImpact('light')
-                setSelectedDay(iso)
-                setActiveView('day')
-              }}
-              onLongPressDay={(iso) => {
+              onLongPressMonth={(iso) => {
                 hapticImpact('medium')
                 openEditor(iso)
               }}
@@ -696,6 +691,16 @@ function DensityMenu({
 }
 
 function openDetail(event: CalendarEvent) {
+  // Route by origin so we land on the right screen for each kind:
+  //   - app:  → app's existing appointment-detail screen (full record:
+  //            doctor info, clinic, status, etc.). The event.id is
+  //            "app:<appointmentId>" so we strip the prefix.
+  //   - device / reminder → unified popover that reads from EventKit.
+  if (event.origin === 'app') {
+    const apptId = event.id.startsWith('app:') ? event.id.slice(4) : event.id
+    router.push({ pathname: '/Home/appointment-detail', params: { id: apptId } } as never)
+    return
+  }
   router.push({ pathname: '/calendar-event-detail', params: { eventId: event.id } } as never)
 }
 
@@ -752,22 +757,21 @@ function CalendarHeader({
       <View style={styles.headerRow}>
         <View style={styles.headerTitleCol}>
           <Text
-            // Title shrinks aggressively so even long labels like
-            // "Saturday, September 13, 2026" stay on a single line and
-            // never push the action icons off-screen. minimumFontScale
-            // lets RN auto-downsize to fit width. allowFontScaling stays
-            // on so accessibility-large still scales up, but it'll
-            // clamp at the same minimum-scale floor.
-            style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(28) }]}
+            // Title size 22pt (was 28pt) — Ken reported the title was
+            // still too big and the action icons looked tiny next to
+            // it. adjustsFontSizeToFit auto-scales down for very long
+            // labels (e.g. "Saturday, September 13"). Icons paired at
+            // 22pt for visual balance.
+            style={[styles.headerLabel, { color: colors.text, fontSize: getScaledFontSize(22) }]}
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.6}
+            minimumFontScale={0.65}
           >
             {label}
           </Text>
           {subtitle.length > 0 && (
             <Text
-              style={[styles.headerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}
+              style={[styles.headerSubtitle, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}
               numberOfLines={1}
             >
               {subtitle}
@@ -783,7 +787,7 @@ function CalendarHeader({
             accessibilityLabel="Toggle search"
             accessibilityState={{ selected: showSearch }}
           >
-            <IconSymbol name="magnifyingglass" size={getScaledFontSize(20)} color={colors.tint} />
+            <IconSymbol name="magnifyingglass" size={getScaledFontSize(22)} color={colors.tint} />
           </Pressable>
           {showDensityToggle && (
             <Pressable
@@ -794,7 +798,7 @@ function CalendarHeader({
               accessibilityLabel="Month view density"
               accessibilityState={{ expanded: showDensityMenu }}
             >
-              <IconSymbol name="square.grid.2x2" size={getScaledFontSize(20)} color={colors.tint} />
+              <IconSymbol name="square.grid.2x2" size={getScaledFontSize(22)} color={colors.tint} />
             </Pressable>
           )}
           {/* "Today" only renders when you're NOT already on today —
@@ -818,7 +822,7 @@ function CalendarHeader({
             accessibilityRole="button"
             accessibilityLabel="Calendar settings"
           >
-            <IconSymbol name="gear" size={getScaledFontSize(20)} color={colors.tint} />
+            <IconSymbol name="gear" size={getScaledFontSize(22)} color={colors.tint} />
           </Pressable>
         </View>
       </View>
@@ -925,10 +929,11 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', paddingHorizontal: 32 },
   dayHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
-  // Positioned ~16px above the bottom nav (footer height ≈ 64px → fab
-  // bottom ≈ 80px). Closer to the screen edge than v4 (was 100), with
-  // breathing room above the tab bar.
-  fab: { position: 'absolute', right: 20, bottom: 80, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
+  // FAB sits just above the bottom nav. Ken asked for it lower again
+  // in v7 testing — dropped from 80 → 70 so it visually anchors at the
+  // very bottom of the content area with only a small gap above the
+  // tab bar.
+  fab: { position: 'absolute', right: 20, bottom: 70, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   fabPlus: { color: '#fff', fontSize: 30, fontWeight: '300', lineHeight: 32 },
   // Density dropdown — anchored under the header trigger icon.
   densityMenu: {

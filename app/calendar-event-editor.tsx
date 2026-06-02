@@ -39,7 +39,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { router, useLocalSearchParams } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
@@ -88,7 +88,6 @@ export default function CalendarEventEditor() {
   const isEditMode = !!eventId && !eventId.startsWith('app:') && !eventId.startsWith('reminder:')
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
-  const insets = useSafeAreaInsets()
 
   // Seed start date from `day` param if present (so "+" from a chosen
   // day pre-fills correctly); fallback to next hour from now. In edit
@@ -264,23 +263,28 @@ export default function CalendarEventEditor() {
   }
 
   return (
+    // SafeAreaView (top edge only) guarantees the header always sits
+    // below the iOS status bar / dynamic island. KeyboardAvoidingView
+    // wraps the inner content so the keyboard pushes the form up while
+    // the header stays anchored at the top.
+    <SafeAreaView
+      edges={['top']}
+      style={[styles.root, { backgroundColor: colors.background }]}
+    >
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.root, { backgroundColor: colors.background }]}
     >
-      {/* Header — Apple Calendar's New-Event header is wider (≈56pt
-          total height) with a 17pt centered title and 17pt action
-          buttons. We add the safe-area top inset so on iOS formSheet
-          presentation the header stays clear of the sheet grabber +
-          status bar (Ken's testing showed Cancel/Add being clipped). */}
+      {/* Header — 56pt tall, Cancel on left, Save/Add on right, title
+          centered. Always visible (SafeAreaView protects from status
+          bar). 8pt extra paddingTop to give it visual breathing room
+          inside the modal. */}
       <View
         style={[
           styles.header,
           {
             borderBottomColor: colors.border,
-            // Sheet grabber is ~6pt tall; add a small extra so the
-            // header doesn't sit flush against it.
-            paddingTop: Math.max(insets.top, 12) + 8,
+            paddingTop: 16,
           },
         ]}
       >
@@ -667,6 +671,7 @@ export default function CalendarEventEditor() {
         onClose={() => setShowTravelPicker(false)}
       />
     </KeyboardAvoidingView>
+    </SafeAreaView>
   )
 }
 
