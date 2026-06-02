@@ -110,13 +110,34 @@ export async function checkSession(): Promise<{ authenticated: boolean; user?: U
 }
 
 /**
- * Sign out: clear tokens and Cognito session.
+ * Sign out: clear tokens and Cognito session. Also clear any user-
+ * scoped local caches that could leak PHI to the next user on the
+ * device (calendar mirror map, etc.).
  */
 export async function signOut(): Promise<void> {
+  // Capture the outgoing user's sub before clearing the cached profile
+  // so we can scope the cache wipes correctly.
+  let outgoingSub: string | undefined
+  try {
+    const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me')
+    outgoingSub = res.data?.data?.sub
+  } catch { /* swallow — sign-out is best-effort cleanup */ }
+
   cognitoSignOut();
   await clearTokens();
   await clearCachedProfile();
   await SecureStore.deleteItemAsync('cos_username');
+
+  if (outgoingSub) {
+    // Lazy-import to avoid pulling AsyncStorage into every consumer of
+    // auth.ts at module-load time. Best-effort: a failure here doesn't
+    // block sign-out, the next read will fail closed (mirror map only
+    // acts when ownerSub matches the current session).
+    try {
+      const { clearMirrorMap } = await import('./calendar-mirror')
+      await clearMirrorMap(outgoingSub)
+    } catch { /* non-fatal */ }
+  }
 }
 
 /**

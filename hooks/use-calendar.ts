@@ -30,6 +30,7 @@ import {
   type ServerCalendarEvent,
 } from '@/services/api/calendar'
 import { reconcileDeviceMirror } from '@/services/calendar-mirror'
+import { checkSession } from '@/services/auth'
 
 export interface UseCalendarArgs {
   appEvents?: CalendarEvent[]
@@ -120,8 +121,10 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
       // through but that's brittle.)
       void (async () => {
         try {
+          const session = await checkSession()
+          if (!session.authenticated || !session.user?.sub) return
           const fresh = await listServerCalendarEvents({ from: fromIso, to: toIso })
-          await reconcileDeviceMirror(fresh)
+          await reconcileDeviceMirror(session.user.sub, fresh)
         } catch { /* non-fatal */ }
       })()
     } finally {
