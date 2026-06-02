@@ -50,6 +50,10 @@ import {
   type CalendarSource,
 } from '@/services/calendar'
 import {
+  createServerCalendarEvent,
+  updateServerCalendarEvent,
+} from '@/services/api/calendar'
+import {
   getCalendarPreferences,
   setCalendarPreferences,
 } from '@/services/calendar-preferences'
@@ -81,6 +85,71 @@ function startOfNextHour(seed: Date): Date {
   d.setMinutes(0, 0, 0)
   d.setHours(d.getHours() + 1)
   return d
+}
+
+/**
+ * Convert the editor state into a server-side create / update payload
+ * and call cos-backend. Returns a promise that the caller can ignore —
+ * this is best-effort; the device-side save has already succeeded by
+ * the time we're called.
+ *
+ * Edits to existing app events route to updateServerCalendarEvent
+ * (the eventId is the same on both sides for app-origin events). New
+ * events use a clientId so a retry idempotently upserts.
+ */
+async function mirrorToBackend(args: {
+  isEdit: boolean
+  existingId?: string
+  title: string
+  start: Date
+  end: Date
+  allDay: boolean
+  location: string
+  notes: string
+  url: string
+  showAs: 'busy' | 'free'
+  repeatValue: RepeatValue
+  timeZone: string
+  travelTimeValue: TravelTimeValue
+  alarms: number[]
+}): Promise<void> {
+  const payload = {
+    title: args.title,
+    startDate: args.start.toISOString(),
+    endDate: args.end.toISOString(),
+    allDay: args.allDay,
+    location: args.location.trim() || undefined,
+    notes: args.notes.trim() || undefined,
+    url: args.url.trim() || undefined,
+    showAs: args.showAs,
+    alarms: args.alarms,
+    recurrenceRule: args.repeatValue === 'never' ? undefined : repeatToRrule(args.repeatValue),
+    timeZone: args.timeZone,
+    travelTimeMinutes: args.travelTimeValue === 'none' ? undefined : parseInt(args.travelTimeValue, 10),
+    visibility: 'device_sync' as const,
+  }
+  if (args.isEdit && args.existingId && args.existingId.startsWith('app:')) {
+    const serverId = args.existingId.slice(4)
+    await updateServerCalendarEvent(serverId, payload)
+    return
+  }
+  // For new events (or edits of device-origin events), create on the
+  // server. clientId stabilizes against duplicate creates on retry.
+  await createServerCalendarEvent({
+    ...payload,
+    clientId: `${args.start.toISOString()}-${args.title.slice(0, 32)}`,
+  })
+}
+
+function repeatToRrule(v: RepeatValue): string | undefined {
+  switch (v) {
+    case 'daily': return 'FREQ=DAILY'
+    case 'weekly': return 'FREQ=WEEKLY'
+    case 'biweekly': return 'FREQ=WEEKLY;INTERVAL=2'
+    case 'monthly': return 'FREQ=MONTHLY'
+    case 'yearly': return 'FREQ=YEARLY'
+    default: return undefined
+  }
 }
 
 export default function CalendarEventEditor() {
@@ -241,6 +310,18 @@ export default function CalendarEventEditor() {
           lastUsedRepeat: repeatValue,
           lastUsedTravelTime: travelTimeValue,
         })
+        // Mirror to cos-backend so care managers see this event. Best-
+        // effort, non-blocking — local device write already succeeded.
+        // ClientId = device event id so a retry on the next save
+        // (e.g. for an edit) upserts in place instead of duplicating.
+        void mirrorToBackend({
+          isEdit: isEditMode,
+          existingId: eventId,
+          title: title.trim(),
+          start, end, allDay, location, notes, url,
+          showAs, repeatValue, timeZone, travelTimeValue,
+          alarms: allAlarms,
+        }).catch(() => {})
         router.back()
       } else {
         hapticNotify('error')

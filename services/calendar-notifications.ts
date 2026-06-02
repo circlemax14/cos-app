@@ -46,8 +46,11 @@ export async function reconcileEventNotifications(
 
   const now = Date.now()
   for (const event of events) {
-    if (event.origin !== 'device') continue
-    if (!event.source.allowsWrite) continue // skip subscribed read-only calendars
+    // Ken's spec: notify for EVERY event with alarms — device events,
+    // iOS reminders (which carry their own alarm offsets), and server-
+    // /care-manager-/health-plan-injected app events. We still skip
+    // subscribed read-only calendars (Apple notifies for those itself).
+    if (event.origin === 'device' && !event.source.allowsWrite) continue
     if (event.alarms.length === 0) continue
     if (notificationDisabledCalendarIds?.has(event.source.id)) continue
 

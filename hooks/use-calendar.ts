@@ -24,6 +24,11 @@ import {
   type CreateEventInput,
   type UpdateEventInput,
 } from '@/services/calendar'
+import {
+  listHealthPlanTasksAsEvents,
+  listServerCalendarEvents,
+  type ServerCalendarEvent,
+} from '@/services/api/calendar'
 
 export interface UseCalendarArgs {
   appEvents?: CalendarEvent[]
@@ -55,6 +60,11 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
   const { appEvents = [], enabledCalendarIds, windowStart, windowEnd, includeReminders = true } = args
   const [deviceEvents, setDeviceEvents] = useState<CalendarEvent[]>([])
   const [reminders, setReminders] = useState<CalendarEvent[]>([])
+  // Server-stored events (created in mobile new-event flow OR added by
+  // a care manager from the admin dashboard) + health-plan tasks
+  // expanded to event shape. Both fetched from cos-backend.
+  const [serverEvents, setServerEvents] = useState<CalendarEvent[]>([])
+  const [healthPlanEvents, setHealthPlanEvents] = useState<CalendarEvent[]>([])
   const [calendars, setCalendars] = useState<CalendarSource[]>([])
   const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
   const [notificationDisabledCalendarIds, setNotificationDisabledCalendarIds] = useState<Set<string>>(new Set())
@@ -79,14 +89,26 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     if (showSpinner) setIsLoading(true)
     else setIsRefreshing(true)
     try {
-      const [evt, cals, rems] = await Promise.all([
+      const fromIso = (windowStart ?? new Date(Date.now() - 30 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
+      const toIso = (windowEnd ?? new Date(Date.now() + 365 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
+      const [evt, cals, rems, srv, hp] = await Promise.all([
         readEvents({ windowStart, windowEnd, calendarIds: enabledCalendarIds }),
         listCalendars(),
         includeReminders ? readReminders({ windowStart, windowEnd }) : Promise.resolve([] as CalendarEvent[]),
+        // Server events + health-plan tasks are best-effort: a backend
+        // outage shouldn't blank the calendar.
+        listServerCalendarEvents({ from: fromIso, to: toIso })
+          .then((s) => s.map(serverEventToCalendarEvent))
+          .catch(() => [] as CalendarEvent[]),
+        listHealthPlanTasksAsEvents({ from: fromIso, to: toIso })
+          .then((s) => s.map(serverEventToCalendarEvent))
+          .catch(() => [] as CalendarEvent[]),
       ])
       setDeviceEvents(evt)
       setCalendars(cals)
       setReminders(rems)
+      setServerEvents(srv)
+      setHealthPlanEvents(hp)
     } finally {
       if (showSpinner) setIsLoading(false)
       else setIsRefreshing(false)
@@ -137,13 +159,18 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     })
   }, [])
 
-  // Merge + filter by hidden-calendar set so the user's toggle preferences
-  // are respected without re-fetching from the OS.
+  // Merge order: device → reminders → app-injected → server-stored →
+  // health-plan tasks. mergeEvents dedups by id so a server event with
+  // the same id as a device event is kept once. Hidden-calendar filter
+  // applies last so the user's toggles still hide everything.
   const events = useMemo(() => {
-    const all = mergeEvents(mergeEvents(deviceEvents, reminders), appEvents)
+    let all = mergeEvents(deviceEvents, reminders)
+    all = mergeEvents(all, appEvents)
+    all = mergeEvents(all, serverEvents)
+    all = mergeEvents(all, healthPlanEvents)
     if (hiddenCalendarIds.size === 0) return all
     return all.filter((e) => !hiddenCalendarIds.has(e.source.id))
-  }, [deviceEvents, reminders, appEvents, hiddenCalendarIds])
+  }, [deviceEvents, reminders, appEvents, serverEvents, healthPlanEvents, hiddenCalendarIds])
 
   return {
     events,
@@ -158,5 +185,41 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     remove,
     toggleCalendarVisibility,
     toggleCalendarNotifications,
+  }
+}
+
+/**
+ * Map a server-side CalendarEvent (cos-backend wire shape) into our
+ * UI's CalendarEvent shape. Server events live as `app`-origin so the
+ * UI can render them with a distinct badge and route taps to the
+ * appropriate detail screen. Health-plan tasks come through here too
+ * and get appKind='task' for the badge.
+ */
+function serverEventToCalendarEvent(s: ServerCalendarEvent): CalendarEvent {
+  const isHealthPlan = s.id.startsWith('healthplan:')
+  const isCareManager = s.author === 'care_manager'
+  // Color hint: health-plan tasks get a calm teal; care-manager-
+  // created events get our primary tint; patient-created events get
+  // neutral gray so they don't visually shout.
+  const color = isHealthPlan ? '#34C759' : isCareManager ? '#007AFF' : '#8E8E93'
+  return {
+    id: `app:${s.id}`,
+    title: s.title,
+    startDate: s.startDate,
+    endDate: s.endDate,
+    allDay: s.allDay,
+    location: s.location,
+    notes: s.notes,
+    calendarId: 'csh-server',
+    source: {
+      id: isHealthPlan ? 'csh-health-plan' : 'csh-server',
+      title: isHealthPlan ? 'Health Plan' : isCareManager ? 'Care Team' : 'Circle Support Health',
+      source: 'Circle Support Health',
+      color,
+      allowsWrite: !isHealthPlan,
+    },
+    origin: 'app',
+    appKind: isHealthPlan ? 'task' : 'appointment',
+    alarms: s.alarms,
   }
 }

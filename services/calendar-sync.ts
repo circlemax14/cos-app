@@ -27,9 +27,25 @@
 
 import * as BackgroundFetch from 'expo-background-fetch'
 import * as TaskManager from 'expo-task-manager'
-import { readEvents } from './calendar'
+import { readEvents, readReminders } from './calendar'
+import { uploadCalendarSnapshot, type SnapshotEventPayload } from './api/calendar'
 
 export const CALENDAR_SYNC_TASK = 'csh-calendar-sync-v1'
+
+/**
+ * Compute a cheap content hash so the backend can dedup unchanged
+ * events on repeated uploads. SHA-1 quality not required — just a
+ * stable digest that flips when something the user cares about
+ * changes (title / time / location). Pure JS so it runs in the
+ * background task without native deps.
+ */
+function contentHash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  }
+  return Math.abs(h).toString(16)
+}
 
 /**
  * Module-load registration. Must run synchronously at import time so the
@@ -40,11 +56,61 @@ try {
   if (!TaskManager.isTaskDefined(CALENDAR_SYNC_TASK)) {
     TaskManager.defineTask(CALENDAR_SYNC_TASK, async () => {
       try {
-        const events = await readEvents()
-        // For v1 we don't compute notifications inside the background
-        // task itself — the foreground hook handles scheduling. Returning
-        // NewData lets the OS know it was worth waking us (so iOS doesn't
-        // back off the schedule).
+        // Pull the next ~60 days of events + reminders from the device.
+        // Bigger windows would blow the BatchWriteItem budget; smaller
+        // would miss month-ahead events on a 30-min cadence.
+        const windowStart = new Date()
+        const windowEnd = new Date(Date.now() + 60 * 24 * 60 * 60_000)
+        const [events, reminders] = await Promise.all([
+          readEvents({ windowStart, windowEnd }),
+          readReminders({ windowStart, windowEnd }).catch(() => []),
+        ])
+
+        // Upload to cos-backend so care managers can see the patient's
+        // calendar. Best-effort: a backend outage shouldn't cause the
+        // background task to "fail" from iOS's perspective (would make
+        // iOS back off the schedule).
+        try {
+          const payload: SnapshotEventPayload[] = [
+            ...events.map((e) => ({
+              origin: 'device' as const,
+              sourceEventId: e.id,
+              sourceCalendarName: e.source.title,
+              sourceCalendarSource: e.source.source,
+              sourceCalendarColor: e.source.color,
+              title: e.title,
+              startDate: e.startDate,
+              endDate: e.endDate,
+              allDay: e.allDay,
+              location: e.location,
+              notes: e.notes,
+              alarms: e.alarms,
+              contentHash: contentHash(`${e.id}|${e.title}|${e.startDate}|${e.endDate}|${e.location ?? ''}`),
+            })),
+            ...reminders.map((r) => ({
+              origin: 'reminder' as const,
+              sourceEventId: r.id,
+              sourceCalendarName: r.source.title,
+              sourceCalendarSource: r.source.source,
+              sourceCalendarColor: r.source.color,
+              title: r.title,
+              startDate: r.startDate,
+              endDate: r.endDate,
+              allDay: r.allDay,
+              location: r.location,
+              notes: r.notes,
+              alarms: r.alarms,
+              completed: r.completed,
+              contentHash: contentHash(`${r.id}|${r.title}|${r.startDate}|${!!r.completed}`),
+            })),
+          ]
+          if (payload.length > 0) {
+            await uploadCalendarSnapshot(payload, new Date().toISOString())
+          }
+        } catch {
+          // Swallow — see above.
+        }
+
         return events.length > 0
           ? BackgroundFetch.BackgroundFetchResult.NewData
           : BackgroundFetch.BackgroundFetchResult.NoData
@@ -69,7 +135,7 @@ export async function registerCalendarSync(): Promise<void> {
       return
     }
     await BackgroundFetch.registerTaskAsync(CALENDAR_SYNC_TASK, {
-      minimumInterval: 15 * 60, // 15 minutes — iOS treats as hint
+      minimumInterval: 30 * 60, // 30 minutes — iOS treats as hint (Ken's spec)
       stopOnTerminate: false,
       startOnBoot: true,
     })
