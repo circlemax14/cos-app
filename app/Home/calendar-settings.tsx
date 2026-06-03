@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
+import { clearAllAppNotifications } from '@/services/calendar-notifications'
 import { router } from 'expo-router'
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
@@ -127,16 +128,15 @@ export default function CalendarSettingsScreen() {
                 PREFERENCES
               </Text>
 
-              {/* SCRUM-279: Test notification — fires in 5 sec.
-                  Diagnostic for "no notifications" reports — isolates
-                  the OS path from event scheduling. */}
+              {/* SCRUM-279: Test notification — fires in 5 sec. */}
               <Pressable
                 onPress={async () => {
                   try {
+                    const beforeAll = await Notifications.getAllScheduledNotificationsAsync()
                     const id = await Notifications.scheduleNotificationAsync({
                       content: {
                         title: 'Test notification',
-                        body: 'If you see this, notifications are working. Tap the calendar tab to confirm event notifications also fire.',
+                        body: 'If you see this, notifications are working.',
                         data: { tag: 'csh-test' },
                       },
                       trigger: {
@@ -145,9 +145,17 @@ export default function CalendarSettingsScreen() {
                       },
                     })
                     const all = await Notifications.getAllScheduledNotificationsAsync()
+                    const cshCount = all.filter((r) =>
+                      ((r.content.data as { tag?: string } | null)?.tag ?? '').startsWith('csh-')
+                    ).length
                     Alert.alert(
                       'Test scheduled',
-                      `Test notification scheduled (id ${id.slice(0, 6)}). ${all.length} total notifications in the queue. Lock your phone or background this app within 5 sec — the alert should fire.`,
+                      `Scheduled id ${id.slice(0, 6)}.\n\n` +
+                      `Queue: ${all.length} total (${cshCount} from this app), was ${beforeAll.length}.\n\n` +
+                      (all.length >= 60
+                        ? '⚠️ Queue is near iOS\'s 64 cap. Tap "Clear notification queue" to free it, then re-test.\n\n'
+                        : '') +
+                      'Lock your phone now — the alert fires in 5 sec.',
                     )
                   } catch (e) {
                     Alert.alert('Schedule failed', String(e))
@@ -162,6 +170,32 @@ export default function CalendarSettingsScreen() {
                 </Text>
                 <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
                   Fire in 5 sec ›
+                </Text>
+              </Pressable>
+
+              {/* SCRUM-279: Clear notification queue — recovery for
+                  full-queue state. iOS hard-caps local notifications
+                  at 64; once saturated, all new schedules silently
+                  drop. Tapping this wipes every csh-tagged
+                  notification (calendar + test). */}
+              <Pressable
+                onPress={async () => {
+                  const removed = await clearAllAppNotifications()
+                  const all = await Notifications.getAllScheduledNotificationsAsync()
+                  Alert.alert(
+                    'Queue cleared',
+                    `Removed ${removed} app-tagged notifications. ${all.length} remain in the queue (other apps / system).\n\nNew event notifications will schedule on the next calendar refresh.`,
+                  )
+                }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Clear notification queue"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Clear notification queue
+                </Text>
+                <Text style={{ color: '#FF3B30', fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                  Reset ›
                 </Text>
               </Pressable>
 
