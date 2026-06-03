@@ -26,8 +26,10 @@ import {
 } from '@/services/calendar'
 import {
   listHealthPlanTasksAsEvents,
+  listMyCalendarSnapshot,
   listServerCalendarEvents,
   type ServerCalendarEvent,
+  type SnapshotRow,
 } from '@/services/api/calendar'
 import { reconcileDeviceMirror } from '@/services/calendar-mirror'
 import { checkSession } from '@/services/auth'
@@ -67,6 +69,10 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
   // expanded to event shape. Both fetched from cos-backend.
   const [serverEvents, setServerEvents] = useState<CalendarEvent[]>([])
   const [healthPlanEvents, setHealthPlanEvents] = useState<CalendarEvent[]>([])
+  // Cross-device snapshot events — pulled from cos-backend so events
+  // captured on one device (e.g. iPhone reminders) show up on another
+  // (e.g. iPad without local reminders).
+  const [snapshotEvents, setSnapshotEvents] = useState<CalendarEvent[]>([])
   const [calendars, setCalendars] = useState<CalendarSource[]>([])
   const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
   const [notificationDisabledCalendarIds, setNotificationDisabledCalendarIds] = useState<Set<string>>(new Set())
@@ -93,24 +99,36 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     try {
       const fromIso = (windowStart ?? new Date(Date.now() - 30 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
       const toIso = (windowEnd ?? new Date(Date.now() + 365 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
-      const [evt, cals, rems, srv, hp] = await Promise.all([
+      const [evt, cals, rems, srv, hp, snap] = await Promise.all([
         readEvents({ windowStart, windowEnd, calendarIds: enabledCalendarIds }),
         listCalendars(),
         includeReminders ? readReminders({ windowStart, windowEnd }) : Promise.resolve([] as CalendarEvent[]),
-        // Server events + health-plan tasks are best-effort: a backend
-        // outage shouldn't blank the calendar.
+        // Server events + health-plan tasks + snapshot are best-effort:
+        // a backend outage shouldn't blank the calendar.
         listServerCalendarEvents({ from: fromIso, to: toIso })
           .then((s) => s.map(serverEventToCalendarEvent))
           .catch(() => [] as CalendarEvent[]),
         listHealthPlanTasksAsEvents({ from: fromIso, to: toIso })
           .then((s) => s.map(serverEventToCalendarEvent))
           .catch(() => [] as CalendarEvent[]),
+        // Cross-device snapshot — surfaces events captured on a sibling
+        // device (e.g. iPhone reminders on iPad).
+        listMyCalendarSnapshot({ from: fromIso, to: toIso })
+          .catch(() => [] as SnapshotRow[]),
       ])
       setDeviceEvents(evt)
       setCalendars(cals)
       setReminders(rems)
       setServerEvents(srv)
       setHealthPlanEvents(hp)
+      // Convert snapshot rows → CalendarEvent shape, filtering out any
+      // row that's already in the local device set (sourceEventId
+      // match) so we don't double-count what's locally available.
+      const localIds = new Set([...evt, ...rems].map((e) => e.id))
+      const snapEvents: CalendarEvent[] = snap
+        .filter((r) => !localIds.has(r.sourceEventId))
+        .map(snapshotRowToCalendarEvent)
+      setSnapshotEvents(snapEvents)
       // Mirror care-manager-created (visibility='device_sync') events
       // to the user's device calendar so they sync to iCloud / Google.
       // Best-effort, non-blocking: we already returned the merged list
@@ -186,9 +204,10 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     all = mergeEvents(all, appEvents)
     all = mergeEvents(all, serverEvents)
     all = mergeEvents(all, healthPlanEvents)
+    all = mergeEvents(all, snapshotEvents)
     if (hiddenCalendarIds.size === 0) return all
     return all.filter((e) => !hiddenCalendarIds.has(e.source.id))
-  }, [deviceEvents, reminders, appEvents, serverEvents, healthPlanEvents, hiddenCalendarIds])
+  }, [deviceEvents, reminders, appEvents, serverEvents, healthPlanEvents, snapshotEvents, hiddenCalendarIds])
 
   return {
     events,
@@ -213,6 +232,36 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
  * appropriate detail screen. Health-plan tasks come through here too
  * and get appKind='task' for the badge.
  */
+/**
+ * Map a SnapshotRow (cross-device device-calendar entry pulled from the
+ * backend) to our UI's CalendarEvent shape. These render with a hint
+ * that they came from a sibling device — the source title preserves
+ * the original calendar (e.g. "Reminders (iCloud)") so the user
+ * recognizes them.
+ */
+function snapshotRowToCalendarEvent(r: SnapshotRow): CalendarEvent {
+  return {
+    id: `snapshot:${r.sourceEventId}`,
+    title: r.title || '(Untitled)',
+    startDate: r.startDate,
+    endDate: r.endDate,
+    allDay: r.allDay,
+    location: r.location,
+    notes: r.notes,
+    calendarId: 'csh-snapshot',
+    source: {
+      id: 'csh-snapshot',
+      title: `${r.sourceCalendarName} (other device)`,
+      source: r.sourceCalendarSource,
+      color: r.sourceCalendarColor || '#FF9500',
+      allowsWrite: false,
+    },
+    origin: r.origin,
+    alarms: r.alarms,
+    completed: r.completed,
+  }
+}
+
 function serverEventToCalendarEvent(s: ServerCalendarEvent): CalendarEvent {
   const isHealthPlan = s.id.startsWith('healthplan:')
   const isCareManager = s.author === 'care_manager'

@@ -24,6 +24,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Dimensions,
   FlatList,
   Pressable,
   RefreshControl,
@@ -65,10 +66,10 @@ import { getCalendarPreferences } from '@/services/calendar-preferences'
 // doesn't because of screen width, but we support it everywhere now).
 type CalendarViewMode = 'year' | 'month' | 'week' | 'day' | 'list'
 
-/** Shift an ISO date by N weeks (positive or negative), returning ISO. */
+/** Shift an ISO date by N weeks. UTC math — see addDays comment. */
 function addWeeks(dayIso: string, delta: number): string {
-  const d = new Date(`${dayIso}T00:00:00`)
-  d.setDate(d.getDate() + delta * 7)
+  const d = new Date(`${dayIso}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + delta * 7)
   return d.toISOString().slice(0, 10)
 }
 
@@ -87,10 +88,20 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-/** Shift an ISO date by N days (positive or negative), returning ISO. */
+/**
+ * Shift an ISO date by N days (positive or negative), returning ISO.
+ *
+ * IMPORTANT: uses UTC math (not local) so the result is stable across
+ * timezones. The previous implementation parsed `${iso}T00:00:00` as
+ * LOCAL time then sliced `toISOString()` (UTC) — which in any timezone
+ * east of UTC would round back to the SAME ISO date for delta=+1,
+ * silently no-op'ing the Day-view forward arrow. Ken reported this 4
+ * times on build 25, 26, 27, 28 — this was the actual root cause, not
+ * the chevron Pressable hit area.
+ */
 function addDays(dayIso: string, delta: number): string {
-  const d = new Date(`${dayIso}T00:00:00`)
-  d.setDate(d.getDate() + delta)
+  const d = new Date(`${dayIso}T12:00:00Z`)  // mid-day UTC to avoid DST + boundary issues
+  d.setUTCDate(d.getUTCDate() + delta)
   return d.toISOString().slice(0, 10)
 }
 
@@ -200,6 +211,9 @@ export default function CalendarScreen() {
   // Density dropdown state lifted to screen so the popover can be
   // absolutely positioned over the grid instead of pushing it down.
   const [showDensityMenu, setShowDensityMenu] = useState(false)
+  // Measured position of the density icon trigger, so the dropdown
+  // anchors right below it instead of at a fixed top:120 guess.
+  const [densityAnchor, setDensityAnchor] = useState<{ top: number; right: number }>({ top: 96, right: 16 })
   // Apple's Month-view density toggle (pinch-to-zoom on Apple — we
   // expose it as a small chip in the title bar).
   const [monthDensity, setMonthDensity] = useState<MonthDensityMode>('compact')
@@ -377,7 +391,10 @@ export default function CalendarScreen() {
             onChangeDensity={setMonthDensity}
             showDensityToggle={activeView === 'month'}
             showDensityMenu={showDensityMenu}
-            onToggleDensityMenu={() => setShowDensityMenu((p) => !p)}
+            onToggleDensityMenu={(measured) => {
+              if (measured) setDensityAnchor(measured)
+              setShowDensityMenu((p) => !p)
+            }}
           />
           {isLoading ? (
             <View style={styles.center}>
@@ -617,7 +634,10 @@ export default function CalendarScreen() {
                 accessibilityLabel="Dismiss density menu"
               />
               <View
-                style={styles.densityMenuFloater}
+                style={[
+                  styles.densityMenuFloater,
+                  { top: densityAnchor.top, right: densityAnchor.right },
+                ]}
                 pointerEvents="box-none"
               >
                 <DensityMenu
@@ -691,16 +711,26 @@ function DensityMenu({
 }
 
 function openDetail(event: CalendarEvent) {
-  // Route by origin so we land on the right screen for each kind:
-  //   - app:  → app's existing appointment-detail screen (full record:
-  //            doctor info, clinic, status, etc.). The event.id is
-  //            "app:<appointmentId>" so we strip the prefix.
-  //   - device / reminder → unified popover that reads from EventKit.
+  // Route by origin + appKind. After v8 the app-origin event pool grew
+  // beyond just appointments — it now includes server-stored events
+  // (CM-created appointments) and health-plan tasks. Routing every
+  // `app:` event to /Home/appointment-detail caused "appointment not
+  // found" for server + health-plan events whose IDs aren't in the
+  // appointments table.
   if (event.origin === 'app') {
-    const apptId = event.id.startsWith('app:') ? event.id.slice(4) : event.id
-    router.push({ pathname: '/Home/appointment-detail', params: { id: apptId } } as never)
+    if (event.appKind === 'appointment' || event.appKind === 'past-visit') {
+      // Strip "app:" prefix to get the underlying appointment UUID.
+      const apptId = event.id.startsWith('app:') ? event.id.slice(4) : event.id
+      router.push({ pathname: '/Home/appointment-detail', params: { id: apptId } } as never)
+      return
+    }
+    // appKind === 'task' (health plan) OR no appKind (server event):
+    // use the unified detail popover which will fetch from backend.
+    // event.id is "app:<serverId>" or "app:healthplan:<taskId>:<date>".
+    router.push({ pathname: '/calendar-event-detail', params: { eventId: event.id } } as never)
     return
   }
+  // origin = device | reminder
   router.push({ pathname: '/calendar-event-detail', params: { eventId: event.id } } as never)
 }
 
@@ -728,7 +758,9 @@ interface HeaderProps {
   onChangeDensity: (m: MonthDensityMode) => void
   showDensityToggle: boolean
   showDensityMenu: boolean
-  onToggleDensityMenu: () => void
+  /** Called when the user taps the density icon. Receives the icon's
+   *  measured screen position so the parent can anchor the dropdown. */
+  onToggleDensityMenu: (anchor?: { top: number; right: number }) => void
 }
 
 function CalendarHeader({
@@ -740,6 +772,7 @@ function CalendarHeader({
 }: HeaderProps) {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const densityTriggerRef = useRef<View>(null)
   // intentionally read these to silence unused-arg lints when the
   // dropdown is rendered by the parent — the props are still needed
   // for the trigger button's accessibility state.
@@ -791,7 +824,22 @@ function CalendarHeader({
           </Pressable>
           {showDensityToggle && (
             <Pressable
-              onPress={() => { hapticSelection(); onToggleDensityMenu() }}
+              ref={densityTriggerRef}
+              onPress={() => {
+                hapticSelection()
+                // Measure the trigger so the parent can anchor the
+                // dropdown right under it. measureInWindow gives screen
+                // coordinates which feed straight into top/right.
+                densityTriggerRef.current?.measureInWindow((x, y, width, height) => {
+                  // Anchor the dropdown 6pt below the icon's bottom-
+                  // right corner. `right` is the distance from the
+                  // RIGHT screen edge (screenWidth - (x + width)).
+                  const screenW = Dimensions.get('window').width
+                  const right = Math.max(8, screenW - (x + width))
+                  const top = y + height + 6
+                  onToggleDensityMenu({ top, right })
+                }) ?? onToggleDensityMenu()
+              }}
               hitSlop={8}
               style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
               accessibilityRole="button"
@@ -929,11 +977,10 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', paddingHorizontal: 32 },
   dayHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   dayHeaderText: { fontWeight: '700', letterSpacing: 0.5 },
-  // FAB sits just above the bottom nav. Ken asked for it lower again
-  // in v7 testing — dropped from 80 → 70 so it visually anchors at the
-  // very bottom of the content area with only a small gap above the
-  // tab bar.
-  fab: { position: 'absolute', right: 20, bottom: 70, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
+  // FAB sits just above the bottom nav. Dropped from 70 → 24 per Ken's
+  // 4th request — the FAB now hugs the bottom of the calendar content
+  // area, with the tab bar sitting just below in the OS chrome.
+  fab: { position: 'absolute', right: 20, bottom: 24, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   fabPlus: { color: '#fff', fontSize: 30, fontWeight: '300', lineHeight: 32 },
   // Density dropdown — anchored under the header trigger icon.
   densityMenu: {

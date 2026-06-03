@@ -22,6 +22,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { deleteEvent, readEvents, readReminders, type CalendarEvent } from '@/services/calendar'
+import { listServerCalendarEvents, listHealthPlanTasksAsEvents, type ServerCalendarEvent } from '@/services/api/calendar'
 import { hapticImpact, hapticNotify, hapticSelection } from '@/utils/haptics'
 
 export default function CalendarEventDetail() {
@@ -37,11 +38,28 @@ export default function CalendarEventDetail() {
         setIsLoading(false)
         return
       }
-      // Look up across BOTH event sources. Reminders are stored in a
-      // separate EventKit entity store (iOS) so they're never in
-      // readEvents(); the prior code returned 'not found' for any
-      // reminder tap (Ken's list-view bug).
+      // Look up across ALL event sources. Routing logic in appointments.tsx
+      // sends tasks + server events here too (not just reminders/device).
       const isReminder = eventId.startsWith('reminder:')
+      const isServerApp = eventId.startsWith('app:')
+      const isHealthPlanTask = isServerApp && eventId.includes(':healthplan:')
+
+      if (isServerApp) {
+        // Strip the "app:" prefix to get the server-side id, then fetch
+        // a fresh copy from the backend so notes/alarms reflect the
+        // latest server state (not the cached useCalendar snapshot).
+        const serverId = eventId.slice(4)
+        try {
+          const list = isHealthPlanTask
+            ? await listHealthPlanTasksAsEvents()
+            : await listServerCalendarEvents()
+          const srv = list.find((e) => e.id === serverId)
+          if (srv) setEvent(serverEventToDetailEvent(srv))
+        } catch { /* falls through to "not found" */ }
+        setIsLoading(false)
+        return
+      }
+
       const [events, reminders] = await Promise.all([
         isReminder ? Promise.resolve([] as CalendarEvent[]) : readEvents(),
         isReminder ? readReminders() : Promise.resolve([] as CalendarEvent[]),
@@ -329,6 +347,37 @@ function buildIcs(e: CalendarEvent): string {
     'END:VCALENDAR',
   ].filter(Boolean) as string[]
   return lines.join('\r\n')
+}
+
+/**
+ * Convert a backend ServerCalendarEvent into the CalendarEvent shape
+ * the detail popover renders. Mirrors the converter in use-calendar.ts
+ * (kept local here to avoid coupling the detail screen to that hook).
+ */
+function serverEventToDetailEvent(s: ServerCalendarEvent): CalendarEvent {
+  const isHealthPlan = s.id.startsWith('healthplan:')
+  const isCareManager = s.author === 'care_manager'
+  const color = isHealthPlan ? '#34C759' : isCareManager ? '#007AFF' : '#8E8E93'
+  return {
+    id: `app:${s.id}`,
+    title: s.title,
+    startDate: s.startDate,
+    endDate: s.endDate,
+    allDay: s.allDay,
+    location: s.location,
+    notes: s.notes,
+    calendarId: 'csh-server',
+    source: {
+      id: isHealthPlan ? 'csh-health-plan' : 'csh-server',
+      title: isHealthPlan ? 'Health Plan' : isCareManager ? 'Care Team' : 'Circle Support Health',
+      source: 'Circle Support Health',
+      color,
+      allowsWrite: !isHealthPlan,
+    },
+    origin: 'app',
+    appKind: isHealthPlan ? 'task' : 'appointment',
+    alarms: s.alarms,
+  }
 }
 
 function fmtRange(e: CalendarEvent): string {

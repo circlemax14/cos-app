@@ -128,6 +128,25 @@ export async function uploadCalendarSnapshot(
   return res.data?.data ?? { written: 0 }
 }
 
+export interface SnapshotRow extends SnapshotEventPayload {
+  id: string
+  userId: string
+  capturedAt: string
+}
+
+/**
+ * Read back the patient's own snapshot. Used for cross-device parity:
+ * iPad pulls in events iPhone uploaded so reminders that only live on
+ * one device still surface in our calendar on every device.
+ */
+export async function listMyCalendarSnapshot(
+  range: { from?: string; to?: string } = {},
+): Promise<SnapshotRow[]> {
+  const { from = defaultRange().from, to = defaultRange().to } = range
+  const res = await apiClient.get(`/v1/patients/me/calendar-snapshot?from=${from}&to=${to}`)
+  return res.data?.data?.events ?? []
+}
+
 export async function listHealthPlanTasksAsEvents(
   range: { from?: string; to?: string } = {},
 ): Promise<ServerCalendarEvent[]> {

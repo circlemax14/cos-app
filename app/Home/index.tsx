@@ -8,7 +8,7 @@ import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider, ty
 import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -375,11 +375,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // SCRUM-265 #15: cap reduced 2.2 → 1.7 — the circle was visually overwhelming
   // the rest of the home screen on iPads / large tablets.
   // SCRUM-267: Ken asked for another ~20% reduction on tablet. Cap lowered
-  // 1.7 → 1.36 (1.7 × 0.8). Drives radius via `desiredRadius = baseRadius *
-  // scaleFactor * adaptiveMultiplier`, so a 20% cap reduction translates
-  // to a 20% smaller circle diameter on screens that were hitting the cap.
-  // Phones aren't affected (their scaleFactor is well below 1).
-  const scaleFactor = Math.min(screenWidth / baseWidth, 1.36);
+  // 1.7 → 1.36 (1.7 × 0.8).
+  // SCRUM-279 (2026-06-03): Ken asked for a further 30% reduction on iPad.
+  // Cap lowered 1.36 → 0.95 (1.36 × 0.7). At 0.95 the iPad circle renders
+  // smaller than the iPad's natural scaleFactor (~1.96), so the Math.min
+  // clamps and we get a circle visually similar to iPhone proportions.
+  const scaleFactor = Math.min(screenWidth / baseWidth, 0.95);
 
   // Base radius for orbit - original design value
   const baseRadius = 144 * 1.1; // ~158.4
@@ -2391,6 +2392,22 @@ export default function HomeScreen() {
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [cmLogoUrl, setCmLogoUrl] = useState<string | null>(null);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
+  // SCRUM-279 (2026-06-03): Ken wants a "Today's Appointments" card on
+  // the home screen, placed before Health Trends. Derived from the
+  // same upcomingAppointments stream, filtered to whose date is today.
+  const todayAppointments = useMemo(() => {
+    const today = new Date()
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    return upcomingAppointments.filter((a) => {
+      try {
+        const d = new Date(a.date)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        return key === todayKey
+      } catch {
+        return false
+      }
+    }).slice(0, 3)
+  }, [upcomingAppointments])
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
@@ -2768,9 +2785,10 @@ export default function HomeScreen() {
         </View>
 
         {/* Quick actions row — between title and circle, matches the web
-            layout. SCRUM-236: bumped marginBottom further so the Circle
-            visibly sits lower than the three quick-action pills. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 48 }}>
+            layout. SCRUM-279 (2026-06-03): Ken asked to tighten the gap
+            between the action buttons and the circle below. Dropped
+            marginBottom 48 → 12. */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 12 }}>
           <QuickActionButtons />
         </View>
 
@@ -2883,6 +2901,99 @@ export default function HomeScreen() {
 
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
+
+        {/* SCRUM-279 (2026-06-03): Today's Appointments — Ken asked for
+            today's events shown on the home screen in the same card
+            format Recommended Appointments used, placed BEFORE Health
+            Trends. Same card chrome as the existing Upcoming section. */}
+        {todayAppointments.length > 0 && (
+          <View style={styles.appointmentsSection}>
+            <Text style={[
+              styles.sectionTitle,
+              {
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(600) as any,
+                color: colors.text,
+              }
+            ]}>Today's Appointments</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/Home/appointments' as never)}
+              style={[
+                styles.deckContainer,
+                {
+                  minHeight: Math.max(
+                    56,
+                    getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                  ),
+                }
+              ]}
+            >
+              {todayAppointments.map((appointment: FastenAppointment, index: number) => {
+                const appointmentDate = new Date(appointment.date)
+                const dateLabel = appointmentDate.toLocaleDateString('en-US', {
+                  weekday: 'short', month: 'short', day: 'numeric',
+                })
+                const title = appointment.doctorName
+                  ? `${appointment.type || 'Appointment'} - ${appointment.doctorName}`
+                  : appointment.type || 'Appointment'
+                const iconNames = ['calendar-today', 'stethoscope', 'tooth']
+                const cardStyle = [styles.firstCard, styles.secondCard, styles.thirdCard][index] || styles.firstCard
+
+                return (
+                  <Card
+                    key={appointment.id}
+                    style={[
+                      styles.appointmentCard,
+                      cardStyle,
+                      {
+                        minHeight: Math.max(
+                          56,
+                          getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                        ),
+                      }
+                    ]}
+                  >
+                    <View style={[
+                      styles.listItemContainer,
+                      {
+                        paddingHorizontal: getScaledFontSize(16),
+                        paddingVertical: getScaledFontSize(8),
+                        minHeight: Math.max(
+                          56,
+                          getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                        ),
+                      }
+                    ]}>
+                      <View style={{ transform: [{ scale: getScaledFontSize(24) / 24 }] }}>
+                        <List.Icon icon={iconNames[index] || 'calendar'} />
+                      </View>
+                      <View style={[
+                        styles.listItemContent,
+                        { marginLeft: getScaledFontSize(16), flexShrink: 1 }
+                      ]}>
+                        <Text style={[
+                          styles.appointmentTitle,
+                          {
+                            fontSize: getScaledFontSize(16),
+                            fontWeight: settings.isBoldTextEnabled ? '700' : '500',
+                            marginBottom: getScaledFontSize(2),
+                          }
+                        ]}>{title}</Text>
+                        <Text style={[
+                          styles.appointmentDescription,
+                          {
+                            fontSize: getScaledFontSize(14),
+                            fontWeight: settings.isBoldTextEnabled ? '600' : '400'
+                          }
+                        ]}>{`${dateLabel} · ${appointment.time}`}</Text>
+                      </View>
+                    </View>
+                  </Card>
+                )
+              })}
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
             an accent gradient overlay, four illustrative metric icons,
@@ -3020,7 +3131,12 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {recommendedAppointments.length > 0 && (
+        {/* SCRUM-279 (2026-06-03): Recommended Appointments section
+            removed at Ken's request. Today's Appointments now sits
+            before Health Trends instead. The data still loads in the
+            background (could surface in another screen later) but the
+            home card is gone. */}
+        {false && recommendedAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text
               style={[

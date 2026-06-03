@@ -72,11 +72,19 @@ export async function reconcileEventNotifications(
               calendarId: event.calendarId,
             },
           },
-          trigger: { date: new Date(fireAt) } as Notifications.NotificationTriggerInput,
+          // expo-notifications ≥0.27 requires `type` on every trigger.
+          // The old `{ date }` shape was silently rejected by validation
+          // (and the empty catch below masked the failure for every
+          // event, so Ken got zero notifications on build 28).
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: new Date(fireAt),
+          },
         })
-      } catch {
-        // ignore individual scheduling failures — one bad event shouldn't
-        // wipe out the queue for the rest.
+      } catch (err) {
+        // Dev-only log so a future regression surfaces. Production
+        // build still swallows.
+        if (__DEV__) console.warn('[calendar-notifications] schedule failed', event.title, err)
       }
     }
   }

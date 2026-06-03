@@ -51,15 +51,22 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
-const YEAR_RANGE = 50
+// ±5 years (was ±50). 101 years was overkill — almost no one needs
+// half a century of pre-mounted sections, the virtualization estimates
+// drift further with more sections, and FlatList lays the whole list
+// before first paint which contributed to the white flash. 11 years is
+// plenty for normal use (we can extend later with onEndReached).
+const YEAR_RANGE = 5
 
-// Section height estimate for getItemLayout — gets us roughly close so
-// scrollToIndex doesn't have to measure every row. Recomputed per-device
-// since iPad is taller-per-section than iPhone.
+// Section height estimate per device. iPad 3-col grids and iPhone 2-col
+// grids both work out near 1100pt with current cellSize math
+// (title ~50 + 4 or 6 rows × ~250pt mini-month cards + padding).
+// Better-fit estimates dramatically improve scrollToIndex accuracy —
+// previously 520pt on iPad meant scrollToIndex(5) landed 3 years short.
 function estimatedSectionHeight(width: number): number {
   const isPad = width >= 600
-  if (isPad) return 520 // 3-col × 4-row
-  return 680            // 2-col × 6-row (taller)
+  if (isPad) return 1100 // 3-col × 4-row × ~232pt cells + chrome
+  return 1100            // 2-col × 6-row × ~172pt cells + chrome
 }
 
 export function CalendarYearView({ year, events, onJumpToMonth, onLongPressMonth }: Props) {
@@ -88,18 +95,24 @@ export function CalendarYearView({ year, events, onJumpToMonth, onLongPressMonth
   const listRef = useRef<FlatList<number>>(null)
   const didInitialScroll = useRef(false)
 
-  // Scroll to the current year exactly once after first layout. This
-  // avoids the prior bug where FlatList's initialScrollIndex +
-  // maintainVisibleContentPosition combination jumped back to year 0
-  // on iPad after the first layout pass.
+  // Scroll to the current year on mount AND whenever `year` prop
+  // changes (e.g. user navigated to Month then back to Year for a
+  // different year). Uses scrollToOffset with our height estimate so
+  // we don't depend on FlatList having actually rendered item N yet
+  // (scrollToIndex with a small windowSize was the cause of Ken's
+  // "Year scroll lands 3 years short" bug — index 5 needed item 5
+  // measured, but only items 0-3 were rendered, so it fell through to
+  // onScrollToIndexFailed which estimated incorrectly).
   useEffect(() => {
-    if (didInitialScroll.current) return
     const id = setTimeout(() => {
-      listRef.current?.scrollToIndex({ index: initialIndex, animated: false })
+      listRef.current?.scrollToOffset({
+        offset: initialIndex * sectionHeight,
+        animated: false,
+      })
       didInitialScroll.current = true
     }, 50)
     return () => clearTimeout(id)
-  }, [initialIndex])
+  }, [initialIndex, sectionHeight, year])
 
   const renderItem = ({ item: y }: { item: number }) => (
     <YearSection
@@ -118,38 +131,41 @@ export function CalendarYearView({ year, events, onJumpToMonth, onLongPressMonth
   )
 
   return (
-    <FlatList
-      ref={listRef}
-      data={yearList}
-      keyExtractor={(y) => String(y)}
-      renderItem={renderItem}
-      getItemLayout={(_, index) => ({
-        length: sectionHeight,
-        offset: sectionHeight * index,
-        index,
-      })}
-      onScrollToIndexFailed={(info) => {
-        // Layout hasn't measured yet — wait and retry. No-op if
-        // didInitialScroll became true in the meantime.
-        const id = setTimeout(() => {
-          listRef.current?.scrollToIndex({ index: info.index, animated: false })
-        }, 120)
-        return () => clearTimeout(id)
-      }}
-      // INTENTIONALLY NOT using maintainVisibleContentPosition — it was
-      // the source of the iPad "scroll jumps back to 1998" bug. With
-      // virtualized lists + getItemLayout it's also not needed since
-      // items don't shift relative to one another.
-      contentContainerStyle={{ paddingBottom: 60 }}
-      removeClippedSubviews
-      // Modest window — too wide hurts perf on iPad with many cells
-      // visible; too narrow causes blank frames during fast scroll.
-      windowSize={5}
-      initialNumToRender={2}
-      maxToRenderPerBatch={2}
-      updateCellsBatchingPeriod={50}
-      showsVerticalScrollIndicator
-    />
+    // Background-colored wrapper kills the white flash Ken saw on
+    // iPhone — without it, the system background showed through
+    // during virtualization windows where no items were laid out yet.
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <FlatList
+        ref={listRef}
+        data={yearList}
+        keyExtractor={(y) => String(y)}
+        renderItem={renderItem}
+        getItemLayout={(_, index) => ({
+          length: sectionHeight,
+          offset: sectionHeight * index,
+          index,
+        })}
+        onScrollToIndexFailed={(info) => {
+          const id = setTimeout(() => {
+            listRef.current?.scrollToOffset({
+              offset: info.index * sectionHeight,
+              animated: false,
+            })
+          }, 120)
+          return () => clearTimeout(id)
+        }}
+        contentContainerStyle={{ paddingBottom: 60, backgroundColor: colors.background }}
+        style={{ backgroundColor: colors.background }}
+        removeClippedSubviews
+        // 11-year YEAR_RANGE means windowSize 3 is enough to cover the
+        // visible year + neighbors without paying for distant offscreen.
+        windowSize={3}
+        initialNumToRender={1}
+        maxToRenderPerBatch={1}
+        updateCellsBatchingPeriod={50}
+        showsVerticalScrollIndicator
+      />
+    </View>
   )
 }
 
