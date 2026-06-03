@@ -18,6 +18,11 @@ import { fetchPatientInfo } from '@/services/api/patient';
 import { fetchPendingTaskCount } from '@/services/api/ai-health-plan';
 import { fetchRecommendedAppointments } from '@/services/api/recommended-appointments';
 import type { RecommendedAppointment , Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
+// SCRUM-279 (2026-06-03): Today's Appointments card pulls from the
+// UNIFIED calendar feed (FHIR appts + user-created + care-manager-
+// added + health-plan tasks + device + reminders), not just FHIR.
+import { useCalendar } from '@/hooks/use-calendar'
+import type { CalendarEvent } from '@/services/calendar'
 import { EntityIcon } from '@/components/icons';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
@@ -2392,22 +2397,41 @@ export default function HomeScreen() {
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [cmLogoUrl, setCmLogoUrl] = useState<string | null>(null);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
-  // SCRUM-279 (2026-06-03): Ken wants a "Today's Appointments" card on
-  // the home screen, placed before Health Trends. Derived from the
-  // same upcomingAppointments stream, filtered to whose date is today.
-  const todayAppointments = useMemo(() => {
-    const today = new Date()
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    return upcomingAppointments.filter((a) => {
-      try {
-        const d = new Date(a.date)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        return key === todayKey
-      } catch {
-        return false
-      }
-    }).slice(0, 3)
-  }, [upcomingAppointments])
+
+  // SCRUM-279 (2026-06-03): pull today's window from the unified
+  // calendar feed so home shows server-stored events, care-manager-
+  // added appointments, health-plan tasks, device events, and
+  // reminders — not just FHIR appointments. Narrow window to keep
+  // home-screen network cost bounded.
+  const todayWindow = useMemo(() => {
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = new Date()
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }, [])
+  const calendar = useCalendar({
+    windowStart: todayWindow.start,
+    windowEnd: todayWindow.end,
+    includeReminders: true,
+  })
+  // Convert today's calendar events into the card-row shape the
+  // existing Recommended/Upcoming cards use. Sorted by start time so
+  // the next-up event is first. Cap to 3 (matches the deck layout).
+  const todayCalendarItems = useMemo(() => {
+    const todayKey = `${todayWindow.start.getFullYear()}-${String(todayWindow.start.getMonth() + 1).padStart(2, '0')}-${String(todayWindow.start.getDate()).padStart(2, '0')}`
+    return calendar.events
+      .filter((e: CalendarEvent) => {
+        try {
+          const d = new Date(e.startDate)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === todayKey
+        } catch {
+          return false
+        }
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .slice(0, 3)
+  }, [calendar.events, todayWindow])
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
@@ -2902,11 +2926,12 @@ export default function HomeScreen() {
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
 
-        {/* SCRUM-279 (2026-06-03): Today's Appointments — Ken asked for
-            today's events shown on the home screen in the same card
-            format Recommended Appointments used, placed BEFORE Health
-            Trends. Same card chrome as the existing Upcoming section. */}
-        {todayAppointments.length > 0 && (
+        {/* SCRUM-279 (2026-06-03): Today's Appointments — pulls from
+            the UNIFIED calendar feed (FHIR + user-created + care-
+            manager + health-plan tasks + device + reminders). Placed
+            BEFORE Health Trends. Same card chrome as the existing
+            Upcoming section. */}
+        {todayCalendarItems.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
@@ -2928,20 +2953,29 @@ export default function HomeScreen() {
                 }
               ]}
             >
-              {todayAppointments.map((appointment: FastenAppointment, index: number) => {
-                const appointmentDate = new Date(appointment.date)
-                const dateLabel = appointmentDate.toLocaleDateString('en-US', {
-                  weekday: 'short', month: 'short', day: 'numeric',
-                })
-                const title = appointment.doctorName
-                  ? `${appointment.type || 'Appointment'} - ${appointment.doctorName}`
-                  : appointment.type || 'Appointment'
-                const iconNames = ['calendar-today', 'stethoscope', 'tooth']
+              {todayCalendarItems.map((event: CalendarEvent, index: number) => {
+                const startDate = new Date(event.startDate)
+                const timeLabel = event.allDay
+                  ? 'All-day'
+                  : startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                const title = event.title || 'Untitled event'
+                // Source-based icon: distinguishes health-plan task /
+                // care-team / reminder / personal at a glance.
+                const iconName =
+                  event.origin === 'reminder' ? 'bell-ring' :
+                  event.appKind === 'task' ? 'clipboard-check' :
+                  event.appKind === 'past-visit' || event.appKind === 'appointment' ? 'stethoscope' :
+                  'calendar-today'
                 const cardStyle = [styles.firstCard, styles.secondCard, styles.thirdCard][index] || styles.firstCard
+                const subtitle = event.location
+                  ? `${timeLabel} · ${event.location}`
+                  : event.source.title
+                    ? `${timeLabel} · ${event.source.title}`
+                    : timeLabel
 
                 return (
                   <Card
-                    key={appointment.id}
+                    key={event.id}
                     style={[
                       styles.appointmentCard,
                       cardStyle,
@@ -2965,7 +2999,7 @@ export default function HomeScreen() {
                       }
                     ]}>
                       <View style={{ transform: [{ scale: getScaledFontSize(24) / 24 }] }}>
-                        <List.Icon icon={iconNames[index] || 'calendar'} />
+                        <List.Icon icon={iconName} />
                       </View>
                       <View style={[
                         styles.listItemContent,
@@ -2978,14 +3012,18 @@ export default function HomeScreen() {
                             fontWeight: settings.isBoldTextEnabled ? '700' : '500',
                             marginBottom: getScaledFontSize(2),
                           }
-                        ]}>{title}</Text>
+                        ]}
+                        numberOfLines={1}
+                        >{title}</Text>
                         <Text style={[
                           styles.appointmentDescription,
                           {
                             fontSize: getScaledFontSize(14),
                             fontWeight: settings.isBoldTextEnabled ? '600' : '400'
                           }
-                        ]}>{`${dateLabel} · ${appointment.time}`}</Text>
+                        ]}
+                        numberOfLines={1}
+                        >{subtitle}</Text>
                       </View>
                     </View>
                   </Card>
