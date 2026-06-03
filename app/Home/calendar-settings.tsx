@@ -8,7 +8,8 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
+import * as Notifications from 'expo-notifications'
 import { router } from 'expo-router'
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
@@ -125,6 +126,44 @@ export default function CalendarSettingsScreen() {
               <Text style={[styles.sectionHeader, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>
                 PREFERENCES
               </Text>
+
+              {/* SCRUM-279: Test notification — fires in 5 sec.
+                  Diagnostic for "no notifications" reports — isolates
+                  the OS path from event scheduling. */}
+              <Pressable
+                onPress={async () => {
+                  try {
+                    const id = await Notifications.scheduleNotificationAsync({
+                      content: {
+                        title: 'Test notification',
+                        body: 'If you see this, notifications are working. Tap the calendar tab to confirm event notifications also fire.',
+                        data: { tag: 'csh-test' },
+                      },
+                      trigger: {
+                        type: Notifications.SchedulableTriggerInputTypes.DATE,
+                        date: new Date(Date.now() + 5_000),
+                      },
+                    })
+                    const all = await Notifications.getAllScheduledNotificationsAsync()
+                    Alert.alert(
+                      'Test scheduled',
+                      `Test notification scheduled (id ${id.slice(0, 6)}). ${all.length} total notifications in the queue. Lock your phone or background this app within 5 sec — the alert should fire.`,
+                    )
+                  } catch (e) {
+                    Alert.alert('Schedule failed', String(e))
+                  }
+                }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Send test notification"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Send test notification
+                </Text>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                  Fire in 5 sec ›
+                </Text>
+              </Pressable>
 
               {/* J1: Show Reminders toggle */}
               <View style={[styles.prefRow, { borderBottomColor: colors.border }]}>
