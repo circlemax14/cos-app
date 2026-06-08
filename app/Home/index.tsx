@@ -209,15 +209,30 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        <Button
-          mode="contained"
-          buttonColor="#008080"
+        // SCRUM-279 (2026-06-08 build 37): PhoneCircleView's More
+        // button — Paper Button replaced with plain Pressable pill.
+        // Was missed in builds 33-36; Ken's "More button still too
+        // big" reports were about THIS instance.
+        <Pressable
           onPress={() => router.push('/modal')}
-          style={[styles.moreDoctorsButton, { paddingVertical: getScaledFontSize(4) }]}
-          contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
-          labelStyle={{ fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
-          More
-        </Button>
+          style={({ pressed }) => ({
+            alignSelf: 'center',
+            backgroundColor: '#008080',
+            paddingHorizontal: 10,
+            paddingVertical: 3,
+            borderRadius: 999,
+            opacity: pressed ? 0.7 : 1,
+          })}
+          accessibilityRole="button"
+          accessibilityLabel="More providers"
+        >
+          <Text
+            style={{ color: '#fff', fontSize: 10, fontWeight: '600', letterSpacing: 0.3, lineHeight: 12 }}
+            allowFontScaling={false}
+          >
+            More
+          </Text>
+        </Pressable>
       )}
       {orbitItems.map((item, idx) => {
         const angle = (idx / orbitItems.length) * 2 * Math.PI;
@@ -539,21 +554,29 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        <Button
-          mode="contained"
-          buttonColor="#008080"
+        // SCRUM-279 (2026-06-08 build 37): TabletCircleView's More
+        // button — also converted to plain Pressable pill so iPad
+        // shows the same compact pill as iPhone.
+        <Pressable
           onPress={() => router.push('/modal')}
-          style={[
-            styles.moreDoctorsButton,
-            {
-              paddingHorizontal: getScaledFontSize(20),
-              borderRadius: getScaledFontSize(24),
-            }
-          ]}
-          contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
-          labelStyle={{ fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
-          More
-        </Button>
+          style={({ pressed }) => ({
+            alignSelf: 'center',
+            backgroundColor: '#008080',
+            paddingHorizontal: 12,
+            paddingVertical: 4,
+            borderRadius: 999,
+            opacity: pressed ? 0.7 : 1,
+          })}
+          accessibilityRole="button"
+          accessibilityLabel="More providers"
+        >
+          <Text
+            style={{ color: '#fff', fontSize: 12, fontWeight: '600', letterSpacing: 0.3, lineHeight: 14 }}
+            allowFontScaling={false}
+          >
+            More
+          </Text>
+        </Pressable>
       )}
       {orbitItems.map((item, idx) => {
         const angle = (idx / orbitItems.length) * 2 * Math.PI;
