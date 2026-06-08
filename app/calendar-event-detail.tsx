@@ -375,7 +375,7 @@ function serverEventToDetailEvent(s: ServerCalendarEvent): CalendarEvent {
       allowsWrite: !isHealthPlan,
     },
     origin: 'app',
-    appKind: isHealthPlan ? 'task' : 'appointment',
+    appKind: isHealthPlan ? 'task' : undefined,
     alarms: s.alarms,
   }
 }

@@ -209,17 +209,17 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        // SCRUM-279 (2026-06-08 build 37): PhoneCircleView's More
-        // button — Paper Button replaced with plain Pressable pill.
-        // Was missed in builds 33-36; Ken's "More button still too
-        // big" reports were about THIS instance.
+        // SCRUM-279 (2026-06-08 build 38): build 37 went too tiny.
+        // Bumped to readable size — fontSize 12, paddingH 14,
+        // paddingV 5. ~28pt tall × ~52pt wide — a legitimate
+        // tappable pill, not a chip.
         <Pressable
           onPress={() => router.push('/modal')}
           style={({ pressed }) => ({
             alignSelf: 'center',
             backgroundColor: '#008080',
-            paddingHorizontal: 10,
-            paddingVertical: 3,
+            paddingHorizontal: 14,
+            paddingVertical: 5,
             borderRadius: 999,
             opacity: pressed ? 0.7 : 1,
           })}
@@ -227,7 +227,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           accessibilityLabel="More providers"
         >
           <Text
-            style={{ color: '#fff', fontSize: 10, fontWeight: '600', letterSpacing: 0.3, lineHeight: 12 }}
+            style={{ color: '#fff', fontSize: 12, fontWeight: '600', letterSpacing: 0.3, lineHeight: 14 }}
             allowFontScaling={false}
           >
             More
@@ -886,8 +886,8 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               style={({ pressed }) => ({
                 alignSelf: 'center',
                 backgroundColor: '#008080',
-                paddingHorizontal: 10,
-                paddingVertical: 3,
+                paddingHorizontal: 14,
+                paddingVertical: 5,
                 borderRadius: 999,
                 opacity: pressed ? 0.7 : 1,
               })}
@@ -897,10 +897,10 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               <Text
                 style={{
                   color: '#fff',
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: '600',
                   letterSpacing: 0.3,
-                  lineHeight: 12,
+                  lineHeight: 14,
                 }}
                 allowFontScaling={false}
               >

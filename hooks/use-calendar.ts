@@ -303,7 +303,13 @@ function serverEventToCalendarEvent(s: ServerCalendarEvent): CalendarEvent {
       allowsWrite: !isHealthPlan,
     },
     origin: 'app',
-    appKind: isHealthPlan ? 'task' : 'appointment',
+    // SCRUM-279 (2026-06-08 build 38): server-stored events were
+    // labeled appKind='appointment', which sent them to the FHIR-only
+    // /Home/appointment-detail screen where they're not found. Leave
+    // appKind undefined for non-task server events so openDetail
+    // routes them to the unified /calendar-event-detail popover
+    // (which DOES know how to look them up via listServerCalendarEvents).
+    appKind: isHealthPlan ? 'task' : undefined,
     alarms: s.alarms,
   }
 }
