@@ -26,6 +26,7 @@ import {
   Animated,
   Dimensions,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -58,7 +59,7 @@ import { buildAndUploadSnapshot, registerCalendarSync } from '@/services/calenda
 import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
-import { addRecentSearch, clearRecentSearches, getRecentSearches } from '@/services/calendar-recents'
+import { addRecentSearch } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
 
 // Year / Month / Week / Day / List — Week was added in v7 at Ken's
@@ -206,7 +207,6 @@ export default function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<string>(todayIso())
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
-  const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [showRemindersPref, setShowRemindersPref] = useState(true)
   // Density dropdown state lifted to screen so the popover can be
   // absolutely positioned over the grid instead of pushing it down.
@@ -230,18 +230,14 @@ export default function CalendarScreen() {
     }).start()
   }, [showSearch, searchAnim])
 
-  // Load recents whenever the search bar opens (cheap; AsyncStorage read).
-  useEffect(() => {
-    if (showSearch) void getRecentSearches().then(setRecentSearches)
-  }, [showSearch])
-
-  // When the user submits a search (≥2 chars), persist it as a recent
-  // so the next open shows it. Debounced via a tiny delay so each
-  // keystroke doesn't write.
+  // SCRUM-279 (2026-06-08): Ken asked for the calendar to stay
+  // visible when the search bar opens with no query (was showing
+  // a blank "Recent" list before). Recents-related state removed;
+  // we just persist the query for future analytics use.
   useEffect(() => {
     if (!showSearch || searchQuery.trim().length < 2) return
     const id = setTimeout(() => {
-      void addRecentSearch(searchQuery).then(setRecentSearches)
+      void addRecentSearch(searchQuery).catch(() => { /* non-fatal */ })
     }, 800)
     return () => clearTimeout(id)
   }, [searchQuery, showSearch])
@@ -410,46 +406,6 @@ export default function CalendarScreen() {
             <View style={styles.center}>
               <ActivityIndicator color={colors.tint} />
             </View>
-          ) : showSearch && searchQuery.trim().length === 0 ? (
-            // F4: Recent searches list shown when search is open and
-            // the query is empty. Tap a recent to fill the query.
-            <ScrollView contentContainerStyle={{ paddingTop: 12 }}>
-              <View style={{ paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: '700', letterSpacing: 0.5 }}>
-                  RECENT
-                </Text>
-                {recentSearches.length > 0 && (
-                  <Pressable onPress={() => { void clearRecentSearches().then(() => setRecentSearches([])) }}>
-                    <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '500' }}>Clear</Text>
-                  </Pressable>
-                )}
-              </View>
-              {recentSearches.length === 0 ? (
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), paddingHorizontal: 16, paddingVertical: 12 }}>
-                  Your recent searches will appear here.
-                </Text>
-              ) : (
-                recentSearches.map((q) => (
-                  <Pressable
-                    key={q}
-                    onPress={() => { hapticSelection(); setSearchQuery(q) }}
-                    style={({ pressed }) => ({
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      borderBottomWidth: StyleSheet.hairlineWidth,
-                      borderBottomColor: colors.border,
-                      backgroundColor: pressed ? colors.cardBackground : 'transparent',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 10,
-                    })}
-                  >
-                    <IconSymbol name="clock" size={getScaledFontSize(15)} color={colors.subtext} />
-                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), flex: 1 }}>{q}</Text>
-                  </Pressable>
-                ))
-              )}
-            </ScrollView>
           ) : showSearch && searchQuery.trim().length > 0 ? (
             // F2: Flat search-results list — date-grouped, sticky day
             // headers, NOT scoped to the current view. Apple's behavior.
@@ -636,30 +592,39 @@ export default function CalendarScreen() {
               down). Backdrop fills the whole screen so tap-outside
               dismisses; the menu itself is anchored under the trigger
               icon at the top-right. */}
-          {showDensityMenu && activeView === 'month' && (
-            <>
-              <Pressable
-                onPress={() => setShowDensityMenu(false)}
-                style={StyleSheet.absoluteFillObject as never}
-                accessibilityLabel="Dismiss density menu"
+          {/* SCRUM-279 (2026-06-08): Use Modal (RN's portal) instead of
+              absolute-positioned View. The prior in-screen overlay was
+              getting z-clipped by the FlatList content on some
+              layouts, hence Ken's "dropdown not visible" report.
+              Modal renders into the window root above all other
+              app content. transparent + no animation = popover feel. */}
+          <Modal
+            visible={showDensityMenu && activeView === 'month'}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowDensityMenu(false)}
+          >
+            <Pressable
+              onPress={() => setShowDensityMenu(false)}
+              style={StyleSheet.absoluteFillObject as never}
+              accessibilityLabel="Dismiss density menu"
+            />
+            <View
+              style={[
+                styles.densityMenuFloater,
+                { top: densityAnchor.top, right: densityAnchor.right },
+              ]}
+              pointerEvents="box-none"
+            >
+              <DensityMenu
+                density={monthDensity}
+                onChange={setMonthDensity}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                onClose={() => setShowDensityMenu(false)}
               />
-              <View
-                style={[
-                  styles.densityMenuFloater,
-                  { top: densityAnchor.top, right: densityAnchor.right },
-                ]}
-                pointerEvents="box-none"
-              >
-                <DensityMenu
-                  density={monthDensity}
-                  onChange={setMonthDensity}
-                  colors={colors}
-                  getScaledFontSize={getScaledFontSize}
-                  onClose={() => setShowDensityMenu(false)}
-                />
-              </View>
-            </>
-          )}
+            </View>
+          </Modal>
         </View>
       </CalendarPermissionGate>
     </AppWrapper>

@@ -859,15 +859,21 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               onPress={() => router.push('/modal')}
               style={styles.moreDoctorsButton}
               labelStyle={{
-                fontSize: 10,                  // 14 → 10 (~28% smaller)
+                // SCRUM-279 (2026-06-08 build 34): cut further per
+                // Ken's report. label fontSize 10 → 9, lineHeight
+                // 14 → 11, vertical/horizontal margins zeroed out.
+                fontSize: 9,
                 fontWeight: getScaledFontWeight(500) as any,
-                lineHeight: 14,
+                lineHeight: 11,
+                marginVertical: 0,
+                marginHorizontal: 0,
               }}
               contentStyle={{
-                minHeight: 26,                // 44 → 26 (~40% smaller)
-                paddingVertical: 2,
-                paddingHorizontal: 10,
+                minHeight: 22,                // matches outer style
+                paddingVertical: 0,
+                paddingHorizontal: 6,
               }}
+              compact
             >
               More
             </Button>
@@ -2828,11 +2834,12 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick actions row — between title and circle, matches the web
-            layout. SCRUM-279 (2026-06-03): Ken asked to tighten the gap
-            between the action buttons and the circle below. Dropped
-            marginBottom 48 → 12. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 12 }}>
+        {/* Quick actions row — between title and circle, matches the
+            web layout. SCRUM-279 (2026-06-08 build 34): Ken asked to
+            reduce the gap to circle by 50% more on iPad. Dropped
+            marginBottom 12 → 6. iPhone already tight enough so it
+            applies universally (no responsive override needed). */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
           <QuickActionButtons />
         </View>
 
@@ -2948,11 +2955,13 @@ export default function HomeScreen() {
 
         {/* SCRUM-279 (2026-06-03): Today's Appointments — pulls from
             the UNIFIED calendar feed (FHIR + user-created + care-
-            manager + health-plan tasks + device + reminders). Placed
-            BEFORE Health Trends. Same card chrome as the existing
-            Upcoming section. */}
-        {todayCalendarItems.length > 0 && (
-          <View style={styles.appointmentsSection}>
+            manager + device + reminders).
+            SCRUM-279 (2026-06-08 build 34): ALWAYS render, never
+            conditional. Ken reported iPad showing nothing — was the
+            length > 0 gate hiding the whole section when his iPad
+            had no events for today. Empty state now surfaces an
+            explicit "No appointments today" CTA. */}
+        <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
               {
@@ -2961,6 +2970,29 @@ export default function HomeScreen() {
                 color: colors.text,
               }
             ]}>Today's Appointments</Text>
+            {todayCalendarItems.length === 0 ? (
+              // SCRUM-279 (2026-06-08 build 34): empty state replaces
+              // the silent-hide so the user always sees the card.
+              <TouchableOpacity
+                onPress={() => router.push('/Home/appointments' as never)}
+                style={{
+                  backgroundColor: (colors.cardBackground as string) ?? 'transparent',
+                  borderRadius: 12,
+                  padding: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: 64,
+                }}
+              >
+                <Text style={{
+                  color: colors.subtext as string,
+                  fontSize: getScaledFontSize(14),
+                  textAlign: 'center',
+                }}>
+                  No appointments today · tap to open calendar
+                </Text>
+              </TouchableOpacity>
+            ) : (
             <TouchableOpacity
               onPress={() => router.push('/Home/appointments' as never)}
               style={[
@@ -3052,8 +3084,8 @@ export default function HomeScreen() {
                 )
               })}
             </TouchableOpacity>
+            )}
           </View>
-        )}
 
         {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
             an accent gradient overlay, four illustrative metric icons,
@@ -3385,9 +3417,11 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   // SCRUM-279 (2026-06-08): phone gets a more compact hero — Ken
-  // said the iPad-tuned card was too tall on iPhone.
+  // said the iPad-tuned card was too tall on iPhone. Build 34: also
+  // tightened marginTop 8 → 0 since the appointmentsSection's
+  // paddingBottom was already reduced for the gap-50% ask.
   trendsHeroCardPhone: {
-    marginTop: 8,
+    marginTop: 0,
     paddingTop: 12,
     paddingBottom: 12,
     paddingHorizontal: 12,
@@ -3538,9 +3572,13 @@ const styles = StyleSheet.create({
   },
   moreDoctorsButton: {
     alignSelf: 'center',
-    minHeight: 44,
+    // SCRUM-279 (2026-06-08 build 34): still too big per Ken. The
+    // wrapper Button style had minHeight 44 + paddingHorizontal 20
+    // overriding my inline contentStyle. Both squashed now:
+    // minHeight 44 → 22, paddingHorizontal 20 → 8.
+    minHeight: 22,
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
   },
   moreButtonContainer: {
     alignItems: 'center',
@@ -3559,11 +3597,11 @@ const styles = StyleSheet.create({
   appointmentsSection: {
     width: '100%',
     paddingHorizontal: 24,
-    // Was 60; reduced because the QuickActionButtons row now sits
-    // between this section and the Circle of Support, providing
-    // its own vertical separation.
-    paddingTop: 16,
-    paddingBottom: 20,
+    // SCRUM-279 (2026-06-08): Ken asked to reduce the gap between
+    // Today's Appointments and Health Trends by 50%. Dropped
+    // paddingBottom 20 → 8 + paddingTop 16 → 10.
+    paddingTop: 10,
+    paddingBottom: 8,
     gap: 12,
   },
   deckContainer: {
