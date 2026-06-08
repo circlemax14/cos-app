@@ -25,7 +25,6 @@ import {
   type UpdateEventInput,
 } from '@/services/calendar'
 import {
-  listHealthPlanTasksAsEvents,
   listMyCalendarSnapshot,
   listServerCalendarEvents,
   type ServerCalendarEvent,
@@ -65,10 +64,13 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
   const [deviceEvents, setDeviceEvents] = useState<CalendarEvent[]>([])
   const [reminders, setReminders] = useState<CalendarEvent[]>([])
   // Server-stored events (created in mobile new-event flow OR added by
-  // a care manager from the admin dashboard) + health-plan tasks
-  // expanded to event shape. Both fetched from cos-backend.
+  // a care manager from the admin dashboard). Fetched from cos-backend.
+  //
+  // SCRUM-279 (2026-06-08): health-plan tasks intentionally REMOVED from
+  // the calendar feed at Ken's request — appointments + reminders only
+  // here; tasks live in the existing health-plan UI to avoid
+  // duplication / noise.
   const [serverEvents, setServerEvents] = useState<CalendarEvent[]>([])
-  const [healthPlanEvents, setHealthPlanEvents] = useState<CalendarEvent[]>([])
   // Cross-device snapshot events — pulled from cos-backend so events
   // captured on one device (e.g. iPhone reminders) show up on another
   // (e.g. iPad without local reminders).
@@ -99,16 +101,13 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     try {
       const fromIso = (windowStart ?? new Date(Date.now() - 30 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
       const toIso = (windowEnd ?? new Date(Date.now() + 365 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
-      const [evt, cals, rems, srv, hp, snap] = await Promise.all([
+      const [evt, cals, rems, srv, snap] = await Promise.all([
         readEvents({ windowStart, windowEnd, calendarIds: enabledCalendarIds }),
         listCalendars(),
         includeReminders ? readReminders({ windowStart, windowEnd }) : Promise.resolve([] as CalendarEvent[]),
-        // Server events + health-plan tasks + snapshot are best-effort:
-        // a backend outage shouldn't blank the calendar.
+        // Server events + snapshot are best-effort: a backend outage
+        // shouldn't blank the calendar.
         listServerCalendarEvents({ from: fromIso, to: toIso })
-          .then((s) => s.map(serverEventToCalendarEvent))
-          .catch(() => [] as CalendarEvent[]),
-        listHealthPlanTasksAsEvents({ from: fromIso, to: toIso })
           .then((s) => s.map(serverEventToCalendarEvent))
           .catch(() => [] as CalendarEvent[]),
         // Cross-device snapshot — surfaces events captured on a sibling
@@ -120,7 +119,6 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
       setCalendars(cals)
       setReminders(rems)
       setServerEvents(srv)
-      setHealthPlanEvents(hp)
       // Convert snapshot rows → CalendarEvent shape, filtering out any
       // row that's already in the local device set (sourceEventId
       // match) so we don't double-count what's locally available.
@@ -203,11 +201,10 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     let all = mergeEvents(deviceEvents, reminders)
     all = mergeEvents(all, appEvents)
     all = mergeEvents(all, serverEvents)
-    all = mergeEvents(all, healthPlanEvents)
     all = mergeEvents(all, snapshotEvents)
     if (hiddenCalendarIds.size === 0) return all
     return all.filter((e) => !hiddenCalendarIds.has(e.source.id))
-  }, [deviceEvents, reminders, appEvents, serverEvents, healthPlanEvents, snapshotEvents, hiddenCalendarIds])
+  }, [deviceEvents, reminders, appEvents, serverEvents, snapshotEvents, hiddenCalendarIds])
 
   return {
     events,
