@@ -804,18 +804,24 @@ function CalendarHeader({
               ref={densityTriggerRef}
               onPress={() => {
                 hapticSelection()
-                // Measure the trigger so the parent can anchor the
-                // dropdown right under it. measureInWindow gives screen
-                // coordinates which feed straight into top/right.
-                densityTriggerRef.current?.measureInWindow((x, y, width, height) => {
-                  // Anchor the dropdown 6pt below the icon's bottom-
-                  // right corner. `right` is the distance from the
-                  // RIGHT screen edge (screenWidth - (x + width)).
-                  const screenW = Dimensions.get('window').width
-                  const right = Math.max(8, screenW - (x + width))
-                  const top = y + height + 6
-                  onToggleDensityMenu({ top, right })
-                }) ?? onToggleDensityMenu()
+                // SCRUM-279 (2026-06-08 build 36): the prior `??`
+                // pattern had a side effect — measureInWindow returns
+                // undefined, so `undefined ?? onToggleDensityMenu()`
+                // ALWAYS fired the fallback toggle, then the async
+                // measure callback toggled AGAIN. Menu opened and
+                // immediately closed. Now: synchronous ref check,
+                // toggle exactly once.
+                const ref = densityTriggerRef.current
+                if (ref) {
+                  ref.measureInWindow((x, y, width, height) => {
+                    const screenW = Dimensions.get('window').width
+                    const right = Math.max(8, screenW - (x + width))
+                    const top = y + height + 6
+                    onToggleDensityMenu({ top, right })
+                  })
+                } else {
+                  onToggleDensityMenu()
+                }
               }}
               hitSlop={8}
               style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}

@@ -403,8 +403,9 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // Avatar container size - scale proportionally.
   // SCRUM-279 (2026-06-08): provider avatars +25% (Ken asked for
   // them to be more visually prominent inside the tighter orbit).
-  // The base AND the cap both go up — base 120 → 150, cap 1.5 → 1.875.
-  const baseAvatarContainerSize = 150;
+  // Build 36: another bump per Ken's "increase provider circle and
+  // name text on iPad only" feedback. Base 150 → 180 (+20%).
+  const baseAvatarContainerSize = 180;
   const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
@@ -652,7 +653,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12 * Math.min(scaleFactor, 1.5)),
+                        // SCRUM-279 (2026-06-08 build 36): Ken asked
+                        // to bump provider name font on iPad. Base
+                        // 12 → 16 + cap 1.5 → 1.8 so iPad gets
+                        // visibly larger names while iPhone stays
+                        // on its own scale-down branch.
+                        fontSize: getScaledFontSize(16 * Math.min(scaleFactor, 1.8)),
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         textAlign: 'center',
@@ -678,7 +684,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12 * Math.min(scaleFactor, 1.5)),
+                        // SCRUM-279 (2026-06-08 build 36): Ken asked
+                        // to bump provider name font on iPad. Base
+                        // 12 → 16 + cap 1.5 → 1.8 so iPad gets
+                        // visibly larger names while iPhone stays
+                        // on its own scale-down branch.
+                        fontSize: getScaledFontSize(16 * Math.min(scaleFactor, 1.8)),
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         textAlign: 'center',
@@ -842,24 +853,18 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
             </TouchableOpacity>
           ))
         )}
-        <View style={[
-          styles.moreButtonContainer,
-          { paddingVertical: 6, paddingHorizontal: 8 }
-        ]}>
+        {/* SCRUM-279 (2026-06-08 build 36): wrapper padding stripped
+            so the pill takes its natural size — ~20pt tall × ~38pt
+            wide. No more chunky container around a small pill. */}
+        <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingVertical: 2 }}>
           {isCircleComplete && (
-            // SCRUM-279 (2026-06-08 build 35): Paper Button's
-            // internal label padding kept overriding our shrink
-            // attempts in build 33 + 34. Swapped to a plain
-            // Pressable so we control every pixel. Total size now
-            // ~28pt tall × auto-width, font 11pt — visually a small
-            // pill rather than a "button".
             <Pressable
               onPress={() => router.push('/modal')}
               style={({ pressed }) => ({
                 alignSelf: 'center',
                 backgroundColor: '#008080',
-                paddingHorizontal: 12,
-                paddingVertical: 4,
+                paddingHorizontal: 10,
+                paddingVertical: 3,
                 borderRadius: 999,
                 opacity: pressed ? 0.7 : 1,
               })}
@@ -869,9 +874,10 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               <Text
                 style={{
                   color: '#fff',
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: '600',
                   letterSpacing: 0.3,
+                  lineHeight: 12,
                 }}
                 allowFontScaling={false}
               >
