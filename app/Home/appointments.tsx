@@ -54,7 +54,7 @@ import {
   virtualEventFromAppEntity,
   type CalendarEvent,
 } from '@/services/calendar'
-import { registerCalendarSync } from '@/services/calendar-sync'
+import { buildAndUploadSnapshot, registerCalendarSync } from '@/services/calendar-sync'
 import { reconcileEventNotifications } from '@/services/calendar-notifications'
 import { useAppointments } from '@/hooks/use-appointments'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
@@ -308,12 +308,14 @@ export default function CalendarScreen() {
     // "Show Reminders" pref in Calendar Settings takes effect when the
     // user comes back here).
     void getCalendarPreferences().then((p) => setShowRemindersPref(p.showReminders))
-    // SCRUM-279: also re-fetch the calendar events. Without this, a
-    // newly-created event from the editor doesn't enter the events
-    // array until manual pull-to-refresh, which means
-    // reconcileEventNotifications never schedules its alarms. Ken's
-    // build-29 "set 2-min event, no notification fired" bug.
+    // SCRUM-279: re-fetch the calendar events.
     void refresh()
+    // SCRUM-279 (2026-06-08): also push a fresh snapshot to cos-backend
+    // on focus, in addition to the 30-min bg fetch. Ken's "iPad
+    // doesn't show iPhone reminders" was caused by iOS not running
+    // the bg task often enough — explicit foreground upload makes
+    // cross-device parity work after one app open per device.
+    void buildAndUploadSnapshot().catch(() => { /* non-fatal */ })
     // refresh is stable from useCalendar's useCallback wrap
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshPermissions]))

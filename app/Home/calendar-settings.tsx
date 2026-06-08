@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import { clearAllAppNotifications } from '@/services/calendar-notifications'
+import { buildAndUploadSnapshot } from '@/services/calendar-sync'
 import { router } from 'expo-router'
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
@@ -170,6 +171,31 @@ export default function CalendarSettingsScreen() {
                 </Text>
                 <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
                   Fire in 5 sec ›
+                </Text>
+              </Pressable>
+
+              {/* SCRUM-279 (2026-06-08): Sync now — pushes a snapshot
+                  of this device's calendar + reminders to the backend
+                  immediately. Diagnostic for cross-device parity
+                  ("iPad doesn't see iPhone reminders"). */}
+              <Pressable
+                onPress={async () => {
+                  try {
+                    const written = await buildAndUploadSnapshot()
+                    Alert.alert('Sync sent', `Uploaded ${written} events + reminders to the backend. Open the calendar on your other device and pull to refresh to see them merge in.`)
+                  } catch (e) {
+                    Alert.alert('Sync failed', String(e))
+                  }
+                }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Sync calendar to backend now"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Sync now (cross-device)
+                </Text>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                  Upload ›
                 </Text>
               </Pressable>
 

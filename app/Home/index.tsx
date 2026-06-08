@@ -313,11 +313,16 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   <Text
                     numberOfLines={2}
                     adjustsFontSizeToFit
-                    minimumFontScale={0.7}
+                    minimumFontScale={0.65}
+                    allowFontScaling={false}
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12),
+                        // SCRUM-279 (2026-06-08): Ken asked to reduce
+                        // provider-name font on phone. 12pt → 10pt
+                        // and allowFontScaling=false so device
+                        // Large Text settings can't blow up the orbit.
+                        fontSize: 10,
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         width: 90,
@@ -340,11 +345,16 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   <Text
                     numberOfLines={2}
                     adjustsFontSizeToFit
-                    minimumFontScale={0.7}
+                    minimumFontScale={0.65}
+                    allowFontScaling={false}
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12),
+                        // SCRUM-279 (2026-06-08): Ken asked to reduce
+                        // provider-name font on phone. 12pt → 10pt
+                        // and allowFontScaling=false so device
+                        // Large Text settings can't blow up the orbit.
+                        fontSize: 10,
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         width: 90,
@@ -381,18 +391,21 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // the rest of the home screen on iPads / large tablets.
   // SCRUM-267: Ken asked for another ~20% reduction on tablet. Cap lowered
   // 1.7 → 1.36 (1.7 × 0.8).
-  // SCRUM-279 (2026-06-03): Ken asked for a further 30% reduction on iPad.
-  // Cap lowered 1.36 → 0.95 (1.36 × 0.7). At 0.95 the iPad circle renders
-  // smaller than the iPad's natural scaleFactor (~1.96), so the Math.min
-  // clamps and we get a circle visually similar to iPhone proportions.
-  const scaleFactor = Math.min(screenWidth / baseWidth, 0.95);
+  // SCRUM-279 (2026-06-03): Ken asked for a 30% reduction on iPad.
+  // Cap lowered 1.36 → 0.95.
+  // SCRUM-279 (2026-06-08): another 10% reduction on iPad (so the
+  // orbit feels lighter). Cap 0.95 → 0.855 (×0.9).
+  const scaleFactor = Math.min(screenWidth / baseWidth, 0.855);
 
   // Base radius for orbit - original design value
   const baseRadius = 144 * 1.1; // ~158.4
 
-  // Avatar container size - scale proportionally
-  const baseAvatarContainerSize = 120;
-  const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.5);
+  // Avatar container size - scale proportionally.
+  // SCRUM-279 (2026-06-08): provider avatars +25% (Ken asked for
+  // them to be more visually prominent inside the tighter orbit).
+  // The base AND the cap both go up — base 120 → 150, cap 1.5 → 1.875.
+  const baseAvatarContainerSize = 150;
+  const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
   // Calculate maximum radius that fits within available width
@@ -832,8 +845,11 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
         <View style={[
           styles.moreButtonContainer,
           {
-            paddingVertical: getScaledFontSize(16),
-            paddingHorizontal: getScaledFontSize(16),
+            // SCRUM-279 (2026-06-08): Ken asked to reduce "More"
+            // button by 40%. Tightened container padding, button
+            // min-height, label font, and inner padding accordingly.
+            paddingVertical: 8,
+            paddingHorizontal: 8,
           }
         ]}>
           {isCircleComplete && (
@@ -843,11 +859,15 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               onPress={() => router.push('/modal')}
               style={styles.moreDoctorsButton}
               labelStyle={{
-                fontSize: getScaledFontSize(14),
+                fontSize: 10,                  // 14 → 10 (~28% smaller)
                 fontWeight: getScaledFontWeight(500) as any,
-                lineHeight: getScaledFontSize(20),
+                lineHeight: 14,
               }}
-              contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
+              contentStyle={{
+                minHeight: 26,                // 44 → 26 (~40% smaller)
+                paddingVertical: 2,
+                paddingHorizontal: 10,
+              }}
             >
               More
             </Button>
@@ -2946,9 +2966,11 @@ export default function HomeScreen() {
               style={[
                 styles.deckContainer,
                 {
+                  // +16 accounts for the third card's top:16 offset
+                  // so the outer container fully contains the deck.
                   minHeight: Math.max(
-                    56,
-                    getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                    96,
+                    16 + getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
                   ),
                 }
               ]}
@@ -3039,40 +3061,74 @@ export default function HomeScreen() {
             to the rest of the home cards; the new layout treats trends
             as a feature surface, not a row link. */}
         <TouchableOpacity
-          style={[styles.trendsHeroCard, { backgroundColor: colors.tint as string }]}
+          style={[
+            styles.trendsHeroCard,
+            !isTabletDevice && styles.trendsHeroCardPhone,
+            { backgroundColor: colors.tint as string },
+          ]}
           onPress={() => router.push('/Home/health-trends' as never)}
           accessibilityRole="button"
           accessibilityLabel="View health trends"
           activeOpacity={0.92}
         >
-          {/* Soft gradient bubble in the corner for depth */}
           <View style={styles.trendsHeroBlob} pointerEvents="none" />
           <View style={styles.trendsHeroHeader}>
-            <View style={styles.trendsHeroBadge}>
-              <MaterialIcons name="show-chart" size={getScaledFontSize(20)} color={colors.tint as string} />
+            <View style={[
+              styles.trendsHeroBadge,
+              !isTabletDevice && { width: 32, height: 32, borderRadius: 10 },
+            ]}>
+              <MaterialIcons
+                name="show-chart"
+                size={isTabletDevice ? getScaledFontSize(20) : 16}
+                color={colors.tint as string}
+              />
             </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.trendsHeroTitle, { fontSize: getScaledFontSize(17), fontWeight: getScaledFontWeight(800) as any }]}>
+            <View style={{ flex: 1, marginLeft: isTabletDevice ? 12 : 10 }}>
+              <Text
+                style={[
+                  styles.trendsHeroTitle,
+                  {
+                    fontSize: isTabletDevice ? getScaledFontSize(17) : 14,
+                    fontWeight: getScaledFontWeight(800) as any,
+                  },
+                ]}
+                allowFontScaling={isTabletDevice}
+              >
                 Health Trends
               </Text>
-              <Text style={[styles.trendsHeroSubtitle, { fontSize: getScaledFontSize(12) }]}>
+              <Text
+                style={[
+                  styles.trendsHeroSubtitle,
+                  { fontSize: isTabletDevice ? getScaledFontSize(12) : 10 },
+                ]}
+                allowFontScaling={isTabletDevice}
+                numberOfLines={1}
+              >
                 Labs + vitals + Apple Health over time
               </Text>
             </View>
             <View style={styles.trendsHeroArrow}>
-              <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#FFFFFF" />
+              <MaterialIcons
+                name="arrow-forward"
+                size={isTabletDevice ? getScaledFontSize(18) : 14}
+                color="#FFFFFF"
+              />
             </View>
           </View>
-          <View style={styles.trendsHeroIconRow}>
-            {(['favorite', 'bloodtype', 'directions-walk', 'bedtime'] as const).map((iconName) => (
-              <View key={iconName} style={styles.trendsHeroChip}>
-                <MaterialIcons name={iconName} size={getScaledFontSize(15)} color="#FFFFFF" />
-              </View>
-            ))}
-            <Text style={[styles.trendsHeroChipsTrailing, { fontSize: getScaledFontSize(12) }]}>
-              + 14 more
-            </Text>
-          </View>
+          {/* SCRUM-279 (2026-06-08): Chips row dropped on phone — too
+              busy + redundant with the page itself. iPad keeps them. */}
+          {isTabletDevice && (
+            <View style={styles.trendsHeroIconRow}>
+              {(['favorite', 'bloodtype', 'directions-walk', 'bedtime'] as const).map((iconName) => (
+                <View key={iconName} style={styles.trendsHeroChip}>
+                  <MaterialIcons name={iconName} size={getScaledFontSize(15)} color="#FFFFFF" />
+                </View>
+              ))}
+              <Text style={[styles.trendsHeroChipsTrailing, { fontSize: getScaledFontSize(12) }]}>
+                + 14 more
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {upcomingAppointments.length > 0 && (
@@ -3091,8 +3147,8 @@ export default function HomeScreen() {
                 styles.deckContainer,
                 {
                   minHeight: Math.max(
-                    56,
-                    getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                    96,
+                    16 + getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
                   ),
                 }
               ]}
@@ -3328,6 +3384,15 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
+  // SCRUM-279 (2026-06-08): phone gets a more compact hero — Ken
+  // said the iPad-tuned card was too tall on iPhone.
+  trendsHeroCardPhone: {
+    marginTop: 8,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
   trendsHeroBlob: {
     position: 'absolute',
     width: 180,
@@ -3403,16 +3468,14 @@ const styles = StyleSheet.create({
   },
   circleSection: {
     alignItems: 'center',
-    // SCRUM-236: extra top padding so the orbiting avatars don't crowd
-    // the quick-action pills above. Combined with the wrapper's
-    // marginBottom: 48 above, this gives the circle clear air at both ends.
     paddingTop: 24,
     paddingHorizontal: 24,
-    // SCRUM-234/235: clear gap between the Circle and the next section
-    // (Upcoming Appointments / Recommended). The orbiting avatars are
-    // absolute-positioned and spill below the circleSection's flow box;
-    // 64 below lands ~comfortably below the bottom-most avatar.
-    marginBottom: 64,
+    // SCRUM-279 (2026-06-08): Ken asked to reduce the gap between
+    // circle and Today's Appointments. Was 64, dropped to 24.
+    // Orbiting avatars are absolute-positioned and still spill below
+    // circleSection — 24 leaves enough clearance without the prior
+    // dead air.
+    marginBottom: 24,
   },
   background: {
     position: 'absolute',
@@ -3505,7 +3568,13 @@ const styles = StyleSheet.create({
   },
   deckContainer: {
     position: 'relative',
-    minHeight: 56,
+    // SCRUM-279 (2026-06-08): bumped from 56 → 96 so the third card
+    // (which has top: 16 + its own ~80pt height) doesn't bleed into
+    // the next section. Ken's "today appts overlap health trends"
+    // bug. The inline minHeight overrides on the outer deck wrappers
+    // also apply Math.max with this baseline so dynamic-text
+    // accessibility still grows the container correctly.
+    minHeight: 96,
   },
   appointmentCard: {
     borderRadius: 16,

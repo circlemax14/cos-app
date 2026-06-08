@@ -52,66 +52,68 @@ function contentHash(s: string): string {
  * native side knows about the task before any background wake delivery.
  * The body itself is what runs when iOS/Android wakes us.
  */
+/**
+ * Pull device events + reminders for the next 60 days and POST a
+ * snapshot to cos-backend. Returns the number of rows uploaded.
+ *
+ * Pulled out into its own exported function so it can run from:
+ *   - the BackgroundFetch task (every 30 min when backgrounded)
+ *   - the foreground (e.g. calendar tab mount) for users who haven't
+ *     left the app idle long enough for iOS to wake the bg task
+ *
+ * Best-effort: caller's try/catch wraps any backend / native failure.
+ */
+export async function buildAndUploadSnapshot(): Promise<number> {
+  const windowStart = new Date()
+  const windowEnd = new Date(Date.now() + 60 * 24 * 60 * 60_000)
+  const [events, reminders] = await Promise.all([
+    readEvents({ windowStart, windowEnd }),
+    readReminders({ windowStart, windowEnd }).catch(() => []),
+  ])
+  const payload: SnapshotEventPayload[] = [
+    ...events.map((e) => ({
+      origin: 'device' as const,
+      sourceEventId: e.id,
+      sourceCalendarName: e.source.title,
+      sourceCalendarSource: e.source.source,
+      sourceCalendarColor: e.source.color,
+      title: e.title,
+      startDate: e.startDate,
+      endDate: e.endDate,
+      allDay: e.allDay,
+      location: e.location,
+      notes: e.notes,
+      alarms: e.alarms,
+      contentHash: contentHash(`${e.id}|${e.title}|${e.startDate}|${e.endDate}|${e.location ?? ''}`),
+    })),
+    ...reminders.map((r) => ({
+      origin: 'reminder' as const,
+      sourceEventId: r.id,
+      sourceCalendarName: r.source.title,
+      sourceCalendarSource: r.source.source,
+      sourceCalendarColor: r.source.color,
+      title: r.title,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      allDay: r.allDay,
+      location: r.location,
+      notes: r.notes,
+      alarms: r.alarms,
+      completed: r.completed,
+      contentHash: contentHash(`${r.id}|${r.title}|${r.startDate}|${!!r.completed}`),
+    })),
+  ]
+  if (payload.length === 0) return 0
+  const result = await uploadCalendarSnapshot(payload, new Date().toISOString())
+  return result.written
+}
+
 try {
   if (!TaskManager.isTaskDefined(CALENDAR_SYNC_TASK)) {
     TaskManager.defineTask(CALENDAR_SYNC_TASK, async () => {
       try {
-        // Pull the next ~60 days of events + reminders from the device.
-        // Bigger windows would blow the BatchWriteItem budget; smaller
-        // would miss month-ahead events on a 30-min cadence.
-        const windowStart = new Date()
-        const windowEnd = new Date(Date.now() + 60 * 24 * 60 * 60_000)
-        const [events, reminders] = await Promise.all([
-          readEvents({ windowStart, windowEnd }),
-          readReminders({ windowStart, windowEnd }).catch(() => []),
-        ])
-
-        // Upload to cos-backend so care managers can see the patient's
-        // calendar. Best-effort: a backend outage shouldn't cause the
-        // background task to "fail" from iOS's perspective (would make
-        // iOS back off the schedule).
-        try {
-          const payload: SnapshotEventPayload[] = [
-            ...events.map((e) => ({
-              origin: 'device' as const,
-              sourceEventId: e.id,
-              sourceCalendarName: e.source.title,
-              sourceCalendarSource: e.source.source,
-              sourceCalendarColor: e.source.color,
-              title: e.title,
-              startDate: e.startDate,
-              endDate: e.endDate,
-              allDay: e.allDay,
-              location: e.location,
-              notes: e.notes,
-              alarms: e.alarms,
-              contentHash: contentHash(`${e.id}|${e.title}|${e.startDate}|${e.endDate}|${e.location ?? ''}`),
-            })),
-            ...reminders.map((r) => ({
-              origin: 'reminder' as const,
-              sourceEventId: r.id,
-              sourceCalendarName: r.source.title,
-              sourceCalendarSource: r.source.source,
-              sourceCalendarColor: r.source.color,
-              title: r.title,
-              startDate: r.startDate,
-              endDate: r.endDate,
-              allDay: r.allDay,
-              location: r.location,
-              notes: r.notes,
-              alarms: r.alarms,
-              completed: r.completed,
-              contentHash: contentHash(`${r.id}|${r.title}|${r.startDate}|${!!r.completed}`),
-            })),
-          ]
-          if (payload.length > 0) {
-            await uploadCalendarSnapshot(payload, new Date().toISOString())
-          }
-        } catch {
-          // Swallow — see above.
-        }
-
-        return events.length > 0
+        const written = await buildAndUploadSnapshot().catch(() => 0)
+        return written > 0
           ? BackgroundFetch.BackgroundFetchResult.NewData
           : BackgroundFetch.BackgroundFetchResult.NoData
       } catch {

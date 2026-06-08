@@ -7,6 +7,7 @@ import { useReportTrends } from '@/hooks/use-report-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTrends'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
+import { fetchTrendsSummary, type TrendsSummary } from '@/services/api/trends'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import * as FileSystem from 'expo-file-system/legacy'
 import React, { useCallback, useMemo, useState } from 'react'
@@ -208,6 +209,12 @@ export default function HealthTrendsScreen() {
             </Text>
           </View>
         </View>
+
+        {/* SCRUM-279 (2026-06-08): Summarize CTA — generates a
+            cross-metric narrative + key takeaways + next steps via
+            the new /v1/patients/me/trends/summarize endpoint (cached
+            24h server-side). */}
+        <SummarizeCard />
 
         {/* Time period filter chips */}
         <View style={[styles.filterCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
@@ -1071,4 +1078,127 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 999,
   },
+  summarizeCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  summarizeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  summarizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
 })
+
+/* SCRUM-279 (2026-06-08): Summarize CTA + result panel.
+ * Single tap → POST /trends/summarize → renders narrative,
+ * key takeaways list, next-steps line. State stays in component so
+ * the rest of the screen doesn't re-render while waiting.
+ */
+function SummarizeCard() {
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  const [summary, setSummary] = useState<TrendsSummary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const onPress = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const s = await fetchTrendsSummary()
+      setSummary(s)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not generate summary right now.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return (
+    <View style={[styles.summarizeCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+      <View style={styles.summarizeRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+            Summary
+          </Text>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+            A plain-language read on all your trends together.
+          </Text>
+        </View>
+        <Pressable
+          onPress={onPress}
+          disabled={loading}
+          style={[styles.summarizeBtn, { backgroundColor: (colors.tint as string), opacity: loading ? 0.6 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Summarize my trends"
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <MaterialIcons name="auto-awesome" size={getScaledFontSize(15)} color="#fff" />
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}>
+                Summarize
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+
+      {error && (
+        <Text style={{ color: '#FF3B30', fontSize: getScaledFontSize(13), marginTop: 12 }}>
+          {error}
+        </Text>
+      )}
+
+      {summary && (
+        <View style={{ marginTop: 14 }}>
+          {!!summary.summary && (
+            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
+              {summary.summary}
+            </Text>
+          )}
+          {summary.keyTakeaways.length > 0 && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 }}>
+                KEY TAKEAWAYS
+              </Text>
+              {summary.keyTakeaways.map((t, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
+                  <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), marginRight: 6 }}>•</Text>
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), flex: 1, lineHeight: getScaledFontSize(18) }}>
+                    {t}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {!!summary.nextSteps && (
+            <View style={{ marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: (colors.tint as string) + '14' }}>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 }}>
+                NEXT STEPS
+              </Text>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), lineHeight: getScaledFontSize(18) }}>
+                {summary.nextSteps}
+              </Text>
+            </View>
+          )}
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(10), marginTop: 8, textAlign: 'right' }}>
+            Generated {new Date(summary.generatedAt).toLocaleString()}
+          </Text>
+        </View>
+      )}
+    </View>
+  )
+}
