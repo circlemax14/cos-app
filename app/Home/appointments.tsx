@@ -592,16 +592,18 @@ export default function CalendarScreen() {
               down). Backdrop fills the whole screen so tap-outside
               dismisses; the menu itself is anchored under the trigger
               icon at the top-right. */}
-          {/* SCRUM-279 (2026-06-08): Use Modal (RN's portal) instead of
-              absolute-positioned View. The prior in-screen overlay was
-              getting z-clipped by the FlatList content on some
-              layouts, hence Ken's "dropdown not visible" report.
-              Modal renders into the window root above all other
-              app content. transparent + no animation = popover feel. */}
+          {/* SCRUM-279 (2026-06-08 build 35): Modal in build 34 still
+              wasn't visible on iPhone. presentationStyle="overFullScreen"
+              + statusBarTranslucent ensures the modal renders ABOVE
+              the entire app chrome including the status bar / nav.
+              animationType="none" so the menu appears instantly when
+              the user taps the trigger (matches Apple Calendar). */}
           <Modal
             visible={showDensityMenu && activeView === 'month'}
             transparent
-            animationType="fade"
+            animationType="none"
+            presentationStyle="overFullScreen"
+            statusBarTranslucent
             onRequestClose={() => setShowDensityMenu(false)}
           >
             <Pressable

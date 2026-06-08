@@ -101,6 +101,16 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
     try {
       const fromIso = (windowStart ?? new Date(Date.now() - 30 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
       const toIso = (windowEnd ?? new Date(Date.now() + 365 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
+      // Snapshot window is on CAPTURED-AT (when the sibling device
+      // uploaded), not on event startDate. Always fetch the last
+      // 7 days of uploads so a same-day snapshot from a sibling
+      // device is included even if the user's local window is just
+      // "today" (home screen). SCRUM-279 (build 35): Ken's "iPad
+      // Today's Appointments empty" bug — without this, iPad with a
+      // today-only window asked the backend for snapshots captured
+      // today, missing yesterday's iPhone uploads.
+      const snapFromIso = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString().slice(0, 10)
+      const snapToIso = new Date(Date.now() + 1 * 24 * 60 * 60_000).toISOString().slice(0, 10)
       const [evt, cals, rems, srv, snap] = await Promise.all([
         readEvents({ windowStart, windowEnd, calendarIds: enabledCalendarIds }),
         listCalendars(),
@@ -110,9 +120,7 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
         listServerCalendarEvents({ from: fromIso, to: toIso })
           .then((s) => s.map(serverEventToCalendarEvent))
           .catch(() => [] as CalendarEvent[]),
-        // Cross-device snapshot — surfaces events captured on a sibling
-        // device (e.g. iPhone reminders on iPad).
-        listMyCalendarSnapshot({ from: fromIso, to: toIso })
+        listMyCalendarSnapshot({ from: snapFromIso, to: snapToIso })
           .catch(() => [] as SnapshotRow[]),
       ])
       setDeviceEvents(evt)
@@ -123,7 +131,19 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
       // row that's already in the local device set (sourceEventId
       // match) so we don't double-count what's locally available.
       const localIds = new Set([...evt, ...rems].map((e) => e.id))
-      const snapEvents: CalendarEvent[] = snap
+      // Dedup snapshot rows by sourceEventId, keeping the LATEST
+      // capturedAt. The backend GET returns every row in the window
+      // (one per upload — id = sourceEventId#capturedAt), so without
+      // this dedup iPad showed each reminder 4-5 times after iPhone
+      // bg-uploaded for 4-5 cycles.
+      const latestBySourceId = new Map<string, SnapshotRow>()
+      for (const r of snap) {
+        const existing = latestBySourceId.get(r.sourceEventId)
+        if (!existing || r.capturedAt > existing.capturedAt) {
+          latestBySourceId.set(r.sourceEventId, r)
+        }
+      }
+      const snapEvents: CalendarEvent[] = Array.from(latestBySourceId.values())
         .filter((r) => !localIds.has(r.sourceEventId))
         .map(snapshotRowToCalendarEvent)
       setSnapshotEvents(snapEvents)

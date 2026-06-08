@@ -408,8 +408,31 @@ export function virtualEventFromAppEntity(e: AppEventLike): CalendarEvent {
  * Merge device events + app virtual events into a single time-sorted
  * stream. Callers fetch each side independently and pass them here.
  */
+/**
+ * Concatenate two event lists, dedup by `id` (first occurrence wins
+ * — caller controls priority by ordering args), and sort by start
+ * time.
+ *
+ * SCRUM-279 (2026-06-08 build 35): Ken's "iPad reminders appearing
+ * 4-5 times" bug. The snapshot endpoint returns every uploaded row
+ * for an event (each capturedAt = a new row); after multiple bg
+ * uploads from iPhone, iPad fetched N copies. They mapped to the
+ * same CalendarEvent.id, but the prior mergeEvents kept all N. Now
+ * dedupes via a Set so even worst-case data has one row per id.
+ */
 export function mergeEvents(deviceEvents: CalendarEvent[], appEvents: CalendarEvent[]): CalendarEvent[] {
-  const merged = [...deviceEvents, ...appEvents]
+  const seen = new Set<string>()
+  const merged: CalendarEvent[] = []
+  for (const e of deviceEvents) {
+    if (seen.has(e.id)) continue
+    seen.add(e.id)
+    merged.push(e)
+  }
+  for (const e of appEvents) {
+    if (seen.has(e.id)) continue
+    seen.add(e.id)
+    merged.push(e)
+  }
   merged.sort((a, b) => a.startDate.localeCompare(b.startDate))
   return merged
 }

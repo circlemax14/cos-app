@@ -9,7 +9,7 @@ import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
@@ -844,39 +844,40 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
         )}
         <View style={[
           styles.moreButtonContainer,
-          {
-            // SCRUM-279 (2026-06-08): Ken asked to reduce "More"
-            // button by 40%. Tightened container padding, button
-            // min-height, label font, and inner padding accordingly.
-            paddingVertical: 8,
-            paddingHorizontal: 8,
-          }
+          { paddingVertical: 6, paddingHorizontal: 8 }
         ]}>
           {isCircleComplete && (
-            <Button
-              mode="contained"
-              buttonColor="#008080"
+            // SCRUM-279 (2026-06-08 build 35): Paper Button's
+            // internal label padding kept overriding our shrink
+            // attempts in build 33 + 34. Swapped to a plain
+            // Pressable so we control every pixel. Total size now
+            // ~28pt tall × auto-width, font 11pt — visually a small
+            // pill rather than a "button".
+            <Pressable
               onPress={() => router.push('/modal')}
-              style={styles.moreDoctorsButton}
-              labelStyle={{
-                // SCRUM-279 (2026-06-08 build 34): cut further per
-                // Ken's report. label fontSize 10 → 9, lineHeight
-                // 14 → 11, vertical/horizontal margins zeroed out.
-                fontSize: 9,
-                fontWeight: getScaledFontWeight(500) as any,
-                lineHeight: 11,
-                marginVertical: 0,
-                marginHorizontal: 0,
-              }}
-              contentStyle={{
-                minHeight: 22,                // matches outer style
-                paddingVertical: 0,
-                paddingHorizontal: 6,
-              }}
-              compact
+              style={({ pressed }) => ({
+                alignSelf: 'center',
+                backgroundColor: '#008080',
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                borderRadius: 999,
+                opacity: pressed ? 0.7 : 1,
+              })}
+              accessibilityRole="button"
+              accessibilityLabel="More providers"
             >
-              More
-            </Button>
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 11,
+                  fontWeight: '600',
+                  letterSpacing: 0.3,
+                }}
+                allowFontScaling={false}
+              >
+                More
+              </Text>
+            </Pressable>
           )}
         </View>
       </ScrollView>
