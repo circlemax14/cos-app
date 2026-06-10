@@ -3,6 +3,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
+import { useAppointment } from '@/hooks/use-appointments';
 import type { Appointment } from '@/services/api/types';
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -217,18 +218,35 @@ export default function AppointmentDetailScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const params = useLocalSearchParams<{ id: string; data: string }>();
 
-  let appointment: Appointment | null = null;
+  // First try the `data` param (callers that have the full appointment
+  // object pre-loaded — e.g. the appointments list screen).
+  let appointmentFromData: Appointment | null = null;
   try {
-    appointment = params.data ? JSON.parse(params.data) : null;
+    appointmentFromData = params.data ? JSON.parse(params.data) : null;
   } catch {
-    appointment = null;
+    appointmentFromData = null;
   }
+
+  // SCRUM-279 (2026-06-10 build 39): the calendar's openDetail passes
+  // ONLY `id`, not `data` — without this fallback every calendar tap
+  // landed on "Appointment not found". Now we look the appointment
+  // up by id via the existing useAppointment(id) hook.
+  const idForLookup = params.id && !appointmentFromData ? params.id : '';
+  const { data: appointmentFromId, isLoading: isLoadingById, isError: isErrorById } = useAppointment(idForLookup);
+
+  const appointment = appointmentFromData ?? appointmentFromId ?? null;
 
   if (!appointment) {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <Text style={{ color: colors.text }}>Appointment not found</Text>
+          {idForLookup && isLoadingById ? (
+            <ActivityIndicator color={colors.tint} />
+          ) : (
+            <Text style={{ color: colors.text }}>
+              {isErrorById ? 'Could not load appointment' : 'Appointment not found'}
+            </Text>
+          )}
         </View>
       </AppWrapper>
     );

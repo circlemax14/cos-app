@@ -969,8 +969,11 @@ export default function ModalScreen() {
                                       const isSelected = selectedProviderIds.has(String(provider.id));
                                       const canAdd = !isSelected && !isCircleFull;
                                       const showAction = isSelected || !isCircleFull;
-                                      // SCRUM-265 #6: indirect-care + records-missing → inactive
-                                      const inactiveReason = !provider.isManual
+                                      // SCRUM-265 #6: indirect-care + records-missing → inactive.
+                                      // SCRUM-279 (2026-06-10 build 39): only mark inactive for
+                                      // NOT-yet-selected providers — Ken couldn't remove circle
+                                      // members whose specialty matched the indirect-care list.
+                                      const inactiveReason = !provider.isManual && !isSelected
                                         ? providerInactiveReason(provider)
                                         : null;
                                       return (
@@ -1047,7 +1050,10 @@ export default function ModalScreen() {
                               const isSelected = selectedProviderIds.has(String(provider.id));
                               const canAdd = !isSelected && !isCircleFull;
                               const showAction = isSelected || !isCircleFull;
-                              const inactiveReason = providerInactiveReason(provider);
+                              // SCRUM-279 (2026-06-10 build 39): only mark inactive for
+                              // NOT-yet-selected providers — selected ones must remain
+                              // removable from the circle (build 38 regression).
+                              const inactiveReason = !isSelected ? providerInactiveReason(provider) : null;
                               return (
                                 <DoctorCard
                                   key={provider.id}

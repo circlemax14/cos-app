@@ -209,17 +209,16 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        // SCRUM-279 (2026-06-08 build 38): build 37 went too tiny.
-        // Bumped to readable size — fontSize 12, paddingH 14,
-        // paddingV 5. ~28pt tall × ~52pt wide — a legitimate
-        // tappable pill, not a chip.
+        // SCRUM-279 (2026-06-10 build 39): build 38 still too small per Ken.
+        // Bumped to fontSize 15, paddingH 18, paddingV 8 — comfortably
+        // tappable pill, not a chip and not chunky.
         <Pressable
           onPress={() => router.push('/modal')}
           style={({ pressed }) => ({
             alignSelf: 'center',
             backgroundColor: '#008080',
-            paddingHorizontal: 14,
-            paddingVertical: 5,
+            paddingHorizontal: 18,
+            paddingVertical: 8,
             borderRadius: 999,
             opacity: pressed ? 0.7 : 1,
           })}
@@ -227,7 +226,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           accessibilityLabel="More providers"
         >
           <Text
-            style={{ color: '#fff', fontSize: 12, fontWeight: '600', letterSpacing: 0.3, lineHeight: 14 }}
+            style={{ color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: 0.3, lineHeight: 18 }}
             allowFontScaling={false}
           >
             More
@@ -420,7 +419,9 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // them to be more visually prominent inside the tighter orbit).
   // Build 36: another bump per Ken's "increase provider circle and
   // name text on iPad only" feedback. Base 150 → 180 (+20%).
-  const baseAvatarContainerSize = 180;
+  // Build 39 (2026-06-10): Ken asked for another +25% bump on iPad
+  // bubbles. 180 → 225 (180 × 1.25). iPad only — phone view untouched.
+  const baseAvatarContainerSize = 225;
   const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
@@ -554,16 +555,15 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        // SCRUM-279 (2026-06-08 build 37): TabletCircleView's More
-        // button — also converted to plain Pressable pill so iPad
-        // shows the same compact pill as iPhone.
+        // SCRUM-279 (2026-06-10 build 39): TabletCircleView More pill —
+        // bumped to readable size matching iPhone instance (15/18/8).
         <Pressable
           onPress={() => router.push('/modal')}
           style={({ pressed }) => ({
             alignSelf: 'center',
             backgroundColor: '#008080',
-            paddingHorizontal: 12,
-            paddingVertical: 4,
+            paddingHorizontal: 18,
+            paddingVertical: 8,
             borderRadius: 999,
             opacity: pressed ? 0.7 : 1,
           })}
@@ -571,7 +571,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           accessibilityLabel="More providers"
         >
           <Text
-            style={{ color: '#fff', fontSize: 12, fontWeight: '600', letterSpacing: 0.3, lineHeight: 14 }}
+            style={{ color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: 0.3, lineHeight: 18 }}
             allowFontScaling={false}
           >
             More
@@ -876,18 +876,18 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
             </TouchableOpacity>
           ))
         )}
-        {/* SCRUM-279 (2026-06-08 build 36): wrapper padding stripped
-            so the pill takes its natural size — ~20pt tall × ~38pt
-            wide. No more chunky container around a small pill. */}
-        <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingVertical: 2 }}>
+        {/* SCRUM-279 (2026-06-10 build 39): ListView More pill — bumped
+            to fontSize 15, paddingH 18, paddingV 8 to match iPhone/iPad
+            circle views. Build 38 was still too small per Ken. */}
+        <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingVertical: 4 }}>
           {isCircleComplete && (
             <Pressable
               onPress={() => router.push('/modal')}
               style={({ pressed }) => ({
                 alignSelf: 'center',
                 backgroundColor: '#008080',
-                paddingHorizontal: 14,
-                paddingVertical: 5,
+                paddingHorizontal: 18,
+                paddingVertical: 8,
                 borderRadius: 999,
                 opacity: pressed ? 0.7 : 1,
               })}
@@ -897,10 +897,10 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               <Text
                 style={{
                   color: '#fff',
-                  fontSize: 12,
+                  fontSize: 15,
                   fontWeight: '600',
                   letterSpacing: 0.3,
-                  lineHeight: 14,
+                  lineHeight: 18,
                 }}
                 allowFontScaling={false}
               >
