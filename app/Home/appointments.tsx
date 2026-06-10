@@ -696,8 +696,17 @@ function openDetail(event: CalendarEvent) {
   // appointments table.
   if (event.origin === 'app') {
     if (event.appKind === 'appointment' || event.appKind === 'past-visit') {
-      // Strip "app:" prefix to get the underlying appointment UUID.
-      const apptId = event.id.startsWith('app:') ? event.id.slice(4) : event.id
+      // SCRUM-279 (2026-06-10 build 40): virtualEventFromAppEntity
+      // produces ids shaped `app:<kind>:<uuid>` (two colons), not
+      // `app:<uuid>`. Build 39 stripped only "app:" — leaving
+      // "appointment:<uuid>" — which the backend 404'd on, giving
+      // Ken's "Could not load appointment". Strip the full prefix.
+      const prefix = `app:${event.appKind}:`
+      const apptId = event.id.startsWith(prefix)
+        ? event.id.slice(prefix.length)
+        : event.id.startsWith('app:')
+          ? event.id.slice(4)
+          : event.id
       router.push({ pathname: '/Home/appointment-detail', params: { id: apptId } } as never)
       return
     }
