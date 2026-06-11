@@ -1,8 +1,8 @@
 import axios, { AxiosError } from 'axios';
-import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from './auth-tokens';
 import { CLIENT_INFO_HEADERS } from './client-info';
+import { requestSignIn, SignInReason } from './lock-gate';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 
@@ -13,18 +13,23 @@ export const apiClient = axios.create({
 });
 
 /**
- * Clear all auth state and redirect to sign-in.
- * Called when token refresh fails — the session is unrecoverable.
- * Guarded against re-entry to prevent navigation loops.
+ * Clear all auth state and request sign-in.
+ * SCRUM-279 (build 44): now goes through lock-gate.requestSignIn so
+ * the navigation is DEFERRED while the user is on /(security)/lock-screen.
+ * Previously a token refresh failure could yank the user off PIN
+ * entry mid-flow — see lib/lock-gate.ts for the full architecture.
+ *
+ * Guarded against re-entry to prevent navigation loops if multiple
+ * parallel API calls all hit 401-then-refresh-fail at once.
  */
 let isSigningOut = false;
-async function forceSignOut(): Promise<void> {
+async function forceSignOut(reason: SignInReason): Promise<void> {
   if (isSigningOut) return;
   isSigningOut = true;
   await clearTokens();
   await SecureStore.deleteItemAsync('cos_username');
   try {
-    router.replace('/(auth)/sign-in' as never);
+    await requestSignIn(reason);
   } finally {
     // Reset after a short delay to allow navigation to settle
     setTimeout(() => { isSigningOut = false; }, 2000);
@@ -48,8 +53,18 @@ apiClient.interceptors.request.use(async (config) => {
 });
 
 // ─── Response interceptor: handle 401 refresh + network errors ─────────────
+//
+// SCRUM-279 (build 44): the queue now supports BOTH resolve + reject.
+// Previously, on refresh failure we cleared pendingRequests but never
+// rejected the queued promises — they hung forever, leaking memory and
+// causing UI spinners to spin indefinitely while the user was bounced
+// to sign-in. Now we fan the rejection out to every waiter.
 let isRefreshing = false;
-let pendingRequests: Array<(token: string) => void> = [];
+interface PendingRequest {
+  resolve: (token: string) => void;
+  reject: (err: Error) => void;
+}
+let pendingRequests: PendingRequest[] = [];
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -67,13 +82,16 @@ apiClient.interceptors.response.use(
     if (error.response.status === 401 && !originalRequest?._retry) {
       if (isRefreshing) {
         // Queue this request until refresh completes
-        return new Promise((resolve) => {
-          pendingRequests.push((newToken: string) => {
-            if (originalRequest) {
-              originalRequest.headers = originalRequest.headers ?? {};
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
-              resolve(apiClient(originalRequest));
-            }
+        return new Promise((resolve, reject) => {
+          pendingRequests.push({
+            resolve: (newToken: string) => {
+              if (originalRequest) {
+                originalRequest.headers = originalRequest.headers ?? {};
+                originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                resolve(apiClient(originalRequest));
+              }
+            },
+            reject,
           });
         });
       }
@@ -84,7 +102,7 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = await getRefreshToken();
         if (!refreshToken) {
-          await forceSignOut();
+          await forceSignOut('session_expired');
           throw error;
         }
 
@@ -164,17 +182,29 @@ apiClient.interceptors.response.use(
 
         await storeTokens(newAccess, newRefresh, newId);
 
-        pendingRequests.forEach((cb) => cb(newAccess));
+        // Fan out the new token to every waiter that queued while we
+        // were refreshing.
+        const waiters = pendingRequests;
         pendingRequests = [];
+        waiters.forEach((p) => p.resolve(newAccess));
 
         if (originalRequest) {
           originalRequest.headers = originalRequest.headers ?? {};
           originalRequest.headers.Authorization = `Bearer ${newAccess}`;
           return apiClient(originalRequest);
         }
-      } catch {
+      } catch (refreshErr) {
+        // SCRUM-279 (build 44): reject every queued request so callers
+        // surface a real error instead of hanging on a never-resolved
+        // promise. Then defer the sign-in nav via the lock-gate so the
+        // user isn't yanked off PIN entry.
+        const waiters = pendingRequests;
         pendingRequests = [];
-        await forceSignOut();
+        const wrappedErr = refreshErr instanceof Error
+          ? refreshErr
+          : new Error('Token refresh failed');
+        waiters.forEach((p) => p.reject(wrappedErr));
+        await forceSignOut('refresh_failed');
         throw error;
       } finally {
         isRefreshing = false;

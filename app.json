@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "43",
+      "buildNumber": "44",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"

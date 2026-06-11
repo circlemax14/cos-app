@@ -21,11 +21,27 @@ export async function storePin(pin: string): Promise<void> {
   await resetFailedAttempts();
 }
 
+/**
+ * Constant-time string comparison. JavaScript's === short-circuits on
+ * first mismatched byte, which leaks information through timing. For a
+ * PIN hash (where attacker only ever controls the input to be hashed,
+ * not the bytes compared) this is extremely low-risk in practice but
+ * cheap to harden. SCRUM-279 (build 44).
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 export async function verifyPin(pin: string): Promise<boolean> {
   const storedHash = await SecureStore.getItemAsync(PIN_HASH_KEY);
   if (!storedHash) return false;
   const inputHash = await hashPin(pin);
-  return storedHash === inputHash;
+  return timingSafeEqual(storedHash, inputHash);
 }
 
 export async function isPinSetup(): Promise<boolean> {

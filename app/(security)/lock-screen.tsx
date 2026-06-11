@@ -19,6 +19,9 @@ import { useSecurity } from '@/stores/security-store';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { getColors, Spacing, Typography } from '@/constants/design-system';
 import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
+import { consumePendingSignIn, SignInReason } from '@/lib/lock-gate';
+import { checkSession } from '@/services/auth';
+import { clearTokens } from '@/lib/auth-tokens';
 
 /**
  * Resolve the route to land on after a successful unlock. Defaults to
@@ -36,6 +39,41 @@ async function resumeAfterUnlock() {
     // Best-effort; fall through to /Home.
   }
   router.replace(target as never);
+}
+
+/**
+ * SCRUM-279 (build 44): friendly copy for the deferred-sign-in alert.
+ * The user just entered their PIN correctly; if we have to send them
+ * to sign-in anyway because the backend session is gone, tell them
+ * why instead of silently bouncing.
+ */
+function describeSignInReason(reason: SignInReason): { title: string; message: string } {
+  switch (reason) {
+    case 'session_expired':
+    case 'refresh_failed':
+    case 'splash_revalidate_failed':
+      return {
+        title: 'Session expired',
+        message:
+          'For your security, your session has expired and we need you to sign in again with your password.',
+      };
+    case 'manual_sign_out':
+      return {
+        title: 'Signed out',
+        message: 'Please sign in to continue.',
+      };
+    case 'splash_no_session':
+      return {
+        title: 'Sign in required',
+        message: 'Please sign in to continue.',
+      };
+    case 'unrecoverable':
+    default:
+      return {
+        title: 'Sign in required',
+        message: 'Something went wrong and we need you to sign in again.',
+      };
+  }
 }
 
 const MAX_ATTEMPTS = 5;
@@ -93,7 +131,7 @@ export default function LockScreen() {
     if (result.success) {
       await resetFailedAttempts();
       setIsLocked(false);
-      await resumeAfterUnlock();
+      await postUnlockNavigate();
     }
   };
 
@@ -107,12 +145,76 @@ export default function LockScreen() {
     }
   };
 
+  /**
+   * SCRUM-279 (build 44): post-unlock navigation.
+   *
+   * After successful PIN/biometric:
+   *
+   *   1. Check the lock-gate for any sign-in that was DEFERRED while
+   *      the user was on this screen (e.g. SplashGate's background
+   *      revalidation found the session was bad, or api-client got a
+   *      refresh failure on a parallel call). If there's a pending
+   *      reason, surface an alert explaining what happened, then
+   *      route to sign-in. Tokens are wiped first so PHI can't leak.
+   *   2. Otherwise validate the session ourselves — the cached
+   *      profile path in SplashGate doesn't talk to the backend, so
+   *      this is our first authoritative check. If the live call
+   *      returns no user, treat it as session_expired.
+   *   3. Only if both gates pass do we restore the pre-lock route.
+   *
+   * Security note: the PIN is a device-local secret. It does NOT
+   * authorise any backend call — the Cognito (or app-signed social)
+   * token does. So when the backend session is genuinely gone we
+   * MUST require a real re-sign-in before any PHI can render.
+   */
+  const postUnlockNavigate = async () => {
+    const pendingReason = consumePendingSignIn();
+    if (pendingReason) {
+      await clearTokens();
+      const { title, message } = describeSignInReason(pendingReason);
+      Alert.alert(title, message, [
+        {
+          text: 'Sign In',
+          onPress: () => {
+            router.replace('/(auth)/sign-in' as never);
+          },
+        },
+      ]);
+      return;
+    }
+
+    // No deferred sign-in — validate the live session before showing PHI.
+    try {
+      const result = await checkSession();
+      if (!result.authenticated || !result.user) {
+        await clearTokens();
+        Alert.alert(
+          'Session expired',
+          'For your security, your session has expired and we need you to sign in again with your password.',
+          [
+            {
+              text: 'Sign In',
+              onPress: () => router.replace('/(auth)/sign-in' as never),
+            },
+          ],
+        );
+        return;
+      }
+    } catch {
+      // Network failure — let the user in (cached data only). The
+      // next API call will trigger the refresh path; if THAT fails
+      // we'll come back through this gate.
+    }
+
+    await resumeAfterUnlock();
+  };
+
   const verifyAndUnlock = async (enteredPin: string) => {
     const valid = await verifyPin(enteredPin);
     if (valid) {
       await resetFailedAttempts();
       setIsLocked(false);
-      await resumeAfterUnlock();
+      await postUnlockNavigate();
     } else {
       const attempts = await incrementFailedAttempts();
       const remaining = MAX_ATTEMPTS - attempts;
@@ -128,7 +230,14 @@ export default function LockScreen() {
             {
               text: 'Sign In',
               onPress: async () => {
+                // SCRUM-279 (build 44) security: also wipe the backend
+                // session tokens. Previously only PIN data was cleared,
+                // so the old access/refresh tokens stayed in SecureStore.
+                // If an attacker exhausted PIN attempts they could
+                // theoretically still call APIs with the stale token
+                // until expiry. Now we force a true fresh sign-in.
                 await clearPinData();
+                await clearTokens();
                 setIsLocked(false);
                 router.replace('/(auth)/sign-in' as never);
               },

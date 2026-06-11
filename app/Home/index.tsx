@@ -425,17 +425,19 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   const baseRadius = 144 * 1.1; // ~158.4
 
   // Avatar container size - scale proportionally.
-  // SCRUM-279 (2026-06-08): provider avatars +25% (Ken asked for
-  // them to be more visually prominent inside the tighter orbit).
-  // Build 36: another bump per Ken's "increase provider circle and
-  // name text on iPad only" feedback. Base 150 → 180 (+20%).
-  // Build 39 (2026-06-10): Ken asked for another +25% bump on iPad
-  // bubbles. 180 → 225 (180 × 1.25). iPad only — phone view untouched.
-  // Build 41 (2026-06-11): Ken still says small. Bump 225 → 300
-  // (+33%) — the 0.855 scaleFactor cap dampens this to ~256px
-  // rendered on iPad Pro 11", up from ~192px. Phone view still
-  // capped at scaleFactor 1.0 so iPhone avatars are unchanged.
-  const baseAvatarContainerSize = 300;
+  // Build 36: 150 → 180 (Ken asked to grow iPad providers + names).
+  // Build 39: 180 → 225 (+25%).
+  // Build 41: 225 → 300 — but we later learned this wrapper governs the
+  // text-+-bubble enclosure, NOT the bubble itself; the actual avatar
+  // size lives on orbitAvatarSize below.
+  // Build 43: orbit avatar shrunk to 78 base, but the 300 wrapper
+  // stayed — producing tons of vertical dead air on iPad because the
+  // circle's outer container is sized as (2·radius + avatarContainerSize).
+  // Build 44 (2026-06-11): wrapper dropped to 180 to match the smaller
+  // bubble. Visible circle radius grows ~50px, vertical dead space
+  // shrinks ~50px per side. iPhone unaffected (PhoneCircleView has
+  // its own constants).
+  const baseAvatarContainerSize = 180;
   const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
@@ -2906,7 +2908,15 @@ export default function HomeScreen() {
           <QuickActionButtons />
         </View>
 
-        <View style={styles.circleSection}>
+        {/* SCRUM-279 (build 44): iPad-only — kill the extra vertical
+            padding around the circle. iPhone is already perfect at 24px
+            top + 24px marginBottom; iPad's bigger container produces
+            unnecessary dead air. Drop top padding to 4 and bottom margin
+            to 8 on tablets only. */}
+        <View style={[
+          styles.circleSection,
+          isTabletDevice && { paddingTop: 4, marginBottom: 8 },
+        ]}>
           {viewMode === 'circle' ? (
             isTabletDevice ? (
               <TabletCircleView

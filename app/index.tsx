@@ -12,6 +12,7 @@ import { isPinSetup } from '@/services/pin-auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSecurity } from '@/stores/security-store';
+import { requestSignIn } from '@/lib/lock-gate';
 // useAppLock now mounts at the root layout (app/_layout.tsx) so the
 // AppState lock listener stays alive after navigating away from this
 // splash gate (SCRUM-235).
@@ -92,15 +93,25 @@ async function getDestination(user: UserProfile, isLocked: boolean): Promise<str
 /**
  * Background revalidation: refreshes user profile from backend after the
  * optimistic navigation. If the server says the user is no longer authenticated
- * (401/403 — handled by checkSession), we redirect to sign-in.
+ * (401/403 — handled by checkSession), we defer the sign-in via the
+ * lock-gate so the user isn't yanked off PIN entry mid-flow.
+ *
+ * SCRUM-279 (build 44): this function used to route directly to
+ * /(auth)/sign-in on failure. It now goes through requestSignIn() which
+ * defers when the user is on the lock screen.
  */
 function revalidateInBackground(previousDestination: string, isLocked: boolean) {
+  // If we just routed the user to the lock screen, the API call here
+  // can race with their PIN entry. Skip it entirely; we'll validate
+  // again after the unlock fires from lock-screen.tsx.
+  if (previousDestination.startsWith('/(security)/lock-screen')) return;
+
   void (async () => {
     try {
       const result = await checkSession();
       if (!result.authenticated || !result.user) {
-        // Token invalidated server-side — bounce to sign-in.
-        router.replace('/(auth)/sign-in' as never);
+        // Token invalidated server-side — defer the sign-in via the gate.
+        await requestSignIn('splash_revalidate_failed');
         return;
       }
       // If onboarding state changed server-side since our cached snapshot, route
@@ -135,7 +146,7 @@ export default function SplashGate() {
       ]);
 
       if (!hasSession) {
-        router.replace('/(auth)/sign-in' as never);
+        await requestSignIn('splash_no_session');
         return;
       }
 
@@ -154,7 +165,7 @@ export default function SplashGate() {
       // with backend before routing.
       const result = await checkSession();
       if (!result.authenticated || !result.user) {
-        router.replace('/(auth)/sign-in' as never);
+        await requestSignIn('splash_revalidate_failed');
         return;
       }
 
@@ -166,7 +177,7 @@ export default function SplashGate() {
       if (isNetworkError) {
         setState('no-internet');
       } else {
-        router.replace('/(auth)/sign-in' as never);
+        await requestSignIn('unrecoverable');
       }
     } finally {
       SplashScreen.hideAsync().catch(() => {});
