@@ -421,16 +421,27 @@ export function virtualEventFromAppEntity(e: AppEventLike): CalendarEvent {
  * dedupes via a Set so even worst-case data has one row per id.
  */
 export function mergeEvents(deviceEvents: CalendarEvent[], appEvents: CalendarEvent[]): CalendarEvent[] {
+  // SCRUM-279 (2026-06-11 build 42): dedup key is now id + startDate.
+  // Ken reported Apple Calendar showed 4 yesterday but the app showed 2.
+  // Root cause: iOS expo-calendar returns the same `eventIdentifier`
+  // for every occurrence of a recurring event, so a daily standup with
+  // 4 instances in the window had all 4 collapsed to a single row by
+  // dedup-by-id. Including startDate in the key keeps each instance
+  // while still collapsing app-mirrored device events (which share both
+  // id and startDate with their origin event).
   const seen = new Set<string>()
+  const keyOf = (e: CalendarEvent): string => `${e.id}@${e.startDate}`
   const merged: CalendarEvent[] = []
   for (const e of deviceEvents) {
-    if (seen.has(e.id)) continue
-    seen.add(e.id)
+    const k = keyOf(e)
+    if (seen.has(k)) continue
+    seen.add(k)
     merged.push(e)
   }
   for (const e of appEvents) {
-    if (seen.has(e.id)) continue
-    seen.add(e.id)
+    const k = keyOf(e)
+    if (seen.has(k)) continue
+    seen.add(k)
     merged.push(e)
   }
   merged.sort((a, b) => a.startDate.localeCompare(b.startDate))

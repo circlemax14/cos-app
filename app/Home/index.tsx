@@ -33,6 +33,7 @@ import {
   type NonEhrProvider,
 } from '@/services/non-ehr-processor';
 import { QuickActionButtons } from '@/components/home/quick-action-buttons';
+import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -254,18 +255,26 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   ],
                 },
               ]} />
+            {/* SCRUM-279 (build 42): bloom + drift animation per Ken's
+                provider-bloom HTML reference. Position lives on the
+                BloomingOrbitItem wrapper; the TouchableOpacity fills
+                it and keeps its press handlers untouched. */}
+            <BloomingOrbitItem
+              left={containerWidth / 2 + x - halfContainerSize}
+              top={containerHeight / 2 + y - halfContainerSize}
+              width={containerSize}
+              height={containerSize}
+              zIndex={1}
+              index={idx}
+            >
             <TouchableOpacity
               style={[
                 styles.orbitAvatar,
                 {
-                  position: 'absolute',
-                  left: containerWidth / 2 + x - halfContainerSize,
-                  top: containerHeight / 2 + y - halfContainerSize,
-                  zIndex: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: containerSize,
-                  height: containerSize,
+                  width: '100%',
+                  height: '100%',
                 },
               ]}
               onPress={() => {
@@ -380,6 +389,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                 </>
               )}
             </TouchableOpacity>
+            </BloomingOrbitItem>
           </React.Fragment>
         );
       })}
@@ -476,7 +486,13 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // Calculate container size based on actual radius
   const containerWidth = (radius * 2) + avatarContainerSize + (adjustedContainerPadding * 2);
   const containerHeight = containerWidth; // Keep it square
-  const orbitAvatarSize = 48 * Math.min(scaleFactor, 1.5);
+  // SCRUM-279 (2026-06-11 build 42): the rendered AVATAR (image circle)
+  // size lives here — separate from the avatarContainerSize bumps in
+  // builds 39/40/41 (which only widened the wrapper that hosts the
+  // name text below). On iPad: 48 × 0.855 = ~41px — way too small.
+  // Bumped to 120 base → 102px rendered on iPad. Phones unaffected
+  // because PhoneCircleView has its own orbitAvatarSize constant.
+  const orbitAvatarSize = 120 * Math.min(scaleFactor, 1.5);
   const orbitAvatarContainerSize = avatarContainerSize;
   const linkLineWidth = 92 * Math.min(scaleFactor, 1.5);
 
@@ -604,19 +620,27 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   ],
                 },
               ]} />
+            {/* SCRUM-279 (build 42): bloom + drift animation (Ken's
+                provider-bloom HTML reference). Positioning lives on
+                the wrapper; the TouchableOpacity stays tappable inside. */}
+            <BloomingOrbitItem
+              left={containerWidth / 2 + x - halfContainerSize}
+              top={containerHeight / 2 + y - halfContainerSize}
+              width={containerSize}
+              height={containerSize}
+              zIndex={1}
+              index={idx}
+            >
             <TouchableOpacity
               style={[
                 styles.orbitAvatar,
                 {
-                  position: 'absolute',
-                  left: containerWidth / 2 + x - halfContainerSize,
-                  top: containerHeight / 2 + y - halfContainerSize,
-                  zIndex: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
                   minWidth: containerSize,
                   paddingHorizontal: 4,
-                  height: containerSize,
+                  width: '100%',
+                  height: '100%',
                 },
               ]}
               onPress={() => {
@@ -728,6 +752,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                 </>
               )}
             </TouchableOpacity>
+            </BloomingOrbitItem>
           </React.Fragment>
         );
       })}

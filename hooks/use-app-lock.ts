@@ -6,6 +6,17 @@ import { useSecurity } from '@/stores/security-store';
 import { getLockTimeout, isPinSetup } from '@/services/pin-auth';
 
 /**
+ * SCRUM-279 (2026-06-11 build 42): minimum debounce for active→background
+ * →active transitions before re-locking. Ken reported double-PIN entry on
+ * iPad: the FaceID modal animation (and Stage Manager gestures) trigger
+ * sub-second AppState flickers — with the default lock timeout of 0ms,
+ * those flickers re-fire captureAndLock and bounce the user back to the
+ * lock screen mid-PIN-entry. 2s covers all OS-induced flickers while
+ * still locking promptly when the user genuinely backgrounds the app.
+ */
+const MIN_BG_DEBOUNCE_MS = 2000;
+
+/**
  * Default idle window before the app auto-locks while in the foreground.
  * Matches the web's useInactivityTimeout default (SCRUM-170) so the two
  * platforms behave identically when a user walks away from the device.
@@ -93,7 +104,13 @@ export function useAppLock() {
         if (backgroundTime.current !== null) {
           const elapsed = Date.now() - backgroundTime.current;
           const timeout = await getLockTimeout();
-          if (elapsed >= timeout) {
+          // SCRUM-279 (build 42): never re-lock if we're already on
+          // the lock screen (PIN entry shouldn't reset itself) AND
+          // require a minimum debounce so OS-induced sub-second
+          // background flickers don't trigger a re-lock.
+          const onLockScreen = (lastPathRef.current ?? pathname ?? '').startsWith('/(security)/lock-screen');
+          const effectiveTimeout = Math.max(timeout, MIN_BG_DEBOUNCE_MS);
+          if (elapsed >= effectiveTimeout && !onLockScreen) {
             const pinSetup = await isPinSetup();
             if (pinSetup) await captureAndLock();
           }
