@@ -492,7 +492,10 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // name text below). On iPad: 48 × 0.855 = ~41px — way too small.
   // Bumped to 120 base → 102px rendered on iPad. Phones unaffected
   // because PhoneCircleView has its own orbitAvatarSize constant.
-  const orbitAvatarSize = 120 * Math.min(scaleFactor, 1.5);
+  // Build 43 (2026-06-11): Ken says 102px was way too big. Reduce by
+  // 35%: 120 → 78. Renders ~66.7px on iPad Pro 11" — bigger than
+  // the original 41px but no longer overwhelming the orbit.
+  const orbitAvatarSize = 78 * Math.min(scaleFactor, 1.5);
   const orbitAvatarContainerSize = avatarContainerSize;
   const linkLineWidth = 92 * Math.min(scaleFactor, 1.5);
 
