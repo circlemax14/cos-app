@@ -22,15 +22,15 @@ const INDIRECT_CARE_KEYWORDS = [
   'nuclear medicine',
 ];
 
-export type ProviderInactiveReason = 'no-records' | 'indirect-care';
+export type ProviderInactiveReason = 'indirect-care';
 
 export function providerInactiveReason(p: Provider): ProviderInactiveReason | null {
-  // No clinical records reference this provider → can't surface anything
-  // useful on the detail screen.
-  if (p.hasData === false || (p.hasData === undefined && p.recordCount === 0)) {
-    return 'no-records';
-  }
-  // Indirect-care specialties — visible but disabled.
+  // SCRUM-279 (2026-06-11 build 41): no-records gate removed — Ken
+  // reported he couldn't add real providers to his circle because the
+  // backend was returning hasData:false / recordCount:0 for many real
+  // doctors (data may have arrived later, or never indexed). Only
+  // hard-block indirect-care specialties (pharmacy / lab / etc.) — the
+  // detail screen handles empty clinical data gracefully on its own.
   const haystack = `${p.specialty ?? ''} ${p.qualifications ?? ''} ${p.subCategory ?? ''} ${(p.subCategories ?? []).join(' ')}`.toLowerCase();
   if (INDIRECT_CARE_KEYWORDS.some((kw) => haystack.includes(kw))) {
     return 'indirect-care';
@@ -40,8 +40,6 @@ export function providerInactiveReason(p: Provider): ProviderInactiveReason | nu
 
 export function inactiveLabel(reason: ProviderInactiveReason): string {
   switch (reason) {
-    case 'no-records':
-      return 'No records yet';
     case 'indirect-care':
       return 'Support role';
   }

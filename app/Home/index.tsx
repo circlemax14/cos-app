@@ -421,7 +421,11 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // name text on iPad only" feedback. Base 150 → 180 (+20%).
   // Build 39 (2026-06-10): Ken asked for another +25% bump on iPad
   // bubbles. 180 → 225 (180 × 1.25). iPad only — phone view untouched.
-  const baseAvatarContainerSize = 225;
+  // Build 41 (2026-06-11): Ken still says small. Bump 225 → 300
+  // (+33%) — the 0.855 scaleFactor cap dampens this to ~256px
+  // rendered on iPad Pro 11", up from ~192px. Phone view still
+  // capped at scaleFactor 1.0 so iPhone avatars are unchanged.
+  const baseAvatarContainerSize = 300;
   const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
@@ -555,15 +559,16 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        // SCRUM-279 (2026-06-10 build 39): TabletCircleView More pill —
-        // bumped to readable size matching iPhone instance (15/18/8).
+        // SCRUM-279 (2026-06-11 build 41): iPad More pill — bumped
+        // larger than iPhone (Ken: iPad still too small at 15/18/8).
+        // 22/28/12 — feels like a proper iPad button, not a phone pill.
         <Pressable
           onPress={() => router.push('/modal')}
           style={({ pressed }) => ({
             alignSelf: 'center',
             backgroundColor: '#008080',
-            paddingHorizontal: 18,
-            paddingVertical: 8,
+            paddingHorizontal: 28,
+            paddingVertical: 12,
             borderRadius: 999,
             opacity: pressed ? 0.7 : 1,
           })}
@@ -571,7 +576,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           accessibilityLabel="More providers"
         >
           <Text
-            style={{ color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: 0.3, lineHeight: 18 }}
+            style={{ color: '#fff', fontSize: 22, fontWeight: '600', letterSpacing: 0.3, lineHeight: 26 }}
             allowFontScaling={false}
           >
             More

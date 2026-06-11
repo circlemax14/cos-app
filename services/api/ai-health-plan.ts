@@ -64,20 +64,51 @@ export async function fetchPendingTaskCount(date?: string): Promise<number> {
   }
 }
 
+/**
+ * SCRUM-279 (2026-06-11 build 41): expose the underlying failure
+ * reason instead of swallowing it as `false`. Ken reported tapping a
+ * task in Today's Schedule and seeing it revert; we need to know
+ * whether it's auth, network, or a validation error before we can
+ * fix the right thing.
+ */
+export interface TaskActionResult {
+  ok: boolean;
+  status?: number;
+  code?: string;
+  message?: string;
+}
+
+function describeError(err: unknown): TaskActionResult {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const e = err as { response?: { status?: number; data?: { code?: string; error?: string; message?: string } }; message?: string };
+    return {
+      ok: false,
+      status: e.response?.status,
+      code: e.response?.data?.code,
+      message: e.response?.data?.error ?? e.response?.data?.message ?? e.message ?? 'Request failed',
+    };
+  }
+  if (err && typeof err === 'object' && 'code' in err) {
+    const e = err as { code?: string; message?: string };
+    return { ok: false, code: e.code, message: e.message };
+  }
+  return { ok: false, message: err instanceof Error ? err.message : 'Unknown error' };
+}
+
 /** Mark a task occurrence complete. */
 export async function completeTask(
   taskId: string,
   scheduledFor: string,
   notes?: string,
-): Promise<boolean> {
+): Promise<TaskActionResult> {
   try {
     await apiClient.post(`/v1/patients/me/tasks/${encodeURIComponent(taskId)}/complete`, {
       scheduledFor,
       notes,
     });
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (err) {
+    return describeError(err);
   }
 }
 
@@ -86,14 +117,14 @@ export async function skipTask(
   taskId: string,
   scheduledFor: string,
   notes?: string,
-): Promise<boolean> {
+): Promise<TaskActionResult> {
   try {
     await apiClient.post(`/v1/patients/me/tasks/${encodeURIComponent(taskId)}/skip`, {
       scheduledFor,
       notes,
     });
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (err) {
+    return describeError(err);
   }
 }

@@ -2,7 +2,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import React, { useEffect, useState, useRef } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
 import { Card, IconButton, List, Button } from 'react-native-paper';
 import { getTodayHealthMetrics, initializeHealthKit, HealthMetrics } from '@/services/health';
 import { fetchPatientInfo, fetchMedicationsSummary } from '@/services/api/patient';
@@ -58,6 +58,13 @@ export default function TodayScheduleScreen() {
     error: null,
   });
   const [refreshing, setRefreshing] = useState(false);
+  // SCRUM-279 (2026-06-11 build 41): authoritative gate for the
+  // "Enable Health Permissions" CTA. Previously the CTA was triggered
+  // by an "all metrics are zero" heuristic, which false-positives when
+  // a user genuinely has zero activity today (sitting at a desk).
+  // Track init success directly — once initializeHealthKit() resolves
+  // we know permissions are granted, regardless of returned values.
+  const [healthKitInitialized, setHealthKitInitialized] = useState(false);
   const appState = useRef(AppState.currentState);
   
   // Load patient data and medications
@@ -108,7 +115,10 @@ export default function TodayScheduleScreen() {
     loadPlanTasks();
   }, []);
 
-  // Task actions (optimistic updates)
+  // Task actions (optimistic updates).
+  // SCRUM-279 (2026-06-11 build 41): on revert, surface the actual
+  // failure reason via Alert so Ken (and we) know what went wrong —
+  // previously the task silently reverted with no signal at all.
   const handleTaskComplete = async (task: TaskOccurrence) => {
     if (task.status === 'completed') return;
     setPlanTasks((prev) =>
@@ -118,8 +128,8 @@ export default function TodayScheduleScreen() {
           : t,
       ),
     );
-    const ok = await completeTask(task.id, task.scheduledFor);
-    if (!ok) {
+    const result = await completeTask(task.id, task.scheduledFor);
+    if (!result.ok) {
       setPlanTasks((prev) =>
         prev.map((t) =>
           t.id === task.id && t.scheduledFor === task.scheduledFor
@@ -127,6 +137,12 @@ export default function TodayScheduleScreen() {
             : t,
         ),
       );
+      const reason = result.code === 'NETWORK_ERROR'
+        ? 'No internet connection. Try again when you’re back online.'
+        : result.status === 401 || result.status === 403
+          ? 'Your session expired. Please sign in again to mark tasks complete.'
+          : (result.message ?? 'Could not save task completion.');
+      Alert.alert("Couldn't complete task", reason);
     }
   };
 
@@ -136,13 +152,19 @@ export default function TodayScheduleScreen() {
         t.id === task.id && t.scheduledFor === task.scheduledFor ? { ...t, status: 'skipped' } : t,
       ),
     );
-    const ok = await skipTask(task.id, task.scheduledFor);
-    if (!ok) {
+    const result = await skipTask(task.id, task.scheduledFor);
+    if (!result.ok) {
       setPlanTasks((prev) =>
         prev.map((t) =>
           t.id === task.id && t.scheduledFor === task.scheduledFor ? { ...t, status: 'pending' } : t,
         ),
       );
+      const reason = result.code === 'NETWORK_ERROR'
+        ? 'No internet connection. Try again when you’re back online.'
+        : result.status === 401 || result.status === 403
+          ? 'Your session expired. Please sign in again to skip tasks.'
+          : (result.message ?? 'Could not save task skip.');
+      Alert.alert("Couldn't skip task", reason);
     }
   };
 
@@ -244,11 +266,13 @@ export default function TodayScheduleScreen() {
       try {
         await initializeHealthKit();
         if (isMounted) {
+          setHealthKitInitialized(true);
           await fetchHealthData(true);
         }
       } catch (err) {
         console.warn('HealthKit initialization failed:', err);
         if (isMounted) {
+          setHealthKitInitialized(false);
           setHealthMetrics({
             steps: 0,
             heartRate: null,
@@ -271,8 +295,13 @@ export default function TodayScheduleScreen() {
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App came back — re-fetch health data
-        fetchHealthData(false);
+        // App came back — if init never succeeded (user denied earlier
+        // then granted via Settings), retry init. Otherwise just refresh.
+        if (!healthKitInitialized && Platform.OS === 'ios') {
+          loadHealthData();
+        } else {
+          fetchHealthData(false);
+        }
       }
       appState.current = nextAppState;
     });
@@ -438,13 +467,11 @@ export default function TodayScheduleScreen() {
 
         {/* Health Metrics Section */}
         {!healthMetrics.isLoading && (
-          // Show permission error card if permissions are denied
-          // Check: explicit error OR all values are 0/null (likely permission denial)
-          (isPermissionError() || 
-           (healthMetrics.steps === 0 && 
-            healthMetrics.heartRate === null && 
-            healthMetrics.sleepHours === 0 && 
-            healthMetrics.caloriesBurned === 0)) ? (
+          // SCRUM-279 (2026-06-11 build 41): show the permission CTA
+          // ONLY when HealthKit init actually failed. Previously the
+          // CTA also fired on the "all metrics zero" heuristic, which
+          // false-positives for users with zero activity today.
+          (!healthKitInitialized) ? (
             <Card style={[styles.healthMetricsCard, { backgroundColor: colors.background }]}>
               <Text style={[
                 styles.healthMetricsTitle,

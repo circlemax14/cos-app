@@ -231,8 +231,8 @@ export default function HealthPlanScreen() {
             : t,
         ),
       );
-      const ok = await completeTask(task.id, task.scheduledFor);
-      if (!ok) {
+      const result = await completeTask(task.id, task.scheduledFor);
+      if (!result.ok) {
         // Revert on failure
         setTasks((prev) =>
           prev.map((t) =>
@@ -255,8 +255,8 @@ export default function HealthPlanScreen() {
             : t,
         ),
       );
-      const ok = await skipTask(task.id, task.scheduledFor);
-      if (!ok) {
+      const result = await skipTask(task.id, task.scheduledFor);
+      if (!result.ok) {
         setTasks((prev) =>
           prev.map((t) =>
             t.id === task.id && t.scheduledFor === task.scheduledFor

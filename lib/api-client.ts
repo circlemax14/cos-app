@@ -88,30 +88,36 @@ apiClient.interceptors.response.use(
           throw error;
         }
 
-        // Check if this is a social auth token (app-signed JWT, not Cognito).
-        // Social tokens have tokenType: 'social' in the payload.
-        const currentToken = await getAccessToken();
-        let isSocialToken = false;
-        if (currentToken) {
+        // Detect token type: social (app-signed JWT) vs Cognito.
+        // SCRUM-279 (2026-06-11 build 41): previously used atob() which
+        // chokes on the base64url alphabet (- and _) that JWTs use,
+        // mis-classifying social tokens as Cognito → refresh tried the
+        // Cognito path (which needs cos_username — not set for social
+        // users) → forced sign-out every time the token expired.
+        // Fix: base64url-safe decode + fall through to backend refresh
+        // if Cognito refresh fails.
+        const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
           try {
-            const payload = JSON.parse(atob(currentToken.split('.')[1]));
-            isSocialToken = payload.tokenType === 'social';
-          } catch {
-            // Not a valid JWT — treat as Cognito
-          }
-        }
+            const part = jwt.split('.')[1];
+            if (!part) return null;
+            // Base64url → base64: replace -/_ and pad to length % 4 === 0.
+            let b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4 !== 0) b64 += '=';
+            return JSON.parse(atob(b64));
+          } catch { return null; }
+        };
+        const currentToken = await getAccessToken();
+        const payload = currentToken ? decodeJwtPayload(currentToken) : null;
+        const isSocialToken = payload?.tokenType === 'social';
 
         let newAccess: string;
         let newRefresh: string;
         let newId: string;
 
-        if (isSocialToken) {
-          // SCRUM-260: social tokens are app-signed JWTs (Apple / Google
-          // sign-in). The backend's POST /v1/auth/refresh accepts the
-          // refresh token in the request body and returns new access/id/
-          // refresh tokens in the response body. Use a separate axios
-          // instance with no auth interceptor so this call can't loop on
-          // its own 401.
+        const tryBackendRefresh = async (): Promise<{ a: string; r: string; i: string }> => {
+          // Backend `/v1/auth/refresh` is the catch-all path: accepts
+          // refresh tokens for both social-signed JWTs and Cognito.
+          // No auth interceptor on this axios instance — can't loop.
           const publicHttp = axios.create({
             baseURL: API_BASE,
             timeout: 30_000,
@@ -125,20 +131,35 @@ apiClient.interceptors.response.use(
           if (!data?.accessToken || !data.refreshToken || !data.idToken) {
             throw new Error('Refresh response missing tokens');
           }
-          newAccess = data.accessToken;
-          newRefresh = data.refreshToken;
-          newId = data.idToken;
+          return { a: data.accessToken, r: data.refreshToken, i: data.idToken };
+        };
+
+        if (isSocialToken) {
+          const t = await tryBackendRefresh();
+          newAccess = t.a; newRefresh = t.r; newId = t.i;
         } else {
           // Cognito email/password path — refresh via amazon-cognito-identity-js
-          // directly, no backend round-trip. Dynamic import avoids circular dep.
-          const { refreshCognitoTokens } = await import('./cognito');
-          const storedUsername = await import('expo-secure-store').then((m) =>
-            m.getItemAsync('cos_username'),
-          );
-          const newTokens = await refreshCognitoTokens(storedUsername ?? '', refreshToken);
-          newAccess = newTokens.accessToken;
-          newRefresh = refreshToken; // Cognito doesn't rotate the refresh token
-          newId = newTokens.idToken;
+          // directly. If it fails (e.g. cos_username missing because the
+          // user actually signed up via social and we mis-classified —
+          // belt-and-suspenders for the atob bug above), fall back to
+          // the backend refresh endpoint before giving up.
+          try {
+            const { refreshCognitoTokens } = await import('./cognito');
+            const storedUsername = await import('expo-secure-store').then((m) =>
+              m.getItemAsync('cos_username'),
+            );
+            if (!storedUsername) {
+              throw new Error('cos_username missing — likely social user');
+            }
+            const newTokens = await refreshCognitoTokens(storedUsername, refreshToken);
+            newAccess = newTokens.accessToken;
+            newRefresh = refreshToken; // Cognito doesn't rotate the refresh token
+            newId = newTokens.idToken;
+          } catch (cognitoErr) {
+            console.warn('[auth] Cognito refresh failed, falling back to backend:', cognitoErr);
+            const t = await tryBackendRefresh();
+            newAccess = t.a; newRefresh = t.r; newId = t.i;
+          }
         }
 
         await storeTokens(newAccess, newRefresh, newId);
