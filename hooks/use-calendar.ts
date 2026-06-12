@@ -127,6 +127,28 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
       setCalendars(cals)
       setReminders(rems)
       setServerEvents(srv)
+      // SCRUM-279 (build 45): prune stale hidden-calendar IDs. Ken
+      // reported reminders + Zoom-call events missing from the
+      // calendar after upgrading. A common cause is a hidden-set entry
+      // that survived an iOS account change / calendar rename — the
+      // old id is in hiddenCalendarIds but no longer maps to a real
+      // calendar, so it silently hides whatever the new id is. Drop
+      // ids that no longer correspond to a live calendar OR reminder.
+      const liveCalendarIds = new Set<string>()
+      for (const c of cals) liveCalendarIds.add(c.id)
+      for (const r of rems) liveCalendarIds.add(r.calendarId)
+      setHiddenCalendarIds((prev) => {
+        if (prev.size === 0) return prev
+        let changed = false
+        const next = new Set<string>()
+        for (const id of prev) {
+          if (liveCalendarIds.has(id)) next.add(id)
+          else changed = true
+        }
+        if (!changed) return prev
+        AsyncStorage.setItem(HIDDEN_CALS_KEY, JSON.stringify([...next])).catch(() => {})
+        return next
+      })
       // Convert snapshot rows → CalendarEvent shape, filtering out any
       // row that's already in the local device set (sourceEventId
       // match) so we don't double-count what's locally available.

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
@@ -96,6 +96,12 @@ export default function LockScreen() {
   const [error, setError] = useState(false);
   const [showBiometric, setShowBiometric] = useState(false);
   const [attemptsLeft, setAttemptsLeft] = useState(MAX_ATTEMPTS);
+  // SCRUM-279 (build 45): Ken reported "after PIN entry I'm staring at
+  // the same screen for a few seconds — nothing happening, then home".
+  // postUnlockNavigate calls checkSession (network round-trip) and that
+  // wait is invisible. unlocking=true draws a full-screen overlay with
+  // a spinner and "Unlocking…" copy so it's obvious work is happening.
+  const [unlocking, setUnlocking] = useState(false);
 
   // Ambient halo pulse around the lock icon — scale + opacity loop.
   const halo = useRef(new Animated.Value(0)).current;
@@ -168,45 +174,58 @@ export default function LockScreen() {
    * MUST require a real re-sign-in before any PHI can render.
    */
   const postUnlockNavigate = async () => {
-    const pendingReason = consumePendingSignIn();
-    if (pendingReason) {
-      await clearTokens();
-      const { title, message } = describeSignInReason(pendingReason);
-      Alert.alert(title, message, [
-        {
-          text: 'Sign In',
-          onPress: () => {
-            router.replace('/(auth)/sign-in' as never);
-          },
-        },
-      ]);
-      return;
-    }
-
-    // No deferred sign-in — validate the live session before showing PHI.
+    // Build 45: show the loading overlay BEFORE any async work so the
+    // user gets immediate visual feedback that the PIN was accepted.
+    setUnlocking(true);
     try {
-      const result = await checkSession();
-      if (!result.authenticated || !result.user) {
+      const pendingReason = consumePendingSignIn();
+      if (pendingReason) {
         await clearTokens();
-        Alert.alert(
-          'Session expired',
-          'For your security, your session has expired and we need you to sign in again with your password.',
-          [
-            {
-              text: 'Sign In',
-              onPress: () => router.replace('/(auth)/sign-in' as never),
+        const { title, message } = describeSignInReason(pendingReason);
+        setUnlocking(false);
+        Alert.alert(title, message, [
+          {
+            text: 'Sign In',
+            onPress: () => {
+              router.replace('/(auth)/sign-in' as never);
             },
-          ],
-        );
+          },
+        ]);
         return;
       }
-    } catch {
-      // Network failure — let the user in (cached data only). The
-      // next API call will trigger the refresh path; if THAT fails
-      // we'll come back through this gate.
-    }
 
-    await resumeAfterUnlock();
+      // No deferred sign-in — validate the live session before showing PHI.
+      try {
+        const result = await checkSession();
+        if (!result.authenticated || !result.user) {
+          await clearTokens();
+          setUnlocking(false);
+          Alert.alert(
+            'Session expired',
+            'For your security, your session has expired and we need you to sign in again with your password.',
+            [
+              {
+                text: 'Sign In',
+                onPress: () => router.replace('/(auth)/sign-in' as never),
+              },
+            ],
+          );
+          return;
+        }
+      } catch {
+        // Network failure — let the user in (cached data only). The
+        // next API call will trigger the refresh path; if THAT fails
+        // we'll come back through this gate.
+      }
+
+      await resumeAfterUnlock();
+    } finally {
+      // resumeAfterUnlock has already navigated by the time we get here
+      // in the happy path; the overlay sits on top of the unmounting
+      // lock-screen for one frame then disappears with the screen.
+      // Reset state defensively in case navigation didn't happen.
+      setUnlocking(false);
+    }
   };
 
   const verifyAndUnlock = async (enteredPin: string) => {
@@ -355,6 +374,34 @@ export default function LockScreen() {
           />
         </View>
       </SafeAreaView>
+
+      {/* SCRUM-279 (build 45): "Unlocking…" overlay during postUnlockNavigate.
+          checkSession is a network call that can take 1–2 seconds; without
+          this overlay the user stares at the lock screen wondering if
+          their PIN was accepted. Sits on top of everything (no SafeArea)
+          so it covers the keypad cleanly. */}
+      {unlocking ? (
+        <View
+          pointerEvents="auto"
+          style={[styles.unlockingOverlay, { backgroundColor: base + 'EE' }]}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text
+            style={[
+              styles.unlockingText,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(Typography.callout.fontSize),
+                fontWeight: getScaledFontWeight(600) as any,
+              },
+            ]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            Unlocking…
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -440,5 +487,17 @@ const styles = StyleSheet.create({
     // between them; remaining bottom space is shared.
     marginTop: Spacing.lg,
     paddingBottom: Spacing.md,
+  },
+  unlockingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    zIndex: 1000,
+  },
+  unlockingText: {
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
 });

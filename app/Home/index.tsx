@@ -425,19 +425,16 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   const baseRadius = 144 * 1.1; // ~158.4
 
   // Avatar container size - scale proportionally.
-  // Build 36: 150 → 180 (Ken asked to grow iPad providers + names).
-  // Build 39: 180 → 225 (+25%).
-  // Build 41: 225 → 300 — but we later learned this wrapper governs the
-  // text-+-bubble enclosure, NOT the bubble itself; the actual avatar
-  // size lives on orbitAvatarSize below.
-  // Build 43: orbit avatar shrunk to 78 base, but the 300 wrapper
-  // stayed — producing tons of vertical dead air on iPad because the
-  // circle's outer container is sized as (2·radius + avatarContainerSize).
-  // Build 44 (2026-06-11): wrapper dropped to 180 to match the smaller
-  // bubble. Visible circle radius grows ~50px, vertical dead space
-  // shrinks ~50px per side. iPhone unaffected (PhoneCircleView has
-  // its own constants).
-  const baseAvatarContainerSize = 180;
+  // Build 36: 150 → 180. Build 39: 180 → 225. Build 41: 225 → 300
+  // (mistaken — this wrapper governs the text+bubble enclosure, NOT
+  // the bubble itself which is orbitAvatarSize below). Build 44 we
+  // dropped 300 → 180 to remove the dead air left when the bubble
+  // shrunk back to 78.
+  // Build 45 (2026-06-11): Ken still sees space above/below on iPad.
+  // Drop further 180 → 120 — just enough to host avatar (67px) +
+  // name (32px for two lines @ 14pt) + a 16px buffer. Vertical dead
+  // space per side drops ~25px. iPhone untouched.
+  const baseAvatarContainerSize = 120;
   const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
@@ -446,8 +443,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   const adjustedContainerPadding = containerPadding * 1.5;
   const maxRadius = (maxAvailableWidth - avatarContainerSize - (adjustedContainerPadding * 2)) / 2;
 
-  // Avatar sizes - scale less aggressively than the circle (calculate early for radius calculation)
-  const centerAvatarSize = 80 * Math.min(scaleFactor, 1.5);
+  // Avatar sizes - scale less aggressively than the circle (calculate early for radius calculation).
+  // SCRUM-279 (build 45): centerAvatarSize was 80×scaleFactor (~68px on
+  // iPad), orbit was 78×scaleFactor (~67px) — close but not identical.
+  // Ken wants the center user bubble visually identical to the orbit
+  // provider bubbles. Bind them to the same base so they always match.
+  const centerAvatarSize = 78 * Math.min(scaleFactor, 1.5);
 
   // Adaptive multiplier based on screen width - larger screens get more spacing
   // 11-inch iPad: ~834px width, 13-inch iPad: ~1024px width
@@ -2908,14 +2909,13 @@ export default function HomeScreen() {
           <QuickActionButtons />
         </View>
 
-        {/* SCRUM-279 (build 44): iPad-only — kill the extra vertical
-            padding around the circle. iPhone is already perfect at 24px
-            top + 24px marginBottom; iPad's bigger container produces
-            unnecessary dead air. Drop top padding to 4 and bottom margin
-            to 8 on tablets only. */}
+        {/* SCRUM-279 (build 45): iPad-only — kill all extra vertical
+            padding around the circle. Ken still saw space on build 44.
+            paddingTop 4 → 0, marginBottom 8 → 0. iPhone is already
+            perfect so the override only applies on tablets. */}
         <View style={[
           styles.circleSection,
-          isTabletDevice && { paddingTop: 4, marginBottom: 8 },
+          isTabletDevice && { paddingTop: 0, marginBottom: 0 },
         ]}>
           {viewMode === 'circle' ? (
             isTabletDevice ? (

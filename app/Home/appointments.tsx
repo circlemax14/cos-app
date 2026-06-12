@@ -26,6 +26,7 @@ import {
   Animated,
   Dimensions,
   FlatList,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -267,9 +268,21 @@ export default function CalendarScreen() {
       .filter((e) => !Number.isNaN(new Date(e.startDate).getTime()))
   }, [appointments])
 
-  const { events, isLoading, isRefreshing, refresh, notificationDisabledCalendarIds } =
+  const { events, calendars, hiddenCalendarIds, isLoading, isRefreshing, refresh, notificationDisabledCalendarIds } =
     useCalendar({ appEvents, includeReminders: showRemindersPref })
   const filteredEvents = useMemo(() => applySearch(events, searchQuery), [events, searchQuery])
+
+  // SCRUM-279 (build 45): expose reminder permission state so we can
+  // surface a "Reminders denied — open Settings" banner. iOS only
+  // prompts once; if the user denied that one chance, we must
+  // explicitly help them recover via Settings.
+  const [reminderPermDenied, setReminderPermDenied] = useState(false)
+  useEffect(() => {
+    void (async () => {
+      const r = await getReminderPermissionStatus()
+      setReminderPermDenied(r.prompted && !r.granted)
+    })()
+  }, [events.length])
 
   useEffect(() => {
     if (permissions.state.granted) void registerCalendarSync()
@@ -402,6 +415,53 @@ export default function CalendarScreen() {
               setShowDensityMenu((p) => !p)
             }}
           />
+          {/* SCRUM-279 (build 45): diagnostic banner. Ken reported
+              reminders + Zoom calls not appearing. Most common
+              causes are (a) Reminders permission was denied at first
+              prompt (iOS doesn't re-ask) — surface a tap-to-fix CTA;
+              (b) the calendar was hidden via in-app toggles —
+              surface count + open settings. */}
+          {(reminderPermDenied || hiddenCalendarIds.size > 0) ? (
+            <View style={{
+              marginHorizontal: 16,
+              marginTop: 8,
+              padding: 12,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: '#F59E0B55',
+              backgroundColor: '#FFFBEB',
+            }}>
+              {reminderPermDenied ? (
+                <Pressable
+                  onPress={() => Linking.openSettings()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Settings to grant Reminders access"
+                >
+                  <Text style={{ color: '#92400E', fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                    Reminders aren’t showing
+                  </Text>
+                  <Text style={{ color: '#92400E', fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                    iOS Reminders access is denied. Tap to open Settings → CSH → Reminders.
+                  </Text>
+                </Pressable>
+              ) : null}
+              {hiddenCalendarIds.size > 0 ? (
+                <Pressable
+                  onPress={() => router.push('/Home/calendar-settings' as never)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${hiddenCalendarIds.size} calendars hidden — tap to manage`}
+                  style={{ marginTop: reminderPermDenied ? 8 : 0 }}
+                >
+                  <Text style={{ color: '#92400E', fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                    {hiddenCalendarIds.size} of {calendars.length} calendars hidden
+                  </Text>
+                  <Text style={{ color: '#92400E', fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                    Some events (Zoom, work) may be missing. Tap to manage visibility.
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
           {isLoading ? (
             <View style={styles.center}>
               <ActivityIndicator color={colors.tint} />
