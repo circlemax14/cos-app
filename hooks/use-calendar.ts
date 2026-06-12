@@ -150,14 +150,25 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
         return next
       })
       // Convert snapshot rows → CalendarEvent shape, filtering out any
-      // row that's already in the local device set (sourceEventId
-      // match) so we don't double-count what's locally available.
+      // row that's already in the local device set so we don't
+      // double-count what's locally available.
+      //
+      // SCRUM-279 (build 48): Ken's "1 event showing 5x" repro
+      // showed the sourceEventId filter alone isn't enough. After an
+      // event is created locally and uploaded as a snapshot, iCloud
+      // can rewrite the device's local id — so the SAME event has
+      // ID-A in the snapshot and ID-B locally. The sourceEventId
+      // check missed that. Added a content-match filter (title +
+      // startDate) as belt-and-suspenders.
       const localIds = new Set([...evt, ...rems].map((e) => e.id))
+      const localContentKeys = new Set(
+        [...evt, ...rems].map((e) => `${(e.title || '').toLowerCase().trim()}@${e.startDate}`),
+      )
       // Dedup snapshot rows by sourceEventId, keeping the LATEST
       // capturedAt. The backend GET returns every row in the window
-      // (one per upload — id = sourceEventId#capturedAt), so without
-      // this dedup iPad showed each reminder 4-5 times after iPhone
-      // bg-uploaded for 4-5 cycles.
+      // (one per upload — id = sourceEventId#capturedAt for legacy
+      // rows), so without this dedup iPad showed each reminder 4-5
+      // times after iPhone bg-uploaded for 4-5 cycles.
       const latestBySourceId = new Map<string, SnapshotRow>()
       for (const r of snap) {
         const existing = latestBySourceId.get(r.sourceEventId)
@@ -166,7 +177,12 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
         }
       }
       const snapEvents: CalendarEvent[] = Array.from(latestBySourceId.values())
-        .filter((r) => !localIds.has(r.sourceEventId))
+        .filter((r) => {
+          if (localIds.has(r.sourceEventId)) return false
+          const contentKey = `${(r.title || '').toLowerCase().trim()}@${r.startDate}`
+          if (localContentKeys.has(contentKey)) return false
+          return true
+        })
         .map(snapshotRowToCalendarEvent)
       setSnapshotEvents(snapEvents)
       // Mirror care-manager-created (visibility='device_sync') events

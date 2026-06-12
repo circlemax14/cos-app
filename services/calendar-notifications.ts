@@ -79,8 +79,26 @@ export async function reconcileEventNotifications(
     if (startMs > horizon) continue
 
     // Soonest-firing first (largest offset = earliest fire-time).
+    //
+    // SCRUM-279 (build 48): if the alarm time is in the past but the
+    // event hasn't started yet, fire ~10 seconds from now instead of
+    // dropping it. Ken's repro: at 5:40 he created an event for 5:45
+    // with a 5-min alarm — alarm time was 5:40 (already past by the
+    // time we scheduled), so the strict `fireAt > now` filter dropped
+    // it and he got no notification at all. The 10-second buffer keeps
+    // expo-notifications' DATE trigger happy and still gives Ken a
+    // useful "starting soon" ping.
+    const SCHED_BUFFER_MS = 10_000
     const valid = event.alarms
-      .map((m) => ({ m, fireAt: startMs - m * 60_000 }))
+      .map((m) => {
+        const idealFireAt = startMs - m * 60_000
+        // If the ideal fire time is in the past but the event itself
+        // hasn't started yet, schedule for now + buffer.
+        const fireAt = idealFireAt < now && startMs > now
+          ? now + SCHED_BUFFER_MS
+          : idealFireAt
+        return { m, fireAt }
+      })
       .filter((a) => a.fireAt > now)
       .sort((a, b) => a.fireAt - b.fireAt)
       .slice(0, MAX_ALARMS_PER_EVENT)

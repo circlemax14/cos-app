@@ -421,27 +421,34 @@ export function virtualEventFromAppEntity(e: AppEventLike): CalendarEvent {
  * dedupes via a Set so even worst-case data has one row per id.
  */
 export function mergeEvents(deviceEvents: CalendarEvent[], appEvents: CalendarEvent[]): CalendarEvent[] {
-  // SCRUM-279 (2026-06-11 build 42): dedup key is now id + startDate.
-  // Ken reported Apple Calendar showed 4 yesterday but the app showed 2.
-  // Root cause: iOS expo-calendar returns the same `eventIdentifier`
-  // for every occurrence of a recurring event, so a daily standup with
-  // 4 instances in the window had all 4 collapsed to a single row by
-  // dedup-by-id. Including startDate in the key keeps each instance
-  // while still collapsing app-mirrored device events (which share both
-  // id and startDate with their origin event).
-  const seen = new Set<string>()
-  const keyOf = (e: CalendarEvent): string => `${e.id}@${e.startDate}`
+  // SCRUM-279 (build 42): dedup key was id + startDate, to preserve
+  // recurring iOS instances while collapsing app-mirrored device events.
+  //
+  // SCRUM-279 (build 48): Ken added an event via CSH calendar and saw
+  // it 5 times. Root cause: the SAME logical event has different ids
+  // across sources — device read returns ID-A, snapshot row stores
+  // ID-B (post iCloud rewrite), server mirror writes ID-C — so the
+  // id+startDate key keeps all of them. Added a CONTENT-based
+  // secondary dedup: title + startDate + endDate + allDay. If we've
+  // already seen an event with the same content key, skip the
+  // duplicate even though its id differs.
+  //
+  // Edge case: two distinct events with literally identical title +
+  // time would collapse, but that's a vanishingly rare false positive
+  // versus the 5x duplication Ken's seeing today.
+  const seenById = new Set<string>()
+  const seenByContent = new Set<string>()
+  const keyById = (e: CalendarEvent): string => `${e.id}@${e.startDate}`
+  const keyByContent = (e: CalendarEvent): string =>
+    `${(e.title || '').toLowerCase().trim()}@${e.startDate}@${e.endDate}@${e.allDay ? 'ad' : 'td'}`
   const merged: CalendarEvent[] = []
-  for (const e of deviceEvents) {
-    const k = keyOf(e)
-    if (seen.has(k)) continue
-    seen.add(k)
-    merged.push(e)
-  }
-  for (const e of appEvents) {
-    const k = keyOf(e)
-    if (seen.has(k)) continue
-    seen.add(k)
+  for (const e of [...deviceEvents, ...appEvents]) {
+    const idKey = keyById(e)
+    if (seenById.has(idKey)) continue
+    const contentKey = keyByContent(e)
+    if (seenByContent.has(contentKey)) continue
+    seenById.add(idKey)
+    seenByContent.add(contentKey)
     merged.push(e)
   }
   merged.sort((a, b) => a.startDate.localeCompare(b.startDate))
