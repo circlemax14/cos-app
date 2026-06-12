@@ -60,8 +60,15 @@ export function useGlobalCalendarSync() {
     // background sync the moment the user passes the splash gate.
     void registerCalendarSync();
 
-    // Warm-up upload on first mount of the root layout.
-    uploadIfDue('mount');
+    // SCRUM-279 (build 47): Ken's "as soon as we open app, we fetch
+    // it and send to backend" — bypass the 5-min throttle on the
+    // very first mount so a cold launch always pushes a fresh
+    // snapshot to the DB. lastUploadAt stays 0 until the first
+    // successful run so this is effectively "always upload on
+    // cold start".
+    void buildAndUploadSnapshot()
+      .then(() => { lastUploadAt.current = Date.now(); })
+      .catch(() => { /* best-effort */ });
 
     const sub = AppState.addEventListener('change', (nextState) => {
       const wasInactive = appState.current.match(/inactive|background/);

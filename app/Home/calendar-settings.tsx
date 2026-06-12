@@ -10,6 +10,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
+import * as Calendar from 'expo-calendar'
+import { Platform } from 'react-native'
+import { readReminders, readEvents } from '@/services/calendar'
 import { clearAllAppNotifications } from '@/services/calendar-notifications'
 import { buildAndUploadSnapshot } from '@/services/calendar-sync'
 import { router } from 'expo-router'
@@ -46,6 +49,81 @@ const ALARM_OPTIONS: { label: string; minutes: number }[] = [
   { label: '1 hour', minutes: 60 },
   { label: '1 day', minutes: 60 * 24 },
 ]
+
+/**
+ * SCRUM-279 (build 47): calendar diagnostic. Surfaces EXACTLY what
+ * iOS exposes about the user's calendars and reminders so we (and
+ * Ken) can see whether a missing-reminders symptom is:
+ *   a) Reminders permission undetermined / denied
+ *   b) The Reminders list isn't in iOS's accessible set
+ *   c) iOS returned dueDate / dueDateComponents in a shape our
+ *      mapper doesn't handle
+ *   d) Render-side filtering elsewhere
+ *
+ * No PHI is logged or alert-rendered — only titles + counts + ISO
+ * dates, in an opt-in user-initiated dialog. The Alert auto-dismisses
+ * so nothing is persisted.
+ */
+async function showCalendarDiagnostic(): Promise<void> {
+  const lines: string[] = []
+  try {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Calendar diagnostic', 'iOS-only diagnostic (this is the only platform with Reminders).')
+      return
+    }
+    const cal = await Calendar.getCalendarPermissionsAsync()
+    const rem = await Calendar.getRemindersPermissionsAsync()
+    lines.push(`Calendar permission: ${cal.status}`)
+    lines.push(`Reminders permission: ${rem.status}`)
+
+    let eventCals: Calendar.Calendar[] = []
+    let reminderCals: Calendar.Calendar[] = []
+    try { eventCals = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT) } catch (e) {
+      lines.push(`getCalendarsAsync(EVENT) failed: ${String(e).slice(0, 80)}`)
+    }
+    try { reminderCals = await Calendar.getCalendarsAsync(Calendar.EntityTypes.REMINDER) } catch (e) {
+      lines.push(`getCalendarsAsync(REMINDER) failed: ${String(e).slice(0, 80)}`)
+    }
+    lines.push('')
+    lines.push(`Event calendars (${eventCals.length}):`)
+    for (const c of eventCals.slice(0, 10)) {
+      lines.push(`  • ${c.title} (${c.source?.name ?? '?'})`)
+    }
+    if (eventCals.length > 10) lines.push(`  …and ${eventCals.length - 10} more`)
+
+    lines.push('')
+    lines.push(`Reminder lists (${reminderCals.length}):`)
+    for (const c of reminderCals.slice(0, 10)) {
+      lines.push(`  • ${c.title} (${c.source?.name ?? '?'})`)
+    }
+    if (reminderCals.length > 10) lines.push(`  …and ${reminderCals.length - 10} more`)
+
+    // Pull what our mapper would produce, in a small window so the
+    // dialog stays readable.
+    const windowStart = new Date(Date.now() - 1 * 24 * 60 * 60_000)
+    const windowEnd = new Date(Date.now() + 7 * 24 * 60 * 60_000)
+    const [evs, rems] = await Promise.all([
+      readEvents({ windowStart, windowEnd }).catch(() => []),
+      readReminders({ windowStart, windowEnd }).catch(() => []),
+    ])
+    lines.push('')
+    lines.push(`Events in ±7 day window: ${evs.length}`)
+    lines.push(`Reminders in ±7 day window: ${rems.length}`)
+    if (rems.length > 0) {
+      lines.push('Sample reminders:')
+      for (const r of rems.slice(0, 5)) {
+        const tag = r.allDay ? 'all-day' : 'timed'
+        lines.push(`  • ${r.title} [${tag}] @ ${r.startDate.slice(0, 16).replace('T', ' ')}`)
+      }
+    } else {
+      lines.push('(No reminders returned. If you can see one in the iOS Reminders app, it may be in a list this app can\'t access — check Settings → CSH → Reminders → Full Access.)')
+    }
+  } catch (err) {
+    lines.push('')
+    lines.push(`Unhandled error: ${String(err).slice(0, 120)}`)
+  }
+  Alert.alert('Calendar diagnostic', lines.join('\n'))
+}
 
 export default function CalendarSettingsScreen() {
   const { settings, getScaledFontSize } = useAccessibility()
@@ -151,6 +229,24 @@ export default function CalendarSettingsScreen() {
                 </Text>
                 <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
                   Upload ›
+                </Text>
+              </Pressable>
+
+              {/* SCRUM-279 (build 47): Calendar diagnostic — shows
+                  EXACTLY what iOS is returning so Ken can see if the
+                  "missing reminders" problem is a permission state, a
+                  Reminders-list visibility issue, or a render bug. */}
+              <Pressable
+                onPress={async () => { await showCalendarDiagnostic() }}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Show calendar diagnostic"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
+                  Calendar diagnostic
+                </Text>
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
+                  Inspect ›
                 </Text>
               </Pressable>
 
