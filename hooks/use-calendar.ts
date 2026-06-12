@@ -102,14 +102,14 @@ export function useCalendar(args: UseCalendarArgs = {}): UseCalendar {
       const fromIso = (windowStart ?? new Date(Date.now() - 30 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
       const toIso = (windowEnd ?? new Date(Date.now() + 365 * 24 * 60 * 60_000)).toISOString().slice(0, 10)
       // Snapshot window is on CAPTURED-AT (when the sibling device
-      // uploaded), not on event startDate. Always fetch the last
-      // 7 days of uploads so a same-day snapshot from a sibling
-      // device is included even if the user's local window is just
-      // "today" (home screen). SCRUM-279 (build 35): Ken's "iPad
-      // Today's Appointments empty" bug — without this, iPad with a
-      // today-only window asked the backend for snapshots captured
-      // today, missing yesterday's iPhone uploads.
-      const snapFromIso = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString().slice(0, 10)
+      // uploaded), not on event startDate. SCRUM-279 (build 46): Ken's
+      // ask "always maintain sync between different devices" requires
+      // a wider window — the previous 7-day capturedAt window meant
+      // an iPad freshly installed couldn't see iPhone events captured
+      // more than a week ago. Widened to 30 days back, since the
+      // upload itself runs every 15 min so 30 days of capturedAt
+      // gives plenty of overlap for normal use.
+      const snapFromIso = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString().slice(0, 10)
       const snapToIso = new Date(Date.now() + 1 * 24 * 60 * 60_000).toISOString().slice(0, 10)
       const [evt, cals, rems, srv, snap] = await Promise.all([
         readEvents({ windowStart, windowEnd, calendarIds: enabledCalendarIds }),

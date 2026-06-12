@@ -549,12 +549,45 @@ export async function readReminders(opts: ReadEventsOptions = {}): Promise<Calen
       color: '#FF9500',
       allowsWrite: false,
     }
+
+    // SCRUM-279 (build 46): respect the actual due TIME. Previously
+    // every reminder was forced to allDay=true, so Ken's "daily
+    // medication reminder at 9 AM" showed as a banner across the
+    // whole day. Now: if iOS provides a dueDateComponents with hour
+    // or minute set, the reminder is TIMED — render as a normal
+    // point-in-time event. If all the time fields are absent OR the
+    // dueDate is exactly midnight (00:00:00) with no time
+    // components, treat as all-day.
+    //
+    // expo-calendar exposes `dueDateComponents` since v12; we
+    // gracefully fall through on older runtimes.
+    const dueComponents = (r as unknown as {
+      dueDateComponents?: { hour?: number; minute?: number; second?: number }
+    }).dueDateComponents
+    const hasTimeComponent =
+      typeof dueComponents?.hour === 'number' ||
+      typeof dueComponents?.minute === 'number'
+    const dueDateObj = due instanceof Date ? due : new Date(due)
+    const looksLikeAllDay =
+      dueDateObj.getHours() === 0 &&
+      dueDateObj.getMinutes() === 0 &&
+      dueDateObj.getSeconds() === 0
+    const isAllDay = hasTimeComponent ? false : looksLikeAllDay
+
+    // Timed reminders get a 30-min visual duration so they show as a
+    // proper hour-aligned block in the day/week timelines, not a
+    // zero-height sliver. All-day reminders keep the orange pill UI.
+    const startIso = dueIso
+    const endIso = isAllDay
+      ? dueIso
+      : new Date(dueDateObj.getTime() + 30 * 60_000).toISOString()
+
     events.push({
       id: `reminder:${r.id}`,
       title: r.title ?? '(No title)',
-      startDate: dueIso,
-      endDate: dueIso,
-      allDay: true, // reminders don't have explicit duration; render as all-day pill
+      startDate: startIso,
+      endDate: endIso,
+      allDay: isAllDay,
       location: r.location ?? undefined,
       notes: r.notes ?? undefined,
       calendarId: r.calendarId ?? '',

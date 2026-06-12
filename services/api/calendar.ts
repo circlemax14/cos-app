@@ -119,13 +119,34 @@ export async function deleteServerCalendarEvent(id: string): Promise<void> {
   await apiClient.delete(`/v1/patients/me/calendar-events/${id}`)
 }
 
+/**
+ * SCRUM-279 (build 46): chunked snapshot upload.
+ *
+ * The wider snapshot window (build 46: 30d back → 365d forward) plus
+ * busy patient calendars can produce 1000+ rows. The backend zod
+ * validator caps at 500 per request, so we chunk transparently here.
+ * Each chunk POSTs sequentially; if one fails we still report what
+ * succeeded so the user's data isn't lost on a partial outage.
+ */
+const SNAPSHOT_CHUNK_SIZE = 200;
+
 export async function uploadCalendarSnapshot(
   events: SnapshotEventPayload[],
   capturedAt: string = new Date().toISOString(),
 ): Promise<{ written: number }> {
   if (events.length === 0) return { written: 0 }
-  const res = await apiClient.post('/v1/patients/me/calendar-snapshot', { events, capturedAt })
-  return res.data?.data ?? { written: 0 }
+  let total = 0
+  for (let i = 0; i < events.length; i += SNAPSHOT_CHUNK_SIZE) {
+    const chunk = events.slice(i, i + SNAPSHOT_CHUNK_SIZE)
+    try {
+      const res = await apiClient.post('/v1/patients/me/calendar-snapshot', { events: chunk, capturedAt })
+      total += res.data?.data?.written ?? chunk.length
+    } catch {
+      // Partial-failure: skip this chunk, keep going. The next bg
+      // sync run will re-attempt the missing rows.
+    }
+  }
+  return { written: total }
 }
 
 export interface SnapshotRow extends SnapshotEventPayload {

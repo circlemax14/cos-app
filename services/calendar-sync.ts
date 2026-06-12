@@ -64,8 +64,14 @@ function contentHash(s: string): string {
  * Best-effort: caller's try/catch wraps any backend / native failure.
  */
 export async function buildAndUploadSnapshot(): Promise<number> {
-  const windowStart = new Date()
-  const windowEnd = new Date(Date.now() + 60 * 24 * 60 * 60_000)
+  // SCRUM-279 (build 46): widen the upload window. Previously this only
+  // captured FORWARD events (today → +60 days), which meant a sibling
+  // device couldn't see yesterday's events from the uploading device.
+  // Ken wants "all data" replicated across devices, so include the
+  // past 30 days too. The download path (see hooks/use-calendar.ts)
+  // already requests a similar window so the rows are visible.
+  const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60_000)
+  const windowEnd = new Date(Date.now() + 365 * 24 * 60 * 60_000)
   const [events, reminders] = await Promise.all([
     readEvents({ windowStart, windowEnd }),
     readReminders({ windowStart, windowEnd }).catch(() => []),
@@ -137,7 +143,11 @@ export async function registerCalendarSync(): Promise<void> {
       return
     }
     await BackgroundFetch.registerTaskAsync(CALENDAR_SYNC_TASK, {
-      minimumInterval: 30 * 60, // 30 minutes — iOS treats as hint (Ken's spec)
+      // SCRUM-279 (build 46): tightened 30 → 15 min per Ken's spec
+      // ("fetch native calendar every 15 min"). iOS treats this as a
+      // hint and may stretch to 30 min+ based on battery/usage
+      // patterns; Android (WorkManager) honours it tightly.
+      minimumInterval: 15 * 60,
       stopOnTerminate: false,
       startOnBoot: true,
     })

@@ -129,51 +129,6 @@ export default function CalendarSettingsScreen() {
                 PREFERENCES
               </Text>
 
-              {/* SCRUM-279: Test notification — fires in 5 sec. */}
-              <Pressable
-                onPress={async () => {
-                  try {
-                    const beforeAll = await Notifications.getAllScheduledNotificationsAsync()
-                    const id = await Notifications.scheduleNotificationAsync({
-                      content: {
-                        title: 'Test notification',
-                        body: 'If you see this, notifications are working.',
-                        data: { tag: 'csh-test' },
-                      },
-                      trigger: {
-                        type: Notifications.SchedulableTriggerInputTypes.DATE,
-                        date: new Date(Date.now() + 5_000),
-                      },
-                    })
-                    const all = await Notifications.getAllScheduledNotificationsAsync()
-                    const cshCount = all.filter((r) =>
-                      ((r.content.data as { tag?: string } | null)?.tag ?? '').startsWith('csh-')
-                    ).length
-                    Alert.alert(
-                      'Test scheduled',
-                      `Scheduled id ${id.slice(0, 6)}.\n\n` +
-                      `Queue: ${all.length} total (${cshCount} from this app), was ${beforeAll.length}.\n\n` +
-                      (all.length >= 60
-                        ? '⚠️ Queue is near iOS\'s 64 cap. Tap "Clear notification queue" to free it, then re-test.\n\n'
-                        : '') +
-                      'Lock your phone now — the alert fires in 5 sec.',
-                    )
-                  } catch (e) {
-                    Alert.alert('Schedule failed', String(e))
-                  }
-                }}
-                style={[styles.prefRow, { borderBottomColor: colors.border }]}
-                accessibilityRole="button"
-                accessibilityLabel="Send test notification"
-              >
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
-                  Send test notification
-                </Text>
-                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
-                  Fire in 5 sec ›
-                </Text>
-              </Pressable>
-
               {/* SCRUM-279 (2026-06-08): Sync now — pushes a snapshot
                   of this device's calendar + reminders to the backend
                   immediately. Diagnostic for cross-device parity

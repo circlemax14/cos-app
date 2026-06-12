@@ -9,6 +9,7 @@ import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebra
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
+import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -64,6 +65,11 @@ export const unstable_settings = {
  */
 function StackWithAppLock() {
   useAppLock();
+  // SCRUM-279 (build 46): app-wide calendar snapshot sync — runs on
+  // first mount + every foreground transition, throttled to once per
+  // 5 minutes. Backs up the 15-min BackgroundFetch task with an
+  // active-use safety net so the DB is always fresh.
+  useGlobalCalendarSync();
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
