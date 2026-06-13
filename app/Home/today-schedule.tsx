@@ -12,6 +12,9 @@ import { getPhotoDownloadUrl } from '@/services/user-photo';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { detectMetricForTask, type MetricInputSpec } from '@/services/smart-task-detection';
 import { RecordMetricModal } from '@/components/home/record-metric-modal';
+import { useCalendar } from '@/hooks/use-calendar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { CalendarEvent } from '@/services/calendar';
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -42,11 +45,53 @@ export default function TodayScheduleScreen() {
   const [planTasks, setPlanTasks] = useState<TaskOccurrence[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   // SCRUM-279 (build 45): Health Metrics section removed from this
-  // screen — it lives in Health Trends and was duplicated here. All
-  // HealthKit init code, the "Enable Health Permissions" CTA, the
-  // AppState listener that re-fetched metrics, and the related
-  // helpers came out together. Keep the screen focused on patient
-  // profile + medications + today's plan tasks.
+  // screen — it lives in Health Trends and was duplicated here.
+
+  // SCRUM-279 (build 49): Ken's ask "we need to have these events and
+  // calendar in today's task also, so user can complete it in task
+  // also. but this won't impact plan progress." Pull today's
+  // calendar items and render them as plan-task-style rows in their
+  // own section. Completion is stored locally (per-day AsyncStorage)
+  // because there's no backend "completed" concept for arbitrary
+  // device events. Reminders get their iOS completed-flag respected
+  // on initial load. None of this counts toward the AI plan's % done.
+  const todayWindow = React.useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }, []);
+  const { events: calendarEvents } = useCalendar({
+    windowStart: todayWindow.start,
+    windowEnd: todayWindow.end,
+    includeReminders: true,
+  });
+  const todayCalendarItems = React.useMemo(
+    () => calendarEvents
+      .filter((e) => e.startDate.slice(0, 10) === todayISO())
+      .sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    [calendarEvents],
+  );
+  const [completedCalendarIds, setCompletedCalendarIds] = useState<Set<string>>(new Set());
+  const CALENDAR_DONE_KEY = `csh-today-cal-done-${todayISO()}`;
+  useEffect(() => {
+    void (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(CALENDAR_DONE_KEY);
+        if (raw) setCompletedCalendarIds(new Set(JSON.parse(raw) as string[]));
+      } catch { /* ignore */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const toggleCalendarItem = async (item: CalendarEvent) => {
+    setCompletedCalendarIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+      AsyncStorage.setItem(CALENDAR_DONE_KEY, JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
+  };
   
   // Load patient data and medications
   useEffect(() => {
@@ -442,14 +487,81 @@ export default function TodayScheduleScreen() {
           </View>
         )}
 
-        {/* Today's Progress and Today's Tasks — temporarily disabled
-        <Card style={[styles.progressCard]}>
-          ...
-        </Card>
-        <View style={styles.tasksSection}>
-          ...
-        </View>
-        */}
+        {/* SCRUM-279 (build 49): today's calendar events + reminders,
+            tappable but DO NOT count toward plan progress (per Ken). */}
+        {todayCalendarItems.length > 0 && (
+          <View style={styles.planTasksSection}>
+            <View style={styles.planTasksHeader}>
+              <Text style={[styles.planTasksTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}>
+                Today&apos;s Calendar
+              </Text>
+              <Text style={[styles.planTasksProgress, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any, color: colors.text + '80' }]}>
+                {todayCalendarItems.length} item{todayCalendarItems.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+            {todayCalendarItems.map((item) => {
+              const done = completedCalendarIds.has(item.id) || !!item.completed;
+              const isReminder = item.origin === 'reminder';
+              const hhmm = item.allDay
+                ? 'All day'
+                : (() => {
+                    const d = new Date(item.startDate);
+                    const hh = d.getHours();
+                    const mm = d.getMinutes().toString().padStart(2, '0');
+                    const meridiem = hh >= 12 ? 'PM' : 'AM';
+                    const display = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+                    return `${display}:${mm} ${meridiem}`;
+                  })();
+              const iconBg = isReminder ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)';
+              const iconColor = isReminder ? '#F59E0B' : '#3B82F6';
+              const iconName: keyof typeof MaterialIcons.glyphMap = isReminder ? 'notifications' : 'event';
+              return (
+                <TouchableOpacity
+                  key={`cal:${item.id}`}
+                  activeOpacity={0.7}
+                  onPress={() => toggleCalendarItem(item)}
+                  style={[
+                    styles.planTaskRow,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.text + '15',
+                      opacity: done ? 0.55 : 1,
+                    },
+                  ]}>
+                  <View style={[styles.planTaskCheck, {
+                    borderColor: done ? '#008080' : colors.text + '50',
+                    backgroundColor: done ? '#008080' : 'transparent',
+                  }]}>
+                    {done && <MaterialIcons name="check" size={14} color="#fff" />}
+                  </View>
+                  <View style={[styles.planTaskIcon, { backgroundColor: iconBg }]}>
+                    <MaterialIcons name={iconName} size={18} color={iconColor} />
+                  </View>
+                  <View style={styles.planTaskBody}>
+                    <Text
+                      style={[styles.planTaskTitle, {
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(600) as any,
+                        color: colors.text,
+                        textDecorationLine: done ? 'line-through' : 'none',
+                      }]}
+                      numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {!!item.location && (
+                      <Text style={[styles.planTaskSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]} numberOfLines={1}>
+                        {item.location}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
+                    {hhmm}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
       {/* SCRUM-279 (build 45): smart-task value capture. Modal opens

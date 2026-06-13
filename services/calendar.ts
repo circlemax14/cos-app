@@ -600,7 +600,16 @@ export async function readReminders(opts: ReadEventsOptions = {}): Promise<Calen
       calendarId: r.calendarId ?? '',
       source,
       origin: 'reminder',
-      alarms: [],
+      // SCRUM-279 (build 49): inject default alarms so reminders
+      // actually notify. We previously hardcoded `alarms: []`, which
+      // meant reconcileEventNotifications skipped EVERY reminder
+      // (line 72 there: `if (event.alarms.length === 0) continue`).
+      // Ken's spec: "I want 2 notifications, 1 at 15 min before and
+      // 1 at-time, for every event AND reminder." Timed reminders
+      // get [15, 0]; all-day reminders get [0] only (firing a "15
+      // min before midnight" alarm at 11:45 PM the previous night
+      // is rarely what the user wants).
+      alarms: isAllDay ? [0] : [15, 0],
       completed: !!r.completed,
     })
   }

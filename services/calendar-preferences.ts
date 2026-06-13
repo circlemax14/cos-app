@@ -37,7 +37,10 @@ export interface CalendarPreferences {
 
 const DEFAULTS: CalendarPreferences = {
   defaultCalendarId: null,
-  defaultAlertMinutes: [15],
+  // SCRUM-279 (build 49): Ken's spec — "I want 2 notifications: 1 at
+  // 15 min before, 1 at-time" for every event. Was [15] (one alarm
+  // 15 min before); now [15, 0] (15-min-before + at-time).
+  defaultAlertMinutes: [15, 0],
   startWeekDay: 0,
   showHolidays: true,
   showReminders: true,

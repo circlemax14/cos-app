@@ -4,6 +4,7 @@ import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useQuery } from '@tanstack/react-query'
 import { fetchProgressSummary, type ProgressSummary } from '@/services/api/progress-summary'
+import { SelfReportedMetricsCard } from './SelfReportedMetricsCard'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 
@@ -218,6 +219,12 @@ export function ProgressTab({
           </Text>
         </Card.Content>
       </Card>
+
+      {/* SCRUM-279 (build 49): patient-self-reported metrics history
+          ("we need to maintain this chart in plan progress"). One row
+          per metric type the patient has logged via the daily-task
+          RECORD pill, with a 14-point sparkline and latest value. */}
+      <SelfReportedMetricsCard />
     </ScrollView>
   )
 }

@@ -55,6 +55,12 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const [raw, setRaw] = useState('');
+  // SCRUM-279 (build 49): Ken's ask "we need to record EVERY parameter"
+  // — blood pressure was logging only systolic before. Now when the
+  // smart detector returns the systolic spec, the modal also collects
+  // diastolic in a second input and POSTs both as separate records.
+  const isBloodPressure = spec?.type === 'blood_pressure_systolic';
+  const [diastolicRaw, setDiastolicRaw] = useState('');
   const [saving, setSaving] = useState(false);
 
   const parsed = useMemo(() => {
@@ -66,18 +72,43 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
     return { value: n, valid: true, error: '' };
   }, [raw, spec]);
 
-  const reset = () => { setRaw(''); setSaving(false); };
+  // BP-specific: diastolic range 30–160 mmHg (clinically wider than
+  // typical to avoid blocking valid emergency readings).
+  const diastolicParsed = useMemo(() => {
+    if (!isBloodPressure) return { value: NaN, valid: true, error: '' };
+    const n = parseFloat(diastolicRaw);
+    if (!Number.isFinite(n)) return { value: NaN, valid: false, error: '' };
+    if (n < 30) return { value: n, valid: false, error: 'Diastolic must be at least 30' };
+    if (n > 160) return { value: n, valid: false, error: 'Diastolic must be at most 160' };
+    if (n >= parsed.value) return { value: n, valid: false, error: 'Diastolic should be less than systolic' };
+    return { value: n, valid: true, error: '' };
+  }, [diastolicRaw, isBloodPressure, parsed.value]);
+
+  const allValid = parsed.valid && diastolicParsed.valid;
+  const reset = () => { setRaw(''); setDiastolicRaw(''); setSaving(false); };
 
   const handleSave = async () => {
-    if (!spec || !parsed.valid) return;
+    if (!spec || !allValid) return;
     setSaving(true);
+    const recordedAt = new Date().toISOString();
     const result = await recordSelfReportedMetric({
       type: spec.type,
       value: parsed.value,
       unit: spec.unit,
-      recordedAt: new Date().toISOString(),
+      recordedAt,
       sourceTaskId,
     });
+    // If it's BP, also POST the diastolic reading. We don't fail the
+    // whole flow if the second POST errors — at least systolic landed.
+    if (result.ok && isBloodPressure && diastolicParsed.valid) {
+      await recordSelfReportedMetric({
+        type: 'blood_pressure_diastolic',
+        value: diastolicParsed.value,
+        unit: 'mmHg',
+        recordedAt,
+        sourceTaskId,
+      });
+    }
     setSaving(false);
     if (!result.ok) {
       Alert.alert(
@@ -146,8 +177,36 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
             </Text>
           ) : null}
           <Text style={{ color: colors.text + '88', fontSize: getScaledFontSize(11), marginTop: 4 }}>
-            Range: {spec.min}–{spec.max} {spec.unit}
+            {isBloodPressure ? 'Systolic' : 'Range'}: {spec.min}–{spec.max} {spec.unit}
           </Text>
+
+          {isBloodPressure ? (
+            <>
+              <View style={[styles.inputRow, { borderColor: colors.text + '30', marginTop: 16 }]}>
+                <TextInput
+                  style={[styles.input, { color: colors.text, fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(700) as any }]}
+                  value={diastolicRaw}
+                  onChangeText={setDiastolicRaw}
+                  placeholder="e.g. 80"
+                  placeholderTextColor={colors.text + '55'}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  accessibilityLabel="Diastolic blood pressure value in mmHg"
+                />
+                <Text style={[styles.unit, { color: colors.text + 'AA', fontSize: getScaledFontSize(15) }]}>
+                  mmHg
+                </Text>
+              </View>
+              {diastolicParsed.error ? (
+                <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), marginTop: 4 }}>
+                  {diastolicParsed.error}
+                </Text>
+              ) : null}
+              <Text style={{ color: colors.text + '88', fontSize: getScaledFontSize(11), marginTop: 4 }}>
+                Diastolic: 30–160 mmHg (must be below systolic)
+              </Text>
+            </>
+          ) : null}
 
           <View style={styles.buttonRow}>
             <Pressable
@@ -161,12 +220,12 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
             </Pressable>
             <Pressable
               onPress={handleSave}
-              disabled={!parsed.valid || saving}
+              disabled={!allValid || saving}
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.btnPrimary,
                 {
-                  opacity: !parsed.valid || saving ? 0.45 : pressed ? 0.85 : 1,
+                  opacity: !allValid || saving ? 0.45 : pressed ? 0.85 : 1,
                   backgroundColor: colors.tint || '#008080',
                 },
               ]}
