@@ -68,7 +68,18 @@ export async function reconcileEventNotifications(
   for (const event of sorted) {
     if (scheduled >= MAX_TOTAL_SCHEDULES) break
 
-    if (event.origin === 'device' && !event.source.allowsWrite) continue
+    // SCRUM-279 (build 50): iPad missing-notification fix.
+    // Snapshot events pulled from cos-backend (iPhone uploads → iPad
+    // downloads) get rendered with `origin='device'` (from the upload
+    // source) and `source.allowsWrite=false` (you can't write to a
+    // remote device's calendar). The old guard skipped them, so iPad
+    // saw the events but never scheduled local notifications for
+    // them — Ken got pings on iPhone but silence on iPad for the
+    // same account.
+    // Allow snapshot events through; only skip read-only DEVICE
+    // calendars (Holidays, sports — non-snapshot origin).
+    const isSnapshotEvent = event.source.id === 'csh-snapshot' || event.calendarId === 'csh-snapshot'
+    if (event.origin === 'device' && !event.source.allowsWrite && !isSnapshotEvent) continue
     if (event.alarms.length === 0) continue
     if (notificationDisabledCalendarIds?.has(event.source.id)) continue
 

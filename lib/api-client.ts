@@ -194,17 +194,51 @@ apiClient.interceptors.response.use(
           return apiClient(originalRequest);
         }
       } catch (refreshErr) {
-        // SCRUM-279 (build 44): reject every queued request so callers
-        // surface a real error instead of hanging on a never-resolved
-        // promise. Then defer the sign-in nav via the lock-gate so the
-        // user isn't yanked off PIN entry.
+        // SCRUM-279 (build 50): distinguish auth failure from network
+        // failure. Ken's iPad bounced to sign-in on a flaky network
+        // during cold launch — but the refresh token was still valid.
+        // We now only sign out when the backend / Cognito EXPLICITLY
+        // says the refresh token is no longer valid; everything else
+        // (timeout, DNS, transient 5xx) is treated as offline and
+        // leaves the session alone so the next foreground retries.
         const waiters = pendingRequests;
         pendingRequests = [];
         const wrappedErr = refreshErr instanceof Error
           ? refreshErr
           : new Error('Token refresh failed');
         waiters.forEach((p) => p.reject(wrappedErr));
-        await forceSignOut('refresh_failed');
+
+        const isAuthRejection = (() => {
+          // Cognito SDK: explicit NotAuthorizedException = refresh
+          // token expired / revoked. Anything else (network, throttle,
+          // generic timeout) is recoverable.
+          if (refreshErr instanceof Error) {
+            const name = (refreshErr as Error & { name?: string }).name ?? '';
+            if (
+              name === 'NotAuthorizedException' ||
+              name === 'UserNotFoundException' ||
+              name === 'InvalidGrantException'
+            ) return true;
+          }
+          // Backend /v1/auth/refresh: 401/403 = genuine sign-out.
+          if (refreshErr && typeof refreshErr === 'object' && 'response' in refreshErr) {
+            const r = refreshErr as { response?: { status?: number } };
+            if (r.response?.status === 401 || r.response?.status === 403) return true;
+          }
+          return false;
+        })();
+
+        if (isAuthRejection) {
+          await forceSignOut('refresh_failed');
+        } else {
+          // Offline / transient — keep the session intact, but still
+          // bubble the original 401 to the caller so the UI can show
+          // an "offline" state. The next request will retry refresh.
+          if (__DEV__) {
+            // eslint-disable-next-line no-console
+            console.warn('[auth] Refresh transient failure; session preserved:', wrappedErr.message);
+          }
+        }
         throw error;
       } finally {
         isRefreshing = false;

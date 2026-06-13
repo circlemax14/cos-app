@@ -22,6 +22,7 @@ import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
 import { consumePendingSignIn, SignInReason } from '@/lib/lock-gate';
 import { checkSession } from '@/services/auth';
 import { clearTokens } from '@/lib/auth-tokens';
+import { prefetchAfterAuth } from '@/services/auth-prefetch';
 
 /**
  * Resolve the route to land on after a successful unlock. Defaults to
@@ -217,6 +218,12 @@ export default function LockScreen() {
         // next API call will trigger the refresh path; if THAT fails
         // we'll come back through this gate.
       }
+
+      // SCRUM-279 (build 50): warm home + calendar caches in parallel
+      // so the post-unlock home screen doesn't show empty state for
+      // the first ~3 seconds. force=false honors the 30s cooldown if
+      // the user just unlocked recently (PIN-then-PIN scenarios).
+      prefetchAfterAuth();
 
       await resumeAfterUnlock();
     } finally {

@@ -13,6 +13,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSecurity } from '@/stores/security-store';
 import { requestSignIn } from '@/lib/lock-gate';
+import { prefetchAfterAuth } from '@/services/auth-prefetch';
 // useAppLock now mounts at the root layout (app/_layout.tsx) so the
 // AppState lock listener stays alive after navigating away from this
 // splash gate (SCRUM-235).
@@ -157,6 +158,11 @@ export default function SplashGate() {
         const destination = await getDestination(cachedProfile, isLocked);
         router.replace(destination as never);
         revalidateInBackground(destination, isLocked);
+        // SCRUM-279 (build 50): warm home + calendar caches in
+        // parallel so the user doesn't see empty cards while each
+        // screen re-fetches on first visit. Skips if destination is
+        // an onboarding / lock screen — no data to show yet.
+        if (destination === '/Home') prefetchAfterAuth({ force: true });
         return;
       }
 
@@ -171,6 +177,7 @@ export default function SplashGate() {
 
       const destination = await getDestination(result.user, isLocked);
       router.replace(destination as never);
+      if (destination === '/Home') prefetchAfterAuth({ force: true });
     } catch (err: unknown) {
       const isNetworkError =
         err instanceof Error && (err as Error & { code?: string }).code === 'NETWORK_ERROR';

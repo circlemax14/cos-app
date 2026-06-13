@@ -24,6 +24,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -752,9 +753,60 @@ export default function CalendarEventEditor() {
         onClose={() => setShowTravelPicker(false)}
       />
     </KeyboardAvoidingView>
+
+    {/* SCRUM-279 (build 50): Ken asked for a clear loading indicator
+        when creating an event so it's obvious the save is in flight.
+        The "Saving…" button label alone wasn't visible enough on the
+        full-screen editor. Full-screen overlay with spinner + label,
+        sits on top of the SafeAreaView so it covers the form. */}
+    {isSaving ? (
+      <View pointerEvents="auto" style={editorStyles.savingOverlay}>
+        <View style={editorStyles.savingCard}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(15),
+              fontWeight: '600',
+              marginTop: 12,
+              letterSpacing: 0.3,
+            }}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {isEditMode ? 'Saving event…' : 'Adding event…'}
+          </Text>
+        </View>
+      </View>
+    ) : null}
     </SafeAreaView>
   )
 }
+
+const editorStyles = StyleSheet.create({
+  savingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  savingCard: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 6,
+  },
+})
 
 function fmtDateLabel(d: Date, allDay: boolean): string {
   try {
