@@ -28,6 +28,7 @@ import { listMyCalendarSnapshot, listServerCalendarEvents } from '@/services/api
 import { buildAndUploadSnapshot } from '@/services/calendar-sync';
 import { listSelfReportedMetrics } from '@/services/api/self-reported-metrics';
 import { apiClient } from '@/lib/api-client';
+import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
 
 const COOLDOWN_MS = 30_000;
 let lastRunAt = 0;
@@ -92,7 +93,15 @@ export function prefetchAfterAuth(opts: PrefetchOptions = {}): void {
     }),
     queryClient.prefetchQuery({
       queryKey: ['plan-tasks', todayIso()],
-      queryFn: () => fetchTasksForDate(todayIso()),
+      // SCRUM-279 (build 51): schedule local notifications for today's
+      // plan tasks at fetch time, so Ken gets notified even if he
+      // never opens the Today's Schedule screen. 15-min + at-time
+      // pair per task.
+      queryFn: async () => {
+        const tasks = await fetchTasksForDate(todayIso());
+        void reconcilePlanTaskNotifications(tasks).catch(() => { /* non-fatal */ });
+        return tasks;
+      },
       staleTime: 2 * 60_000,
     }),
     // Health Trends progress card

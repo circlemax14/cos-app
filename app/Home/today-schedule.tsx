@@ -15,6 +15,7 @@ import { RecordMetricModal } from '@/components/home/record-metric-modal';
 import { useCalendar } from '@/hooks/use-calendar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CalendarEvent } from '@/services/calendar';
+import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -131,6 +132,11 @@ export default function TodayScheduleScreen() {
       try {
         const t = await fetchTasksForDate(todayISO());
         setPlanTasks(t);
+        // SCRUM-279 (build 51): schedule local notifications for
+        // today's pending plan tasks — 15 min before + at-time pair
+        // per Ken's spec. Idempotent; runs whenever plan tasks
+        // refresh (mount, focus, pull-to-refresh).
+        void reconcilePlanTaskNotifications(t).catch(() => { /* non-fatal */ });
       } catch {
         // Tasks failed to load
       }
