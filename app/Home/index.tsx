@@ -8,8 +8,8 @@ import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider, ty
 import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
@@ -18,6 +18,11 @@ import { fetchPatientInfo } from '@/services/api/patient';
 import { fetchPendingTaskCount } from '@/services/api/ai-health-plan';
 import { fetchRecommendedAppointments } from '@/services/api/recommended-appointments';
 import type { RecommendedAppointment , Provider as FastenProvider , Appointment as FastenAppointment } from '@/services/api/types';
+// SCRUM-279 (2026-06-03): Today's Appointments card pulls from the
+// UNIFIED calendar feed (FHIR appts + user-created + care-manager-
+// added + health-plan tasks + device + reminders), not just FHIR.
+import { useCalendar } from '@/hooks/use-calendar'
+import type { CalendarEvent } from '@/services/calendar'
 import { EntityIcon } from '@/components/icons';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
@@ -28,6 +33,7 @@ import {
   type NonEhrProvider,
 } from '@/services/non-ehr-processor';
 import { QuickActionButtons } from '@/components/home/quick-action-buttons';
+import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -204,15 +210,29 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        <Button
-          mode="contained"
-          buttonColor="#008080"
+        // SCRUM-279 (2026-06-10 build 39): build 38 still too small per Ken.
+        // Bumped to fontSize 15, paddingH 18, paddingV 8 — comfortably
+        // tappable pill, not a chip and not chunky.
+        <Pressable
           onPress={() => router.push('/modal')}
-          style={[styles.moreDoctorsButton, { paddingVertical: getScaledFontSize(4) }]}
-          contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
-          labelStyle={{ fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
-          More
-        </Button>
+          style={({ pressed }) => ({
+            alignSelf: 'center',
+            backgroundColor: '#008080',
+            paddingHorizontal: 18,
+            paddingVertical: 8,
+            borderRadius: 999,
+            opacity: pressed ? 0.7 : 1,
+          })}
+          accessibilityRole="button"
+          accessibilityLabel="More providers"
+        >
+          <Text
+            style={{ color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: 0.3, lineHeight: 18 }}
+            allowFontScaling={false}
+          >
+            More
+          </Text>
+        </Pressable>
       )}
       {orbitItems.map((item, idx) => {
         const angle = (idx / orbitItems.length) * 2 * Math.PI;
@@ -235,18 +255,26 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   ],
                 },
               ]} />
+            {/* SCRUM-279 (build 42): bloom + drift animation per Ken's
+                provider-bloom HTML reference. Position lives on the
+                BloomingOrbitItem wrapper; the TouchableOpacity fills
+                it and keeps its press handlers untouched. */}
+            <BloomingOrbitItem
+              left={containerWidth / 2 + x - halfContainerSize}
+              top={containerHeight / 2 + y - halfContainerSize}
+              width={containerSize}
+              height={containerSize}
+              zIndex={1}
+              index={idx}
+            >
             <TouchableOpacity
               style={[
                 styles.orbitAvatar,
                 {
-                  position: 'absolute',
-                  left: containerWidth / 2 + x - halfContainerSize,
-                  top: containerHeight / 2 + y - halfContainerSize,
-                  zIndex: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: containerSize,
-                  height: containerSize,
+                  width: '100%',
+                  height: '100%',
                 },
               ]}
               onPress={() => {
@@ -308,11 +336,16 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   <Text
                     numberOfLines={2}
                     adjustsFontSizeToFit
-                    minimumFontScale={0.7}
+                    minimumFontScale={0.65}
+                    allowFontScaling={false}
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12),
+                        // SCRUM-279 (2026-06-08): Ken asked to reduce
+                        // provider-name font on phone. 12pt → 10pt
+                        // and allowFontScaling=false so device
+                        // Large Text settings can't blow up the orbit.
+                        fontSize: 10,
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         width: 90,
@@ -335,11 +368,16 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   <Text
                     numberOfLines={2}
                     adjustsFontSizeToFit
-                    minimumFontScale={0.7}
+                    minimumFontScale={0.65}
+                    allowFontScaling={false}
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12),
+                        // SCRUM-279 (2026-06-08): Ken asked to reduce
+                        // provider-name font on phone. 12pt → 10pt
+                        // and allowFontScaling=false so device
+                        // Large Text settings can't blow up the orbit.
+                        fontSize: 10,
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         width: 90,
@@ -351,6 +389,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                 </>
               )}
             </TouchableOpacity>
+            </BloomingOrbitItem>
           </React.Fragment>
         );
       })}
@@ -375,18 +414,28 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // SCRUM-265 #15: cap reduced 2.2 → 1.7 — the circle was visually overwhelming
   // the rest of the home screen on iPads / large tablets.
   // SCRUM-267: Ken asked for another ~20% reduction on tablet. Cap lowered
-  // 1.7 → 1.36 (1.7 × 0.8). Drives radius via `desiredRadius = baseRadius *
-  // scaleFactor * adaptiveMultiplier`, so a 20% cap reduction translates
-  // to a 20% smaller circle diameter on screens that were hitting the cap.
-  // Phones aren't affected (their scaleFactor is well below 1).
-  const scaleFactor = Math.min(screenWidth / baseWidth, 1.36);
+  // 1.7 → 1.36 (1.7 × 0.8).
+  // SCRUM-279 (2026-06-03): Ken asked for a 30% reduction on iPad.
+  // Cap lowered 1.36 → 0.95.
+  // SCRUM-279 (2026-06-08): another 10% reduction on iPad (so the
+  // orbit feels lighter). Cap 0.95 → 0.855 (×0.9).
+  const scaleFactor = Math.min(screenWidth / baseWidth, 0.855);
 
   // Base radius for orbit - original design value
   const baseRadius = 144 * 1.1; // ~158.4
 
-  // Avatar container size - scale proportionally
+  // Avatar container size - scale proportionally.
+  // Build 36: 150 → 180. Build 39: 180 → 225. Build 41: 225 → 300
+  // (mistaken — this wrapper governs the text+bubble enclosure, NOT
+  // the bubble itself which is orbitAvatarSize below). Build 44 we
+  // dropped 300 → 180 to remove the dead air left when the bubble
+  // shrunk back to 78.
+  // Build 45 (2026-06-11): Ken still sees space above/below on iPad.
+  // Drop further 180 → 120 — just enough to host avatar (67px) +
+  // name (32px for two lines @ 14pt) + a 16px buffer. Vertical dead
+  // space per side drops ~25px. iPhone untouched.
   const baseAvatarContainerSize = 120;
-  const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.5);
+  const avatarContainerSize = baseAvatarContainerSize * Math.min(scaleFactor, 1.875);
   const containerPadding = 1;
 
   // Calculate maximum radius that fits within available width
@@ -394,8 +443,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   const adjustedContainerPadding = containerPadding * 1.5;
   const maxRadius = (maxAvailableWidth - avatarContainerSize - (adjustedContainerPadding * 2)) / 2;
 
-  // Avatar sizes - scale less aggressively than the circle (calculate early for radius calculation)
-  const centerAvatarSize = 80 * Math.min(scaleFactor, 1.5);
+  // Avatar sizes - scale less aggressively than the circle (calculate early for radius calculation).
+  // SCRUM-279 (build 45): centerAvatarSize was 80×scaleFactor (~68px on
+  // iPad), orbit was 78×scaleFactor (~67px) — close but not identical.
+  // Ken wants the center user bubble visually identical to the orbit
+  // provider bubbles. Bind them to the same base so they always match.
+  const centerAvatarSize = 78 * Math.min(scaleFactor, 1.5);
 
   // Adaptive multiplier based on screen width - larger screens get more spacing
   // 11-inch iPad: ~834px width, 13-inch iPad: ~1024px width
@@ -436,7 +489,16 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   // Calculate container size based on actual radius
   const containerWidth = (radius * 2) + avatarContainerSize + (adjustedContainerPadding * 2);
   const containerHeight = containerWidth; // Keep it square
-  const orbitAvatarSize = 48 * Math.min(scaleFactor, 1.5);
+  // SCRUM-279 (2026-06-11 build 42): the rendered AVATAR (image circle)
+  // size lives here — separate from the avatarContainerSize bumps in
+  // builds 39/40/41 (which only widened the wrapper that hosts the
+  // name text below). On iPad: 48 × 0.855 = ~41px — way too small.
+  // Bumped to 120 base → 102px rendered on iPad. Phones unaffected
+  // because PhoneCircleView has its own orbitAvatarSize constant.
+  // Build 43 (2026-06-11): Ken says 102px was way too big. Reduce by
+  // 35%: 120 → 78. Renders ~66.7px on iPad Pro 11" — bigger than
+  // the original 41px but no longer overwhelming the orbit.
+  const orbitAvatarSize = 78 * Math.min(scaleFactor, 1.5);
   const orbitAvatarContainerSize = avatarContainerSize;
   const linkLineWidth = 92 * Math.min(scaleFactor, 1.5);
 
@@ -519,21 +581,29 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           ]}>{patientName}</Text>
       </View>
       {isCircleComplete && (
-        <Button
-          mode="contained"
-          buttonColor="#008080"
+        // SCRUM-279 (2026-06-11 build 41): iPad More pill — bumped
+        // larger than iPhone (Ken: iPad still too small at 15/18/8).
+        // 22/28/12 — feels like a proper iPad button, not a phone pill.
+        <Pressable
           onPress={() => router.push('/modal')}
-          style={[
-            styles.moreDoctorsButton,
-            {
-              paddingHorizontal: getScaledFontSize(20),
-              borderRadius: getScaledFontSize(24),
-            }
-          ]}
-          contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
-          labelStyle={{ fontSize: getScaledFontSize(14), lineHeight: getScaledFontSize(20) }}>
-          More
-        </Button>
+          style={({ pressed }) => ({
+            alignSelf: 'center',
+            backgroundColor: '#008080',
+            paddingHorizontal: 28,
+            paddingVertical: 12,
+            borderRadius: 999,
+            opacity: pressed ? 0.7 : 1,
+          })}
+          accessibilityRole="button"
+          accessibilityLabel="More providers"
+        >
+          <Text
+            style={{ color: '#fff', fontSize: 22, fontWeight: '600', letterSpacing: 0.3, lineHeight: 26 }}
+            allowFontScaling={false}
+          >
+            More
+          </Text>
+        </Pressable>
       )}
       {orbitItems.map((item, idx) => {
         const angle = (idx / orbitItems.length) * 2 * Math.PI;
@@ -556,19 +626,27 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   ],
                 },
               ]} />
+            {/* SCRUM-279 (build 42): bloom + drift animation (Ken's
+                provider-bloom HTML reference). Positioning lives on
+                the wrapper; the TouchableOpacity stays tappable inside. */}
+            <BloomingOrbitItem
+              left={containerWidth / 2 + x - halfContainerSize}
+              top={containerHeight / 2 + y - halfContainerSize}
+              width={containerSize}
+              height={containerSize}
+              zIndex={1}
+              index={idx}
+            >
             <TouchableOpacity
               style={[
                 styles.orbitAvatar,
                 {
-                  position: 'absolute',
-                  left: containerWidth / 2 + x - halfContainerSize,
-                  top: containerHeight / 2 + y - halfContainerSize,
-                  zIndex: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
                   minWidth: containerSize,
                   paddingHorizontal: 4,
-                  height: containerSize,
+                  width: '100%',
+                  height: '100%',
                 },
               ]}
               onPress={() => {
@@ -633,7 +711,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12 * Math.min(scaleFactor, 1.5)),
+                        // SCRUM-279 (2026-06-08 build 36): Ken asked
+                        // to bump provider name font on iPad. Base
+                        // 12 → 16 + cap 1.5 → 1.8 so iPad gets
+                        // visibly larger names while iPhone stays
+                        // on its own scale-down branch.
+                        fontSize: getScaledFontSize(16 * Math.min(scaleFactor, 1.8)),
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         textAlign: 'center',
@@ -659,7 +742,12 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     style={[
                       styles.orbitAvatarText,
                       {
-                        fontSize: getScaledFontSize(12 * Math.min(scaleFactor, 1.5)),
+                        // SCRUM-279 (2026-06-08 build 36): Ken asked
+                        // to bump provider name font on iPad. Base
+                        // 12 → 16 + cap 1.5 → 1.8 so iPad gets
+                        // visibly larger names while iPhone stays
+                        // on its own scale-down branch.
+                        fontSize: getScaledFontSize(16 * Math.min(scaleFactor, 1.8)),
                         fontWeight: getScaledFontWeight(500) as any,
                         color: colors.text,
                         textAlign: 'center',
@@ -670,6 +758,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                 </>
               )}
             </TouchableOpacity>
+            </BloomingOrbitItem>
           </React.Fragment>
         );
       })}
@@ -823,28 +912,37 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
             </TouchableOpacity>
           ))
         )}
-        <View style={[
-          styles.moreButtonContainer,
-          {
-            paddingVertical: getScaledFontSize(16),
-            paddingHorizontal: getScaledFontSize(16),
-          }
-        ]}>
+        {/* SCRUM-279 (2026-06-10 build 39): ListView More pill — bumped
+            to fontSize 15, paddingH 18, paddingV 8 to match iPhone/iPad
+            circle views. Build 38 was still too small per Ken. */}
+        <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingVertical: 4 }}>
           {isCircleComplete && (
-            <Button
-              mode="contained"
-              buttonColor="#008080"
+            <Pressable
               onPress={() => router.push('/modal')}
-              style={styles.moreDoctorsButton}
-              labelStyle={{
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(500) as any,
-                lineHeight: getScaledFontSize(20),
-              }}
-              contentStyle={{ minHeight: getScaledFontSize(44), paddingVertical: getScaledFontSize(4), paddingHorizontal: getScaledFontSize(16) }}
+              style={({ pressed }) => ({
+                alignSelf: 'center',
+                backgroundColor: '#008080',
+                paddingHorizontal: 18,
+                paddingVertical: 8,
+                borderRadius: 999,
+                opacity: pressed ? 0.7 : 1,
+              })}
+              accessibilityRole="button"
+              accessibilityLabel="More providers"
             >
-              More
-            </Button>
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: '600',
+                  letterSpacing: 0.3,
+                  lineHeight: 18,
+                }}
+                allowFontScaling={false}
+              >
+                More
+              </Text>
+            </Pressable>
           )}
         </View>
       </ScrollView>
@@ -2391,6 +2489,41 @@ export default function HomeScreen() {
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [cmLogoUrl, setCmLogoUrl] = useState<string | null>(null);
   const [upcomingAppointments, setUpcomingAppointments] = useState<FastenAppointment[]>([]);
+
+  // SCRUM-279 (2026-06-03): pull today's window from the unified
+  // calendar feed so home shows server-stored events, care-manager-
+  // added appointments, health-plan tasks, device events, and
+  // reminders — not just FHIR appointments. Narrow window to keep
+  // home-screen network cost bounded.
+  const todayWindow = useMemo(() => {
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = new Date()
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }, [])
+  const calendar = useCalendar({
+    windowStart: todayWindow.start,
+    windowEnd: todayWindow.end,
+    includeReminders: true,
+  })
+  // Convert today's calendar events into the card-row shape the
+  // existing Recommended/Upcoming cards use. Sorted by start time so
+  // the next-up event is first. Cap to 3 (matches the deck layout).
+  const todayCalendarItems = useMemo(() => {
+    const todayKey = `${todayWindow.start.getFullYear()}-${String(todayWindow.start.getMonth() + 1).padStart(2, '0')}-${String(todayWindow.start.getDate()).padStart(2, '0')}`
+    return calendar.events
+      .filter((e: CalendarEvent) => {
+        try {
+          const d = new Date(e.startDate)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === todayKey
+        } catch {
+          return false
+        }
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .slice(0, 3)
+  }, [calendar.events, todayWindow])
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
@@ -2767,14 +2900,23 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick actions row — between title and circle, matches the web
-            layout. SCRUM-236: bumped marginBottom further so the Circle
-            visibly sits lower than the three quick-action pills. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 48 }}>
+        {/* Quick actions row — between title and circle, matches the
+            web layout. SCRUM-279 (2026-06-08 build 34): Ken asked to
+            reduce the gap to circle by 50% more on iPad. Dropped
+            marginBottom 12 → 6. iPhone already tight enough so it
+            applies universally (no responsive override needed). */}
+        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
           <QuickActionButtons />
         </View>
 
-        <View style={styles.circleSection}>
+        {/* SCRUM-279 (build 45): iPad-only — kill all extra vertical
+            padding around the circle. Ken still saw space on build 44.
+            paddingTop 4 → 0, marginBottom 8 → 0. iPhone is already
+            perfect so the override only applies on tablets. */}
+        <View style={[
+          styles.circleSection,
+          isTabletDevice && { paddingTop: 0, marginBottom: 0 },
+        ]}>
           {viewMode === 'circle' ? (
             isTabletDevice ? (
               <TabletCircleView
@@ -2884,46 +3026,214 @@ export default function HomeScreen() {
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
 
+        {/* SCRUM-279 (2026-06-03): Today's Appointments — pulls from
+            the UNIFIED calendar feed (FHIR + user-created + care-
+            manager + device + reminders).
+            SCRUM-279 (2026-06-08 build 34): ALWAYS render, never
+            conditional. Ken reported iPad showing nothing — was the
+            length > 0 gate hiding the whole section when his iPad
+            had no events for today. Empty state now surfaces an
+            explicit "No appointments today" CTA. */}
+        <View style={styles.appointmentsSection}>
+            <Text style={[
+              styles.sectionTitle,
+              {
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(600) as any,
+                color: colors.text,
+              }
+            ]}>Today's Appointments</Text>
+            {todayCalendarItems.length === 0 ? (
+              // SCRUM-279 (2026-06-08 build 34): empty state replaces
+              // the silent-hide so the user always sees the card.
+              <TouchableOpacity
+                onPress={() => router.push('/Home/appointments' as never)}
+                style={{
+                  backgroundColor: (colors.cardBackground as string) ?? 'transparent',
+                  borderRadius: 12,
+                  padding: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: 64,
+                }}
+              >
+                <Text style={{
+                  color: colors.subtext as string,
+                  fontSize: getScaledFontSize(14),
+                  textAlign: 'center',
+                }}>
+                  No appointments today · tap to open calendar
+                </Text>
+              </TouchableOpacity>
+            ) : (
+            <TouchableOpacity
+              onPress={() => router.push('/Home/appointments' as never)}
+              style={[
+                styles.deckContainer,
+                {
+                  // +16 accounts for the third card's top:16 offset
+                  // so the outer container fully contains the deck.
+                  minHeight: Math.max(
+                    96,
+                    16 + getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                  ),
+                }
+              ]}
+            >
+              {todayCalendarItems.map((event: CalendarEvent, index: number) => {
+                const startDate = new Date(event.startDate)
+                const timeLabel = event.allDay
+                  ? 'All-day'
+                  : startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                const title = event.title || 'Untitled event'
+                // Source-based icon: distinguishes health-plan task /
+                // care-team / reminder / personal at a glance.
+                const iconName =
+                  event.origin === 'reminder' ? 'bell-ring' :
+                  event.appKind === 'task' ? 'clipboard-check' :
+                  event.appKind === 'past-visit' || event.appKind === 'appointment' ? 'stethoscope' :
+                  'calendar-today'
+                const cardStyle = [styles.firstCard, styles.secondCard, styles.thirdCard][index] || styles.firstCard
+                const subtitle = event.location
+                  ? `${timeLabel} · ${event.location}`
+                  : event.source.title
+                    ? `${timeLabel} · ${event.source.title}`
+                    : timeLabel
+
+                return (
+                  <Card
+                    key={event.id}
+                    style={[
+                      styles.appointmentCard,
+                      cardStyle,
+                      {
+                        minHeight: Math.max(
+                          56,
+                          getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                        ),
+                      }
+                    ]}
+                  >
+                    <View style={[
+                      styles.listItemContainer,
+                      {
+                        paddingHorizontal: getScaledFontSize(16),
+                        paddingVertical: getScaledFontSize(8),
+                        minHeight: Math.max(
+                          56,
+                          getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                        ),
+                      }
+                    ]}>
+                      <View style={{ transform: [{ scale: getScaledFontSize(24) / 24 }] }}>
+                        <List.Icon icon={iconName} />
+                      </View>
+                      <View style={[
+                        styles.listItemContent,
+                        { marginLeft: getScaledFontSize(16), flexShrink: 1 }
+                      ]}>
+                        <Text style={[
+                          styles.appointmentTitle,
+                          {
+                            fontSize: getScaledFontSize(16),
+                            fontWeight: settings.isBoldTextEnabled ? '700' : '500',
+                            marginBottom: getScaledFontSize(2),
+                          }
+                        ]}
+                        numberOfLines={1}
+                        >{title}</Text>
+                        <Text style={[
+                          styles.appointmentDescription,
+                          {
+                            fontSize: getScaledFontSize(14),
+                            fontWeight: settings.isBoldTextEnabled ? '600' : '400'
+                          }
+                        ]}
+                        numberOfLines={1}
+                        >{subtitle}</Text>
+                      </View>
+                    </View>
+                  </Card>
+                )
+              })}
+            </TouchableOpacity>
+            )}
+          </View>
+
         {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
             an accent gradient overlay, four illustrative metric icons,
             and a prominent CTA. The plain banner felt forgettable next
             to the rest of the home cards; the new layout treats trends
             as a feature surface, not a row link. */}
         <TouchableOpacity
-          style={[styles.trendsHeroCard, { backgroundColor: colors.tint as string }]}
+          style={[
+            styles.trendsHeroCard,
+            !isTabletDevice && styles.trendsHeroCardPhone,
+            { backgroundColor: colors.tint as string },
+          ]}
           onPress={() => router.push('/Home/health-trends' as never)}
           accessibilityRole="button"
           accessibilityLabel="View health trends"
           activeOpacity={0.92}
         >
-          {/* Soft gradient bubble in the corner for depth */}
           <View style={styles.trendsHeroBlob} pointerEvents="none" />
           <View style={styles.trendsHeroHeader}>
-            <View style={styles.trendsHeroBadge}>
-              <MaterialIcons name="show-chart" size={getScaledFontSize(20)} color={colors.tint as string} />
+            <View style={[
+              styles.trendsHeroBadge,
+              !isTabletDevice && { width: 32, height: 32, borderRadius: 10 },
+            ]}>
+              <MaterialIcons
+                name="show-chart"
+                size={isTabletDevice ? getScaledFontSize(20) : 16}
+                color={colors.tint as string}
+              />
             </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.trendsHeroTitle, { fontSize: getScaledFontSize(17), fontWeight: getScaledFontWeight(800) as any }]}>
+            <View style={{ flex: 1, marginLeft: isTabletDevice ? 12 : 10 }}>
+              <Text
+                style={[
+                  styles.trendsHeroTitle,
+                  {
+                    fontSize: isTabletDevice ? getScaledFontSize(17) : 14,
+                    fontWeight: getScaledFontWeight(800) as any,
+                  },
+                ]}
+                allowFontScaling={isTabletDevice}
+              >
                 Health Trends
               </Text>
-              <Text style={[styles.trendsHeroSubtitle, { fontSize: getScaledFontSize(12) }]}>
+              <Text
+                style={[
+                  styles.trendsHeroSubtitle,
+                  { fontSize: isTabletDevice ? getScaledFontSize(12) : 10 },
+                ]}
+                allowFontScaling={isTabletDevice}
+                numberOfLines={1}
+              >
                 Labs + vitals + Apple Health over time
               </Text>
             </View>
             <View style={styles.trendsHeroArrow}>
-              <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#FFFFFF" />
+              <MaterialIcons
+                name="arrow-forward"
+                size={isTabletDevice ? getScaledFontSize(18) : 14}
+                color="#FFFFFF"
+              />
             </View>
           </View>
-          <View style={styles.trendsHeroIconRow}>
-            {(['favorite', 'bloodtype', 'directions-walk', 'bedtime'] as const).map((iconName) => (
-              <View key={iconName} style={styles.trendsHeroChip}>
-                <MaterialIcons name={iconName} size={getScaledFontSize(15)} color="#FFFFFF" />
-              </View>
-            ))}
-            <Text style={[styles.trendsHeroChipsTrailing, { fontSize: getScaledFontSize(12) }]}>
-              + 14 more
-            </Text>
-          </View>
+          {/* SCRUM-279 (2026-06-08): Chips row dropped on phone — too
+              busy + redundant with the page itself. iPad keeps them. */}
+          {isTabletDevice && (
+            <View style={styles.trendsHeroIconRow}>
+              {(['favorite', 'bloodtype', 'directions-walk', 'bedtime'] as const).map((iconName) => (
+                <View key={iconName} style={styles.trendsHeroChip}>
+                  <MaterialIcons name={iconName} size={getScaledFontSize(15)} color="#FFFFFF" />
+                </View>
+              ))}
+              <Text style={[styles.trendsHeroChipsTrailing, { fontSize: getScaledFontSize(12) }]}>
+                + 14 more
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {upcomingAppointments.length > 0 && (
@@ -2942,8 +3252,8 @@ export default function HomeScreen() {
                 styles.deckContainer,
                 {
                   minHeight: Math.max(
-                    56,
-                    getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
+                    96,
+                    16 + getScaledFontSize(16) + getScaledFontSize(2) + getScaledFontSize(14) + (getScaledFontSize(8) * 2) + getScaledFontSize(4)
                   ),
                 }
               ]}
@@ -3020,7 +3330,12 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {recommendedAppointments.length > 0 && (
+        {/* SCRUM-279 (2026-06-03): Recommended Appointments section
+            removed at Ken's request. Today's Appointments now sits
+            before Health Trends instead. The data still loads in the
+            background (could surface in another screen later) but the
+            home card is gone. */}
+        {false && recommendedAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text
               style={[
@@ -3174,6 +3489,17 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
+  // SCRUM-279 (2026-06-08): phone gets a more compact hero — Ken
+  // said the iPad-tuned card was too tall on iPhone. Build 34: also
+  // tightened marginTop 8 → 0 since the appointmentsSection's
+  // paddingBottom was already reduced for the gap-50% ask.
+  trendsHeroCardPhone: {
+    marginTop: 0,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
   trendsHeroBlob: {
     position: 'absolute',
     width: 180,
@@ -3249,16 +3575,14 @@ const styles = StyleSheet.create({
   },
   circleSection: {
     alignItems: 'center',
-    // SCRUM-236: extra top padding so the orbiting avatars don't crowd
-    // the quick-action pills above. Combined with the wrapper's
-    // marginBottom: 48 above, this gives the circle clear air at both ends.
     paddingTop: 24,
     paddingHorizontal: 24,
-    // SCRUM-234/235: clear gap between the Circle and the next section
-    // (Upcoming Appointments / Recommended). The orbiting avatars are
-    // absolute-positioned and spill below the circleSection's flow box;
-    // 64 below lands ~comfortably below the bottom-most avatar.
-    marginBottom: 64,
+    // SCRUM-279 (2026-06-08): Ken asked to reduce the gap between
+    // circle and Today's Appointments. Was 64, dropped to 24.
+    // Orbiting avatars are absolute-positioned and still spill below
+    // circleSection — 24 leaves enough clearance without the prior
+    // dead air.
+    marginBottom: 24,
   },
   background: {
     position: 'absolute',
@@ -3321,9 +3645,13 @@ const styles = StyleSheet.create({
   },
   moreDoctorsButton: {
     alignSelf: 'center',
-    minHeight: 44,
+    // SCRUM-279 (2026-06-08 build 34): still too big per Ken. The
+    // wrapper Button style had minHeight 44 + paddingHorizontal 20
+    // overriding my inline contentStyle. Both squashed now:
+    // minHeight 44 → 22, paddingHorizontal 20 → 8.
+    minHeight: 22,
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
   },
   moreButtonContainer: {
     alignItems: 'center',
@@ -3342,16 +3670,22 @@ const styles = StyleSheet.create({
   appointmentsSection: {
     width: '100%',
     paddingHorizontal: 24,
-    // Was 60; reduced because the QuickActionButtons row now sits
-    // between this section and the Circle of Support, providing
-    // its own vertical separation.
-    paddingTop: 16,
-    paddingBottom: 20,
+    // SCRUM-279 (2026-06-08): Ken asked to reduce the gap between
+    // Today's Appointments and Health Trends by 50%. Dropped
+    // paddingBottom 20 → 8 + paddingTop 16 → 10.
+    paddingTop: 10,
+    paddingBottom: 8,
     gap: 12,
   },
   deckContainer: {
     position: 'relative',
-    minHeight: 56,
+    // SCRUM-279 (2026-06-08): bumped from 56 → 96 so the third card
+    // (which has top: 16 + its own ~80pt height) doesn't bleed into
+    // the next section. Ken's "today appts overlap health trends"
+    // bug. The inline minHeight overrides on the outer deck wrappers
+    // also apply Math.max with this baseline so dynamic-text
+    // accessibility still grows the container correctly.
+    minHeight: 96,
   },
   appointmentCard: {
     borderRadius: 16,

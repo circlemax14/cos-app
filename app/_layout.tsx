@@ -9,6 +9,7 @@ import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebra
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
+import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -64,6 +65,11 @@ export const unstable_settings = {
  */
 function StackWithAppLock() {
   useAppLock();
+  // SCRUM-279 (build 46): app-wide calendar snapshot sync — runs on
+  // first mount + every foreground transition, throttled to once per
+  // 5 minutes. Backs up the 15-min BackgroundFetch task with an
+  // active-use safety net so the DB is always fresh.
+  useGlobalCalendarSync();
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -104,6 +110,31 @@ function StackWithAppLock() {
           title: "Today's Schedule",
           headerShown: false,
           autoHideHomeIndicator: true,
+        }}
+      />
+      <Stack.Screen
+        name="calendar-event-editor"
+        options={{
+          // formSheet presentation had inconsistent safe-area + status-
+          // bar overlap across iPad / iPhone / orientation, leaving
+          // Cancel/Add hidden behind iOS chrome (Ken reported this
+          // twice). Reverted to fullScreenModal — predictable safe-area
+          // on all surfaces, header always visible. Loses the sheet
+          // grabber but the explicit "Cancel" button covers dismissal.
+          presentation: 'fullScreenModal',
+          title: 'New Event',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="calendar-event-detail"
+        options={{
+          // Apple-style: dimmed underlying screen visible through the popover
+          presentation: 'transparentModal',
+          animation: 'fade',
+          title: 'Event Detail',
+          headerShown: false,
+          contentStyle: { backgroundColor: 'transparent' },
         }}
       />
     </Stack>

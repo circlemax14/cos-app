@@ -21,3 +21,22 @@ export async function fetchTrendExplanation(metricCode: string): Promise<TrendEx
   const res = await apiClient.get(`/v1/patients/me/trends/${metricCode}/explain`);
   return res.data?.data;
 }
+
+// SCRUM-279 (2026-06-08): cross-metric narrative for the Summarize CTA.
+export interface TrendsSummary {
+  summary: string;
+  keyTakeaways: string[];
+  nextSteps: string;
+  metricCount: number;
+  generatedAt: string;
+}
+
+export async function fetchTrendsSummary(
+  category?: 'lab' | 'vital' | 'score',
+): Promise<TrendsSummary> {
+  const res = await apiClient.post(
+    '/v1/patients/me/trends/summarize',
+    category ? { category } : {},
+  );
+  return res.data?.data?.summary as TrendsSummary;
+}

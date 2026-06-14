@@ -1,16 +1,21 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import React, { useEffect, useState, useRef } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Platform, AppState, RefreshControl } from 'react-native';
-import { Card, IconButton, List, Button } from 'react-native-paper';
-import { getTodayHealthMetrics, initializeHealthKit, HealthMetrics } from '@/services/health';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { Card, IconButton, List } from 'react-native-paper';
 import { fetchPatientInfo, fetchMedicationsSummary } from '@/services/api/patient';
 import type { MedicationSummary, TaskOccurrence, TaskType } from '@/services/api/types';
 import { fetchTasksForDate, completeTask, skipTask } from '@/services/api/ai-health-plan';
 import { EntityIcon } from '@/components/icons';
 import { getPhotoDownloadUrl } from '@/services/user-photo';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { detectMetricForTask, type MetricInputSpec } from '@/services/smart-task-detection';
+import { RecordMetricModal } from '@/components/home/record-metric-modal';
+import { useCalendar } from '@/hooks/use-calendar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { CalendarEvent } from '@/services/calendar';
+import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -31,16 +36,6 @@ const TASK_ICON_CONFIG: Record<TaskType, { name: keyof typeof MaterialIcons.glyp
   reminder: { name: 'notifications', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
 };
 
-interface Task {
-  id: number;
-  time: string;
-  title: string;
-  description: string;
-  type: string;
-  icon: string;
-  completed: boolean;
-}
-
 export default function TodayScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -49,16 +44,55 @@ export default function TodayScheduleScreen() {
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [medications, setMedications] = useState<MedicationSummary[]>([]);
   const [planTasks, setPlanTasks] = useState<TaskOccurrence[]>([]);
-  const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
-    steps: 0,
-    heartRate: null,
-    sleepHours: 0,
-    caloriesBurned: 0,
-    isLoading: true,
-    error: null,
-  });
   const [refreshing, setRefreshing] = useState(false);
-  const appState = useRef(AppState.currentState);
+  // SCRUM-279 (build 45): Health Metrics section removed from this
+  // screen — it lives in Health Trends and was duplicated here.
+
+  // SCRUM-279 (build 49): Ken's ask "we need to have these events and
+  // calendar in today's task also, so user can complete it in task
+  // also. but this won't impact plan progress." Pull today's
+  // calendar items and render them as plan-task-style rows in their
+  // own section. Completion is stored locally (per-day AsyncStorage)
+  // because there's no backend "completed" concept for arbitrary
+  // device events. Reminders get their iOS completed-flag respected
+  // on initial load. None of this counts toward the AI plan's % done.
+  const todayWindow = React.useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }, []);
+  const { events: calendarEvents } = useCalendar({
+    windowStart: todayWindow.start,
+    windowEnd: todayWindow.end,
+    includeReminders: true,
+  });
+  const todayCalendarItems = React.useMemo(
+    () => calendarEvents
+      .filter((e) => e.startDate.slice(0, 10) === todayISO())
+      .sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    [calendarEvents],
+  );
+  const [completedCalendarIds, setCompletedCalendarIds] = useState<Set<string>>(new Set());
+  const CALENDAR_DONE_KEY = `csh-today-cal-done-${todayISO()}`;
+  useEffect(() => {
+    void (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(CALENDAR_DONE_KEY);
+        if (raw) setCompletedCalendarIds(new Set(JSON.parse(raw) as string[]));
+      } catch { /* ignore */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const toggleCalendarItem = async (item: CalendarEvent) => {
+    setCompletedCalendarIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+      AsyncStorage.setItem(CALENDAR_DONE_KEY, JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
+  };
   
   // Load patient data and medications
   useEffect(() => {
@@ -98,6 +132,11 @@ export default function TodayScheduleScreen() {
       try {
         const t = await fetchTasksForDate(todayISO());
         setPlanTasks(t);
+        // SCRUM-279 (build 51): schedule local notifications for
+        // today's pending plan tasks — 15 min before + at-time pair
+        // per Ken's spec. Idempotent; runs whenever plan tasks
+        // refresh (mount, focus, pull-to-refresh).
+        void reconcilePlanTaskNotifications(t).catch(() => { /* non-fatal */ });
       } catch {
         // Tasks failed to load
       }
@@ -108,9 +147,18 @@ export default function TodayScheduleScreen() {
     loadPlanTasks();
   }, []);
 
-  // Task actions (optimistic updates)
-  const handleTaskComplete = async (task: TaskOccurrence) => {
-    if (task.status === 'completed') return;
+  // SCRUM-279 (build 45): smart-task value capture.
+  // Some tasks (blood glucose / weight / BP / ...) deserve to also
+  // RECORD a value alongside marking complete. When the user taps the
+  // checkmark on such a task, open a modal asking for the value. The
+  // task isn't marked completed until either the value is saved OR
+  // the user chooses "Skip recording".
+  const [metricModalTask, setMetricModalTask] = useState<TaskOccurrence | null>(null);
+  const [metricModalSpec, setMetricModalSpec] = useState<MetricInputSpec | null>(null);
+
+  // Core completion path — same as before, just extracted so the
+  // smart-task capture flow can call it after a value is saved.
+  const persistTaskCompletion = async (task: TaskOccurrence) => {
     setPlanTasks((prev) =>
       prev.map((t) =>
         t.id === task.id && t.scheduledFor === task.scheduledFor
@@ -118,8 +166,8 @@ export default function TodayScheduleScreen() {
           : t,
       ),
     );
-    const ok = await completeTask(task.id, task.scheduledFor);
-    if (!ok) {
+    const result = await completeTask(task.id, task.scheduledFor);
+    if (!result.ok) {
       setPlanTasks((prev) =>
         prev.map((t) =>
           t.id === task.id && t.scheduledFor === task.scheduledFor
@@ -127,7 +175,28 @@ export default function TodayScheduleScreen() {
             : t,
         ),
       );
+      const reason = result.code === 'NETWORK_ERROR'
+        ? 'No internet connection. Try again when you’re back online.'
+        : result.status === 401 || result.status === 403
+          ? 'Your session expired. Please sign in again to mark tasks complete.'
+          : (result.message ?? 'Could not save task completion.');
+      Alert.alert("Couldn't complete task", reason);
     }
+  };
+
+  const handleTaskComplete = async (task: TaskOccurrence) => {
+    if (task.status === 'completed') return;
+    // Smart detection: if this task is asking the patient to measure
+    // something, open the capture modal instead of completing right
+    // away. Persisting completion is deferred until the modal confirms.
+    const spec = detectMetricForTask(task);
+    if (spec) {
+      setMetricModalTask(task);
+      setMetricModalSpec(spec);
+      return;
+    }
+    // Non-trackable task — original behaviour.
+    await persistTaskCompletion(task);
   };
 
   const handleTaskSkip = async (task: TaskOccurrence) => {
@@ -136,227 +205,36 @@ export default function TodayScheduleScreen() {
         t.id === task.id && t.scheduledFor === task.scheduledFor ? { ...t, status: 'skipped' } : t,
       ),
     );
-    const ok = await skipTask(task.id, task.scheduledFor);
-    if (!ok) {
+    const result = await skipTask(task.id, task.scheduledFor);
+    if (!result.ok) {
       setPlanTasks((prev) =>
         prev.map((t) =>
           t.id === task.id && t.scheduledFor === task.scheduledFor ? { ...t, status: 'pending' } : t,
         ),
       );
+      const reason = result.code === 'NETWORK_ERROR'
+        ? 'No internet connection. Try again when you’re back online.'
+        : result.status === 401 || result.status === 403
+          ? 'Your session expired. Please sign in again to skip tasks.'
+          : (result.message ?? 'Could not save task skip.');
+      Alert.alert("Couldn't skip task", reason);
     }
   };
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-
-  // Fetch health data function
-  const fetchHealthData = async (showLoading = true): Promise<void> => {
-    if (showLoading) {
-      setHealthMetrics((prev) => ({ ...prev, isLoading: true }));
-    }
-    
-    // Wrap everything in try-catch to prevent any crashes
-    try {
-      // Check if we're on iOS before attempting HealthKit
-      if (Platform.OS !== 'ios') {
-        setHealthMetrics({
-          steps: 0,
-          heartRate: null,
-          sleepHours: 0,
-          caloriesBurned: 0,
-          isLoading: false,
-          error: 'Health data is only available on iOS devices.',
-        });
-        return;
-      }
-      
-      // Wrap HealthKit call in additional error handling to prevent crashes
-      const metrics = await Promise.race([
-        getTodayHealthMetrics().catch((err) => {
-          // If HealthKit fails, return a safe default instead of crashing
-          console.error('HealthKit fetch failed, using defaults:', err);
-          return {
-            steps: 0,
-            heartRate: null,
-            sleepHours: 0,
-            caloriesBurned: 0,
-            isLoading: false,
-            error: 'Failed to load health data. Please try again later.',
-          };
-        }),
-        // Timeout after 5 seconds to prevent hanging (reduced from 10)
-        new Promise<HealthMetrics>((resolve) => {
-          setTimeout(() => {
-            resolve({
-              steps: 0,
-              heartRate: null,
-              sleepHours: 0,
-              caloriesBurned: 0,
-              isLoading: false,
-              error: 'Health data request timed out. Please try again.',
-            });
-          }, 5000);
-        }),
-      ]);
-      
-      setHealthMetrics(metrics);
-    } catch (error) {
-      console.error('Error in fetchHealthData:', error);
-      // Ensure we always set a valid state, even on error - never crash
-      setHealthMetrics((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to fetch health data',
-        steps: prev?.steps || 0,
-        heartRate: prev?.heartRate || null,
-        sleepHours: prev?.sleepHours || 0,
-        caloriesBurned: prev?.caloriesBurned || 0,
-      }));
-    }
-  };
-
-  // Pull to refresh handler
+  // Pull to refresh — re-fetch medications + plan tasks.
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchHealthData(false);
-    setRefreshing(false);
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    let timeoutId: NodeJS.Timeout | null = null;
-    
-    // Initialize HealthKit and fetch metrics on mount (iOS only)
-    const loadHealthData = async () => {
-      if (Platform.OS !== 'ios') {
-        if (isMounted) {
-          setHealthMetrics({
-            steps: 0,
-            heartRate: null,
-            sleepHours: 0,
-            caloriesBurned: 0,
-            isLoading: false,
-            error: 'Health data is only available on iOS devices.',
-          });
-        }
-        return;
-      }
-
-      try {
-        await initializeHealthKit();
-        if (isMounted) {
-          await fetchHealthData(true);
-        }
-      } catch (err) {
-        console.warn('HealthKit initialization failed:', err);
-        if (isMounted) {
-          setHealthMetrics({
-            steps: 0,
-            heartRate: null,
-            sleepHours: 0,
-            caloriesBurned: 0,
-            isLoading: false,
-            error: 'Unable to access health data. Please grant permission in Settings.',
-          });
-        }
-      }
-    };
-
-    loadHealthData();
-
-    // Listen for app state changes — refresh health data when app returns to foreground
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (!isMounted) return;
-
-      if (
-        appState.current.match(/inactive|background/) &&
-        nextAppState === 'active'
-      ) {
-        // App came back — re-fetch health data
-        fetchHealthData(false);
-      }
-      appState.current = nextAppState;
-    });
-
-    return () => {
-      isMounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      subscription.remove();
-    };
-  }, []);
-
-  // Check if error is permission-related
-  const isPermissionError = () => {
-    if (!healthMetrics.error) {
-      // Also check if all values are 0/null - this might indicate permission denial
-      const allZero = 
-        healthMetrics.steps === 0 &&
-        healthMetrics.heartRate === null &&
-        healthMetrics.sleepHours === 0 &&
-        healthMetrics.caloriesBurned === 0;
-      
-      // If all values are zero and we're not loading, it's likely a permission issue
-      if (allZero && !healthMetrics.isLoading) {
-        console.log('⚠️ All health metrics are zero - likely permission issue');
-        return true;
-      }
-      return false;
-    }
-    const errorLower = healthMetrics.error.toLowerCase();
-    const isPermission = (
-      errorLower.includes('permission') ||
-      errorLower.includes('authorization') ||
-      errorLower.includes('denied') ||
-      errorLower.includes('not granted') ||
-      errorLower.includes('required') ||
-      errorLower.includes('not authorized')
-    );
-    console.log('🔍 Checking permission error:', {
-      error: healthMetrics.error,
-      isPermission,
-      errorLower,
-    });
-    return isPermission;
-  };
-
-  // Open iOS Settings app to Health permissions
-  const openHealthSettings = async () => {
     try {
-      if (Platform.OS === 'ios') {
-        // Open Health privacy settings page (Privacy & Security > Health)
-        // User can then select CoS from the list
-        const healthSettingsUrl = 'App-Prefs:root=Privacy&path=HEALTH';
-        const canOpen = await Linking.canOpenURL(healthSettingsUrl);
-        if (canOpen) {
-          await Linking.openURL(healthSettingsUrl);
-        } else {
-          // Fallback to app settings if Health settings URL doesn't work
-          await Linking.openURL('app-settings:');
-        }
-      } else {
-        // For Android, open app settings
-        await Linking.openSettings();
-      }
-    } catch (error) {
-      console.error('Error opening settings:', error);
-      // Fallback to app settings if Health settings URL fails
-      try {
-        await Linking.openURL('app-settings:');
-      } catch (fallbackError) {
-        console.error('Error opening fallback settings:', fallbackError);
-      }
+      const [meds, t] = await Promise.all([
+        fetchMedicationsSummary().catch(() => null),
+        fetchTasksForDate(todayISO()).catch(() => null),
+      ]);
+      if (meds) setMedications(meds);
+      if (t) setPlanTasks(t);
+    } finally {
+      setRefreshing(false);
     }
   };
-
-  const toggleTaskCompletion = (taskId: number) => {
-    setTasks(tasks.map(task => 
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    ));
-  };
-
-  const completedCount = tasks.filter(task => task.completed).length;
-  const progress = (completedCount / tasks.length) * 100;
 
   return (
     <AppWrapper>
@@ -436,230 +314,6 @@ export default function TodayScheduleScreen() {
           </View>
         </Card>
 
-        {/* Health Metrics Section */}
-        {!healthMetrics.isLoading && (
-          // Show permission error card if permissions are denied
-          // Check: explicit error OR all values are 0/null (likely permission denial)
-          (isPermissionError() || 
-           (healthMetrics.steps === 0 && 
-            healthMetrics.heartRate === null && 
-            healthMetrics.sleepHours === 0 && 
-            healthMetrics.caloriesBurned === 0)) ? (
-            <Card style={[styles.healthMetricsCard, { backgroundColor: colors.background }]}>
-              <Text style={[
-                styles.healthMetricsTitle,
-                {
-                  fontSize: getScaledFontSize(16),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  color: colors.text,
-                  marginBottom: 16,
-                }
-              ]}>
-                Health Metrics
-              </Text>
-              <View style={styles.permissionErrorContainer}>
-                <Text style={[
-                  styles.permissionErrorText,
-                  {
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    color: colors.text + 'CC',
-                    marginBottom: getScaledFontSize(16),
-                    textAlign: 'center',
-                    paddingHorizontal: 8,
-                    paddingTop: getScaledFontSize(8),
-                    paddingBottom: getScaledFontSize(4),
-                  }
-                ]}>
-                  Health data access is required to display your activity metrics.
-                </Text>
-                <Button
-                  mode="contained"
-                  onPress={openHealthSettings}
-                  style={[
-                    styles.permissionButton,
-                    {
-                      marginVertical: getScaledFontSize(8),
-                    }
-                  ]}
-                  buttonColor="#008080"
-                  textColor="#ffffff"
-                  labelStyle={{
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    paddingVertical: getScaledFontSize(4),
-                  }}
-                  contentStyle={{
-                    paddingVertical: getScaledFontSize(8),
-                  }}
-                >
-                  Enable Health Permissions
-                </Button>
-                <Text style={[
-                  styles.permissionHintText,
-                  {
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    color: colors.text + '80',
-                    marginTop: getScaledFontSize(12),
-                    textAlign: 'center',
-                    paddingHorizontal: 8,
-                    paddingTop: getScaledFontSize(4),
-                    paddingBottom: getScaledFontSize(8),
-                  }
-                ]}>
-                  Go to Settings → Privacy & Security → Health → CoS
-                </Text>
-              </View>
-            </Card>
-          ) : (
-            // Show health metrics if we have data
-            (healthMetrics.steps > 0 ||
-             healthMetrics.heartRate !== null ||
-             healthMetrics.sleepHours > 0 ||
-             healthMetrics.caloriesBurned > 0) && (
-              <Card style={[styles.healthMetricsCard, { backgroundColor: colors.background }]}>
-                <Text style={[
-                  styles.healthMetricsTitle,
-                  {
-                    fontSize: getScaledFontSize(16),
-                    fontWeight: getScaledFontWeight(600) as any,
-                    color: colors.text,
-                    marginBottom: 16,
-                  }
-                ]}>
-                  Today&apos;s Health Metrics
-                </Text>
-                
-                <View style={styles.healthMetricsGrid}>
-                {/* Steps - Only show if steps > 0 */}
-                {healthMetrics.steps > 0 && (
-                  <View style={styles.healthMetricItem}>
-                    <View style={styles.healthMetricIconContainer}>
-                      <List.Icon icon="walk" color="#008080" />
-                    </View>
-                    <View style={styles.healthMetricContent}>
-                      <Text style={[
-                        styles.healthMetricValue,
-                        {
-                          fontSize: getScaledFontSize(20),
-                          fontWeight: getScaledFontWeight(700) as any,
-                          color: colors.text,
-                        }
-                      ]}>
-                        {healthMetrics.steps.toLocaleString()}
-                      </Text>
-                      <Text style={[
-                        styles.healthMetricLabel,
-                        {
-                          fontSize: getScaledFontSize(12),
-                          fontWeight: getScaledFontWeight(400) as any,
-                          color: colors.text + '80',
-                        }
-                      ]}>
-                        Steps
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Heart Rate - Only show if heartRate is not null */}
-                {healthMetrics.heartRate !== null && (
-                  <View style={styles.healthMetricItem}>
-                    <View style={styles.healthMetricIconContainer}>
-                      <List.Icon icon="heart" color="#008080" />
-                    </View>
-                    <View style={styles.healthMetricContent}>
-                      <Text style={[
-                        styles.healthMetricValue,
-                        {
-                          fontSize: getScaledFontSize(20),
-                          fontWeight: getScaledFontWeight(700) as any,
-                          color: colors.text,
-                        }
-                      ]}>
-                        {Math.round(healthMetrics.heartRate)}
-                      </Text>
-                      <Text style={[
-                        styles.healthMetricLabel,
-                        {
-                          fontSize: getScaledFontSize(12),
-                          fontWeight: getScaledFontWeight(400) as any,
-                          color: colors.text + '80',
-                        }
-                      ]}>
-                        Heart Rate (bpm)
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Sleep - Only show if sleepHours > 0 */}
-                {healthMetrics.sleepHours > 0 && (
-                  <View style={styles.healthMetricItem}>
-                    <View style={styles.healthMetricIconContainer}>
-                      <List.Icon icon="sleep" color="#008080" />
-                    </View>
-                    <View style={styles.healthMetricContent}>
-                      <Text style={[
-                        styles.healthMetricValue,
-                        {
-                          fontSize: getScaledFontSize(20),
-                          fontWeight: getScaledFontWeight(700) as any,
-                          color: colors.text,
-                        }
-                      ]}>
-                        {healthMetrics.sleepHours}h
-                      </Text>
-                      <Text style={[
-                        styles.healthMetricLabel,
-                        {
-                          fontSize: getScaledFontSize(12),
-                          fontWeight: getScaledFontWeight(400) as any,
-                          color: colors.text + '80',
-                        }
-                      ]}>
-                        Sleep
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Calories - Only show if caloriesBurned > 0 */}
-                {healthMetrics.caloriesBurned > 0 && (
-                  <View style={styles.healthMetricItem}>
-                    <View style={styles.healthMetricIconContainer}>
-                      <List.Icon icon="fire" color="#008080" />
-                    </View>
-                    <View style={styles.healthMetricContent}>
-                      <Text style={[
-                        styles.healthMetricValue,
-                        {
-                          fontSize: getScaledFontSize(20),
-                          fontWeight: getScaledFontWeight(700) as any,
-                          color: colors.text,
-                        }
-                      ]}>
-                        {healthMetrics.caloriesBurned.toLocaleString()}
-                      </Text>
-                      <Text style={[
-                        styles.healthMetricLabel,
-                        {
-                          fontSize: getScaledFontSize(12),
-                          fontWeight: getScaledFontWeight(400) as any,
-                          color: colors.text + '80',
-                        }
-                      ]}>
-                        Calories
-                      </Text>
-                    </View>
-                  </View>
-                )}
-                </View>
-              </Card>
-            )
-          )
-        )}
 
         {/* Current Medications — active prescriptions only */}
         {medications.length > 0 && (
@@ -756,6 +410,10 @@ export default function TodayScheduleScreen() {
               const icon = TASK_ICON_CONFIG[task.type];
               const done = task.status === 'completed';
               const skipped = task.status === 'skipped';
+              // SCRUM-279 (build 45): if this task is metric-trackable,
+              // show a small "Record" pill so the patient sees that
+              // tapping will ask them for a value (not just check off).
+              const spec = !done && !skipped ? detectMetricForTask(task) : null;
               return (
                 <TouchableOpacity
                   key={`${task.id}#${task.scheduledFor}`}
@@ -806,6 +464,26 @@ export default function TodayScheduleScreen() {
                       </Text>
                     )}
                   </View>
+                  {spec ? (
+                    <View style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 999,
+                      backgroundColor: (colors.tint ?? '#008080') + '22',
+                      borderWidth: 1,
+                      borderColor: (colors.tint ?? '#008080') + '55',
+                      marginRight: 8,
+                    }}>
+                      <Text style={{
+                        color: colors.tint ?? '#008080',
+                        fontSize: getScaledFontSize(10),
+                        fontWeight: '700',
+                        letterSpacing: 0.3,
+                      }}>
+                        RECORD
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
                     {formatTaskTime(task.scheduledTime)}
                   </Text>
@@ -815,15 +493,99 @@ export default function TodayScheduleScreen() {
           </View>
         )}
 
-        {/* Today's Progress and Today's Tasks — temporarily disabled
-        <Card style={[styles.progressCard]}>
-          ...
-        </Card>
-        <View style={styles.tasksSection}>
-          ...
-        </View>
-        */}
+        {/* SCRUM-279 (build 49): today's calendar events + reminders,
+            tappable but DO NOT count toward plan progress (per Ken). */}
+        {todayCalendarItems.length > 0 && (
+          <View style={styles.planTasksSection}>
+            <View style={styles.planTasksHeader}>
+              <Text style={[styles.planTasksTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}>
+                Today&apos;s Calendar
+              </Text>
+              <Text style={[styles.planTasksProgress, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any, color: colors.text + '80' }]}>
+                {todayCalendarItems.length} item{todayCalendarItems.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+            {todayCalendarItems.map((item) => {
+              const done = completedCalendarIds.has(item.id) || !!item.completed;
+              const isReminder = item.origin === 'reminder';
+              const hhmm = item.allDay
+                ? 'All day'
+                : (() => {
+                    const d = new Date(item.startDate);
+                    const hh = d.getHours();
+                    const mm = d.getMinutes().toString().padStart(2, '0');
+                    const meridiem = hh >= 12 ? 'PM' : 'AM';
+                    const display = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+                    return `${display}:${mm} ${meridiem}`;
+                  })();
+              const iconBg = isReminder ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)';
+              const iconColor = isReminder ? '#F59E0B' : '#3B82F6';
+              const iconName: keyof typeof MaterialIcons.glyphMap = isReminder ? 'notifications' : 'event';
+              return (
+                <TouchableOpacity
+                  key={`cal:${item.id}`}
+                  activeOpacity={0.7}
+                  onPress={() => toggleCalendarItem(item)}
+                  style={[
+                    styles.planTaskRow,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.text + '15',
+                      opacity: done ? 0.55 : 1,
+                    },
+                  ]}>
+                  <View style={[styles.planTaskCheck, {
+                    borderColor: done ? '#008080' : colors.text + '50',
+                    backgroundColor: done ? '#008080' : 'transparent',
+                  }]}>
+                    {done && <MaterialIcons name="check" size={14} color="#fff" />}
+                  </View>
+                  <View style={[styles.planTaskIcon, { backgroundColor: iconBg }]}>
+                    <MaterialIcons name={iconName} size={18} color={iconColor} />
+                  </View>
+                  <View style={styles.planTaskBody}>
+                    <Text
+                      style={[styles.planTaskTitle, {
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(600) as any,
+                        color: colors.text,
+                        textDecorationLine: done ? 'line-through' : 'none',
+                      }]}
+                      numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {!!item.location && (
+                      <Text style={[styles.planTaskSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]} numberOfLines={1}>
+                        {item.location}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
+                    {hhmm}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
+
+      {/* SCRUM-279 (build 45): smart-task value capture. Modal opens
+          when the user taps a recordable task (blood glucose / weight /
+          etc.) and POSTs the captured value before marking complete. */}
+      <RecordMetricModal
+        visible={!!metricModalTask && !!metricModalSpec}
+        spec={metricModalSpec}
+        taskTitle={metricModalTask?.title ?? ''}
+        sourceTaskId={metricModalTask?.id}
+        onClose={() => { setMetricModalTask(null); setMetricModalSpec(null); }}
+        onConfirmComplete={async () => {
+          const task = metricModalTask;
+          setMetricModalTask(null);
+          setMetricModalSpec(null);
+          if (task) await persistTaskCompletion(task);
+        }}
+      />
     </AppWrapper>
   );
 }

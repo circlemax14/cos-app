@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signIn, UserProfile } from '@/services/auth';
 import { signInWithApple, socialSignInWithBackend } from '@/services/social-auth';
+import { prefetchAfterAuth } from '@/services/auth-prefetch';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -66,6 +67,12 @@ export default function SignInScreen() {
   }, [googleResponse]);
 
   const handleRoute = async (user: UserProfile) => {
+    // SCRUM-279 (build 50): kick off parallel data prefetch the moment
+    // the user is authenticated so home/calendar/health-plan have
+    // warm caches by the time the user navigates to them.
+    // Force=true because this is a fresh sign-in — always re-warm.
+    prefetchAfterAuth({ force: true });
+
     if (!user.termsAccepted) {
       router.replace('/(onboarding)/usage-guidelines' as never);
       return;

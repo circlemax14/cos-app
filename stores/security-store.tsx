@@ -1,5 +1,6 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { isPinSetup, isBiometricEnabled } from '@/services/pin-auth';
+import { setAppLocked } from '@/lib/lock-gate';
 
 interface SecurityContextType {
   isPinConfigured: boolean;
@@ -31,6 +32,13 @@ export function SecurityProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshSecurityState().finally(() => setIsReady(true));
   }, []);
+
+  // SCRUM-279 (build 44): mirror isLocked into the module-scoped
+  // lock-gate so api-client / SplashGate / etc. can consult it
+  // without prop-drilling. See lib/lock-gate.ts for context.
+  useEffect(() => {
+    setAppLocked(isLocked);
+  }, [isLocked]);
 
   if (!isReady) return null;
 

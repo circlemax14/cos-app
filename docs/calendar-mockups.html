@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSH Calendar — Apple-parity UI review</title>
+<style>
+  /* Apple-style typography via system font stack */
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    /* Apple system colors */
+    --white: #FFFFFF;
+    --black: #000000;
+    --gray1: #8E8E93;   /* secondary label */
+    --gray2: #AEAEB2;
+    --gray3: #C7C7CC;
+    --sep:   #C6C6C8;
+    --bg:    #F2F2F7;
+    --blue:  #007AFF;
+    --red:   #FF3B30;
+    --green: #34C759;
+    --orange:#FF9500;
+    --purple:#AF52DE;
+    --yellow:#FFCC00;
+    --teal:  #5AC8FA;
+    --pink:  #FF2D55;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: var(--font); background: #1c1c1e; color: #fff; }
+  body { padding: 32px 16px 60px; }
+
+  header.page {
+    max-width: 1400px;
+    margin: 0 auto 32px;
+    color: #fff;
+  }
+  header.page h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 6px; }
+  header.page p { color: #8e8e93; font-size: 15px; line-height: 1.5; margin-bottom: 12px; }
+  header.page .meta {
+    display: inline-block;
+    padding: 4px 10px;
+    background: #2c2c2e;
+    color: #8e8e93;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-right: 6px;
+  }
+
+  nav.toc {
+    max-width: 1400px;
+    margin: 0 auto 40px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  nav.toc a {
+    color: var(--blue);
+    background: #2c2c2e;
+    padding: 6px 12px;
+    border-radius: 16px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  nav.toc a:hover { background: #3a3a3c; }
+
+  .screen-grid {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+    gap: 56px 32px;
+  }
+
+  .screen-card { color: #fff; }
+  .screen-card h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.1px;
+  }
+  .screen-card .caption {
+    font-size: 12px;
+    color: #8e8e93;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  /* iPhone frame — 390 × 844 (iPhone 14) at 1× */
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: var(--white);
+    color: var(--black);
+    border-radius: 32px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    font-size: 17px;
+    line-height: 1.3;
+    position: relative;
+  }
+
+  /* iOS status bar — 54px height with notch dummy */
+  .status-bar {
+    height: 54px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 0 24px 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--black);
+  }
+  .status-bar .icons { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+
+  /* Top toolbar — Apple iOS Calendar */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px 4px;
+  }
+  .toolbar .leading { color: var(--blue); font-size: 17px; font-weight: 400; }
+  .toolbar .trailing { display: flex; gap: 18px; }
+  .toolbar .trailing button { background: none; border: none; color: var(--blue); font-size: 22px; font-weight: 400; padding: 0; cursor: pointer; }
+
+  /* Apple Calendar large title */
+  .nav-title {
+    padding: 8px 16px 12px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: var(--black);
+  }
+  .nav-title .year-num {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+  }
+
+  /* Weekday header row (S M T W T F S) */
+  .weekday-row {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    padding: 4px 16px 6px;
+    border-bottom: 0.5px solid var(--sep);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--gray1);
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  /* Month-grid generic */
+  .month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    padding: 0 16px;
+  }
+  .month-cell {
+    border-bottom: 0.5px solid var(--sep);
+    padding: 4px 4px 6px;
+    min-height: 72px;
+    position: relative;
+  }
+  .month-cell .num {
+    font-size: 20px;
+    color: var(--black);
+    font-weight: 400;
+  }
+  .month-cell.today .num {
+    color: var(--red);
+    font-weight: 700;
+  }
+  .month-cell.other-month .num { color: var(--gray3); }
+
+  /*
+   * COMPACT mode — Apple shows a single SHORT bar centered horizontally
+   * just below the day number. Visually says "this day has events" with
+   * minimum chrome.
+   */
+  .month-cell .bar-compact {
+    display: block;
+    width: 14px;
+    height: 4px;
+    border-radius: 2px;
+    margin: 6px auto 0;
+  }
+
+  /*
+   * STACKED mode — full-width bars stacked vertically, one per event
+   * up to 3. The width difference + count makes this visually distinct
+   * from Compact's single small centered indicator.
+   */
+  .stacked-bars {
+    display: flex; flex-direction: column; gap: 2px;
+    margin-top: 6px;
+    width: 100%;
+  }
+  .stacked-bars .b {
+    display: block;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  /* Details mode — show event title */
+  .month-cell.details .e {
+    display: flex; align-items: center; gap: 3px; margin-top: 2px;
+    font-size: 9px; line-height: 11px; font-weight: 500;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .month-cell.details .e .dot {
+    width: 2px; height: 8px; border-radius: 1px; flex-shrink: 0;
+  }
+  .month-cell.details .e .lbl {
+    overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Selected-day event list (below grid in Month view) */
+  .day-events {
+    padding: 14px 16px 0;
+    flex: 1;
+    overflow: auto;
+  }
+  .day-events h3 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray1);
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+  .event-row {
+    display: flex;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 0.5px solid var(--sep);
+  }
+  .event-row .e-bar { width: 3px; border-radius: 2px; flex-shrink: 0; }
+  .event-row .e-content { flex: 1; min-width: 0; }
+  .event-row .e-title { font-size: 17px; font-weight: 600; color: var(--black); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-row .e-meta { font-size: 15px; color: var(--gray1); margin-top: 2px; }
+  .event-row .e-time { font-size: 15px; color: var(--gray1); padding-right: 8px; flex-shrink: 0; width: 80px; text-align: right; }
+
+  /* Bottom toolbar — Apple's "Today" + "Inbox" */
+  .bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 64px;
+    border-top: 0.5px solid var(--sep);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(10px);
+  }
+  .bottom-bar a {
+    color: var(--blue);
+    font-size: 17px;
+    text-decoration: none;
+  }
+  .bottom-bar .badge {
+    background: var(--red); color: #fff;
+    border-radius: 99px;
+    padding: 1px 7px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+
+  /* YEAR VIEW SPECIFIC */
+  .year-section { padding: 16px; }
+  .year-section .yr-label {
+    font-size: 34px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    letter-spacing: -0.6px;
+  }
+  .year-section .yr-label.current { color: var(--red); }
+  .months-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .mini-month .mname {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--black);
+  }
+  .mini-month.current .mname { color: var(--red); }
+  .mini-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0;
+    font-size: 9px;
+  }
+  .mini-grid .wd { color: var(--gray1); font-weight: 500; text-align: center; padding: 1px 0; }
+  .mini-grid .d { text-align: center; padding: 2px 0; position: relative; min-height: 14px; }
+  .mini-grid .d.today {
+    color: #fff; background: var(--red); border-radius: 99px;
+    font-weight: 700;
+  }
+  .mini-grid .d.has-events::after {
+    content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 3px; height: 3px; border-radius: 1px; background: var(--blue);
+  }
+  .mini-grid .d.today.has-events::after { background: transparent; }
+  .mini-grid .d.empty { color: transparent; }
+
+  /* DAY VIEW SPECIFIC */
+  .day-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px 4px;
+  }
+  .day-nav .arrow {
+    background: none; border: none; color: var(--blue);
+    font-size: 24px; padding: 4px 12px;
+  }
+  .day-nav .label { font-size: 17px; font-weight: 600; }
+  .day-week-strip {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    padding: 8px 16px 12px;
+    border-bottom: 0.5px solid var(--sep);
+  }
+  .day-week-strip .dws {
+    text-align: center; padding: 4px 0;
+  }
+  .day-week-strip .dws .wd { font-size: 11px; color: var(--gray1); font-weight: 600; }
+  .day-week-strip .dws .num {
+    font-size: 17px; font-weight: 400; margin-top: 2px;
+    width: 30px; height: 30px; line-height: 30px; border-radius: 99px;
+    margin: 2px auto 0; text-align: center;
+  }
+  .day-week-strip .dws.today .num { background: var(--red); color: #fff; font-weight: 700; }
+  .day-week-strip .dws.selected:not(.today) .num { background: var(--black); color: #fff; }
+
+  .all-day-strip {
+    padding: 8px 16px; border-bottom: 0.5px solid var(--sep);
+    display: flex; gap: 6px; flex-wrap: wrap;
+    background: var(--bg);
+  }
+  .all-day-strip .pill {
+    background: var(--purple);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .timeline {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+    padding-bottom: 70px;
+  }
+  .hour-row {
+    display: flex; align-items: flex-start;
+    border-bottom: 0.5px solid var(--sep);
+    height: 56px;
+    padding: 0 16px;
+  }
+  .hour-row .hr-label {
+    width: 50px; flex-shrink: 0;
+    font-size: 11px; color: var(--gray1); text-align: right;
+    padding-right: 8px; padding-top: 0; transform: translateY(-6px);
+  }
+  .hour-row .hr-line { flex: 1; height: 0.5px; background: transparent; margin-top: 0; }
+
+  /* Now-time red line */
+  .now-line {
+    position: absolute;
+    left: 50px;
+    right: 0;
+    height: 1px;
+    background: var(--red);
+    z-index: 3;
+  }
+  .now-line::before {
+    content: '';
+    position: absolute;
+    left: -2px; top: -3px;
+    width: 7px; height: 7px;
+    border-radius: 99px;
+    background: var(--red);
+  }
+
+  .event-block {
+    position: absolute;
+    left: 58px; right: 12px;
+    background: rgba(0, 122, 255, 0.12);
+    border-left: 3px solid var(--blue);
+    border-radius: 5px;
+    padding: 4px 8px;
+    overflow: hidden;
+    z-index: 2;
+  }
+  .event-block .eb-title { font-size: 13px; font-weight: 600; color: var(--black); }
+  .event-block .eb-time { font-size: 11px; color: var(--gray1); margin-top: 2px; }
+
+  /* LIST / INBOX */
+  .list-section { flex: 1; overflow: auto; padding-bottom: 70px; }
+  .list-day-header {
+    background: var(--bg);
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray1);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 0.5px solid var(--sep);
+  }
+  .list-day-header.today { color: var(--red); }
+
+  /* SEARCH OVERLAY */
+  .search-bar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg);
+    margin: 8px 16px 4px;
+    padding: 9px 12px;
+    border-radius: 10px;
+  }
+  .search-bar input {
+    flex: 1; border: none; background: transparent;
+    font-size: 17px;
+    font-family: var(--font);
+    outline: none;
+  }
+  .search-bar .icon { color: var(--gray1); font-size: 16px; }
+  .search-cancel { color: var(--blue); padding: 0 16px 8px; font-size: 17px; cursor: pointer; }
+  .search-results { flex: 1; overflow: auto; padding-bottom: 70px; }
+
+  /* EVENT EDITOR */
+  .editor-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 0.5px solid var(--sep);
+  }
+  .editor-header .btn { color: var(--blue); font-size: 17px; cursor: pointer; }
+  .editor-header .btn.primary { font-weight: 600; }
+  .editor-header .title { font-size: 17px; font-weight: 600; }
+
+  .form-section {
+    background: var(--white);
+    margin: 14px 0 0;
+    border-top: 0.5px solid var(--sep);
+    border-bottom: 0.5px solid var(--sep);
+  }
+  .form-section.grouped { background: var(--bg); margin: 14px 16px; border-radius: 10px; border: 0; }
+  .form-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 0.5px solid var(--sep);
+    font-size: 17px;
+  }
+  .form-row:last-child { border-bottom: none; }
+  .form-row .label { color: var(--black); }
+  .form-row .value { color: var(--gray1); display: flex; align-items: center; gap: 6px; }
+  .form-row .value.blue { color: var(--blue); }
+  .form-row .title-input {
+    flex: 1; border: none; background: transparent; outline: none;
+    font-family: var(--font); font-size: 22px; font-weight: 400;
+  }
+  .toggle {
+    width: 51px; height: 31px; background: var(--green);
+    border-radius: 99px; position: relative;
+  }
+  .toggle::after {
+    content: '';
+    width: 27px; height: 27px;
+    background: #fff;
+    border-radius: 99px;
+    position: absolute;
+    top: 2px; right: 2px;
+    box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+  }
+  .toggle.off { background: var(--gray3); }
+  .toggle.off::after { right: auto; left: 2px; }
+
+  /* SETTINGS */
+  .settings-list { flex: 1; overflow: auto; padding-bottom: 70px; background: var(--bg); }
+  .settings-section-header {
+    padding: 12px 16px 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray1);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .settings-card {
+    background: var(--white);
+    margin: 0 16px 16px;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .cal-row {
+    display: flex; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 0.5px solid var(--sep);
+    gap: 12px;
+  }
+  .cal-row:last-child { border-bottom: none; }
+  .cal-row .cal-dot { width: 14px; height: 14px; border-radius: 99px; flex-shrink: 0; }
+  .cal-row .cal-info { flex: 1; min-width: 0; }
+  .cal-row .cal-title { font-size: 17px; color: var(--black); font-weight: 500; }
+  .cal-row .cal-meta { font-size: 12px; color: var(--gray1); }
+  .cal-row .cal-toggles { display: flex; gap: 12px; align-items: center; }
+  .cal-row .col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .cal-row .col-lbl { font-size: 9px; color: var(--gray1); font-weight: 700; letter-spacing: 0.5px; }
+  .help-card {
+    background: var(--white);
+    margin: 16px;
+    padding: 16px;
+    border-radius: 10px;
+  }
+  .help-card h4 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .help-card p { font-size: 14px; color: var(--gray1); line-height: 1.5; margin-bottom: 12px; }
+  .help-card .btn-fill { background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block; }
+
+  /* EVENT DETAIL POPOVER */
+  .detail-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 20;
+  }
+  .detail-card {
+    position: absolute;
+    top: 200px; left: 16px; right: 16px;
+    background: rgba(245, 245, 247, 0.96);
+    backdrop-filter: blur(20px);
+    border-radius: 14px;
+    padding: 18px 16px;
+    z-index: 21;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  }
+  .detail-card .d-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: var(--black); }
+  .detail-card .d-source { font-size: 13px; color: var(--gray1); margin-bottom: 14px; }
+  .detail-card .d-time { font-size: 17px; color: var(--black); margin-bottom: 4px; }
+  .detail-card .d-loc { font-size: 15px; color: var(--gray1); margin-bottom: 12px; }
+  .detail-card .d-actions { display: flex; gap: 12px; }
+  .detail-card .d-actions .a {
+    flex: 1; text-align: center; background: rgba(255,255,255,0.7);
+    padding: 10px; border-radius: 8px;
+    font-size: 15px; color: var(--blue); font-weight: 500;
+  }
+  .detail-card .d-actions .a.del { color: var(--red); }
+
+  /* shared full-height layout */
+  .col-flex { display: flex; flex-direction: column; height: 100%; }
+  .scrollable { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>CSH Calendar — Apple-parity UI review</h1>
+  <p>Pixel-accurate mockups for the new Calendar tab, modeled after iPhone Apple Calendar (iOS 18). Open in any browser at 100% zoom for true-to-iPhone sizing (390 × 844). Screenshot anything you want changed and paste back in chat.</p>
+  <span class="meta">10 screens</span>
+  <span class="meta">iPhone 14 size (390 × 844)</span>
+  <span class="meta">Apple SF Pro typography</span>
+  <span class="meta">SCRUM-279 / COS-308 / build 22 target</span>
+</header>
+
+<nav class="toc">
+  <a href="#year">1. Year</a>
+  <a href="#month-compact">2. Month — Compact</a>
+  <a href="#month-stacked">3. Month — Stacked</a>
+  <a href="#month-details">4. Month — Details</a>
+  <a href="#day">5. Day</a>
+  <a href="#list">6. List / Inbox</a>
+  <a href="#search">7. Search overlay</a>
+  <a href="#editor">8. New Event editor</a>
+  <a href="#settings">9. Calendar Settings</a>
+  <a href="#detail">10. Event detail</a>
+</nav>
+
+<div class="screen-grid">
+
+  <!-- 1. YEAR VIEW -->
+  <div class="screen-card" id="year">
+    <h2>1. Year view</h2>
+    <p class="caption">Apple's iPhone Year view: vertical scroll, today (Jun 1, 2026) in red circle. Tap any month → drills into Month view at that month's first day.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="icons">●●●●● 100%</span>
+        </div>
+        <div class="toolbar">
+          <a class="leading" href="#">Calendars</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="scrollable">
+          <div class="year-section">
+            <div class="yr-label current">2026</div>
+            <div class="months-grid">
+              <!-- 12 mini months for 2026 -->
+              <!-- Filled by script below this script tag -->
+              <div id="year-grid-2026"></div>
+            </div>
+          </div>
+          <div class="year-section">
+            <div class="yr-label">2027</div>
+            <div class="months-grid"><div id="year-grid-2027"></div></div>
+          </div>
+        </div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. MONTH — COMPACT -->
+  <div class="screen-card" id="month-compact">
+    <h2>2. Month — Compact</h2>
+    <p class="caption">Single thin bar per day shows "has events" without details. Apple's default density mode.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="toolbar">
+          <a class="leading" href="#">Calendars</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="nav-title">June 2026</div>
+        <div class="weekday-row">
+          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        </div>
+        <div class="month-grid" id="month-compact-grid"></div>
+        <div class="day-events">
+          <h3>Monday, June 1</h3>
+          <div class="event-row">
+            <div class="e-time">9:00 AM</div>
+            <div class="e-bar" style="background: var(--blue);"></div>
+            <div class="e-content">
+              <div class="e-title">Team standup</div>
+              <div class="e-meta">9:00 – 9:30 AM · Zoom</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. MONTH — STACKED -->
+  <div class="screen-card" id="month-stacked">
+    <h2>3. Month — Stacked</h2>
+    <p class="caption">One bar per event, color-coded by source calendar. Pinch-to-zoom on Month view switches between modes.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="toolbar">
+          <a class="leading" href="#">Calendars</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="nav-title">June 2026</div>
+        <div class="weekday-row">
+          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        </div>
+        <div class="month-grid" id="month-stacked-grid"></div>
+        <div class="day-events">
+          <h3>Monday, June 1</h3>
+          <div class="event-row">
+            <div class="e-time">9:00 AM</div>
+            <div class="e-bar" style="background: var(--blue);"></div>
+            <div class="e-content">
+              <div class="e-title">Team standup</div>
+              <div class="e-meta">9:00 – 9:30 AM · Zoom</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MONTH — DETAILS -->
+  <div class="screen-card" id="month-details">
+    <h2>4. Month — Details</h2>
+    <p class="caption">Event titles rendered directly in day cells. Pinch further to see times. Highest-density mode.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="toolbar">
+          <a class="leading" href="#">Calendars</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="nav-title">June 2026</div>
+        <div class="weekday-row">
+          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        </div>
+        <div class="month-grid" id="month-details-grid" style="min-height: 480px;"></div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. DAY VIEW -->
+  <div class="screen-card" id="day">
+    <h2>5. Day view (with day-nav arrows + now line)</h2>
+    <p class="caption">Hour timeline. Left/right arrows next to date label move days. Today's red line crosses the current time slot.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="toolbar">
+          <a class="leading" href="#">Today</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="day-nav">
+          <button class="arrow">‹</button>
+          <span class="label">Monday, June 1, 2026</span>
+          <button class="arrow">›</button>
+        </div>
+        <div class="day-week-strip">
+          <div class="dws"><div class="wd">SUN</div><div class="num">31</div></div>
+          <div class="dws today selected"><div class="wd">MON</div><div class="num">1</div></div>
+          <div class="dws"><div class="wd">TUE</div><div class="num">2</div></div>
+          <div class="dws"><div class="wd">WED</div><div class="num">3</div></div>
+          <div class="dws"><div class="wd">THU</div><div class="num">4</div></div>
+          <div class="dws"><div class="wd">FRI</div><div class="num">5</div></div>
+          <div class="dws"><div class="wd">SAT</div><div class="num">6</div></div>
+        </div>
+        <div class="all-day-strip">
+          <span class="pill" style="background: var(--purple);">Vacation request</span>
+        </div>
+        <div class="timeline" id="day-timeline"></div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. LIST / INBOX -->
+  <div class="screen-card" id="list">
+    <h2>6. List view (upcoming events agenda)</h2>
+    <p class="caption">All upcoming events grouped by day. Past visits + Reminders + device events merged. Apple labels this as "List" toggle on Month/Day views.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="toolbar">
+          <a class="leading" href="#">Calendars</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="nav-title">List</div>
+        <div class="list-section">
+          <div class="list-day-header today">TODAY · MONDAY, JUN 1</div>
+          <div style="padding: 0 16px;">
+            <div class="event-row">
+              <div class="e-time">9:00 AM</div>
+              <div class="e-bar" style="background: var(--blue);"></div>
+              <div class="e-content"><div class="e-title">Team standup</div><div class="e-meta">9:00 – 9:30 · Zoom</div></div>
+            </div>
+            <div class="event-row">
+              <div class="e-time">12:00 PM</div>
+              <div class="e-bar" style="background: var(--green);"></div>
+              <div class="e-content"><div class="e-title">Lunch w/ Dr. Smith</div><div class="e-meta">12:00 – 1:00 · Olive & Vine</div></div>
+            </div>
+            <div class="event-row">
+              <div class="e-time">3:30 PM</div>
+              <div class="e-bar" style="background: var(--orange);"></div>
+              <div class="e-content"><div class="e-title">Cardiology follow-up — Dr. Patel</div><div class="e-meta">3:30 – 4:30 · Stanford Health Care · Past Visit</div></div>
+            </div>
+          </div>
+          <div class="list-day-header">TUESDAY, JUN 2</div>
+          <div style="padding: 0 16px;">
+            <div class="event-row">
+              <div class="e-time">all-day</div>
+              <div class="e-bar" style="background: var(--orange);"></div>
+              <div class="e-content"><div class="e-title">Pick up prescription</div><div class="e-meta">Walgreens · 🟧 Reminder</div></div>
+            </div>
+            <div class="event-row">
+              <div class="e-time">10:00 AM</div>
+              <div class="e-bar" style="background: var(--purple);"></div>
+              <div class="e-content"><div class="e-title">Q2 board prep call</div><div class="e-meta">10:00 – 11:00 · Microsoft Teams</div></div>
+            </div>
+          </div>
+          <div class="list-day-header">WEDNESDAY, JUN 3</div>
+          <div style="padding: 0 16px;">
+            <div class="event-row">
+              <div class="e-time">9:00 AM</div>
+              <div class="e-bar" style="background: var(--blue);"></div>
+              <div class="e-content"><div class="e-title">Team standup</div><div class="e-meta">9:00 – 9:30 · Recurring · Zoom</div></div>
+            </div>
+            <div class="event-row">
+              <div class="e-time">6:00 PM</div>
+              <div class="e-bar" style="background: var(--green);"></div>
+              <div class="e-content"><div class="e-title">Family dinner</div><div class="e-meta">6:00 – 8:00 · Home</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. SEARCH OVERLAY -->
+  <div class="screen-card" id="search">
+    <h2>7. Search overlay (animated slide-in)</h2>
+    <p class="caption">Tap magnifying glass → bar slides down from top. Filters across event title, location, notes, calendar name. Tap Cancel or clear text to return.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="search-bar">
+          <span class="icon">⌕</span>
+          <input type="text" placeholder="Search events, locations, notes" value="cardiology" autofocus>
+        </div>
+        <div class="search-cancel">Cancel</div>
+        <div class="search-results">
+          <div class="list-day-header">RESULTS · 3 EVENTS</div>
+          <div style="padding: 0 16px;">
+            <div class="event-row">
+              <div class="e-bar" style="background: var(--orange);"></div>
+              <div class="e-content">
+                <div class="e-title">Cardiology follow-up — Dr. Patel</div>
+                <div class="e-meta">Mon, Jun 1 · 3:30 PM · Stanford Health Care</div>
+              </div>
+            </div>
+            <div class="event-row">
+              <div class="e-bar" style="background: var(--orange);"></div>
+              <div class="e-content">
+                <div class="e-title">Cardiology consultation</div>
+                <div class="e-meta">Thu, Jun 18 · 2:00 PM · Stanford Health Care</div>
+              </div>
+            </div>
+            <div class="event-row">
+              <div class="e-bar" style="background: var(--orange);"></div>
+              <div class="e-content">
+                <div class="e-title">Cardiology — bloodwork results</div>
+                <div class="e-meta">Mon, Jul 13 · 10:00 AM · Stanford Health Care</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-bar">
+          <a href="#">Today</a>
+          <a href="#">Inbox <span class="badge">2</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. NEW EVENT EDITOR -->
+  <div class="screen-card" id="editor">
+    <h2>8. New Event editor</h2>
+    <p class="caption">All Apple fields in order: title, location, all-day, dates, repeat, travel time, calendar, invitees, alerts, show as, URL, notes. HIPAA disclosure shown before first save.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="editor-header">
+          <span class="btn">Cancel</span>
+          <span class="title">New Event</span>
+          <span class="btn primary">Add</span>
+        </div>
+        <div class="scrollable" style="background: var(--bg);">
+          <div class="form-section grouped" style="margin-top: 14px;">
+            <div class="form-row">
+              <input class="title-input" placeholder="Title" value="Cardiology follow-up">
+            </div>
+            <div class="form-row">
+              <input class="title-input" style="font-size: 17px;" placeholder="Location or Video Call" value="Stanford Health Care, Palo Alto">
+            </div>
+          </div>
+          <div class="form-section grouped">
+            <div class="form-row">
+              <span class="label">All-day</span>
+              <span class="toggle off"></span>
+            </div>
+            <div class="form-row">
+              <span class="label">Starts</span>
+              <span class="value blue">Mon, Jun 1, 2026 · 3:30 PM</span>
+            </div>
+            <div class="form-row">
+              <span class="label">Ends</span>
+              <span class="value blue">Mon, Jun 1, 2026 · 4:30 PM</span>
+            </div>
+            <div class="form-row">
+              <span class="label">Time Zone</span>
+              <span class="value">Cupertino ›</span>
+            </div>
+          </div>
+          <div class="form-section grouped">
+            <div class="form-row">
+              <span class="label">Repeat</span>
+              <span class="value">Never ›</span>
+            </div>
+            <div class="form-row">
+              <span class="label">Travel Time</span>
+              <span class="value">None ›</span>
+            </div>
+          </div>
+          <div class="form-section grouped">
+            <div class="form-row">
+              <span class="label">Calendar</span>
+              <span class="value">
+                <span style="display:inline-block; width:10px; height:10px; border-radius:5px; background:var(--blue);"></span>
+                Personal — iCloud ›
+              </span>
+            </div>
+            <div class="form-row">
+              <span class="label">Invitees</span>
+              <span class="value">None ›</span>
+            </div>
+          </div>
+          <div class="form-section grouped">
+            <div class="form-row">
+              <span class="label">Alert</span>
+              <span class="value">15 minutes before ›</span>
+            </div>
+            <div class="form-row">
+              <span class="label">Second Alert</span>
+              <span class="value">None ›</span>
+            </div>
+            <div class="form-row">
+              <span class="label">Show As</span>
+              <span class="value">Busy ›</span>
+            </div>
+          </div>
+          <div class="form-section grouped">
+            <div class="form-row">
+              <span class="label">URL</span>
+              <span class="value">stanfordhealthcare.org/...</span>
+            </div>
+            <div class="form-row" style="flex-direction: column; align-items: stretch;">
+              <span class="value" style="font-size: 15px; color: var(--gray1); padding: 8px 0;">Annual follow-up. Bring lab results from May 20.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. CALENDAR SETTINGS -->
+  <div class="screen-card" id="settings">
+    <h2>9. Calendar Settings (per-calendar Show + Notify)</h2>
+    <p class="caption">Calendar visibility grouped by source. Two toggles per calendar: Show (visibility) and Notify (notifications). Help card explains how to add Outlook / Teams accounts via iOS Settings.</p>
+    <div class="phone">
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="editor-header">
+          <span class="btn">‹ Back</span>
+          <span class="title">Calendars</span>
+          <span></span>
+        </div>
+        <div class="settings-list">
+          <div class="settings-section-header">ICLOUD</div>
+          <div class="settings-card">
+            <div class="cal-row">
+              <div class="cal-dot" style="background: var(--blue);"></div>
+              <div class="cal-info">
+                <div class="cal-title">Personal</div>
+              </div>
+              <div class="cal-toggles">
+                <div class="col"><span class="col-lbl">SHOW</span><span class="toggle"></span></div>
+                <div class="col"><span class="col-lbl">NOTIFY</span><span class="toggle"></span></div>
+              </div>
+            </div>
+            <div class="cal-row">
+              <div class="cal-dot" style="background: var(--green);"></div>
+              <div class="cal-info">
+                <div class="cal-title">Family</div>
+              </div>
+              <div class="cal-toggles">
+                <div class="col"><span class="col-lbl">SHOW</span><span class="toggle"></span></div>
+                <div class="col"><span class="col-lbl">NOTIFY</span><span class="toggle off"></span></div>
+              </div>
+            </div>
+            <div class="cal-row">
+              <div class="cal-dot" style="background: var(--orange);"></div>
+              <div class="cal-info">
+                <div class="cal-title">Medical</div>
+              </div>
+              <div class="cal-toggles">
+                <div class="col"><span class="col-lbl">SHOW</span><span class="toggle"></span></div>
+                <div class="col"><span class="col-lbl">NOTIFY</span><span class="toggle"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-header">GOOGLE (KEN@COMPANY.COM)</div>
+          <div class="settings-card">
+            <div class="cal-row">
+              <div class="cal-dot" style="background: var(--purple);"></div>
+              <div class="cal-info">
+                <div class="cal-title">Work</div>
+              </div>
+              <div class="cal-toggles">
+                <div class="col"><span class="col-lbl">SHOW</span><span class="toggle"></span></div>
+                <div class="col"><span class="col-lbl">NOTIFY</span><span class="toggle"></span></div>
+              </div>
+            </div>
+            <div class="cal-row">
+              <div class="cal-dot" style="background: var(--teal);"></div>
+              <div class="cal-info">
+                <div class="cal-title">Holidays in United States</div>
+                <div class="cal-meta">Read-only</div>
+              </div>
+              <div class="cal-toggles">
+                <div class="col"><span class="col-lbl">SHOW</span><span class="toggle off"></span></div>
+                <div class="col"><span class="col-lbl">NOTIFY</span><span class="toggle off" style="opacity:0.4;"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-header">REMINDERS</div>
+          <div class="settings-card">
+            <div class="cal-row">
+              <div class="cal-dot" style="background: var(--orange);"></div>
+              <div class="cal-info">
+                <div class="cal-title">Reminders</div>
+                <div class="cal-meta">iOS Reminders app</div>
+              </div>
+              <div class="cal-toggles">
+                <div class="col"><span class="col-lbl">SHOW</span><span class="toggle"></span></div>
+                <div class="col"><span class="col-lbl">NOTIFY</span><span class="toggle off"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="help-card">
+            <h4>Missing Outlook, Teams, or Google calendars?</h4>
+            <p>iOS Calendar can only see calendars from accounts you've added in iOS Settings. To add them: Settings → Apps → Calendar → Calendar Accounts → Add Account → choose your provider. Make sure the Calendar toggle is ON.</p>
+            <span class="btn-fill">Open iOS Settings</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. EVENT DETAIL POPOVER -->
+  <div class="screen-card" id="detail">
+    <h2>10. Event detail popover</h2>
+    <p class="caption">Apple-style inline popover when tapping an event in Month/Day view. Tap "Edit" → full editor screen. Tap outside or "Done" to dismiss.</p>
+    <div class="phone">
+      <!-- background = month view dimmed -->
+      <div class="col-flex">
+        <div class="status-bar"><span>9:41</span><span class="icons">●●●●● 100%</span></div>
+        <div class="toolbar">
+          <a class="leading" href="#">Calendars</a>
+          <div class="trailing"><button>+</button><button>⌕</button></div>
+        </div>
+        <div class="nav-title">June 2026</div>
+        <div class="weekday-row">
+          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        </div>
+        <div class="month-grid" id="detail-bg-grid"></div>
+      </div>
+      <div class="detail-backdrop"></div>
+      <div class="detail-card">
+        <div class="d-title">Cardiology follow-up — Dr. Patel</div>
+        <div class="d-source">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--orange); margin-right:6px;"></span>
+          Medical — iCloud
+        </div>
+        <div class="d-time">Monday, Jun 1 · 3:30 – 4:30 PM</div>
+        <div class="d-loc">📍 Stanford Health Care, Palo Alto</div>
+        <div class="d-loc" style="margin-top: 8px;">🔔 Alert 15 minutes before</div>
+        <div class="d-actions">
+          <span class="a">Edit</span>
+          <span class="a del">Delete</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Build month mini-grids for Year view
+  function buildMiniGrid(year, monthIdx, todayDay, eventDays) {
+    const wd = ['S','M','T','W','T','F','S'];
+    const firstWd = new Date(year, monthIdx, 1).getDay();
+    const dim = new Date(year, monthIdx + 1, 0).getDate();
+    let html = wd.map(w => `<span class="wd">${w}</span>`).join('');
+    for (let i = 0; i < firstWd; i++) html += `<span class="d empty">·</span>`;
+    for (let d = 1; d <= dim; d++) {
+      const isToday = d === todayDay;
+      const hasEvt = eventDays.includes(d);
+      let cls = 'd';
+      if (isToday) cls += ' today';
+      if (hasEvt) cls += ' has-events';
+      html += `<span class="${cls}">${d}</span>`;
+    }
+    return html;
+  }
+
+  function buildYearMonths(year, currentMonth, todayDay) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let html = '';
+    for (let m = 0; m < 12; m++) {
+      const cls = m === currentMonth ? 'mini-month current' : 'mini-month';
+      const eventDays = sampleEventsForMonth(m);
+      const tdy = (m === currentMonth) ? todayDay : null;
+      html += `<div class="${cls}"><div class="mname">${months[m]}</div><div class="mini-grid">${buildMiniGrid(year, m, tdy, eventDays)}</div></div>`;
+    }
+    return html;
+  }
+
+  function sampleEventsForMonth(monthIdx) {
+    const samples = {
+      0: [3, 12, 17, 22, 28],
+      1: [5, 14, 20],
+      2: [4, 10, 15, 22, 28],
+      3: [7, 12, 19, 25],
+      4: [3, 8, 13, 22, 27],
+      5: [1, 3, 5, 10, 12, 17, 22, 26],  // June — current month, dense
+      6: [4, 11, 18, 25],
+      7: [2, 9, 15, 22, 29],
+      8: [5, 12, 18, 26],
+      9: [3, 10, 17, 24, 31],
+      10: [7, 14, 21, 28],
+      11: [5, 12, 19, 25, 31],
+    };
+    return samples[monthIdx] || [];
+  }
+
+  // 2026 year view, current month June, today=1
+  document.getElementById('year-grid-2026').outerHTML =
+    '<div style="display:contents">' + buildYearMonths(2026, 5, 1) + '</div>';
+  document.getElementById('year-grid-2027').outerHTML =
+    '<div style="display:contents">' + buildYearMonths(2027, -1, null) + '</div>';
+
+  // Month views — full June 2026 grid
+  function buildMonthGrid(monthIdx, year, mode) {
+    const firstWd = new Date(year, monthIdx, 1).getDay();
+    const dim = new Date(year, monthIdx + 1, 0).getDate();
+    const prevDim = new Date(year, monthIdx, 0).getDate();
+    const todayDay = 1; // June 1
+
+    // Sample events per day
+    const evts = {
+      3:  [{c:'blue',t:'Standup'}],
+      5:  [{c:'green',t:'Lunch'}, {c:'blue',t:'Sprint review'}],
+      10: [{c:'orange',t:'Cardiology f/u'}],
+      12: [{c:'blue',t:'Board call'}, {c:'green',t:'Family dinner'}, {c:'purple',t:'Soccer'}],
+      17: [{c:'blue',t:'1:1 Ken'}],
+      22: [{c:'orange',t:'Bloodwork'}, {c:'blue',t:'Q2 review'}],
+      26: [{c:'green',t:'BBQ — Mike'}],
+    };
+    const colorMap = {
+      blue: 'var(--blue)', green: 'var(--green)', orange: 'var(--orange)',
+      purple: 'var(--purple)', red: 'var(--red)', teal: 'var(--teal)',
+    };
+
+    let html = '';
+    // Previous-month trailing days
+    for (let i = firstWd - 1; i >= 0; i--) {
+      html += `<div class="month-cell other-month"><span class="num">${prevDim - i}</span></div>`;
+    }
+    // Current month
+    for (let d = 1; d <= dim; d++) {
+      const isToday = d === todayDay;
+      const eList = evts[d] || [];
+      let cellHtml = `<span class="num">${d}</span>`;
+      if (mode === 'compact' && eList.length > 0) {
+        cellHtml += `<span class="bar-compact" style="background:${colorMap[eList[0].c]};"></span>`;
+      } else if (mode === 'stacked' && eList.length > 0) {
+        cellHtml += `<div class="stacked-bars">`;
+        for (let i = 0; i < Math.min(eList.length, 3); i++) {
+          cellHtml += `<span class="b" style="background:${colorMap[eList[i].c]};"></span>`;
+        }
+        cellHtml += `</div>`;
+      } else if (mode === 'details' && eList.length > 0) {
+        for (let i = 0; i < Math.min(eList.length, 3); i++) {
+          cellHtml += `<div class="e"><div class="dot" style="background:${colorMap[eList[i].c]};"></div><div class="lbl">${eList[i].t}</div></div>`;
+        }
+      }
+      html += `<div class="month-cell${isToday ? ' today' : ''}${mode === 'details' ? ' details' : ''}">${cellHtml}</div>`;
+    }
+    // Trailing days
+    const remaining = 7 - ((firstWd + dim) % 7);
+    if (remaining < 7) {
+      for (let d = 1; d <= remaining; d++) {
+        html += `<div class="month-cell other-month"><span class="num">${d}</span></div>`;
+      }
+    }
+    return html;
+  }
+
+  document.getElementById('month-compact-grid').innerHTML = buildMonthGrid(5, 2026, 'compact');
+  document.getElementById('month-stacked-grid').innerHTML = buildMonthGrid(5, 2026, 'stacked');
+  document.getElementById('month-details-grid').innerHTML = buildMonthGrid(5, 2026, 'details');
+  document.getElementById('detail-bg-grid').innerHTML = buildMonthGrid(5, 2026, 'stacked');
+
+  // Day view timeline
+  const timeline = document.getElementById('day-timeline');
+  if (timeline) {
+    const HOUR_HEIGHT = 56;
+    const hours = ['12 AM','1 AM','2 AM','3 AM','4 AM','5 AM','6 AM','7 AM','8 AM',
+                   '9 AM','10 AM','11 AM','12 PM','1 PM','2 PM','3 PM','4 PM','5 PM',
+                   '6 PM','7 PM','8 PM','9 PM','10 PM','11 PM'];
+    let html = '';
+    for (const h of hours) {
+      html += `<div class="hour-row"><div class="hr-label">${h}</div><div class="hr-line"></div></div>`;
+    }
+    // Event blocks — positioned absolutely
+    const events = [
+      { startH: 9, durMin: 30, title: 'Team standup', time: '9:00 – 9:30 AM · Zoom', color: 'blue' },
+      { startH: 12, durMin: 60, title: 'Lunch w/ Dr. Smith', time: '12:00 – 1:00 PM · Olive & Vine', color: 'green' },
+      { startH: 15.5, durMin: 60, title: 'Cardiology follow-up — Dr. Patel', time: '3:30 – 4:30 PM · Stanford Health Care', color: 'orange' },
+      { startH: 18, durMin: 120, title: 'Family dinner', time: '6:00 – 8:00 PM · Home', color: 'green' },
+    ];
+    const colorMap2 = { blue: 'var(--blue)', green: 'var(--green)', orange: 'var(--orange)', purple: 'var(--purple)', red: 'var(--red)' };
+    for (const e of events) {
+      const top = e.startH * HOUR_HEIGHT;
+      const height = (e.durMin / 60) * HOUR_HEIGHT;
+      const bg = `rgba(${e.color === 'blue' ? '0,122,255' : e.color === 'green' ? '52,199,89' : e.color === 'orange' ? '255,149,0' : '175,82,222'}, 0.15)`;
+      html += `<div class="event-block" style="top:${top}px;height:${height}px;background:${bg};border-left-color:${colorMap2[e.color]};">
+        <div class="eb-title">${e.title}</div>
+        <div class="eb-time">${e.time}</div>
+      </div>`;
+    }
+    // Now-line — 14:32 (2:32 PM = hour 14.53)
+    const nowH = 14.53;
+    html += `<div class="now-line" style="top:${nowH * HOUR_HEIGHT}px;"></div>`;
+    timeline.innerHTML = html;
+    // Scroll to the now line
+    setTimeout(() => { timeline.scrollTop = nowH * HOUR_HEIGHT - 200; }, 50);
+  }
+</script>
+</body>
+</html>

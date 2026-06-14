@@ -168,7 +168,14 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
   // Tablets/iPads (≥768 wide) keep the full pass-through because there's
   // room for it. Anything ≤ 1.0 passes through untouched so users who
   // deliberately SHRINK text still get the reduction they asked for.
-  const PHONE_MAX_SCALE = 1.2;
+  //
+  // SCRUM-279 (2026-06-08): Ken reported home-screen layouts breaking
+  // for older accounts whose iOS Large Text setting was inflating
+  // fonts past the prior 1.2 cap. Dropped 1.2 → 1.05 so layouts hold
+  // at the design sizes — accessibility users still get the +15%
+  // bump via accessibilityMultiplier when they explicitly enable
+  // in-app accessibility mode (caps at 1.05 × 1.15 = 1.21).
+  const PHONE_MAX_SCALE = 1.05;
   const effectiveFontScale =
     isTablet() || rawFontScale <= 1
       ? rawFontScale

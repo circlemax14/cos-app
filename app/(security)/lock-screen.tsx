@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NumberPad } from '@/components/ui/number-pad';
 import { PinDots } from '@/components/ui/pin-dots';
 import {
@@ -17,6 +18,64 @@ import {
 import { useSecurity } from '@/stores/security-store';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { getColors, Spacing, Typography } from '@/constants/design-system';
+import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
+import { consumePendingSignIn, SignInReason } from '@/lib/lock-gate';
+import { checkSession } from '@/services/auth';
+import { clearTokens } from '@/lib/auth-tokens';
+import { prefetchAfterAuth } from '@/services/auth-prefetch';
+
+/**
+ * Resolve the route to land on after a successful unlock. Defaults to
+ * /Home, but if useAppLock captured a pre-lock path we restore that so
+ * the user lands back where they were (Calendar, Reports, etc.) instead
+ * of always bouncing to the Home tab.
+ */
+async function resumeAfterUnlock() {
+  let target = '/Home';
+  try {
+    const saved = await AsyncStorage.getItem(PRE_LOCK_ROUTE_KEY);
+    if (saved && saved.startsWith('/')) target = saved;
+    await AsyncStorage.removeItem(PRE_LOCK_ROUTE_KEY);
+  } catch {
+    // Best-effort; fall through to /Home.
+  }
+  router.replace(target as never);
+}
+
+/**
+ * SCRUM-279 (build 44): friendly copy for the deferred-sign-in alert.
+ * The user just entered their PIN correctly; if we have to send them
+ * to sign-in anyway because the backend session is gone, tell them
+ * why instead of silently bouncing.
+ */
+function describeSignInReason(reason: SignInReason): { title: string; message: string } {
+  switch (reason) {
+    case 'session_expired':
+    case 'refresh_failed':
+    case 'splash_revalidate_failed':
+      return {
+        title: 'Session expired',
+        message:
+          'For your security, your session has expired and we need you to sign in again with your password.',
+      };
+    case 'manual_sign_out':
+      return {
+        title: 'Signed out',
+        message: 'Please sign in to continue.',
+      };
+    case 'splash_no_session':
+      return {
+        title: 'Sign in required',
+        message: 'Please sign in to continue.',
+      };
+    case 'unrecoverable':
+    default:
+      return {
+        title: 'Sign in required',
+        message: 'Something went wrong and we need you to sign in again.',
+      };
+  }
+}
 
 const MAX_ATTEMPTS = 5;
 
@@ -38,6 +97,12 @@ export default function LockScreen() {
   const [error, setError] = useState(false);
   const [showBiometric, setShowBiometric] = useState(false);
   const [attemptsLeft, setAttemptsLeft] = useState(MAX_ATTEMPTS);
+  // SCRUM-279 (build 45): Ken reported "after PIN entry I'm staring at
+  // the same screen for a few seconds — nothing happening, then home".
+  // postUnlockNavigate calls checkSession (network round-trip) and that
+  // wait is invisible. unlocking=true draws a full-screen overlay with
+  // a spinner and "Unlocking…" copy so it's obvious work is happening.
+  const [unlocking, setUnlocking] = useState(false);
 
   // Ambient halo pulse around the lock icon — scale + opacity loop.
   const halo = useRef(new Animated.Value(0)).current;
@@ -73,7 +138,7 @@ export default function LockScreen() {
     if (result.success) {
       await resetFailedAttempts();
       setIsLocked(false);
-      router.replace('/Home' as never);
+      await postUnlockNavigate();
     }
   };
 
@@ -87,12 +152,95 @@ export default function LockScreen() {
     }
   };
 
+  /**
+   * SCRUM-279 (build 44): post-unlock navigation.
+   *
+   * After successful PIN/biometric:
+   *
+   *   1. Check the lock-gate for any sign-in that was DEFERRED while
+   *      the user was on this screen (e.g. SplashGate's background
+   *      revalidation found the session was bad, or api-client got a
+   *      refresh failure on a parallel call). If there's a pending
+   *      reason, surface an alert explaining what happened, then
+   *      route to sign-in. Tokens are wiped first so PHI can't leak.
+   *   2. Otherwise validate the session ourselves — the cached
+   *      profile path in SplashGate doesn't talk to the backend, so
+   *      this is our first authoritative check. If the live call
+   *      returns no user, treat it as session_expired.
+   *   3. Only if both gates pass do we restore the pre-lock route.
+   *
+   * Security note: the PIN is a device-local secret. It does NOT
+   * authorise any backend call — the Cognito (or app-signed social)
+   * token does. So when the backend session is genuinely gone we
+   * MUST require a real re-sign-in before any PHI can render.
+   */
+  const postUnlockNavigate = async () => {
+    // Build 45: show the loading overlay BEFORE any async work so the
+    // user gets immediate visual feedback that the PIN was accepted.
+    setUnlocking(true);
+    try {
+      const pendingReason = consumePendingSignIn();
+      if (pendingReason) {
+        await clearTokens();
+        const { title, message } = describeSignInReason(pendingReason);
+        setUnlocking(false);
+        Alert.alert(title, message, [
+          {
+            text: 'Sign In',
+            onPress: () => {
+              router.replace('/(auth)/sign-in' as never);
+            },
+          },
+        ]);
+        return;
+      }
+
+      // No deferred sign-in — validate the live session before showing PHI.
+      try {
+        const result = await checkSession();
+        if (!result.authenticated || !result.user) {
+          await clearTokens();
+          setUnlocking(false);
+          Alert.alert(
+            'Session expired',
+            'For your security, your session has expired and we need you to sign in again with your password.',
+            [
+              {
+                text: 'Sign In',
+                onPress: () => router.replace('/(auth)/sign-in' as never),
+              },
+            ],
+          );
+          return;
+        }
+      } catch {
+        // Network failure — let the user in (cached data only). The
+        // next API call will trigger the refresh path; if THAT fails
+        // we'll come back through this gate.
+      }
+
+      // SCRUM-279 (build 50): warm home + calendar caches in parallel
+      // so the post-unlock home screen doesn't show empty state for
+      // the first ~3 seconds. force=false honors the 30s cooldown if
+      // the user just unlocked recently (PIN-then-PIN scenarios).
+      prefetchAfterAuth();
+
+      await resumeAfterUnlock();
+    } finally {
+      // resumeAfterUnlock has already navigated by the time we get here
+      // in the happy path; the overlay sits on top of the unmounting
+      // lock-screen for one frame then disappears with the screen.
+      // Reset state defensively in case navigation didn't happen.
+      setUnlocking(false);
+    }
+  };
+
   const verifyAndUnlock = async (enteredPin: string) => {
     const valid = await verifyPin(enteredPin);
     if (valid) {
       await resetFailedAttempts();
       setIsLocked(false);
-      router.replace('/Home' as never);
+      await postUnlockNavigate();
     } else {
       const attempts = await incrementFailedAttempts();
       const remaining = MAX_ATTEMPTS - attempts;
@@ -108,7 +256,14 @@ export default function LockScreen() {
             {
               text: 'Sign In',
               onPress: async () => {
+                // SCRUM-279 (build 44) security: also wipe the backend
+                // session tokens. Previously only PIN data was cleared,
+                // so the old access/refresh tokens stayed in SecureStore.
+                // If an attacker exhausted PIN attempts they could
+                // theoretically still call APIs with the stale token
+                // until expiry. Now we force a true fresh sign-in.
                 await clearPinData();
+                await clearTokens();
                 setIsLocked(false);
                 router.replace('/(auth)/sign-in' as never);
               },
@@ -226,6 +381,34 @@ export default function LockScreen() {
           />
         </View>
       </SafeAreaView>
+
+      {/* SCRUM-279 (build 45): "Unlocking…" overlay during postUnlockNavigate.
+          checkSession is a network call that can take 1–2 seconds; without
+          this overlay the user stares at the lock screen wondering if
+          their PIN was accepted. Sits on top of everything (no SafeArea)
+          so it covers the keypad cleanly. */}
+      {unlocking ? (
+        <View
+          pointerEvents="auto"
+          style={[styles.unlockingOverlay, { backgroundColor: base + 'EE' }]}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text
+            style={[
+              styles.unlockingText,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(Typography.callout.fontSize),
+                fontWeight: getScaledFontWeight(600) as any,
+              },
+            ]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            Unlocking…
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -311,5 +494,17 @@ const styles = StyleSheet.create({
     // between them; remaining bottom space is shared.
     marginTop: Spacing.lg,
     paddingBottom: Spacing.md,
+  },
+  unlockingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    zIndex: 1000,
+  },
+  unlockingText: {
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
 });

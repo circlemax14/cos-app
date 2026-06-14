@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -130,6 +131,8 @@ async function openPharmacy(p: PharmacyChoice): Promise<void> {
 
 export function QuickActionButtons() {
   const { getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const { width } = useWindowDimensions();
+  const isPhone = width < 600;
 
   const [pcp, setPcp] = useState<ContactInfo | null>(null);
   const [urgent, setUrgent] = useState<ContactInfo | null>(null);
@@ -190,6 +193,7 @@ export function QuickActionButtons() {
         loading={loading}
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
+        isPhone={isPhone}
       />
       <ActionButton
         primaryLabel="Pharmacy"
@@ -200,6 +204,7 @@ export function QuickActionButtons() {
         loading={loading}
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
+        isPhone={isPhone}
       />
       <ActionButton
         primaryLabel={urgent ? `Call ${urgent.name}` : 'Urgent Care'}
@@ -210,6 +215,7 @@ export function QuickActionButtons() {
         loading={loading}
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
+        isPhone={isPhone}
       />
 
       <ContactSetupModal
@@ -275,6 +281,7 @@ interface ActionButtonProps {
   loading: boolean;
   getScaledFontSize: (n: number) => number;
   getScaledFontWeight: (n: number) => string;
+  isPhone: boolean;
 }
 
 function ActionButton({
@@ -286,17 +293,23 @@ function ActionButton({
   loading,
   getScaledFontSize,
   getScaledFontWeight,
+  isPhone,
 }: ActionButtonProps) {
-  // SCRUM-265 #19: filled-card design replaces the pale-tint pill. Solid
-  // accent background, white icon pill in the top-left corner, larger
-  // labels in white. Soft shadow + decorative blob give the card real
-  // visual weight on the home grid.
+  // SCRUM-265 #19: filled-card design replaces the pale-tint pill.
+  // SCRUM-279 (2026-06-08): Ken asked to shrink on phone — buttons
+  // were taking too much vertical real estate and the provider-
+  // circle initials were overlapping. Tightened minHeight, padding,
+  // icon size, and font sizes when isPhone. iPad untouched.
+  // Use Math.min on getScaledFontSize so device Large Text settings
+  // don't blow the layout.
+  const cap = (sz: number) => Math.min(getScaledFontSize(sz), sz * 1.15)
   return (
     <Pressable
       onPress={onPress}
       disabled={loading}
       style={({ pressed }) => [
         styles.button,
+        isPhone && styles.buttonPhone,
         {
           backgroundColor: accent,
           opacity: loading ? 0.6 : pressed ? 0.9 : 1,
@@ -307,28 +320,33 @@ function ActionButton({
       accessibilityLabel={primaryLabel}
     >
       <View style={styles.buttonBlob} pointerEvents="none" />
-      <View style={[styles.iconCircle, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
-        <MaterialIcons name={icon} size={getScaledFontSize(20)} color="white" />
+      <View style={[
+        styles.iconCircle,
+        isPhone && styles.iconCirclePhone,
+        { backgroundColor: 'rgba(255,255,255,0.22)' },
+      ]}>
+        <MaterialIcons name={icon} size={isPhone ? 16 : getScaledFontSize(20)} color="white" />
       </View>
       <Text
         style={{
           color: '#FFFFFF',
-          fontSize: getScaledFontSize(13),
+          fontSize: isPhone ? cap(11) : getScaledFontSize(13),
           fontWeight: getScaledFontWeight(800) as any,
           textAlign: 'center',
-          marginTop: 10,
+          marginTop: isPhone ? 4 : 10,
           letterSpacing: 0.2,
         }}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
+        allowFontScaling={!isPhone}
       >
         {primaryLabel}
       </Text>
       <Text
         style={{
           color: 'rgba(255,255,255,0.78)',
-          fontSize: getScaledFontSize(10),
+          fontSize: isPhone ? cap(9) : getScaledFontSize(10),
           fontWeight: getScaledFontWeight(600) as any,
           textAlign: 'center',
           textTransform: 'uppercase',
@@ -338,6 +356,7 @@ function ActionButton({
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
+        allowFontScaling={!isPhone}
       >
         {secondaryLabel}
       </Text>
@@ -593,6 +612,15 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  // SCRUM-279 (2026-06-08): phone-specific overrides — tighter
+  // padding + shorter card. Provider-circle initials were overlapping
+  // the 96pt-tall cards on iPhone.
+  buttonPhone: {
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    minHeight: 68,
+    borderRadius: 12,
+  },
   buttonBlob: {
     position: 'absolute',
     width: 120,
@@ -609,6 +637,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconCirclePhone: { width: 28, height: 28, borderRadius: 10 },
   modalRoot: { flex: 1 },
   modalHeader: {
     flexDirection: 'row',

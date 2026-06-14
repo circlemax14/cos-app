@@ -46,7 +46,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="appointments"
           options={{
-            title: 'Appointments',
+            title: 'Calendar',
             tabBarIcon: ({ color }) => (
               <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
             ),
@@ -259,6 +259,14 @@ export default function TabLayout() {
         name="reminder-settings"
         options={{
           title: 'Reminders',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="calendar-settings"
+        options={{
+          title: 'Calendar Settings',
           href: null,
           headerShown: false,
         }}

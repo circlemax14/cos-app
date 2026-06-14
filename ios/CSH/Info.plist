@@ -35,7 +35,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>17</string>
+	<string>51</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -63,6 +63,16 @@
 	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Circle Support Health needs photo library access to upload health documents.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Circle Support Health reads your calendars so all your appointments — medical, work, and personal — appear together in one view.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Circle Support Health reads and writes calendar events so you can manage all your appointments in one place. Events you create here will appear in your other calendar apps.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Circle Support Health writes calendar events so the appointments you create here appear in your other calendar apps.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Circle Support Health uses reminders so you don't miss your appointments.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Circle Support Health uses reminders so you don't miss your appointments.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
@@ -72,6 +82,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>fetch</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>
