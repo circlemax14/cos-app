@@ -19,6 +19,7 @@ import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
+import { installRedactedConsoleError } from '@/lib/redact-error-logs';
 
 // Initialize Sentry as early as possible — before any other imports run side
 // effects — so we capture errors thrown during module load + provider setup.
@@ -48,7 +49,11 @@ if (!__DEV__) {
   console.log = () => {};
   console.warn = () => {};
   console.debug = () => {};
-  // Keep console.error for crash reporting tools that may hook into it
+
+  // console.error is kept (some crash-reporting tooling hooks into it)
+  // but wrapped to redact PHI from Error / axios-shaped arguments before
+  // logging. Security audit COS-331. Implementation in lib/redact-error-logs.
+  installRedactedConsoleError();
 }
 
 export const unstable_settings = {
