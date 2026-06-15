@@ -35,7 +35,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>52</string>
+	<string>53</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -51,8 +51,6 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Circle Support Health needs camera access to photograph documents and prescriptions.</string>
-	<key>NSContactsUsageDescription</key>
-	<string>Circle Support Health uses contacts to help you add emergency contacts quickly.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Circle Support Health uses Face ID to securely unlock your health information.</string>
 	<key>NSHealthShareUsageDescription</key>

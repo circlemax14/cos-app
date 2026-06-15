@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Contacts from 'expo-contacts';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
@@ -59,13 +58,10 @@ export default function PermissionsScreen() {
         // Continue if notification permission fails
       }
 
-      // 2. Contacts
-      setStatus('Requesting contacts access...');
-      try {
-        await Contacts.requestPermissionsAsync();
-      } catch {
-        // Continue
-      }
+      // SCRUM-279 (build 53): contacts permission removed.
+      // Apple Review 5.1.5: do not request permissions you don't use.
+      // No in-app feature currently reads or uploads contacts; the
+      // permission was vestigial and is being dropped before resubmit.
 
       // All done — mark as complete and route based on user state
       await AsyncStorage.setItem('permissions_requested', 'true');
