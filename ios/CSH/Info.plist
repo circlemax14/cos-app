@@ -35,7 +35,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>54</string>
+	<string>55</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -59,8 +59,6 @@
 	<string>Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Circle Support Health updates your health data so your care team has the latest information.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Circle Support Health needs photo library access to upload health documents.</string>
 	<key>NSCalendarsUsageDescription</key>

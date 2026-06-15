@@ -409,7 +409,7 @@ export default function AgencyDetailScreen() {
                     {
                       value: 'agency-managed' as const,
                       title: 'Agency Managed',
-                      desc: 'Your care team actively directs your plan with full intake and cognitive assessment (MoCA + Full Intake coming soon).',
+                      desc: 'Your care team actively directs your plan with intake and cognitive assessment.',
                     },
                   ]).map((opt) => {
                     const selected = requestedTier === opt.value;
