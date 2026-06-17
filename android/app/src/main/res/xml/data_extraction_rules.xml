@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SCRUM-368 (MOBILE-002): Exclude all app data from Android backup channels.
+
+  AsyncStorage / SQLite / SharedPreferences in this app may contain PHI
+  (patient demographics, encounters, observations, calendar events).
+  Allowing Android Auto Backup or device-transfer to copy this data
+  off-device would violate HIPAA (45 CFR §164.312(a)(2)(iv)) because the
+  backup destination is outside our BAA boundary.
+
+  cloud-backup  -> Google Drive / Auto Backup (Android 6+)
+  device-transfer -> direct device-to-device transfer (Android 12+)
+
+  Excluding domain="root" prevents BOTH channels from including ANY of
+  the app's private data. Pair with android:allowBackup="false" +
+  android:fullBackupContent="false" in AndroidManifest.xml so older
+  Android versions (pre-12) also get no backup.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
