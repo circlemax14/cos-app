@@ -12,7 +12,6 @@ import {
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
@@ -22,42 +21,11 @@ import {
   type InstrumentItem,
 } from '@/services/api/instruments'
 import { submitAssessment } from '@/services/api/assessments'
-
-const DRAFT_KEY_PREFIX = 'assessment-draft:'
-interface Draft {
-  stepIdx: number
-  answers: Record<string, unknown>
-}
-
-async function loadDraft(instrumentId: string): Promise<Draft | null> {
-  try {
-    const raw = await AsyncStorage.getItem(DRAFT_KEY_PREFIX + instrumentId)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Draft
-    if (typeof parsed.stepIdx === 'number' && parsed.answers && typeof parsed.answers === 'object') {
-      return parsed
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-async function saveDraft(instrumentId: string, draft: Draft): Promise<void> {
-  try {
-    await AsyncStorage.setItem(DRAFT_KEY_PREFIX + instrumentId, JSON.stringify(draft))
-  } catch {
-    /* ignore — draft is best-effort */
-  }
-}
-
-async function clearDraft(instrumentId: string): Promise<void> {
-  try {
-    await AsyncStorage.removeItem(DRAFT_KEY_PREFIX + instrumentId)
-  } catch {
-    /* ignore */
-  }
-}
+import {
+  loadAssessmentDraft as loadDraft,
+  saveAssessmentDraft as saveDraft,
+  clearAssessmentDraft as clearDraft,
+} from '@/lib/assessment-draft-storage'
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
