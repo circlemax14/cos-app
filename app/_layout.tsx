@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react-native';
+import { initSentry } from '@/lib/sentry-install';
 
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
@@ -25,19 +26,20 @@ import { installRedactedConsoleError } from '@/lib/redact-error-logs';
 
 // Initialize Sentry as early as possible — before any other imports run side
 // effects — so we capture errors thrown during module load + provider setup.
-// The DSN is public (that's how Sentry's threat model works); the secret is
-// the auth token, which is only used at build time for source-map upload.
-Sentry.init({
-  dsn: 'https://e355f7946736032baf6d1b47c7dec51c@o4511341366345728.ingest.us.sentry.io/4511341368115200',
-  // Adjust this value in production, or use tracesSampler for greater control
-  tracesSampleRate: 0.1,
-  // Capture warnings + errors
-  enableNativeCrashHandling: true,
-  enableAutoSessionTracking: true,
-  // Tag every event with the runtime info we already track in About so we
-  // can filter by build / OTA group when triaging
-  // (more tags added in app/index.tsx after the JS bundle finishes loading)
-});
+//
+// initSentry wires the HIPAA-safety contract (SCRUM-364 / PHI-LOGGING-003):
+// beforeSend strips PHI from event request / user / transaction / extra /
+// contexts / breadcrumb tail; beforeBreadcrumb strips request bodies from
+// PHI-bearing fetch/xhr breadcrumbs; and mobileReplayIntegration is
+// registered with mask-all-text/images/vectors pinned ON so flipping
+// replay sampling later doesn't need a fresh review.
+//
+// Config lives in lib/sentry-config.ts (pure, contract-tested). The
+// Sentry-touching adapter is lib/sentry-install.ts. The DSN is public
+// (Sentry's threat model); the secret is the build-time auth token.
+initSentry(
+  'https://e355f7946736032baf6d1b47c7dec51c@o4511341366345728.ingest.us.sentry.io/4511341368115200',
+);
 
 // Hold the native splash up as early as possible — at module load,
 // before any layout mount — so there is no flash of blank white
