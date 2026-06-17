@@ -137,6 +137,14 @@ export async function signOut(): Promise<void> {
       const { clearMirrorMap } = await import('./calendar-mirror')
       await clearMirrorMap(outgoingSub)
     } catch { /* non-fatal */ }
+
+    // SCRUM-367: sweep this user's in-progress assessment drafts
+    // (clinical questionnaire answers — PHI) so the next user on the
+    // device cannot inherit them.
+    try {
+      const { clearAllAssessmentDraftsForUser } = await import('@/lib/assessment-draft-storage')
+      await clearAllAssessmentDraftsForUser(outgoingSub)
+    } catch { /* non-fatal */ }
   }
 }
 
