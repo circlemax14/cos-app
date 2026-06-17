@@ -4,8 +4,10 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import * as ScreenCapture from 'expo-screen-capture';
 import { PaperProvider } from 'react-native-paper';
 import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
+import { useEffect } from 'react';
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
@@ -149,6 +151,20 @@ function StackWithAppLock() {
 function RootLayout() {
   const colorScheme = useColorScheme();
   useNotifications();
+
+  // SCRUM-368 (MOBILE-003): Block screenshots and screen-recording app-wide.
+  // PHI is rendered on virtually every authenticated screen (patient detail,
+  // health summary, assessments, calendar events), so we apply the flag
+  // globally rather than per-screen. On Android this sets FLAG_SECURE on the
+  // window — which ALSO hides the app preview from the recent-apps switcher.
+  // On iOS this listens to UIScreen.capturedDidChangeNotification and blanks
+  // the screen during recording; iOS app-switcher snapshot redaction is a
+  // separate concern (see NOTES — may require a native AppDelegate shim).
+  useEffect(() => {
+    ScreenCapture.preventScreenCaptureAsync().catch(() => {
+      // Non-fatal — log loss of capture protection but don't crash the app.
+    });
+  }, []);
 
   // Capture every touch at the root so the idle-lock timer (15 min) is
   // reset whenever the user actually interacts with the app. The
