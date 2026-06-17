@@ -1,9 +1,53 @@
 import * as SecureStore from 'expo-secure-store';
 import { AxiosError } from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cognitoSignOut } from '@/lib/cognito';
 import { storeTokens, clearTokens, hasStoredSession } from '@/lib/auth-tokens';
 import { apiClient } from '@/lib/api-client';
 import { setCachedProfile, clearCachedProfile } from '@/lib/cached-profile';
+import { clearCachedUserSummary } from '@/lib/cached-user-summary';
+import { queryClient } from '@/providers/QueryProvider';
+
+/**
+ * Key prefixes that hold per-user, PHI-bearing state in AsyncStorage and
+ * MUST be purged on sign-out. Audit SCRUM-365 STORAGE-003/004 found these
+ * keys leaking between users on a shared device.
+ *
+ *  - 'doctor_data_<providerId>' — cached doctor lookups (PHI: who the user sees).
+ *  - 'assessment-draft:<instrumentId>' — in-flight PROMIS / PHQ-9 / etc. drafts.
+ *  - 'assessment_' — defensive: catches any legacy/alternate assessment key naming.
+ */
+export const PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT = [
+  'doctor_data_',
+  'assessment-draft:',
+  'assessment_',
+] as const;
+
+/**
+ * Best-effort sweep of all AsyncStorage keys whose prefix matches one of
+ * PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT. Exported for testability.
+ *
+ * Returns the list of keys it removed (handy for tests / debugging).
+ */
+export async function purgePhiAsyncStorageKeys(
+  storage: Pick<typeof AsyncStorage, 'getAllKeys' | 'multiRemove'> = AsyncStorage,
+): Promise<string[]> {
+  try {
+    const all = await storage.getAllKeys();
+    const matches = all.filter((k) =>
+      PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT.some((prefix) => k.startsWith(prefix)),
+    );
+    if (matches.length > 0) {
+      await storage.multiRemove(matches);
+    }
+    return [...matches];
+  } catch {
+    // Sign-out cleanup is best-effort — a storage failure must not block
+    // the user from signing out (auth tokens are already cleared by the
+    // caller before this runs).
+    return [];
+  }
+}
 
 export type SignInPayload = { username: string; password: string };
 export type SignUpPayload = {
@@ -112,7 +156,13 @@ export async function checkSession(): Promise<{ authenticated: boolean; user?: U
 /**
  * Sign out: clear tokens and Cognito session. Also clear any user-
  * scoped local caches that could leak PHI to the next user on the
- * device (calendar mirror map, etc.).
+ * device (React Query cache, profile cache, user-summary cache,
+ * doctor_data_* and assessment-draft:* AsyncStorage keys, calendar
+ * mirror map, etc.).
+ *
+ * Audit SCRUM-365 SESSION-001 + STORAGE-003/004: prior implementation
+ * left React Query state and per-user AsyncStorage keys behind, so the
+ * next user on a shared device could see the previous user's PHI.
  */
 export async function signOut(): Promise<void> {
   // Capture the outgoing user's sub before clearing the cached profile
@@ -126,7 +176,19 @@ export async function signOut(): Promise<void> {
   cognitoSignOut();
   await clearTokens();
   await clearCachedProfile();
+  await clearCachedUserSummary();
   await SecureStore.deleteItemAsync('cos_username');
+
+  // Nuke the React Query cache so PHI-bearing query responses (patients,
+  // health plans, providers, etc.) can't be observed by the next signed-in
+  // user. .clear() removes all queries + mutations and resets internal state.
+  try {
+    queryClient.clear();
+  } catch { /* non-fatal — never block sign-out */ }
+
+  // Sweep PHI-bearing AsyncStorage keys (doctor_data_*, assessment-draft:*,
+  // assessment_*) — see PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT above.
+  await purgePhiAsyncStorageKeys();
 
   if (outgoingSub) {
     // Lazy-import to avoid pulling AsyncStorage into every consumer of
