@@ -70,13 +70,38 @@ export type SignInReason =
 let _pendingReason: SignInReason | null = null;
 
 /**
+ * Reasons that originate from the cold-launch SplashGate and therefore
+ * mean "this user has no valid session and there is nothing for the
+ * lock-screen to protect". These MUST navigate immediately even if
+ * `_appLocked` is true — the lock-gate's deferral logic is designed to
+ * protect users mid-PIN-entry, not to trap users with no tokens on
+ * the splash screen forever (COS-348, Ken's 2026-06-18 user report).
+ *
+ * The bug shape: SecurityProvider persists `isLocked` across launches,
+ * so a previously-locked user who later signed out (or whose tokens
+ * were cleared) would arrive at SplashGate with `_appLocked === true`
+ * AND no session. The splash gate would call `requestSignIn`, the
+ * deferral branch would queue the request, no lock-screen would mount
+ * (because no profile → no destination), and the splash spinner would
+ * render indefinitely. Only "clear app data" recovered it.
+ */
+const BYPASS_LOCK_REASONS: ReadonlySet<SignInReason> = new Set([
+  'splash_no_session',
+  'splash_revalidate_failed',
+  'unrecoverable',
+]);
+
+/**
  * Request that the user be routed to /(auth)/sign-in. If the app is
  * currently locked the request is deferred — the lock-screen will
  * drain it after successful PIN entry. Otherwise the navigation
  * happens immediately.
+ *
+ * Splash-originated reasons bypass the lock gate (see BYPASS_LOCK_REASONS
+ * above) because there is no PHI to protect when there is no session.
  */
 export async function requestSignIn(reason: SignInReason): Promise<void> {
-  if (_appLocked) {
+  if (_appLocked && !BYPASS_LOCK_REASONS.has(reason)) {
     // Don't clobber a more-specific earlier reason.
     if (!_pendingReason) _pendingReason = reason;
     return;

@@ -138,6 +138,20 @@ export default function SplashGate() {
 
   const run = useCallback(async () => {
     setState('loading');
+
+    // Safety net: cap the entire boot pipeline at 12 seconds. If any
+    // step hangs — SecureStore stall, requestSignIn miss (the COS-348
+    // bug), network call without a timeout, anything new in the chain
+    // we haven't accounted for — drop the user at sign-in rather than
+    // leaving them on the spinner forever. A re-sign-in is a much
+    // smaller hit than "the app is broken, reinstall it."
+    let safetyFallbackFired = false;
+    const safetyTimeout = setTimeout(() => {
+      safetyFallbackFired = true;
+      router.replace('/(auth)/sign-in' as never);
+      SplashScreen.hideAsync().catch(() => {});
+    }, 12_000);
+
     try {
       // Step 1: Read token + cached profile in parallel. Both are local reads
       // (SecureStore + AsyncStorage) — no network.
@@ -179,6 +193,9 @@ export default function SplashGate() {
       router.replace(destination as never);
       if (destination === '/Home') prefetchAfterAuth({ force: true });
     } catch (err: unknown) {
+      // If the safety timeout already fired and routed the user, don't
+      // double-route or stomp on whatever state they're now in.
+      if (safetyFallbackFired) return;
       const isNetworkError =
         err instanceof Error && (err as Error & { code?: string }).code === 'NETWORK_ERROR';
       if (isNetworkError) {
@@ -187,6 +204,7 @@ export default function SplashGate() {
         await requestSignIn('unrecoverable');
       }
     } finally {
+      clearTimeout(safetyTimeout);
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [isLocked]);
