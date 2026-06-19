@@ -1,3 +1,4 @@
+import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -671,6 +672,7 @@ export default function Reports() {
             <Text style={[styles.historyContentText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(24) }]}>
               {getHistoryContent()}
             </Text>
+            <AICitationsFooter compact />
           </Card.Content>
         </Card>
       </View>
@@ -863,6 +865,7 @@ export default function Reports() {
                       <Text style={[styles.summaryText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any, lineHeight: getScaledFontSize(22) }]}>
                         {reportSummary.summary}
                       </Text>
+                      <AICitationsFooter compact />
                     </View>
                   </View>
                 )}

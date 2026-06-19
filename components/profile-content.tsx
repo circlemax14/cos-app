@@ -319,38 +319,11 @@ export function ProfileContent({
             />
           </Card>
 
-          {/* TODO: Temporarily hidden — re-enable when ready
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Services</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>View and manage your services</Text>}
-              left={(props) => <Icon {...props} source="bag-personal" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => {
-                if (onServicesPress) {
-                  onServicesPress();
-                } else {
-                  router.push('/Home/services');
-                }
-              }}
-            />
-          </Card>
-
-          <Card style={styles.menuCard}>
-            <List.Item
-              title={<Text style={[{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>Services</Text>}
-              description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>View and manage your services</Text>}
-              left={(props) => <Icon {...props} source="bag-personal" size={getScaledFontSize(40)} />}
-              right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => {
-                if (onServicesPress) {
-                  onServicesPress();
-                } else {
-                  router.push('/Home/services');
-                }
-              }}
-            />
-          </Card>
+          {/* SCRUM-319 — Services menu entry hidden for Apple Review
+              build 55. The Services screen shows fake-unlocked "active"
+              status for every premium feature with no real IAP wiring
+              — Guideline 2.1 ("placeholder content"). Re-enable when
+              the subscription / IAP flow ships. */}
 
           <Card style={styles.menuCard}>
             <List.Item
@@ -375,7 +348,6 @@ export function ProfileContent({
               onPress={() => router.push('/Home/proxy-management')}
             />
           </Card>
-          */}
 
           <Card style={styles.menuCard}>
             <List.Item
@@ -609,6 +581,67 @@ export function ProfileContent({
           >
             <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
               Sign Out
+            </Text>
+          </Button>
+
+          {/* SCRUM-319 — Apple Review 5.1.1(v): in-app account
+              deletion. Two-step confirm (alert → confirm modal)
+              prevents accidental taps. Backend call wipes Cognito +
+              all DynamoDB rows + queues FHIR purge; mobile clears
+              local state and routes to sign-in. */}
+          <Button
+            mode="text"
+            onPress={() => {
+              Alert.alert(
+                'Delete account?',
+                "This permanently deletes your Circle Support Health account and all your data, including your records, plans, and trends. This cannot be undone. Are you absolutely sure?",
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete forever',
+                    style: 'destructive',
+                    onPress: () => {
+                      Alert.alert(
+                        'Last chance',
+                        "Tap Delete to permanently erase your account. You will be signed out immediately.",
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await apiClient.delete('/v1/auth/account');
+                              } catch {
+                                // Even if the network call fails (token
+                                // expired, offline), continue with the
+                                // local wipe — better to leave the user
+                                // signed out than to keep PHI accessible.
+                              }
+                              await signOut();
+                              queryClient.clear();
+                              router.replace('/(auth)/sign-in' as never);
+                              setTimeout(() => {
+                                Alert.alert(
+                                  'Account deleted',
+                                  "Your account and data have been deleted. We're sorry to see you go.",
+                                );
+                              }, 400);
+                            },
+                          },
+                        ],
+                      );
+                    },
+                  },
+                ],
+              );
+            }}
+            style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12), marginTop: 8 }]}
+            accessibilityLabel="Permanently delete my account and all my data"
+            accessibilityRole="button"
+          >
+            <Text style={[{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }]}>
+              Delete Account
             </Text>
           </Button>
         </View>

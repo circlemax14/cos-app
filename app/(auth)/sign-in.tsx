@@ -438,6 +438,52 @@ export default function SignInScreen() {
                 </Text>
               </View>
 
+              {/* SCRUM-319 (Apple Review 5.1.1): Privacy Policy + Terms
+                  must be reachable without signing in. Sign-in footer
+                  surfaces both as inline links. */}
+              <View style={[styles.privacyRow, { marginTop: 8, gap: 6 }]}>
+                <Pressable
+                  onPress={() => router.push('/(auth)/privacy-policy' as never)}
+                  accessibilityRole="link"
+                  accessibilityLabel="Open Privacy Policy"
+                >
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(600) as any,
+                      textDecorationLine: 'underline',
+                    }}
+                  >
+                    Privacy Policy
+                  </Text>
+                </Pressable>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                  }}
+                >
+                  ·
+                </Text>
+                <Pressable
+                  onPress={() => router.push('/(auth)/terms' as never)}
+                  accessibilityRole="link"
+                  accessibilityLabel="Open Terms of Service"
+                >
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(600) as any,
+                      textDecorationLine: 'underline',
+                    }}
+                  >
+                    Terms of Service
+                  </Text>
+                </Pressable>
+              </View>
+
               <View style={styles.switchRow}>
                 <Text
                   style={{

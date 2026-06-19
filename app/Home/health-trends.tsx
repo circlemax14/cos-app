@@ -8,6 +8,7 @@ import { TrendLineChart } from '@/components/health/TrendLineChart'
 import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTrends'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import { fetchTrendsSummary, type TrendsSummary } from '@/services/api/trends'
+import { AICitationsFooter } from '@/components/ai/ai-citations-footer'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import * as FileSystem from 'expo-file-system/legacy'
 import React, { useCallback, useMemo, useState } from 'react'
@@ -1197,6 +1198,7 @@ function SummarizeCard() {
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(10), marginTop: 8, textAlign: 'right' }}>
             Generated {new Date(summary.generatedAt).toLocaleString()}
           </Text>
+          <AICitationsFooter compact />
         </View>
       )}
     </View>

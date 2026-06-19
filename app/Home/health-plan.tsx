@@ -10,6 +10,7 @@ import {
  Pressable } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
+import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -648,6 +649,7 @@ export default function HealthPlanScreen() {
           <Text style={[styles.aiBannerText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
             {plan.summary}
           </Text>
+          <AICitationsFooter compact />
         </View>
 
         {/* Plan overview — breakdown of all tasks in the plan */}

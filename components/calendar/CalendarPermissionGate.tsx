@@ -40,9 +40,13 @@ export function CalendarPermissionGate({ permissions, children }: Props) {
       </Text>
       <Text style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
         {needsSettings
-          ? 'You previously declined access. Open Settings to enable it so Circle Support Health can show your appointments alongside other calendars.'
-          : 'Allow access to your calendar so Circle Support Health can show all your appointments — medical, work, and personal — together in one view.'}
+          ? 'Calendar access was previously declined. Open Settings to enable it so Circle Support Health can show your appointments alongside other calendars.'
+          : 'Circle Support Health can show all your appointments — medical, work, and personal — together in one view. Tap Continue to grant calendar access.'}
       </Text>
+      {/* SCRUM-279 (build 53): Apple Review 5.1.1(iv) — the pre-prompt
+          button must not use words like "Allow" since that's reserved
+          for the OS system sheet itself. Using "Continue" + neutral
+          copy. iOS shows the actual permission sheet AFTER this tap. */}
       <Pressable
         onPress={needsSettings ? permissions.openSettings : permissions.request}
         style={({ pressed }) => [
@@ -50,10 +54,10 @@ export function CalendarPermissionGate({ permissions, children }: Props) {
           { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 },
         ]}
         accessibilityRole="button"
-        accessibilityLabel={needsSettings ? 'Open Settings' : 'Allow calendar access'}
+        accessibilityLabel={needsSettings ? 'Open Settings' : 'Continue to calendar permission'}
       >
         <Text style={[styles.primaryBtnLabel, { fontSize: getScaledFontSize(15) }]}>
-          {needsSettings ? 'Open Settings' : 'Allow access'}
+          {needsSettings ? 'Open Settings' : 'Continue'}
         </Text>
       </Pressable>
     </View>

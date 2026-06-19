@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "52",
+      "buildNumber": "55",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"
@@ -18,7 +18,7 @@
       "appleTeamId": "Y9J46AL3G2",
       "infoPlist": {
         "NSCameraUsageDescription": "Circle Support Health needs camera access to photograph documents and prescriptions.",
-        "NSContactsUsageDescription": "Circle Support Health uses contacts to help you add emergency contacts quickly.",
+        "NSContactsUsageDescription": "Circle Support Health does not access your contacts. This message is required by iOS because a third-party library included in the app bundle references the Contacts API; the app itself does not read, transmit, or store any contact information.",
         "NSPhotoLibraryUsageDescription": "Circle Support Health needs photo library access to upload health documents.",
         "NSFaceIDUsageDescription": "Circle Support Health uses Face ID to securely unlock your health information.",
         "NSHealthShareUsageDescription": "Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.",

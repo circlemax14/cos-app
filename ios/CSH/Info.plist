@@ -35,7 +35,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>52</string>
+	<string>55</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -52,15 +52,13 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Circle Support Health needs camera access to photograph documents and prescriptions.</string>
 	<key>NSContactsUsageDescription</key>
-	<string>Circle Support Health uses contacts to help you add emergency contacts quickly.</string>
+	<string>Circle Support Health does not access your contacts. This message is required by iOS because a third-party library included in the app bundle references the Contacts API; the app itself does not read, transmit, or store any contact information.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Circle Support Health uses Face ID to securely unlock your health information.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Circle Support Health updates your health data so your care team has the latest information.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Circle Support Health needs photo library access to upload health documents.</string>
 	<key>NSCalendarsUsageDescription</key>
