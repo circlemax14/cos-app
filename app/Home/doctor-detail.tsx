@@ -1,3 +1,4 @@
+import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams } from 'expo-router';
@@ -617,6 +618,9 @@ export default function DoctorDetailScreen() {
               {state.summary}
             </Text>
           )}
+          {state && !state.loading && !state.empty && state.summary ? (
+            <AICitationsFooter compact />
+          ) : null}
         </Card.Content>
       </Card>
     );
@@ -946,6 +950,7 @@ export default function DoctorDetailScreen() {
                   Generated {new Date(aiProgressNotes.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
                   {aiProgressNotes.fromCache ? ' · cached' : ''}
                 </Text>
+                <AICitationsFooter compact />
               </>
             ) : (
               <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
