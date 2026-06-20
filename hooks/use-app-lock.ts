@@ -3,6 +3,7 @@ import { AppState, AppStateStatus, PanResponder } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSecurity } from '@/stores/security-store';
+import { isAppLocked } from '@/lib/lock-gate';
 import { getLockTimeout, isPinSetup } from '@/services/pin-auth';
 
 /**
@@ -104,13 +105,22 @@ export function useAppLock() {
         if (backgroundTime.current !== null) {
           const elapsed = Date.now() - backgroundTime.current;
           const timeout = await getLockTimeout();
-          // SCRUM-279 (build 42): never re-lock if we're already on
-          // the lock screen (PIN entry shouldn't reset itself) AND
+          // SCRUM-279 (build 42): never re-lock if we're already locked /
+          // on the lock screen (PIN entry shouldn't reset itself) AND
           // require a minimum debounce so OS-induced sub-second
           // background flickers don't trigger a re-lock.
-          const onLockScreen = (lastPathRef.current ?? pathname ?? '').startsWith('/(security)/lock-screen');
+          //
+          // COS-351: the previous guard read `lastPathRef.current` — but
+          // lastPathRef only tracks RESTORE-able paths and the lock screen is
+          // blocklisted, so while ON the lock screen it still held the
+          // PRE-lock route (e.g. /Home). That made `onLockScreen` evaluate
+          // FALSE during unlock and re-fire captureAndLock — the Face ID
+          // "unlock → flash of PIN screen" race. Use the always-current
+          // module lock-mirror + the live pathname instead.
+          const alreadyLocked =
+            isAppLocked() || (pathname ?? '').startsWith('/(security)/lock-screen');
           const effectiveTimeout = Math.max(timeout, MIN_BG_DEBOUNCE_MS);
-          if (elapsed >= effectiveTimeout && !onLockScreen) {
+          if (elapsed >= effectiveTimeout && !alreadyLocked) {
             const pinSetup = await isPinSetup();
             if (pinSetup) await captureAndLock();
           }

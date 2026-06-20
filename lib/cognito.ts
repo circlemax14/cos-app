@@ -4,6 +4,16 @@ import {
   AuthenticationDetails,
   CognitoRefreshToken,
 } from 'amazon-cognito-identity-js';
+import { withTimeout } from './with-timeout';
+
+/**
+ * Hard ceiling on the Cognito refresh round-trip (COS-351). amazon-cognito-
+ * identity-js has no built-in timeout; this call is awaited inside the
+ * api-client refresh mutex, so an unbounded hang there freezes the app on
+ * resume. 20s is well above a healthy refresh yet bounded — on timeout we
+ * reject with a TimeoutError (treated as transient, session preserved).
+ */
+const REFRESH_TIMEOUT_MS = 20_000;
 
 const userPool = new CognitoUserPool({
   UserPoolId: process.env.EXPO_PUBLIC_COGNITO_USER_POOL_ID ?? '',
@@ -50,7 +60,7 @@ export function refreshCognitoTokens(
   username: string,
   refreshToken: string,
 ): Promise<Pick<CognitoTokens, 'accessToken' | 'idToken'>> {
-  return new Promise((resolve, reject) => {
+  const inner = new Promise<Pick<CognitoTokens, 'accessToken' | 'idToken'>>((resolve, reject) => {
     const user = new CognitoUser({ Username: username, Pool: userPool });
     const token = new CognitoRefreshToken({ RefreshToken: refreshToken });
 
@@ -62,6 +72,11 @@ export function refreshCognitoTokens(
       });
     });
   });
+
+  // COS-351: never let a hung refreshSession() wedge the api-client refresh
+  // mutex. A timeout rejects as transient (TimeoutError), so the session is
+  // preserved and the mutex's finally always runs.
+  return withTimeout(inner, REFRESH_TIMEOUT_MS, 'Cognito token refresh timed out');
 }
 
 /**
