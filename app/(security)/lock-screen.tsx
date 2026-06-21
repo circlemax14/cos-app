@@ -19,7 +19,8 @@ import { useSecurity } from '@/stores/security-store';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { getColors, Spacing, Typography } from '@/constants/design-system';
 import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
-import { consumePendingSignIn, SignInReason } from '@/lib/lock-gate';
+import { consumePendingSignIn, SignInReason, setAppLocked } from '@/lib/lock-gate';
+import { resolveUnlockAction, LOCAL_FIRST_UNLOCK } from '@/lib/unlock-decision';
 import { checkSession } from '@/services/auth';
 import { clearTokens } from '@/lib/auth-tokens';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
@@ -153,49 +154,61 @@ export default function LockScreen() {
   };
 
   /**
-   * SCRUM-279 (build 44): post-unlock navigation.
+   * Post-unlock navigation (COS-351 — local-first unlock).
    *
-   * After successful PIN/biometric:
+   * A successful PIN/biometric proves DEVICE-LOCAL identity, so the unlock
+   * must NOT block on a network round-trip. The old flow `await
+   * checkSession()`d here: on a flaky network after resume that froze the
+   * app behind the "Unlocking…" overlay (force-close territory), and ANY
+   * non-200 — including a transient network error — wiped a still-valid
+   * 30-day session and bounced the user to sign-in. See lib/unlock-decision.ts.
    *
-   *   1. Check the lock-gate for any sign-in that was DEFERRED while
-   *      the user was on this screen (e.g. SplashGate's background
-   *      revalidation found the session was bad, or api-client got a
-   *      refresh failure on a parallel call). If there's a pending
-   *      reason, surface an alert explaining what happened, then
-   *      route to sign-in. Tokens are wiped first so PHI can't leak.
-   *   2. Otherwise validate the session ourselves — the cached
-   *      profile path in SplashGate doesn't talk to the backend, so
-   *      this is our first authoritative check. If the live call
-   *      returns no user, treat it as session_expired.
-   *   3. Only if both gates pass do we restore the pre-lock route.
+   *   1. If a sign-in was already DEFERRED while locked (api-client's
+   *      forceSignOut on a GENUINE auth rejection, or SplashGate) — that is a
+   *      confirmed-dead session: wipe tokens, explain, route to sign-in.
+   *      No PHI renders.
+   *   2. Local-first (default): enter the app IMMEDIATELY on cached data —
+   *      the same trust model SplashGate already uses for its optimistic
+   *      cached-profile route — and revalidate in the background via prefetch.
+   *      The api-client interceptor force-signs-out only on a GENUINE auth
+   *      rejection, so a truly-dead session still bounces within ~1–2s while a
+   *      transient error neither freezes nor signs the user out.
+   *   3. Kill-switch OFF: legacy validate-then-enter (tolerating transient
+   *      failures by letting the user in on cached data).
    *
-   * Security note: the PIN is a device-local secret. It does NOT
-   * authorise any backend call — the Cognito (or app-signed social)
-   * token does. So when the backend session is genuinely gone we
-   * MUST require a real re-sign-in before any PHI can render.
+   * `setAppLocked(false)` is called synchronously so that if the background
+   * revalidation finds a genuinely-dead session, the interceptor's
+   * requestSignIn routes to sign-in immediately instead of being deferred
+   * again (and lost) because the module lock-mirror still read `true`.
    */
   const postUnlockNavigate = async () => {
-    // Build 45: show the loading overlay BEFORE any async work so the
-    // user gets immediate visual feedback that the PIN was accepted.
+    setAppLocked(false);
+
+    const action = resolveUnlockAction({
+      pendingReason: consumePendingSignIn(),
+      localFirst: LOCAL_FIRST_UNLOCK,
+    });
+
+    // Confirmed-dead session (deferred while locked) — never show PHI.
+    if (action.type === 'sign-in') {
+      await clearTokens();
+      const { title, message } = describeSignInReason(action.reason);
+      Alert.alert(title, message, [
+        { text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in' as never) },
+      ]);
+      return;
+    }
+
+    // Local-first: enter immediately on cached data; revalidate in background.
+    if (action.type === 'enter-app') {
+      prefetchAfterAuth();
+      await resumeAfterUnlock();
+      return;
+    }
+
+    // Legacy (kill-switch off): validate against the backend before entering.
     setUnlocking(true);
     try {
-      const pendingReason = consumePendingSignIn();
-      if (pendingReason) {
-        await clearTokens();
-        const { title, message } = describeSignInReason(pendingReason);
-        setUnlocking(false);
-        Alert.alert(title, message, [
-          {
-            text: 'Sign In',
-            onPress: () => {
-              router.replace('/(auth)/sign-in' as never);
-            },
-          },
-        ]);
-        return;
-      }
-
-      // No deferred sign-in — validate the live session before showing PHI.
       try {
         const result = await checkSession();
         if (!result.authenticated || !result.user) {
@@ -204,33 +217,16 @@ export default function LockScreen() {
           Alert.alert(
             'Session expired',
             'For your security, your session has expired and we need you to sign in again with your password.',
-            [
-              {
-                text: 'Sign In',
-                onPress: () => router.replace('/(auth)/sign-in' as never),
-              },
-            ],
+            [{ text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in' as never) }],
           );
           return;
         }
       } catch {
-        // Network failure — let the user in (cached data only). The
-        // next API call will trigger the refresh path; if THAT fails
-        // we'll come back through this gate.
+        // Network failure — let the user in (cached data only).
       }
-
-      // SCRUM-279 (build 50): warm home + calendar caches in parallel
-      // so the post-unlock home screen doesn't show empty state for
-      // the first ~3 seconds. force=false honors the 30s cooldown if
-      // the user just unlocked recently (PIN-then-PIN scenarios).
       prefetchAfterAuth();
-
       await resumeAfterUnlock();
     } finally {
-      // resumeAfterUnlock has already navigated by the time we get here
-      // in the happy path; the overlay sits on top of the unmounting
-      // lock-screen for one frame then disappears with the screen.
-      // Reset state defensively in case navigation didn't happen.
       setUnlocking(false);
     }
   };
