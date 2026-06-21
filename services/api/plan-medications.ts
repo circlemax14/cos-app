@@ -11,9 +11,20 @@
  *
  * Backend contract (fixed):
  *   GET  /v1/patients/me/plan-medications
- *        -> { success, data: { flagEnabled, medications: Medication[] } }
+ *        -> { success, data: {
+ *               flagEnabled,
+ *               medications: Medication[],
+ *               // COS-357 follow-up (SCRUM-504): soft recurring "review your
+ *               // medications" prompt. medsReviewNeeded is true while the
+ *               // server-side review flag is on AND the patient hasn't yet
+ *               // confirmed; medsReviewedAt is the last confirmation time.
+ *               // Both default to a no-prompt state on older backends.
+ *               medsReviewNeeded?: boolean,
+ *               medsReviewedAt?: string | null,
+ *             } }
  *   PUT  /v1/patients/me/plan-medications  (all body fields optional)
  *        -> { success, data: { medications: Medication[] } }
+ *        accepts confirmReview?: boolean to mark the review complete.
  *
  * Flag-gating: `flagEnabled` defaults to false on older/back-compat
  * deployments. Callers MUST treat false as "render nothing".
@@ -52,6 +63,15 @@ export interface Medication {
 export interface PlanMedicationsResponse {
   flagEnabled: boolean;
   medications: Medication[];
+  /**
+   * COS-357 follow-up (SCRUM-504). True when the patient should be nudged to
+   * review their medications (server review flag on + not yet confirmed).
+   * Defaults to false on older backends that don't send the field, so the
+   * prompt stays inert (back-compat).
+   */
+  medsReviewNeeded: boolean;
+  /** ISO timestamp of the last review confirmation, or null if never. */
+  medsReviewedAt: string | null;
 }
 
 // ─── PUT body shapes (every field optional) ────────────────────────────────
@@ -96,6 +116,12 @@ export interface UpdatePlanMedicationsBody {
   setTracked?: PlanMedicationSetTracked[];
   setSupply?: PlanMedicationSetSupply[];
   snoozeRefill?: PlanMedicationSnoozeRefill[];
+  /**
+   * COS-357 follow-up (SCRUM-504). When true, marks the "review your
+   * medications" prompt as completed server-side. Can be sent on its own or
+   * alongside other mutations (e.g. when the patient saves supply).
+   */
+  confirmReview?: boolean;
 }
 
 /**
@@ -114,10 +140,13 @@ export async function fetchPlanMedications(): Promise<PlanMedicationsResponse> {
     return {
       flagEnabled: data?.flagEnabled === true,
       medications: Array.isArray(data?.medications) ? data.medications : [],
+      // Default to no-prompt when the field is absent (older backend).
+      medsReviewNeeded: data?.medsReviewNeeded === true,
+      medsReviewedAt: typeof data?.medsReviewedAt === 'string' ? data.medsReviewedAt : null,
     };
   } catch {
     // Disabled-by-default on any failure (404 on old backends, network, etc.)
-    return { flagEnabled: false, medications: [] };
+    return { flagEnabled: false, medications: [], medsReviewNeeded: false, medsReviewedAt: null };
   }
 }
 

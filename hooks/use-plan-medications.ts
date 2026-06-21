@@ -34,13 +34,21 @@ export function useUpdatePlanMedications() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: UpdatePlanMedicationsBody) => updatePlanMedications(body),
-    onSuccess: (medications) => {
+    onSuccess: (medications, variables) => {
       // Seed the cache immediately, preserving the existing flag state, then
-      // invalidate so the next read re-confirms with the server.
-      qc.setQueryData<PlanMedicationsResponse>(PLAN_MEDICATIONS_KEY, (prev) => ({
-        flagEnabled: prev?.flagEnabled ?? true,
-        medications,
-      }));
+      // invalidate so the next read re-confirms with the server. The PUT only
+      // returns the medication list, so we carry over the review fields from
+      // the prior cache — and optimistically clear medsReviewNeeded when this
+      // mutation confirmed the review, so the prompt disappears at once.
+      qc.setQueryData<PlanMedicationsResponse>(PLAN_MEDICATIONS_KEY, (prev) => {
+        const confirmed = variables.confirmReview === true;
+        return {
+          flagEnabled: prev?.flagEnabled ?? true,
+          medications,
+          medsReviewNeeded: confirmed ? false : prev?.medsReviewNeeded ?? false,
+          medsReviewedAt: confirmed ? new Date().toISOString() : prev?.medsReviewedAt ?? null,
+        };
+      });
       qc.invalidateQueries({ queryKey: PLAN_MEDICATIONS_KEY });
     },
   });

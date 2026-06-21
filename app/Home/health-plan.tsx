@@ -31,6 +31,7 @@ import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
+import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {
@@ -100,6 +101,23 @@ export default function HealthPlanScreen() {
   // Health Plan v2: Plan / Progress tabs + plan-type chooser
   const [activeTab, setActiveTab] = useState<'plan' | 'progress'>('plan');
   const [showChooser, setShowChooser] = useState(false);
+
+  // COS-357: "Review your medications" prompt → scroll to the meds section and
+  // open its add flow. We track the section's Y offset inside the Plan
+  // ScrollView and a monotonic signal that tells the section to open Add.
+  const planScrollRef = React.useRef<ScrollView | null>(null);
+  const medsSectionYRef = React.useRef<number | null>(null);
+  const [openMedsAddSignal, setOpenMedsAddSignal] = useState(0);
+
+  const onReviewMedications = useCallback(() => {
+    setActiveTab('plan');
+    const y = medsSectionYRef.current;
+    if (y != null && planScrollRef.current) {
+      planScrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
+    // Open the section's add/confirm flow so the patient can act immediately.
+    setOpenMedsAddSignal((n) => n + 1);
+  }, []);
 
   const planTypeQuery = useQuery({
     queryKey: ['plan-type'],
@@ -452,8 +470,14 @@ export default function HealthPlanScreen() {
         />
       ) : (
       <ScrollView
+        ref={planScrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+        {/* COS-357: soft, recurring "review your medications" prompt. Self-
+            gates on the GET flagEnabled + medsReviewNeeded and the local
+            snooze, so it renders nothing when off/snoozed/back-compat. Sits
+            above the rest of the Plan content. */}
+        <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
         {needsAssessment ? (
           <Pressable
             onPress={() => router.push('/Home/assessments-catalog?source=plan-upgrade' as never)}
@@ -657,7 +681,12 @@ export default function HealthPlanScreen() {
             GET response's flagEnabled: renders nothing when the flag is off
             (or the endpoint errors), so this is inert for back-compat and
             for older app builds. Shown for Basic AND Advanced plans. */}
-        <MedicationsSection />
+        <MedicationsSection
+          onLayout={(e) => {
+            medsSectionYRef.current = e.nativeEvent.layout.y;
+          }}
+          openAddSignal={openMedsAddSignal}
+        />
 
         {/* Plan overview — breakdown of all tasks in the plan */}
         <View style={[styles.planOverview, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>

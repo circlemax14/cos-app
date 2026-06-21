@@ -21,6 +21,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  type LayoutChangeEvent,
   Modal,
   Pressable,
   StyleSheet,
@@ -71,7 +72,24 @@ type EditorMode =
 
 type SupplyMode = { med: Medication };
 
-export function MedicationsSection(): React.JSX.Element | null {
+export interface MedicationsSectionProps {
+  /**
+   * Forwarded to the section's outer View so a parent screen can measure it and
+   * scroll to it (used by the "Review your medications" prompt — COS-357).
+   */
+  onLayout?: (e: LayoutChangeEvent) => void;
+  /**
+   * Monotonic counter: whenever it increments, the section opens its add-med
+   * flow. Lets the review prompt's "Review now" jump straight into adding/
+   * confirming a med. Initial value (0) does nothing.
+   */
+  openAddSignal?: number;
+}
+
+export function MedicationsSection({
+  onLayout,
+  openAddSignal = 0,
+}: MedicationsSectionProps = {}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -80,6 +98,15 @@ export function MedicationsSection(): React.JSX.Element | null {
 
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
+
+  // Open the add flow when the parent bumps openAddSignal (skip the initial 0).
+  const lastOpenSignal = React.useRef(0);
+  React.useEffect(() => {
+    if (openAddSignal > 0 && openAddSignal !== lastOpenSignal.current) {
+      lastOpenSignal.current = openAddSignal;
+      setEditor({ kind: 'add' });
+    }
+  }, [openAddSignal]);
 
   // Flag gate — render NOTHING until the server explicitly enables the
   // feature. Off-by-default for back-compat and while the query is loading.
@@ -103,7 +130,7 @@ export function MedicationsSection(): React.JSX.Element | null {
   };
 
   return (
-    <View>
+    <View onLayout={onLayout}>
       {/* Section header */}
       <View style={styles.secHead}>
         <Text
@@ -220,8 +247,13 @@ export function MedicationsSection(): React.JSX.Element | null {
         onClose={() => setSupplyEditor(null)}
         onSubmit={({ remainingQuantity, dosesPerDay }) => {
           if (!supplyEditor) return;
+          // Saving supply for a med also counts as confirming the patient
+          // reviewed their meds (COS-357), so we auto-confirm the review here.
+          // The explicit "Confirm my medications" button still exists for
+          // patients who don't need to update supply.
           updateMutation.mutate({
             setSupply: [{ id: supplyEditor.med.id, remainingQuantity, dosesPerDay }],
+            confirmReview: true,
           });
           setSupplyEditor(null);
         }}
