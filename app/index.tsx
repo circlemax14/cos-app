@@ -201,7 +201,19 @@ export default function SplashGate() {
       if (isNetworkError) {
         setState('no-internet');
       } else {
-        await requestSignIn('unrecoverable');
+        // COS-353: a token/SecureStore READ failure on cold start (iOS
+        // Keychain not ready right after unlock, or the expo-modules read
+        // race) is NOT a sign-out condition. A PIN-configured user almost
+        // certainly has a session, so route to the lock screen — unlocking
+        // re-reads the token once the Keychain is available, and the unlock
+        // path self-corrects (forces a real sign-in) if the session is
+        // genuinely gone. Only fall back to sign-in when there's no PIN.
+        const pinConfigured = await isPinSetup().catch(() => false);
+        if (pinConfigured) {
+          router.replace('/(security)/lock-screen' as never);
+        } else {
+          await requestSignIn('unrecoverable');
+        }
       }
     } finally {
       clearTimeout(safetyTimeout);
