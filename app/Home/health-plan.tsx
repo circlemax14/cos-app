@@ -30,6 +30,7 @@ import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
+import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {
@@ -651,6 +652,12 @@ export default function HealthPlanScreen() {
           </Text>
           <AICitationsFooter compact />
         </View>
+
+        {/* Medication Management (COS-357 / SCRUM-504). Self-gates on the
+            GET response's flagEnabled: renders nothing when the flag is off
+            (or the endpoint errors), so this is inert for back-compat and
+            for older app builds. Shown for Basic AND Advanced plans. */}
+        <MedicationsSection />
 
         {/* Plan overview — breakdown of all tasks in the plan */}
         <View style={[styles.planOverview, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
