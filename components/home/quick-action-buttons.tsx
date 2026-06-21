@@ -312,7 +312,9 @@ function ActionButton({
         isPhone && styles.buttonPhone,
         {
           backgroundColor: accent,
-          opacity: loading ? 0.6 : pressed ? 0.9 : 1,
+          // COS-352: Ken asked for a softer, more transparent look on the
+          // Call PCP / Pharmacy / Urgent Care buttons. Resting opacity 1 -> 0.85.
+          opacity: loading ? 0.55 : pressed ? 0.72 : 0.85,
           transform: [{ scale: pressed ? 0.98 : 1 }],
         },
       ]}
