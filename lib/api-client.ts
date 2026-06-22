@@ -3,6 +3,11 @@ import * as SecureStore from 'expo-secure-store';
 import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from './auth-tokens';
 import { CLIENT_INFO_HEADERS } from './client-info';
 import { requestSignIn, SignInReason } from './lock-gate';
+import {
+  settleWaitersWithToken,
+  settleWaitersWithError,
+  type QueuedWaiter,
+} from './refresh-queue';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 
@@ -54,17 +59,21 @@ apiClient.interceptors.request.use(async (config) => {
 
 // ─── Response interceptor: handle 401 refresh + network errors ─────────────
 //
-// SCRUM-279 (build 44): the queue now supports BOTH resolve + reject.
-// Previously, on refresh failure we cleared pendingRequests but never
-// rejected the queued promises — they hung forever, leaking memory and
-// causing UI spinners to spin indefinitely while the user was bounced
-// to sign-in. Now we fan the rejection out to every waiter.
+// SCRUM-279 (build 44): the queue supports BOTH resolve + reject. Previously,
+// on refresh FAILURE we cleared pendingRequests but never rejected the queued
+// promises — they hung forever, leaking memory and spinning UI while the user
+// was bounced to sign-in. That added the reject fan-out.
+//
+// COS-362 (build 57+): the symmetric dangle on refresh SUCCESS is now closed
+// too. A queued waiter whose request had no `config` (originalRequest
+// undefined) used to settle neither resolve nor reject inside the success
+// fan-out — hanging forever and wedging the caller's Promise.all (this is what
+// stuck Health Plan after unlock). Both fan-outs now route through the
+// settle helpers in ./refresh-queue, which guarantee every waiter settles
+// exactly once. Each waiter carries a `retry` closure (re-issue with the fresh
+// token) or null when there is no request to retry.
 let isRefreshing = false;
-interface PendingRequest {
-  resolve: (token: string) => void;
-  reject: (err: Error) => void;
-}
-let pendingRequests: PendingRequest[] = [];
+let pendingRequests: QueuedWaiter[] = [];
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -81,17 +90,20 @@ apiClient.interceptors.response.use(
     // 401 → try token refresh once
     if (error.response.status === 401 && !originalRequest?._retry) {
       if (isRefreshing) {
-        // Queue this request until refresh completes
+        // Queue this request until refresh completes. The settle helpers
+        // (see ./refresh-queue) guarantee this promise ALWAYS settles — even
+        // when originalRequest is undefined (COS-362: previously hung forever).
         return new Promise((resolve, reject) => {
           pendingRequests.push({
-            resolve: (newToken: string) => {
-              if (originalRequest) {
-                originalRequest.headers = originalRequest.headers ?? {};
-                originalRequest.headers.Authorization = `Bearer ${newToken}`;
-                resolve(apiClient(originalRequest));
-              }
-            },
+            resolve,
             reject,
+            retry: originalRequest
+              ? (newToken: string) => {
+                  originalRequest.headers = originalRequest.headers ?? {};
+                  originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                  return apiClient(originalRequest);
+                }
+              : null,
           });
         });
       }
@@ -182,11 +194,13 @@ apiClient.interceptors.response.use(
 
         await storeTokens(newAccess, newRefresh, newId);
 
-        // Fan out the new token to every waiter that queued while we
-        // were refreshing.
+        // Fan out the new token to every waiter that queued while we were
+        // refreshing. settleWaitersWithToken retries each request and resolves
+        // it, and rejects (never hangs) any waiter that has no request to
+        // retry — see COS-362 note above.
         const waiters = pendingRequests;
         pendingRequests = [];
-        waiters.forEach((p) => p.resolve(newAccess));
+        settleWaitersWithToken(waiters, newAccess);
 
         if (originalRequest) {
           originalRequest.headers = originalRequest.headers ?? {};
@@ -206,7 +220,7 @@ apiClient.interceptors.response.use(
         const wrappedErr = refreshErr instanceof Error
           ? refreshErr
           : new Error('Token refresh failed');
-        waiters.forEach((p) => p.reject(wrappedErr));
+        settleWaitersWithError(waiters, wrappedErr);
 
         const isAuthRejection = (() => {
           // Cognito SDK: explicit NotAuthorizedException = refresh
