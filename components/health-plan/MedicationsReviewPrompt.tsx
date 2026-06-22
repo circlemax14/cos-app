@@ -36,9 +36,17 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanMedications, useUpdatePlanMedications } from '@/hooks/use-plan-medications';
+import { MedicationsReviewModal } from './MedicationsReviewModal';
 
 /** Local snooze key (device-local; never holds PHI — just a timestamp). */
 export const MEDS_REVIEW_SNOOZE_KEY = 'meds_review_snoozed_until';
+/**
+ * COS-364: flag that the first-visit review MODAL has already been shown for
+ * the CURRENT review cycle (device-local, no PHI). Set when the modal appears;
+ * cleared when the patient confirms (reviewNeeded → false) so the next cycle
+ * shows the modal again. The banner remains the recurring nudge in between.
+ */
+export const MEDS_REVIEW_MODAL_SHOWN_KEY = 'meds_review_modal_shown';
 /** How long "Not now" hides the prompt for. */
 const SNOOZE_MS = 3 * 60 * 60 * 1000; // 3 hours
 
@@ -59,6 +67,11 @@ export function MedicationsReviewPrompt({
 
   // null = not yet read; number = ms epoch the snooze expires at; 0 = no snooze.
   const [snoozeUntil, setSnoozeUntil] = React.useState<number | null>(null);
+
+  // COS-364: first-visit review modal. Shown once per review cycle (guarded by
+  // MEDS_REVIEW_MODAL_SHOWN_KEY across sessions + a ref within this mount).
+  const [modalVisible, setModalVisible] = React.useState(false);
+  const modalEvalRef = React.useRef(false);
 
   /** Read the stored snooze and decide if it's still active right now. */
   const refreshSnooze = React.useCallback(async () => {
@@ -88,14 +101,45 @@ export function MedicationsReviewPrompt({
     return () => sub.remove();
   }, [refreshSnooze]);
 
+  // COS-364: show the first-visit modal ONCE per review cycle — when the
+  // feature is on, a review is needed, and we're NOT currently snoozed. The
+  // AsyncStorage flag makes it once-per-cycle across sessions; modalEvalRef
+  // guards against a double-show race within this mount. When snoozed, the
+  // modal stays closed and the banner is the (also-hidden-while-snoozed) nudge.
+  React.useEffect(() => {
+    if (!flagEnabled || !reviewNeeded) return;
+    if (snoozeUntil === null || snoozeUntil > Date.now()) return;
+    if (modalEvalRef.current) return;
+    modalEvalRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const shown = await AsyncStorage.getItem(MEDS_REVIEW_MODAL_SHOWN_KEY);
+        if (shown) return; // already shown this cycle
+        await AsyncStorage.setItem(MEDS_REVIEW_MODAL_SHOWN_KEY, '1');
+        if (!cancelled) setModalVisible(true);
+      } catch {
+        /* storage unavailable → just skip the modal (banner still nudges) */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [flagEnabled, reviewNeeded, snoozeUntil]);
+
   // Once the patient has confirmed (reviewNeeded false), clear the local snooze
-  // so the next review cycle starts fresh. Only act once the query has data and
-  // the flag is on, to avoid clobbering during load/back-compat.
+  // AND the modal-shown flag so the next review cycle starts fresh (modal shows
+  // again). Only act once the query has data and the flag is on, to avoid
+  // clobbering during load/back-compat.
   React.useEffect(() => {
     if (flagEnabled && query.data && !reviewNeeded) {
       AsyncStorage.removeItem(MEDS_REVIEW_SNOOZE_KEY).catch(() => {
         /* non-fatal */
       });
+      AsyncStorage.removeItem(MEDS_REVIEW_MODAL_SHOWN_KEY).catch(() => {
+        /* non-fatal */
+      });
+      modalEvalRef.current = false;
     }
   }, [flagEnabled, reviewNeeded, query.data]);
 
@@ -124,7 +168,29 @@ export function MedicationsReviewPrompt({
     updateMutation.mutate({ confirmReview: true });
   };
 
+  // COS-364 modal actions (mirror the banner buttons).
+  const onModalConfirm = () => {
+    updateMutation.mutate({ confirmReview: true }, { onSuccess: () => setModalVisible(false) });
+  };
+  const onModalReviewEdit = () => {
+    setModalVisible(false);
+    onReviewNow();
+  };
+  const onModalNotNow = () => {
+    setModalVisible(false);
+    onNotNow();
+  };
+
   return (
+    <>
+      <MedicationsReviewModal
+        visible={modalVisible}
+        medications={query.data?.medications ?? []}
+        isConfirming={updateMutation.isPending}
+        onConfirm={onModalConfirm}
+        onReviewEdit={onModalReviewEdit}
+        onNotNow={onModalNotNow}
+      />
     <View
       style={[
         styles.card,
@@ -213,6 +279,7 @@ export function MedicationsReviewPrompt({
         </Text>
       ) : null}
     </View>
+    </>
   );
 }
 
