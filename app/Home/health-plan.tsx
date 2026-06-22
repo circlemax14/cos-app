@@ -23,7 +23,7 @@ import {
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, TaskOccurrence, TaskType } from '@/services/api/types';
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { fetchAssessments } from '@/services/api/assessments';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
@@ -118,6 +118,25 @@ export default function HealthPlanScreen() {
     // Open the section's add/confirm flow so the patient can act immediately.
     setOpenMedsAddSignal((n) => n + 1);
   }, []);
+
+  // COS-361 (Bug #9): deep-link from a MEDICATION_REFILL_REMINDER push.
+  // The notification routes to /Home/health-plan?focus=medications; when
+  // that param is present we focus the medications section (same as the
+  // in-app "Review medications" prompt). Fire once per arrival — guarded
+  // by a ref so a remount with the param still set doesn't re-trigger.
+  // The param is optional and additive: a tap without it behaves exactly
+  // as before (back-compatible).
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const focusHandledRef = React.useRef(false);
+  React.useEffect(() => {
+    if (focus !== 'medications') return;
+    if (focusHandledRef.current) return;
+    focusHandledRef.current = true;
+    // Defer one tick so the Plan ScrollView + meds section have laid out
+    // and medsSectionYRef is populated before we scroll to it.
+    const t = setTimeout(() => onReviewMedications(), 350);
+    return () => clearTimeout(t);
+  }, [focus, onReviewMedications]);
 
   const planTypeQuery = useQuery({
     queryKey: ['plan-type'],

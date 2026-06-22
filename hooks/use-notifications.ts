@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { apiClient } from '@/lib/api-client';
+import { routeForNotificationData } from '@/lib/notification-routing';
 
 const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId ?? '30bc49bd-ee12-4a06-86b3-ee4f23690114';
 
@@ -34,6 +35,24 @@ export function useNotifications() {
   const notificationListener = useRef<Notifications.Subscription>(undefined);
   const responseListener = useRef<Notifications.Subscription>(undefined);
 
+  // COLD START: the tap that LAUNCHED the app from a killed state.
+  // useLastNotificationResponse returns that response once it's
+  // available; it stays stable across re-renders, so we guard with a
+  // ref to route exactly once. This is Expo's recommended pattern and
+  // sidesteps the "navigate before the router is mounted" race —
+  // the hook only yields a value after the component tree (and router)
+  // has rendered.
+  const lastResponse = Notifications.useLastNotificationResponse();
+  const coldStartHandledRef = useRef(false);
+  useEffect(() => {
+    if (coldStartHandledRef.current) return;
+    if (!lastResponse) return;
+    coldStartHandledRef.current = true;
+    // Clear badge on cold-start tap too.
+    Notifications.setBadgeCountAsync(0).catch(() => {});
+    navigateForNotification(lastResponse);
+  }, [lastResponse]);
+
   useEffect(() => {
     // Listen for notifications received while app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(async () => {
@@ -46,7 +65,11 @@ export function useNotifications() {
       }
     });
 
-    // Listen for user tapping on a notification
+    // Listen for user tapping on a notification (WARM start — app was
+    // already running in foreground or background). Cold-start taps
+    // (app launched from killed state) are handled separately below via
+    // useLastNotificationResponse, because the router may not be mounted
+    // yet when this listener would otherwise fire.
     responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
       // Clear badge on tap
       try {
@@ -55,24 +78,7 @@ export function useNotifications() {
         // Non-critical
       }
 
-      const data = response.notification.request.content.data;
-
-      // Navigate based on notification type
-      if (data?.type === 'DATA_SYNC_COMPLETE' || data?.type === 'EHI_EXPORT_COMPLETE') {
-        router.push('/Home' as never);
-      } else if (data?.type === 'APPOINTMENT_REMINDER') {
-        router.push('/Home/appointments' as never);
-      } else if (data?.type === 'CARE_PLAN_UPDATE') {
-        router.push('/Home/plan' as never);
-      } else if (data?.type === 'NEW_MESSAGE') {
-        router.push('/Home/chat' as never);
-      } else if (data?.type === 'RECOMMENDED_APPOINTMENTS') {
-        router.push('/Home/appointments' as never);
-      } else if (data?.type === 'CARE_GAP') {
-        router.push('/Home/care-checklist' as never);
-      } else {
-        router.push('/Home' as never);
-      }
+      navigateForNotification(response);
     });
 
     // Register token on mount
@@ -86,6 +92,37 @@ export function useNotifications() {
       responseListener.current?.remove();
     };
   }, []);
+}
+
+/**
+ * Route to the right screen for a tapped notification, defaulting to
+ * Home. Shared by the warm-tap listener and the cold-start path.
+ *
+ * Both paths can surface the SAME tap on a cold launch (the OS delivers
+ * the launching response to the listener AND useLastNotificationResponse
+ * exposes it). We dedupe on the notification identifier so we navigate
+ * exactly once per tap.
+ */
+let lastNavigatedNotificationId: string | null = null;
+function navigateForNotification(response: Notifications.NotificationResponse): void {
+  try {
+    const id = response.notification.request.identifier;
+    if (id && id === lastNavigatedNotificationId) return; // already handled this tap
+    if (id) lastNavigatedNotificationId = id;
+
+    const data = response.notification.request.content.data;
+    const route = routeForNotificationData(data);
+    // null → Home default (back-compat for unknown/new/data-ready types).
+    router.push((route ?? '/Home') as never);
+  } catch {
+    // Never let a navigation failure crash the notification pipeline.
+    // Fall back to Home so the tap still does something sensible.
+    try {
+      router.push('/Home' as never);
+    } catch {
+      // Router not ready — nothing more we can do; cold start will retry.
+    }
+  }
 }
 
 /**
