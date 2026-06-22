@@ -27,6 +27,35 @@ let inFlightAccessRead: Promise<string | null> | null = null;
 let inFlightRefreshRead: Promise<string | null> | null = null;
 let inFlightIdRead: Promise<string | null> | null = null;
 
+/**
+ * Read a SecureStore key with a few short retries.
+ *
+ * COS-353: on a cold launch right after the device is unlocked, the iOS
+ * Keychain (items default to WHEN_UNLOCKED) can be briefly inaccessible and
+ * `getItemAsync` throws — plus there's the documented expo-modules-core read
+ * race. A read FAILURE must never be interpreted as "no token": that wrongly
+ * bounced returning users straight to the sign-in screen on the first launch
+ * after a long background (SplashGate's catch → requestSignIn), while a
+ * second launch — Keychain now warm — read the token fine and showed the PIN
+ * screen. We retry across the transient post-unlock window; only a genuine
+ * successful `null` means "no token". If every attempt throws we rethrow so
+ * the caller can distinguish a real failure from an empty store.
+ */
+async function readSecureWithRetry(key: string, attempts = 3): Promise<string | null> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch (err) {
+      lastErr = err;
+      // Back off and retry — the Keychain typically becomes available within
+      // a few hundred ms of the device being unlocked.
+      await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export async function storeTokens(
   accessToken: string,
   refreshToken: string,
@@ -45,7 +74,7 @@ export async function storeTokens(
 export async function getAccessToken(): Promise<string | null> {
   if (cachedAccessToken !== undefined) return cachedAccessToken;
   if (inFlightAccessRead) return inFlightAccessRead;
-  inFlightAccessRead = SecureStore.getItemAsync(KEYS.access)
+  inFlightAccessRead = readSecureWithRetry(KEYS.access)
     .then((value) => {
       cachedAccessToken = value;
       return value;
@@ -59,7 +88,7 @@ export async function getAccessToken(): Promise<string | null> {
 export async function getRefreshToken(): Promise<string | null> {
   if (cachedRefreshToken !== undefined) return cachedRefreshToken;
   if (inFlightRefreshRead) return inFlightRefreshRead;
-  inFlightRefreshRead = SecureStore.getItemAsync(KEYS.refresh)
+  inFlightRefreshRead = readSecureWithRetry(KEYS.refresh)
     .then((value) => {
       cachedRefreshToken = value;
       return value;
@@ -73,7 +102,7 @@ export async function getRefreshToken(): Promise<string | null> {
 export async function getIdToken(): Promise<string | null> {
   if (cachedIdToken !== undefined) return cachedIdToken;
   if (inFlightIdRead) return inFlightIdRead;
-  inFlightIdRead = SecureStore.getItemAsync(KEYS.id)
+  inFlightIdRead = readSecureWithRetry(KEYS.id)
     .then((value) => {
       cachedIdToken = value;
       return value;
