@@ -32,6 +32,16 @@ const PLAN_TASK_TAG = 'csh-plan-task-v1';
 const NEAR_FUTURE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_TOTAL_PLAN_SCHEDULES = 30;
 
+// COS-363 / SCRUM-506 (Bug #4): scheduling a local notification while iOS
+// notification authorization is still `notDetermined` makes the OS implicitly
+// present the permission prompt. That surfaced as a surprise "Allow
+// Notifications" dialog the moment Today's Schedule mounted (the user read it
+// as a "health app" prompt). We now only schedule when permission is ALREADY
+// granted — the read-only getPermissionsAsync below never prompts. The actual
+// REQUEST stays in onboarding / an explicit opt-in. Kill-switch: set false to
+// restore the previous always-schedule behaviour.
+const SCHEDULE_ONLY_WHEN_GRANTED = true;
+
 /**
  * Convert "HH:MM" + a YYYY-MM-DD date into a JS Date in LOCAL time.
  * Used to anchor plan-task notifications to the patient's wall clock,
@@ -78,6 +88,23 @@ export interface PlanNotificationOutcome {
 export async function reconcilePlanTaskNotifications(
   tasks: TaskOccurrence[],
 ): Promise<PlanNotificationOutcome> {
+  // COS-363 (Bug #4): never let scheduling implicitly prompt for notification
+  // permission. getPermissionsAsync is READ-ONLY (never prompts); if auth isn't
+  // already granted we bail without scheduling, so Today's Schedule can't
+  // trigger a surprise OS dialog on mount. Granted users are unaffected.
+  if (SCHEDULE_ONLY_WHEN_GRANTED) {
+    let granted = false;
+    try {
+      const perms = await Notifications.getPermissionsAsync();
+      granted = perms.granted;
+    } catch {
+      granted = false;
+    }
+    if (!granted) {
+      return { scheduled: 0, skipped: tasks.length };
+    }
+  }
+
   try {
     await cancelAllPlanTaskScheduled();
   } catch {
