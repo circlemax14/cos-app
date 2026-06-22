@@ -32,6 +32,15 @@ import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCat
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
+import { withTimeout } from '@/lib/with-timeout';
+
+// COS-362: hard ceiling on the initial full-screen loader so it can never hang
+// forever (build 57 "stuck on Health Plan after unlock"). Generous on purpose —
+// longer than a typical load, shorter than the 30s per-request axios timeout —
+// so a genuinely-slow-but-working load still completes (a late resolve still
+// populates the screen), while a wedged load bails to the recoverable empty
+// state instead of spinning. Backstops the api-client refresh-queue fix.
+const INITIAL_LOAD_TIMEOUT_MS = 20_000;
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {
@@ -218,7 +227,16 @@ export default function HealthPlanScreen() {
     (async () => {
       setLoading(true);
       try {
-        await load();
+        // COS-362: bound the load so the spinner can never hang forever. On
+        // timeout/error we fall through to the !plan empty state (which has
+        // pull-to-refresh + Generate) rather than spinning indefinitely. If
+        // load() is merely slow it keeps running and its setPlan/setTasks
+        // still populate the screen when it later resolves.
+        await withTimeout(load(), INITIAL_LOAD_TIMEOUT_MS, 'health-plan initial load timed out');
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[health-plan] initial load failed/timeout:', (err as Error)?.message);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
