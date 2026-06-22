@@ -395,6 +395,83 @@ export default function TodayScheduleScreen() {
         </View>
         )}
 
+        {/* COS-352: Ken wants calendar events shown FIRST, then tasks. */}
+        {/* SCRUM-279 (build 49): today's calendar events + reminders,
+            tappable but DO NOT count toward plan progress (per Ken). */}
+        {todayCalendarItems.length > 0 && (
+          <View style={styles.planTasksSection}>
+            <View style={styles.planTasksHeader}>
+              <Text style={[styles.planTasksTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}>
+                Today&apos;s Calendar
+              </Text>
+              <Text style={[styles.planTasksProgress, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any, color: colors.text + '80' }]}>
+                {todayCalendarItems.length} item{todayCalendarItems.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+            {todayCalendarItems.map((item) => {
+              const done = completedCalendarIds.has(item.id) || !!item.completed;
+              const isReminder = item.origin === 'reminder';
+              const hhmm = item.allDay
+                ? 'All day'
+                : (() => {
+                    const d = new Date(item.startDate);
+                    const hh = d.getHours();
+                    const mm = d.getMinutes().toString().padStart(2, '0');
+                    const meridiem = hh >= 12 ? 'PM' : 'AM';
+                    const display = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+                    return `${display}:${mm} ${meridiem}`;
+                  })();
+              const iconBg = isReminder ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)';
+              const iconColor = isReminder ? '#F59E0B' : '#3B82F6';
+              const iconName: keyof typeof MaterialIcons.glyphMap = isReminder ? 'notifications' : 'event';
+              return (
+                <TouchableOpacity
+                  key={`cal:${item.id}`}
+                  activeOpacity={0.7}
+                  onPress={() => toggleCalendarItem(item)}
+                  style={[
+                    styles.planTaskRow,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.text + '15',
+                      opacity: done ? 0.55 : 1,
+                    },
+                  ]}>
+                  <View style={[styles.planTaskCheck, {
+                    borderColor: done ? '#008080' : colors.text + '50',
+                    backgroundColor: done ? '#008080' : 'transparent',
+                  }]}>
+                    {done && <MaterialIcons name="check" size={14} color="#fff" />}
+                  </View>
+                  <View style={[styles.planTaskIcon, { backgroundColor: iconBg }]}>
+                    <MaterialIcons name={iconName} size={18} color={iconColor} />
+                  </View>
+                  <View style={styles.planTaskBody}>
+                    <Text
+                      style={[styles.planTaskTitle, {
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(600) as any,
+                        color: colors.text,
+                        textDecorationLine: done ? 'line-through' : 'none',
+                      }]}
+                      numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {!!item.location && (
+                      <Text style={[styles.planTaskSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]} numberOfLines={1}>
+                        {item.location}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
+                    {hhmm}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
         {/* Today's Plan Tasks (from AI health plan) */}
         {planTasks.length > 0 && (
           <View style={styles.planTasksSection}>
@@ -486,82 +563,6 @@ export default function TodayScheduleScreen() {
                   ) : null}
                   <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
                     {formatTaskTime(task.scheduledTime)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {/* SCRUM-279 (build 49): today's calendar events + reminders,
-            tappable but DO NOT count toward plan progress (per Ken). */}
-        {todayCalendarItems.length > 0 && (
-          <View style={styles.planTasksSection}>
-            <View style={styles.planTasksHeader}>
-              <Text style={[styles.planTasksTitle, { fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, color: colors.text }]}>
-                Today&apos;s Calendar
-              </Text>
-              <Text style={[styles.planTasksProgress, { fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any, color: colors.text + '80' }]}>
-                {todayCalendarItems.length} item{todayCalendarItems.length === 1 ? '' : 's'}
-              </Text>
-            </View>
-            {todayCalendarItems.map((item) => {
-              const done = completedCalendarIds.has(item.id) || !!item.completed;
-              const isReminder = item.origin === 'reminder';
-              const hhmm = item.allDay
-                ? 'All day'
-                : (() => {
-                    const d = new Date(item.startDate);
-                    const hh = d.getHours();
-                    const mm = d.getMinutes().toString().padStart(2, '0');
-                    const meridiem = hh >= 12 ? 'PM' : 'AM';
-                    const display = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
-                    return `${display}:${mm} ${meridiem}`;
-                  })();
-              const iconBg = isReminder ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)';
-              const iconColor = isReminder ? '#F59E0B' : '#3B82F6';
-              const iconName: keyof typeof MaterialIcons.glyphMap = isReminder ? 'notifications' : 'event';
-              return (
-                <TouchableOpacity
-                  key={`cal:${item.id}`}
-                  activeOpacity={0.7}
-                  onPress={() => toggleCalendarItem(item)}
-                  style={[
-                    styles.planTaskRow,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: colors.text + '15',
-                      opacity: done ? 0.55 : 1,
-                    },
-                  ]}>
-                  <View style={[styles.planTaskCheck, {
-                    borderColor: done ? '#008080' : colors.text + '50',
-                    backgroundColor: done ? '#008080' : 'transparent',
-                  }]}>
-                    {done && <MaterialIcons name="check" size={14} color="#fff" />}
-                  </View>
-                  <View style={[styles.planTaskIcon, { backgroundColor: iconBg }]}>
-                    <MaterialIcons name={iconName} size={18} color={iconColor} />
-                  </View>
-                  <View style={styles.planTaskBody}>
-                    <Text
-                      style={[styles.planTaskTitle, {
-                        fontSize: getScaledFontSize(14),
-                        fontWeight: getScaledFontWeight(600) as any,
-                        color: colors.text,
-                        textDecorationLine: done ? 'line-through' : 'none',
-                      }]}
-                      numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    {!!item.location && (
-                      <Text style={[styles.planTaskSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]} numberOfLines={1}>
-                        {item.location}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={[styles.planTaskTime, { fontSize: getScaledFontSize(12), color: colors.text + '80', fontWeight: getScaledFontWeight(600) as any }]}>
-                    {hhmm}
                   </Text>
                 </TouchableOpacity>
               );

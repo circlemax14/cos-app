@@ -41,6 +41,14 @@ const ASSESSMENT_LABEL: Record<AssessmentLevel, string> = {
   clinical: 'Full clinical assessment',
 }
 
+// COS-352: Ken asked to remove the "Agency Supported" / "Agency Managed"
+// tiers for now — to be reworked with the full agency business flow. This
+// flag hides them from the chooser WITHOUT deleting any code path, so it
+// flips straight back on when the agency flow is rebuilt. Existing agency
+// users keep their current plan (health-plan.tsx still renders the labels).
+const AGENCY_PLANS_ENABLED = false
+const isAgencyType = (t: PlanType) => t === 'agency-supported' || t === 'agency-managed'
+
 const PLAN_CARDS: PlanCardSpec[] = [
   {
     type: 'basic',
@@ -186,7 +194,7 @@ export function PlanTypeChooser({
             </View>
           ) : null}
 
-          {PLAN_CARDS.map((card) => {
+          {PLAN_CARDS.filter((c) => AGENCY_PLANS_ENABLED || !isAgencyType(c.type)).map((card) => {
             const isCurrent = card.type === currentType
             // SCRUM-232: chooser is fully open — users can pick any tier.
             // Agency tiers still require a linked care-management agency
