@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { retryAsync, isTransientApiError } from '@/lib/retry-async';
 import { categorizeProvider } from '@/services/provider-categorization';
 import type {
   Provider,
@@ -87,10 +88,16 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
 
 export async function fetchProviders(): Promise<Provider[]> {
   try {
-    const res = await apiClient.get<{
-      success: boolean;
-      data: { roles: FhirPractitionerRole[]; practitioners: FhirPractitioner[] };
-    }>('/v1/patients/me/providers');
+    // COS-366: retry transient launch-burst throttles (429) so a momentary
+    // Lambda-concurrency throttle doesn't collapse the provider list to [].
+    const res = await retryAsync(
+      () =>
+        apiClient.get<{
+          success: boolean;
+          data: { roles: FhirPractitionerRole[]; practitioners: FhirPractitioner[] };
+        }>('/v1/patients/me/providers'),
+      { shouldRetry: isTransientApiError },
+    );
     const { roles, practitioners } = res.data.data;
     return practitioners.map((p) => {
       const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);

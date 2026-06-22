@@ -4,6 +4,7 @@
  */
 import React, { createContext, ReactNode, useContext, useState, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { retryAsync, isTransientApiError } from '@/lib/retry-async';
 import type { Provider } from '@/services/api/types';
 
 export const MAX_SELECTED_PROVIDERS = 7;
@@ -127,13 +128,23 @@ export function ProviderSelectionProvider({ children }: { children: ReactNode })
   const loadFromServer = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await apiClient.get<{
-        success: boolean;
-        data: {
-          selectedProviders: SelectedProvider[];
-          selectedCareManager: SelectedCareManager | null;
-        };
-      }>('/v1/auth/selected-providers');
+      // COS-366: the circle of providers loads from here on cold launch. The
+      // app fires ~8 parallel requests at launch and the Lambda concurrency
+      // ceiling throttles some (HTTP 429); a single throttled request used to
+      // leave selectedProviders at [] → an EMPTY ring (Ken's recurring
+      // "circle of providers not coming"). The throttle is transient, so retry
+      // with backoff lets it clear and the ring populates instead of blanking.
+      const res = await retryAsync(
+        () =>
+          apiClient.get<{
+            success: boolean;
+            data: {
+              selectedProviders: SelectedProvider[];
+              selectedCareManager: SelectedCareManager | null;
+            };
+          }>('/v1/auth/selected-providers'),
+        { shouldRetry: isTransientApiError },
+      );
       if (res.data?.data) {
         const { selectedProviders: providers, selectedCareManager: cm } = res.data.data;
         if (Array.isArray(providers)) {
@@ -142,7 +153,10 @@ export function ProviderSelectionProvider({ children }: { children: ReactNode })
         setSelectedCareManagerState(cm ?? null);
       }
     } catch (error) {
-      console.error('Failed to load provider selection from server:', error);
+      // Retries exhausted (sustained throttling/outage). Deliberately KEEP the
+      // last-known selection — never overwrite the ring with [] on a failure,
+      // so a transient error can't blank a circle the user already had.
+      console.warn('Failed to load provider selection from server (kept last-known):', error);
     } finally {
       setIsLoading(false);
     }
