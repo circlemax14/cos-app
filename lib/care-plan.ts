@@ -3,11 +3,13 @@
  * RN-import-free so node:test can load it directly. Category list + order MUST
  * match cos-backend/src/services/care-plan-categories.ts.
  *
- * KILL-SWITCH: CARE_PLAN_ENABLED default FALSE. While off, the goals UI renders
- * exactly as today (a flat list) — no category headers, no measurable line,
- * no edit affordance.
+ * KILL-SWITCH: CARE_PLAN_ENABLED. While off, the goals UI renders exactly as
+ * today (a flat list) — no category headers, no measurable line, no edit
+ * affordance. ENABLED 2026-06-25 (COS-377 rollout) — the backend
+ * care_plan_enabled flag is live in prod, so the UI now renders the 8-category
+ * measurable Care Plan. Flip back to false to instantly revert the UI.
  */
-export const CARE_PLAN_ENABLED = false;
+export const CARE_PLAN_ENABLED = true;
 
 export type CarePlanCategoryKey =
   | 'medical' | 'cognitive' | 'adl' | 'medication'
