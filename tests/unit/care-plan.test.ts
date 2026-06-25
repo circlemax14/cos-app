@@ -8,8 +8,8 @@ import {
   formatGoalMeasure,
 } from '../../lib/care-plan.ts';
 
-test('CARE_PLAN_ENABLED defaults OFF', () => {
-  assert.equal(CARE_PLAN_ENABLED, false);
+test('CARE_PLAN_ENABLED is enabled (COS-377 rollout — backend care_plan_enabled is live in prod)', () => {
+  assert.equal(CARE_PLAN_ENABLED, true);
 });
 
 test('category keys are the 8 in Ken’s order', () => {
