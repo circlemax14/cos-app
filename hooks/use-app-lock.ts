@@ -3,7 +3,7 @@ import { AppState, AppStateStatus, PanResponder } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSecurity } from '@/stores/security-store';
-import { isAppLocked, setAppLocked, hasPendingSignIn } from '@/lib/lock-gate';
+import { isAppLocked, setAppLocked, hasPendingSignIn, clearPendingSignIn } from '@/lib/lock-gate';
 import { computeResumeLockDecision } from '@/lib/resume-lock-decision';
 import { getLockTimeout, isPinSetup } from '@/services/pin-auth';
 
@@ -125,6 +125,15 @@ export function useAppLock() {
 
           const timeout = await getLockTimeout();
 
+          // SCRUM-520 (COS-379): re-assert forced lock after the await gap.
+          // The security-store `useEffect(() => setAppLocked(isLocked), [isLocked])`
+          // can fire during the `await getLockTimeout()` window if
+          // `refreshSecurityState` resolves and sets `isLocked=false`, clobbering
+          // our forced `_appLocked=true` back to false — so a 401 in that gap
+          // routes directly to sign-in, defeating the race fix. Re-assert here to
+          // keep the module mirror true through the guard/decision window.
+          if (!wasLocked) setAppLocked(true);
+
           // SCRUM-279 (build 42) + COS-351: never re-lock if we are ALREADY
           // locked AND on the lock screen — PIN entry shouldn't reset itself,
           // and Face-ID dismissal shouldn't re-fire captureAndLock (the
@@ -143,44 +152,70 @@ export function useAppLock() {
           const effectiveTimeout = Math.max(timeout, MIN_BG_DEBOUNCE_MS);
           let didLock = false;
 
-          if (elapsed >= effectiveTimeout && !alreadyLocked) {
-            const pinSetup = await isPinSetup();
-            if (pinSetup) {
-              await captureAndLock();
-              didLock = true;
-            }
-          }
-
-          // SCRUM-520 (COS-379): cleanup for the forced-mirror path.
-          // If we forced the mirror to `true` but did NOT end up calling
-          // captureAndLock (below-debounce flicker, no PIN, or alreadyLocked),
-          // we must decide what to do with the temporarily-forced state:
-          //
-          //   • A pending sign-in was queued during the window → the session
-          //     is dead. Lock local-first so the lock screen drains the queue
-          //     and re-authenticates after unlock. This is the conservative /
-          //     secure path (SCRUM-520 design doc).
-          //   • No pending sign-in → benign flicker or active session. Restore
-          //     the mirror to `false` so we don't strand the app in a
-          //     permanently-locked state that no unlock path can clear.
-          if (!wasLocked && !didLock) {
-            if (hasPendingSignIn()) {
-              // Dead session detected during the race window; lock local-first.
-              // captureAndLock routes to /(security)/lock-screen; postUnlockNavigate
-              // will drain the pending reason and send the user to sign-in.
+          // FIX 3 (COS-379 adversarial review): wrap the entire decision + cleanup
+          // region so that if captureAndLock() throws (Expo Router crash, Keychain
+          // error, etc.) AND we forced the mirror to `true` AND we didn't
+          // successfully lock, the forced mirror is released. Without this, an
+          // unhandled throw leaves `_appLocked=true` with no lock screen showing —
+          // every API request defers forever. The catch only releases if !didLock
+          // so a partially-mounted lock screen (router.replace succeeded but
+          // setIsLocked threw) doesn't have its mirror cleared out from under it.
+          try {
+            if (elapsed >= effectiveTimeout && !alreadyLocked) {
               const pinSetup = await isPinSetup();
               if (pinSetup) {
                 await captureAndLock();
-                // didLock is true from here; mirror stays locked (self-synced).
+                didLock = true;
+              }
+            }
+
+            // SCRUM-520 (COS-379): cleanup for the forced-mirror path.
+            // If we forced the mirror to `true` but did NOT end up calling
+            // captureAndLock (below-debounce flicker, no PIN, or alreadyLocked),
+            // we must decide what to do with the temporarily-forced state:
+            //
+            //   • A pending sign-in was queued during the window → the session
+            //     is dead. Lock local-first so the lock screen drains the queue
+            //     and re-authenticates after unlock. This is the conservative /
+            //     secure path (SCRUM-520 design doc).
+            //   • No pending sign-in → benign flicker or active session. Restore
+            //     the mirror to `false` so we don't strand the app in a
+            //     permanently-locked state that no unlock path can clear.
+            if (!wasLocked && !didLock) {
+              if (hasPendingSignIn()) {
+                // Dead session detected during the race window; lock local-first.
+                // captureAndLock routes to /(security)/lock-screen; postUnlockNavigate
+                // will drain the pending reason and send the user to sign-in.
+                const pinSetup = await isPinSetup();
+                if (pinSetup) {
+                  await captureAndLock();
+                  // didLock is true from here; mirror stays locked (self-synced).
+                } else {
+                  // No PIN — can't lock locally; release immediately to sign-in.
+                  // Clear the stale pending reason BEFORE releasing the mirror so a
+                  // future valid session (user later configures a PIN and idle-locks)
+                  // is never mis-routed to sign-in by a leftover _pendingReason.
+                  // Routing to sign-in still happens via the live 401 that queued
+                  // the reason — we just must not leave a dangling deferred reason.
+                  clearPendingSignIn();
+                  setAppLocked(false);
+                }
               } else {
-                // No PIN — can't lock locally; release immediately to sign-in.
+                // Benign flicker / short background nap / live session.
+                // Restore the mirror so nothing is stranded.
                 setAppLocked(false);
               }
-            } else {
-              // Benign flicker / short background nap / live session.
-              // Restore the mirror so nothing is stranded.
+            }
+          } catch (err) {
+            // captureAndLock() (or a cleanup call) threw. If we forced the mirror
+            // and didn't successfully lock, release it so requests aren't deferred
+            // forever. If we DID lock (didLock=true), leave the mirror alone — the
+            // lock screen is (at least partially) showing and will reset it on unlock.
+            if (!wasLocked && !didLock) {
               setAppLocked(false);
             }
+            // Re-throw so unexpected errors surface in error boundaries / Sentry.
+            throw err;
           }
           // If captureAndLock() ran (didLock=true OR the dead-session branch
           // above ran), the mirror stays `true`. The security-store effect and

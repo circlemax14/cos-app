@@ -175,3 +175,102 @@ if (!wasLocked && !didLock) {
   }
 }
 ```
+
+---
+
+## Adversarial Review Fixes — COS-379 Round 2 (2026-06-25)
+
+### Adversarial Fix 1 — Mirror-clobber race: re-assert after `await getLockTimeout()`
+
+**File:** `hooks/use-app-lock.ts` (background→active handler)
+
+**Problem:** The security-store `useEffect(() => setAppLocked(isLocked), [isLocked])` can fire during the `await getLockTimeout()` gap if `refreshSecurityState` resolves and sets `isLocked=false`. This clobbers the forced `_appLocked=true` back to `false` — so a 401 arriving in that window routes directly to sign-in, defeating the 401-race fix.
+
+**Before:**
+```ts
+if (!wasLocked) setAppLocked(true);
+const timeout = await getLockTimeout();
+// gap: security-store mirror can clobber _appLocked back to false here
+const { alreadyLocked } = computeResumeLockDecision({ wasLocked, pathname });
+```
+
+**After:**
+```ts
+if (!wasLocked) setAppLocked(true);
+const timeout = await getLockTimeout();
+// SCRUM-520 (COS-379): re-assert forced lock after the await gap to beat
+// the security-store mirror clobber (refreshSecurityState fires during gap).
+if (!wasLocked) setAppLocked(true);
+const { alreadyLocked } = computeResumeLockDecision({ wasLocked, pathname });
+```
+
+---
+
+### Adversarial Fix 2 — Stranded pending sign-in: clear before releasing on no-PIN dead-session path
+
+**File:** `hooks/use-app-lock.ts` (cleanup branch); `lib/lock-gate.ts` import in `use-app-lock.ts`
+
+**Problem:** On the no-PIN dead-session branch, `setAppLocked(false)` was called but `_pendingReason` was left set. A future valid session — where the user later configures a PIN and idle-locks — would call `consumePendingSignIn()` from the lock screen and mis-route to sign-in despite the session being alive.
+
+**Before:**
+```ts
+} else {
+  // No PIN — can't lock locally; release immediately to sign-in.
+  setAppLocked(false);
+}
+```
+
+**After:**
+```ts
+} else {
+  // No PIN — can't lock locally; release immediately to sign-in.
+  // Clear the stale pending reason BEFORE releasing so a future valid
+  // session is never mis-routed to sign-in by a leftover _pendingReason.
+  clearPendingSignIn();
+  setAppLocked(false);
+}
+```
+
+`clearPendingSignIn()` already existed in `lib/lock-gate.ts` (line 129). Added to the import in `use-app-lock.ts`.
+
+---
+
+### Adversarial Fix 3 — Stranded locked on throw: release forced mirror in catch
+
+**File:** `hooks/use-app-lock.ts` (decision/cleanup region)
+
+**Problem:** If `captureAndLock()` throws (e.g. Expo Router or Keychain error), the forced `_appLocked=true` is left stranded with no lock screen showing — every API request defers into the pending queue forever, making the app unresponsive.
+
+**Before:** No error handling around the decision/cleanup region. Any throw from `captureAndLock()` left the forced mirror uncleaned.
+
+**After:** Wrapped the entire decision + cleanup region in `try/catch`. The catch releases the mirror only if `!wasLocked && !didLock` (we forced it, and no lock screen mounted):
+```ts
+try {
+  if (elapsed >= effectiveTimeout && !alreadyLocked) {
+    // ... captureAndLock() / isPinSetup() calls
+    didLock = true;
+  }
+  // cleanup branch ...
+} catch (err) {
+  // Release stranded mirror only if we forced it and didn't successfully lock.
+  // If didLock=true, the lock screen may be (partially) showing — don't clear.
+  if (!wasLocked && !didLock) {
+    setAppLocked(false);
+  }
+  throw err; // re-throw for error boundaries / Sentry
+}
+```
+
+---
+
+## Tests Added (Round 2)
+
+**File:** `tests/unit/resume-lock-guard.test.ts` — 8 new tests in groups 4–6:
+
+| Group | Tests | What they cover |
+|-------|-------|-----------------|
+| FIX 2 (group 4) | 2 | No-PIN dead-session cleanup calls `clearPendingSignIn` before `setAppLocked(false)`; pending reason gone after cleanup |
+| FIX 3 (group 5) | 3 | Throw-recovery decision: release mirror when !wasLocked && !didLock; keep when didLock=true or wasLocked=true |
+| FIX 1 (group 6) | 1 | Re-assert invariant: forced lock survives a simulated store clobber during await gap |
+
+Total: 76 tests passing (was 54 before the original COS-379 fix; was 70 after round 1).

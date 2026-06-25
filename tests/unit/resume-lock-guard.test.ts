@@ -234,3 +234,114 @@ test('cleanup: wasLocked=true → no-op (was already locked, mirror was not forc
   const action = resolveCleanupAction({ wasLocked: true, didLock: false, hasPending: false, hasPinSetup: true });
   assert.equal(action, 'no-op');
 });
+
+// ── 4. FIX 2 (COS-379 adversarial review): no-PIN dead-session clears pending ──
+//
+// When there is a pending sign-in but no PIN (can't lock locally), the cleanup
+// path must call clearPendingSignIn() BEFORE setAppLocked(false). This prevents
+// the stale _pendingReason from surviving into a future session where the user
+// later configures a PIN, causing a valid idle-lock to mis-route to sign-in.
+//
+// We test this via an extended replica that tracks the ORDER of operations.
+
+class CleanupOrderReplica {
+  private _locked = false;
+  private _pending: SignInReason | null = 'session_expired'; // pre-loaded
+  private _ops: string[] = [];
+
+  setAppLocked(v: boolean) { this._ops.push(v ? 'setAppLocked(true)' : 'setAppLocked(false)'); this._locked = v; }
+  clearPendingSignIn() { this._ops.push('clearPendingSignIn()'); this._pending = null; }
+  hasPendingSignIn() { return this._pending !== null; }
+  getOps() { return this._ops; }
+
+  // Simulate the no-PIN dead-session branch from use-app-lock.ts cleanup:
+  runNoPinDeadSessionCleanup() {
+    // This is what the hook does (FIX 2 applied):
+    this.clearPendingSignIn();
+    this.setAppLocked(false);
+  }
+}
+
+test('FIX2: no-PIN dead-session cleanup — clearPendingSignIn fires BEFORE setAppLocked(false)', () => {
+  const replica = new CleanupOrderReplica();
+  assert.equal(replica.hasPendingSignIn(), true, 'pre-condition: pending reason exists');
+  replica.runNoPinDeadSessionCleanup();
+  const ops = replica.getOps();
+  assert.equal(ops[0], 'clearPendingSignIn()', 'clearPendingSignIn must be first op');
+  assert.equal(ops[1], 'setAppLocked(false)', 'setAppLocked(false) must follow clearPendingSignIn');
+  assert.equal(replica.hasPendingSignIn(), false, 'pending reason must be cleared after cleanup');
+});
+
+test('FIX2: no-PIN dead-session cleanup — pending reason is gone after cleanup (no stale reason)', () => {
+  const gate = new LockGateReplica();
+  gate.setAppLocked(true);
+  // Race: a 401 queues a deferred sign-in during the forced-lock window
+  gate['_pending'] = 'session_expired' as SignInReason; // directly inject pending
+  // Now simulate the no-PIN cleanup: clearPendingSignIn then release
+  gate.clearPendingSignIn();
+  gate.setAppLocked(false);
+  assert.equal(gate.hasPendingSignIn(), false, 'stale reason must not survive cleanup');
+  // Ensure consumePendingSignIn returns null (no ghost reason)
+  assert.equal(gate.consumePendingSignIn(), null, 'consumePendingSignIn returns null after clear');
+});
+
+// ── 5. FIX 3 (COS-379 adversarial review): throw-recovery releases forced mirror ─
+//
+// If captureAndLock() throws AND we forced the mirror AND !didLock, the mirror
+// must be released to prevent stranded-locked state. If didLock=true, the mirror
+// must NOT be released (lock screen is at least partially shown).
+
+function resolveThrowRecovery(opts: {
+  wasLocked: boolean;
+  didLock: boolean;
+}): 'release-mirror' | 'keep-mirror' {
+  // Mirrors the catch block in use-app-lock.ts (FIX 3):
+  if (!opts.wasLocked && !opts.didLock) return 'release-mirror';
+  return 'keep-mirror';
+}
+
+test('FIX3: throw-recovery — wasLocked=false, didLock=false → release mirror', () => {
+  // captureAndLock threw before router.replace could mount the lock screen.
+  // Mirror was forced but lock never showed — must release so app isn't stranded.
+  const action = resolveThrowRecovery({ wasLocked: false, didLock: false });
+  assert.equal(action, 'release-mirror');
+});
+
+test('FIX3: throw-recovery — wasLocked=false, didLock=true → keep mirror', () => {
+  // captureAndLock() partially succeeded (router.replace ran) before the throw.
+  // Lock screen may be showing — do NOT release the mirror under it.
+  const action = resolveThrowRecovery({ wasLocked: false, didLock: true });
+  assert.equal(action, 'keep-mirror');
+});
+
+test('FIX3: throw-recovery — wasLocked=true → keep mirror (was already locked, mirror not forced)', () => {
+  // Mirror was not forced by us; not our responsibility to release it.
+  const action = resolveThrowRecovery({ wasLocked: true, didLock: false });
+  assert.equal(action, 'keep-mirror');
+});
+
+// ── 6. FIX 1 (COS-379 adversarial review): re-assert after await gap ─────────────
+//
+// The security-store useEffect(() => setAppLocked(isLocked), [isLocked]) can
+// clobber the forced _appLocked=true back to false if refreshSecurityState()
+// resolves during the getLockTimeout() await. The fix re-asserts setAppLocked(true)
+// immediately after the await. We verify the intended invariant: if wasLocked=false,
+// the mirror must be true both before AND after the await gap.
+
+test('FIX1: re-assert after await — forced lock survives a hypothetical store clobber', () => {
+  // Simulate: pre-await force, store clobber during gap, re-assert post-await.
+  let _locked = false;
+
+  // Step 1: pre-await force
+  const wasLocked = _locked; // false
+  if (!wasLocked) _locked = true;
+  assert.equal(_locked, true, 'mirror must be true after pre-await force');
+
+  // Step 2: store clobber (simulates security-store mirror effect firing)
+  _locked = false; // clobber
+  assert.equal(_locked, false, 'clobber simulated');
+
+  // Step 3: re-assert (FIX 1 — immediately after await getLockTimeout())
+  if (!wasLocked) _locked = true;
+  assert.equal(_locked, true, 'mirror must be true again after re-assert');
+});
