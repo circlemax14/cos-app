@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
@@ -275,6 +275,37 @@ export default function LockScreen() {
     setPin(prev => prev.slice(0, -1));
   };
 
+  // COS-376: recovery for a user who forgot their PIN and has no biometric
+  // fallback. Mirrors the proven 5-attempt escape (clearPinData + clearTokens +
+  // route to sign-in) but on demand, behind a confirm. Strictly MORE
+  // restrictive than unlocking — it wipes the local PIN + session and forces a
+  // full re-login (email OTP / Apple / Google), after which the user sets a new
+  // PIN. It cannot bypass auth; it only prevents permanent lockout.
+  const handleForgotPin = () => {
+    Alert.alert(
+      'Forgot your PIN?',
+      "You'll be signed out, then you can sign in again with your email, Apple, or Google and set a new PIN.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearPinData();
+              await clearTokens();
+            } catch {
+              // Even if a wipe step fails, still drop the lock + route to
+              // sign-in so the user is never trapped.
+            }
+            setIsLocked(false);
+            router.replace('/(auth)/sign-in' as never);
+          },
+        },
+      ],
+    );
+  };
+
   // Ambient backdrop palette — base color + two off-screen accent blobs
   // for a gradient-y depth feel without a LinearGradient dep.
   const base = isDark ? '#0B1220' : '#F1F5FF';
@@ -376,6 +407,28 @@ export default function LockScreen() {
             onBiometric={attemptBiometric}
           />
         </View>
+
+        {/* COS-376: always-visible recovery so a forgot-PIN user (esp. with no
+            Face ID) is never permanently locked out. Wipes PIN + session and
+            forces a full re-login — strictly more restrictive than unlocking. */}
+        <TouchableOpacity
+          onPress={handleForgotPin}
+          accessibilityRole="button"
+          accessibilityLabel="Forgot your PIN? Sign out and reset it"
+          hitSlop={12}
+          style={{ alignSelf: 'center', marginTop: 12, paddingVertical: 10, paddingHorizontal: 20 }}
+        >
+          <Text
+            style={{
+              color: colors.secondary,
+              fontSize: getScaledFontSize(14),
+              fontWeight: getScaledFontWeight(600) as any,
+              textDecorationLine: 'underline',
+            }}
+          >
+            Forgot PIN?
+          </Text>
+        </TouchableOpacity>
       </SafeAreaView>
 
       {/* SCRUM-279 (build 45): "Unlocking…" overlay during postUnlockNavigate.
