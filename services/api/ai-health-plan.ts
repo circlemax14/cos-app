@@ -1,5 +1,10 @@
 import { apiClient } from '@/lib/api-client';
-import type { AiHealthPlan, TaskOccurrence } from './types';
+import type { AiHealthPlan, AiPlanGoal, TaskOccurrence } from './types';
+
+// ── Care Plan goal editing (COS-377) ───────────────────────────────────────
+export type GoalPatch = Partial<
+  Pick<AiPlanGoal, 'title' | 'description' | 'metric' | 'baseline' | 'target' | 'timeframe' | 'status'>
+>;
 
 /** Get the active AI-generated health plan for the current user. */
 export async function fetchAiHealthPlan(): Promise<AiHealthPlan | null> {
@@ -127,4 +132,18 @@ export async function skipTask(
   } catch (err) {
     return describeError(err);
   }
+}
+
+/**
+ * Edit a measurable goal on the AI health plan (COS-377).
+ * Calls PUT /v1/patients/me/health-plan/ai/goals/:goalId and returns the
+ * updated full plan. Unwrap follows the same `res.data.data.plan` convention
+ * as `fetchAiHealthPlan` above.
+ */
+export async function updatePlanGoal(goalId: string, patch: GoalPatch): Promise<AiHealthPlan> {
+  const res = await apiClient.put<{
+    success: boolean;
+    data: { plan: AiHealthPlan };
+  }>(`/v1/patients/me/health-plan/ai/goals/${encodeURIComponent(goalId)}`, patch);
+  return res.data.data.plan;
 }
