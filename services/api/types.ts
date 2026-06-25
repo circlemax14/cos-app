@@ -316,6 +316,13 @@ export interface AiPlanGoal {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
+  // Care Plan additions (COS-377) — optional for back-compat
+  category?: string;
+  metric?: string;
+  baseline?: string;
+  target?: string;
+  timeframe?: string;
+  status?: 'active' | 'achieved' | 'paused' | 'cancelled';
 }
 
 export interface AiHealthPlan {
@@ -323,6 +330,7 @@ export interface AiHealthPlan {
   summary: string;
   goals: AiPlanGoal[];
   tasks: PlanTask[];
+  categories?: string[];
   sourceDataHash: string;
   generatedAt: string;
   provider: 'bedrock' | 'openai';
