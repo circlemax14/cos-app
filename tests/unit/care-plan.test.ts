@@ -69,8 +69,8 @@ test('formatGoalMeasure renders baseline → target · timeframe', () => {
 
 // ── Phase 3: GOAL_PROGRESS_ENABLED + formatGoalProgress (COS-382) ────────────
 
-test('GOAL_PROGRESS_ENABLED is false (dark-launch default)', () => {
-  assert.equal(GOAL_PROGRESS_ENABLED, false);
+test('GOAL_PROGRESS_ENABLED is enabled (COS-382 rollout)', () => {
+  assert.equal(GOAL_PROGRESS_ENABLED, true);
 });
 
 test('formatGoalProgress: full progress ⇒ line + ↑ + barFraction 0.5', () => {
