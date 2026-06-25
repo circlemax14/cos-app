@@ -3,7 +3,8 @@ import { AppState, AppStateStatus, PanResponder } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSecurity } from '@/stores/security-store';
-import { isAppLocked } from '@/lib/lock-gate';
+import { isAppLocked, setAppLocked, hasPendingSignIn } from '@/lib/lock-gate';
+import { computeResumeLockDecision } from '@/lib/resume-lock-decision';
 import { getLockTimeout, isPinSetup } from '@/services/pin-auth';
 
 /**
@@ -104,26 +105,87 @@ export function useAppLock() {
       if (appState.current.match(/background/) && nextState === 'active') {
         if (backgroundTime.current !== null) {
           const elapsed = Date.now() - backgroundTime.current;
+
+          // SCRUM-520 (COS-379): capture the REAL prior lock state before the
+          // async getLockTimeout() gap. The security-store initialises
+          // `isLocked` to `true` and the mirror effect syncs it — so
+          // `isAppLocked()` can be `true` even when the user was NOT locked
+          // (first cold-launch before refreshSecurityState resolves). Snapping
+          // wasLocked here avoids misreading that stale mirror.
+          const wasLocked = isAppLocked();
+
+          // SCRUM-520 (COS-379): win the 401 race. If the app was NOT already
+          // locked, force the module mirror to `true` NOW — synchronously,
+          // before the `await getLockTimeout()` gap — so any racing 401 from
+          // React Query refetches / calendar sync fires `requestSignIn` into
+          // the deferred queue instead of routing straight to /(auth)/sign-in.
+          // We use `wasLocked` (not the now-forced mirror) for all subsequent
+          // guard logic so the COS-351 Face-ID-flicker fix is unaffected.
+          if (!wasLocked) setAppLocked(true);
+
           const timeout = await getLockTimeout();
-          // SCRUM-279 (build 42): never re-lock if we're already locked /
-          // on the lock screen (PIN entry shouldn't reset itself) AND
-          // require a minimum debounce so OS-induced sub-second
-          // background flickers don't trigger a re-lock.
+
+          // SCRUM-279 (build 42) + COS-351: never re-lock if we are ALREADY
+          // locked AND on the lock screen — PIN entry shouldn't reset itself,
+          // and Face-ID dismissal shouldn't re-fire captureAndLock (the
+          // "unlock → flash of PIN screen" race COS-351 fixed).
           //
-          // COS-351: the previous guard read `lastPathRef.current` — but
-          // lastPathRef only tracks RESTORE-able paths and the lock screen is
-          // blocklisted, so while ON the lock screen it still held the
-          // PRE-lock route (e.g. /Home). That made `onLockScreen` evaluate
-          // FALSE during unlock and re-fire captureAndLock — the Face ID
-          // "unlock → flash of PIN screen" race. Use the always-current
-          // module lock-mirror + the live pathname instead.
-          const alreadyLocked =
-            isAppLocked() || (pathname ?? '').startsWith('/(security)/lock-screen');
+          // SCRUM-520 (COS-379) guard change — see lib/resume-lock-decision.ts:
+          //   BEFORE: `isAppLocked() || onLockScreen`  — OR means the
+          //           stale-`true` module mirror short-circuited every warm
+          //           resume and suppressed the PIN route entirely.
+          //   AFTER:  `wasLocked && onLockScreen`     — AND means we only
+          //           skip if the user was GENUINELY mid-unlock (on the lock
+          //           screen with the mirror already set). A normal resume
+          //           where wasLocked=false now falls through to captureAndLock.
+          const { alreadyLocked } = computeResumeLockDecision({ wasLocked, pathname });
+
           const effectiveTimeout = Math.max(timeout, MIN_BG_DEBOUNCE_MS);
+          let didLock = false;
+
           if (elapsed >= effectiveTimeout && !alreadyLocked) {
             const pinSetup = await isPinSetup();
-            if (pinSetup) await captureAndLock();
+            if (pinSetup) {
+              await captureAndLock();
+              didLock = true;
+            }
           }
+
+          // SCRUM-520 (COS-379): cleanup for the forced-mirror path.
+          // If we forced the mirror to `true` but did NOT end up calling
+          // captureAndLock (below-debounce flicker, no PIN, or alreadyLocked),
+          // we must decide what to do with the temporarily-forced state:
+          //
+          //   • A pending sign-in was queued during the window → the session
+          //     is dead. Lock local-first so the lock screen drains the queue
+          //     and re-authenticates after unlock. This is the conservative /
+          //     secure path (SCRUM-520 design doc).
+          //   • No pending sign-in → benign flicker or active session. Restore
+          //     the mirror to `false` so we don't strand the app in a
+          //     permanently-locked state that no unlock path can clear.
+          if (!wasLocked && !didLock) {
+            if (hasPendingSignIn()) {
+              // Dead session detected during the race window; lock local-first.
+              // captureAndLock routes to /(security)/lock-screen; postUnlockNavigate
+              // will drain the pending reason and send the user to sign-in.
+              const pinSetup = await isPinSetup();
+              if (pinSetup) {
+                await captureAndLock();
+                // didLock is true from here; mirror stays locked (self-synced).
+              } else {
+                // No PIN — can't lock locally; release immediately to sign-in.
+                setAppLocked(false);
+              }
+            } else {
+              // Benign flicker / short background nap / live session.
+              // Restore the mirror so nothing is stranded.
+              setAppLocked(false);
+            }
+          }
+          // If captureAndLock() ran (didLock=true OR the dead-session branch
+          // above ran), the mirror stays `true`. The security-store effect and
+          // postUnlockNavigate will set it to `false` after successful unlock.
+
           backgroundTime.current = null;
         }
         // Coming back to foreground after a non-locking nap — restart

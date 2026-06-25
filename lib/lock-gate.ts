@@ -129,3 +129,19 @@ export function consumePendingSignIn(): SignInReason | null {
 export function clearPendingSignIn(): void {
   _pendingReason = null;
 }
+
+/**
+ * SCRUM-520 (COS-379): non-consuming peek at the deferred sign-in queue.
+ *
+ * Returns `true` if a sign-in was deferred while the app was locked —
+ * meaning the Cognito session is genuinely dead. Used by the
+ * background→active handler in use-app-lock.ts to decide whether it is
+ * safe to release a temporarily-forced lock mirror or whether it must
+ * route through the PIN screen first (local-first security model).
+ *
+ * Intentionally a simple boolean peek: callers that need the reason
+ * should use `consumePendingSignIn()` AFTER the lock-screen is showing.
+ */
+export function hasPendingSignIn(): boolean {
+  return _pendingReason !== null;
+}
