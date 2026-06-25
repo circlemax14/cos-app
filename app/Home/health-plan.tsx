@@ -47,6 +47,7 @@ import {
   formatGoalMeasure,
 } from '@/lib/care-plan';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
+import type { GoalPatch } from '@/services/api/ai-health-plan';
 
 // COS-362: hard ceiling on the initial full-screen loader so it can never hang
 // forever (build 57 "stuck on Health Plan after unlock"). Generous on purpose —
@@ -162,7 +163,7 @@ export default function HealthPlanScreen() {
 
   const saveGoalEdit = useCallback(async () => {
     if (!editGoal) return;
-    const patch: Record<string, string> = {};
+    const patch: GoalPatch = {};
     if (editTitle !== editGoal.title) patch.title = editTitle;
     if (editDesc !== (editGoal.description ?? '')) patch.description = editDesc;
     if (editMetric !== (editGoal.metric ?? '')) patch.metric = editMetric;

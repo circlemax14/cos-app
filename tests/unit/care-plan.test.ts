@@ -42,6 +42,18 @@ test('groupGoalsByCategory: legacy goals (no category) fall into a single "gener
   assert.equal(groups[0].label, 'Your Goals');
 });
 
+test('groupGoalsByCategory: mixed categorized + legacy goals — categorized groups first, leftover in "general"', () => {
+  const groups = groupGoalsByCategory([
+    { id: '1', title: 'a', category: 'medical' },
+    { id: '2', title: 'b' }, // legacy, no category
+    { id: '3', title: 'c', category: 'social' },
+  ]);
+  assert.deepEqual(groups.map((g) => g.key), ['medical', 'social', 'general']);
+  assert.equal(groups[2].label, 'Your Goals');
+  assert.equal(groups[2].goals.length, 1);
+  assert.equal(groups[2].goals[0].id, '2');
+});
+
 test('formatGoalMeasure renders baseline → target · timeframe', () => {
   assert.equal(
     formatGoalMeasure({ baseline: '7.8%', target: '<7.0%', timeframe: '3 months' }),
