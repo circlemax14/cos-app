@@ -35,7 +35,16 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanMedications, useUpdatePlanMedications } from '@/hooks/use-plan-medications';
-import type { Medication } from '@/services/api/plan-medications';
+import type { Medication, MedicationCadence, MedicationForm } from '@/services/api/plan-medications';
+import {
+  CADENCE_OPTIONS,
+  MED_FORMS_ENABLED,
+  cadenceLabel,
+  formTagLabel,
+  normalizeCadence,
+  normalizeForm,
+  supplyUnitLabel,
+} from '@/lib/med-forms';
 
 const SAFETY_DISCLAIMER =
   'This updates your tracking only — it does not change your prescription or ' +
@@ -227,10 +236,42 @@ export function MedicationsSection({
         onSubmit={(payload) => {
           if (!editor) return;
           if (editor.kind === 'add') {
+            // `form` is only set when MED_FORMS_ENABLED (the editor leaves it
+            // undefined otherwise), so the add payload is unchanged when off.
+            // Cadence isn't sent on add (no med id yet); the patient sets it
+            // with supply via the supply modal, per the setSupply contract.
             updateMutation.mutate({ add: [payload] });
           } else {
+            const id = editor.med.id;
+            // On edit the id exists, so a chosen injectable cadence can ride
+            // along on setSupply (cadence/startDate live on supply, keyed by
+            // id). Only included when the editor returned a cadence — i.e. an
+            // injectable with the feature on; otherwise the body is today's.
+            const cadence = payload.cadence;
             updateMutation.mutate({
-              edit: [{ id: editor.med.id, dose: payload.dose, times: payload.times, frequency: payload.frequency }],
+              edit: [
+                {
+                  id,
+                  dose: payload.dose,
+                  times: payload.times,
+                  frequency: payload.frequency,
+                  form: payload.form,
+                },
+              ],
+              ...(cadence
+                ? {
+                    setSupply: [
+                      {
+                        id,
+                        // Preserve any prior quantities; cadence is the change.
+                        remainingQuantity: editor.med.supply?.remainingQuantity ?? 0,
+                        dosesPerDay: editor.med.supply?.dosesPerDay ?? 1,
+                        cadence,
+                        startDate: isoDatePlusDays(0),
+                      },
+                    ],
+                  }
+                : {}),
             });
           }
           setEditor(null);
@@ -245,14 +286,18 @@ export function MedicationsSection({
         getScaledFontWeight={getScaledFontWeight}
         saving={updateMutation.isPending}
         onClose={() => setSupplyEditor(null)}
-        onSubmit={({ remainingQuantity, dosesPerDay }) => {
+        onSubmit={({ remainingQuantity, dosesPerDay, cadence, startDate }) => {
           if (!supplyEditor) return;
           // Saving supply for a med also counts as confirming the patient
           // reviewed their meds (COS-357), so we auto-confirm the review here.
           // The explicit "Confirm my medications" button still exists for
           // patients who don't need to update supply.
+          //
+          // cadence/startDate are only populated for an injectable when
+          // MED_FORMS_ENABLED; they stay undefined otherwise, so the setSupply
+          // payload is byte-for-byte today's when the flag is off.
           updateMutation.mutate({
-            setSupply: [{ id: supplyEditor.med.id, remainingQuantity, dosesPerDay }],
+            setSupply: [{ id: supplyEditor.med.id, remainingQuantity, dosesPerDay, cadence, startDate }],
             confirmReview: true,
           });
           setSupplyEditor(null);
@@ -297,6 +342,9 @@ function MedicationCard({
   const badgeLabel = isEhr ? 'From your records' : 'Added by you';
   const needsRefill = med.supply?.needsRefill === true;
   const daysLeft = daysUntil(med.supply?.runOutDate ?? null);
+  // COS-372: form-derived display (only surfaced when MED_FORMS_ENABLED).
+  const isInjectable = normalizeForm(med.form) === 'injectable';
+  const formTag = formTagLabel(med.form);
 
   return (
     <View style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
@@ -319,22 +367,44 @@ function MedicationCard({
               {med.times.join(', ')}
             </Text>
           ) : null}
-          <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
-            <MaterialIcons
-              name={isEhr ? 'verified' : 'edit'}
-              size={getScaledFontSize(11)}
-              color={badgeColor}
-            />
-            <Text
-              style={{
-                color: badgeColor,
-                fontSize: getScaledFontSize(10),
-                fontWeight: getScaledFontWeight(700) as any,
-                marginLeft: 4,
-              }}
-            >
-              {badgeLabel}
-            </Text>
+          <View style={styles.badgeRow}>
+            <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
+              <MaterialIcons
+                name={isEhr ? 'verified' : 'edit'}
+                size={getScaledFontSize(11)}
+                color={badgeColor}
+              />
+              <Text
+                style={{
+                  color: badgeColor,
+                  fontSize: getScaledFontSize(10),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  marginLeft: 4,
+                }}
+              >
+                {badgeLabel}
+              </Text>
+            </View>
+            {/* COS-372: small Injectable/Oral tag. Dark by default. */}
+            {MED_FORMS_ENABLED ? (
+              <View style={[styles.badge, { backgroundColor: (colors.subtext as string) + '14', borderColor: (colors.subtext as string) + '40' }]}>
+                <MaterialIcons
+                  name={isInjectable ? 'vaccines' : 'medication'}
+                  size={getScaledFontSize(11)}
+                  color={colors.subtext}
+                />
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(10),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    marginLeft: 4,
+                  }}
+                >
+                  {formTag}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
         <Pressable
@@ -375,7 +445,13 @@ function MedicationCard({
       {med.supply && (med.supply.remainingQuantity != null || med.supply.dosesPerDay != null) ? (
         <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}>
           {med.supply.remainingQuantity != null ? `${med.supply.remainingQuantity} left` : 'Supply unknown'}
-          {med.supply.dosesPerDay != null ? ` · ${med.supply.dosesPerDay}/day` : ''}
+          {/* COS-372: injectables read as "· weekly"; consumables keep "· N/day".
+              When the flag is off this is byte-for-byte today's "/day" line. */}
+          {MED_FORMS_ENABLED && isInjectable
+            ? ` · ${cadenceLabel(med.supply.cadence).toLowerCase()}`
+            : med.supply.dosesPerDay != null
+            ? ` · ${med.supply.dosesPerDay}/day`
+            : ''}
           {med.supply.runOutDate
             ? ` · runs out ${new Date(med.supply.runOutDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
             : ''}
@@ -462,7 +538,15 @@ function MedicationEditorModal({
   mode: EditorMode | null;
   saving: boolean;
   onClose: () => void;
-  onSubmit: (payload: { name: string; dose?: string; frequency?: string; times?: string[] }) => void;
+  onSubmit: (payload: {
+    name: string;
+    dose?: string;
+    frequency?: string;
+    times?: string[];
+    form?: MedicationForm;
+    /** COS-372 — chosen injectable cadence (undefined for consumables/flag-off). */
+    cadence?: MedicationCadence;
+  }) => void;
 }): React.JSX.Element {
   const visible = mode !== null;
   const isEdit = mode?.kind === 'edit';
@@ -472,6 +556,11 @@ function MedicationEditorModal({
   const [dose, setDose] = React.useState('');
   const [frequency, setFrequency] = React.useState('');
   const [timesRaw, setTimesRaw] = React.useState('');
+  // COS-372: which form is selected. Only surfaced when MED_FORMS_ENABLED;
+  // otherwise it stays at the default and is never sent.
+  const [form, setForm] = React.useState<MedicationForm>('consumable');
+  // COS-372: cadence for an injectable (the consumable path ignores it).
+  const [cadence, setCadence] = React.useState<MedicationCadence>('daily');
 
   // Reset fields whenever the modal target changes.
   React.useEffect(() => {
@@ -479,9 +568,15 @@ function MedicationEditorModal({
     setDose(existing?.dose ?? '');
     setFrequency(existing?.frequency ?? '');
     setTimesRaw((existing?.times ?? []).join(', '));
+    setForm(normalizeForm(existing?.form));
+    setCadence(normalizeCadence(existing?.supply?.cadence));
   }, [existing, visible]);
 
   const nameValid = isEdit || name.trim().length > 0;
+  // The injectable layout (cadence picker, no daily-times field) only applies
+  // when the feature is on AND the user picked injectable. When the flag is
+  // off this is always false → today's consumable layout exactly.
+  const isInjectable = MED_FORMS_ENABLED && form === 'injectable';
 
   const submit = () => {
     if (!nameValid) return;
@@ -490,7 +585,14 @@ function MedicationEditorModal({
       name: name.trim(),
       dose: dose.trim() || undefined,
       frequency: frequency.trim() || undefined,
-      times: times.length > 0 ? times : undefined,
+      // Injectables dose on a cadence, not daily times — don't send stale times.
+      times: !isInjectable && times.length > 0 ? times : undefined,
+      // Only attach `form` when the feature is enabled; undefined otherwise so
+      // the payload is identical to today's.
+      form: MED_FORMS_ENABLED ? form : undefined,
+      // Carry the chosen cadence for the parent to persist via setSupply on the
+      // edit path (where the med id exists). undefined for consumables/flag-off.
+      cadence: isInjectable ? cadence : undefined,
     });
   };
 
@@ -501,6 +603,43 @@ function MedicationEditorModal({
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, marginBottom: 12 }}>
             {isEdit ? 'Edit medication' : 'Add medication'}
           </Text>
+
+          {/* COS-372: consumable / injectable segmented control. Dark by
+              default — when MED_FORMS_ENABLED is false this whole block is not
+              rendered, so the modal is byte-for-byte today's. */}
+          {MED_FORMS_ENABLED ? (
+            <>
+              <FieldLabel text="Type" colors={colors} getScaledFontSize={getScaledFontSize} />
+              <View style={[styles.segmented, { borderColor: colors.text + '30' }]}>
+                {(['consumable', 'injectable'] as MedicationForm[]).map((opt) => {
+                  const selected = form === opt;
+                  return (
+                    <Pressable
+                      key={opt}
+                      onPress={() => setForm(opt)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={opt === 'injectable' ? 'Injectable' : 'Consumable (pills, tablets, liquid)'}
+                      style={[
+                        styles.segment,
+                        selected ? { backgroundColor: colors.tint as string } : null,
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: selected ? '#fff' : colors.text,
+                          fontSize: getScaledFontSize(13),
+                          fontWeight: getScaledFontWeight(selected ? 700 : 600) as any,
+                        }}
+                      >
+                        {opt === 'injectable' ? 'Injectable' : 'Consumable'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
 
           {!isEdit ? (
             <>
@@ -538,15 +677,62 @@ function MedicationEditorModal({
             placeholderTextColor={colors.text + '40'}
           />
 
-          <FieldLabel text="Times (comma-separated, HH:MM)" colors={colors} getScaledFontSize={getScaledFontSize} />
-          <TextInput
-            style={[styles.input, { color: colors.text, borderColor: colors.text + '30', fontSize: getScaledFontSize(16) }]}
-            value={timesRaw}
-            onChangeText={setTimesRaw}
-            placeholder="e.g. 08:00, 20:00"
-            placeholderTextColor={colors.text + '40'}
-            autoCapitalize="none"
-          />
+          {isInjectable ? (
+            // COS-372: injectables dose on a cadence (weekly, etc.), not daily
+            // clock times. The cadence itself is chosen with the supply (it
+            // drives the run-out projection and is keyed by med id on
+            // setSupply), so here we just pick the cadence and surface where
+            // it's applied. The selected value pre-seeds the supply modal.
+            <>
+              <FieldLabel text="How often" colors={colors} getScaledFontSize={getScaledFontSize} />
+              <View style={styles.cadenceWrap}>
+                {CADENCE_OPTIONS.map((opt) => {
+                  const selected = cadence === opt;
+                  return (
+                    <Pressable
+                      key={opt}
+                      onPress={() => setCadence(opt)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={cadenceLabel(opt)}
+                      style={[
+                        styles.cadenceChip,
+                        {
+                          borderColor: selected ? (colors.tint as string) : colors.text + '30',
+                          backgroundColor: selected ? (colors.tint as string) + '1A' : 'transparent',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: selected ? (colors.tint as string) : colors.text,
+                          fontSize: getScaledFontSize(13),
+                          fontWeight: getScaledFontWeight(selected ? 700 : 500) as any,
+                        }}
+                      >
+                        {cadenceLabel(opt)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 6 }}>
+                You&apos;ll confirm how many {supplyUnitLabel(form)} you have when you add supply.
+              </Text>
+            </>
+          ) : (
+            <>
+              <FieldLabel text="Times (comma-separated, HH:MM)" colors={colors} getScaledFontSize={getScaledFontSize} />
+              <TextInput
+                style={[styles.input, { color: colors.text, borderColor: colors.text + '30', fontSize: getScaledFontSize(16) }]}
+                value={timesRaw}
+                onChangeText={setTimesRaw}
+                placeholder="e.g. 08:00, 20:00"
+                placeholderTextColor={colors.text + '40'}
+                autoCapitalize="none"
+              />
+            </>
+          )}
 
           <View style={styles.modalActions}>
             <Pressable onPress={onClose} style={[styles.modalBtn, { borderColor: colors.border }]} accessibilityRole="button">
@@ -591,17 +777,28 @@ function SupplyEditorModal({
   mode: SupplyMode | null;
   saving: boolean;
   onClose: () => void;
-  onSubmit: (payload: { remainingQuantity: number; dosesPerDay: number }) => void;
+  onSubmit: (payload: {
+    remainingQuantity: number;
+    dosesPerDay: number;
+    cadence?: MedicationCadence;
+    startDate?: string;
+  }) => void;
 }): React.JSX.Element {
   const visible = mode !== null;
   const med = mode?.med ?? null;
+  // COS-372: an injectable's supply is measured in pens/vials/doses on a
+  // cadence. Off by default → consumable units + no cadence row, exactly today.
+  const isInjectable = MED_FORMS_ENABLED && normalizeForm(med?.form) === 'injectable';
+  const unitLabel = MED_FORMS_ENABLED ? supplyUnitLabel(med?.form) : 'pills/tablets/mL';
 
   const [remaining, setRemaining] = React.useState('');
   const [perDay, setPerDay] = React.useState('');
+  const [cadence, setCadence] = React.useState<MedicationCadence>('daily');
 
   React.useEffect(() => {
     setRemaining(med?.supply?.remainingQuantity != null ? String(med.supply.remainingQuantity) : '');
     setPerDay(med?.supply?.dosesPerDay != null ? String(med.supply.dosesPerDay) : '');
+    setCadence(normalizeCadence(med?.supply?.cadence));
   }, [med, visible]);
 
   const remainingNum = Number(remaining);
@@ -616,7 +813,14 @@ function SupplyEditorModal({
 
   const submit = () => {
     if (!valid) return;
-    onSubmit({ remainingQuantity: remainingNum, dosesPerDay: perDayNum });
+    onSubmit({
+      remainingQuantity: remainingNum,
+      dosesPerDay: perDayNum,
+      // Only send cadence/startDate for an injectable when the feature is on;
+      // undefined otherwise → today's setSupply payload exactly.
+      cadence: isInjectable ? cadence : undefined,
+      startDate: isInjectable ? isoDatePlusDays(0) : undefined,
+    });
   };
 
   return (
@@ -632,7 +836,14 @@ function SupplyEditorModal({
             </Text>
           ) : null}
 
-          <FieldLabel text="How many do you have left?" colors={colors} getScaledFontSize={getScaledFontSize} />
+          {/* COS-372: when the feature is on, qualify the count with the
+              form's unit ("How many do you have left? (pens/vials/doses)").
+              When off, the label is byte-for-byte today's. */}
+          <FieldLabel
+            text={MED_FORMS_ENABLED ? `How many do you have left? (${unitLabel})` : 'How many do you have left?'}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+          />
           <TextInput
             style={[styles.input, { color: colors.text, borderColor: colors.text + '30', fontSize: getScaledFontSize(16) }]}
             value={remaining}
@@ -642,7 +853,50 @@ function SupplyEditorModal({
             keyboardType="number-pad"
           />
 
-          <FieldLabel text="Doses per day" colors={colors} getScaledFontSize={getScaledFontSize} />
+          {/* COS-372: cadence picker for an injectable's supply projection.
+              Only rendered when the feature is on AND the med is injectable. */}
+          {isInjectable ? (
+            <>
+              <FieldLabel text="How often" colors={colors} getScaledFontSize={getScaledFontSize} />
+              <View style={styles.cadenceWrap}>
+                {CADENCE_OPTIONS.map((opt) => {
+                  const selected = cadence === opt;
+                  return (
+                    <Pressable
+                      key={opt}
+                      onPress={() => setCadence(opt)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={cadenceLabel(opt)}
+                      style={[
+                        styles.cadenceChip,
+                        {
+                          borderColor: selected ? (colors.tint as string) : colors.text + '30',
+                          backgroundColor: selected ? (colors.tint as string) + '1A' : 'transparent',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: selected ? (colors.tint as string) : colors.text,
+                          fontSize: getScaledFontSize(13),
+                          fontWeight: getScaledFontWeight(selected ? 700 : 500) as any,
+                        }}
+                      >
+                        {cadenceLabel(opt)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
+
+          <FieldLabel
+            text={isInjectable ? 'Doses per intake' : 'Doses per day'}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+          />
           <TextInput
             style={[styles.input, { color: colors.text, borderColor: colors.text + '30', fontSize: getScaledFontSize(16) }]}
             value={perDay}
@@ -753,6 +1007,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -761,7 +1016,6 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
-    marginTop: 6,
   },
   iconBtn: { padding: 6, marginLeft: 2 },
   refillBanner: {
@@ -800,6 +1054,27 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  // COS-372: consumable/injectable segmented control + cadence chips.
+  segmented: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cadenceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cadenceChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
   modalBtn: {
