@@ -19,6 +19,8 @@ import {
 } from '@/services/api/instruments'
 import { fetchAssessments, type AssessmentRecord } from '@/services/api/assessments'
 import { generateAiHealthPlan } from '@/services/api/ai-health-plan'
+import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
+import { resolveBuildGate } from '@/lib/build-plan-gate'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
@@ -156,7 +158,14 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
     () => visible.filter((it) => completedById.has(it.instrumentId)).length,
     [visible, completedById],
   )
-  const canBuildPlan = completedCount >= MIN_TO_BUILD_PLAN
+
+  // SCRUM-521 / COS-380: gate button on the backend's canGenerate truth,
+  // falling back to the local heuristic only when assignments aren't loaded
+  // yet (offline / pre-load). Basic-tier users always get canGenerate=true
+  // from the backend, so they are never newly blocked.
+  const assignmentsQuery = useHealthPlanAssignments()
+  const buildGate = resolveBuildGate(assignmentsQuery.data, completedCount, MIN_TO_BUILD_PLAN)
+  const canBuildPlan = buildGate.canBuild
 
   if (instrumentsQuery.isLoading || assessmentsQuery.isLoading) {
     return (
@@ -223,13 +232,15 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
           <Text style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
             {canBuildPlan
               ? 'Build my plan'
-              : `Complete ${MIN_TO_BUILD_PLAN - completedCount} more to build plan`}
+              : `Complete ${buildGate.remainingCount} more to build plan`}
           </Text>
         )}
       </Pressable>
       {buildPlan.error ? (
         <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), textAlign: 'center', marginTop: 10 }}>
-          Couldn&apos;t generate your plan right now. Try again in a moment.
+          {(buildPlan.error as Error & { code?: string })?.code === 'AI_AWAITING_ASSESSMENTS'
+            ? `Finish all your assigned check-ins first, then build your plan${buildGate.remainingCount > 0 ? ` — ${buildGate.remainingCount} left` : ''}.`
+            : "Couldn’t generate your plan right now. Try again in a moment."}
         </Text>
       ) : null}
     </View>
