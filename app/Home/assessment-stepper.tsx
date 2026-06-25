@@ -69,6 +69,14 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
       return
     }
     let cancelled = false
+    // SCRUM-528: reset to a clean slate for the NEW instrument before loading
+    // its draft. The stepper is a single reused screen instance — without this,
+    // a stale stepIdx/answers from a previous (longer) check-in carries over and
+    // can index past the new, shorter instrument's items array → `items[stepIdx]`
+    // is undefined → crash. The saved draft (if any) is overlaid after load.
+    setDraftLoaded(false)
+    setStepIdx(0)
+    setAnswers({})
     void loadDraft(instrumentId).then((d) => {
       if (cancelled) return
       if (d) {
@@ -161,6 +169,20 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   const items = instrument.items
   const total = items.length
   const item = items[stepIdx]
+  // SCRUM-528: guard the transient render where stepIdx is stale for a
+  // just-changed instrument (the draft-load effect resets it post-render).
+  // Indexing past the new instrument's items leaves `item` undefined, and
+  // `answers[item.id]` below would crash. Show a loader until the effect
+  // resets stepIdx and the correct item resolves.
+  if (!item) {
+    return (
+      <AppWrapper>
+        <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint as string} />
+        </View>
+      </AppWrapper>
+    )
+  }
   const isLast = stepIdx >= total - 1
   const isFirst = stepIdx === 0
   const currentValue = answers[item.id]
