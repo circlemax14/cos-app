@@ -117,6 +117,15 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [celebrating])
 
+  // SCRUM-527: the stepper is a single reused screen instance — navigating to a
+  // different instrumentId doesn't remount it, so clear the completion overlay +
+  // mutation state when the instrument changes, otherwise the prior "Nicely done"
+  // celebration leaks to the next check-in.
+  React.useEffect(() => {
+    setCelebrating(false)
+    submit.reset()
+  }, [instrumentId])
+
   if (instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)) {
     return (
       <AppWrapper>
