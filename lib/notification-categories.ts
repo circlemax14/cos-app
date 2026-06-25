@@ -19,7 +19,7 @@
  */
 
 /** Master kill-switch for the entire notification-categories feature. */
-export const NOTIFICATION_CATEGORIES_ENABLED = false;
+export const NOTIFICATION_CATEGORIES_ENABLED = true;
 
 /**
  * The five notification categories the backend persists. Mirrors the backend's

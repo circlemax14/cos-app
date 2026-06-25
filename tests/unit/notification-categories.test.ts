@@ -65,6 +65,6 @@ test('NOTIFICATION_CATEGORY_KEYS covers exactly the defaultCategoryPrefs keys', 
   );
 });
 
-test('NOTIFICATION_CATEGORIES_ENABLED defaults OFF (kill-switch)', () => {
-  assert.equal(NOTIFICATION_CATEGORIES_ENABLED, false);
+test('NOTIFICATION_CATEGORIES_ENABLED is enabled (COS-375 rollout — backend notification_categories_enabled is live)', () => {
+  assert.equal(NOTIFICATION_CATEGORIES_ENABLED, true);
 });
