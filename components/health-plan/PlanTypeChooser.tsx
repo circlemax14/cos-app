@@ -138,16 +138,21 @@ export function PlanTypeChooser({
       // Plan screen reflects the switch immediately.
       queryClient.invalidateQueries({ queryKey: ['health-plan-assignments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
-      setPendingType(null)
+      // SCRUM-524: close inner consent modal immediately, then defer the
+      // outer pageSheet dismissal one frame so iOS doesn't collide the
+      // two nested-Modal dismissals (which left a blank orphaned sheet).
       setConsentAck(false)
-      onClose()
-      // Any non-basic tier opens the assessment catalog so users can see
-      // their AI-picked check-ins. Basic stays on the plan screen — it
-      // also gets AI picks now (SCRUM-268) but they're light enough that
-      // we don't force the user into the catalog.
-      if (type !== 'basic') {
-        router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
-      }
+      setPendingType(null)            // close inner consent modal now
+      requestAnimationFrame(() => {   // defer outer-sheet dismissal one frame so iOS
+        onClose()                     // doesn't collide the two nested-Modal dismissals
+        // Any non-basic tier opens the assessment catalog so users can see
+        // their AI-picked check-ins. Basic stays on the plan screen — it
+        // also gets AI picks now (SCRUM-268) but they're light enough that
+        // we don't force the user into the catalog.
+        if (type !== 'basic') {
+          router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
+        }
+      })
     },
     onError: (err: Error & { code?: string }) => {
       if (err.code === 'NO_AGENCY') {
