@@ -22,6 +22,9 @@ import {
   defaultCategoryPrefs,
   type NotificationCategory,
 } from '@/lib/notification-categories';
+import { buildCategoryGateFromPrefs } from '@/services/notification-category-gate';
+import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
+import type { TaskOccurrence } from '@/services/api/types';
 
 const NOTIFICATION_CATEGORIES_KEY = ['notification-categories'] as const;
 
@@ -64,6 +67,19 @@ export function useUpdateNotificationCategories() {
     onSuccess: (updated) => {
       // Seed with the server-recomputed map, then invalidate to re-confirm.
       qc.setQueryData(NOTIFICATION_CATEGORIES_KEY, updated);
+
+      // SCRUM-525 FIX 1: cancel already-OS-scheduled notifications for any
+      // category the user just toggled off, and re-schedule enabled ones.
+      // We pull today's plan tasks from the React Query cache (they were
+      // prefetched by auth-prefetch / today-schedule) and build the gate
+      // directly from the server-confirmed prefs — no extra network call.
+      // Fire-and-forget; failures are non-fatal.
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const cached = qc.getQueryData<TaskOccurrence[]>(['plan-tasks', todayIso]);
+      if (cached && cached.length > 0) {
+        const gate = buildCategoryGateFromPrefs(updated.flagEnabled, updated.preferences);
+        void reconcilePlanTaskNotifications(cached, gate).catch(() => { /* non-fatal */ });
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: NOTIFICATION_CATEGORIES_KEY });

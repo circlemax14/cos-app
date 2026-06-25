@@ -629,7 +629,7 @@ export default function HealthPlanScreen() {
           <TouchableOpacity
             style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}
             onPress={() => onGenerate(true)}
-            disabled={generating}>
+            disabled={generating || !canGeneratePlan}> {/* SCRUM-526: also gate when check-ins are incomplete */}
             {generating ? (
               <ActivityIndicator color={colors.tint} size="small" />
             ) : (

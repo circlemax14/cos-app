@@ -29,6 +29,7 @@ import { buildAndUploadSnapshot } from '@/services/calendar-sync';
 import { listSelfReportedMetrics } from '@/services/api/self-reported-metrics';
 import { apiClient } from '@/lib/api-client';
 import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
+import { resolveCategoryGate } from '@/services/notification-category-gate';
 
 const COOLDOWN_MS = 30_000;
 let lastRunAt = 0;
@@ -99,7 +100,13 @@ export function prefetchAfterAuth(opts: PrefetchOptions = {}): void {
       // pair per task.
       queryFn: async () => {
         const tasks = await fetchTasksForDate(todayIso());
-        void reconcilePlanTaskNotifications(tasks).catch(() => { /* non-fatal */ });
+        // SCRUM-525 FIX 2: gate the cold-start reconcile with the user's
+        // per-category prefs so a launch never re-schedules notifications
+        // for categories the user has disabled. resolveCategoryGate() is
+        // best-effort (returns undefined on error / flag-off) which keeps
+        // the existing "schedule everything" behaviour as the safe fallback.
+        const gate = await resolveCategoryGate().catch(() => undefined);
+        void reconcilePlanTaskNotifications(tasks, gate).catch(() => { /* non-fatal */ });
         return tasks;
       },
       staleTime: 2 * 60_000,
