@@ -6,6 +6,8 @@ import {
   categoryLabel,
   groupGoalsByCategory,
   formatGoalMeasure,
+  GOAL_PROGRESS_ENABLED,
+  formatGoalProgress,
 } from '../../lib/care-plan.ts';
 
 test('CARE_PLAN_ENABLED is enabled (COS-377 rollout — backend care_plan_enabled is live in prod)', () => {
@@ -63,4 +65,52 @@ test('formatGoalMeasure renders baseline → target · timeframe', () => {
   assert.equal(formatGoalMeasure({ target: '<10', timeframe: '8 weeks' }), '<10 · 8 weeks');
   // nothing measurable ⇒ empty string
   assert.equal(formatGoalMeasure({}), '');
+});
+
+// ── Phase 3: GOAL_PROGRESS_ENABLED + formatGoalProgress (COS-382) ────────────
+
+test('GOAL_PROGRESS_ENABLED is false (dark-launch default)', () => {
+  assert.equal(GOAL_PROGRESS_ENABLED, false);
+});
+
+test('formatGoalProgress: full progress ⇒ line + ↑ + barFraction 0.5', () => {
+  const result = formatGoalProgress({
+    baseline: '7.8%',
+    target: '<7.0%',
+    progress: { currentValue: '7.4%', trendDirection: 'improving', progressPercent: 50 },
+  });
+  assert.ok(result !== null);
+  assert.equal(result.line, '7.8% → 7.4% → <7.0%');
+  assert.equal(result.trendSymbol, '↑');
+  assert.equal(result.barFraction, 0.5);
+});
+
+test('formatGoalProgress: worsening ⇒ ↓', () => {
+  const result = formatGoalProgress({
+    progress: { currentValue: '8.2%', trendDirection: 'worsening', progressPercent: 0 },
+  });
+  assert.ok(result !== null);
+  assert.equal(result.trendSymbol, '↓');
+});
+
+test('formatGoalProgress: stable ⇒ →', () => {
+  const result = formatGoalProgress({
+    progress: { currentValue: '7.8%', trendDirection: 'stable' },
+  });
+  assert.ok(result !== null);
+  assert.equal(result.trendSymbol, '→');
+  assert.equal(result.barFraction, undefined);
+});
+
+test('formatGoalProgress: insufficient_data ⇒ empty trendSymbol', () => {
+  const result = formatGoalProgress({
+    progress: { currentValue: '7.8%', trendDirection: 'insufficient_data' },
+  });
+  assert.ok(result !== null);
+  assert.equal(result.trendSymbol, '');
+});
+
+test('formatGoalProgress: no progress ⇒ null', () => {
+  assert.equal(formatGoalProgress({ baseline: '7.8%', target: '<7.0%' }), null);
+  assert.equal(formatGoalProgress({}), null);
 });

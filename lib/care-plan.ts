@@ -65,3 +65,49 @@ export function formatGoalMeasure(g: {
   const left = g.baseline && g.target ? `${g.baseline} → ${g.target}` : (g.target ?? '');
   return [left, g.timeframe].filter(Boolean).join(' · ');
 }
+
+/**
+ * KILL-SWITCH: GOAL_PROGRESS_ENABLED. While off, progress fields are ignored
+ * and goal cards render exactly as Phase 1 (COS-377). Flip to true once the
+ * backend COS-382 changes are live on dev/staging + the GOAL_PROGRESS_ENABLED
+ * SSM flag is enabled. Default: false (dark launch).
+ */
+export const GOAL_PROGRESS_ENABLED = false;
+
+/**
+ * Format a goal's progress for display. Returns null when no progress data is
+ * present (flag off or backend did not hydrate). Pure — no RN imports.
+ *
+ * @param g  Goal-shaped object carrying optional baseline, target, progress.
+ * @returns  { line, trendSymbol, barFraction } or null.
+ */
+export function formatGoalProgress(g: {
+  baseline?: string;
+  target?: string;
+  progress?: {
+    currentValue?: string;
+    trendDirection?: string;
+    progressPercent?: number;
+  };
+}): { line: string; trendSymbol: '↑' | '↓' | '→' | ''; barFraction?: number } | null {
+  if (!g.progress) return null;
+
+  const { currentValue, trendDirection, progressPercent } = g.progress;
+
+  // Build "baseline → currentValue → target" using whatever parts are available.
+  const parts: string[] = [];
+  if (g.baseline) parts.push(g.baseline);
+  if (currentValue) parts.push(currentValue);
+  if (g.target) parts.push(g.target);
+  const line = parts.join(' → ');
+
+  const trendSymbol: '↑' | '↓' | '→' | '' =
+    trendDirection === 'improving'         ? '↑'
+    : trendDirection === 'worsening'       ? '↓'
+    : trendDirection === 'stable'          ? '→'
+    : /* insufficient_data or unknown */     '';
+
+  const barFraction = progressPercent != null ? progressPercent / 100 : undefined;
+
+  return { line, trendSymbol, barFraction };
+}
