@@ -26,7 +26,7 @@
  * feature: no segmented form control, no cadence picker, consumable units,
  * "Take"/daily-times everywhere, and every med treated as a consumable.
  */
-export const MED_FORMS_ENABLED = false;
+export const MED_FORMS_ENABLED = true;
 
 /** How a medication is taken. Defaults to 'consumable' when unspecified. */
 export type MedicationForm = 'consumable' | 'injectable';

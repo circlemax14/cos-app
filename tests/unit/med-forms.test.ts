@@ -14,8 +14,8 @@ import {
 
 // ─── Kill-switch default ────────────────────────────────────────────────────
 
-test('MED_FORMS_ENABLED ships OFF (dark by default for back-compat)', () => {
-  assert.equal(MED_FORMS_ENABLED, false);
+test('MED_FORMS_ENABLED is enabled (COS-375 rollout — backend med_forms_enabled is live)', () => {
+  assert.equal(MED_FORMS_ENABLED, true);
 });
 
 // ─── Defaults ───────────────────────────────────────────────────────────────
