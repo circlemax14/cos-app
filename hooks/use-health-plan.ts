@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan'
 
 export interface PlanGoal { id: string; title: string; description: string; status: 'active' | 'completed' | 'cancelled' }
 export interface CareManagerPlan { goals: PlanGoal[]; notes: string; updatedAt: string; updatedBy: string }
@@ -25,5 +26,20 @@ export function useRefreshAiInsights() {
       return res.data.data
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['health-plan'] }),
+  })
+}
+
+/**
+ * React Query mutation that edits a measurable goal on the AI health plan (COS-377).
+ * On success invalidates the ['ai-health-plan'] query key so any subscriber
+ * (Task 10 UI once wired up) refetches the updated plan automatically.
+ * Query key: ['ai-health-plan']
+ */
+export function useUpdatePlanGoal() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) =>
+      updatePlanGoal(goalId, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-health-plan'] }),
   })
 }
