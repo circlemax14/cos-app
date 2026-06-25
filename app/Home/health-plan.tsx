@@ -43,8 +43,10 @@ import {
 import { useNotificationCategories } from '@/hooks/use-notification-categories';
 import {
   CARE_PLAN_ENABLED,
+  GOAL_PROGRESS_ENABLED,
   groupGoalsByCategory,
   formatGoalMeasure,
+  formatGoalProgress,
 } from '@/lib/care-plan';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
@@ -938,6 +940,37 @@ export default function HealthPlanScreen() {
                               {measure}
                             </Text>
                           )}
+                          {/* COS-382: goal-progress row — flag-gated, inert when GOAL_PROGRESS_ENABLED=false */}
+                          {GOAL_PROGRESS_ENABLED && g.progress && (() => {
+                            const prog = formatGoalProgress(g);
+                            if (!prog) return null;
+                            const trendColor =
+                              prog.trendSymbol === '↑' ? colors.tint
+                              : prog.trendSymbol === '↓' ? (colors as any).error ?? '#E53E3E'
+                              : colors.subtext;
+                            return (
+                              <View style={styles.progressRow}>
+                                {prog.barFraction != null && (
+                                  <View style={styles.progressTrack}>
+                                    <View
+                                      style={[
+                                        styles.progressFill,
+                                        {
+                                          width: `${Math.min(1, Math.max(0, prog.barFraction)) * 100}%` as any,
+                                          backgroundColor: colors.tint,
+                                        },
+                                      ]}
+                                    />
+                                  </View>
+                                )}
+                                {!!prog.trendSymbol && !!prog.line && (
+                                  <Text style={[styles.goalDesc, { color: trendColor, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }]} numberOfLines={1}>
+                                    {prog.trendSymbol} {prog.line}
+                                  </Text>
+                                )}
+                              </View>
+                            );
+                          })()}
                         </View>
                         <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
                           <Text style={[styles.priorityText, { color: pstyle.color, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any }]}>
@@ -1331,6 +1364,10 @@ const styles = StyleSheet.create({
   goalBody: { flex: 1 },
   goalTitle: { marginBottom: 2 },
   goalDesc: { lineHeight: 16 },
+  // COS-382: goal-progress row styles (inert when GOAL_PROGRESS_ENABLED=false)
+  progressRow: { marginTop: 6, gap: 4 },
+  progressTrack: { height: 4, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.08)', overflow: 'hidden' },
+  progressFill: { height: 4, borderRadius: 2 },
   priorityPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   priorityText: { letterSpacing: 0.8, textTransform: 'uppercase' },
 
