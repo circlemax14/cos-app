@@ -323,6 +323,17 @@ export interface AiPlanGoal {
   target?: string;
   timeframe?: string;
   status?: 'active' | 'achieved' | 'paused' | 'cancelled';
+  // Phase 3 additions (COS-382) — optional, never persisted (computed on read)
+  metricSource?: { type: string; id: string };
+  progress?: {
+    currentValue: string;
+    numericCurrent?: number;
+    trendDirection: 'improving' | 'worsening' | 'stable' | 'insufficient_data';
+    percentageChange?: number;
+    progressPercent?: number;
+    lastMeasuredAt?: string;
+    dataPoints?: number;
+  };
 }
 
 export interface AiHealthPlan {
