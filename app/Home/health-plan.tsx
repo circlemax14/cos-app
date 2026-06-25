@@ -33,6 +33,11 @@ import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import { withTimeout } from '@/lib/with-timeout';
+import {
+  NOTIFICATION_CATEGORIES_ENABLED,
+  NOTIFICATION_CATEGORY_KEYS,
+} from '@/lib/notification-categories';
+import { useNotificationCategories } from '@/hooks/use-notification-categories';
 
 // COS-362: hard ceiling on the initial full-screen loader so it can never hang
 // forever (build 57 "stuck on Health Plan after unlock"). Generous on purpose —
@@ -89,6 +94,15 @@ const TASK_ICON: Record<TaskType, { name: keyof typeof MaterialIcons.glyphMap; c
   exercise: { name: 'directions-walk', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
   appointment: { name: 'local-hospital', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
   reminder: { name: 'notifications', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
+};
+
+// COS-373: short labels for the read-only notification-categories glimpse.
+const NOTIF_CATEGORY_LABELS: Record<(typeof NOTIFICATION_CATEGORY_KEYS)[number], string> = {
+  appointments: 'Appointments',
+  reminders: 'Reminders',
+  medicationReminders: 'Medication reminders',
+  medicationTask: 'Medication tasks',
+  otherTask: 'Other tasks',
 };
 
 const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: string; label: string }> = {
@@ -329,6 +343,14 @@ export default function HealthPlanScreen() {
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
   const skippedCount = tasks.filter((t) => t.status === 'skipped').length;
   const progressPct = tasks.length > 0 ? completedCount / tasks.length : 0;
+
+  // COS-373: read-only "what you'll be notified about" glimpse on the plan
+  // surface. The hook always runs (defensive), but the card only renders when
+  // the client kill-switch is on AND the server reports the feature enabled.
+  const notifCategoriesQuery = useNotificationCategories();
+  const showNotifPreview =
+    NOTIFICATION_CATEGORIES_ENABLED && notifCategoriesQuery.data?.flagEnabled === true;
+  const notifPrefs = notifCategoriesQuery.data?.preferences;
 
   // Plan-level breakdown (all tasks in the plan, not just today)
   const planTaskCounts = plan
@@ -714,6 +736,53 @@ export default function HealthPlanScreen() {
           <AICitationsFooter compact />
         </View>
 
+        {/* COS-373: read-only "Here's what you'll be notified about" glimpse.
+            Lists each notification category and whether it's on/off, with a
+            Manage link to the Reminders settings screen. No toggles here — it's
+            a glimpse only. Gated by the client kill-switch + the server flag, so
+            absent for back-compat / older builds. */}
+        {showNotifPreview && notifPrefs ? (
+          <View style={[styles.notifPreviewCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+            <View style={styles.notifPreviewHead}>
+              <View style={styles.notifPreviewTitleWrap}>
+                <MaterialIcons name="notifications-active" size={getScaledFontSize(16)} color={colors.tint as string} />
+                <Text style={[styles.notifPreviewTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}>
+                  Here&apos;s what you&apos;ll be notified about
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => router.push('/Home/reminder-settings' as never)}
+                accessibilityRole="button"
+                accessibilityLabel="Manage notification settings"
+                hitSlop={8}
+              >
+                <Text style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}>
+                  Manage
+                </Text>
+              </Pressable>
+            </View>
+            {NOTIFICATION_CATEGORY_KEYS.map((key) => {
+              const on = notifPrefs[key];
+              const label = NOTIF_CATEGORY_LABELS[key];
+              return (
+                <View key={key} style={styles.notifPreviewRow}>
+                  <MaterialIcons
+                    name={on ? 'check-circle' : 'cancel'}
+                    size={getScaledFontSize(16)}
+                    color={on ? '#16A34A' : colors.subtext}
+                  />
+                  <Text style={[styles.notifPreviewLabel, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
+                    {label}
+                  </Text>
+                  <Text style={{ color: on ? '#16A34A' : colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }}>
+                    {on ? 'On' : 'Off'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
         {/* Medication Management (COS-357 / SCRUM-504). Self-gates on the
             GET response's flagEnabled: renders nothing when the flag is off
             (or the endpoint errors), so this is inert for back-compat and
@@ -1056,6 +1125,14 @@ const styles = StyleSheet.create({
   reportStat: { flex: 1, alignItems: 'center' },
   reportStatValue: { letterSpacing: -0.5, marginBottom: 2 },
   reportStatLabel: { textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // COS-373: notification-categories preview card
+  notifPreviewCard: { marginHorizontal: 20, marginBottom: 16, padding: 16, borderRadius: 18, borderWidth: 1 },
+  notifPreviewHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  notifPreviewTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 },
+  notifPreviewTitle: { flexShrink: 1 },
+  notifPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+  notifPreviewLabel: { flex: 1 },
 
   // Plan overview card
   planOverview: { marginHorizontal: 20, marginTop: 10, padding: 16, borderRadius: 16, borderWidth: 1 },

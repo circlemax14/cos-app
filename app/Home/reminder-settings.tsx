@@ -14,6 +14,15 @@ import {
   updateTimezonePref,
   type HealthPlanReminderPrefs,
 } from '@/services/api/notification-prefs'
+import {
+  NOTIFICATION_CATEGORIES_ENABLED,
+  NOTIFICATION_CATEGORY_KEYS,
+  type NotificationCategory,
+} from '@/lib/notification-categories'
+import {
+  useNotificationCategories,
+  useUpdateNotificationCategories,
+} from '@/hooks/use-notification-categories'
 
 // Top-30 IANA timezones surfaced in the picker. Anything outside this
 // list falls back to the device-detected default — the picker can't
@@ -82,6 +91,49 @@ const SLOTS: SlotSpec[] = [
   { key: 'eod',    title: 'End of day', subtitle: 'Around 7:00 PM — final nudge before bed', iconName: 'nightlight-round' },
 ]
 
+// COS-373: notification-category rows. Each maps to one server preference key.
+// Only rendered when NOTIFICATION_CATEGORIES_ENABLED. "Other tasks" starts OFF
+// (server default) so users aren't pinged for non-medication tasks by default.
+interface CategorySpec {
+  key: NotificationCategory
+  title: string
+  subtitle: string
+  iconName: keyof typeof MaterialIcons.glyphMap
+}
+
+const CATEGORY_SPECS: Record<NotificationCategory, CategorySpec> = {
+  appointments: {
+    key: 'appointments',
+    title: 'Appointments',
+    subtitle: 'Reminders before your upcoming visits',
+    iconName: 'local-hospital',
+  },
+  reminders: {
+    key: 'reminders',
+    title: 'Reminders',
+    subtitle: 'General plan reminders and nudges',
+    iconName: 'notifications',
+  },
+  medicationReminders: {
+    key: 'medicationReminders',
+    title: 'Medication reminders',
+    subtitle: 'Refill and supply reminders for your medications',
+    iconName: 'medication',
+  },
+  medicationTask: {
+    key: 'medicationTask',
+    title: 'Medication tasks',
+    subtitle: 'Alerts when it\'s time to take a dose',
+    iconName: 'alarm',
+  },
+  otherTask: {
+    key: 'otherTask',
+    title: 'Other tasks',
+    subtitle: 'Alerts for non-medication plan tasks (exercise, check-ins)',
+    iconName: 'check-circle-outline',
+  },
+}
+
 /**
  * Settings screen for Health Plan reminder push notifications. Lets users
  * opt out of each daily slot (am / midday / eod). Default state is all-on
@@ -121,6 +173,15 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
   const [pickerOpen, setPickerOpen] = React.useState(false)
   const storedTz = tzQuery.data?.timezone ?? null
   const effectiveTz = storedTz ?? deviceTimezone()
+
+  // COS-373: notification-category preferences. The hooks always run (cheap +
+  // defensive), but the section below only renders when the client kill-switch
+  // is on AND the server reports the feature flagEnabled.
+  const categoriesQuery = useNotificationCategories()
+  const categoriesMutation = useUpdateNotificationCategories()
+  const categoryPrefs = categoriesQuery.data?.preferences
+  const showCategories =
+    NOTIFICATION_CATEGORIES_ENABLED && categoriesQuery.data?.flagEnabled === true
 
   // On first launch (and any time the user has no stored TZ), auto-write
   // the device-detected TZ so the new sweeper has something to work with
@@ -219,6 +280,49 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
               </Card.Content>
             </Card>
           </Pressable>
+
+          {/* COS-373: notification categories. Lets the patient mute whole
+              categories of notifications (Ken's "too many notifications"). Only
+              rendered when the client kill-switch is on and the server reports
+              the feature enabled — otherwise this section is absent and the
+              screen looks exactly as before. */}
+          {showCategories && categoryPrefs ? (
+            <>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any, marginTop: 22, marginBottom: 10, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                Notification categories
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginBottom: 12, lineHeight: 18 }}>
+                Choose which kinds of notifications you want to receive. Turn off any you don&apos;t need.
+              </Text>
+              {NOTIFICATION_CATEGORY_KEYS.map((key) => {
+                const spec = CATEGORY_SPECS[key]
+                const enabled = categoryPrefs[key]
+                return (
+                  <Card key={key} style={[styles.row, { backgroundColor: colors.card }]}>
+                    <Card.Content style={styles.rowContent}>
+                      <View style={[styles.iconWrap, { backgroundColor: (colors.tint as string) + '22' }]}>
+                        <MaterialIcons name={spec.iconName} size={20} color={colors.tint as string} />
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 14 }}>
+                        <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
+                          {spec.title}
+                        </Text>
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                          {spec.subtitle}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={enabled}
+                        onValueChange={(value) => categoriesMutation.mutate({ [key]: value })}
+                        disabled={categoriesMutation.isPending}
+                        accessibilityLabel={`${spec.title} ${enabled ? 'enabled' : 'disabled'}`}
+                      />
+                    </Card.Content>
+                  </Card>
+                )
+              })}
+            </>
+          ) : null}
 
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 18, lineHeight: 18 }}>
             Reminders use device push notifications. Allow notifications in your iOS / Android settings to receive them.
