@@ -15,35 +15,11 @@ import { RecordMetricModal } from '@/components/home/record-metric-modal';
 import { useCalendar } from '@/hooks/use-calendar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CalendarEvent } from '@/services/calendar';
-import { reconcilePlanTaskNotifications, type PlanTaskCategoryGate } from '@/services/plan-task-notifications';
-import { NOTIFICATION_CATEGORIES_ENABLED } from '@/lib/notification-categories';
-import { fetchNotificationCategories } from '@/services/api/notification-prefs';
+import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
+import { resolveCategoryGate } from '@/services/notification-category-gate';
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-/**
- * COS-373: resolve the per-category gate for the plan-task scheduler.
- *
- * Flag OFF (default) → returns `undefined`, so the scheduler receives no gate
- * and schedules exactly as today. Flag ON → fetch the patient's prefs and pass
- * the medicationTask / otherTask booleans through. The fetch is defensive
- * (returns defaults on error), and we only honour the prefs when the server's
- * own `flagEnabled` is also true — otherwise we leave scheduling unchanged.
- */
-async function resolveCategoryGate(): Promise<PlanTaskCategoryGate | undefined> {
-  if (!NOTIFICATION_CATEGORIES_ENABLED) return undefined;
-  try {
-    const res = await fetchNotificationCategories();
-    if (!res.flagEnabled) return undefined;
-    return {
-      medicationTask: res.preferences.medicationTask,
-      otherTask: res.preferences.otherTask,
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 function formatTaskTime(hhmm: string): string {
