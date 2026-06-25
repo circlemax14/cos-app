@@ -24,6 +24,7 @@
 
 import * as Notifications from 'expo-notifications';
 import type { TaskOccurrence } from '@/services/api/types';
+import { categoryForPlanTask } from '@/lib/notification-categories';
 
 const PLAN_TASK_TAG = 'csh-plan-task-v1';
 
@@ -77,6 +78,22 @@ export interface PlanNotificationOutcome {
 }
 
 /**
+ * COS-373: per-plan-task category gating. Each plan task maps to one of two
+ * categories — medication tasks → `medicationTask`, everything else →
+ * `otherTask` (see lib/notification-categories.categoryForPlanTask). When a
+ * category is disabled we skip scheduling its tasks.
+ *
+ * The param is OPTIONAL and defaults to BOTH enabled. So flag-off callers (and
+ * any caller that passes nothing) get exactly today's behaviour — every task is
+ * scheduled. Only when the caller explicitly supplies disabled categories does
+ * the gate drop those tasks.
+ */
+export interface PlanTaskCategoryGate {
+  medicationTask?: boolean;
+  otherTask?: boolean;
+}
+
+/**
  * Schedule a 15-min-before + at-time pair of local notifications for
  * each non-completed plan task in `tasks`. Idempotent — cancels every
  * existing plan-task-tagged schedule first, then re-schedules.
@@ -84,9 +101,13 @@ export interface PlanNotificationOutcome {
  * SCRUM-279 (build 51): mirrors the calendar-notification "fire near-
  * past alarms shortly from now" trick so a task created at 5:40 for
  * 5:45 still pings at 5:40:10.
+ *
+ * COS-373: `categoryPrefs` optionally gates scheduling per category. Omitted /
+ * undefined keys are treated as enabled, so a missing arg = unchanged behaviour.
  */
 export async function reconcilePlanTaskNotifications(
   tasks: TaskOccurrence[],
+  categoryPrefs?: PlanTaskCategoryGate,
 ): Promise<PlanNotificationOutcome> {
   // COS-363 (Bug #4): never let scheduling implicitly prompt for notification
   // permission. getPermissionsAsync is READ-ONLY (never prompts); if auth isn't
@@ -117,8 +138,17 @@ export async function reconcilePlanTaskNotifications(
   let scheduled = 0;
   let skipped = 0;
 
-  // Skip already-completed / skipped tasks; the user has dealt with them.
-  const open = tasks.filter((t) => t.status === 'pending');
+  // COS-373: resolve the category gate. Undefined keys default to enabled so a
+  // missing arg (flag-off / no-arg caller) leaves every category on → today's
+  // behaviour. `isCategoryEnabled` is a no-op filter in that case.
+  const medicationTaskEnabled = categoryPrefs?.medicationTask !== false;
+  const otherTaskEnabled = categoryPrefs?.otherTask !== false;
+  const isCategoryEnabled = (t: TaskOccurrence): boolean =>
+    categoryForPlanTask(t) === 'medicationTask' ? medicationTaskEnabled : otherTaskEnabled;
+
+  // Skip already-completed / skipped tasks (the user has dealt with them) and
+  // any task whose mapped notification category is disabled.
+  const open = tasks.filter((t) => t.status === 'pending' && isCategoryEnabled(t));
 
   // Sort by scheduled time so the soonest-firing reservations win
   // when we hit the cap.

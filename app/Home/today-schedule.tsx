@@ -15,10 +15,35 @@ import { RecordMetricModal } from '@/components/home/record-metric-modal';
 import { useCalendar } from '@/hooks/use-calendar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CalendarEvent } from '@/services/calendar';
-import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
+import { reconcilePlanTaskNotifications, type PlanTaskCategoryGate } from '@/services/plan-task-notifications';
+import { NOTIFICATION_CATEGORIES_ENABLED } from '@/lib/notification-categories';
+import { fetchNotificationCategories } from '@/services/api/notification-prefs';
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * COS-373: resolve the per-category gate for the plan-task scheduler.
+ *
+ * Flag OFF (default) → returns `undefined`, so the scheduler receives no gate
+ * and schedules exactly as today. Flag ON → fetch the patient's prefs and pass
+ * the medicationTask / otherTask booleans through. The fetch is defensive
+ * (returns defaults on error), and we only honour the prefs when the server's
+ * own `flagEnabled` is also true — otherwise we leave scheduling unchanged.
+ */
+async function resolveCategoryGate(): Promise<PlanTaskCategoryGate | undefined> {
+  if (!NOTIFICATION_CATEGORIES_ENABLED) return undefined;
+  try {
+    const res = await fetchNotificationCategories();
+    if (!res.flagEnabled) return undefined;
+    return {
+      medicationTask: res.preferences.medicationTask,
+      otherTask: res.preferences.otherTask,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function formatTaskTime(hhmm: string): string {
@@ -136,7 +161,14 @@ export default function TodayScheduleScreen() {
         // today's pending plan tasks — 15 min before + at-time pair
         // per Ken's spec. Idempotent; runs whenever plan tasks
         // refresh (mount, focus, pull-to-refresh).
-        void reconcilePlanTaskNotifications(t).catch(() => { /* non-fatal */ });
+        //
+        // COS-373: when the categories feature is ON, fetch the patient's
+        // per-category prefs and gate the scheduler with them (medication
+        // tasks → medicationTask, others → otherTask). When OFF we pass no
+        // gate, so the scheduler schedules exactly as before. Resolving the
+        // gate is best-effort — any failure falls back to no gate.
+        const gate = await resolveCategoryGate();
+        void reconcilePlanTaskNotifications(t, gate).catch(() => { /* non-fatal */ });
       } catch {
         // Tasks failed to load
       }

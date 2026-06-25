@@ -1,0 +1,72 @@
+/**
+ * React Query hooks for notification categories (COS-373).
+ *
+ * One query (`['notification-categories']`) for the GET, one mutation for the
+ * PUT. The mutation optimistically merges the partial into the cached prefs so
+ * the toggle flips instantly, then invalidates so the server-recomputed map
+ * re-confirms. Mirrors the use-plan-medications pattern.
+ *
+ * Flag-gating lives in the consuming component: it renders nothing unless
+ * `NOTIFICATION_CATEGORIES_ENABLED`. The query is defensive (the service
+ * returns a disabled, default-prefs result on any error), so it never breaks
+ * the screen.
+ */
+
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  fetchNotificationCategories,
+  updateNotificationCategories,
+  type NotificationCategoriesResponse,
+} from '@/services/api/notification-prefs';
+import {
+  defaultCategoryPrefs,
+  type NotificationCategory,
+} from '@/lib/notification-categories';
+
+const NOTIFICATION_CATEGORIES_KEY = ['notification-categories'] as const;
+
+export function useNotificationCategories() {
+  return useQuery<NotificationCategoriesResponse>({
+    queryKey: NOTIFICATION_CATEGORIES_KEY,
+    queryFn: fetchNotificationCategories,
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateNotificationCategories() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (partial: Partial<Record<NotificationCategory, boolean>>) =>
+      updateNotificationCategories(partial),
+    onMutate: async (partial) => {
+      // Optimistic: merge the partial into the cached prefs so the toggle
+      // reflects immediately. Cancel in-flight reads first so they don't
+      // clobber the optimistic value.
+      await qc.cancelQueries({ queryKey: NOTIFICATION_CATEGORIES_KEY });
+      const previous = qc.getQueryData<NotificationCategoriesResponse>(
+        NOTIFICATION_CATEGORIES_KEY,
+      );
+      qc.setQueryData<NotificationCategoriesResponse>(
+        NOTIFICATION_CATEGORIES_KEY,
+        (prev) => ({
+          flagEnabled: prev?.flagEnabled ?? true,
+          preferences: { ...(prev?.preferences ?? defaultCategoryPrefs()), ...partial },
+        }),
+      );
+      return { previous };
+    },
+    onError: (_err, _partial, context) => {
+      // Roll back to the pre-mutation snapshot on failure.
+      if (context?.previous) {
+        qc.setQueryData(NOTIFICATION_CATEGORIES_KEY, context.previous);
+      }
+    },
+    onSuccess: (updated) => {
+      // Seed with the server-recomputed map, then invalidate to re-confirm.
+      qc.setQueryData(NOTIFICATION_CATEGORIES_KEY, updated);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: NOTIFICATION_CATEGORIES_KEY });
+    },
+  });
+}
