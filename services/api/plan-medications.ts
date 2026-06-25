@@ -34,6 +34,21 @@ import { apiClient } from '@/lib/api-client';
 
 export type MedicationSource = 'ehr' | 'patient-reported';
 
+/**
+ * COS-372 — how a medication is taken. `consumable` = pills/tablets/mL on a
+ * daily-times schedule (today's only behavior); `injectable` = pens/vials/doses
+ * on a cadence (weekly, etc.). Additive + optional: older backends omit it and
+ * the client treats a missing value as 'consumable' (see lib/med-forms.ts), so
+ * the existing UI is unchanged. Gated client-side by MED_FORMS_ENABLED.
+ */
+export type MedicationForm = 'consumable' | 'injectable';
+
+/**
+ * COS-372 — dosing cadence for an injectable. Consumables stay on daily-times,
+ * so cadence is only meaningful for injectables. Optional for back-compat.
+ */
+export type MedicationCadence = 'daily' | 'weekly' | 'biweekly' | 'monthly';
+
 export interface MedicationSupply {
   /** How many doses/units the patient currently has on hand. */
   remainingQuantity: number | null;
@@ -47,6 +62,16 @@ export interface MedicationSupply {
   needsRefill: boolean;
   /** ISO date (YYYY-MM-DD) the refill banner is snoozed until, if any. */
   snoozedUntil: string | null;
+  /**
+   * COS-372 — dosing cadence for an injectable's supply projection. Optional;
+   * absent on older backends, where supply is assumed daily (consumable).
+   */
+  cadence?: MedicationCadence;
+  /**
+   * COS-372 — ISO date (YYYY-MM-DD) the cadence schedule starts from, used to
+   * project the next dose / run-out for an injectable. Optional.
+   */
+  startDate?: string;
 }
 
 export interface Medication {
@@ -58,6 +83,11 @@ export interface Medication {
   source: MedicationSource;
   tracked: boolean;
   supply: MedicationSupply | null;
+  /**
+   * COS-372 — how the med is taken. Optional + additive: when absent (older
+   * backend) the client defaults to 'consumable', preserving today's behavior.
+   */
+  form?: MedicationForm;
 }
 
 export interface PlanMedicationsResponse {
@@ -81,6 +111,8 @@ export interface PlanMedicationEdit {
   dose?: string;
   times?: string[];
   frequency?: string;
+  /** COS-372 — update how the med is taken. Optional + additive. */
+  form?: MedicationForm;
 }
 
 export interface PlanMedicationAdd {
@@ -88,6 +120,8 @@ export interface PlanMedicationAdd {
   dose?: string;
   times?: string[];
   frequency?: string;
+  /** COS-372 — how the med is taken. Optional; backend defaults to consumable. */
+  form?: MedicationForm;
 }
 
 export interface PlanMedicationSetTracked {
@@ -99,6 +133,13 @@ export interface PlanMedicationSetSupply {
   id: string;
   remainingQuantity: number;
   dosesPerDay: number;
+  /**
+   * COS-372 — cadence for an injectable's supply projection. Optional +
+   * additive; omitted for consumables (daily-times) and on older clients.
+   */
+  cadence?: MedicationCadence;
+  /** COS-372 — ISO date (YYYY-MM-DD) the cadence starts from. Optional. */
+  startDate?: string;
 }
 
 export interface PlanMedicationSnoozeRefill {

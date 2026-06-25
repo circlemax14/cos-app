@@ -30,6 +30,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import type { Medication } from '@/services/api/plan-medications';
+import { MED_FORMS_ENABLED, formTagLabel, normalizeForm } from '@/lib/med-forms';
 
 /** One-line supply hint for a med row (no PHI beyond what's already on screen). */
 function supplyHint(med: Medication): string | null {
@@ -37,6 +38,12 @@ function supplyHint(med: Medication): string | null {
   if (!s) return null;
   if (s.needsRefill) return 'Refill soon';
   if (typeof s.remainingQuantity === 'number') {
+    // When med-forms are enabled, qualify the remaining count with a
+    // form-appropriate unit ("3 doses left" vs the bare "3 left"). Off by
+    // default → the original "N left" wording is preserved byte-for-byte.
+    if (MED_FORMS_ENABLED && normalizeForm(med.form) === 'injectable') {
+      return `${s.remainingQuantity} doses left`;
+    }
     return `${s.remainingQuantity} left`;
   }
   return null;
@@ -147,6 +154,28 @@ export function MedicationsReviewModal({
                           {detail}
                         </Text>
                       ) : null}
+                      {/* COS-372: small Injectable/Oral tag, dark by default. */}
+                      {MED_FORMS_ENABLED ? (
+                        <View
+                          style={[styles.formTag, { borderColor: (colors.subtext as string) + '40' }]}
+                        >
+                          <MaterialIcons
+                            name={normalizeForm(med.form) === 'injectable' ? 'vaccines' : 'medication'}
+                            size={getScaledFontSize(11)}
+                            color={colors.subtext}
+                          />
+                          <Text
+                            style={{
+                              color: colors.subtext,
+                              fontSize: getScaledFontSize(10),
+                              fontWeight: getScaledFontWeight(700) as any,
+                              marginLeft: 4,
+                            }}
+                          >
+                            {formTagLabel(med.form)}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                     {hint ? (
                       <View
@@ -251,6 +280,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   hintChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  formTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 6,
+  },
   actions: { marginTop: 16, gap: 8 },
   btn: {
     paddingHorizontal: 14,
