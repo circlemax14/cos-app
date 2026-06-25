@@ -68,11 +68,13 @@ export function formatGoalMeasure(g: {
 
 /**
  * KILL-SWITCH: GOAL_PROGRESS_ENABLED. While off, progress fields are ignored
- * and goal cards render exactly as Phase 1 (COS-377). Flip to true once the
- * backend COS-382 changes are live on dev/staging + the GOAL_PROGRESS_ENABLED
- * SSM flag is enabled. Default: false (dark launch).
+ * and goal cards render exactly as Phase 1 (COS-377). ENABLED 2026-06-25
+ * (COS-382 rollout) — backend goal-progress is deployed; the UI now renders
+ * the per-goal progress row when the backend hydrates a goal's `progress`
+ * (which it only does once the backend goal_progress_enabled SSM flag is on
+ * per stage — so this is inert until then). Flip back to false to revert the UI.
  */
-export const GOAL_PROGRESS_ENABLED = false;
+export const GOAL_PROGRESS_ENABLED = true;
 
 /**
  * Format a goal's progress for display. Returns null when no progress data is
