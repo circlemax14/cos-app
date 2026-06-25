@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
  Pressable } from 'react-native';
@@ -21,7 +24,7 @@ import {
   completeTask,
   skipTask,
 } from '@/services/api/ai-health-plan';
-import type { AiHealthPlan, TaskOccurrence, TaskType } from '@/services/api/types';
+import type { AiHealthPlan, AiPlanGoal, TaskOccurrence, TaskType } from '@/services/api/types';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
@@ -38,6 +41,12 @@ import {
   NOTIFICATION_CATEGORY_KEYS,
 } from '@/lib/notification-categories';
 import { useNotificationCategories } from '@/hooks/use-notification-categories';
+import {
+  CARE_PLAN_ENABLED,
+  groupGoalsByCategory,
+  formatGoalMeasure,
+} from '@/lib/care-plan';
+import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 
 // COS-362: hard ceiling on the initial full-screen loader so it can never hang
 // forever (build 57 "stuck on Health Plan after unlock"). Generous on purpose —
@@ -124,6 +133,51 @@ export default function HealthPlanScreen() {
   // Health Plan v2: Plan / Progress tabs + plan-type chooser
   const [activeTab, setActiveTab] = useState<'plan' | 'progress'>('plan');
   const [showChooser, setShowChooser] = useState(false);
+
+  // COS-377: goal editor state (only active when CARE_PLAN_ENABLED)
+  const [editGoal, setEditGoal] = useState<AiPlanGoal | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editMetric, setEditMetric] = useState('');
+  const [editBaseline, setEditBaseline] = useState('');
+  const [editTarget, setEditTarget] = useState('');
+  const [editTimeframe, setEditTimeframe] = useState('');
+  const [editStatus, setEditStatus] = useState<'active' | 'achieved' | 'paused' | 'cancelled'>('active');
+  const updateGoalMutation = useUpdatePlanGoal();
+
+  const openGoalEditor = useCallback((g: AiPlanGoal) => {
+    setEditGoal(g);
+    setEditTitle(g.title);
+    setEditDesc(g.description ?? '');
+    setEditMetric(g.metric ?? '');
+    setEditBaseline(g.baseline ?? '');
+    setEditTarget(g.target ?? '');
+    setEditTimeframe(g.timeframe ?? '');
+    setEditStatus(g.status ?? 'active');
+  }, []);
+
+  const closeGoalEditor = useCallback(() => {
+    setEditGoal(null);
+  }, []);
+
+  const saveGoalEdit = useCallback(async () => {
+    if (!editGoal) return;
+    const patch: Record<string, string> = {};
+    if (editTitle !== editGoal.title) patch.title = editTitle;
+    if (editDesc !== (editGoal.description ?? '')) patch.description = editDesc;
+    if (editMetric !== (editGoal.metric ?? '')) patch.metric = editMetric;
+    if (editBaseline !== (editGoal.baseline ?? '')) patch.baseline = editBaseline;
+    if (editTarget !== (editGoal.target ?? '')) patch.target = editTarget;
+    if (editTimeframe !== (editGoal.timeframe ?? '')) patch.timeframe = editTimeframe;
+    if (editStatus !== (editGoal.status ?? 'active')) patch.status = editStatus;
+    try {
+      const updatedPlan = await updateGoalMutation.mutateAsync({ goalId: editGoal.id, patch });
+      setPlan(updatedPlan);
+      closeGoalEditor();
+    } catch {
+      Alert.alert('Error', 'Failed to save goal. Please try again.');
+    }
+  }, [editGoal, editTitle, editDesc, editMetric, editBaseline, editTarget, editTimeframe, editStatus, updateGoalMutation, closeGoalEditor]);
 
   // COS-357: "Review your medications" prompt → scroll to the meds section and
   // open its add flow. We track the section's Y offset inside the Plan
@@ -839,45 +893,102 @@ export default function HealthPlanScreen() {
           </View>
         </View>
 
-        {/* Goals */}
+        {/* Goals — COS-377: flag-gated category-grouped editable view vs. original flat list */}
         {plan.goals.length > 0 && (
-          <>
-            <View style={styles.secHead}>
-              <Text style={[styles.secLabel, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
-                GOALS
-              </Text>
-              <View style={[styles.countBadge, { backgroundColor: colors.tint + '18' }]}>
-                <Text style={[styles.countBadgeText, { color: colors.tint, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
-                  {plan.goals.length} Active
-                </Text>
-              </View>
-            </View>
-            {plan.goals.map((g) => {
-              const pstyle = PRIORITY_STYLE[g.priority];
-              return (
-                <View key={g.id} style={[styles.goal, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-                  <View style={[styles.goalIcon, { backgroundColor: pstyle.bg }]}>
-                    <MaterialIcons name="flag" size={16} color={pstyle.color} />
-                  </View>
-                  <View style={styles.goalBody}>
-                    <Text style={[styles.goalTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]} numberOfLines={2}>
-                      {g.title}
+          CARE_PLAN_ENABLED ? (
+            /* NEW: category-grouped, editable — only when CARE_PLAN_ENABLED=true */
+            <>
+              {groupGoalsByCategory(plan.goals).map((group) => (
+                <View key={group.key}>
+                  <View style={styles.secHead}>
+                    <Text style={[styles.secLabel, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
+                      {group.label.toUpperCase()}
                     </Text>
-                    {!!g.description && (
-                      <Text style={[styles.goalDesc, { color: colors.subtext, fontSize: getScaledFontSize(12) }]} numberOfLines={2}>
-                        {g.description}
+                    <View style={[styles.countBadge, { backgroundColor: colors.tint + '18' }]}>
+                      <Text style={[styles.countBadgeText, { color: colors.tint, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
+                        {group.goals.length}
                       </Text>
-                    )}
+                    </View>
                   </View>
-                  <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
-                    <Text style={[styles.priorityText, { color: pstyle.color, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any }]}>
-                      {pstyle.label}
-                    </Text>
-                  </View>
+                  {group.goals.map((g) => {
+                    const pstyle = PRIORITY_STYLE[g.priority];
+                    const measure = formatGoalMeasure(g);
+                    return (
+                      <TouchableOpacity
+                        key={g.id}
+                        onPress={() => openGoalEditor(g)}
+                        activeOpacity={0.7}
+                        style={[styles.goal, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}
+                      >
+                        <View style={[styles.goalIcon, { backgroundColor: pstyle.bg }]}>
+                          <MaterialIcons name="flag" size={16} color={pstyle.color} />
+                        </View>
+                        <View style={styles.goalBody}>
+                          <Text style={[styles.goalTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]} numberOfLines={2}>
+                            {g.title}
+                          </Text>
+                          {!!g.description && (
+                            <Text style={[styles.goalDesc, { color: colors.subtext, fontSize: getScaledFontSize(12) }]} numberOfLines={2}>
+                              {g.description}
+                            </Text>
+                          )}
+                          {!!measure && (
+                            <Text style={[styles.goalDesc, { color: colors.tint, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(600) as any }]} numberOfLines={1}>
+                              {measure}
+                            </Text>
+                          )}
+                        </View>
+                        <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
+                          <Text style={[styles.priorityText, { color: pstyle.color, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any }]}>
+                            {pstyle.label}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              );
-            })}
-          </>
+              ))}
+            </>
+          ) : (
+            /* ORIGINAL flat list — byte-for-byte unchanged when CARE_PLAN_ENABLED=false */
+            <>
+              <View style={styles.secHead}>
+                <Text style={[styles.secLabel, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
+                  GOALS
+                </Text>
+                <View style={[styles.countBadge, { backgroundColor: colors.tint + '18' }]}>
+                  <Text style={[styles.countBadgeText, { color: colors.tint, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
+                    {plan.goals.length} Active
+                  </Text>
+                </View>
+              </View>
+              {plan.goals.map((g) => {
+                const pstyle = PRIORITY_STYLE[g.priority];
+                return (
+                  <View key={g.id} style={[styles.goal, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+                    <View style={[styles.goalIcon, { backgroundColor: pstyle.bg }]}>
+                      <MaterialIcons name="flag" size={16} color={pstyle.color} />
+                    </View>
+                    <View style={styles.goalBody}>
+                      <Text style={[styles.goalTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]} numberOfLines={2}>
+                        {g.title}
+                      </Text>
+                      {!!g.description && (
+                        <Text style={[styles.goalDesc, { color: colors.subtext, fontSize: getScaledFontSize(12) }]} numberOfLines={2}>
+                          {g.description}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
+                      <Text style={[styles.priorityText, { color: pstyle.color, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any }]}>
+                        {pstyle.label}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          )
         )}
 
         {/* Today's task list is intentionally NOT rendered here — it lives on
@@ -970,6 +1081,124 @@ export default function HealthPlanScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+      )}
+
+      {/* COS-377: Goal editor modal — only rendered when CARE_PLAN_ENABLED=true and a goal is selected */}
+      {CARE_PLAN_ENABLED && (
+        <Modal
+          visible={editGoal !== null}
+          animationType="slide"
+          transparent
+          onRequestClose={closeGoalEditor}
+        >
+          <View style={goalEditorStyles.overlay}>
+            <View style={[goalEditorStyles.sheet, { backgroundColor: colors.card as string }]}>
+              <View style={goalEditorStyles.header}>
+                <Text style={[goalEditorStyles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }]}>
+                  Edit Goal
+                </Text>
+                <TouchableOpacity onPress={closeGoalEditor} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <MaterialIcons name="close" size={22} color={colors.subtext as string} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={goalEditorStyles.scrollArea} keyboardShouldPersistTaps="handled">
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>TITLE</Text>
+                <TextInput
+                  style={[goalEditorStyles.input, { color: colors.text as string, borderColor: colors.border as string, backgroundColor: (colors.background as string) }]}
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  maxLength={120}
+                  placeholder="Goal title"
+                  placeholderTextColor={colors.subtext as string}
+                />
+
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>DESCRIPTION</Text>
+                <TextInput
+                  style={[goalEditorStyles.input, goalEditorStyles.multiline, { color: colors.text as string, borderColor: colors.border as string, backgroundColor: (colors.background as string) }]}
+                  value={editDesc}
+                  onChangeText={setEditDesc}
+                  maxLength={300}
+                  multiline
+                  numberOfLines={3}
+                  placeholder="Description"
+                  placeholderTextColor={colors.subtext as string}
+                />
+
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>METRIC</Text>
+                <TextInput
+                  style={[goalEditorStyles.input, { color: colors.text as string, borderColor: colors.border as string, backgroundColor: (colors.background as string) }]}
+                  value={editMetric}
+                  onChangeText={setEditMetric}
+                  maxLength={80}
+                  placeholder="What is measured"
+                  placeholderTextColor={colors.subtext as string}
+                />
+
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>BASELINE</Text>
+                <TextInput
+                  style={[goalEditorStyles.input, { color: colors.text as string, borderColor: colors.border as string, backgroundColor: (colors.background as string) }]}
+                  value={editBaseline}
+                  onChangeText={setEditBaseline}
+                  maxLength={40}
+                  placeholder="Current value"
+                  placeholderTextColor={colors.subtext as string}
+                />
+
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>TARGET</Text>
+                <TextInput
+                  style={[goalEditorStyles.input, { color: colors.text as string, borderColor: colors.border as string, backgroundColor: (colors.background as string) }]}
+                  value={editTarget}
+                  onChangeText={setEditTarget}
+                  maxLength={40}
+                  placeholder="Goal value"
+                  placeholderTextColor={colors.subtext as string}
+                />
+
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>TIMEFRAME</Text>
+                <TextInput
+                  style={[goalEditorStyles.input, { color: colors.text as string, borderColor: colors.border as string, backgroundColor: (colors.background as string) }]}
+                  value={editTimeframe}
+                  onChangeText={setEditTimeframe}
+                  maxLength={40}
+                  placeholder="e.g. 3 months"
+                  placeholderTextColor={colors.subtext as string}
+                />
+
+                <Text style={[goalEditorStyles.fieldLabel, { color: colors.subtext as string, fontSize: getScaledFontSize(12) }]}>STATUS</Text>
+                <View style={goalEditorStyles.statusRow}>
+                  {(['active', 'achieved', 'paused', 'cancelled'] as const).map((s) => (
+                    <TouchableOpacity
+                      key={s}
+                      onPress={() => setEditStatus(s)}
+                      style={[
+                        goalEditorStyles.statusChip,
+                        { borderColor: editStatus === s ? colors.tint as string : colors.border as string },
+                        editStatus === s && { backgroundColor: colors.tint + '22' },
+                      ]}
+                    >
+                      <Text style={[goalEditorStyles.statusChipText, { color: editStatus === s ? colors.tint as string : colors.subtext as string, fontSize: getScaledFontSize(12) }]}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  onPress={saveGoalEdit}
+                  disabled={updateGoalMutation.isPending}
+                  style={[goalEditorStyles.saveBtn, { backgroundColor: colors.tint as string, opacity: updateGoalMutation.isPending ? 0.6 : 1 }]}
+                >
+                  <Text style={[goalEditorStyles.saveBtnText, { fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }]}>
+                    {updateGoalMutation.isPending ? 'Saving…' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={{ height: 32 }} />
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       )}
     </AppWrapper>
   );
@@ -1173,5 +1402,70 @@ const styles = StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: 10,
     marginHorizontal: 20, marginBottom: 6,
     borderRadius: 12, borderWidth: 1,
+  },
+});
+
+// COS-377: styles for the goal editor modal (only loaded when CARE_PLAN_ENABLED=true at runtime)
+const goalEditorStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingTop: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  headerTitle: {},
+  scrollArea: { paddingHorizontal: 20, paddingTop: 12 },
+  fieldLabel: {
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    marginTop: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  multiline: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  statusChip: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  statusChipText: {},
+  saveBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  saveBtnText: {
+    color: '#fff',
   },
 });
