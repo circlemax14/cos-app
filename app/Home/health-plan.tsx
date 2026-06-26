@@ -47,6 +47,8 @@ import {
   groupGoalsByCategory,
   formatGoalMeasure,
   formatGoalProgress,
+  CARE_PLAN_V2_ENABLED,
+  isPlanTaskTypeVisible,
 } from '@/lib/care-plan';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
@@ -875,24 +877,28 @@ export default function HealthPlanScreen() {
               </Text>
               <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Exercise</Text>
             </View>
-            <View style={styles.planOverviewItem}>
-              <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.appointment.bg }]}>
-                <MaterialIcons name={TASK_ICON.appointment.name} size={18} color={TASK_ICON.appointment.color} />
+            {isPlanTaskTypeVisible('appointment', CARE_PLAN_V2_ENABLED) && (
+              <View style={styles.planOverviewItem}>
+                <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.appointment.bg }]}>
+                  <MaterialIcons name={TASK_ICON.appointment.name} size={18} color={TASK_ICON.appointment.color} />
+                </View>
+                <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
+                  {planTaskCounts.appointment}
+                </Text>
+                <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Visits</Text>
               </View>
-              <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
-                {planTaskCounts.appointment}
-              </Text>
-              <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Visits</Text>
-            </View>
-            <View style={styles.planOverviewItem}>
-              <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
-                <MaterialIcons name={TASK_ICON.reminder.name} size={18} color={TASK_ICON.reminder.color} />
+            )}
+            {isPlanTaskTypeVisible('reminder', CARE_PLAN_V2_ENABLED) && (
+              <View style={styles.planOverviewItem}>
+                <View style={[styles.planOverviewIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
+                  <MaterialIcons name={TASK_ICON.reminder.name} size={18} color={TASK_ICON.reminder.color} />
+                </View>
+                <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
+                  {planTaskCounts.reminder}
+                </Text>
+                <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Reminders</Text>
               </View>
-              <Text style={[styles.planOverviewCount, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(800) as any }]}>
-                {planTaskCounts.reminder}
-              </Text>
-              <Text style={[styles.planOverviewLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>Reminders</Text>
-            </View>
+            )}
           </View>
         </View>
 
@@ -1041,8 +1047,36 @@ export default function HealthPlanScreen() {
                 {plan.tasks.length} tasks
               </Text>
             </View>
+            {/* SCRUM-532 Phase A — when Care Plan v2 is on, reminders move off the
+                plan into Notifications/Reminders settings; this row deep-links there.
+                Not rendered when the flag is OFF (plan is byte-for-byte today's). */}
+            {CARE_PLAN_V2_ENABLED && (
+              <Pressable
+                onPress={() => router.push('/Home/reminder-settings' as never)}
+                accessibilityRole="button"
+                accessibilityLabel="Manage reminders"
+                style={[styles.fullPlanRow, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+                <View style={[styles.taskRail, { backgroundColor: TASK_ICON.reminder.color }]} />
+                <View style={[styles.taskIcon, { backgroundColor: TASK_ICON.reminder.bg, marginLeft: 10 }]}>
+                  <MaterialIcons name={TASK_ICON.reminder.name} size={getScaledFontSize(18)} color={TASK_ICON.reminder.color} />
+                </View>
+                <View style={styles.taskBody}>
+                  <Text
+                    style={[styles.taskTitle, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }]}
+                    numberOfLines={1}>
+                    Manage reminders
+                  </Text>
+                  <Text
+                    style={[styles.taskSub, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}
+                    numberOfLines={1}>
+                    Notifications &amp; reminder settings
+                  </Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.subtext as string} />
+              </Pressable>
+            )}
             {tasksByType
-              .filter((g) => g.tasks.length > 0)
+              .filter((g) => g.tasks.length > 0 && isPlanTaskTypeVisible(g.type, CARE_PLAN_V2_ENABLED))
               .map((group) => {
                 const icon = TASK_ICON[group.type];
                 const groupLabels: Record<TaskType, string> = {
