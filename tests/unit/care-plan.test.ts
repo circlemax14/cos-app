@@ -10,6 +10,8 @@ import {
   formatGoalProgress,
   CARE_PLAN_V2_ENABLED,
   isPlanTaskTypeVisible,
+  PLAN_REDESIGN_ENABLED,
+  formatGoalPlain,
 } from '../../lib/care-plan.ts';
 
 test('CARE_PLAN_ENABLED is enabled (COS-377 rollout — backend care_plan_enabled is live in prod)', () => {
@@ -134,4 +136,49 @@ test('isPlanTaskTypeVisible: flag ON hides reminders + visits(appointment), keep
   assert.equal(isPlanTaskTypeVisible('appointment', true), false);
   assert.equal(isPlanTaskTypeVisible('medication', true), true);
   assert.equal(isPlanTaskTypeVisible('exercise', true), true);
+});
+
+// ── Plan redesign: PLAN_REDESIGN_ENABLED + formatGoalPlain (COS-402, SCRUM-538) ──
+
+test('PLAN_REDESIGN_ENABLED defaults OFF (kill-switch — flag-off renders today’s screen byte-for-byte)', () => {
+  assert.equal(PLAN_REDESIGN_ENABLED, false);
+});
+
+test('formatGoalPlain: prefers live progress percent ⇒ "You\'re at N% toward TARGET"', () => {
+  assert.equal(
+    formatGoalPlain({ target: '<7.0%', progress: { progressPercent: 72 } }),
+    "You're at 72% toward <7.0%",
+  );
+  // no target ⇒ omit the "toward" suffix
+  assert.equal(
+    formatGoalPlain({ progress: { progressPercent: 40 } }),
+    "You're at 40%",
+  );
+  // percent is clamped to 0..100 and rounded
+  assert.equal(
+    formatGoalPlain({ progress: { progressPercent: 120.6 } }),
+    "You're at 100%",
+  );
+  assert.equal(
+    formatGoalPlain({ progress: { progressPercent: -5 } }),
+    "You're at 0%",
+  );
+});
+
+test('formatGoalPlain: no progress ⇒ baseline→target framing', () => {
+  assert.equal(
+    formatGoalPlain({ baseline: '7.8%', target: '<7.0%', timeframe: '3 months' }),
+    'From 7.8% to <7.0% over 3 months',
+  );
+  // target only ⇒ "Aiming for TARGET"
+  assert.equal(formatGoalPlain({ target: '8,000 steps' }), 'Aiming for 8,000 steps');
+  assert.equal(
+    formatGoalPlain({ target: '8,000 steps', timeframe: 'a day' }),
+    'Aiming for 8,000 steps over a day',
+  );
+});
+
+test('formatGoalPlain: nothing measurable ⇒ empty string (caller omits the line)', () => {
+  assert.equal(formatGoalPlain({}), '');
+  assert.equal(formatGoalPlain({ timeframe: '6 weeks' }), 'Over 6 weeks');
 });
