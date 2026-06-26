@@ -1,26 +1,36 @@
 /**
- * PlanScreenRedesigned (COS-402 / SCRUM-538).
+ * PlanScreenRedesigned (COS-404 / SCRUM-539) — CATEGORY-FIRST rebuild.
  *
- * Goals-first, decluttered presentation of the Care Plan screen. Rendered ONLY
- * when `PLAN_REDESIGN_ENABLED` is true; otherwise `health-plan.tsx` keeps its
- * original render path byte-for-byte.
+ * Ken rejected the v1 goals-first redesign because it didn't show the plan
+ * CATEGORIES. The plan must be organized BY CATEGORY, and each category flows
+ * **STATUS → TASKS → GOALS**, "organized in a way that makes very clear sense to
+ * users" (his bar: a 5-year-old can understand it).
+ *
+ * Rendered ONLY when `PLAN_REDESIGN_ENABLED` is true; otherwise `health-plan.tsx`
+ * keeps its original render path byte-for-byte.
  *
  * This component is PRESENTATION-ONLY. It owns no data and no business logic —
- * everything (the plan, the build/refresh + canGenerate gating, the goal-edit
- * flow + modal, goal progress, category grouping, the medications sections, the
- * notifications/celebration behavior) is passed in as props from the screen so
- * the two render paths share identical behavior and a single source of truth.
+ * the plan, the build/refresh + canGenerate gating, the goal-edit flow + modal,
+ * goal progress, the medications sections, and the notifications/celebration
+ * behavior are all passed in as props from the screen so the two render paths
+ * share identical behavior and a single source of truth.
  *
- * Ken's redesign brief:
- *   1. Lead with GOALS, not counts — the count card is shrunk to a one-line strip.
- *   2. Big, clean, one-goal-per-card layout with plain-language measure + an
- *      unmistakable per-card "Edit" button (pencil + the word "Edit").
- *   3. The "FULL PLAN" daily-task list collapses into a secondary, collapsible
- *      "Today's tasks" section (collapsed by default) with the Manage reminders link.
- *   4. One primary Build/Refresh action (keeps canGenerate gating).
- *   5. Bigger type, more spacing, simpler words, calmer color, WCAG-AA labels.
+ * Structure (per category, in registry order, present-only):
+ *   1. Category header (clear, simple — "Medical", "Mental Health", …).
+ *   2. STATUS — the backend's `categoryStatuses` summary, when present. When
+ *      absent (backend not yet shipped/enabled) the STATUS block is GRACEFULLY
+ *      OMITTED — structure still reads STATUS(optional) → TASKS → GOALS.
+ *   3. TASKS — the category's tasks (AI-tagged `task.category`, else a
+ *      type→category fallback so it groups correctly BEFORE the backend ships).
+ *      Phase A hiding (reminders/visits off) + the Manage-reminders link kept.
+ *   4. GOALS — the category's goals as v1's big editable goal cards (plain-
+ *      language measure, progress/trend, the unmistakable per-card Edit button).
+ *
+ * Kept from v1: the single Build/Refresh primary action (canGenerate gating),
+ * the personalize banner, the plan-type strip, the plan summary, the medications
+ * sections, the goal cards / Edit button / progress, pull-to-refresh.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import {
   ActivityIndicator,
   LayoutChangeEvent,
@@ -41,7 +51,7 @@ import type { AiHealthPlan, AiPlanGoal, PlanTask, TaskType } from '@/services/ap
 import {
   CARE_PLAN_V2_ENABLED,
   GOAL_PROGRESS_ENABLED,
-  groupGoalsByCategory,
+  buildCategorySections,
   formatGoalPlain,
   formatGoalProgress,
   isPlanTaskTypeVisible,
@@ -65,13 +75,6 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
   low: { color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', label: 'Low' },
 };
 
-const GROUP_LABELS: Record<TaskType, string> = {
-  medication: 'Medications',
-  exercise: 'Exercise',
-  appointment: 'Visits',
-  reminder: 'Reminders',
-};
-
 function planTypeLabel(t: string | undefined): string {
   switch (t) {
     case 'advanced':
@@ -87,11 +90,22 @@ function planTypeLabel(t: string | undefined): string {
 
 // Format "HH:MM" -> "8:00 AM" / "6:30 PM"
 function formatTime(hhmm: string): { time: string; meridiem: string } {
-  const [hStr, m] = hhmm.split(':');
+  const [hStr, m] = (hhmm ?? '').split(':');
   const h = parseInt(hStr, 10);
+  if (!Number.isFinite(h)) return { time: '', meridiem: '' };
   const meridiem = h >= 12 ? 'PM' : 'AM';
   const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return { time: `${display}:${m}`, meridiem };
+}
+
+function recurrenceLabel(r: PlanTask['recurrence']): string {
+  return r === 'daily'
+    ? 'Daily'
+    : r === 'weekdays'
+      ? 'Weekdays'
+      : r === 'weekly'
+        ? 'Weekly'
+        : 'Once';
 }
 
 export interface PlanScreenRedesignedProps {
@@ -99,13 +113,6 @@ export interface PlanScreenRedesignedProps {
   colors: ColorMap;
   getScaledFontSize: (n: number) => number;
   getScaledFontWeight: (n: number) => string;
-
-  // Today's tasks (for the collapsible summary + list)
-  tasks: { length: number }; // only length is used here for the summary count
-  completedCount: number;
-  skippedCount: number;
-  progressPct: number;
-  tasksByType: { type: TaskType; tasks: PlanTask[] }[];
 
   // Plan type chooser
   currentPlanType: string | undefined;
@@ -144,11 +151,6 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
     colors,
     getScaledFontSize,
     getScaledFontWeight,
-    tasks,
-    completedCount,
-    skippedCount,
-    progressPct,
-    tasksByType,
     currentPlanType,
     onChangePlanType,
     refreshing,
@@ -166,22 +168,43 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
     onReviewMedications,
   } = props;
 
-  // Today's tasks section is collapsed by default so it stops crowding the goals.
-  const [tasksOpen, setTasksOpen] = useState(false);
-
   const tint = colors.tint;
   const text = colors.text;
   const subtext = colors.subtext;
   const border = colors.border;
   const card = (colors.card as string) + 'D9';
 
-  const totalToday = tasks.length;
-  const visibleTaskGroups = tasksByType.filter(
-    (g) => g.tasks.length > 0 && isPlanTaskTypeVisible(g.type, CARE_PLAN_V2_ENABLED),
-  );
-  const visiblePlanTaskCount = visibleTaskGroups.reduce((n, g) => n + g.tasks.length, 0);
+  // ── Category-first model ──────────────────────────────────────────────────
+  // Build one section per present care-plan category (STATUS + TASKS + GOALS),
+  // in registry order. Tasks are taken from the plan and grouped by category via
+  // the AI tag (`task.category`) with a type→category fallback. Phase A hiding
+  // (reminders/visits) is applied BEFORE grouping so hidden types never appear.
+  const planTasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+  const visibleTasks = planTasks
+    .filter((t) => isPlanTaskTypeVisible(t.type, CARE_PLAN_V2_ENABLED))
+    // Restore the original/flag-off within-group sort: tasks ascending by
+    // scheduledTime ("HH:MM" sorts lexicographically). Null-safe — tasks with a
+    // missing/empty scheduledTime are pushed LAST (not just sentinel-compared, so
+    // locale collation can't float them up). buildCategorySections preserves this
+    // order while grouping, so each category renders its tasks time-ordered.
+    .slice()
+    .sort((a, b) => {
+      const at = a.scheduledTime || '';
+      const bt = b.scheduledTime || '';
+      if (!at && !bt) return 0;
+      if (!at) return 1; // a has no time → after b
+      if (!bt) return -1; // b has no time → after a
+      return at.localeCompare(bt);
+    });
+  const goals = Array.isArray(plan.goals) ? plan.goals : [];
 
-  const goalGroups = groupGoalsByCategory(plan.goals);
+  const { sections, leftoverGoals } = buildCategorySections(
+    goals,
+    visibleTasks,
+    plan.categoryStatuses, // optional — graceful omission when absent
+  );
+
+  const hasAnyContent = sections.length > 0 || leftoverGoals.length > 0;
 
   return (
     <ScrollView
@@ -213,7 +236,7 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
         </Pressable>
       ) : null}
 
-      {/* Header — calm, generous. "Your goals" leads the screen (goals are the hero). */}
+      {/* Header — calm, generous. "Your plan" leads; the body is the categories. */}
       <View style={styles.header}>
         <View style={{ flex: 1, paddingRight: 12 }}>
           <Text
@@ -224,13 +247,13 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
               letterSpacing: -0.6,
             }}
           >
-            Your goals
+            Your plan
           </Text>
           <Text style={{ color: subtext, fontSize: getScaledFontSize(14), marginTop: 6, lineHeight: 20 }}>
             Updated{' '}
             {new Date(plan.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             {'  ·  '}
-            {plan.goals.length} goal{plan.goals.length === 1 ? '' : 's'}
+            {goals.length} goal{goals.length === 1 ? '' : 's'}
           </Text>
         </View>
       </View>
@@ -240,7 +263,7 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
         onPress={() => onGenerate(true)}
         disabled={generating || !canGeneratePlan}
         accessibilityRole="button"
-        accessibilityLabel={plan.goals.length > 0 ? 'Refresh my plan' : 'Build my plan'}
+        accessibilityLabel={goals.length > 0 ? 'Refresh my plan' : 'Build my plan'}
         accessibilityState={{ disabled: generating || !canGeneratePlan }}
         style={[
           styles.primaryBtn,
@@ -255,7 +278,7 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
             <Text
               style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }}
             >
-              {plan.goals.length > 0 ? 'Refresh my plan' : 'Build my plan'}
+              {goals.length > 0 ? 'Refresh my plan' : 'Build my plan'}
             </Text>
           </>
         )}
@@ -296,308 +319,376 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
       {/* Medications — self-gating; kept so the redesign loses nothing. */}
       <MedicationsSection onLayout={onMedsSectionLayout} openAddSignal={openMedsAddSignal} />
 
-      {/* GOALS — the hero. Big, one-per-card, plain language, unmistakable Edit. */}
-      {plan.goals.length > 0 && (
-        <>
-          <View
-            style={styles.editHint}
-            accessibilityRole="text"
-            accessibilityLabel="You can change any goal. Tap a goal, or its Edit button, to edit it."
-          >
-            <MaterialIcons name="edit" size={getScaledFontSize(15)} color={subtext} />
-            <Text style={{ color: subtext, fontSize: getScaledFontSize(13), marginLeft: 6, lineHeight: 18 }}>
-              You can change any goal — tap <Text style={{ fontWeight: getScaledFontWeight(700) as any }}>Edit</Text>.
-            </Text>
-          </View>
-
-          {goalGroups.map((group) => (
-            <View key={group.key} style={{ marginTop: 8 }}>
-              <Text
-                style={[
-                  styles.categoryHead,
-                  { color: text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any },
-                ]}
-              >
-                {group.label}
-              </Text>
-
-              {group.goals.map((g) => {
-                const pstyle = PRIORITY_STYLE[g.priority];
-                const plain = formatGoalPlain(g);
-                const prog = GOAL_PROGRESS_ENABLED && g.progress ? formatGoalProgress(g) : null;
-                const trendColor =
-                  prog?.trendSymbol === '↑'
-                    ? tint
-                    : prog?.trendSymbol === '↓'
-                      ? colors.error ?? '#E53E3E'
-                      : subtext;
-                return (
-                  <View
-                    key={g.id}
-                    style={[styles.goalCard, { backgroundColor: card, borderColor: border }]}
-                  >
-                    <View style={styles.goalHeadRow}>
-                      <View style={[styles.goalDot, { backgroundColor: pstyle.bg }]}>
-                        <MaterialIcons name="flag" size={getScaledFontSize(18)} color={pstyle.color} />
-                      </View>
-                      <Text
-                        style={{
-                          color: text,
-                          fontSize: getScaledFontSize(18),
-                          fontWeight: getScaledFontWeight(700) as any,
-                          flex: 1,
-                          lineHeight: 24,
-                        }}
-                      >
-                        {g.title}
-                      </Text>
-                    </View>
-
-                    {!!g.description && (
-                      <Text
-                        style={{ color: subtext, fontSize: getScaledFontSize(14), lineHeight: 20, marginTop: 8 }}
-                      >
-                        {g.description}
-                      </Text>
-                    )}
-
-                    {!!plain && (
-                      <Text
-                        style={{
-                          color: text,
-                          fontSize: getScaledFontSize(15),
-                          fontWeight: getScaledFontWeight(600) as any,
-                          marginTop: 12,
-                          lineHeight: 21,
-                        }}
-                      >
-                        {plain}
-                      </Text>
-                    )}
-
-                    {/* Calmer progress bar + trend line (COS-382 data, kept). */}
-                    {prog && prog.barFraction != null && (
-                      <View style={[styles.progressTrack, { backgroundColor: border }]}>
-                        <View
-                          style={[
-                            styles.progressFill,
-                            {
-                              width: `${Math.min(1, Math.max(0, prog.barFraction)) * 100}%` as any,
-                              backgroundColor: tint,
-                            },
-                          ]}
-                        />
-                      </View>
-                    )}
-                    {prog && !!prog.trendSymbol && !!prog.line && (
-                      <Text
-                        style={{
-                          color: trendColor,
-                          fontSize: getScaledFontSize(13),
-                          fontWeight: getScaledFontWeight(600) as any,
-                          marginTop: 8,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {prog.trendSymbol} {prog.line}
-                      </Text>
-                    )}
-
-                    {/* Footer: priority + the unmistakable per-card Edit button. */}
-                    <View style={styles.goalFooter}>
-                      <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
-                        <Text
-                          style={{
-                            color: pstyle.color,
-                            fontSize: getScaledFontSize(11),
-                            fontWeight: getScaledFontWeight(700) as any,
-                            letterSpacing: 0.6,
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          {pstyle.label} priority
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => openGoalEditor(g)}
-                        activeOpacity={0.7}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Edit goal: ${g.title}`}
-                        accessibilityHint="Opens the goal editor to change its target and details"
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        style={[styles.editBtn, { borderColor: tint }]}
-                      >
-                        <MaterialIcons name="edit" size={getScaledFontSize(16)} color={tint} />
-                        <Text
-                          style={{
-                            color: tint,
-                            fontSize: getScaledFontSize(15),
-                            fontWeight: getScaledFontWeight(700) as any,
-                            marginLeft: 6,
-                          }}
-                        >
-                          Edit
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          ))}
-        </>
-      )}
-
-      {/* Tiny "plan at a glance" strip — replaces the big count card. */}
-      {visiblePlanTaskCount > 0 && (
-        <View style={[styles.glanceStrip, { borderColor: border }]}>
-          <MaterialIcons name="checklist" size={getScaledFontSize(16)} color={subtext} />
-          <Text style={{ color: subtext, fontSize: getScaledFontSize(13), marginLeft: 8 }}>
-            {visiblePlanTaskCount} task{visiblePlanTaskCount === 1 ? '' : 's'} in your plan
+      {/* Gentle hint: goals are editable. */}
+      {goals.length > 0 && (
+        <View
+          style={styles.editHint}
+          accessibilityRole="text"
+          accessibilityLabel="You can change any goal. Tap its Edit button to edit it."
+        >
+          <MaterialIcons name="edit" size={getScaledFontSize(15)} color={subtext} />
+          <Text style={{ color: subtext, fontSize: getScaledFontSize(13), marginLeft: 6, lineHeight: 18 }}>
+            You can change any goal — tap <Text style={{ fontWeight: getScaledFontWeight(700) as any }}>Edit</Text>.
           </Text>
         </View>
       )}
 
-      {/* Today's tasks — secondary, collapsible, collapsed by default. */}
-      {(visiblePlanTaskCount > 0 || CARE_PLAN_V2_ENABLED) && (
-        <View style={styles.tasksSection}>
-          <TouchableOpacity
-            onPress={() => setTasksOpen((o) => !o)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: tasksOpen }}
-            accessibilityLabel={tasksOpen ? "Hide today's tasks" : "Show today's tasks"}
-            style={[styles.tasksToggle, { borderColor: border, backgroundColor: card }]}
-          >
-            <MaterialIcons name="today" size={getScaledFontSize(20)} color={subtext} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={{ color: text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }}>
-                Today&apos;s tasks
+      {/* ── CATEGORY SECTIONS — the hero. One per category: STATUS → TASKS → GOALS. ── */}
+      {sections.map((section) => {
+        return (
+          <View key={section.key} style={styles.categorySection}>
+            {/* 1. Category header — big, simple, the anchor of the section. */}
+            <View style={[styles.categoryHeaderRow, { borderColor: border }]}>
+              <Text
+                style={{
+                  color: text,
+                  fontSize: getScaledFontSize(22),
+                  fontWeight: getScaledFontWeight(800) as any,
+                  letterSpacing: -0.4,
+                  flex: 1,
+                }}
+              >
+                {section.label}
               </Text>
-              {totalToday > 0 && (
-                <Text style={{ color: subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
-                  {completedCount} of {totalToday} done
-                  {skippedCount > 0 ? ` · ${skippedCount} skipped` : ''}
-                </Text>
-              )}
             </View>
-            <MaterialIcons
-              name={tasksOpen ? 'expand-less' : 'expand-more'}
-              size={getScaledFontSize(26)}
-              color={subtext}
-            />
-          </TouchableOpacity>
 
-          {tasksOpen && (
-            <View style={{ marginTop: 8 }}>
-              {totalToday > 0 && (
-                <View style={[styles.todayProgressTrack, { backgroundColor: border }]}>
-                  <View
+            {/* 2. STATUS — backend baseline summary. Omitted when absent. */}
+            {section.status ? (
+              <View style={[styles.statusCard, { backgroundColor: tint + '0F', borderColor: tint + '33' }]}>
+                <View style={styles.subLabelRow}>
+                  <MaterialIcons name="insights" size={getScaledFontSize(14)} color={tint} />
+                  <Text
                     style={[
-                      styles.todayProgressFill,
-                      {
-                        width: `${Math.max(2, progressPct * 100)}%`,
-                        backgroundColor: progressPct === 1 ? '#16A34A' : tint,
-                      },
+                      styles.subLabel,
+                      { color: tint, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(800) as any },
                     ]}
-                  />
+                  >
+                    WHERE YOU ARE NOW
+                  </Text>
                 </View>
-              )}
+                <Text style={{ color: text, fontSize: getScaledFontSize(15), lineHeight: 22, marginTop: 8 }}>
+                  {section.status}
+                </Text>
+              </View>
+            ) : null}
 
-              {/* Manage reminders (Care Plan v2) */}
-              {CARE_PLAN_V2_ENABLED && (
-                <Pressable
-                  onPress={onManageReminders}
-                  accessibilityRole="button"
-                  accessibilityLabel="Manage reminders"
-                  style={[styles.taskRow, { backgroundColor: card, borderColor: border }]}
-                >
-                  <View style={[styles.taskIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
-                    <MaterialIcons
-                      name={TASK_ICON.reminder.name}
-                      size={getScaledFontSize(18)}
-                      color={TASK_ICON.reminder.color}
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text
-                      style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
-                      numberOfLines={1}
-                    >
-                      Manage reminders
-                    </Text>
-                    <Text style={{ color: subtext, fontSize: getScaledFontSize(13) }} numberOfLines={1}>
-                      Notifications &amp; reminder settings
-                    </Text>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={subtext} />
-                </Pressable>
-              )}
+            {/* 3. TASKS — the planned actions for this category. */}
+            {section.tasks.length > 0 && (
+              <View style={{ marginTop: 6 }}>
+                <View style={[styles.subLabelRow, styles.subLabelInset]}>
+                  <MaterialIcons name="checklist" size={getScaledFontSize(14)} color={subtext} />
+                  <Text
+                    style={[
+                      styles.subLabel,
+                      { color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(800) as any },
+                    ]}
+                  >
+                    WHAT TO DO
+                  </Text>
+                </View>
 
-              {visibleTaskGroups.map((group) => {
-                const icon = TASK_ICON[group.type];
-                return (
-                  <View key={group.type} style={{ marginTop: 8 }}>
-                    <View style={styles.taskGroupHead}>
-                      <View style={[styles.taskGroupIcon, { backgroundColor: icon.bg }]}>
-                        <MaterialIcons name={icon.name} size={getScaledFontSize(14)} color={icon.color} />
+                {section.tasks.map((t) => {
+                  const icon = TASK_ICON[t.type] ?? TASK_ICON.medication;
+                  const { time, meridiem } = formatTime(t.scheduledTime);
+                  return (
+                    <View key={t.id} style={[styles.taskRow, { backgroundColor: card, borderColor: border }]}>
+                      <View style={[styles.taskIcon, { backgroundColor: icon.bg }]}>
+                        <MaterialIcons name={icon.name} size={getScaledFontSize(18)} color={icon.color} />
                       </View>
-                      <Text
-                        style={{ color: text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any, flex: 1 }}
-                      >
-                        {GROUP_LABELS[group.type]}
-                      </Text>
-                      <Text style={{ color: subtext, fontSize: getScaledFontSize(13) }}>{group.tasks.length}</Text>
-                    </View>
-                    {group.tasks.map((t) => {
-                      const { time, meridiem } = formatTime(t.scheduledTime);
-                      const recurLabel =
-                        t.recurrence === 'daily'
-                          ? 'Daily'
-                          : t.recurrence === 'weekdays'
-                            ? 'Weekdays'
-                            : t.recurrence === 'weekly'
-                              ? 'Weekly'
-                              : 'Once';
-                      return (
-                        <View key={t.id} style={[styles.taskRow, { backgroundColor: card, borderColor: border }]}>
-                          <View style={[styles.taskIcon, { backgroundColor: icon.bg }]}>
-                            <MaterialIcons name={icon.name} size={getScaledFontSize(18)} color={icon.color} />
-                          </View>
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text
-                              style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
-                              numberOfLines={1}
-                            >
-                              {t.title}
-                            </Text>
-                            <Text style={{ color: subtext, fontSize: getScaledFontSize(13) }} numberOfLines={1}>
-                              {recurLabel}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
-                            <Text
-                              style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
-                            >
-                              {time}
-                            </Text>
-                            <Text style={{ color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }}>
-                              {meridiem}
-                            </Text>
-                          </View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text
+                          style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
+                          numberOfLines={2}
+                        >
+                          {t.title}
+                        </Text>
+                        <Text style={{ color: subtext, fontSize: getScaledFontSize(13), marginTop: 1 }} numberOfLines={1}>
+                          {recurrenceLabel(t.recurrence)}
+                        </Text>
+                      </View>
+                      {!!time && (
+                        <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
+                          <Text
+                            style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
+                          >
+                            {time}
+                          </Text>
+                          <Text style={{ color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }}>
+                            {meridiem}
+                          </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                );
-              })}
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* 4. GOALS — the category's measurable goals (v1 editable cards). */}
+            {section.goals.length > 0 && (
+              <View style={{ marginTop: 6 }}>
+                <View style={[styles.subLabelRow, styles.subLabelInset]}>
+                  <MaterialIcons name="flag" size={getScaledFontSize(14)} color={subtext} />
+                  <Text
+                    style={[
+                      styles.subLabel,
+                      { color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(800) as any },
+                    ]}
+                  >
+                    YOUR GOALS
+                  </Text>
+                </View>
+                {section.goals.map((g) => (
+                  <GoalCard
+                    key={g.id}
+                    goal={g}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                    onEdit={openGoalEditor}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        );
+      })}
+
+      {/* Trailing "Your Goals" group for goals with no/unknown category (legacy). */}
+      {leftoverGoals.length > 0 && (
+        <View style={styles.categorySection}>
+          <View style={[styles.categoryHeaderRow, { borderColor: border }]}>
+            <Text
+              style={{
+                color: text,
+                fontSize: getScaledFontSize(22),
+                fontWeight: getScaledFontWeight(800) as any,
+                letterSpacing: -0.4,
+                flex: 1,
+              }}
+            >
+              Your Goals
+            </Text>
+          </View>
+          {leftoverGoals.map((g) => (
+            <GoalCard
+              key={g.id}
+              goal={g}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              onEdit={openGoalEditor}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* Manage reminders (Care Plan v2) — STABLE trailing block, gated only on
+          CARE_PLAN_V2_ENABLED. Rendered ONCE here, independent of any category
+          section, so the deep-link to /Home/reminder-settings is ALWAYS reachable
+          when v2 is on — even for plans with no medical-category content. (It
+          previously lived inside the Medical section's TASKS and vanished when
+          that category was empty.) Mirrors the flag-off screen's behavior. */}
+      {CARE_PLAN_V2_ENABLED && (
+        <View style={styles.categorySection}>
+          <View style={[styles.subLabelRow, styles.subLabelInset]}>
+            <MaterialIcons name="notifications" size={getScaledFontSize(14)} color={subtext} />
+            <Text
+              style={[
+                styles.subLabel,
+                { color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(800) as any },
+              ]}
+            >
+              REMINDERS
+            </Text>
+          </View>
+          <Pressable
+            onPress={onManageReminders}
+            accessibilityRole="button"
+            accessibilityLabel="Manage reminders"
+            style={[styles.taskRow, { backgroundColor: card, borderColor: border }]}
+          >
+            <View style={[styles.taskIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
+              <MaterialIcons
+                name={TASK_ICON.reminder.name}
+                size={getScaledFontSize(18)}
+                color={TASK_ICON.reminder.color}
+              />
             </View>
-          )}
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text
+                style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
+                numberOfLines={1}
+              >
+                Manage reminders
+              </Text>
+              <Text style={{ color: subtext, fontSize: getScaledFontSize(13) }} numberOfLines={1}>
+                Notifications &amp; reminder settings
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={subtext} />
+          </Pressable>
+        </View>
+      )}
+
+      {/* Empty state — no categories, goals, or tasks yet. */}
+      {!hasAnyContent && (
+        <View style={[styles.emptyCard, { backgroundColor: card, borderColor: border }]}>
+          <MaterialIcons name="auto-awesome" size={getScaledFontSize(28)} color={subtext} />
+          <Text
+            style={{
+              color: text,
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(700) as any,
+              marginTop: 10,
+              textAlign: 'center',
+            }}
+          >
+            Your plan is ready to build
+          </Text>
+          <Text
+            style={{ color: subtext, fontSize: getScaledFontSize(13), lineHeight: 19, marginTop: 6, textAlign: 'center' }}
+          >
+            Tap “Build my plan” above to create your personalized care plan.
+          </Text>
         </View>
       )}
 
       <View style={{ height: 24 }} />
     </ScrollView>
+  );
+}
+
+// ── Goal card — v1's big editable card, extracted so each category reuses it. ──
+function GoalCard(props: {
+  goal: AiPlanGoal;
+  colors: ColorMap;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string;
+  onEdit: (g: AiPlanGoal) => void;
+}) {
+  const { goal: g, colors, getScaledFontSize, getScaledFontWeight, onEdit } = props;
+  const tint = colors.tint;
+  const text = colors.text;
+  const subtext = colors.subtext;
+  const border = colors.border;
+  const card = (colors.card as string) + 'D9';
+
+  const pstyle = PRIORITY_STYLE[g.priority];
+  const plain = formatGoalPlain(g);
+  const prog = GOAL_PROGRESS_ENABLED && g.progress ? formatGoalProgress(g) : null;
+  const trendColor =
+    prog?.trendSymbol === '↑'
+      ? tint
+      : prog?.trendSymbol === '↓'
+        ? colors.error ?? '#E53E3E'
+        : subtext;
+
+  return (
+    <View style={[styles.goalCard, { backgroundColor: card, borderColor: border }]}>
+      <View style={styles.goalHeadRow}>
+        <View style={[styles.goalDot, { backgroundColor: pstyle.bg }]}>
+          <MaterialIcons name="flag" size={getScaledFontSize(18)} color={pstyle.color} />
+        </View>
+        <Text
+          style={{
+            color: text,
+            fontSize: getScaledFontSize(18),
+            fontWeight: getScaledFontWeight(700) as any,
+            flex: 1,
+            lineHeight: 24,
+          }}
+        >
+          {g.title}
+        </Text>
+      </View>
+
+      {!!g.description && (
+        <Text style={{ color: subtext, fontSize: getScaledFontSize(14), lineHeight: 20, marginTop: 8 }}>
+          {g.description}
+        </Text>
+      )}
+
+      {!!plain && (
+        <Text
+          style={{
+            color: text,
+            fontSize: getScaledFontSize(15),
+            fontWeight: getScaledFontWeight(600) as any,
+            marginTop: 12,
+            lineHeight: 21,
+          }}
+        >
+          {plain}
+        </Text>
+      )}
+
+      {/* Progress bar + trend line (COS-382 data, kept). */}
+      {prog && prog.barFraction != null && (
+        <View style={[styles.progressTrack, { backgroundColor: border }]}>
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width: `${Math.min(1, Math.max(0, prog.barFraction)) * 100}%` as any,
+                backgroundColor: tint,
+              },
+            ]}
+          />
+        </View>
+      )}
+      {prog && !!prog.trendSymbol && !!prog.line && (
+        <Text
+          style={{
+            color: trendColor,
+            fontSize: getScaledFontSize(13),
+            fontWeight: getScaledFontWeight(600) as any,
+            marginTop: 8,
+          }}
+          numberOfLines={1}
+        >
+          {prog.trendSymbol} {prog.line}
+        </Text>
+      )}
+
+      {/* Footer: priority + the unmistakable per-card Edit button. */}
+      <View style={styles.goalFooter}>
+        <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
+          <Text
+            style={{
+              color: pstyle.color,
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as any,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+            }}
+          >
+            {pstyle.label} priority
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => onEdit(g)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit goal: ${g.title}`}
+          accessibilityHint="Opens the goal editor to change its target and details"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[styles.editBtn, { borderColor: tint }]}
+        >
+          <MaterialIcons name="edit" size={getScaledFontSize(16)} color={tint} />
+          <Text
+            style={{
+              color: tint,
+              fontSize: getScaledFontSize(15),
+              fontWeight: getScaledFontWeight(700) as any,
+              marginLeft: 6,
+            }}
+          >
+            Edit
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -656,7 +747,29 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
 
-  categoryHead: { marginHorizontal: 20, marginTop: 14, marginBottom: 10, letterSpacing: -0.3 },
+  // Category section — clear visual separation between categories.
+  categorySection: { marginTop: 26 },
+  categoryHeaderRow: {
+    marginHorizontal: 20,
+    paddingBottom: 10,
+    marginBottom: 8,
+    borderBottomWidth: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  // STATUS / TASKS / GOALS sub-labels within a category.
+  subLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  subLabelInset: { marginHorizontal: 20, marginTop: 10, marginBottom: 6 },
+  subLabel: { letterSpacing: 1, textTransform: 'uppercase' },
+
+  statusCard: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
 
   goalCard: {
     marginHorizontal: 20,
@@ -688,35 +801,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
 
-  glanceStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-
-  tasksSection: { marginTop: 18 },
-  tasksToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    minHeight: 56,
-  },
-
-  todayProgressTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginHorizontal: 20, marginBottom: 4 },
-  todayProgressFill: { height: 8, borderRadius: 4 },
-
-  taskGroupHead: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginTop: 10, marginBottom: 6 },
-  taskGroupIcon: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-
   taskRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -728,4 +812,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   taskIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+
+  emptyCard: {
+    marginHorizontal: 20,
+    marginTop: 26,
+    padding: 24,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
 });
