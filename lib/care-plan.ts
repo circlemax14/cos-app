@@ -113,3 +113,17 @@ export function formatGoalProgress(g: {
 
   return { line, trendSymbol, barFraction };
 }
+
+// SCRUM-532 Phase A — Care Plan v2 plan-view cleanups. Dark-launch: default OFF;
+// flip to true + OTA to enable. When ON, the plan view hides the reminders +
+// visits task groups (reminders move to Notifications/Reminders settings; visits
+// live on the Calendar). Flag OFF = today's plan exactly.
+export const CARE_PLAN_V2_ENABLED = false;
+
+// Full-Plan task types hidden when Care Plan v2 is on.
+export const PLAN_TASK_TYPES_HIDDEN_IN_V2: readonly string[] = ['reminder', 'appointment'];
+
+export function isPlanTaskTypeVisible(type: string, v2Enabled: boolean): boolean {
+  if (!v2Enabled) return true;
+  return !PLAN_TASK_TYPES_HIDDEN_IN_V2.includes(type);
+}

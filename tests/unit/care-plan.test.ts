@@ -8,6 +8,8 @@ import {
   formatGoalMeasure,
   GOAL_PROGRESS_ENABLED,
   formatGoalProgress,
+  CARE_PLAN_V2_ENABLED,
+  isPlanTaskTypeVisible,
 } from '../../lib/care-plan.ts';
 
 test('CARE_PLAN_ENABLED is enabled (COS-377 rollout — backend care_plan_enabled is live in prod)', () => {
@@ -113,4 +115,23 @@ test('formatGoalProgress: insufficient_data ⇒ empty trendSymbol', () => {
 test('formatGoalProgress: no progress ⇒ null', () => {
   assert.equal(formatGoalProgress({ baseline: '7.8%', target: '<7.0%' }), null);
   assert.equal(formatGoalProgress({}), null);
+});
+
+// ── Care Plan v2 Phase A: CARE_PLAN_V2_ENABLED + isPlanTaskTypeVisible (COS-391, SCRUM-532) ──
+
+test('CARE_PLAN_V2_ENABLED defaults OFF (Phase A dark-launch)', () => {
+  assert.equal(CARE_PLAN_V2_ENABLED, false);
+});
+
+test('isPlanTaskTypeVisible: flag OFF shows every task type', () => {
+  for (const t of ['medication', 'exercise', 'appointment', 'reminder']) {
+    assert.equal(isPlanTaskTypeVisible(t, false), true);
+  }
+});
+
+test('isPlanTaskTypeVisible: flag ON hides reminders + visits(appointment), keeps the rest', () => {
+  assert.equal(isPlanTaskTypeVisible('reminder', true), false);
+  assert.equal(isPlanTaskTypeVisible('appointment', true), false);
+  assert.equal(isPlanTaskTypeVisible('medication', true), true);
+  assert.equal(isPlanTaskTypeVisible('exercise', true), true);
 });
