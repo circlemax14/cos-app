@@ -105,7 +105,7 @@ const getHealthKitModule = () => {
 /**
  * Check if HealthKit is available on this platform
  */
-const isHealthKitAvailable = (): boolean => {
+export const isHealthKitAvailable = (): boolean => {
   if (Platform.OS !== 'ios') {
     return false;
   }

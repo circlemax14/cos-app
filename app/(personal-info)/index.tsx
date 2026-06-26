@@ -13,7 +13,6 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiClient } from '@/lib/api-client';
 import { getPresignedUploadUrl, confirmPhotoUpload, getPhotoDownloadUrl } from '@/services/user-photo';
-import { initializeHealthKit } from '@/services/health';
 import { useUserPhoto } from '@/stores/user-photo-store';
 
 export default function PersonalInfoScreen() {
@@ -126,18 +125,11 @@ export default function PersonalInfoScreen() {
     ]);
   }, []);
 
-  // Request HealthKit permissions when this screen opens (iOS only).
-  // This is where patients land when they tap their own name in the circle of providers.
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    initializeHealthKit()
-      .then((granted) => {
-        console.log('HealthKit permission granted:', granted);
-      })
-      .catch((err) => {
-        console.warn('HealthKit permission request failed:', err);
-      });
-  }, []);
+  // NOTE (COS-389 / SCRUM-530): the HealthKit permission prompt used to fire
+  // here on mount, so simply visiting Personal Information silently triggered
+  // the iOS Health permission dialog. That accidental trigger has been moved
+  // to a deliberate, opt-in control on the profile drawer → Apple Health
+  // screen (app/Home/apple-health.tsx). Do not re-add an auto-prompt here.
 
   useEffect(() => {
     const loadPatientData = async () => {
