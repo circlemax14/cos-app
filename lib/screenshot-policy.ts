@@ -21,7 +21,10 @@
  * BEFORE the build reaches real (PHI-bearing) users. Never ship a binary or a
  * lasting OTA with this set to false.
  */
-export const SCREENSHOTS_BLOCKED = true;
+// ⚠️ TEMPORARILY false for Ken's screenshot testing (2026-06-26, SCRUM-537).
+// The SECURE default is `true`. FLIP BACK TO true + OTA the moment testing is
+// done — never leave this false for real PHI-bearing users (see warning above).
+export const SCREENSHOTS_BLOCKED = false;
 
 /**
  * Pure decision helper: should the app actively prevent screen capture?

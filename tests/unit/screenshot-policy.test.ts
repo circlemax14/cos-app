@@ -5,14 +5,15 @@ import {
   shouldPreventScreenCapture,
 } from '../../lib/screenshot-policy.ts';
 
-test('SCREENSHOTS_BLOCKED defaults to true (secure — PHI screenshot safeguard ON)', () => {
-  // This is the HIPAA invariant: the default build MUST block capture.
-  // The flag is a deliberate, temporary testing toggle only (COS-401).
-  assert.equal(SCREENSHOTS_BLOCKED, true);
+test('SCREENSHOTS_BLOCKED is TEMPORARILY false for Ken testing (SCRUM-537) — restore to true after', () => {
+  // The SECURE default is true (the HIPAA invariant). It is deliberately +
+  // temporarily flipped to false (2026-06-26) so Ken can capture screenshots.
+  // Restore to true (and this assertion) the moment testing is done.
+  assert.equal(SCREENSHOTS_BLOCKED, false);
 });
 
-test('shouldPreventScreenCapture() with no arg honors the secure default', () => {
-  assert.equal(shouldPreventScreenCapture(), true);
+test('shouldPreventScreenCapture() honors the (temporarily allow-capture) flag', () => {
+  assert.equal(shouldPreventScreenCapture(), false);
 });
 
 test('shouldPreventScreenCapture(true) prevents capture (block path)', () => {
