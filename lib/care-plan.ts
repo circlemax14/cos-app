@@ -113,3 +113,18 @@ export function formatGoalProgress(g: {
 
   return { line, trendSymbol, barFraction };
 }
+
+// SCRUM-532 Phase A — Care Plan v2 plan-view cleanups. ENABLED 2026-06-26 via OTA
+// (user request): the plan view hides the reminders + visits task groups
+// (reminders move to Notifications/Reminders settings; visits live on the
+// Calendar) and shows the "Manage reminders" link. Flip back to false + OTA to
+// instantly revert to today's plan.
+export const CARE_PLAN_V2_ENABLED = true;
+
+// Full-Plan task types hidden when Care Plan v2 is on.
+export const PLAN_TASK_TYPES_HIDDEN_IN_V2: readonly string[] = ['reminder', 'appointment'];
+
+export function isPlanTaskTypeVisible(type: string, v2Enabled: boolean): boolean {
+  if (!v2Enabled) return true;
+  return !PLAN_TASK_TYPES_HIDDEN_IN_V2.includes(type);
+}
