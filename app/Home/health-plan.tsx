@@ -924,6 +924,22 @@ export default function HealthPlanScreen() {
           CARE_PLAN_ENABLED ? (
             /* NEW: category-grouped, editable — only when CARE_PLAN_ENABLED=true */
             <>
+              {/* COS-401 / SCRUM-537: discoverability cue. Goal cards are editable
+                  (title, description, target & metrics) but the affordance was
+                  invisible — testers found it by accident. This one-liner + the
+                  per-card pencil below signpost that goals are tappable to edit. */}
+              <View
+                style={styles.goalEditHint}
+                accessibilityRole="text"
+                accessibilityLabel="Tap a goal to edit its target and metrics"
+              >
+                <MaterialIcons name="edit" size={13} color={colors.subtext} />
+                <Text
+                  style={[styles.goalEditHintText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}
+                >
+                  Tap a goal to edit its target &amp; metrics
+                </Text>
+              </View>
               {groupGoalsByCategory(plan.goals).map((group) => (
                 <View key={group.key}>
                   <View style={styles.secHead}>
@@ -944,6 +960,9 @@ export default function HealthPlanScreen() {
                         key={g.id}
                         onPress={() => openGoalEditor(g)}
                         activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit goal: ${g.title}`}
+                        accessibilityHint="Opens the goal editor to change its target and metrics"
                         style={[styles.goal, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}
                       >
                         <View style={[styles.goalIcon, { backgroundColor: pstyle.bg }]}>
@@ -995,10 +1014,21 @@ export default function HealthPlanScreen() {
                             );
                           })()}
                         </View>
-                        <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
-                          <Text style={[styles.priorityText, { color: pstyle.color, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any }]}>
-                            {pstyle.label}
-                          </Text>
+                        <View style={styles.goalTrailing}>
+                          <View style={[styles.priorityPill, { backgroundColor: pstyle.bg }]}>
+                            <Text style={[styles.priorityText, { color: pstyle.color, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any }]}>
+                              {pstyle.label}
+                            </Text>
+                          </View>
+                          {/* COS-401 / SCRUM-537: visible per-card "Edit" affordance.
+                              Decorative (the whole card is the button + is labeled),
+                              so it's hidden from screen readers to avoid a double read. */}
+                          <View style={styles.goalEditCue} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+                            <MaterialIcons name="edit" size={12} color={colors.tint} />
+                            <Text style={[styles.goalEditCueText, { color: colors.tint, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(600) as any }]}>
+                              Edit
+                            </Text>
+                          </View>
                         </View>
                       </TouchableOpacity>
                     );
@@ -1421,6 +1451,15 @@ const styles = StyleSheet.create({
   progressFill: { height: 4, borderRadius: 2 },
   priorityPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   priorityText: { letterSpacing: 0.8, textTransform: 'uppercase' },
+  // COS-401 / SCRUM-537: goal-edit discoverability cue
+  goalEditHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginHorizontal: 20, marginTop: 2, marginBottom: 4,
+  },
+  goalEditHintText: { lineHeight: 16 },
+  goalTrailing: { alignItems: 'flex-end', gap: 6 },
+  goalEditCue: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  goalEditCueText: { letterSpacing: 0.3 },
 
   // Task row
   taskRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginHorizontal: 20, marginBottom: 8, borderRadius: 14, borderWidth: 1 },

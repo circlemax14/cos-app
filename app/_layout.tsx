@@ -23,6 +23,7 @@ import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
+import { shouldPreventScreenCapture } from '@/lib/screenshot-policy';
 
 // Initialize Sentry as early as possible — before any other imports run side
 // effects — so we capture errors thrown during module load + provider setup.
@@ -162,10 +163,28 @@ function RootLayout() {
   // On iOS this listens to UIScreen.capturedDidChangeNotification and blanks
   // the screen during recording; iOS app-switcher snapshot redaction is a
   // separate concern (see NOTES — may require a native AppDelegate shim).
+  //
+  // COS-401 / SCRUM-537: the block is now gated on SCREENSHOTS_BLOCKED
+  // (lib/screenshot-policy.ts), default true (secure). This is an OTA-safe JS
+  // toggle: flipping the flag to false makes us call allowScreenCaptureAsync()
+  // instead, so testers can capture screenshots without a native rebuild.
+  //
+  // HIPAA / PHI SAFEGUARD: flipping SCREENSHOTS_BLOCKED off disables a PHI
+  // safeguard for ALL users on that build/OTA — intended ONLY as a temporary,
+  // deliberate testing toggle. Flip back to true (and OTA) before real users
+  // see PHI on that build.
   useEffect(() => {
-    ScreenCapture.preventScreenCaptureAsync().catch(() => {
-      // Non-fatal — log loss of capture protection but don't crash the app.
-    });
+    if (shouldPreventScreenCapture()) {
+      ScreenCapture.preventScreenCaptureAsync().catch(() => {
+        // Non-fatal — log loss of capture protection but don't crash the app.
+      });
+    } else {
+      // Testing toggle is OFF-secure: actively re-allow capture in case a prior
+      // run/instance had prevention enabled. OTA-safe expo-screen-capture path.
+      ScreenCapture.allowScreenCaptureAsync().catch(() => {
+        // Non-fatal.
+      });
+    }
   }, []);
 
   // Capture every touch at the root so the idle-lock timer (15 min) is
