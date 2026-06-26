@@ -114,6 +114,53 @@ export function formatGoalProgress(g: {
   return { line, trendSymbol, barFraction };
 }
 
+/**
+ * KILL-SWITCH: PLAN_REDESIGN_ENABLED (COS-402 / SCRUM-538). Default OFF.
+ *
+ * While OFF the Care Plan screen renders EXACTLY as today (the existing
+ * `health-plan.tsx` render path, byte-for-byte). While ON it renders the
+ * goals-first redesign (`PlanScreenRedesigned`) — same data, hooks, edit flow,
+ * build/refresh logic, and celebration, new presentation only.
+ *
+ * Ken's brief: the plan screen is too crowded — lead with editable goals (with
+ * an unmistakable per-card Edit button), shrink the count card, and collapse the
+ * daily-task list into a secondary "Today's tasks" section. Presentation-only:
+ * flip back to false to instantly revert to today's screen.
+ */
+// ENABLED 2026-06-26 for Ken's testing (SCRUM-538). Flip to false + OTA to
+// instantly revert to today's screen (presentation-only; flag-off is byte-for-byte today).
+export const PLAN_REDESIGN_ENABLED = true;
+
+/**
+ * Plain-language one-liner for a goal's measure + progress (COS-402). Powers the
+ * redesigned goal card's "a 5-year-old can understand it" measure line, e.g.
+ * "You're at 72% of your target" or "Aiming for <7.0% over 3 months".
+ *
+ * Prefers a live progress percentage when present; otherwise falls back to the
+ * baseline→target framing. Returns '' when nothing measurable is known so the
+ * caller can omit the line entirely. Pure — no RN imports (node:test loadable).
+ */
+export function formatGoalPlain(g: {
+  baseline?: string;
+  target?: string;
+  timeframe?: string;
+  progress?: { progressPercent?: number };
+}): string {
+  const pct = g.progress?.progressPercent;
+  if (pct != null && Number.isFinite(pct)) {
+    const clamped = Math.round(Math.min(100, Math.max(0, pct)));
+    const targetSuffix = g.target ? ` toward ${g.target}` : '';
+    return `You're at ${clamped}%${targetSuffix}`;
+  }
+  if (g.target) {
+    const tf = g.timeframe ? ` over ${g.timeframe}` : '';
+    return g.baseline
+      ? `From ${g.baseline} to ${g.target}${tf}`
+      : `Aiming for ${g.target}${tf}`;
+  }
+  return g.timeframe ? `Over ${g.timeframe}` : '';
+}
+
 // SCRUM-532 Phase A — Care Plan v2 plan-view cleanups. ENABLED 2026-06-26 via OTA
 // (user request): the plan view hides the reminders + visits task groups
 // (reminders move to Notifications/Reminders settings; visits live on the

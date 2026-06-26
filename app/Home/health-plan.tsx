@@ -49,7 +49,9 @@ import {
   formatGoalProgress,
   CARE_PLAN_V2_ENABLED,
   isPlanTaskTypeVisible,
+  PLAN_REDESIGN_ENABLED,
 } from '@/lib/care-plan';
+import { PlanScreenRedesigned } from '@/components/health-plan/PlanScreenRedesigned';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
 
@@ -602,6 +604,42 @@ export default function HealthPlanScreen() {
           adherencePercent={adherencePercent}
           completedToday={completedToday}
           totalToday={totalToday}
+        />
+      ) : PLAN_REDESIGN_ENABLED ? (
+        /* COS-402 / SCRUM-538: goals-first redesign. Presentation-only — reuses
+           the same plan data, build/refresh + canGenerate gating, the goal-edit
+           flow (the shared modal below), goal progress, category grouping, the
+           medications sections, and the focus-refetch behavior. When the flag is
+           OFF the original ScrollView below renders byte-for-byte as today. */
+        <PlanScreenRedesigned
+          plan={plan}
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          tasks={tasks}
+          completedCount={completedCount}
+          skippedCount={skippedCount}
+          progressPct={progressPct}
+          tasksByType={tasksByType}
+          currentPlanType={currentPlanType}
+          onChangePlanType={() => setShowChooser(true)}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          generating={generating}
+          canGeneratePlan={canGeneratePlan}
+          onGenerate={onGenerate}
+          openGoalEditor={openGoalEditor}
+          needsAssessment={needsAssessment}
+          onPersonalize={() =>
+            router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
+          }
+          onManageReminders={() => router.push('/Home/reminder-settings' as never)}
+          planScrollRef={planScrollRef}
+          onMedsSectionLayout={(e) => {
+            medsSectionYRef.current = e.nativeEvent.layout.y;
+          }}
+          openMedsAddSignal={openMedsAddSignal}
+          onReviewMedications={onReviewMedications}
         />
       ) : (
       <ScrollView
