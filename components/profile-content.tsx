@@ -13,7 +13,7 @@ import {
 } from '@/lib/cached-user-summary';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Button, Card, Icon, List } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -262,6 +262,24 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            {/*
+              Apple Health (COS-389 / SCRUM-530): deliberate, easy-to-find
+              opt-in control. The HealthKit permission prompt used to fire
+              accidentally on mount of the Personal Information screen; it now
+              lives behind this row → app/Home/apple-health.tsx. iOS only —
+              HealthKit doesn't exist on Android.
+            */}
+            {Platform.OS === 'ios' && (
+              <DrawerRow
+                iconName="favorite-border"
+                label="Apple Health"
+                onPress={() => router.push('/Home/apple-health' as never)}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
             {/*
               Assessment entry points live on the Plan tab now:
               - PlanTypeChooser routes new Advanced/Agency users into the intake

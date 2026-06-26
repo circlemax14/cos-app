@@ -272,6 +272,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="apple-health"
+        options={{
+          title: 'Apple Health',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
         name="assessment-intake"
         options={{
           title: 'Health check-in',
