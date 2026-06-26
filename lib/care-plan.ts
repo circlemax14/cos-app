@@ -287,3 +287,269 @@ export function buildCategorySections<
   const leftoverGoals = goals.filter((g) => !g.category || !knownKeys.includes(g.category));
   return { sections, leftoverGoals };
 }
+
+// ── Patient-authored PERSONAL GOALS (COS-405 / SCRUM-532) ────────────────────
+//
+// Ken's plan structure: per category, GOALS + metrics are set "by the
+// individual, the proxy, or the agency care manager." This is the PATIENT side
+// — in each category's GOALS section the patient can ADD / EDIT / DELETE their
+// own measurable goals alongside the AI-suggested ones.
+//
+// All logic below is PURE (no RN imports) so node:test can load it directly and
+// so the service layer can normalize the backend response defensively.
+
+/**
+ * KILL-SWITCH: PERSONAL_GOALS_ENABLED (COS-405 / SCRUM-532). Default OFF.
+ *
+ * While OFF the plan renders EXACTLY as today's v3 — no personal-goals UI, no
+ * "+ Add goal" affordance, and the hooks make NO network calls. While ON, the
+ * per-category GOALS section also shows the patient's own goals + an add/edit
+ * sheet, talking to the backend's flag-gated `/v1/me/personal-goals` endpoints.
+ *
+ * The backend contract is gated by its own `CARE_PLAN_V2_ENABLED` flag, so the
+ * endpoints 404 until the backend ships + enables them. The service treats a
+ * 404 / FEATURE_DISABLED as "no personal goals" (empty), not an error — so even
+ * with this client flag ON before the backend ships, the plan degrades to
+ * today's v3 (no personal goals shown, no error spam). Flip to false to instantly
+ * remove the entire personal-goals UI.
+ */
+export const PERSONAL_GOALS_ENABLED = false;
+
+export type PersonalGoalType = 'quantitative' | 'qualitative';
+export type PersonalGoalCadence = 'monthly' | 'quarterly' | 'biannual' | 'yearly';
+export type PersonalGoalStatus =
+  | 'not_started' | 'in_progress' | 'on_track' | 'achieved';
+
+export const PERSONAL_GOAL_CADENCES: { key: PersonalGoalCadence; label: string }[] = [
+  { key: 'monthly',   label: 'Monthly' },
+  { key: 'quarterly', label: 'Quarterly' },
+  { key: 'biannual',  label: 'Biannual' },
+  { key: 'yearly',    label: 'Yearly' },
+];
+
+export const PERSONAL_GOAL_STATUSES: { key: PersonalGoalStatus; label: string }[] = [
+  { key: 'not_started', label: 'Not started' },
+  { key: 'in_progress', label: 'In progress' },
+  { key: 'on_track',    label: 'On track' },
+  { key: 'achieved',    label: 'Achieved' },
+];
+
+export function cadenceLabel(key: string): string {
+  return PERSONAL_GOAL_CADENCES.find((c) => c.key === key)?.label ?? 'Monthly';
+}
+
+export function personalGoalStatusLabel(key: string | undefined): string {
+  return PERSONAL_GOAL_STATUSES.find((s) => s.key === key)?.label ?? 'Not started';
+}
+
+/**
+ * Format a personal goal's plain-language measure line (mirrors `formatGoalPlain`
+ * for AI goals so the cards read identically). Quantitative goals frame their
+ * current/target/unit; qualitative goals frame their status. Returns '' when
+ * nothing measurable is known so the caller can omit the line. Pure.
+ */
+export function formatPersonalGoalMeasure(g: {
+  type?: string;
+  target?: number;
+  unit?: string;
+  baseline?: number;
+  current?: number;
+  status?: string;
+}): string {
+  if (g.type === 'qualitative') {
+    return personalGoalStatusLabel(g.status);
+  }
+  const unit = g.unit ? ` ${g.unit}` : '';
+  if (g.current != null && g.target != null) {
+    return `${g.current}${unit} of ${g.target}${unit}`;
+  }
+  if (g.target != null) {
+    const from = g.baseline != null ? `From ${g.baseline}${unit} to ` : 'Aiming for ';
+    return `${from}${g.target}${unit}`;
+  }
+  return '';
+}
+
+/**
+ * Progress fraction (0–1) for a quantitative personal goal's bar, or null when
+ * it can't be computed (qualitative, or missing/zero target). Pure. Clamped by
+ * the caller for rendering.
+ */
+export function personalGoalProgressFraction(g: {
+  type?: string;
+  target?: number;
+  baseline?: number;
+  current?: number;
+}): number | null {
+  if (g.type === 'qualitative') return null;
+  if (g.target == null || g.current == null) return null;
+  const base = g.baseline ?? 0;
+  const span = g.target - base;
+  if (span === 0) return null;
+  const frac = (g.current - base) / span;
+  if (!Number.isFinite(frac)) return null;
+  return Math.min(1, Math.max(0, frac));
+}
+
+/** A draft from the add/edit personal-goal form (strings as typed in inputs). */
+export interface PersonalGoalDraft {
+  type: PersonalGoalType;
+  cadence: PersonalGoalCadence;
+  title: string;
+  description?: string;
+  // Quantitative
+  target?: string;
+  unit?: string;
+  baseline?: string;
+  // Qualitative
+  status?: PersonalGoalStatus;
+}
+
+/** The validated, backend-ready create/update payload (numbers parsed). */
+export interface PersonalGoalSubmit {
+  type: PersonalGoalType;
+  cadence: PersonalGoalCadence;
+  title: string;
+  description?: string;
+  target?: number;
+  unit?: string;
+  baseline?: number;
+  status?: PersonalGoalStatus;
+}
+
+/**
+ * Validate a personal-goal draft from the add/edit form. Pure — no RN imports,
+ * no side effects — so the form's submit logic is unit-testable in isolation.
+ *
+ * Rules:
+ *  - title is required (trimmed, ≤120 chars after trim).
+ *  - quantitative: target is required and must be a finite number; baseline (if
+ *    given) must be a finite number; unit is optional free text.
+ *  - qualitative: no target/unit; status defaults to 'not_started'.
+ *
+ * Returns either `{ ok: true, value }` with a normalized, backend-ready payload
+ * (numbers parsed, empty optionals dropped) or `{ ok: false, error }` with a
+ * single user-facing message.
+ */
+export function validatePersonalGoalDraft(
+  draft: PersonalGoalDraft,
+): { ok: true; value: PersonalGoalSubmit } | { ok: false; error: string } {
+  const title = (draft.title ?? '').trim();
+  if (!title) return { ok: false, error: 'Please enter a goal title.' };
+  if (title.length > 120) return { ok: false, error: 'Title must be 120 characters or fewer.' };
+
+  const cadence: PersonalGoalCadence =
+    PERSONAL_GOAL_CADENCES.some((c) => c.key === draft.cadence) ? draft.cadence : 'monthly';
+  const description = (draft.description ?? '').trim() || undefined;
+
+  if (draft.type === 'quantitative') {
+    const targetStr = (draft.target ?? '').trim();
+    if (!targetStr) return { ok: false, error: 'Enter a target number for a quantitative goal.' };
+    const target = Number(targetStr);
+    if (!Number.isFinite(target)) return { ok: false, error: 'Target must be a number.' };
+
+    let baseline: number | undefined;
+    const baselineStr = (draft.baseline ?? '').trim();
+    if (baselineStr) {
+      const b = Number(baselineStr);
+      if (!Number.isFinite(b)) return { ok: false, error: 'Baseline must be a number.' };
+      baseline = b;
+    }
+    const unit = (draft.unit ?? '').trim() || undefined;
+    return {
+      ok: true,
+      value: { type: 'quantitative', cadence, title, description, target, unit, baseline },
+    };
+  }
+
+  // qualitative
+  const status: PersonalGoalStatus =
+    PERSONAL_GOAL_STATUSES.some((s) => s.key === draft.status) ? draft.status! : 'not_started';
+  return { ok: true, value: { type: 'qualitative', cadence, title, description, status } };
+}
+
+/**
+ * Normalize ONE raw personal goal from the backend into a safe shape, dropping
+ * anything malformed by returning null. Pure + defensive — the service maps the
+ * array through this so a bad row never crashes the plan.
+ */
+export interface NormalizedPersonalGoal {
+  id: string;
+  category: string;
+  type: PersonalGoalType;
+  cadence: PersonalGoalCadence;
+  title: string;
+  description?: string;
+  target?: number;
+  unit?: string;
+  baseline?: number;
+  current?: number;
+  status?: PersonalGoalStatus;
+  selfRating?: number;
+  reflections?: { period?: string; note?: string; rating?: number; at?: string }[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function normalizePersonalGoal(raw: unknown): NormalizedPersonalGoal | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === 'string' ? r.id : '';
+  const title = typeof r.title === 'string' ? r.title.trim() : '';
+  const category = typeof r.category === 'string' ? r.category : '';
+  if (!id || !title || !category) return null;
+  const type: PersonalGoalType = r.type === 'qualitative' ? 'qualitative' : 'quantitative';
+  const cadence: PersonalGoalCadence =
+    PERSONAL_GOAL_CADENCES.some((c) => c.key === r.cadence) ? (r.cadence as PersonalGoalCadence) : 'monthly';
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  const status = PERSONAL_GOAL_STATUSES.some((s) => s.key === r.status)
+    ? (r.status as PersonalGoalStatus)
+    : undefined;
+  return {
+    id,
+    category,
+    type,
+    cadence,
+    title,
+    description: typeof r.description === 'string' ? r.description : undefined,
+    target: num(r.target),
+    unit: typeof r.unit === 'string' ? r.unit : undefined,
+    baseline: num(r.baseline),
+    current: num(r.current),
+    status,
+    selfRating: num(r.selfRating),
+    reflections: Array.isArray(r.reflections)
+      ? (r.reflections as { period?: string; note?: string; rating?: number; at?: string }[])
+      : undefined,
+    createdAt: typeof r.createdAt === 'string' ? r.createdAt : undefined,
+    updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : undefined,
+  };
+}
+
+/**
+ * Normalize a raw `GET /v1/me/personal-goals` response body into a clean goals
+ * array (dropping malformed rows). Pure + defensive: a non-array / missing
+ * `goals` resolves to []. The service wraps this in try/catch so a 404
+ * (backend flag off) also yields []. Returns goals only for known categories
+ * are NOT filtered here — the UI buckets by category and silently ignores
+ * unknown ones.
+ */
+export function normalizePersonalGoals(body: unknown): NormalizedPersonalGoal[] {
+  const goals = (body as { goals?: unknown })?.goals;
+  if (!Array.isArray(goals)) return [];
+  const out: NormalizedPersonalGoal[] = [];
+  for (const g of goals) {
+    const n = normalizePersonalGoal(g);
+    if (n) out.push(n);
+  }
+  return out;
+}
+
+/** Personal goals for one category key, in stable (created) order. Pure. */
+export function personalGoalsForCategory<G extends { category?: string }>(
+  goals: G[],
+  categoryKey: string,
+): G[] {
+  return goals.filter((g) => g.category === categoryKey);
+}

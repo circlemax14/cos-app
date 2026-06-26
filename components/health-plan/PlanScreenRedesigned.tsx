@@ -47,10 +47,12 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
+import { PersonalGoalsSection } from '@/components/health-plan/PersonalGoalsSection';
 import type { AiHealthPlan, AiPlanGoal, PlanTask, TaskType } from '@/services/api/types';
 import {
   CARE_PLAN_V2_ENABLED,
   GOAL_PROGRESS_ENABLED,
+  PERSONAL_GOALS_ENABLED,
   buildCategorySections,
   formatGoalPlain,
   formatGoalProgress,
@@ -424,8 +426,14 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
               </View>
             )}
 
-            {/* 4. GOALS — the category's measurable goals (v1 editable cards). */}
-            {section.goals.length > 0 && (
+            {/* 4. GOALS — the category's measurable goals (v1 editable cards) +,
+                when PERSONAL_GOALS_ENABLED, the patient's own goals and an
+                "+ Add goal" affordance (PersonalGoalsSection self-gates on the
+                flag and renders nothing — no API calls — when off). The GOALS
+                sub-label shows when there are AI goals OR the personal-goals UI
+                is on, so the add affordance has a heading even in an AI-goal-empty
+                category. */}
+            {(section.goals.length > 0 || PERSONAL_GOALS_ENABLED) && (
               <View style={{ marginTop: 6 }}>
                 <View style={[styles.subLabelRow, styles.subLabelInset]}>
                   <MaterialIcons name="flag" size={getScaledFontSize(14)} color={subtext} />
@@ -448,6 +456,14 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
                     onEdit={openGoalEditor}
                   />
                 ))}
+                {/* Patient-authored personal goals + Add affordance (COS-405). */}
+                <PersonalGoalsSection
+                  categoryKey={section.key}
+                  categoryLabel={section.label}
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                />
               </View>
             )}
           </View>
