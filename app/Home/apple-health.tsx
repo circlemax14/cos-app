@@ -9,6 +9,8 @@ import {
   View,
 } from 'react-native';
 
+import { useQueryClient } from '@tanstack/react-query';
+
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -17,6 +19,7 @@ import {
   getAppleHealthEnabled,
   setAppleHealthEnabled,
 } from '@/services/apple-health-preference';
+import { APPLE_HEALTH_PREFERENCE_KEY } from '@/hooks/use-apple-health-preference';
 
 /**
  * Apple Health connection screen (COS-389 / SCRUM-530).
@@ -36,8 +39,17 @@ import {
 export default function AppleHealthScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const queryClient = useQueryClient();
 
   const available = isHealthKitAvailable();
+
+  // COS-397 / SCRUM-535: after the user changes their Apple Health choice,
+  // invalidate the reactive preference query + the HealthKit trends so every
+  // surface (Health Trends) reflects the new state without a manual refresh.
+  const invalidateAppleHealth = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: APPLE_HEALTH_PREFERENCE_KEY });
+    void queryClient.invalidateQueries({ queryKey: ['healthkit-trends'] });
+  }, [queryClient]);
 
   const [enabled, setEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,6 +83,7 @@ export default function AppleHealthScreen() {
         // so the daily summary stops being presented as connected.
         setEnabled(false);
         await setAppleHealthEnabled(false);
+        invalidateAppleHealth();
         setStatusMessage({
           text:
             'Apple Health turned off. To fully revoke access, open Settings > Privacy & Security > Health.',
@@ -87,6 +100,7 @@ export default function AppleHealthScreen() {
         const granted = await initializeHealthKit();
         setEnabled(granted);
         await setAppleHealthEnabled(granted);
+        invalidateAppleHealth();
         setStatusMessage(
           granted
             ? { text: 'Apple Health connected. Your daily summary will use Health data.', isError: false }
@@ -95,6 +109,7 @@ export default function AppleHealthScreen() {
       } catch (err) {
         setEnabled(false);
         await setAppleHealthEnabled(false);
+        invalidateAppleHealth();
         const message =
           err instanceof Error
             ? err.message
@@ -104,7 +119,7 @@ export default function AppleHealthScreen() {
         setIsConnecting(false);
       }
     },
-    [available],
+    [available, invalidateAppleHealth],
   );
 
   return (

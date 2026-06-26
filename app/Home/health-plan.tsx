@@ -26,7 +26,7 @@ import {
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, AiPlanGoal, TaskOccurrence, TaskType } from '@/services/api/types';
 import { useQuery } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { fetchAssessments } from '@/services/api/assessments';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
@@ -253,6 +253,23 @@ export default function HealthPlanScreen() {
     ? assignments.assignedInstrumentIds.length - assignments.remainingInstrumentIds.length
     : 0;
   const canGeneratePlan = assignments?.canGenerate ?? (currentPlanType === 'basic');
+
+  // SCRUM-535 / COS-397: the reload icon gates on the backend `canGenerate`
+  // (SCRUM-526). When it can't generate yet, the user is routed to check-ins;
+  // after they complete all of them the assignments query is invalidated from
+  // the stepper, but invalidation only refetches an *active* observer. This
+  // screen is unmounted/backgrounded during that flow, so on return the stale
+  // canGenerate=false snapshot is re-served and the reload + "Personalize your
+  // plan" banner stay blocked. Refetch the gate inputs on focus so they reflect
+  // the live backend truth the moment the user comes back.
+  const refetchAssignments = assignmentsQuery.refetch;
+  const refetchAssessments = assessmentsQuery.refetch;
+  useFocusEffect(
+    useCallback(() => {
+      void refetchAssignments();
+      void refetchAssessments();
+    }, [refetchAssignments, refetchAssessments]),
+  );
 
   const needsAssessment =
     isNonBasicPlan &&
