@@ -114,13 +114,6 @@ export interface PlanScreenRedesignedProps {
   getScaledFontSize: (n: number) => number;
   getScaledFontWeight: (n: number) => string;
 
-  // Today's tasks (completion summary kept for the per-category task counts).
-  tasks: { length: number };
-  completedCount: number;
-  skippedCount: number;
-  progressPct: number;
-  tasksByType: { type: TaskType; tasks: PlanTask[] }[];
-
   // Plan type chooser
   currentPlanType: string | undefined;
   onChangePlanType: () => void;
@@ -187,7 +180,22 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
   // the AI tag (`task.category`) with a type→category fallback. Phase A hiding
   // (reminders/visits) is applied BEFORE grouping so hidden types never appear.
   const planTasks = Array.isArray(plan.tasks) ? plan.tasks : [];
-  const visibleTasks = planTasks.filter((t) => isPlanTaskTypeVisible(t.type, CARE_PLAN_V2_ENABLED));
+  const visibleTasks = planTasks
+    .filter((t) => isPlanTaskTypeVisible(t.type, CARE_PLAN_V2_ENABLED))
+    // Restore the original/flag-off within-group sort: tasks ascending by
+    // scheduledTime ("HH:MM" sorts lexicographically). Null-safe — tasks with a
+    // missing/empty scheduledTime are pushed LAST (not just sentinel-compared, so
+    // locale collation can't float them up). buildCategorySections preserves this
+    // order while grouping, so each category renders its tasks time-ordered.
+    .slice()
+    .sort((a, b) => {
+      const at = a.scheduledTime || '';
+      const bt = b.scheduledTime || '';
+      if (!at && !bt) return 0;
+      if (!at) return 1; // a has no time → after b
+      if (!bt) return -1; // b has no time → after a
+      return at.localeCompare(bt);
+    });
   const goals = Array.isArray(plan.goals) ? plan.goals : [];
 
   const { sections, leftoverGoals } = buildCategorySections(
@@ -327,8 +335,6 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
 
       {/* ── CATEGORY SECTIONS — the hero. One per category: STATUS → TASKS → GOALS. ── */}
       {sections.map((section) => {
-        const showRemindersLink =
-          CARE_PLAN_V2_ENABLED && section.key === 'medical';
         return (
           <View key={section.key} style={styles.categorySection}>
             {/* 1. Category header — big, simple, the anchor of the section. */}
@@ -367,7 +373,7 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
             ) : null}
 
             {/* 3. TASKS — the planned actions for this category. */}
-            {(section.tasks.length > 0 || showRemindersLink) && (
+            {section.tasks.length > 0 && (
               <View style={{ marginTop: 6 }}>
                 <View style={[styles.subLabelRow, styles.subLabelInset]}>
                   <MaterialIcons name="checklist" size={getScaledFontSize(14)} color={subtext} />
@@ -415,36 +421,6 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
                     </View>
                   );
                 })}
-
-                {/* Manage reminders (Care Plan v2) — lives under the Medical section. */}
-                {showRemindersLink && (
-                  <Pressable
-                    onPress={onManageReminders}
-                    accessibilityRole="button"
-                    accessibilityLabel="Manage reminders"
-                    style={[styles.taskRow, { backgroundColor: card, borderColor: border }]}
-                  >
-                    <View style={[styles.taskIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
-                      <MaterialIcons
-                        name={TASK_ICON.reminder.name}
-                        size={getScaledFontSize(18)}
-                        color={TASK_ICON.reminder.color}
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text
-                        style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
-                        numberOfLines={1}
-                      >
-                        Manage reminders
-                      </Text>
-                      <Text style={{ color: subtext, fontSize: getScaledFontSize(13) }} numberOfLines={1}>
-                        Notifications &amp; reminder settings
-                      </Text>
-                    </View>
-                    <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={subtext} />
-                  </Pressable>
-                )}
               </View>
             )}
 
@@ -504,6 +480,54 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
               onEdit={openGoalEditor}
             />
           ))}
+        </View>
+      )}
+
+      {/* Manage reminders (Care Plan v2) — STABLE trailing block, gated only on
+          CARE_PLAN_V2_ENABLED. Rendered ONCE here, independent of any category
+          section, so the deep-link to /Home/reminder-settings is ALWAYS reachable
+          when v2 is on — even for plans with no medical-category content. (It
+          previously lived inside the Medical section's TASKS and vanished when
+          that category was empty.) Mirrors the flag-off screen's behavior. */}
+      {CARE_PLAN_V2_ENABLED && (
+        <View style={styles.categorySection}>
+          <View style={[styles.subLabelRow, styles.subLabelInset]}>
+            <MaterialIcons name="notifications" size={getScaledFontSize(14)} color={subtext} />
+            <Text
+              style={[
+                styles.subLabel,
+                { color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(800) as any },
+              ]}
+            >
+              REMINDERS
+            </Text>
+          </View>
+          <Pressable
+            onPress={onManageReminders}
+            accessibilityRole="button"
+            accessibilityLabel="Manage reminders"
+            style={[styles.taskRow, { backgroundColor: card, borderColor: border }]}
+          >
+            <View style={[styles.taskIcon, { backgroundColor: TASK_ICON.reminder.bg }]}>
+              <MaterialIcons
+                name={TASK_ICON.reminder.name}
+                size={getScaledFontSize(18)}
+                color={TASK_ICON.reminder.color}
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text
+                style={{ color: text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
+                numberOfLines={1}
+              >
+                Manage reminders
+              </Text>
+              <Text style={{ color: subtext, fontSize: getScaledFontSize(13) }} numberOfLines={1}>
+                Notifications &amp; reminder settings
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={subtext} />
+          </Pressable>
         </View>
       )}
 

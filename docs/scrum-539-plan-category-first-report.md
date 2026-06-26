@@ -94,3 +94,46 @@ Added to `tests/unit/care-plan.test.ts` (pure, node:test-loadable):
 
 `npm test`: **117 pass / 0 fail** (was 106; +11). `npx tsc --noEmit`: clean. `npm run lint`: no
 issues in any touched file (the repo's pre-existing errors/warnings are in unrelated files).
+
+---
+
+## Follow-up fixes (COS-404, SCRUM-539) — F1 + F2
+
+Two small SAFE-TO-OTA fixes to `components/health-plan/PlanScreenRedesigned.tsx` (JS/TSX only).
+
+### F1 — Manage-reminders link can disappear (UX regression, FIXED)
+The "Manage reminders" row was rendered INSIDE the per-category render, gated on
+`CARE_PLAN_V2_ENABLED && section.key === 'medical'`. A plan with no medical-category content
+dropped the Medical section entirely, so the link — and its deep-link to
+`/Home/reminder-settings` — **vanished**. In the prior v1/flag-off screen it rendered whenever
+`CARE_PLAN_V2_ENABLED`, independent of any category.
+
+**Fix:** the in-category reminders Pressable was removed and re-rendered ONCE as a STABLE
+trailing block (its own "REMINDERS" sub-labelled section), placed after the category sections +
+leftover goals, gated **only** on `CARE_PLAN_V2_ENABLED`. It is now always reachable when v2 is on,
+regardless of which categories have content. `onManageReminders` (→ `/Home/reminder-settings`)
+wiring unchanged. The TASKS-section visibility gate reverted to `section.tasks.length > 0` (no
+longer coupled to the reminders link).
+
+### F2 — within-category task time-sort (restored)
+The redesign rendered tasks in raw payload order; the original/flag-off screen sorted each task
+group by `scheduledTime`. **Fix:** `visibleTasks` is now sorted ascending by `scheduledTime`
+BEFORE grouping (`buildCategorySections` preserves that order within each category, so every
+category renders time-ordered). The comparator is null-safe — tasks with a missing/empty
+`scheduledTime` are pushed LAST via explicit guards (a naive `'~'` sentinel + `localeCompare`
+floated timeless tasks to the top under locale collation; a unit test caught it).
+
+### Optional prune (done — trivial, parent unaffected)
+Removed the dead props `tasks`/`completedCount`/`skippedCount`/`progressPct`/`tasksByType` from
+`PlanScreenRedesignedProps` and the parent call site in `app/Home/health-plan.tsx`. The screen's
+local computations are kept (still used by the flag-off original ScrollView/hero path). The
+flag-off path is untouched.
+
+### Verification
+- New tests in `tests/unit/care-plan.test.ts`: task time-sort ascending; null-safe (timeless
+  last); and the sort flowing through `buildCategorySections` so each category is time-ordered.
+- `npm test`: **120 pass / 0 fail** (was 117; +3). `npx tsc --noEmit`: clean. Lint: **0 errors**
+  on all touched files (2 pre-existing `toggleTask`/`onSkip` warnings in `health-plan.tsx` predate
+  this work).
+- OTA-safe: JS/TSX only, no native/deps/config touched. Flag-off (`PLAN_REDESIGN_ENABLED=false`)
+  still renders the original screen byte-for-byte; status-absent path unchanged (no crash).

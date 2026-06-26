@@ -616,11 +616,6 @@ export default function HealthPlanScreen() {
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
-          tasks={tasks}
-          completedCount={completedCount}
-          skippedCount={skippedCount}
-          progressPct={progressPct}
-          tasksByType={tasksByType}
           currentPlanType={currentPlanType}
           onChangePlanType={() => setShowChooser(true)}
           refreshing={refreshing}

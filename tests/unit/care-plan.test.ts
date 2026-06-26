@@ -318,3 +318,55 @@ test('buildCategorySections: empty plan ⇒ no sections, no leftovers (caller sh
   assert.equal(sections.length, 0);
   assert.equal(leftoverGoals.length, 0);
 });
+
+// ── F2 (COS-404, SCRUM-539): within-category task time-sort ────────────────────
+// PlanScreenRedesigned sorts visible tasks ascending by scheduledTime BEFORE
+// grouping, restoring the original/flag-off ordering. The comparator (mirrored
+// from the component) is null-safe: a missing/empty scheduledTime sorts LAST.
+// buildCategorySections preserves that pre-sorted order while grouping, so each
+// category renders its tasks time-ordered.
+
+const byScheduledTime = (a: { scheduledTime?: string }, b: { scheduledTime?: string }) => {
+  const at = a.scheduledTime || '';
+  const bt = b.scheduledTime || '';
+  if (!at && !bt) return 0;
+  if (!at) return 1; // a has no time → after b
+  if (!bt) return -1; // b has no time → after a
+  return at.localeCompare(bt);
+};
+
+test('task time-sort: ascending by scheduledTime ("HH:MM" lexicographic)', () => {
+  const tasks = [
+    { id: 'c', scheduledTime: '18:00' },
+    { id: 'a', scheduledTime: '06:30' },
+    { id: 'b', scheduledTime: '08:00' },
+  ];
+  const sorted = tasks.slice().sort(byScheduledTime).map((t) => t.id);
+  assert.deepEqual(sorted, ['a', 'b', 'c']);
+});
+
+test('task time-sort: null-safe — missing/empty scheduledTime sorts LAST', () => {
+  const tasks = [
+    { id: 'noTime' },                       // undefined scheduledTime
+    { id: 'late', scheduledTime: '21:00' },
+    { id: 'empty', scheduledTime: '' },     // empty scheduledTime
+    { id: 'early', scheduledTime: '07:15' },
+  ];
+  const sorted = tasks.slice().sort(byScheduledTime).map((t) => t.id);
+  // timed tasks first (ascending), then the two timeless ones trailing
+  assert.deepEqual(sorted.slice(0, 2), ['early', 'late']);
+  assert.deepEqual(sorted.slice(2).sort(), ['empty', 'noTime']);
+});
+
+test('task time-sort flows through buildCategorySections: each category renders time-ordered', () => {
+  // Pre-sort exactly as the component does, then group.
+  const visibleTasks = [
+    { id: 't-late', type: 'medication', scheduledTime: '20:00' },
+    { id: 't-early', type: 'medication', scheduledTime: '08:00' },
+  ].slice().sort(byScheduledTime);
+  const { sections } = buildCategorySections([], visibleTasks, undefined);
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].key, 'medication');
+  // order preserved from the pre-sorted input → earliest first
+  assert.deepEqual(sections[0].tasks.map((t) => t.id), ['t-early', 't-late']);
+});
