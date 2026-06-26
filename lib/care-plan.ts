@@ -127,7 +127,9 @@ export function formatGoalProgress(g: {
  * daily-task list into a secondary "Today's tasks" section. Presentation-only:
  * flip back to false to instantly revert to today's screen.
  */
-export const PLAN_REDESIGN_ENABLED = false;
+// ENABLED 2026-06-26 for Ken's testing (SCRUM-538). Flip to false + OTA to
+// instantly revert to today's screen (presentation-only; flag-off is byte-for-byte today).
+export const PLAN_REDESIGN_ENABLED = true;
 
 /**
  * Plain-language one-liner for a goal's measure + progress (COS-402). Powers the

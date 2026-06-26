@@ -140,8 +140,8 @@ test('isPlanTaskTypeVisible: flag ON hides reminders + visits(appointment), keep
 
 // ── Plan redesign: PLAN_REDESIGN_ENABLED + formatGoalPlain (COS-402, SCRUM-538) ──
 
-test('PLAN_REDESIGN_ENABLED defaults OFF (kill-switch — flag-off renders today’s screen byte-for-byte)', () => {
-  assert.equal(PLAN_REDESIGN_ENABLED, false);
+test('PLAN_REDESIGN_ENABLED is ON (enabled 2026-06-26 for Ken testing, SCRUM-538)', () => {
+  assert.equal(PLAN_REDESIGN_ENABLED, true);
 });
 
 test('formatGoalPlain: prefers live progress percent ⇒ "You\'re at N% toward TARGET"', () => {
