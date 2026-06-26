@@ -9,6 +9,8 @@ import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTre
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import { fetchTrendsSummary, type TrendsSummary } from '@/services/api/trends'
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer'
+import { useAppleHealthPreference } from '@/hooks/use-apple-health-preference'
+import { router, useFocusEffect } from 'expo-router'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import * as FileSystem from 'expo-file-system/legacy'
 import React, { useCallback, useMemo, useState } from 'react'
@@ -65,14 +67,25 @@ export default function HealthTrendsScreen() {
   const [activeTrend, setActiveTrend] = useState<LongitudinalTrend | null>(null)
 
   const { data, isLoading, isError, refetch } = useTrends()
-  const { data: healthKitTrends, refetch: refetchHealthKit } = useHealthKitTrends()
+  const { data: healthKitTrends, refetch: refetchHealthKit, disabled: appleHealthDisabled } = useHealthKitTrends()
   const { data: reportTrends, isLoading: isLoadingReportTrends, refetch: refetchReportTrends } = useReportTrends()
+
+  // COS-397 / SCRUM-535: the Apple Health preference is the authoritative
+  // switch. Re-read it whenever this screen regains focus so a disable on the
+  // Apple Health screen takes effect immediately when the user comes back here
+  // (otherwise the stale "enabled" snapshot would keep Apple Health trends up).
+  const refetchApplePreference = useAppleHealthPreference().refetch
+  useFocusEffect(
+    useCallback(() => {
+      void refetchApplePreference()
+    }, [refetchApplePreference]),
+  )
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await Promise.all([refetch(), refetchHealthKit(), refetchReportTrends()])
+    await Promise.all([refetch(), refetchHealthKit(), refetchReportTrends(), refetchApplePreference()])
     setRefreshing(false)
-  }, [refetch, refetchHealthKit, refetchReportTrends])
+  }, [refetch, refetchHealthKit, refetchReportTrends, refetchApplePreference])
 
   // Split trends by provenance — Apple Health goes in the carousel at the
   // top, clinic-sourced (FHIR + report-derived) trends go in the selector
@@ -248,10 +261,50 @@ export default function HealthTrendsScreen() {
           </Text>
         </View>
 
+        {/* COS-397 / SCRUM-535: Apple Health is turned off in the app
+            preference. Show a clear "turned off" card (instead of any stale
+            Apple Health trends) with a button to the enable screen. iOS only
+            — `appleHealthDisabled` is false on Android. */}
+        {appleHealthDisabled ? (
+          <View style={{ marginTop: 4 }}>
+            <View style={styles.sectionHeaderRow}>
+              <MaterialIcons
+                name="favorite"
+                size={getScaledFontSize(16)}
+                color={colors.text as string}
+              />
+              <Text style={[styles.sectionHeader, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }]}>
+                Apple Health
+              </Text>
+            </View>
+            <View style={[styles.appleHealthOffCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+              <MaterialIcons name="favorite-border" size={getScaledFontSize(28)} color={colors.subtext as string} />
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any, marginTop: 10, textAlign: 'center' }}>
+                Apple Health is turned off
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4, textAlign: 'center' }}>
+                Turn Apple Health back on to see steps, heart rate, sleep, and more from your iPhone and Apple Watch here.
+              </Text>
+              <Pressable
+                onPress={() => router.push('/Home/apple-health' as never)}
+                style={[styles.appleHealthOffBtn, { backgroundColor: colors.tint as string }]}
+                accessibilityRole="button"
+                accessibilityLabel="Turn on Apple Health"
+              >
+                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                  Turn on Apple Health
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {/* Apple Health — horizontal carousel of every available metric.
             No selector — the slider IS the picker. Only renders when we
-            actually have data (iOS only; Android returns []). */}
-        {appleHealthTrends.length > 0 ? (
+            actually have data (iOS only; Android returns []), and the app
+            preference is enabled (appleHealthDisabled gates the off-state
+            above). */}
+        {!appleHealthDisabled && appleHealthTrends.length > 0 ? (
           <View style={{ marginTop: 4 }}>
             <View style={styles.sectionHeaderRow}>
               <MaterialIcons
@@ -352,8 +405,10 @@ export default function HealthTrendsScreen() {
           </ScrollView>
         ) : null}
 
-        {/* Truly empty — no Apple Health AND no Clinic data. */}
-        {clinicTrends.length === 0 && appleHealthTrends.length === 0 ? (
+        {/* Truly empty — no Apple Health AND no Clinic data. When Apple Health
+            is turned off we already show the dedicated "turned off" card above,
+            so drop the Apple-Health mention here to avoid a mixed message. */}
+        {clinicTrends.length === 0 && appleHealthTrends.length === 0 && !appleHealthDisabled ? (
           <View style={[styles.emptyCard, { borderColor: colors.border }]}>
             <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
               No trends yet. Lab values and Apple Health data will appear here as your records flow in.
@@ -938,6 +993,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   emptyCard: { borderWidth: 1, borderRadius: 14, padding: 18, marginTop: 4 },
+  appleHealthOffCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+  },
+  appleHealthOffBtn: {
+    marginTop: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 999,
+  },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
