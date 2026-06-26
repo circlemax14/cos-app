@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
@@ -166,6 +166,22 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
   const assignmentsQuery = useHealthPlanAssignments()
   const buildGate = resolveBuildGate(assignmentsQuery.data, completedCount, MIN_TO_BUILD_PLAN)
   const canBuildPlan = buildGate.canBuild
+
+  // SCRUM-535 / COS-397: refetch the gate inputs every time the catalog
+  // regains focus. The reload → check-ins → "Build my plan" path crosses
+  // routes: completing the final check-in invalidates ['health-plan-assignments']
+  // from the stepper, but invalidation only refetches an *active* observer.
+  // When the user returns here the cached canGenerate=false snapshot is
+  // re-served, so Build stays blocked even though all check-ins are done.
+  // Forcing a refetch on focus makes the gate read the live backend truth.
+  useFocusEffect(
+    React.useCallback(() => {
+      void assignmentsQuery.refetch()
+      void assessmentsQuery.refetch()
+      // refetch fns are stable across renders for a given query
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [assignmentsQuery.refetch, assessmentsQuery.refetch]),
+  )
 
   if (instrumentsQuery.isLoading || assessmentsQuery.isLoading) {
     return (
