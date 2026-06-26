@@ -309,6 +309,13 @@ export interface PlanTask {
     relatedConditionFhirId?: string;
   };
   source: 'ai' | 'care_manager';
+  /**
+   * Care-plan category this task belongs to (additive, COS-404 / SCRUM-539).
+   * AI-tagged by the backend when `PLAN_CATEGORY_STATUS_ENABLED` is on. Read
+   * defensively — older/untagged tasks omit it and the app falls back to a
+   * type→category mapping. Mirrors cos-backend's `CarePlanCategoryKey`.
+   */
+  category?: string;
 }
 
 export interface AiPlanGoal {
@@ -336,12 +343,30 @@ export interface AiPlanGoal {
   };
 }
 
+/**
+ * Per-category baseline STATUS summary (additive, COS-404 / SCRUM-539). One
+ * entry per care-plan category that has content; `status` is a short (1–3
+ * sentence) AI baseline drawn from assessments + EHR. Emitted by the backend
+ * only when `PLAN_CATEGORY_STATUS_ENABLED` is on — read defensively (optional).
+ * Mirrors cos-backend's plan-category-status contract.
+ */
+export interface PlanCategoryStatus {
+  category: string;
+  status: string;
+}
+
 export interface AiHealthPlan {
   version: number;
   summary: string;
   goals: AiPlanGoal[];
   tasks: PlanTask[];
   categories?: string[];
+  /**
+   * Per-category baseline summaries (additive, COS-404 / SCRUM-539). Present
+   * only once the backend `PLAN_CATEGORY_STATUS_ENABLED` flag is enabled; the
+   * category-first plan view omits the STATUS block when this is absent.
+   */
+  categoryStatuses?: PlanCategoryStatus[];
   sourceDataHash: string;
   generatedAt: string;
   provider: 'bedrock' | 'openai';

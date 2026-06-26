@@ -12,6 +12,11 @@ import {
   isPlanTaskTypeVisible,
   PLAN_REDESIGN_ENABLED,
   formatGoalPlain,
+  TASK_TYPE_TO_CATEGORY,
+  taskCategoryFor,
+  groupTasksByCategory,
+  getCategoryStatus,
+  buildCategorySections,
 } from '../../lib/care-plan.ts';
 
 test('CARE_PLAN_ENABLED is enabled (COS-377 rollout — backend care_plan_enabled is live in prod)', () => {
@@ -181,4 +186,135 @@ test('formatGoalPlain: no progress ⇒ baseline→target framing', () => {
 test('formatGoalPlain: nothing measurable ⇒ empty string (caller omits the line)', () => {
   assert.equal(formatGoalPlain({}), '');
   assert.equal(formatGoalPlain({ timeframe: '6 weeks' }), 'Over 6 weeks');
+});
+
+// ── Category-first plan view: task→category fallback + STATUS (COS-404, SCRUM-539) ──
+
+test('taskCategoryFor: prefers a valid AI-tagged task.category', () => {
+  assert.equal(taskCategoryFor({ type: 'exercise', category: 'social' }), 'social');
+  assert.equal(taskCategoryFor({ type: 'medication', category: 'mentalHealth' }), 'mentalHealth');
+});
+
+test('taskCategoryFor: falls back to the type→category mapping when category is absent', () => {
+  // medication-type → medication category; exercise/appointment/reminder → medical
+  assert.equal(taskCategoryFor({ type: 'medication' }), 'medication');
+  assert.equal(taskCategoryFor({ type: 'exercise' }), 'medical');
+  assert.equal(taskCategoryFor({ type: 'appointment' }), 'medical');
+  assert.equal(taskCategoryFor({ type: 'reminder' }), 'medical');
+  assert.equal(TASK_TYPE_TO_CATEGORY.medication, 'medication');
+  assert.equal(TASK_TYPE_TO_CATEGORY.exercise, 'medical');
+});
+
+test('taskCategoryFor: ignores an unknown task.category and uses the type fallback', () => {
+  assert.equal(taskCategoryFor({ type: 'medication', category: 'bogus' }), 'medication');
+  // unknown type with no/invalid category ⇒ safe default "medical" (never dropped)
+  assert.equal(taskCategoryFor({ type: 'mystery' }), 'medical');
+  assert.equal(taskCategoryFor({}), 'medical');
+});
+
+test('groupTasksByCategory: groups in registry order, present-only, using the fallback', () => {
+  const tasks = [
+    { id: '1', type: 'medication' },               // → medication
+    { id: '2', type: 'exercise' },                 // → medical
+    { id: '3', type: 'appointment', category: 'social' }, // tagged → social
+  ];
+  const groups = groupTasksByCategory(tasks);
+  // medical (1st in registry) before medication before social
+  assert.deepEqual(groups.map((g) => g.key), ['medical', 'medication', 'social']);
+  assert.equal(groups[0].tasks.length, 1); // exercise → medical
+  assert.equal(groups[0].tasks[0].id, '2');
+  assert.equal(groups[1].tasks[0].id, '1');
+  assert.equal(groups[2].tasks[0].id, '3');
+});
+
+test('getCategoryStatus: returns the trimmed status when present', () => {
+  const statuses = [
+    { category: 'medical', status: '  Blood pressure trending down.  ' },
+    { category: 'social', status: 'Engaged with the senior center weekly.' },
+  ];
+  assert.equal(getCategoryStatus(statuses, 'medical'), 'Blood pressure trending down.');
+  assert.equal(getCategoryStatus(statuses, 'social'), 'Engaged with the senior center weekly.');
+});
+
+test('getCategoryStatus: GRACEFUL absent path — undefined/empty/missing ⇒ null (omit the block)', () => {
+  // backend flag off / not deployed ⇒ no categoryStatuses at all
+  assert.equal(getCategoryStatus(undefined, 'medical'), null);
+  // present array but no entry for this category
+  assert.equal(getCategoryStatus([{ category: 'social', status: 'x' }], 'medical'), null);
+  // entry present but empty/whitespace status ⇒ null
+  assert.equal(getCategoryStatus([{ category: 'medical', status: '   ' }], 'medical'), null);
+  assert.equal(getCategoryStatus([{ category: 'medical' }], 'medical'), null);
+  // not an array ⇒ never throws
+  assert.equal(getCategoryStatus({} as any, 'medical'), null);
+});
+
+test('buildCategorySections: STATUS → TASKS → GOALS per category, registry order, present-only', () => {
+  const goals = [
+    { id: 'g1', title: 'Walk daily', category: 'medical' },
+    { id: 'g2', title: 'Call a friend', category: 'social' },
+  ];
+  const tasks = [
+    { id: 't1', type: 'medication' },  // → medication category
+    { id: 't2', type: 'exercise' },    // → medical category
+  ];
+  const statuses = [{ category: 'medical', status: 'Doing well overall.' }];
+  const { sections, leftoverGoals } = buildCategorySections(goals, tasks, statuses);
+
+  // medical (goals+tasks+status), medication (tasks only), social (goals only)
+  assert.deepEqual(sections.map((s) => s.key), ['medical', 'medication', 'social']);
+  assert.equal(leftoverGoals.length, 0);
+
+  const medical = sections[0];
+  assert.equal(medical.status, 'Doing well overall.');
+  assert.equal(medical.tasks.length, 1);
+  assert.equal(medical.tasks[0].id, 't2');
+  assert.equal(medical.goals.length, 1);
+  assert.equal(medical.goals[0].id, 'g1');
+
+  // medication: a task-only category still surfaces (no goals, no status)
+  const medication = sections[1];
+  assert.equal(medication.status, null);
+  assert.equal(medication.goals.length, 0);
+  assert.equal(medication.tasks[0].id, 't1');
+});
+
+test('buildCategorySections: status-ABSENT graceful path — section still reads TASKS → GOALS', () => {
+  const goals = [{ id: 'g1', title: 'Walk daily', category: 'medical' }];
+  const tasks = [{ id: 't1', type: 'exercise' }];
+  // No categoryStatuses passed at all (backend not yet shipped)
+  const { sections } = buildCategorySections(goals, tasks, undefined);
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].key, 'medical');
+  assert.equal(sections[0].status, null); // omitted, not a crash/placeholder
+  assert.equal(sections[0].tasks.length, 1);
+  assert.equal(sections[0].goals.length, 1);
+});
+
+test('buildCategorySections: a STATUS-only category (no goals/tasks) still surfaces', () => {
+  const { sections } = buildCategorySections(
+    [],
+    [],
+    [{ category: 'spiritual', status: 'Finds comfort in weekly services.' }],
+  );
+  assert.deepEqual(sections.map((s) => s.key), ['spiritual']);
+  assert.equal(sections[0].status, 'Finds comfort in weekly services.');
+  assert.equal(sections[0].goals.length, 0);
+  assert.equal(sections[0].tasks.length, 0);
+});
+
+test('buildCategorySections: goals with no/unknown category fall into leftoverGoals (nothing lost)', () => {
+  const goals = [
+    { id: 'g1', title: 'Tagged', category: 'medical' },
+    { id: 'g2', title: 'Legacy, no category' },
+    { id: 'g3', title: 'Unknown category', category: 'bogus' },
+  ];
+  const { sections, leftoverGoals } = buildCategorySections(goals, [], undefined);
+  assert.deepEqual(sections.map((s) => s.key), ['medical']);
+  assert.deepEqual(leftoverGoals.map((g) => g.id), ['g2', 'g3']);
+});
+
+test('buildCategorySections: empty plan ⇒ no sections, no leftovers (caller shows empty state)', () => {
+  const { sections, leftoverGoals } = buildCategorySections([], [], undefined);
+  assert.equal(sections.length, 0);
+  assert.equal(leftoverGoals.length, 0);
 });

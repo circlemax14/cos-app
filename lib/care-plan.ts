@@ -175,3 +175,115 @@ export function isPlanTaskTypeVisible(type: string, v2Enabled: boolean): boolean
   if (!v2Enabled) return true;
   return !PLAN_TASK_TYPES_HIDDEN_IN_V2.includes(type);
 }
+
+// ── Category-first plan view (COS-404 / SCRUM-539) ───────────────────────────
+//
+// Ken's structure: the plan is organized BY CATEGORY, each category flowing
+// STATUS → TASKS → GOALS. Goals already carry `category`. Tasks gain an additive
+// `category` once the backend ships; until then (and for legacy/untagged tasks)
+// we derive a sensible category from the task TYPE so tasks still group under
+// the right heading BEFORE the backend ships. Pure — no RN imports.
+
+/**
+ * Map a plan task's TYPE to a care-plan category. Used as the FALLBACK when a
+ * task has no AI-tagged `category`. Mirrors the backend's derivation
+ * (medication→'medication', exercise→'medical', …). Returns a CarePlanCategoryKey.
+ */
+export const TASK_TYPE_TO_CATEGORY: Record<string, CarePlanCategoryKey> = {
+  medication: 'medication',
+  exercise: 'medical',
+  appointment: 'medical',
+  reminder: 'medical',
+};
+
+/**
+ * Resolve the category for a single task. Prefers the backend's AI-tagged
+ * `task.category` (validated against the known category keys); falls back to the
+ * type→category mapping; defaults to 'medical' for unknown types so a task is
+ * never dropped. Pure, defensive (reads optional fields).
+ */
+export function taskCategoryFor(task: { type?: string; category?: string }): CarePlanCategoryKey {
+  if (task.category && (CARE_PLAN_CATEGORY_KEYS as readonly string[]).includes(task.category)) {
+    return task.category as CarePlanCategoryKey;
+  }
+  return TASK_TYPE_TO_CATEGORY[task.type ?? ''] ?? 'medical';
+}
+
+export interface TaskGroup<T> {
+  key: CarePlanCategoryKey;
+  label: string;
+  tasks: T[];
+}
+
+/**
+ * Group tasks by category in registry order, present-only. Uses `taskCategoryFor`
+ * (AI tag, else type fallback) so it works before AND after the backend ships
+ * task tags. Pure — no RN imports.
+ */
+export function groupTasksByCategory<T extends { type?: string; category?: string }>(
+  tasks: T[],
+): TaskGroup<T>[] {
+  const groups: TaskGroup<T>[] = [];
+  for (const c of CARE_PLAN_CATEGORIES) {
+    const inCat = tasks.filter((t) => taskCategoryFor(t) === c.key);
+    if (inCat.length) groups.push({ key: c.key, label: c.label, tasks: inCat });
+  }
+  return groups;
+}
+
+/**
+ * Look up the backend STATUS summary for a category. Returns the trimmed status
+ * string, or null when absent (backend flag off / not yet deployed) so the
+ * caller GRACEFULLY OMITS the STATUS block. Pure, defensive — never throws on a
+ * missing/empty `categoryStatuses`.
+ */
+export function getCategoryStatus(
+  categoryStatuses: { category?: string; status?: string }[] | undefined,
+  categoryKey: string,
+): string | null {
+  if (!Array.isArray(categoryStatuses)) return null;
+  const entry = categoryStatuses.find((s) => s?.category === categoryKey);
+  const status = entry?.status?.trim();
+  return status ? status : null;
+}
+
+/**
+ * Build the ordered list of category sections for the category-first plan view.
+ * A category section is PRESENT when it has any goals OR any tasks OR a status
+ * (so STATUS-only categories from the backend still surface). Ordered by the
+ * category registry. Pure — no RN imports; the screen layers presentation on top.
+ */
+export interface CategorySection<G, T> {
+  key: CarePlanCategoryKey;
+  label: string;
+  status: string | null;
+  goals: G[];
+  tasks: T[];
+}
+
+export function buildCategorySections<
+  G extends { category?: string },
+  T extends { type?: string; category?: string },
+>(
+  goals: G[],
+  tasks: T[],
+  categoryStatuses: { category?: string; status?: string }[] | undefined,
+): {
+  sections: CategorySection<G, T>[];
+  /** Goals with no category (or an unknown one) — rendered as a trailing
+   *  "Your Goals" group exactly like the legacy grouping, so nothing is lost. */
+  leftoverGoals: G[];
+} {
+  const knownKeys = CARE_PLAN_CATEGORY_KEYS as readonly string[];
+  const sections: CategorySection<G, T>[] = [];
+  for (const c of CARE_PLAN_CATEGORIES) {
+    const catGoals = goals.filter((g) => g.category === c.key);
+    const catTasks = tasks.filter((t) => taskCategoryFor(t) === c.key);
+    const status = getCategoryStatus(categoryStatuses, c.key);
+    if (catGoals.length || catTasks.length || status) {
+      sections.push({ key: c.key, label: c.label, status, goals: catGoals, tasks: catTasks });
+    }
+  }
+  const leftoverGoals = goals.filter((g) => !g.category || !knownKeys.includes(g.category));
+  return { sections, leftoverGoals };
+}
