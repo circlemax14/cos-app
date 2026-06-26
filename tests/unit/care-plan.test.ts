@@ -119,8 +119,8 @@ test('formatGoalProgress: no progress ⇒ null', () => {
 
 // ── Care Plan v2 Phase A: CARE_PLAN_V2_ENABLED + isPlanTaskTypeVisible (COS-391, SCRUM-532) ──
 
-test('CARE_PLAN_V2_ENABLED defaults OFF (Phase A dark-launch)', () => {
-  assert.equal(CARE_PLAN_V2_ENABLED, false);
+test('CARE_PLAN_V2_ENABLED is ON (enabled 2026-06-26 via OTA, user request)', () => {
+  assert.equal(CARE_PLAN_V2_ENABLED, true);
 });
 
 test('isPlanTaskTypeVisible: flag OFF shows every task type', () => {
