@@ -41,6 +41,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useColorScheme,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
@@ -167,17 +168,22 @@ function statusPillStyle(
   state: StatusState,
   tint: string,
   colors: ColorMap,
+  isDark: boolean,
 ): { label: string; icon: keyof typeof MaterialIcons.glyphMap; color: string; bg: string } {
   switch (state) {
     case 'onTrack':
       return { label: 'On track', icon: 'check-circle', color: tint, bg: alpha(tint, '1F') };
-    case 'attention':
+    case 'attention': {
+      // theme.ts has no `warning` key, so pick a scheme-aware amber: a fixed
+      // dark-amber on a dark background reads too dim (COS-422 review).
+      const amber = (colors.warning as string) ?? (isDark ? '#FBBF24' : '#B45309');
       return {
         label: 'Needs attention',
         icon: 'error-outline',
-        color: (colors.warning as string) ?? '#D97706',
-        bg: 'rgba(217,119,6,0.14)',
+        color: amber,
+        bg: alpha(amber, isDark ? '2E' : '22'),
       };
+    }
     default:
       return {
         label: 'Just started',
@@ -203,6 +209,7 @@ const elevation = (level: 1 | 2 | 3) =>
   }) as object;
 
 export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
+  const isDark = useColorScheme() === 'dark';
   const {
     plan,
     colors,
@@ -427,7 +434,7 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
       {sections.map((section) => {
         const cat = categoryStyleFor(section.key, tint);
         const statusState = classifyStatus(section.status);
-        const pill = statusPillStyle(statusState, tint, colors);
+        const pill = statusPillStyle(statusState, tint, colors, isDark);
         return (
           <View key={section.key} style={styles.categorySection}>
             {/* 1. Category header — colored icon chip + tinted underline so each
@@ -743,10 +750,13 @@ function GoalCard(props: {
   const pstyle = PRIORITY_STYLE[g.priority];
   const plain = formatGoalPlain(g);
   const prog = GOAL_PROGRESS_ENABLED && g.progress ? formatGoalProgress(g) : null;
-  const pctLabel =
-    prog && prog.barFraction != null
-      ? `${Math.round(Math.min(1, Math.max(0, prog.barFraction)) * 100)}%`
+  // Clamp + finite-guard once: formatGoalProgress only null-checks, so a NaN
+  // progressPercent would otherwise render "NaN%" and a NaN-width bar (COS-422 review).
+  const frac =
+    prog && prog.barFraction != null && Number.isFinite(prog.barFraction)
+      ? Math.min(1, Math.max(0, prog.barFraction))
       : null;
+  const pctLabel = frac != null ? `${Math.round(frac * 100)}%` : null;
   const trendColor =
     prog?.trendSymbol === '↑'
       ? tint
@@ -812,14 +822,14 @@ function GoalCard(props: {
         )}
 
         {/* Progress: bar + a % label next to it. */}
-        {prog && prog.barFraction != null && (
+        {frac != null && (
           <View style={styles.progressRow}>
             <View style={[styles.progressTrack, { backgroundColor: border }]}>
               <View
                 style={[
                   styles.progressFill,
                   {
-                    width: `${Math.min(1, Math.max(0, prog.barFraction)) * 100}%` as any,
+                    width: `${frac * 100}%` as any,
                     backgroundColor: tint,
                   },
                 ]}
