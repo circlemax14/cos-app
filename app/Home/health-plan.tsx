@@ -50,8 +50,10 @@ import {
   CARE_PLAN_V2_ENABLED,
   isPlanTaskTypeVisible,
   PLAN_REDESIGN_ENABLED,
+  PLAN_REDESIGN_V2_ENABLED,
 } from '@/lib/care-plan';
 import { PlanScreenRedesigned } from '@/components/health-plan/PlanScreenRedesigned';
+import { PlanScreenRedesignedV2 } from '@/components/health-plan/PlanScreenRedesignedV2';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
 
@@ -604,6 +606,38 @@ export default function HealthPlanScreen() {
           adherencePercent={adherencePercent}
           completedToday={completedToday}
           totalToday={totalToday}
+        />
+      ) : PLAN_REDESIGN_V2_ENABLED ? (
+        /* COS-422: MakeMyTrip-inspired visual redesign. PRESENTATION-ONLY and a
+           100% drop-in for PlanScreenRedesigned — IDENTICAL props/data flow
+           (same plan, build/refresh + canGenerate gating, goal-edit flow via the
+           shared modal below, goal progress, category grouping, medications
+           sections, focus-refetch). Layers above v1: when V2 is OFF we fall
+           through to PLAN_REDESIGN_ENABLED (v1) and then the legacy ScrollView. */
+        <PlanScreenRedesignedV2
+          plan={plan}
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          currentPlanType={currentPlanType}
+          onChangePlanType={() => setShowChooser(true)}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          generating={generating}
+          canGeneratePlan={canGeneratePlan}
+          onGenerate={onGenerate}
+          openGoalEditor={openGoalEditor}
+          needsAssessment={needsAssessment}
+          onPersonalize={() =>
+            router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
+          }
+          onManageReminders={() => router.push('/Home/reminder-settings' as never)}
+          planScrollRef={planScrollRef}
+          onMedsSectionLayout={(e) => {
+            medsSectionYRef.current = e.nativeEvent.layout.y;
+          }}
+          openMedsAddSignal={openMedsAddSignal}
+          onReviewMedications={onReviewMedications}
         />
       ) : PLAN_REDESIGN_ENABLED ? (
         /* COS-402 / SCRUM-538: goals-first redesign. Presentation-only — reuses
