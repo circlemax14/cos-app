@@ -132,6 +132,24 @@ export function formatGoalProgress(g: {
 export const PLAN_REDESIGN_ENABLED = true;
 
 /**
+ * KILL-SWITCH: PLAN_REDESIGN_V2_ENABLED (COS-422). Default OFF.
+ *
+ * Layers ABOVE PLAN_REDESIGN_ENABLED — when ON, the Care Plan screen renders the
+ * MakeMyTrip-inspired visual redesign (`PlanScreenRedesignedV2`) instead of v1
+ * (`PlanScreenRedesigned`). Same data, hooks, props, edit flow, build/refresh +
+ * canGenerate gating, medications sections, and category structure as v1 — pure
+ * presentation: depth/elevation, per-category color + icon chips, a 3-state
+ * status pill, token-driven spacing/radii, and a warmer empty state.
+ *
+ * Render precedence in health-plan.tsx:
+ *   PLAN_REDESIGN_V2_ENABLED → v2, else PLAN_REDESIGN_ENABLED → v1, else legacy.
+ *
+ * Presentation-only: flip back to false to instantly revert to v1 (or, with both
+ * off, byte-for-byte today's legacy screen).
+ */
+export const PLAN_REDESIGN_V2_ENABLED = false;
+
+/**
  * Plain-language one-liner for a goal's measure + progress (COS-402). Powers the
  * redesigned goal card's "a 5-year-old can understand it" measure line, e.g.
  * "You're at 72% of your target" or "Aiming for <7.0% over 3 months".
