@@ -146,8 +146,11 @@ export const PLAN_REDESIGN_ENABLED = true;
  *
  * Presentation-only: flip back to false to instantly revert to v1 (or, with both
  * off, byte-for-byte today's legacy screen).
+ *
+ * ENABLED 2026-06-30 (COS-429) for prod testing of the V2 redesign (OTA to the
+ * production channel). Revert = set false + re-OTA (instant rollback to v1).
  */
-export const PLAN_REDESIGN_V2_ENABLED = false;
+export const PLAN_REDESIGN_V2_ENABLED = true;
 
 /**
  * Plain-language one-liner for a goal's measure + progress (COS-402). Powers the
