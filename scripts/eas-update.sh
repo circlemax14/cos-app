@@ -47,6 +47,14 @@ fi
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 RUNTIME="$(grep -E '"runtimeVersion"' app.json | sed -E 's/.*"runtimeVersion":[[:space:]]*"([^"]+)".*/\1/')"
 
+# COS-356 — runtime version drift guard. Fails the OTA if the 5 iOS
+# version artifacts disagree with each other OR if package.json has
+# been modified since the last runtimeVersion bump (probable native-dep
+# add without a binary cut → OTA would crash existing users on launch).
+# See SCRUM-493 (2026-06-19 incident) for the failure mode this catches.
+echo
+node scripts/check-runtime-version.mjs
+
 cat <<EOF
 ─── EAS Update ────────────────────────────────────────────────
   Channel        : $CHANNEL
