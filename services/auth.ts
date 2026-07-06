@@ -90,7 +90,19 @@ export async function markWelcomeSeen(): Promise<void> {
  */
 export async function signIn(
   payload: SignInPayload,
-): Promise<{ success: boolean; user?: UserProfile; message?: string; notConfirmed?: boolean }> {
+): Promise<{
+  success: boolean;
+  user?: UserProfile;
+  message?: string;
+  notConfirmed?: boolean;
+  /**
+   * True when the backend returned ACCOUNT_INACTIVE (COS-354 / SCRUM-573)
+   * — the account is soft-deleted and awaiting hard-purge. Sign-in
+   * screen surfaces a dedicated UI with a Contact Support link so the
+   * user knows how to recover within the 30-day grace window.
+   */
+  accountInactive?: boolean;
+}> {
   try {
     const loginRes = await apiClient.post<{
       success: boolean;
@@ -119,6 +131,21 @@ export async function signIn(
       const code: string | undefined = err.response?.data?.code;
       if (code === 'EMAIL_NOT_VERIFIED') {
         return { success: false, notConfirmed: true, message: 'Please verify your email before signing in.' };
+      }
+      if (code === 'ACCOUNT_INACTIVE') {
+        // Backend returns 403 with this code when the Cognito user is
+        // Enabled=false — almost always because the user (or an admin)
+        // requested account deletion within the last 30 days.
+        // Distinct return field so the sign-in screen can show a
+        // dedicated recovery CTA instead of the generic "wrong
+        // credentials" toast.
+        return {
+          success: false,
+          accountInactive: true,
+          message:
+            err.response?.data?.error ??
+            'This account has been deactivated. If you did not request deletion, contact support at support@circlesupporthealth.ai to recover it.',
+        };
       }
       const apiMsg: string | undefined = err.response?.data?.error ?? err.response?.data?.message;
       if (apiMsg) return { success: false, message: apiMsg };
