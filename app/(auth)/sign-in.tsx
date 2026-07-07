@@ -2,7 +2,9 @@ import { Image } from 'expo-image';
 import { Link, router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -119,6 +121,28 @@ export default function SignInScreen() {
       await handleRoute(res.user);
     } else if (res.notConfirmed) {
       router.push({ pathname: '/(auth)/verify-email', params: { email: username.trim() } } as never);
+    } else if (res.accountInactive) {
+      // COS-355 / SCRUM-573 — soft-deleted account. Show the backend
+      // message verbatim (already carries the support email), plus a
+      // "Contact support" affordance via native Alert so the user can
+      // tap-to-mail rather than copy-paste.
+      Alert.alert(
+        'Account deactivated',
+        res.message ?? 'This account has been deactivated. Contact support to recover.',
+        [
+          { text: 'OK', style: 'cancel' },
+          {
+            text: 'Contact support',
+            onPress: () => {
+              Linking.openURL(
+                'mailto:support@circlesupporthealth.ai?subject=Account%20recovery%20request',
+              ).catch(() => {
+                setError('Could not open your email app. Please email support@circlesupporthealth.ai');
+              });
+            },
+          },
+        ],
+      );
     } else {
       setError(res.message ?? 'Sign in failed. Please check your credentials.');
     }

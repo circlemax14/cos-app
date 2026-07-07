@@ -12,6 +12,7 @@
     "test": "node --test tests/unit/*.test.ts",
     "eas:update:preview": "./scripts/eas-update.sh preview",
     "eas:update:prod": "./scripts/eas-update.sh production",
+    "check-runtime": "node scripts/check-runtime-version.mjs",
     "postinstall": "npx patch-package"
   },
   "dependencies": {
