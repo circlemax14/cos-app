@@ -8,6 +8,7 @@ import { Card, Button } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getCareManagerAgencyById, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { apiClient } from '@/lib/api-client';
+import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 /**
@@ -32,6 +33,8 @@ export default function AgencyDetailScreen() {
   const params = useLocalSearchParams();
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-360 / SCRUM-577 — flag-gated "Family Support" rename.
+  const planTypeDisplayName = usePlanTypeDisplayName();
 
   const [agency, setAgency] = useState<CareManagerAgency | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
@@ -403,12 +406,12 @@ export default function AgencyDetailScreen() {
                   {([
                     {
                       value: 'agency-supported' as const,
-                      title: 'Agency Supported',
+                      title: planTypeDisplayName('agency-supported'),
                       desc: 'Keep your AI-driven plan; your care team adds extra check-ins (ADL, IADL, Mini-Cog) and provides oversight.',
                     },
                     {
                       value: 'agency-managed' as const,
-                      title: 'Agency Managed',
+                      title: planTypeDisplayName('agency-managed'),
                       desc: 'Your care team actively directs your plan with intake and cognitive assessment.',
                     },
                   ]).map((opt) => {

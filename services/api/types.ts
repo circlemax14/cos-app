@@ -451,6 +451,18 @@ export interface CarePlanItem {
   textSummary?: string;
 }
 
+// ─── Biopsychosocial Care Plan v2 (COS-360 / SCRUM-518, Phase 2) ─────────────
+/**
+ * The four axes of Ken's biopsychosocial model. Instruments are tagged with
+ * one of these (additive, optional — older/untagged instruments simply have
+ * no `domain` and fall into the catalog's "Other" bucket until the backend
+ * backfill lands). `spiritual` folds into the `social` SectionPlan bucket at
+ * the plan-rendering layer (see `lib/care-plan.ts#getSection`) but stays a
+ * distinct tag at the instrument-catalog layer so a Spiritual section header
+ * can still be shown there.
+ */
+export type BiopsychosocialDomain = 'biological' | 'psychological' | 'social' | 'spiritual';
+
 // ─── Device ──────────────────────────────────────────────────────────────────
 export interface DeviceItem {
   id: string;

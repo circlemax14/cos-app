@@ -21,6 +21,7 @@ import { fetchAssessments, type AssessmentRecord } from '@/services/api/assessme
 import { generateAiHealthPlan } from '@/services/api/ai-health-plan'
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
 import { resolveBuildGate } from '@/lib/build-plan-gate'
+import { useAssessmentStrategyV2Flag } from '@/hooks/use-assessment-strategy-v2-flag'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
@@ -65,6 +66,47 @@ function iconFor(id: string, tint: string): { name: keyof typeof MaterialIcons.g
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
+// ── Assessment Strategy v2 (COS-360 / SCRUM-518, Phase 2) ────────────────────
+// Domain-grouped catalog headers. `spiritual` folds into the "Social &
+// Spiritual" bucket (there is no separate spiritual header at the catalog
+// layer, matching the 3-section Care Plan grouping). Instruments with no
+// `domain` (pre-backfill, or seeded before ASSESSMENT_STRATEGY_V2_ENABLED
+// existed) fall into a trailing "Other" bucket — expected to be empty once
+// the backend backfill lands.
+type CatalogDomainBucket = 'biological' | 'psychological' | 'social' | 'other'
+
+const DOMAIN_BUCKET_LABEL: Record<CatalogDomainBucket, string> = {
+  biological: 'Biological',
+  psychological: 'Psychological',
+  social: 'Social & Spiritual',
+  other: 'Other',
+}
+
+interface CatalogDomainGroup {
+  key: CatalogDomainBucket
+  label: string
+  items: InstrumentSummary[]
+}
+
+/** Buckets instruments by `domain`, present-only, in a fixed display order. */
+function groupInstrumentsByDomain(items: InstrumentSummary[]): CatalogDomainGroup[] {
+  const buckets: Record<CatalogDomainBucket, InstrumentSummary[]> = {
+    biological: [],
+    psychological: [],
+    social: [],
+    other: [],
+  }
+  for (const it of items) {
+    if (it.domain === 'biological') buckets.biological.push(it)
+    else if (it.domain === 'psychological') buckets.psychological.push(it)
+    else if (it.domain === 'social' || it.domain === 'spiritual') buckets.social.push(it)
+    else buckets.other.push(it)
+  }
+  return (['biological', 'psychological', 'social', 'other'] as const)
+    .map((key) => ({ key, label: DOMAIN_BUCKET_LABEL[key], items: buckets[key] }))
+    .filter((g) => g.items.length > 0)
+}
+
 interface Props {
   /** Visual header copy shown above the grid; omit to hide. */
   intro?: string
@@ -82,6 +124,9 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
+  // COS-360 / SCRUM-518 Phase 2: OFF (default) → flat grid, byte-for-byte
+  // today's behavior. ON → instruments group under 3 domain section headers.
+  const assessmentStrategyV2Enabled = useAssessmentStrategyV2Flag()
 
   // SCRUM-231: prefer the AI-recommended subset (per-patient) over the
   // raw list. Backend already falls back to the full set on any AI
@@ -159,6 +204,13 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
     [visible, completedById],
   )
 
+  // COS-360 / SCRUM-518 Phase 2: null when the flag is off, so the render
+  // below falls through to today's flat grid untouched.
+  const domainGroups = React.useMemo(
+    () => (assessmentStrategyV2Enabled ? groupInstrumentsByDomain(visible) : null),
+    [assessmentStrategyV2Enabled, visible],
+  )
+
   // SCRUM-521 / COS-380: gate button on the backend's canGenerate truth,
   // falling back to the local heuristic only when assignments aren't loaded
   // yet (offline / pre-load). Basic-tier users always get canGenerate=true
@@ -215,19 +267,44 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
         </Text>
       </View>
 
-      <View style={styles.grid}>
-        {visible.map((it) => (
-          <CatalogCard
-            key={it.id}
-            item={it}
-            record={completedById.get(it.instrumentId)}
-            rationale={rationaleById[it.instrumentId]}
-            colors={colors}
-            fontSize={getScaledFontSize}
-            fontWeight={getScaledFontWeight}
-          />
-        ))}
-      </View>
+      {domainGroups ? (
+        // COS-360 / SCRUM-518 Phase 2 — grouped under domain section headers.
+        domainGroups.map((group) => (
+          <View key={group.key} style={styles.domainGroup}>
+            <Text style={[styles.domainHeader, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
+              {group.label.toUpperCase()}
+            </Text>
+            <View style={styles.grid}>
+              {group.items.map((it) => (
+                <CatalogCard
+                  key={it.id}
+                  item={it}
+                  record={completedById.get(it.instrumentId)}
+                  rationale={rationaleById[it.instrumentId]}
+                  colors={colors}
+                  fontSize={getScaledFontSize}
+                  fontWeight={getScaledFontWeight}
+                />
+              ))}
+            </View>
+          </View>
+        ))
+      ) : (
+        // Flag OFF (default) — today's flat grid, unchanged.
+        <View style={styles.grid}>
+          {visible.map((it) => (
+            <CatalogCard
+              key={it.id}
+              item={it}
+              record={completedById.get(it.instrumentId)}
+              rationale={rationaleById[it.instrumentId]}
+              colors={colors}
+              fontSize={getScaledFontSize}
+              fontWeight={getScaledFontWeight}
+            />
+          ))}
+        </View>
+      )}
 
       <Pressable
         onPress={() => buildPlan.mutate()}
@@ -433,6 +510,8 @@ function CatalogCard({
 
 const styles = StyleSheet.create({
   intro: { marginBottom: 12, lineHeight: 19 },
+  domainGroup: { marginBottom: 18 },
+  domainHeader: { marginBottom: 10, letterSpacing: 0.4 },
   progressBar: {
     borderWidth: 1,
     borderRadius: 8,
