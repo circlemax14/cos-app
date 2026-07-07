@@ -54,6 +54,8 @@ import {
 } from '@/lib/care-plan';
 import { PlanScreenRedesigned } from '@/components/health-plan/PlanScreenRedesigned';
 import { PlanScreenRedesignedV2 } from '@/components/health-plan/PlanScreenRedesignedV2';
+import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
+import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
 
@@ -132,6 +134,13 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
 export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // COS-360 / SCRUM-518 Phase 3: called unconditionally (rules-of-hooks safe
+  // even though the underlying flags query resolves async and this value can
+  // flip mid-lifecycle) — every hook below still runs every render regardless
+  // of this value. We only branch on JSX, after all hooks have run (see the
+  // early return right before "── Render" below).
+  const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
 
   const [plan, setPlan] = useState<AiHealthPlan | null>(null);
   const [tasks, setTasks] = useState<TaskOccurrence[]>([]);
@@ -453,6 +462,13 @@ export default function HealthPlanScreen() {
           .sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime)),
       }))
     : [];
+
+  // COS-360 / SCRUM-518 Phase 3: flag ON renders the biopsychosocial (3-
+  // section) Care Plan rebuild instead of everything below. Flag OFF
+  // (default) falls straight through — byte-for-byte today's behavior.
+  if (biopsychosocialPlanEnabled) {
+    return <BiopsychosocialPlanScreen />;
+  }
 
   // ── Render ────────────────────────────────────────────────────────────
   if (loading) {

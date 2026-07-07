@@ -1,4 +1,6 @@
 import { apiClient } from '@/lib/api-client'
+import type { BiopsychosocialDomain } from './types'
+import type { PlanType } from './plan-type'
 
 export type Owner = 'system' | `agency:${string}`
 export type OwnerType = 'system' | 'agency'
@@ -52,6 +54,18 @@ export interface InstrumentSummary {
    * render it disabled with a "Coming Soon" badge.
    */
   comingSoon?: boolean
+  /**
+   * Assessment Strategy v2 (COS-360 / SCRUM-518, Phase 2) — which
+   * biopsychosocial axis this instrument belongs to. Optional/additive:
+   * absent on instruments seeded before the backfill (or when
+   * `ASSESSMENT_STRATEGY_V2_ENABLED` is off), in which case the catalog
+   * falls back to today's flat grid.
+   */
+  domain?: BiopsychosocialDomain
+  /** Plan tiers this instrument is offered on, e.g. ['advanced', 'family']. Optional/additive. */
+  planTiers?: PlanType[]
+  /** Re-administration cadence in days (drives the monthly reassessment nudge). Optional/additive. */
+  cadenceDays?: number
   createdAt: string
   updatedAt: string
 }

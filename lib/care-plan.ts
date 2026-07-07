@@ -3,12 +3,18 @@
  * RN-import-free so node:test can load it directly. Category list + order MUST
  * match cos-backend/src/services/care-plan-categories.ts.
  *
+ * The only non-local import is a `type`-only one (erased at compile time —
+ * `services/api/types.ts` is itself a pure, RN-import-free data-types module),
+ * so this file stays node:test loadable.
+ *
  * KILL-SWITCH: CARE_PLAN_ENABLED. While off, the goals UI renders exactly as
  * today (a flat list) — no category headers, no measurable line, no edit
  * affordance. ENABLED 2026-06-25 (COS-377 rollout) — the backend
  * care_plan_enabled flag is live in prod, so the UI now renders the 8-category
  * measurable Care Plan. Flip back to false to instantly revert the UI.
  */
+import type { BiopsychosocialDomain } from '@/services/api/types';
+
 export const CARE_PLAN_ENABLED = true;
 
 export type CarePlanCategoryKey =
@@ -28,6 +34,40 @@ export const CARE_PLAN_CATEGORIES: { key: CarePlanCategoryKey; label: string }[]
 
 export const CARE_PLAN_CATEGORY_KEYS: readonly CarePlanCategoryKey[] =
   CARE_PLAN_CATEGORIES.map((c) => c.key);
+
+// ── Biopsychosocial section mapping (COS-360 / SCRUM-518, Phase 2/3) ────────
+//
+// Maps each of the 8 Care Plan categories onto Ken's biopsychosocial model.
+// Mirrors the per-instrument `domain` assignments in the design doc (e.g.
+// `cog-minicog` → biological, `pss-4`/`wellbeing-who5` → psychological,
+// `social-isolation-lsns6` → social): medical/cognitive/adl/medication are
+// physical-axis categories → biological; mentalHealth + integrative (talk
+// therapy, mindfulness, stress-reduction practices) → psychological; social
+// stays social; spiritual keeps its own tag here (still useful for the
+// instrument-catalog section header) but folds into `social` at the
+// 3-bucket SectionPlan layer via `getSection` below.
+export const SECTION_BY_CATEGORY: Record<CarePlanCategoryKey, BiopsychosocialDomain> = {
+  medical: 'biological',
+  cognitive: 'biological',
+  adl: 'biological',
+  medication: 'biological',
+  mentalHealth: 'psychological',
+  integrative: 'psychological',
+  social: 'social',
+  spiritual: 'spiritual',
+};
+
+/**
+ * Resolve which of the THREE biopsychosocial-plan sections
+ * (`BiopsychosocialPlanRecord.sections`: biological / psychological / social)
+ * a category's content belongs to. Folds `spiritual` → `social` since the
+ * plan record has no separate spiritual bucket — the section is literally
+ * named "Social & Spiritual Wellness". Pure — no RN imports.
+ */
+export function getSection(category: CarePlanCategoryKey): 'biological' | 'psychological' | 'social' {
+  const domain = SECTION_BY_CATEGORY[category] ?? 'social';
+  return domain === 'spiritual' ? 'social' : domain;
+}
 
 export function categoryLabel(key: string): string {
   return CARE_PLAN_CATEGORIES.find((c) => c.key === key)?.label ?? 'Other';

@@ -732,7 +732,13 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
 
 // ── Goal card — editable card with category-tinted left rail, % progress label,
 // priority as a subtle top-right chip, and Edit as the single clear CTA. ───────
-function GoalCard(props: {
+/**
+ * Exported (COS-360 / SCRUM-518) so the Biopsychosocial Care Plan screen
+ * (`BiopsychosocialPlanScreen` / `SectionCard`) can reuse the exact same
+ * goal-card presentation for `MeasurableGoal` (a type alias of `AiPlanGoal`)
+ * instead of forking it. No behavior change for existing callers.
+ */
+export function GoalCard(props: {
   goal: AiPlanGoal;
   accentColor: string;
   colors: ColorMap;
