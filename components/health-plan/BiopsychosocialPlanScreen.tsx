@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -68,6 +69,7 @@ export function BiopsychosocialPlanScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const planQuery = useBiopsychosocialPlan();
   const patientQuery = usePatientInfo();
@@ -178,6 +180,7 @@ export function BiopsychosocialPlanScreen(): React.JSX.Element {
 
   // ── Empty (flag off / no plan generated yet) ────────────────────────────
   if (!plan) {
+    const generating = regenerateMutation.isPending;
     return (
       <AppWrapper>
         <ScrollView
@@ -193,8 +196,45 @@ export function BiopsychosocialPlanScreen(): React.JSX.Element {
               Your care plan is being prepared
             </Text>
             <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-              Check back after completing your assessments.
+              We&apos;ll build your personalized plan from your Biological, Psychological, and Social &amp; Spiritual assessments.
             </Text>
+
+            {generating ? (
+              <View style={styles.emptyGeneratingRow}>
+                <ActivityIndicator color={colors.tint} />
+                <Text style={[styles.emptyGeneratingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+                  Generating your plan…
+                </Text>
+              </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.emptyPrimaryBtn, { backgroundColor: colors.tint }]}
+                  onPress={onRegenerate}
+                  accessibilityRole="button"
+                  accessibilityLabel="Generate my plan"
+                >
+                  <MaterialIcons name="auto-awesome" size={16} color="#fff" />
+                  <Text style={[styles.emptyPrimaryBtnText, { fontSize: getScaledFontSize(14) }]}>
+                    Generate my plan
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.emptySecondaryBtn, { borderColor: colors.tint }]}
+                  onPress={() =>
+                    router.push('/Home/assessments-catalog?source=biopsychosocial' as never)
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Take assessments"
+                >
+                  <MaterialIcons name="fact-check" size={16} color={colors.tint} />
+                  <Text style={[styles.emptySecondaryBtnText, { color: colors.tint, fontSize: getScaledFontSize(14) }]}>
+                    Take assessments
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </ScrollView>
       </AppWrapper>
@@ -363,7 +403,40 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   emptyTitle: { textAlign: 'center', marginBottom: 6 },
-  emptyBody: { textAlign: 'center', lineHeight: 20 },
+  emptyBody: { textAlign: 'center', lineHeight: 20, marginBottom: Spacing.md },
+  emptyGeneratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+    gap: 10,
+  },
+  emptyGeneratingText: { fontWeight: '500' },
+  emptyPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radii.md,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    gap: 8,
+    alignSelf: 'stretch',
+  },
+  emptyPrimaryBtnText: { color: '#fff', fontWeight: '700' },
+  emptySecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radii.md,
+    paddingVertical: 12,
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    gap: 8,
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  emptySecondaryBtnText: { fontWeight: '600' },
   regenerateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
