@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updatePlanType, type PlanType } from '@/services/api/plan-type'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
+import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name'
 
 interface PlanTypeChooserProps {
   visible: boolean
@@ -120,6 +121,9 @@ export function PlanTypeChooser({
   const queryClient = useQueryClient()
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  // COS-360 / SCRUM-577 — renders 'agency-supported' as "Family Support"
+  // when ASSESSMENT_STRATEGY_V2_ENABLED is on, "Agency Supported" otherwise.
+  const planTypeDisplayName = usePlanTypeDisplayName()
 
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
   // Two-step confirm: tap a card → show consent modal → user acknowledges →
@@ -209,6 +213,9 @@ export function PlanTypeChooser({
             const isAgencyDisabled = isAgencyTier && !hasAgency
             const isLocked = isAgencyDisabled
             const disabled = mutation.isPending || isLocked || isCurrent
+            // COS-360 / SCRUM-577 — flag-gated rename of 'agency-supported'
+            // to "Family Support"; other tiers pass through unchanged.
+            const displayTitle = planTypeDisplayName(card.type)
             return (
               <Pressable
                 key={card.type}
@@ -231,13 +238,13 @@ export function PlanTypeChooser({
                 ]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isCurrent, disabled }}
-                accessibilityLabel={`${card.title} plan. ${card.description}${isCurrent ? '. Currently selected.' : ''}`}
+                accessibilityLabel={`${displayTitle} plan. ${card.description}${isCurrent ? '. Currently selected.' : ''}`}
               >
                 <View style={styles.cardHeader}>
                   <MaterialIcons name={card.icon} size={28} color={colors.tint as string} />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.cardTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
-                      {card.title}
+                      {displayTitle}
                     </Text>
                   </View>
                   {isCurrent ? (
@@ -339,7 +346,7 @@ export function PlanTypeChooser({
             ]}
           >
             <Text style={[styles.consentTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
-              Switching to {pendingType ? PLAN_CARDS.find((c) => c.type === pendingType)?.title : ''}
+              Switching to {pendingType ? planTypeDisplayName(pendingType) : ''}
             </Text>
             <Text style={[styles.consentBody, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
               {pendingType ? consentCopyForType[pendingType] : ''}

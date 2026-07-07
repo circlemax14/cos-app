@@ -12,13 +12,42 @@ import { apiClient } from '@/lib/api-client'
  */
 export type PlanType = 'basic' | 'advanced' | 'agency-supported' | 'agency-managed'
 
-/** Tier value as it arrives from older endpoints / older backend deploys. */
-export type AcceptedPlanType = PlanType | 'agency'
+/**
+ * Tier values accepted at the API boundary.
+ * - 'agency' — legacy pre-SCRUM-268 single agency tier
+ * - 'family' — Ken's v2 alias for Agency Support (COS-360 / SCRUM-577).
+ *   Family Support IS the renamed Agency Support tier. Accepted here so
+ *   older + newer app builds can talk to the same backend without a
+ *   flag-day; canonicalized to 'agency-supported' internally.
+ */
+export type AcceptedPlanType = PlanType | 'agency' | 'family'
 
 export function normalizePlanType(t: string | undefined | null): PlanType {
-  if (t === 'agency') return 'agency-supported'
+  if (t === 'agency' || t === 'family') return 'agency-supported'
   if (t === 'basic' || t === 'advanced' || t === 'agency-supported' || t === 'agency-managed') return t
   return 'basic'
+}
+
+/**
+ * Human-readable label for a plan type. When ASSESSMENT_STRATEGY_V2_ENABLED
+ * is on we render 'agency-supported' as "Family Support" per Ken's v2
+ * naming. Otherwise the legacy "Agency Support" label ships.
+ */
+export function displayNameForPlanType(
+  type: PlanType,
+  opts?: { assessmentStrategyV2Enabled?: boolean },
+): string {
+  const v2 = opts?.assessmentStrategyV2Enabled ?? false
+  switch (type) {
+    case 'basic':
+      return 'Basic'
+    case 'advanced':
+      return 'Advanced'
+    case 'agency-supported':
+      return v2 ? 'Family Support' : 'Agency Support'
+    case 'agency-managed':
+      return 'Agency'
+  }
 }
 
 export interface PlanTypeConsent {

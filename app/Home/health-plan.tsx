@@ -28,6 +28,7 @@ import type { AiHealthPlan, AiPlanGoal, TaskOccurrence, TaskType } from '@/servi
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
+import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { fetchAssessments } from '@/services/api/assessments';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
@@ -82,9 +83,26 @@ function formatTime(hhmm: string): { time: string; meridiem: string } {
 }
 
 /** User-friendly label for a plan type. Undefined → "Basic" so the pill
- *  never shows blank during the initial query load. */
-function planTypeLabel(t: PlanType | undefined): string {
-  switch (t) {
+ *  never shows blank during the initial query load.
+ *
+ *  COS-360 / SCRUM-577 — 'agency-supported' renders as "Family Support"
+ *  when ASSESSMENT_STRATEGY_V2_ENABLED is on; the fallback still returns
+ *  "Agency Supported" so old builds and flag-off deploys are unchanged.
+ *
+ *  This function is called from render-time contexts that also read
+ *  usePlanTypeDisplayName() at the component scope — we accept an
+ *  optional resolver so it can be swapped in without threading the
+ *  flag through every call site. When resolver is missing (during
+ *  first paint or from utility contexts) we fall back to the legacy
+ *  labels — same behavior as before COS-360.
+ */
+function planTypeLabel(
+  t: PlanType | undefined,
+  displayName?: (type: PlanType) => string,
+): string {
+  const type: PlanType = t ?? 'basic';
+  if (displayName) return displayName(type);
+  switch (type) {
     case 'advanced':         return 'Advanced';
     case 'agency-supported': return 'Agency Supported';
     case 'agency-managed':   return 'Agency Managed';
@@ -134,6 +152,10 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
 export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-360 / SCRUM-577 — resolves 'agency-supported' → "Family Support"
+  // when ASSESSMENT_STRATEGY_V2_ENABLED is on. Passed into planTypeLabel()
+  // at each call site so the flag effect is consistent across the screen.
+  const planTypeDisplayName = usePlanTypeDisplayName();
 
   // COS-360 / SCRUM-518 Phase 3: called unconditionally (rules-of-hooks safe
   // even though the underlying flags query resolves async and this value can
@@ -746,7 +768,7 @@ export default function HealthPlanScreen() {
         <Pressable
           onPress={() => setShowChooser(true)}
           accessibilityRole="button"
-          accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType)}. Tap to change.`}
+          accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType, planTypeDisplayName)}. Tap to change.`}
           style={({ pressed }) => [
             styles.planTypeCard,
             {
@@ -792,7 +814,7 @@ export default function HealthPlanScreen() {
               }}
               numberOfLines={1}
             >
-              {planTypeLabel(currentPlanType)}
+              {planTypeLabel(currentPlanType, planTypeDisplayName)}
             </Text>
             <Text
               style={{

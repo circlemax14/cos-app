@@ -60,6 +60,8 @@ import {
 } from '@/lib/care-plan';
 import { Radii, Spacing } from '@/constants/design-system';
 import type { PlanScreenRedesignedProps } from '@/components/health-plan/PlanScreenRedesigned';
+import type { PlanType } from '@/services/api/plan-type';
+import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 
 // Re-export so health-plan.tsx (and anyone) can pull the SAME prop type from
 // either component — v2 is a literal drop-in.
@@ -113,8 +115,23 @@ function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
 }
 
-function planTypeLabel(t: string | undefined): string {
-  switch (t) {
+/**
+ * COS-360 / SCRUM-577 — flag-aware plan-type label helper. Accepts an
+ * optional resolver from usePlanTypeDisplayName() so the "agency-supported"
+ * label switches to "Family Support" when ASSESSMENT_STRATEGY_V2_ENABLED
+ * is on. Without a resolver, ships the legacy labels — same behavior
+ * as before COS-360, unblocking utility callers.
+ */
+function planTypeLabel(
+  t: string | undefined,
+  displayName?: (type: PlanType) => string,
+): string {
+  const type: PlanType =
+    t === 'advanced' || t === 'agency-supported' || t === 'agency-managed'
+      ? t
+      : 'basic';
+  if (displayName) return displayName(type);
+  switch (type) {
     case 'advanced':
       return 'Advanced';
     case 'agency-supported':
@@ -210,6 +227,9 @@ const elevation = (level: 1 | 2 | 3) =>
 
 export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
   const isDark = useColorScheme() === 'dark';
+  // COS-360 / SCRUM-577 — 'agency-supported' → "Family Support" when
+  // ASSESSMENT_STRATEGY_V2_ENABLED is on.
+  const planTypeDisplayName = usePlanTypeDisplayName();
   const {
     plan,
     colors,
@@ -385,7 +405,7 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
       <Pressable
         onPress={onChangePlanType}
         accessibilityRole="button"
-        accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType)}. Tap to change.`}
+        accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType, planTypeDisplayName)}. Tap to change.`}
         style={({ pressed }) => [
           styles.planTypeStrip,
           { backgroundColor: card, borderColor: border, opacity: pressed ? 0.7 : 1 },
@@ -393,7 +413,7 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
       >
         <MaterialIcons name="tune" size={getScaledFontSize(16)} color={subtext} />
         <Text style={{ color: subtext, fontSize: getScaledFontSize(13), marginLeft: Spacing.sm, flex: 1 }} numberOfLines={1}>
-          Plan type: <Text style={{ color: text, fontWeight: getScaledFontWeight(700) as any }}>{planTypeLabel(currentPlanType)}</Text>
+          Plan type: <Text style={{ color: text, fontWeight: getScaledFontWeight(700) as any }}>{planTypeLabel(currentPlanType, planTypeDisplayName)}</Text>
         </Text>
         <Text style={{ color: tint, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}>
           Change
