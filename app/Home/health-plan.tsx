@@ -488,8 +488,32 @@ export default function HealthPlanScreen() {
   // COS-360 / SCRUM-518 Phase 3: flag ON renders the biopsychosocial (3-
   // section) Care Plan rebuild instead of everything below. Flag OFF
   // (default) falls straight through — byte-for-byte today's behavior.
+  //
+  // COS-411: this used to be a bare `return <BiopsychosocialPlanScreen />`,
+  // which short-circuited BEFORE the PlanTypeChooser modal (below, ~line
+  // 604) ever mounted — so new users landed straight on the bio screen with
+  // no way to pick a tier, and existing users had no in-screen switcher.
+  // The auto-prompt effect above (~line 318) still fires regardless (it
+  // runs before this early return, unaffected by which branch renders), so
+  // wrapping here is enough to restore the chooser for both first-visit and
+  // manual "change plan" flows. `currentPlanType` / `onChangePlanType` are
+  // threaded into the screen as props so it can render its own tier pill
+  // (SCRUM-518 Phase 3 UI) without needing to own the chooser's open state.
   if (biopsychosocialPlanEnabled) {
-    return <BiopsychosocialPlanScreen />;
+    return (
+      <>
+        <PlanTypeChooser
+          visible={showChooser}
+          currentType={currentPlanType}
+          hasAgency
+          onClose={() => setShowChooser(false)}
+        />
+        <BiopsychosocialPlanScreen
+          currentPlanType={currentPlanType}
+          onChangePlanType={() => setShowChooser(true)}
+        />
+      </>
+    );
   }
 
   // ── Render ────────────────────────────────────────────────────────────

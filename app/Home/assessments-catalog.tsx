@@ -13,6 +13,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePlanType, meetsTier } from '@/hooks/use-plan-type'
+import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent'
 
 export default function AssessmentsCatalogScreen(): React.JSX.Element {
@@ -23,6 +24,14 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
 
   const { planType, isLoading: planLoading } = usePlanType()
   const canAccess = meetsTier(planType, 'advanced')
+  // COS-411: when the biopsychosocial Care Plan rebuild is live, "Build my
+  // plan" from this catalog should regenerate that plan instead of the
+  // legacy AI health plan. Derived from the flag + whether the plan-type
+  // query has resolved to an actual tier, not from a query param — this
+  // screen is reached from several entry points (plan-upgrade CTA, direct
+  // link from assessment-stepper, etc.) and the flag/tier state is the
+  // single source of truth regardless of how the user got here.
+  const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag()
 
   if (planLoading) {
     return (
@@ -77,6 +86,8 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
               ? 'Pick the check-ins to start with. Your AI plan personalizes itself as you go.'
               : 'Take or revisit check-ins to keep your plan up to date.'
           }
+          biopsychosocialPlanEnabled={biopsychosocialPlanEnabled}
+          hasPlanType={planType !== undefined}
         />
       </ScrollView>
     </AppWrapper>

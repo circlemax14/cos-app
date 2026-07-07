@@ -6,9 +6,15 @@
  *
  * Rendered by `app/Home/health-plan.tsx` ONLY when `useBiopsychosocialPlanFlag()`
  * is true (which itself requires the upstream `ASSESSMENT_STRATEGY_V2_ENABLED`
- * flag) — otherwise `PlanScreenRedesignedV2` renders unchanged. This screen
- * owns its own data (via `useBiopsychosocialPlan`) so it's a fully self-
- * contained drop-in with no props required.
+ * flag) — otherwise `PlanScreenRedesignedV2` renders unchanged.
+ *
+ * COS-411: this screen used to own no tier awareness at all — the parent's
+ * PlanTypeChooser modal was unreachable once this component rendered
+ * (see health-plan.tsx's early-return fix), so users had no way to see or
+ * switch their plan tier from here. `currentPlanType` / `onChangePlanType`
+ * are threaded in as props so the parent stays the single owner of the
+ * chooser's open state (`showChooser`) while this screen can still surface
+ * a tier pill and trigger it.
  */
 import React from 'react';
 import {
@@ -32,10 +38,12 @@ import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientInfo } from '@/hooks/use-patient';
+import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
 import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
+import type { PlanType } from '@/services/api/plan-type';
 
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'biological', title: 'Biological Wellness' },
@@ -64,10 +72,69 @@ function formatGeneratedDate(iso: string | undefined): string | null {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function BiopsychosocialPlanScreen(): React.JSX.Element {
+/**
+ * COS-411: small rounded "Plan: <name> · Change" pill, styled after the
+ * prominent plan-type card on the legacy Plan tab (health-plan.tsx
+ * ~line 768) but compact enough to sit under the greeting instead of
+ * taking a full card row. Tapping it opens the parent's PlanTypeChooser.
+ */
+function PlanTierPill({
+  label,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  onPress,
+  centered,
+}: {
+  label: string;
+  colors: Record<string, string>;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => number | string;
+  onPress: () => void;
+  /** Center the pill instead of the default left alignment — used in the
+   *  empty states, which are already center-aligned columns. */
+  centered?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Plan: ${label}. Tap to change.`}
+      style={({ pressed }) => [
+        styles.tierPill,
+        centered && styles.tierPillCentered,
+        {
+          backgroundColor: (colors.tint ?? '#0D9488') + '14',
+          borderColor: (colors.tint ?? '#0D9488') + '33',
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: colors.tint,
+          fontSize: getScaledFontSize(12),
+          fontWeight: getScaledFontWeight(700) as any,
+        }}
+      >
+        Plan: {label} · Change
+      </Text>
+      <MaterialIcons name="swap-horiz" size={getScaledFontSize(14)} color={colors.tint} style={{ marginLeft: 4 }} />
+    </Pressable>
+  );
+}
+
+export function BiopsychosocialPlanScreen({
+  currentPlanType,
+  onChangePlanType,
+}: {
+  currentPlanType: PlanType | undefined;
+  onChangePlanType: () => void;
+}): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const queryClient = useQueryClient();
+  const planTypeDisplayName = usePlanTypeDisplayName();
 
   const planQuery = useBiopsychosocialPlan();
   const patientQuery = usePatientInfo();
@@ -176,7 +243,45 @@ export function BiopsychosocialPlanScreen(): React.JSX.Element {
   const patientName = firstNameFrom(patientQuery.data);
   const generatedDate = formatGeneratedDate(plan?.generatedAt);
 
-  // ── Empty (flag off / no plan generated yet) ────────────────────────────
+  // ── No tier selected yet (COS-411) ──────────────────────────────────────
+  // Distinct from the generic "no plan yet" empty state below: without a
+  // tier, there's no assigned assessment set for the plan to be built from,
+  // so the usual "check back after completing your assessments" copy (and
+  // any Generate/Take-assessments CTA) would just dead-end the user. Route
+  // them to the chooser instead.
+  if (!plan && currentPlanType === undefined) {
+    return (
+      <AppWrapper>
+        <ScrollView
+          style={[styles.container, { backgroundColor: colors.background }]}
+          contentContainerStyle={{ flexGrow: 1 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
+        >
+          <View style={styles.center}>
+            <View style={[styles.emptyIcon, { backgroundColor: (colors.tint ?? '#0D9488') + '18' }]}>
+              <MaterialIcons name="tune" size={32} color={colors.tint} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as any }]}>
+              Choose your plan first
+            </Text>
+            <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+              Pick a plan tier so we know which check-ins to build your care plan from.
+            </Text>
+            <TouchableOpacity
+              style={[styles.regenerateBtn, { backgroundColor: colors.tint, alignSelf: 'center', paddingHorizontal: Spacing.lg }]}
+              onPress={onChangePlanType}
+              accessibilityRole="button"
+              accessibilityLabel="Choose your plan"
+            >
+              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Choose plan</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </AppWrapper>
+    );
+  }
+
+  // ── Empty (has a tier, no plan generated yet) ───────────────────────────
   if (!plan) {
     return (
       <AppWrapper>
@@ -195,6 +300,14 @@ export function BiopsychosocialPlanScreen(): React.JSX.Element {
             <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
               Check back after completing your assessments.
             </Text>
+            <PlanTierPill
+              label={planTypeDisplayName(currentPlanType as PlanType)}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              onPress={onChangePlanType}
+              centered
+            />
           </View>
         </ScrollView>
       </AppWrapper>
@@ -229,6 +342,13 @@ export function BiopsychosocialPlanScreen(): React.JSX.Element {
               </Text>
             </View>
           )}
+          <PlanTierPill
+            label={planTypeDisplayName(currentPlanType ?? 'basic')}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+            onPress={onChangePlanType}
+          />
         </View>
 
         {/* Three section cards */}
@@ -374,6 +494,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regenerateBtnText: { color: '#fff', fontWeight: '700' },
+  tierPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 10,
+  },
+  tierPillCentered: { alignSelf: 'center' },
 });
 
 const modalStyles = StyleSheet.create({

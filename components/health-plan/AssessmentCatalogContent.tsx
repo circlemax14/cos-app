@@ -22,6 +22,7 @@ import { generateAiHealthPlan } from '@/services/api/ai-health-plan'
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
 import { resolveBuildGate } from '@/lib/build-plan-gate'
 import { useAssessmentStrategyV2Flag } from '@/hooks/use-assessment-strategy-v2-flag'
+import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
@@ -112,6 +113,23 @@ interface Props {
   intro?: string
   /** Hide the per-instrument grid + Build CTA when no instruments at all. */
   emptyMessage?: string
+  /**
+   * COS-411: when true, "Build my plan" targets the biopsychosocial Care
+   * Plan regenerate endpoint (and the softer completedCount >= 1 gate)
+   * instead of the legacy `generateAiHealthPlan(true)` path. Omitted
+   * (default false/undefined) preserves today's behavior byte-for-byte —
+   * the only current caller that sets this is `assessments-catalog.tsx`;
+   * the inline usage inside `health-plan.tsx`'s legacy render never passes
+   * it because that call site is only reachable when the flag is off.
+   */
+  biopsychosocialPlanEnabled?: boolean
+  /**
+   * Only meaningful when `biopsychosocialPlanEnabled` is true: whether the
+   * user has a plan tier set yet. When false, Build is disabled with
+   * "Choose your plan first" instead of the normal gate copy — building
+   * without a tier has no assigned assessment set to key off of.
+   */
+  hasPlanType?: boolean
 }
 
 /**
@@ -120,13 +138,23 @@ interface Props {
  * (with its own header) and inline on the Plan tab as the empty state
  * for advanced/agency users (SCRUM-230).
  */
-export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.JSX.Element {
+export function AssessmentCatalogContent({
+  intro,
+  emptyMessage,
+  biopsychosocialPlanEnabled,
+  hasPlanType,
+}: Props): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
   // COS-360 / SCRUM-518 Phase 2: OFF (default) → flat grid, byte-for-byte
   // today's behavior. ON → instruments group under 3 domain section headers.
   const assessmentStrategyV2Enabled = useAssessmentStrategyV2Flag()
+  // COS-411: true only when the caller explicitly opted in AND passed a
+  // resolved tier state. `hasPlanType === false` (tier confirmed unset,
+  // not just omitted) is handled separately below — Build stays disabled
+  // with "Choose your plan first" rather than routing to either endpoint.
+  const biopsychosocialActive = biopsychosocialPlanEnabled === true
 
   // SCRUM-231: prefer the AI-recommended subset (per-patient) over the
   // raw list. Backend already falls back to the full set on any AI
@@ -152,13 +180,32 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
     staleTime: 30 * 1000,
   })
 
-  const buildPlan = useMutation({
+  // Legacy path — untouched. Still the only path taken when
+  // biopsychosocialActive is false (flag off, or the caller didn't opt in).
+  const legacyBuildPlan = useMutation({
     mutationFn: () => generateAiHealthPlan(true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
       router.replace('/Home/health-plan' as never)
     },
   })
+
+  // COS-411: biopsychosocial path — regenerates the Care Plan v2 record
+  // instead. Called unconditionally (rules-of-hooks) but only ever
+  // triggered from onBuildPlan below when biopsychosocialActive is true.
+  const regenerateBiopsychosocialPlan = useRegenerateBiopsychosocialPlan()
+
+  const buildPlan = biopsychosocialActive ? regenerateBiopsychosocialPlan : legacyBuildPlan
+
+  const onBuildPlan = React.useCallback(() => {
+    if (biopsychosocialActive) {
+      regenerateBiopsychosocialPlan.mutate(undefined, {
+        onSuccess: () => router.replace('/Home/health-plan' as never),
+      })
+    } else {
+      legacyBuildPlan.mutate()
+    }
+  }, [biopsychosocialActive, regenerateBiopsychosocialPlan, legacyBuildPlan])
 
   const completedById = React.useMemo(() => {
     const m = new Map<string, AssessmentRecord>()
@@ -217,7 +264,18 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
   // from the backend, so they are never newly blocked.
   const assignmentsQuery = useHealthPlanAssignments()
   const buildGate = resolveBuildGate(assignmentsQuery.data, completedCount, MIN_TO_BUILD_PLAN)
-  const canBuildPlan = buildGate.canBuild
+
+  // COS-411: when the biopsychosocial path is active, "Build my plan" only
+  // needs 1 completed check-in — the strict "all assigned complete" gate
+  // (buildGate.canBuild) doesn't apply on this path. When the tier itself
+  // hasn't been chosen yet (hasPlanType === false), disable the button
+  // entirely — there's no assigned set to build from without one.
+  const tierUnset = biopsychosocialActive && hasPlanType === false
+  const canBuildPlan = tierUnset
+    ? false
+    : biopsychosocialActive
+      ? completedCount >= 1
+      : buildGate.canBuild
 
   // SCRUM-535 / COS-397: refetch the gate inputs every time the catalog
   // regains focus. The reload → check-ins → "Build my plan" path crosses
@@ -307,7 +365,7 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
       )}
 
       <Pressable
-        onPress={() => buildPlan.mutate()}
+        onPress={onBuildPlan}
         disabled={!canBuildPlan || buildPlan.isPending}
         style={[
           styles.buildBtn,
@@ -325,13 +383,17 @@ export function AssessmentCatalogContent({ intro, emptyMessage }: Props): React.
           <Text style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
             {canBuildPlan
               ? 'Build my plan'
-              : `Complete ${buildGate.remainingCount} more to build plan`}
+              : tierUnset
+                ? 'Choose your plan first'
+                : biopsychosocialActive
+                  ? 'Complete at least 1 check-in to build plan'
+                  : `Complete ${buildGate.remainingCount} more to build plan`}
           </Text>
         )}
       </Pressable>
       {buildPlan.error ? (
         <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), textAlign: 'center', marginTop: 10 }}>
-          {(buildPlan.error as Error & { code?: string })?.code === 'AI_AWAITING_ASSESSMENTS'
+          {!biopsychosocialActive && (buildPlan.error as Error & { code?: string })?.code === 'AI_AWAITING_ASSESSMENTS'
             ? `Finish all your assigned check-ins first, then build your plan${buildGate.remainingCount > 0 ? ` — ${buildGate.remainingCount} left` : ''}.`
             : "Couldn’t generate your plan right now. Try again in a moment."}
         </Text>
