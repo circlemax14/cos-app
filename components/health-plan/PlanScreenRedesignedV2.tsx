@@ -286,7 +286,7 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
   return (
     <ScrollView
       ref={planScrollRef}
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container]}
       contentContainerStyle={{ paddingBottom: Spacing.xl + Spacing.sm }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tint} />}
     >
@@ -359,14 +359,7 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
             {generating ? (
               <ActivityIndicator color={tint} size="small" />
             ) : (
-              <>
-                <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={tint} />
-                <Text
-                  style={{ color: tint, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any, marginLeft: 5 }}
-                >
-                  Refresh
-                </Text>
-              </>
+              <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={tint} />
             )}
           </TouchableOpacity>
         ) : null}
@@ -959,11 +952,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.md - 2,
     borderRadius: Radii.full,
     borderWidth: 1,
     minHeight: 44,
     minWidth: 44,
+    width: 44,
+    height: 44,
   },
 
   primaryBtn: {
