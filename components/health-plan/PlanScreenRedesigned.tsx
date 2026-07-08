@@ -226,7 +226,7 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
   return (
     <ScrollView
       ref={planScrollRef}
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container]}
       contentContainerStyle={{ paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tint} />}
     >

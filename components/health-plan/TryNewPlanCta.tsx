@@ -17,19 +17,46 @@
  * invalidates and health-plan.tsx's routing gate flips the whole screen over
  * to `BiopsychosocialPlanScreen` — so this card simply stops rendering (its
  * host screen unmounts) rather than needing to navigate anywhere itself.
+ *
+ * COS-414 — visual redesign only: promoted from a small pill to a full-width
+ * banner matching the "Personalize your plan" banner on
+ * `PlanScreenRedesignedV2` (icon chip + title + subtitle + chevron) so it
+ * carries the same visual weight instead of being easy to miss. Gating logic
+ * and the confirm modal are unchanged.
  */
 import React from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 
+// Add an alpha suffix to a 6-digit hex color (e.g. tint + '14'). Mirrors the
+// pattern used on PlanScreenRedesignedV2's own banners.
+function alpha(hex: string, hh: string): string {
+  return hex.length === 7 ? hex + hh : hex;
+}
+
+// Matches PlanScreenRedesignedV2's elevation(1) preset so this banner reads
+// at the same visual weight as "Personalize your plan".
+const bannerElevation = Platform.select({
+  ios: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07,
+    shadowRadius: 5,
+  },
+  android: { elevation: 2 },
+  default: {},
+}) as object;
+
 export function TryNewPlanCta(): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const tint = colors.tint as string;
 
   // Hooks run unconditionally, gate on JSX below (rules-of-hooks safe even
   // though both the flag and the plan query resolve async).
@@ -80,25 +107,33 @@ export function TryNewPlanCta(): React.JSX.Element | null {
         accessibilityLabel="Try our new 3-section plan"
         accessibilityHint="Generates a new plan organized into Biological, Psychological, and Social & Spiritual sections"
         style={({ pressed }) => [
-          styles.cta,
+          styles.banner,
+          bannerElevation,
           {
-            backgroundColor: (colors.tint as string) + '14',
-            borderColor: (colors.tint as string) + '33',
+            backgroundColor: alpha(tint, '14'),
+            borderColor: alpha(tint, '55'),
             opacity: pressed ? 0.85 : 1,
           },
         ]}
       >
-        <MaterialIcons name="auto-awesome" size={getScaledFontSize(15)} color={colors.tint as string} />
-        <Text
-          style={{
-            color: colors.tint as string,
-            fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(700) as any,
-            marginLeft: 6,
-          }}
-        >
-          Try our new 3-section plan
-        </Text>
+        <View style={[styles.bannerIcon, { backgroundColor: alpha(tint, '22') }]}>
+          <MaterialIcons name="auto-awesome" size={getScaledFontSize(22)} color={tint} />
+        </View>
+        <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+          >
+            Try our new 3-section plan
+          </Text>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 3, lineHeight: 18 }}>
+            Get personalized insights across Biological, Psychological, and Social & Spiritual sections.
+          </Text>
+        </View>
+        <MaterialIcons name="chevron-right" size={getScaledFontSize(24)} color={tint} />
       </Pressable>
 
       <Modal visible={confirmVisible} animationType="fade" transparent onRequestClose={onCloseConfirm}>
@@ -129,7 +164,7 @@ export function TryNewPlanCta(): React.JSX.Element | null {
 
             {isGenerating ? (
               <View style={styles.generatingRow}>
-                <ActivityIndicator color={colors.tint as string} />
+                <ActivityIndicator color={tint} />
               </View>
             ) : (
               <View style={styles.actions}>
@@ -144,7 +179,7 @@ export function TryNewPlanCta(): React.JSX.Element | null {
                 </Pressable>
                 <Pressable
                   onPress={onConfirmGenerate}
-                  style={[styles.btn, styles.btnPrimary, { backgroundColor: colors.tint as string }]}
+                  style={[styles.btn, styles.btnPrimary, { backgroundColor: tint }]}
                   accessibilityRole="button"
                 >
                   <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
@@ -161,15 +196,21 @@ export function TryNewPlanCta(): React.JSX.Element | null {
 }
 
 const styles = StyleSheet.create({
-  cta: {
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.screenPadding,
+    marginTop: Spacing.md - 2,
     borderWidth: 1,
-    marginBottom: 12,
+    borderRadius: Radii.xl,
+  },
+  bannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backdrop: {
     flex: 1,
