@@ -73,6 +73,25 @@ function formatGeneratedDate(iso: string | undefined): string | null {
 }
 
 /**
+ * COS-415: relative "time ago" label for the in-flight regenerate job's
+ * `jobStartedAt`, shown next to the "Generating your plan…" indicator.
+ * Caps at "generating for a while..." past 3 minutes rather than counting
+ * up indefinitely — by that point the exact elapsed time isn't useful to
+ * the user, just the fact that it's still going.
+ */
+function formatRelativeStartedAt(iso: string): string {
+  const started = new Date(iso).getTime();
+  if (Number.isNaN(started)) return 'just now';
+  const elapsedMs = Date.now() - started;
+  const elapsedSec = Math.floor(elapsedMs / 1000);
+  if (elapsedSec < 5) return 'just now';
+  if (elapsedSec < 60) return `${elapsedSec}s ago`;
+  const elapsedMin = Math.floor(elapsedSec / 60);
+  if (elapsedMin < 3) return `${elapsedMin}m ago`;
+  return 'generating for a while...';
+}
+
+/**
  * COS-411: small rounded "Plan: <name> · Change" pill, styled after the
  * prominent plan-type card on the legacy Plan tab (health-plan.tsx
  * ~line 768) but compact enough to sit under the greeting instead of
@@ -242,6 +261,11 @@ export function BiopsychosocialPlanScreen({
   const plan = planQuery.data?.plan ?? null;
   const patientName = firstNameFrom(patientQuery.data);
   const generatedDate = formatGeneratedDate(plan?.generatedAt);
+  // COS-415: `generating` is additive on the GET response — undefined on
+  // BE deploys that predate this change, which the `=== true` check treats
+  // as false (no polling, existing "Regenerate plan" behavior).
+  const isRegenerating = planQuery.data?.generating === true;
+  const regenerateDisabled = regenerateMutation.isPending || isRegenerating;
 
   // ── No tier selected yet (COS-411) ──────────────────────────────────────
   // Distinct from the generic "no plan yet" empty state below: without a
@@ -367,13 +391,24 @@ export function BiopsychosocialPlanScreen({
 
         {/* Regenerate plan */}
         <TouchableOpacity
-          style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateMutation.isPending ? 0.7 : 1 }]}
+          style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
           onPress={onRegenerate}
-          disabled={regenerateMutation.isPending}
+          disabled={regenerateDisabled}
           accessibilityRole="button"
-          accessibilityLabel="Regenerate plan"
+          accessibilityLabel={isRegenerating ? 'Generating your plan' : 'Regenerate plan'}
+          accessibilityState={{ disabled: regenerateDisabled, busy: regenerateDisabled }}
         >
-          {regenerateMutation.isPending ? (
+          {isRegenerating ? (
+            <>
+              <ActivityIndicator color="#fff" />
+              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
+                Generating your plan…
+                {planQuery.data?.jobStartedAt
+                  ? ` (Started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
+                  : ''}
+              </Text>
+            </>
+          ) : regenerateMutation.isPending ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>

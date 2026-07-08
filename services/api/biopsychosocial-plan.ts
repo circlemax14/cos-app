@@ -1,3 +1,4 @@
+import type { AxiosError } from 'axios'
 import { apiClient } from '@/lib/api-client'
 import type { AiPlanGoal } from './types'
 
@@ -67,6 +68,15 @@ export type PlanStaleness = 'fresh' | 'stale'
 export interface BiopsychosocialPlanResponse {
   plan: BiopsychosocialPlanRecord | null
   staleness: PlanStaleness
+  /**
+   * COS-415: true while an async regenerate job is in flight (interim BE
+   * lock, cos-backend PR #259). Additive field — absent on BE deploys that
+   * predate this change, which we treat as `false` (no polling, existing
+   * behavior) rather than throwing.
+   */
+  generating: boolean
+  /** ISO timestamp the in-flight job started. Only meaningful when `generating` is true. */
+  jobStartedAt?: string
 }
 
 function isFeatureDisabled(err: unknown): boolean {
@@ -85,15 +95,22 @@ export async function fetchBiopsychosocialPlan(): Promise<BiopsychosocialPlanRes
   try {
     const res = await apiClient.get<{
       success: boolean
-      data: { plan: BiopsychosocialPlanRecord | null; staleness?: PlanStaleness }
+      data: {
+        plan: BiopsychosocialPlanRecord | null
+        staleness?: PlanStaleness
+        generating?: boolean
+        jobStartedAt?: string
+      }
     }>('/v1/health-plan/biopsychosocial')
     return {
       plan: res.data.data.plan ?? null,
       staleness: res.data.data.staleness ?? 'fresh',
+      generating: res.data.data.generating ?? false,
+      jobStartedAt: res.data.data.jobStartedAt,
     }
   } catch (err) {
     if (isFeatureDisabled(err)) {
-      return { plan: null, staleness: 'fresh' }
+      return { plan: null, staleness: 'fresh', generating: false }
     }
     throw err
   }
@@ -104,7 +121,30 @@ export interface RegenerateBiopsychosocialPlanResult {
 }
 
 /**
- * POST /v1/health-plan/biopsychosocial/regenerate → 202 { jobId }.
+ * COS-415: thrown by `regenerateBiopsychosocialPlan` when the backend
+ * responds 409 `REGENERATION_IN_FLIGHT` (interim BE lock, cos-backend
+ * PR #259) — a regeneration job is already running for this patient.
+ * Callers must NOT retry the POST; fall back to polling
+ * `GET /v1/health-plan/biopsychosocial` (now reports `generating: true` +
+ * `jobStartedAt`) until the in-flight job completes.
+ */
+export class RegenerationInFlightError extends Error {
+  code = 'REGENERATION_IN_FLIGHT' as const
+  constructor(public jobId: string, public startedAt: string) {
+    super('Regeneration already in progress')
+    this.name = 'RegenerationInFlightError'
+  }
+}
+
+type RegenerateErrorBody = {
+  success?: boolean
+  code?: string
+  error?: string
+  data?: { jobId: string; startedAt: string }
+}
+
+/**
+ * POST /v1/health-plan/biopsychosocial/regenerate → 200 { jobId }.
  * Kicks off async regeneration; callers should poll/refetch
  * `fetchBiopsychosocialPlan` (e.g. via query invalidation) to see the result.
  *
@@ -113,14 +153,30 @@ export interface RegenerateBiopsychosocialPlanResult {
  * shared `apiClient`'s 30s default timeout — the request "fails" client-side
  * while the backend keeps working, the user retries, and the backend ends up
  * generating multiple plan versions for one intent. Override the timeout for
- * THIS call only (90s — comfortably above observed worst case) rather than
- * raising the global default, which would mask slow/hanging requests on
- * every other endpoint.
+ * THIS call only rather than raising the global default, which would mask
+ * slow/hanging requests on every other endpoint.
+ *
+ * COS-415: timeout tightened to 60s — a compromise that still comfortably
+ * covers the observed worst case above, without over-promising past API
+ * Gateway's 29s wall. If it's still running past that, the client falls back
+ * to GET polling (see `useBiopsychosocialPlan`'s `refetchInterval`) instead
+ * of blocking on this POST indefinitely.
+ *
+ * On 409 `REGENERATION_IN_FLIGHT`, throws `RegenerationInFlightError` — do
+ * NOT retry. All other errors bubble unchanged.
  */
 export async function regenerateBiopsychosocialPlan(): Promise<RegenerateBiopsychosocialPlanResult> {
-  const res = await apiClient.post<{
-    success: boolean
-    data: { jobId: string }
-  }>('/v1/health-plan/biopsychosocial/regenerate', undefined, { timeout: 90_000 })
-  return res.data.data
+  try {
+    const res = await apiClient.post<{
+      success: boolean
+      data: { jobId: string }
+    }>('/v1/health-plan/biopsychosocial/regenerate', undefined, { timeout: 60_000 })
+    return res.data.data
+  } catch (err) {
+    const response = (err as AxiosError<RegenerateErrorBody>)?.response
+    if (response?.status === 409 && response.data?.code === 'REGENERATION_IN_FLIGHT' && response.data.data) {
+      throw new RegenerationInFlightError(response.data.data.jobId, response.data.data.startedAt)
+    }
+    throw err
+  }
 }
