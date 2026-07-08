@@ -57,6 +57,7 @@ import { PlanScreenRedesigned } from '@/components/health-plan/PlanScreenRedesig
 import { PlanScreenRedesignedV2 } from '@/components/health-plan/PlanScreenRedesignedV2';
 import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
+import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
 
@@ -163,6 +164,15 @@ export default function HealthPlanScreen() {
   // of this value. We only branch on JSX, after all hooks have run (see the
   // early return right before "── Render" below).
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
+  // COS-412: also called unconditionally, same rules-of-hooks reasoning as
+  // above. Drives the opt-in routing gate below — the bio screen renders
+  // ONLY once a biopsychosocial plan record actually exists (flag on alone
+  // is not enough), so existing users on a legacy plan (e.g. Ken) are never
+  // force-migrated. They opt in via PlanTypeChooser's tier-change trigger or
+  // the "Try our new 3-section plan" CTA on the legacy screen — both call
+  // regenerateBiopsychosocialPlan(), which is what makes this query start
+  // returning a non-null plan.
+  const biopsychosocialPlanQuery = useBiopsychosocialPlan();
 
   const [plan, setPlan] = useState<AiHealthPlan | null>(null);
   const [tasks, setTasks] = useState<TaskOccurrence[]>([]);
@@ -499,7 +509,21 @@ export default function HealthPlanScreen() {
   // manual "change plan" flows. `currentPlanType` / `onChangePlanType` are
   // threaded into the screen as props so it can render its own tier pill
   // (SCRUM-518 Phase 3 UI) without needing to own the chooser's open state.
-  if (biopsychosocialPlanEnabled) {
+  //
+  // COS-412: flag-on alone used to force EVERY flagged user onto the bio
+  // screen, including existing users already settled on a legacy plan
+  // (Ken's case — "until Ken changes plan or requests to go through this
+  // option this should not be forced on patients"). The gate now also
+  // requires an actual biopsychosocial plan RECORD to exist. No record yet
+  // → fall through to the legacy screen below, which surfaces the opt-in
+  // "Try our new 3-section plan" CTA (PlanScreenRedesignedV2) so the user
+  // can choose to migrate themselves. A record gets created by either that
+  // CTA or a plan-type change in PlanTypeChooser (both call
+  // regenerateBiopsychosocialPlan()) — once it exists, this query
+  // invalidates/refetches and the user is routed here automatically.
+  const hasBiopsychosocialPlan =
+    biopsychosocialPlanEnabled && biopsychosocialPlanQuery.data?.plan != null;
+  if (hasBiopsychosocialPlan) {
     return (
       <>
         <PlanTypeChooser

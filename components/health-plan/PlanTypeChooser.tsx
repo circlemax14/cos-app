@@ -7,6 +7,8 @@ import { updatePlanType, type PlanType } from '@/services/api/plan-type'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name'
+import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
+import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 
 interface PlanTypeChooserProps {
   visible: boolean
@@ -131,6 +133,16 @@ export function PlanTypeChooser({
   const [pendingType, setPendingType] = React.useState<PlanType | null>(null)
   const [consentAck, setConsentAck] = React.useState(false)
 
+  // COS-412: opt-in migration trigger #1 for the biopsychosocial (3-section)
+  // Care Plan rebuild — when the flag is on, a plan-type change also kicks
+  // off a background regenerate so the user lands on the new plan without a
+  // separate step. `migrating` keeps the consent sheet open (swapped to a
+  // loading state) for the duration instead of dismissing immediately, so
+  // the ~30-40s regenerate isn't invisible.
+  const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag()
+  const regenerateBioPlanMutation = useRegenerateBiopsychosocialPlan()
+  const [migrating, setMigrating] = React.useState(false)
+
   const mutation = useMutation({
     mutationFn: (type: PlanType) =>
       updatePlanType(type, { consent: { acknowledged: true, consentVersion: 'v1' } }),
@@ -142,21 +154,42 @@ export function PlanTypeChooser({
       // Plan screen reflects the switch immediately.
       queryClient.invalidateQueries({ queryKey: ['health-plan-assignments'] })
       queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] })
+
       // SCRUM-524: close inner consent modal immediately, then defer the
       // outer pageSheet dismissal one frame so iOS doesn't collide the
       // two nested-Modal dismissals (which left a blank orphaned sheet).
-      setConsentAck(false)
-      setPendingType(null)            // close inner consent modal now
-      requestAnimationFrame(() => {   // defer outer-sheet dismissal one frame so iOS
-        onClose()                     // doesn't collide the two nested-Modal dismissals
-        // Any non-basic tier opens the assessment catalog so users can see
-        // their AI-picked check-ins. Basic stays on the plan screen — it
-        // also gets AI picks now (SCRUM-268) but they're light enough that
-        // we don't force the user into the catalog.
-        if (type !== 'basic') {
-          router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
-        }
-      })
+      const dismissAndNavigate = () => {
+        setConsentAck(false)
+        setPendingType(null)            // close inner consent modal now
+        requestAnimationFrame(() => {   // defer outer-sheet dismissal one frame so iOS
+          onClose()                     // doesn't collide the two nested-Modal dismissals
+          // Any non-basic tier opens the assessment catalog so users can see
+          // their AI-picked check-ins. Basic stays on the plan screen — it
+          // also gets AI picks now (SCRUM-268) but they're light enough that
+          // we don't force the user into the catalog.
+          if (type !== 'basic') {
+            router.push('/Home/assessments-catalog?source=plan-upgrade' as never)
+          }
+        })
+      }
+
+      // COS-412: the tier switch above already succeeded regardless of what
+      // happens next, so this is fire-and-forget from the user's
+      // perspective — on regenerate failure we still dismiss/navigate
+      // exactly as before; the user just stays on the legacy screen (no
+      // bio plan record exists yet) with the "Try new plan" CTA available
+      // to retry later.
+      if (biopsychosocialPlanEnabled) {
+        setMigrating(true)
+        regenerateBioPlanMutation.mutate(undefined, {
+          onSettled: () => {
+            setMigrating(false)
+            dismissAndNavigate()
+          },
+        })
+      } else {
+        dismissAndNavigate()
+      }
     },
     onError: (err: Error & { code?: string }) => {
       if (err.code === 'NO_AGENCY') {
@@ -328,12 +361,19 @@ export function PlanTypeChooser({
         </ScrollView>
       </View>
 
-      {/* Consent confirmation modal (SCRUM-224) */}
+      {/* Consent confirmation modal (SCRUM-224). COS-412: while `migrating`
+          is true (biopsychosocial regenerate in flight after a successful
+          tier switch) this swaps to a loading state instead of dismissing,
+          so the ~30-40s regenerate isn't invisible to the user. */}
       <Modal
         visible={pendingType !== null}
         animationType="fade"
         transparent
-        onRequestClose={() => { setPendingType(null); setConsentAck(false) }}
+        onRequestClose={() => {
+          if (migrating) return // don't allow dismissal mid-regenerate
+          setPendingType(null)
+          setConsentAck(false)
+        }}
       >
         <View style={styles.consentBackdrop}>
           <View
@@ -346,63 +386,76 @@ export function PlanTypeChooser({
             ]}
           >
             <Text style={[styles.consentTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
-              Switching to {pendingType ? planTypeDisplayName(pendingType) : ''}
+              {migrating
+                ? 'Generating your new plan…'
+                : `Switching to ${pendingType ? planTypeDisplayName(pendingType) : ''}`}
             </Text>
             <Text style={[styles.consentBody, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-              {pendingType ? consentCopyForType[pendingType] : ''}
+              {migrating
+                ? 'Setting up your personalized plan across Biological, Psychological, and Social & Spiritual sections. This can take up to a minute.'
+                : (pendingType ? consentCopyForType[pendingType] : '')}
             </Text>
-            <Pressable
-              onPress={() => setConsentAck((v) => !v)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: consentAck }}
-              style={styles.consentCheckRow}
-            >
-              <MaterialIcons
-                name={consentAck ? 'check-box' : 'check-box-outline-blank'}
-                size={getScaledFontSize(22)}
-                color={consentAck ? (colors.tint as string) : colors.subtext}
-              />
-              <Text style={{ marginLeft: 8, color: colors.text, fontSize: getScaledFontSize(13), flex: 1 }}>
-                I understand and agree.
-              </Text>
-            </Pressable>
-            <View style={styles.consentActions}>
-              <Pressable
-                onPress={() => { setPendingType(null); setConsentAck(false) }}
-                style={[styles.consentBtn, { borderColor: colors.border }]}
-                accessibilityRole="button"
-              >
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  if (pendingType && consentAck) {
-                    setErrorMsg(null)
-                    mutation.mutate(pendingType)
-                  }
-                }}
-                disabled={!consentAck || mutation.isPending}
-                style={[
-                  styles.consentBtn,
-                  styles.consentBtnPrimary,
-                  {
-                    backgroundColor: consentAck ? (colors.tint as string) : (colors.subtext + '60'),
-                    opacity: mutation.isPending ? 0.6 : 1,
-                  },
-                ]}
-                accessibilityRole="button"
-              >
-                {mutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
-                    Confirm
+
+            {migrating ? (
+              <View style={styles.migratingRow}>
+                <ActivityIndicator color={colors.tint as string} />
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  onPress={() => setConsentAck((v) => !v)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: consentAck }}
+                  style={styles.consentCheckRow}
+                >
+                  <MaterialIcons
+                    name={consentAck ? 'check-box' : 'check-box-outline-blank'}
+                    size={getScaledFontSize(22)}
+                    color={consentAck ? (colors.tint as string) : colors.subtext}
+                  />
+                  <Text style={{ marginLeft: 8, color: colors.text, fontSize: getScaledFontSize(13), flex: 1 }}>
+                    I understand and agree.
                   </Text>
-                )}
-              </Pressable>
-            </View>
+                </Pressable>
+                <View style={styles.consentActions}>
+                  <Pressable
+                    onPress={() => { setPendingType(null); setConsentAck(false) }}
+                    style={[styles.consentBtn, { borderColor: colors.border }]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                      Cancel
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      if (pendingType && consentAck) {
+                        setErrorMsg(null)
+                        mutation.mutate(pendingType)
+                      }
+                    }}
+                    disabled={!consentAck || mutation.isPending}
+                    style={[
+                      styles.consentBtn,
+                      styles.consentBtnPrimary,
+                      {
+                        backgroundColor: consentAck ? (colors.tint as string) : (colors.subtext + '60'),
+                        opacity: mutation.isPending ? 0.6 : 1,
+                      },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    {mutation.isPending ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                        Confirm
+                      </Text>
+                    )}
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -499,6 +552,7 @@ const styles = StyleSheet.create({
   consentBody: { lineHeight: 20, marginBottom: 14 },
   consentCheckRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
   consentActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  migratingRow: { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
   consentBtn: {
     paddingHorizontal: 18,
     paddingVertical: 10,
