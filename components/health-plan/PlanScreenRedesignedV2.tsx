@@ -48,6 +48,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
+import { TryNewPlanCta } from '@/components/health-plan/TryNewPlanCta';
 import type { AiPlanGoal, PlanTask, TaskType } from '@/services/api/types';
 import {
   CARE_PLAN_V2_ENABLED,
@@ -419,6 +420,13 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
           Change
         </Text>
       </Pressable>
+
+      {/* COS-412: opt-in migration CTA to the biopsychosocial (3-section)
+          rebuild. Self-gates internally — renders nothing unless the flag is
+          on AND no biopsychosocial plan exists yet, so this is a no-op for
+          flag-off users and for users who already migrated (they're routed
+          to BiopsychosocialPlanScreen before this component ever mounts). */}
+      <TryNewPlanCta />
 
       {/* Plan summary — one idea per card, lifted with subtle elevation. */}
       {!!plan.summary && (

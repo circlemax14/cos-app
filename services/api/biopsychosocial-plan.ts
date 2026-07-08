@@ -107,11 +107,20 @@ export interface RegenerateBiopsychosocialPlanResult {
  * POST /v1/health-plan/biopsychosocial/regenerate → 202 { jobId }.
  * Kicks off async regeneration; callers should poll/refetch
  * `fetchBiopsychosocialPlan` (e.g. via query invalidation) to see the result.
+ *
+ * COS-412: Bedrock Claude Haiku takes 30-40s to actually generate the plan
+ * (prod regenerates observed at 31.5s/35.5s/32.4s), which blows past the
+ * shared `apiClient`'s 30s default timeout — the request "fails" client-side
+ * while the backend keeps working, the user retries, and the backend ends up
+ * generating multiple plan versions for one intent. Override the timeout for
+ * THIS call only (90s — comfortably above observed worst case) rather than
+ * raising the global default, which would mask slow/hanging requests on
+ * every other endpoint.
  */
 export async function regenerateBiopsychosocialPlan(): Promise<RegenerateBiopsychosocialPlanResult> {
   const res = await apiClient.post<{
     success: boolean
     data: { jobId: string }
-  }>('/v1/health-plan/biopsychosocial/regenerate')
+  }>('/v1/health-plan/biopsychosocial/regenerate', undefined, { timeout: 90_000 })
   return res.data.data
 }
