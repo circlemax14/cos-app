@@ -21,6 +21,8 @@
  *   - CARE_PLAN_UPDATE — plan changed
  *   - NEW_MESSAGE — chat
  *   - CARE_GAP — care checklist
+ *   - BIOPSYCHOSOCIAL_PLAN_READY — biopsychosocial plan regeneration
+ *       finished (COS-421 / cos-backend PR #260)
  *
  * BACK-COMPAT CONTRACT: returning `null` means "no specific route —
  * fall back to Home". Any unknown / new / data-ready type MUST land
@@ -60,6 +62,12 @@ export function routeForNotificationData(data: NotificationData): string | null 
     // (still correct, just not pre-scrolled) — back-compatible.
     case 'MEDICATION_REFILL_REMINDER':
       return '/Home/health-plan?focus=medications';
+
+    // ── New in COS-421 ───────────────────────────────────────────────
+    // Biopsychosocial plan regeneration finished server-side → Health
+    // Plan, so the patient lands on their freshly-regenerated plan.
+    case 'BIOPSYCHOSOCIAL_PLAN_READY':
+      return '/Home/health-plan';
 
     // ── Existing mappings (unchanged behavior) ──────────────────────
     case 'APPOINTMENT_REMINDER':
