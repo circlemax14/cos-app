@@ -73,11 +73,14 @@ function formatGeneratedDate(iso: string | undefined): string | null {
 }
 
 /**
- * COS-415: relative "time ago" label for the in-flight regenerate job's
- * `jobStartedAt`, shown next to the "Generating your plan…" indicator.
- * Caps at "generating for a while..." past 3 minutes rather than counting
- * up indefinitely — by that point the exact elapsed time isn't useful to
- * the user, just the fact that it's still going.
+ * COS-415: relative "time ago" label for an in-flight regenerate job's
+ * `jobStartedAt`. COS-421: with `refetchInterval` polling removed, this is
+ * now a one-time snapshot computed whenever `planQuery.data` was last
+ * fetched (mount, pull-to-refresh, or a push-triggered invalidation) — it
+ * no longer ticks up live while the screen sits idle. Caps at "generating
+ * for a while..." past 3 minutes rather than counting up indefinitely — by
+ * that point the exact elapsed time isn't useful to the user, just the
+ * fact that it's still going.
  */
 function formatRelativeStartedAt(iso: string): string {
   const started = new Date(iso).getTime();
@@ -263,9 +266,22 @@ export function BiopsychosocialPlanScreen({
   const generatedDate = formatGeneratedDate(plan?.generatedAt);
   // COS-415: `generating` is additive on the GET response — undefined on
   // BE deploys that predate this change, which the `=== true` check treats
-  // as false (no polling, existing "Regenerate plan" behavior).
+  // as false. COS-421: this is now a point-in-time snapshot from the last
+  // fetch, not a live-updating flag (refetchInterval polling removed in
+  // favor of push-triggered invalidation) — it only matters at initial
+  // render to detect "another device's job was already running".
   const isRegenerating = planQuery.data?.generating === true;
-  const regenerateDisabled = regenerateMutation.isPending || isRegenerating;
+  // COS-421: primarily driven by this device's own tap. A stale
+  // `isRegenerating` from another device no longer disables the button —
+  // the backend's REGENERATION_IN_FLIGHT (409) is already swallowed by
+  // `useRegenerateBiopsychosocialPlan`, so tapping while another device is
+  // generating is harmless and just converges on the same invalidation.
+  const regenerateDisabled = regenerateMutation.isPending;
+  // True only when ANOTHER device's job was in flight as of the last
+  // fetch — this device's own tap is represented by
+  // `regenerateMutation.isPending` and gets the committed-loader UX on the
+  // button itself instead of this static banner.
+  const showOtherDeviceGenerating = isRegenerating && !regenerateMutation.isPending;
 
   // ── No tier selected yet (COS-411) ──────────────────────────────────────
   // Distinct from the generic "no plan yet" empty state below: without a
@@ -389,27 +405,45 @@ export function BiopsychosocialPlanScreen({
           />
         ))}
 
+        {/* Another device's regeneration in flight — static message, no
+            live polling (COS-421). Snapshot only; updates on next fetch
+            (pull-to-refresh, push invalidation, or remount). */}
+        {showOtherDeviceGenerating && (
+          <View
+            style={[
+              styles.generatingBanner,
+              { backgroundColor: (colors.tint ?? '#0D9488') + '14', borderColor: (colors.tint ?? '#0D9488') + '33' },
+            ]}
+            accessibilityRole="text"
+            accessibilityLabel="A generation is already in progress on another device. Pull down to refresh once it's done."
+          >
+            <MaterialIcons name="info-outline" size={16} color={colors.tint} />
+            <Text style={[styles.generatingBannerText, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
+              A generation is already in progress
+              {planQuery.data?.jobStartedAt
+                ? ` (started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
+                : ''}
+              . Pull down to refresh once it&apos;s done.
+            </Text>
+          </View>
+        )}
+
         {/* Regenerate plan */}
         <TouchableOpacity
           style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
           onPress={onRegenerate}
           disabled={regenerateDisabled}
           accessibilityRole="button"
-          accessibilityLabel={isRegenerating ? 'Generating your plan' : 'Regenerate plan'}
-          accessibilityState={{ disabled: regenerateDisabled, busy: regenerateDisabled }}
+          accessibilityLabel={regenerateMutation.isPending ? 'Generating your plan' : 'Regenerate plan'}
+          accessibilityState={{ disabled: regenerateDisabled, busy: regenerateMutation.isPending }}
         >
-          {isRegenerating ? (
+          {regenerateMutation.isPending ? (
             <>
               <ActivityIndicator color="#fff" />
               <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
                 Generating your plan…
-                {planQuery.data?.jobStartedAt
-                  ? ` (Started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
-                  : ''}
               </Text>
             </>
-          ) : regenerateMutation.isPending ? (
-            <ActivityIndicator color="#fff" />
           ) : (
             <>
               <MaterialIcons name="refresh" size={16} color="#fff" />
@@ -529,6 +563,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regenerateBtnText: { color: '#fff', fontWeight: '700' },
+  generatingBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: Spacing.sm,
+    gap: 8,
+  },
+  generatingBannerText: { flex: 1, lineHeight: 18 },
   tierPill: {
     flexDirection: 'row',
     alignItems: 'center',

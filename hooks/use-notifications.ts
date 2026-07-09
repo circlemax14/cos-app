@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { apiClient } from '@/lib/api-client';
 import { routeForNotificationData } from '@/lib/notification-routing';
+import { queryClient } from '@/providers/QueryProvider';
 
 const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId ?? '30bc49bd-ee12-4a06-86b3-ee4f23690114';
 
@@ -55,13 +56,21 @@ export function useNotifications() {
 
   useEffect(() => {
     // Listen for notifications received while app is in foreground
-    notificationListener.current = Notifications.addNotificationReceivedListener(async () => {
+    notificationListener.current = Notifications.addNotificationReceivedListener(async (notification) => {
       // Increment badge count when notification arrives in foreground
       try {
         const currentBadge = await Notifications.getBadgeCountAsync();
         await Notifications.setBadgeCountAsync(currentBadge + 1);
       } catch {
         // Non-critical
+      }
+
+      // COS-421: a biopsychosocial plan regeneration finished server-side —
+      // invalidate the cached plan so the screen picks up the fresh data
+      // without relying on the removed refetchInterval poll.
+      const data = notification.request.content.data as { type?: string } | undefined;
+      if (data?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
+        queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
       }
     });
 
@@ -111,6 +120,14 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
     if (id) lastNavigatedNotificationId = id;
 
     const data = response.notification.request.content.data;
+
+    // COS-421: a biopsychosocial plan regeneration finished server-side —
+    // invalidate the cached plan so the destination screen renders fresh
+    // data instead of whatever was last polled before the removed interval.
+    if ((data as { type?: string } | undefined)?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
+      queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
+    }
+
     const route = routeForNotificationData(data);
     // null → Home default (back-compat for unknown/new/data-ready types).
     router.push((route ?? '/Home') as never);

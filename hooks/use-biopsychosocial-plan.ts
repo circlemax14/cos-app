@@ -16,21 +16,12 @@ import {
  * null plan instead of throwing), so this hook never errors purely because
  * `BIOPSYCHOSOCIAL_PLAN_ENABLED` is off — treat `data?.plan == null` as
  * "no plan yet" (flag off, or a plan hasn't been generated).
- *
- * COS-415: while a regenerate job is in flight (`data.generating === true`,
- * additive field from the interim BE lock, cos-backend PR #259) poll every
- * 3s so the UI picks up completion without the user manually pulling to
- * refresh. Once `generating` flips back to false, `refetchInterval` returns
- * `false` and polling stops naturally — react-query's own state update from
- * that transition doubles as the "one final refetch" to pick up the
- * finished plan, no extra invalidation needed here.
  */
 export function useBiopsychosocialPlan() {
   return useQuery({
     queryKey: ['biopsychosocial-plan'],
     queryFn: fetchBiopsychosocialPlan,
     staleTime: 5 * 60 * 1000,
-    refetchInterval: (query) => (query.state.data?.generating === true ? 3000 : false),
   })
 }
 
