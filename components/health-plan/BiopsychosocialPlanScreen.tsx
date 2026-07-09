@@ -389,34 +389,37 @@ export function BiopsychosocialPlanScreen({
           />
         ))}
 
-        {/* Regenerate plan */}
-        <TouchableOpacity
-          style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
-          onPress={onRegenerate}
-          disabled={regenerateDisabled}
-          accessibilityRole="button"
-          accessibilityLabel={isRegenerating ? 'Generating your plan' : 'Regenerate plan'}
-          accessibilityState={{ disabled: regenerateDisabled, busy: regenerateDisabled }}
-        >
-          {isRegenerating ? (
-            <>
-              <ActivityIndicator color="#fff" />
-              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
-                Generating your plan…
-                {planQuery.data?.jobStartedAt
-                  ? ` (Started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
-                  : ''}
-              </Text>
-            </>
-          ) : regenerateMutation.isPending ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <MaterialIcons name="refresh" size={16} color="#fff" />
-              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Regenerate plan</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Regenerate plan — COS-419 chunk 1: hidden (not disabled) while a
+            regenerate is in flight, replaced by a committed inline loader so
+            there's no dead disabled button sitting in the tree. */}
+        {regenerateDisabled ? (
+          <View
+            style={[
+              styles.committedLoader,
+              { backgroundColor: (colors.tint ?? '#0D9488') + '14', borderColor: (colors.tint ?? '#0D9488') + '33' },
+            ]}
+            accessibilityLabel="Generating your plan"
+            accessibilityLiveRegion="polite"
+          >
+            <ActivityIndicator color={colors.tint} />
+            <Text style={[styles.committedLoaderText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+              Generating your plan…
+              {planQuery.data?.jobStartedAt
+                ? ` (Started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
+                : ''}
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.regenerateBtn, { backgroundColor: colors.tint }]}
+            onPress={onRegenerate}
+            accessibilityRole="button"
+            accessibilityLabel="Regenerate plan"
+          >
+            <MaterialIcons name="refresh" size={16} color="#fff" />
+            <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Regenerate plan</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* Goal editor modal */}
@@ -529,6 +532,18 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regenerateBtnText: { color: '#fff', fontWeight: '700' },
+  committedLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+    gap: 8,
+  },
+  committedLoaderText: { fontWeight: '600' },
   tierPill: {
     flexDirection: 'row',
     alignItems: 'center',
