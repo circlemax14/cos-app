@@ -23,10 +23,19 @@
  * `PlanScreenRedesignedV2` (icon chip + title + subtitle + chevron) so it
  * carries the same visual weight instead of being easy to miss. Gating logic
  * and the confirm modal are unchanged.
+ *
+ * COS-417 — the confirm step used to be a transparent native `<Modal>`
+ * layered on top of this banner. iOS 26.5 hardened its dismissal path
+ * against exactly this kind of overlapping-presentation pattern elsewhere in
+ * the biopsychosocial flow, so this now expands the confirmation copy +
+ * Cancel/Generate actions in place, directly below the banner, instead of
+ * presenting a second surface. No portal, no view controller — just local
+ * state driving a layout animation.
  */
 import React from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
@@ -64,7 +73,9 @@ export function TryNewPlanCta(): React.JSX.Element | null {
   const bioPlanQuery = useBiopsychosocialPlan();
   const regenerateMutation = useRegenerateBiopsychosocialPlan();
 
-  const [confirmVisible, setConfirmVisible] = React.useState(false);
+  // COS-417: renamed from `confirmVisible` — this now drives an inline
+  // expand/collapse instead of a Modal's `visible` prop.
+  const [expanded, setExpanded] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   const hasBioPlan = bioPlanQuery.data?.plan != null;
@@ -79,12 +90,12 @@ export function TryNewPlanCta(): React.JSX.Element | null {
 
   const onOpenConfirm = () => {
     setErrorMsg(null);
-    setConfirmVisible(true);
+    setExpanded(true);
   };
 
   const onCloseConfirm = () => {
-    if (isGenerating) return; // don't let the sheet be dismissed mid-regenerate
-    setConfirmVisible(false);
+    if (isGenerating) return; // don't let the panel collapse mid-regenerate
+    setExpanded(false);
   };
 
   const onConfirmGenerate = () => {
@@ -93,28 +104,32 @@ export function TryNewPlanCta(): React.JSX.Element | null {
       // useRegenerateBiopsychosocialPlan already invalidates the
       // ['biopsychosocial-plan'] query on success — that's what makes
       // health-plan.tsx's routing gate pick up the new plan and swap
-      // screens. We just need to close this sheet.
-      onSuccess: () => setConfirmVisible(false),
+      // screens. We just need to collapse this panel.
+      onSuccess: () => setExpanded(false),
       onError: () => setErrorMsg("Couldn't generate right now, try again."),
     });
   };
 
   return (
-    <>
+    <Animated.View
+      layout={LinearTransition.duration(200)}
+      style={[
+        styles.card,
+        bannerElevation,
+        {
+          backgroundColor: alpha(tint, '14'),
+          borderColor: alpha(tint, '55'),
+        },
+      ]}
+    >
       <Pressable
-        onPress={onOpenConfirm}
+        onPress={expanded ? undefined : onOpenConfirm}
+        disabled={expanded}
         accessibilityRole="button"
         accessibilityLabel="Try our new 3-section plan"
-        accessibilityHint="Generates a new plan organized into Biological, Psychological, and Social & Spiritual sections"
-        style={({ pressed }) => [
-          styles.banner,
-          bannerElevation,
-          {
-            backgroundColor: alpha(tint, '14'),
-            borderColor: alpha(tint, '55'),
-            opacity: pressed ? 0.85 : 1,
-          },
-        ]}
+        accessibilityHint="Expands a confirmation to generate a new plan organized into Biological, Psychological, and Social & Spiritual sections"
+        accessibilityState={{ expanded }}
+        style={({ pressed }) => [styles.banner, { opacity: pressed && !expanded ? 0.85 : 1 }]}
       >
         <View style={[styles.bannerIcon, { backgroundColor: alpha(tint, '22') }]}>
           <MaterialIcons name="auto-awesome" size={getScaledFontSize(22)} color={tint} />
@@ -133,77 +148,77 @@ export function TryNewPlanCta(): React.JSX.Element | null {
             Get personalized insights across Biological, Psychological, and Social & Spiritual sections.
           </Text>
         </View>
-        <MaterialIcons name="chevron-right" size={getScaledFontSize(24)} color={tint} />
+        <MaterialIcons name={expanded ? 'expand-less' : 'chevron-right'} size={getScaledFontSize(24)} color={tint} />
       </Pressable>
 
-      <Modal visible={confirmVisible} animationType="fade" transparent onRequestClose={onCloseConfirm}>
-        <View style={styles.backdrop}>
-          <View
+      {expanded ? (
+        <Animated.View
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(120)}
+          style={[styles.expandedPanel, { borderTopColor: alpha(tint, '30') }]}
+        >
+          <Text
             style={[
-              styles.sheet,
-              { backgroundColor: (colors.card as string) + 'F2', borderColor: colors.border },
+              styles.title,
+              { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any },
             ]}
           >
-            <Text
-              style={[
-                styles.title,
-                { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any },
-              ]}
-            >
-              {isGenerating ? 'Generating your new plan…' : 'Try the new 3-section plan?'}
-            </Text>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: 19 }}>
-              {isGenerating
-                ? 'Setting up your personalized plan across Biological, Psychological, and Social & Spiritual sections. This can take up to a minute.'
-                : 'Generate a new personalized plan organized into 3 sections (Biological, Psychological, Social & Spiritual)? Your current plan will remain, and you can switch back anytime.'}
-            </Text>
+            {isGenerating ? 'Generating your new plan…' : 'Try the new 3-section plan?'}
+          </Text>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: 19 }}>
+            {isGenerating
+              ? 'Setting up your personalized plan across Biological, Psychological, and Social & Spiritual sections. This can take up to a minute.'
+              : 'Generate a new personalized plan organized into 3 sections (Biological, Psychological, Social & Spiritual)? Your current plan will remain, and you can switch back anytime.'}
+          </Text>
 
-            {errorMsg ? (
-              <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), marginTop: 10 }}>{errorMsg}</Text>
-            ) : null}
+          {errorMsg ? (
+            <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), marginTop: 10 }}>{errorMsg}</Text>
+          ) : null}
 
-            {isGenerating ? (
-              <View style={styles.generatingRow}>
-                <ActivityIndicator color={tint} />
-              </View>
-            ) : (
-              <View style={styles.actions}>
-                <Pressable
-                  onPress={onCloseConfirm}
-                  style={[styles.btn, { borderColor: colors.border }]}
-                  accessibilityRole="button"
-                >
-                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
-                    Cancel
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={onConfirmGenerate}
-                  style={[styles.btn, styles.btnPrimary, { backgroundColor: tint }]}
-                  accessibilityRole="button"
-                >
-                  <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
-                    Generate
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-    </>
+          {isGenerating ? (
+            <View style={styles.generatingRow}>
+              <ActivityIndicator color={tint} />
+            </View>
+          ) : (
+            <View style={styles.actions}>
+              <Pressable
+                onPress={onCloseConfirm}
+                style={[styles.btn, { borderColor: colors.border }]}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={onConfirmGenerate}
+                style={[styles.btn, styles.btnPrimary, { backgroundColor: tint }]}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                  Generate
+                </Text>
+              </Pressable>
+            </View>
+          )}
+        </Animated.View>
+      ) : null}
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.md,
+  card: {
     marginHorizontal: Spacing.screenPadding,
     marginTop: Spacing.md - 2,
     borderWidth: 1,
     borderRadius: Radii.xl,
+    overflow: 'hidden',
+  },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
   },
   bannerIcon: {
     width: 40,
@@ -212,16 +227,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  sheet: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
+  expandedPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md - 2,
+    paddingBottom: Spacing.md,
   },
   title: { marginBottom: 8 },
   generatingRow: { alignItems: 'center', paddingVertical: 10, marginTop: 4 },

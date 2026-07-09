@@ -8,30 +8,28 @@
  * is true (which itself requires the upstream `ASSESSMENT_STRATEGY_V2_ENABLED`
  * flag) — otherwise `PlanScreenRedesignedV2` renders unchanged.
  *
- * COS-411: this screen used to own no tier awareness at all — the parent's
- * PlanTypeChooser modal was unreachable once this component rendered
- * (see health-plan.tsx's early-return fix), so users had no way to see or
- * switch their plan tier from here. `currentPlanType` / `onChangePlanType`
- * are threaded in as props so the parent stays the single owner of the
- * chooser's open state (`showChooser`) while this screen can still surface
- * a tier pill and trigger it.
+ * COS-411: this screen used to own no tier awareness at all — the plan-type
+ * chooser was unreachable once this component rendered (see health-plan.tsx's
+ * early-return fix), so users had no way to see or switch their plan tier
+ * from here. `currentPlanType` / `onChangePlanType` are threaded in as props
+ * so the parent stays the single owner of how the chooser is reached (COS-417:
+ * a `router.push` to app/Home/plan-type-chooser.tsx) while this screen can
+ * still surface a tier pill and trigger it.
  */
 import React from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -41,7 +39,6 @@ import { usePatientInfo } from '@/hooks/use-patient';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
-import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
 
@@ -95,7 +92,8 @@ function formatRelativeStartedAt(iso: string): string {
  * COS-411: small rounded "Plan: <name> · Change" pill, styled after the
  * prominent plan-type card on the legacy Plan tab (health-plan.tsx
  * ~line 768) but compact enough to sit under the greeting instead of
- * taking a full card row. Tapping it opens the parent's PlanTypeChooser.
+ * taking a full card row. Tapping it triggers the parent's
+ * `onChangePlanType`, which navigates to the plan-type-chooser route.
  */
 function PlanTierPill({
   label,
@@ -152,7 +150,6 @@ export function BiopsychosocialPlanScreen({
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
-  const queryClient = useQueryClient();
   const planTypeDisplayName = usePlanTypeDisplayName();
 
   const planQuery = useBiopsychosocialPlan();
@@ -169,49 +166,14 @@ export function BiopsychosocialPlanScreen({
     }
   }, [planQuery]);
 
-  // ── Goal editing — same GoalPatch/updatePlanGoal contract as the legacy
-  // Care Plan editor (COS-377). Reuses the identical endpoint rather than a
-  // second one because the backend dual-writes the same measurable goals to
-  // both the legacy AI_GENERATED_PLAN and the new BIOPSYCHOSOCIAL_PLAN record
-  // for one release cycle (see assessment-strategy-v2.md §3.1). On success we
-  // invalidate both query keys so every surface reflects the edit.
-  const [editGoal, setEditGoal] = React.useState<MeasurableGoal | null>(null);
-  const [editTitle, setEditTitle] = React.useState('');
-  const [editDesc, setEditDesc] = React.useState('');
-  const [editTarget, setEditTarget] = React.useState('');
-  const [editTimeframe, setEditTimeframe] = React.useState('');
-
+  // ── Goal editing (COS-417) ──────────────────────────────────────────────
+  // Used to be a bottom-sheet Modal owned by this screen; now a standalone
+  // route (app/Home/goal-editor.tsx) that looks the goal back up by id from
+  // the same `useBiopsychosocialPlan()` cache this screen already populated,
+  // so there's no need to pass the goal object through navigation params.
   const openGoalEditor = React.useCallback((g: MeasurableGoal) => {
-    setEditGoal(g);
-    setEditTitle(g.title);
-    setEditDesc(g.description ?? '');
-    setEditTarget(g.target ?? '');
-    setEditTimeframe(g.timeframe ?? '');
+    router.push(`/Home/goal-editor?goalId=${encodeURIComponent(g.id)}` as never);
   }, []);
-  const closeGoalEditor = React.useCallback(() => setEditGoal(null), []);
-
-  const updateGoalMutation = useMutation({
-    mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) => updatePlanGoal(goalId, patch),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
-      queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] });
-    },
-  });
-
-  const saveGoalEdit = React.useCallback(async () => {
-    if (!editGoal) return;
-    const patch: GoalPatch = {};
-    if (editTitle !== editGoal.title) patch.title = editTitle;
-    if (editDesc !== (editGoal.description ?? '')) patch.description = editDesc;
-    if (editTarget !== (editGoal.target ?? '')) patch.target = editTarget;
-    if (editTimeframe !== (editGoal.timeframe ?? '')) patch.timeframe = editTimeframe;
-    try {
-      await updateGoalMutation.mutateAsync({ goalId: editGoal.id, patch });
-      closeGoalEditor();
-    } catch {
-      Alert.alert('Error', 'Failed to save goal. Please try again.');
-    }
-  }, [editGoal, editTitle, editDesc, editTarget, editTimeframe, updateGoalMutation, closeGoalEditor]);
 
   const onRegenerate = React.useCallback(() => {
     regenerateMutation.mutate(undefined, {
@@ -418,86 +380,6 @@ export function BiopsychosocialPlanScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
-
-      {/* Goal editor modal */}
-      <Modal visible={editGoal !== null} animationType="slide" transparent onRequestClose={closeGoalEditor}>
-        <View style={modalStyles.overlay}>
-          <View style={[modalStyles.sheet, { backgroundColor: colors.card ?? colors.background }]}>
-            <View style={modalStyles.header}>
-              <Text style={[modalStyles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }]}>
-                Edit Goal
-              </Text>
-              <TouchableOpacity onPress={closeGoalEditor} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <MaterialIcons name="close" size={22} color={colors.subtext} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={modalStyles.scrollArea} keyboardShouldPersistTaps="handled">
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>TITLE</Text>
-              <TextInput
-                style={[modalStyles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editTitle}
-                onChangeText={setEditTitle}
-                maxLength={120}
-                placeholder="Goal title"
-                placeholderTextColor={colors.subtext}
-              />
-
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>DESCRIPTION</Text>
-              <TextInput
-                style={[modalStyles.input, modalStyles.multiline, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editDesc}
-                onChangeText={setEditDesc}
-                maxLength={300}
-                multiline
-                numberOfLines={3}
-                placeholder="Description"
-                placeholderTextColor={colors.subtext}
-              />
-
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>TARGET</Text>
-              <TextInput
-                style={[modalStyles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editTarget}
-                onChangeText={setEditTarget}
-                maxLength={40}
-                placeholder="Goal value"
-                placeholderTextColor={colors.subtext}
-              />
-
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>TIMEFRAME</Text>
-              <TextInput
-                style={[modalStyles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editTimeframe}
-                onChangeText={setEditTimeframe}
-                maxLength={40}
-                placeholder="e.g. 3 months"
-                placeholderTextColor={colors.subtext}
-              />
-            </ScrollView>
-
-            <View style={modalStyles.footer}>
-              <Pressable onPress={closeGoalEditor} style={[modalStyles.footerBtn, { borderColor: colors.border }]}>
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={saveGoalEdit}
-                disabled={updateGoalMutation.isPending}
-                style={[
-                  modalStyles.footerBtn,
-                  { backgroundColor: colors.tint, borderColor: colors.tint, opacity: updateGoalMutation.isPending ? 0.7 : 1 },
-                ]}
-              >
-                {updateGoalMutation.isPending ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Save</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </AppWrapper>
   );
 }
@@ -540,17 +422,4 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   tierPillCentered: { alignSelf: 'center' },
-});
-
-const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '85%', padding: Spacing.md },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  headerTitle: {},
-  scrollArea: { marginBottom: Spacing.sm },
-  fieldLabel: { marginTop: Spacing.sm, marginBottom: 4, letterSpacing: 0.6 },
-  input: { borderWidth: 1, borderRadius: Radii.sm, paddingHorizontal: 12, paddingVertical: 10 },
-  multiline: { minHeight: 72, textAlignVertical: 'top' },
-  footer: { flexDirection: 'row', gap: 12, marginTop: Spacing.sm },
-  footerBtn: { flex: 1, borderWidth: 1, borderRadius: Radii.md, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
 });

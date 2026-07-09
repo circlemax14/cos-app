@@ -303,6 +303,22 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="plan-type-chooser"
+        options={{
+          title: 'Choose your health plan',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="goal-editor"
+        options={{
+          title: 'Edit Goal',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );

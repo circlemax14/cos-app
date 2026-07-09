@@ -31,7 +31,6 @@ import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { fetchAssessments } from '@/services/api/assessments';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
-import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
@@ -168,8 +167,8 @@ export default function HealthPlanScreen() {
   // above. Drives the opt-in routing gate below — the bio screen renders
   // ONLY once a biopsychosocial plan record actually exists (flag on alone
   // is not enough), so existing users on a legacy plan (e.g. Ken) are never
-  // force-migrated. They opt in via PlanTypeChooser's tier-change trigger or
-  // the "Try our new 3-section plan" CTA on the legacy screen — both call
+  // force-migrated. They opt in via the plan-type-chooser route's tier-change
+  // trigger or the "Try our new 3-section plan" CTA on the legacy screen — both call
   // regenerateBiopsychosocialPlan(), which is what makes this query start
   // returning a non-null plan.
   const biopsychosocialPlanQuery = useBiopsychosocialPlan();
@@ -180,9 +179,8 @@ export default function HealthPlanScreen() {
   const [generating, setGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Health Plan v2: Plan / Progress tabs + plan-type chooser
+  // Health Plan v2: Plan / Progress tabs
   const [activeTab, setActiveTab] = useState<'plan' | 'progress'>('plan');
-  const [showChooser, setShowChooser] = useState(false);
 
   // COS-377: goal editor state (only active when CARE_PLAN_ENABLED)
   const [editGoal, setEditGoal] = useState<AiPlanGoal | null>(null);
@@ -324,6 +322,11 @@ export default function HealthPlanScreen() {
   // Surface the chooser on first visit (no record on disk → "first-visit"
   // is signaled by the chooser session flag below). We mark it shown
   // exactly once per app launch so users aren't re-prompted by remounts.
+  //
+  // COS-417: the chooser is now a route (app/Home/plan-type-chooser.tsx)
+  // instead of a Modal owned by this screen's `showChooser` state, so
+  // "surfacing" it is a `router.push` rather than a state flip. The
+  // promptedRef + AsyncStorage once-per-install guard is unchanged.
   const promptedRef = React.useRef(false);
   React.useEffect(() => {
     if (promptedRef.current) return;
@@ -342,7 +345,7 @@ export default function HealthPlanScreen() {
         const KEY = 'health-plan.chooser.acknowledged';
         const acked = await AsyncStorage.getItem(KEY);
         if (!acked) {
-          setShowChooser(true);
+          router.push('/Home/plan-type-chooser?source=first-visit' as never);
           await AsyncStorage.setItem(KEY, '1');
         }
       } catch {
@@ -505,10 +508,13 @@ export default function HealthPlanScreen() {
   // no way to pick a tier, and existing users had no in-screen switcher.
   // The auto-prompt effect above (~line 318) still fires regardless (it
   // runs before this early return, unaffected by which branch renders), so
-  // wrapping here is enough to restore the chooser for both first-visit and
-  // manual "change plan" flows. `currentPlanType` / `onChangePlanType` are
-  // threaded into the screen as props so it can render its own tier pill
-  // (SCRUM-518 Phase 3 UI) without needing to own the chooser's open state.
+  // this is enough to restore the chooser for both first-visit and manual
+  // "change plan" flows. `currentPlanType` is threaded into the screen as a
+  // prop so it can render its own tier pill (SCRUM-518 Phase 3 UI).
+  //
+  // COS-417: `onChangePlanType` now navigates to the plan-type-chooser
+  // route instead of flipping a `showChooser` Modal-visibility flag — this
+  // screen no longer owns any chooser open/close state.
   //
   // COS-412: flag-on alone used to force EVERY flagged user onto the bio
   // screen, including existing users already settled on a legacy plan
@@ -518,25 +524,17 @@ export default function HealthPlanScreen() {
   // → fall through to the legacy screen below, which surfaces the opt-in
   // "Try our new 3-section plan" CTA (PlanScreenRedesignedV2) so the user
   // can choose to migrate themselves. A record gets created by either that
-  // CTA or a plan-type change in PlanTypeChooser (both call
+  // CTA or a plan-type change in the plan-type-chooser route (both call
   // regenerateBiopsychosocialPlan()) — once it exists, this query
   // invalidates/refetches and the user is routed here automatically.
   const hasBiopsychosocialPlan =
     biopsychosocialPlanEnabled && biopsychosocialPlanQuery.data?.plan != null;
   if (hasBiopsychosocialPlan) {
     return (
-      <>
-        <PlanTypeChooser
-          visible={showChooser}
-          currentType={currentPlanType}
-          hasAgency
-          onClose={() => setShowChooser(false)}
-        />
-        <BiopsychosocialPlanScreen
-          currentPlanType={currentPlanType}
-          onChangePlanType={() => setShowChooser(true)}
-        />
-      </>
+      <BiopsychosocialPlanScreen
+        currentPlanType={currentPlanType}
+        onChangePlanType={() => router.push('/Home/plan-type-chooser' as never)}
+      />
     );
   }
 
@@ -649,13 +647,6 @@ export default function HealthPlanScreen() {
 
   return (
     <AppWrapper>
-      <PlanTypeChooser
-        visible={showChooser}
-        currentType={currentPlanType}
-        hasAgency
-        onClose={() => setShowChooser(false)}
-      />
-
       {/* Tab bar */}
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {
@@ -706,7 +697,7 @@ export default function HealthPlanScreen() {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
           currentPlanType={currentPlanType}
-          onChangePlanType={() => setShowChooser(true)}
+          onChangePlanType={() => router.push('/Home/plan-type-chooser' as never)}
           refreshing={refreshing}
           onRefresh={onRefresh}
           generating={generating}
@@ -737,7 +728,7 @@ export default function HealthPlanScreen() {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
           currentPlanType={currentPlanType}
-          onChangePlanType={() => setShowChooser(true)}
+          onChangePlanType={() => router.push('/Home/plan-type-chooser' as never)}
           refreshing={refreshing}
           onRefresh={onRefresh}
           generating={generating}
@@ -814,7 +805,7 @@ export default function HealthPlanScreen() {
             plan at a glance, instead of buried as a tiny pill in the tab
             bar. SCRUM-252. */}
         <Pressable
-          onPress={() => setShowChooser(true)}
+          onPress={() => router.push('/Home/plan-type-chooser' as never)}
           accessibilityRole="button"
           accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType, planTypeDisplayName)}. Tap to change.`}
           style={({ pressed }) => [
