@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "60",
+      "buildNumber": "61",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"
@@ -86,7 +86,7 @@
         "expo-channel-name": "production"
       }
     },
-    "runtimeVersion": "1.5.0",
+    "runtimeVersion": "1.5.1",
     "plugins": [
       "expo-router",
       "expo-updates",
