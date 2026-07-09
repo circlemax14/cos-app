@@ -38,6 +38,7 @@
  * Security audit reference: PHI-LOGGING-003 (SCRUM-364).
  */
 import type { ErrorEvent, EventHint, Breadcrumb, BreadcrumbHint } from '@sentry/core';
+import { Platform } from 'react-native';
 
 /**
  * Field names that must NEVER make it into Sentry, even buried in extra
@@ -368,8 +369,24 @@ export function buildSentryInitOptions(
     dsn,
     // Adjust this value in production, or use tracesSampler for greater control.
     tracesSampleRate: 0.1,
-    enableNativeCrashHandling: true,
-    enableAutoSessionTracking: true,
+    // COS-416 (SCRUM-578 iOS 26.5 native crash workaround): Sentry Cocoa 8.58.0
+    // (@sentry/react-native 7.11.0) crashes when its ObjC exception hook fires on
+    // iOS 26+ — offset math against build 60 crash reports places the crash origin
+    // ~1720 bytes from Sentry's crash handler entry points. Native handler is
+    // OFF on iOS 26+ until we upgrade the SDK; JS-level captureException still
+    // works, we just stop hooking the native exception path.
+    enableNativeCrashHandling: Platform.OS === 'ios'
+      ? (typeof Platform.Version === 'string'
+          ? parseInt(Platform.Version.split('.')[0], 10) < 26
+          : Platform.Version < 26)
+      : true, // Android unchanged
+    // COS-416: session tracking on iOS 26 might be equally affected by the
+    // same native-hook crash path — gate it identically until the SDK upgrade.
+    enableAutoSessionTracking: Platform.OS === 'ios'
+      ? (typeof Platform.Version === 'string'
+          ? parseInt(Platform.Version.split('.')[0], 10) < 26
+          : Platform.Version < 26)
+      : true, // Android unchanged
     // Healthcare app: do NOT send IP addresses, request bodies, or any
     // other "default PII". beforeSend is a belt-and-braces second pass.
     sendDefaultPii: false,
