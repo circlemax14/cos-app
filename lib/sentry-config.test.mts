@@ -125,6 +125,33 @@ test('buildSentryInitOptions exposes the same options for direct contract assert
 });
 
 // ---------------------------------------------------------------------------
+// COS-416 / SCRUM-578 — crashCaptureMode gate. sentry-config.ts stays
+// react-native-import-free; the OS-version resolution happens in
+// sentry-install.ts and the *result* is passed in as crashCaptureMode.
+// ---------------------------------------------------------------------------
+
+test('buildSentryInitOptions defaults crashCaptureMode to "native" (pre-COS-416 behavior)', () => {
+  const { sentry } = makeStubSentry();
+  const opts = buildSentryInitOptions('https://x@y/1', sentry);
+  assert.equal(opts.enableNativeCrashHandling, true);
+  assert.equal(opts.enableAutoSessionTracking, true);
+});
+
+test('buildSentryInitOptions with crashCaptureMode="js-only" disables native crash handling + auto session tracking', () => {
+  const { sentry } = makeStubSentry();
+  const opts = buildSentryInitOptions('https://x@y/1', sentry, 'js-only');
+  assert.equal(opts.enableNativeCrashHandling, false);
+  assert.equal(opts.enableAutoSessionTracking, false);
+});
+
+test('buildSentryInitOptions with crashCaptureMode="native" explicitly matches the default', () => {
+  const { sentry } = makeStubSentry();
+  const opts = buildSentryInitOptions('https://x@y/1', sentry, 'native');
+  assert.equal(opts.enableNativeCrashHandling, true);
+  assert.equal(opts.enableAutoSessionTracking, true);
+});
+
+// ---------------------------------------------------------------------------
 // scrubEvent — runtime behaviour on a fake PHI-laden event.
 // ---------------------------------------------------------------------------
 

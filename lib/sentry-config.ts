@@ -38,7 +38,6 @@
  * Security audit reference: PHI-LOGGING-003 (SCRUM-364).
  */
 import type { ErrorEvent, EventHint, Breadcrumb, BreadcrumbHint } from '@sentry/core';
-import { Platform } from 'react-native';
 
 /**
  * Field names that must NEVER make it into Sentry, even buried in extra
@@ -360,33 +359,39 @@ export interface SentryLike {
  * contract test can assert each field directly — keeps the test fast
  * and removes any chance of an inline override at the call site
  * silently weakening the PHI guarantees.
+ *
+ * `crashCaptureMode` (COS-416 / SCRUM-578): this module is intentionally
+ * free of any `react-native` import (see the module doc-comment) so it
+ * stays loadable in a plain-node test context. Resolving the platform /
+ * OS-version therefore can't happen here — `sentry-install.ts` (which
+ * already imports `react-native` + `@sentry/react-native`) resolves the
+ * mode and passes it in.
+ *
+ *   "native"  (default) — native crash handling + auto session tracking
+ *             enabled, matching the pre-COS-416 behavior.
+ *   "js-only" — both disabled. Used on platforms where the native crash
+ *             handler is known broken: the iOS 26.5+ / Sentry Cocoa 8.58
+ *             (@sentry/react-native 7.11.0) combo triggers a self-crash
+ *             when its ObjC exception hook fires — offset math against
+ *             build 60 crash reports places the crash origin ~1720 bytes
+ *             from Sentry's crash handler entry points. JS-level
+ *             captureException still works in this mode; we just stop
+ *             hooking the native exception path.
  */
 export function buildSentryInitOptions(
   dsn: string,
   sentryLike: SentryLike,
+  crashCaptureMode: 'native' | 'js-only' = 'native',
 ): Record<string, unknown> {
   return {
     dsn,
     // Adjust this value in production, or use tracesSampler for greater control.
     tracesSampleRate: 0.1,
-    // COS-416 (SCRUM-578 iOS 26.5 native crash workaround): Sentry Cocoa 8.58.0
-    // (@sentry/react-native 7.11.0) crashes when its ObjC exception hook fires on
-    // iOS 26+ — offset math against build 60 crash reports places the crash origin
-    // ~1720 bytes from Sentry's crash handler entry points. Native handler is
-    // OFF on iOS 26+ until we upgrade the SDK; JS-level captureException still
-    // works, we just stop hooking the native exception path.
-    enableNativeCrashHandling: Platform.OS === 'ios'
-      ? (typeof Platform.Version === 'string'
-          ? parseInt(Platform.Version.split('.')[0], 10) < 26
-          : Platform.Version < 26)
-      : true, // Android unchanged
-    // COS-416: session tracking on iOS 26 might be equally affected by the
-    // same native-hook crash path — gate it identically until the SDK upgrade.
-    enableAutoSessionTracking: Platform.OS === 'ios'
-      ? (typeof Platform.Version === 'string'
-          ? parseInt(Platform.Version.split('.')[0], 10) < 26
-          : Platform.Version < 26)
-      : true, // Android unchanged
+    // COS-416 / SCRUM-578 — see buildSentryInitOptions doc-comment above.
+    enableNativeCrashHandling: crashCaptureMode === 'native',
+    // COS-416: session tracking might be equally affected by the same
+    // native-hook crash path — gated identically until the SDK upgrade.
+    enableAutoSessionTracking: crashCaptureMode === 'native',
     // Healthcare app: do NOT send IP addresses, request bodies, or any
     // other "default PII". beforeSend is a belt-and-braces second pass.
     sendDefaultPii: false,
