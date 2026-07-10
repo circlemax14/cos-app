@@ -5,9 +5,12 @@
  *
  * Layout: header (icon + section name + status pill) → trend summary + arrow
  * → three independently-expandable groups (plan bullets, interventions grouped
- * by kind, goals). Goals reuse `GoalCard` from `PlanScreenRedesignedV2` so a
- * `MeasurableGoal` (a type alias of `AiPlanGoal`) renders identically to the
- * Care Plan v2 goal cards elsewhere in the app.
+ * by kind, goals). Goals render via `BioGoalCard` (COS-435, experiment #8) — a
+ * minimal, stripped-down goal card for `MeasurableGoal` (a type alias of
+ * `AiPlanGoal`), swapped in from the legacy `GoalCard` (still used by
+ * `PlanScreenRedesignedV2` itself) as part of the iOS 26.5 EXUpdates crash
+ * investigation. Same prop signature — a pure symbol rename, trivially
+ * revertible.
  *
  * Presentation-only, no data ownership — follows the same
  * colors/getScaledFontSize/getScaledFontWeight prop pattern as the rest of
@@ -18,7 +21,7 @@ import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-nati
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Radii, Spacing } from '@/constants/design-system';
-import { GoalCard } from './PlanScreenRedesignedV2';
+import { BioGoalCard } from './BioGoalCard';
 import type {
   Intervention,
   InterventionKind,
@@ -278,7 +281,7 @@ export function SectionCard({
         </CollapsibleGroup>
       )}
 
-      {/* Goals — reuses GoalCard from PlanScreenRedesignedV2 */}
+      {/* Goals — BioGoalCard (COS-435, experiment #8) */}
       {goals.length > 0 && (
         <CollapsibleGroup
           label="Goals"
@@ -290,7 +293,7 @@ export function SectionCard({
           getScaledFontWeight={getScaledFontWeight}
         >
           {goals.map((g) => (
-            <GoalCard
+            <BioGoalCard
               key={g.id}
               goal={g}
               accentColor={style.color}
