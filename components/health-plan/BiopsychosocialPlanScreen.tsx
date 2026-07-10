@@ -44,6 +44,7 @@ import { usePatientInfo } from '@/hooks/use-patient';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
+import { AssessmentDueBanner } from './AssessmentDueBanner';
 import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
@@ -438,6 +439,18 @@ export function BiopsychosocialPlanScreen({
             </Text>
           </Pressable>
         </View>
+
+        {/*
+          COS-430: monthly re-assessment nudge. Dark behind
+          ASSESSMENT_DUE_BANNER_ENABLED — renders null when off, when
+          nothing is due, or when the assessments query errors out. Safe
+          to render on every plan-screen mount.
+        */}
+        <AssessmentDueBanner
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
         {/* Three section cards */}
         {SECTION_ORDER.map(({ key, title }) => (
