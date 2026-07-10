@@ -2,7 +2,9 @@
  * BiopsychosocialPlanScreen (COS-360 / SCRUM-518, Phase 3) — full-screen
  * rendering of Ken's biopsychosocial Care Plan: a patient greeting + last-
  * generated date, three `SectionCard`s (Biological / Psychological /
- * Social & Spiritual Wellness), and a "Regenerate plan" action.
+ * Social & Spiritual Wellness), and a "Refresh my plan" action (COS-430
+ * — Ken's SCRUM-538 language: legacy uses "Refresh my plan" for the same
+ * primary CTA; bio now matches for consistency).
  *
  * Rendered by `app/Home/health-plan.tsx` ONLY when `useBiopsychosocialPlanFlag()`
  * is true (which itself requires the upstream `ASSESSMENT_STRATEGY_V2_ENABLED`
@@ -31,6 +33,7 @@ import {
   View,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -41,9 +44,16 @@ import { usePatientInfo } from '@/hooks/use-patient';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
+import { AssessmentDueBanner } from './AssessmentDueBanner';
 import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
+import {
+  BPS_SUBDOMAINS,
+  knownSubdomains,
+  subdomainsByDomain,
+  type BpsDomain,
+} from '@/lib/bps-subdomains';
 
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'biological', title: 'Biological Wellness' },
@@ -183,6 +193,10 @@ export function BiopsychosocialPlanScreen({
   const [editDesc, setEditDesc] = React.useState('');
   const [editTarget, setEditTarget] = React.useState('');
   const [editTimeframe, setEditTimeframe] = React.useState('');
+  // COS-430: NovoPsych subdomain tags editable per goal. Empty array is
+  // fine — legacy goals arrive without subdomains and stay unchanged unless
+  // the user toggles something.
+  const [editSubdomains, setEditSubdomains] = React.useState<string[]>([]);
 
   const openGoalEditor = React.useCallback((g: MeasurableGoal) => {
     setEditGoal(g);
@@ -190,8 +204,13 @@ export function BiopsychosocialPlanScreen({
     setEditDesc(g.description ?? '');
     setEditTarget(g.target ?? '');
     setEditTimeframe(g.timeframe ?? '');
+    setEditSubdomains(knownSubdomains(g.subdomains));
   }, []);
   const closeGoalEditor = React.useCallback(() => setEditGoal(null), []);
+
+  const toggleSubdomain = React.useCallback((key: string) => {
+    setEditSubdomains((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }, []);
 
   const updateGoalMutation = useMutation({
     mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) => updatePlanGoal(goalId, patch),
@@ -208,13 +227,20 @@ export function BiopsychosocialPlanScreen({
     if (editDesc !== (editGoal.description ?? '')) patch.description = editDesc;
     if (editTarget !== (editGoal.target ?? '')) patch.target = editTarget;
     if (editTimeframe !== (editGoal.timeframe ?? '')) patch.timeframe = editTimeframe;
+    // COS-430: only send subdomains when they've actually changed to keep
+    // the patch minimal and avoid disturbing legacy fields on the server.
+    const currentSubs = knownSubdomains(editGoal.subdomains);
+    const nextSubs = editSubdomains;
+    if (currentSubs.length !== nextSubs.length || currentSubs.some((k, i) => k !== nextSubs[i])) {
+      patch.subdomains = nextSubs;
+    }
     try {
       await updateGoalMutation.mutateAsync({ goalId: editGoal.id, patch });
       closeGoalEditor();
     } catch {
       Alert.alert('Error', 'Failed to save goal. Please try again.');
     }
-  }, [editGoal, editTitle, editDesc, editTarget, editTimeframe, updateGoalMutation, closeGoalEditor]);
+  }, [editGoal, editTitle, editDesc, editTarget, editTimeframe, editSubdomains, updateGoalMutation, closeGoalEditor]);
 
   const onRegenerate = React.useCallback(() => {
     regenerateMutation.mutate(undefined, {
@@ -389,7 +415,42 @@ export function BiopsychosocialPlanScreen({
             getScaledFontWeight={getScaledFontWeight}
             onPress={onChangePlanType}
           />
+          {/*
+            COS-430: entry point to the NovoPsych Wellbeing map. Small text
+            link so it doesn't compete with the tier pill or the Refresh
+            button. Route is read-only — safe to open mid-generate.
+          */}
+          <Pressable
+            onPress={() => router.push('/Home/wellbeing-map' as never)}
+            accessibilityRole="link"
+            accessibilityLabel="Open Wellbeing map"
+            style={styles.mapLinkRow}
+          >
+            <MaterialIcons name="hub" size={16} color={colors.tint} />
+            <Text
+              style={{
+                color: colors.tint,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as any,
+                marginLeft: 6,
+              }}
+            >
+              See your Wellbeing map
+            </Text>
+          </Pressable>
         </View>
+
+        {/*
+          COS-430: monthly re-assessment nudge. Dark behind
+          ASSESSMENT_DUE_BANNER_ENABLED — renders null when off, when
+          nothing is due, or when the assessments query errors out. Safe
+          to render on every plan-screen mount.
+        */}
+        <AssessmentDueBanner
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
         {/* Three section cards */}
         {SECTION_ORDER.map(({ key, title }) => (
@@ -428,13 +489,13 @@ export function BiopsychosocialPlanScreen({
           </View>
         )}
 
-        {/* Regenerate plan */}
+        {/* Refresh my plan — COS-430: matches legacy PlanScreenRedesignedV2 copy. */}
         <TouchableOpacity
           style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
           onPress={onRegenerate}
           disabled={regenerateDisabled}
           accessibilityRole="button"
-          accessibilityLabel={regenerateMutation.isPending ? 'Generating your plan' : 'Regenerate plan'}
+          accessibilityLabel={regenerateMutation.isPending ? 'Generating your plan' : 'Refresh my plan'}
           accessibilityState={{ disabled: regenerateDisabled, busy: regenerateMutation.isPending }}
         >
           {regenerateMutation.isPending ? (
@@ -447,7 +508,7 @@ export function BiopsychosocialPlanScreen({
           ) : (
             <>
               <MaterialIcons name="refresh" size={16} color="#fff" />
-              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Regenerate plan</Text>
+              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Refresh my plan</Text>
             </>
           )}
         </TouchableOpacity>
@@ -508,6 +569,61 @@ export function BiopsychosocialPlanScreen({
                 placeholder="e.g. 3 months"
                 placeholderTextColor={colors.subtext}
               />
+
+              {/*
+                COS-430: NovoPsych subdomain multi-picker. Grouped by domain
+                so each row's chips stay visually associated with their
+                domain header (Biological / Psychological / Social).
+              */}
+              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }]}>
+                NOVOPSYCH SUBDOMAINS
+              </Text>
+              {(Object.entries(subdomainsByDomain()) as [BpsDomain, typeof BPS_SUBDOMAINS[number][]][])
+                .map(([domain, subs]) => (
+                <View key={domain} style={{ marginBottom: 10 }}>
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(11),
+                      textTransform: 'capitalize',
+                      marginBottom: 4,
+                    }}
+                  >
+                    {domain}
+                  </Text>
+                  <View style={modalStyles.chipRow}>
+                    {subs.map((s) => {
+                      const active = editSubdomains.includes(s.key);
+                      return (
+                        <Pressable
+                          key={s.key}
+                          onPress={() => toggleSubdomain(s.key)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          style={[
+                            modalStyles.pickerChip,
+                            {
+                              backgroundColor: active ? (colors.tint as string) + '22' : colors.background,
+                              borderColor: active ? (colors.tint as string) : colors.border,
+                              borderStyle: s.crossDomain ? 'dashed' : 'solid',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              color: active ? (colors.tint as string) : colors.text,
+                              fontSize: getScaledFontSize(12),
+                              fontWeight: '600',
+                            }}
+                          >
+                            {s.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
             </ScrollView>
 
             <View style={modalStyles.footer}>
@@ -543,6 +659,7 @@ const styles = StyleSheet.create({
   headerBlock: { marginBottom: Spacing.md },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 },
   metaText: {},
+  mapLinkRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
   emptyIcon: {
     width: 64,
     height: 64,
@@ -598,4 +715,6 @@ const modalStyles = StyleSheet.create({
   multiline: { minHeight: 72, textAlignVertical: 'top' },
   footer: { flexDirection: 'row', gap: 12, marginTop: Spacing.sm },
   footerBtn: { flex: 1, borderWidth: 1, borderRadius: Radii.md, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pickerChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
 });

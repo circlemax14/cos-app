@@ -295,6 +295,28 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+       * COS-430 — plan-type chooser as a stack-pushed route (not a Modal).
+       * See app/Home/plan-type-chooser.tsx header for the iOS 26.5 crash
+       * background. Same hidden-Tabs.Screen pattern used 30+ times above.
+       */}
+      <Tabs.Screen
+        name="plan-type-chooser"
+        options={{
+          title: 'Plan type',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/* COS-430 — Wellbeing map (read-only Venn of the NovoPsych model). */}
+      <Tabs.Screen
+        name="wellbeing-map"
+        options={{
+          title: 'Wellbeing map',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="assessment-stepper"
         options={{
