@@ -317,6 +317,20 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        COS-438 — biopsychosocial plan as an EXTENSION of the legacy Care
+        Plan, not a replacement. Reached from a link on the legacy Care
+        Plan when a bio plan record exists; back button returns to the
+        legacy plan.
+      */}
+      <Tabs.Screen
+        name="biopsychosocial-plan"
+        options={{
+          title: 'Biopsychosocial',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="assessment-stepper"
         options={{

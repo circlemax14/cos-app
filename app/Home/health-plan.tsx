@@ -637,49 +637,22 @@ export default function HealthPlanScreen() {
   // CTA or a plan-type change in PlanTypeChooser (both call
   // regenerateBiopsychosocialPlan()) — once it exists, this query
   // invalidates/refetches and the user is routed here automatically.
-  const hasBiopsychosocialPlan =
-    biopsychosocialPlanEnabled && biopsychosocialPlanQuery.data?.plan != null;
-  if (hasBiopsychosocialPlan) {
-    return (
-      <>
-        <BiopsychosocialPlanScreen
-          currentPlanType={currentPlanType}
-          onChangePlanType={openPlanTypeChooser}
-          onEditGoal={openBioGoalEditor}
-          patientName={bioPatientName}
-        />
-        {/*
-          COS-433: bio goal-editor Modal HOISTED to this parent. Renders
-          as a sibling of BiopsychosocialPlanScreen, not a descendant.
-          COS-434 experiment #5: additionally gated behind
-          BIO_GOAL_EDITOR_MODAL_ENABLED so we can flip the Modal OUT of
-          the render tree entirely with a single-line OTA if iOS 26.5
-          still crashes on bio branch flip.
-        */}
-        {BIO_GOAL_EDITOR_MODAL_ENABLED && (
-          <BioGoalEditorModal
-            visible={bioEditGoal !== null}
-            colors={colors as unknown as Record<string, string>}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            title={bioEditTitle}
-            description={bioEditDesc}
-            target={bioEditTarget}
-            timeframe={bioEditTimeframe}
-            subdomains={bioEditSubdomains}
-            onChangeTitle={setBioEditTitle}
-            onChangeDescription={setBioEditDesc}
-            onChangeTarget={setBioEditTarget}
-            onChangeTimeframe={setBioEditTimeframe}
-            onToggleSubdomain={toggleBioSubdomain}
-            onClose={closeBioGoalEditor}
-            onSave={saveBioGoalEdit}
-            saving={updateBioGoalMutation.isPending}
-          />
-        )}
-      </>
-    );
-  }
+  /*
+   * COS-438: bio plan is now a PEER of the legacy plan, not a replacement.
+   * Removed the `if (hasBiopsychosocialPlan) return <bio + modal>` short-
+   * circuit that used to hide legacy whenever a bio record existed.
+   * Legacy always renders on this tab; users push to `/Home/biopsychosocial-
+   * plan` via the "View your biopsychosocial insights" link on the legacy
+   * plan when they want the deeper view. Kenneth's 2026-07-10 feedback:
+   * "biopsychosicial plan should be an extension so we can give patients
+   * more refined services."
+   *
+   * Bio Modal state + mutation + BioGoalEditorModal render moved to
+   * `app/Home/biopsychosocial-plan.tsx` where they belong to that route
+   * as a long-resident parent. All the `bioEdit*` state below is now
+   * dead code that's cheap to leave in place; it will get cleaned up in
+   * a follow-up commit — for now the key change is the routing behavior.
+   */
 
   // ── Render ────────────────────────────────────────────────────────────
   if (loading) {
