@@ -2,8 +2,15 @@ import { apiClient } from '@/lib/api-client';
 import type { AiHealthPlan, AiPlanGoal, TaskOccurrence } from './types';
 
 // ── Care Plan goal editing (COS-377) ───────────────────────────────────────
+// COS-430: `subdomains` added — NovoPsych biopsychosocial subdomain tags per
+// goal. Optional and backward-compatible: callers that never patch it keep
+// working; backends that don't yet accept it ignore it (verified by the BE
+// team as an additive PATCH field, mirrors legacy tolerance for extra keys).
 export type GoalPatch = Partial<
-  Pick<AiPlanGoal, 'title' | 'description' | 'metric' | 'baseline' | 'target' | 'timeframe' | 'status'>
+  Pick<
+    AiPlanGoal,
+    'title' | 'description' | 'metric' | 'baseline' | 'target' | 'timeframe' | 'status' | 'subdomains'
+  >
 >;
 
 /** Get the active AI-generated health plan for the current user. */
