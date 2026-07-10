@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
 import { apiClient } from '@/lib/api-client';
 import { routeForNotificationData } from '@/lib/notification-routing';
@@ -39,20 +39,31 @@ export function useNotifications() {
   // COLD START: the tap that LAUNCHED the app from a killed state.
   // useLastNotificationResponse returns that response once it's
   // available; it stays stable across re-renders, so we guard with a
-  // ref to route exactly once. This is Expo's recommended pattern and
-  // sidesteps the "navigate before the router is mounted" race —
-  // the hook only yields a value after the component tree (and router)
-  // has rendered.
+  // ref to route exactly once.
+  //
+  // COS-437: previously this fired as soon as `lastResponse` became
+  // available, which happens BEFORE `SplashGate` (app/index.tsx)
+  // finishes its async auth+destination pipeline. SplashGate then
+  // fires `router.replace('/Home')` which wipes any push we made to
+  // `/Home/health-plan`, dropping the user on the plain Home tab
+  // (or, worse on Kenneth's device 2026-07-10, on the plain splash).
+  // Fix: read `useSegments()` and only fire cold-start navigation once
+  // the current route is under `/Home` — meaning splash has already
+  // completed and settled the user there. Now the notification push
+  // lands ON TOP of splash's replace instead of being clobbered by it.
   const lastResponse = Notifications.useLastNotificationResponse();
+  const segments = useSegments();
+  const isOnHome = segments[0] === 'Home';
   const coldStartHandledRef = useRef(false);
   useEffect(() => {
     if (coldStartHandledRef.current) return;
     if (!lastResponse) return;
+    if (!isOnHome) return;
     coldStartHandledRef.current = true;
     // Clear badge on cold-start tap too.
     Notifications.setBadgeCountAsync(0).catch(() => {});
     navigateForNotification(lastResponse);
-  }, [lastResponse]);
+  }, [lastResponse, isOnHome]);
 
   useEffect(() => {
     // Listen for notifications received while app is in foreground
