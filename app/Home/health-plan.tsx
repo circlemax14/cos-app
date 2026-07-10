@@ -61,10 +61,32 @@ import { BiopsychosocialPlanScreen } from '@/components/health-plan/Biopsychosoc
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
+import { usePatientInfo } from '@/hooks/use-patient';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import { knownSubdomains } from '@/lib/bps-subdomains';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
+
+/**
+ * COS-434 experiment #5: dark-launchable local flag around the hoisted bio
+ * goal-editor Modal. `true` = ship default. If iOS 26.5 still crashes on
+ * bio-branch mount, flip to `false` here + OTA to remove the Modal from
+ * the render tree entirely. Bio screen still calls `onEditGoal` on tap;
+ * the parent just no-ops. Cheap flip vs. a full refactor.
+ */
+const BIO_GOAL_EDITOR_MODAL_ENABLED = true;
+
+/**
+ * COS-434 experiment #2: pure helper used to derive first name from the
+ * shared `patient` query — no hooks — so calling it from the parent
+ * doesn't add a query observer.
+ */
+function firstNameFromPatient(
+  patient: { name?: { given?: string[]; family?: string }[] } | undefined,
+): string | null {
+  const given = patient?.name?.[0]?.given?.[0];
+  return given && given.trim() ? given.trim() : null;
+}
 
 // COS-362: hard ceiling on the initial full-screen loader so it can never hang
 // forever (build 57 "stuck on Health Plan after unlock"). Generous on purpose —
@@ -178,6 +200,15 @@ export default function HealthPlanScreen() {
   // regenerateBiopsychosocialPlan(), which is what makes this query start
   // returning a non-null plan.
   const biopsychosocialPlanQuery = useBiopsychosocialPlan();
+
+  /*
+   * COS-434 experiment #2: patient query hoisted from BiopsychosocialPlanScreen.
+   * Runs on EVERY HealthPlanScreen render, warmed long before the bio/legacy
+   * branch decision. When bio branch fires, the child receives just the
+   * first-name string as a prop — zero new query observers on bio mount.
+   */
+  const patientQuery = usePatientInfo();
+  const bioPatientName = firstNameFromPatient(patientQuery.data);
 
   const [plan, setPlan] = useState<AiHealthPlan | null>(null);
   const [tasks, setTasks] = useState<TaskOccurrence[]>([]);
@@ -615,34 +646,37 @@ export default function HealthPlanScreen() {
           currentPlanType={currentPlanType}
           onChangePlanType={openPlanTypeChooser}
           onEditGoal={openBioGoalEditor}
+          patientName={bioPatientName}
         />
         {/*
           COS-433: bio goal-editor Modal HOISTED to this parent. Renders
-          as a sibling of BiopsychosocialPlanScreen, not a descendant, so
-          its state (`bioEditGoal`, etc. — all declared on THIS parent
-          well above the branch decision) is not co-located with a
-          freshly-mounted child subtree. See the state block header for
-          the iOS 26.5 experiment rationale.
+          as a sibling of BiopsychosocialPlanScreen, not a descendant.
+          COS-434 experiment #5: additionally gated behind
+          BIO_GOAL_EDITOR_MODAL_ENABLED so we can flip the Modal OUT of
+          the render tree entirely with a single-line OTA if iOS 26.5
+          still crashes on bio branch flip.
         */}
-        <BioGoalEditorModal
-          visible={bioEditGoal !== null}
-          colors={colors as unknown as Record<string, string>}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-          title={bioEditTitle}
-          description={bioEditDesc}
-          target={bioEditTarget}
-          timeframe={bioEditTimeframe}
-          subdomains={bioEditSubdomains}
-          onChangeTitle={setBioEditTitle}
-          onChangeDescription={setBioEditDesc}
-          onChangeTarget={setBioEditTarget}
-          onChangeTimeframe={setBioEditTimeframe}
-          onToggleSubdomain={toggleBioSubdomain}
-          onClose={closeBioGoalEditor}
-          onSave={saveBioGoalEdit}
-          saving={updateBioGoalMutation.isPending}
-        />
+        {BIO_GOAL_EDITOR_MODAL_ENABLED && (
+          <BioGoalEditorModal
+            visible={bioEditGoal !== null}
+            colors={colors as unknown as Record<string, string>}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+            title={bioEditTitle}
+            description={bioEditDesc}
+            target={bioEditTarget}
+            timeframe={bioEditTimeframe}
+            subdomains={bioEditSubdomains}
+            onChangeTitle={setBioEditTitle}
+            onChangeDescription={setBioEditDesc}
+            onChangeTarget={setBioEditTarget}
+            onChangeTimeframe={setBioEditTimeframe}
+            onToggleSubdomain={toggleBioSubdomain}
+            onClose={closeBioGoalEditor}
+            onSave={saveBioGoalEdit}
+            saving={updateBioGoalMutation.isPending}
+          />
+        )}
       </>
     );
   }

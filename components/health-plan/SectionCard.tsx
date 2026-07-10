@@ -121,9 +121,16 @@ export function SectionCard({
   const statusStyle = STATUS_STYLE[section.status] ?? STATUS_STYLE['just-started'];
   const trend = TREND_STYLE[section.trendDirection] ?? TREND_STYLE.unknown;
 
-  const [bulletsOpen, setBulletsOpen] = React.useState(true);
-  const [interventionsOpen, setInterventionsOpen] = React.useState(true);
-  const [goalsOpen, setGoalsOpen] = React.useState(true);
+  /*
+   * COS-434 experiment #3: default all three groups CLOSED on first mount.
+   * Cuts the initial view-tree size ~3-4x per section, which the July 10
+   * forensic (workflow wg1dvszi0) flagged as a candidate iOS 26.5 EXUpdates
+   * Class B trigger — "first-paint view-count matters". If crashes stop
+   * after this ships, view-tree size at first commit was the pressure.
+   */
+  const [bulletsOpen, setBulletsOpen] = React.useState(false);
+  const [interventionsOpen, setInterventionsOpen] = React.useState(false);
+  const [goalsOpen, setGoalsOpen] = React.useState(false);
 
   const groupedInterventions = React.useMemo(() => {
     const items = Array.isArray(section.interventions) ? section.interventions : [];

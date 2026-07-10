@@ -37,7 +37,6 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { usePatientInfo } from '@/hooks/use-patient';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
@@ -58,12 +57,6 @@ function greetingForNow(): string {
   return 'Good evening';
 }
 
-function firstNameFrom(
-  patient: { name?: { given?: string[]; family?: string }[] } | undefined,
-): string | null {
-  const given = patient?.name?.[0]?.given?.[0];
-  return given && given.trim() ? given.trim() : null;
-}
 
 function formatGeneratedDate(iso: string | undefined): string | null {
   if (!iso) return null;
@@ -150,6 +143,7 @@ export function BiopsychosocialPlanScreen({
   currentPlanType,
   onChangePlanType,
   onEditGoal,
+  patientName,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
@@ -163,13 +157,23 @@ export function BiopsychosocialPlanScreen({
    * experiment motivation.
    */
   onEditGoal: (goal: MeasurableGoal) => void;
+  /**
+   * COS-434 experiment #2: patient's first name for the greeting, hoisted
+   * up from an inline `usePatientInfo()` query that used to fire the FIRST
+   * time this screen mounted. Now the parent `health-plan.tsx` reads the
+   * patient query on every render (warmed long before the bio/legacy
+   * branch decides), passes just the first-name string down. Removes the
+   * one brand-new query observer this screen used to register on mount —
+   * the July 10 forensic (workflow wg1dvszi0) flagged it as one of two
+   * unique structural differences bio had vs. legacy.
+   */
+  patientName: string | null;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const planTypeDisplayName = usePlanTypeDisplayName();
 
   const planQuery = useBiopsychosocialPlan();
-  const patientQuery = usePatientInfo();
   const regenerateMutation = useRegenerateBiopsychosocialPlan();
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -228,7 +232,6 @@ export function BiopsychosocialPlanScreen({
   }
 
   const plan = planQuery.data?.plan ?? null;
-  const patientName = firstNameFrom(patientQuery.data);
   const generatedDate = formatGeneratedDate(plan?.generatedAt);
   // COS-415: `generating` is additive on the GET response — undefined on
   // BE deploys that predate this change, which the `=== true` check treats
