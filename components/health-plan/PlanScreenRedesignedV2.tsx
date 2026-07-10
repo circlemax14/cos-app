@@ -49,6 +49,7 @@ import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import { TryNewPlanCta } from '@/components/health-plan/TryNewPlanCta';
+import { ViewBioInsightsLink } from '@/components/health-plan/ViewBioInsightsLink';
 import { SubdomainChipRow } from '@/components/health-plan/SubdomainChip';
 import type { AiPlanGoal, PlanTask, TaskType } from '@/services/api/types';
 import {
@@ -415,12 +416,17 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
         </Text>
       </Pressable>
 
-      {/* COS-412: opt-in migration CTA to the biopsychosocial (3-section)
-          rebuild. Self-gates internally — renders nothing unless the flag is
-          on AND no biopsychosocial plan exists yet, so this is a no-op for
-          flag-off users and for users who already migrated (they're routed
-          to BiopsychosocialPlanScreen before this component ever mounts). */}
+      {/* COS-412: opt-in CTA that creates a bio plan for the first time.
+          Self-gates internally — renders nothing unless the bio flag is on
+          AND no bio plan exists yet. Once one exists, this becomes a no-op
+          and the peer <ViewBioInsightsLink> below takes over. */}
       <TryNewPlanCta />
+
+      {/* COS-438: sibling of TryNewPlanCta — appears once a bio plan exists,
+          pushes into /Home/biopsychosocial-plan for the deeper view. Legacy
+          plan stays the default; bio becomes an extension the user opts into
+          per Kenneth's 2026-07-10 feedback. */}
+      <ViewBioInsightsLink />
 
       {/* Plan summary — one idea per card, lifted with subtle elevation. */}
       {!!plan.summary && (
