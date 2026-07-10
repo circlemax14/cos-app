@@ -33,6 +33,7 @@ import {
   View,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -413,6 +414,29 @@ export function BiopsychosocialPlanScreen({
             getScaledFontWeight={getScaledFontWeight}
             onPress={onChangePlanType}
           />
+          {/*
+            COS-430: entry point to the NovoPsych Wellbeing map. Small text
+            link so it doesn't compete with the tier pill or the Refresh
+            button. Route is read-only — safe to open mid-generate.
+          */}
+          <Pressable
+            onPress={() => router.push('/Home/wellbeing-map' as never)}
+            accessibilityRole="link"
+            accessibilityLabel="Open Wellbeing map"
+            style={styles.mapLinkRow}
+          >
+            <MaterialIcons name="hub" size={16} color={colors.tint} />
+            <Text
+              style={{
+                color: colors.tint,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as any,
+                marginLeft: 6,
+              }}
+            >
+              See your Wellbeing map
+            </Text>
+          </Pressable>
         </View>
 
         {/* Three section cards */}
@@ -622,6 +646,7 @@ const styles = StyleSheet.create({
   headerBlock: { marginBottom: Spacing.md },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 },
   metaText: {},
+  mapLinkRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
   emptyIcon: {
     width: 64,
     height: 64,

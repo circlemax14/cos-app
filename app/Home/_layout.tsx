@@ -308,6 +308,15 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* COS-430 — Wellbeing map (read-only Venn of the NovoPsych model). */}
+      <Tabs.Screen
+        name="wellbeing-map"
+        options={{
+          title: 'Wellbeing map',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="assessment-stepper"
         options={{
