@@ -31,7 +31,9 @@ import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { fetchAssessments } from '@/services/api/assessments';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
-import { PlanTypeChooser } from '@/components/health-plan/PlanTypeChooser';
+// PlanTypeChooser Modal removed in COS-430 — the chooser is now a stack-
+// pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
+// nested-Modal collision iOS 26.5 crashed on.
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
@@ -182,7 +184,15 @@ export default function HealthPlanScreen() {
 
   // Health Plan v2: Plan / Progress tabs + plan-type chooser
   const [activeTab, setActiveTab] = useState<'plan' | 'progress'>('plan');
-  const [showChooser, setShowChooser] = useState(false);
+  /**
+   * COS-430: `showChooser` state is gone — opening the plan-type chooser
+   * now pushes the `/Home/plan-type-chooser` route rather than flipping a
+   * Modal visibility. `openPlanTypeChooser` is a helper so every call site
+   * reads the same.
+   */
+  const openPlanTypeChooser = useCallback(() => {
+    router.push('/Home/plan-type-chooser' as never);
+  }, []);
 
   // COS-377: goal editor state (only active when CARE_PLAN_ENABLED)
   const [editGoal, setEditGoal] = useState<AiPlanGoal | null>(null);
@@ -342,7 +352,7 @@ export default function HealthPlanScreen() {
         const KEY = 'health-plan.chooser.acknowledged';
         const acked = await AsyncStorage.getItem(KEY);
         if (!acked) {
-          setShowChooser(true);
+          openPlanTypeChooser();
           await AsyncStorage.setItem(KEY, '1');
         }
       } catch {
@@ -525,18 +535,10 @@ export default function HealthPlanScreen() {
     biopsychosocialPlanEnabled && biopsychosocialPlanQuery.data?.plan != null;
   if (hasBiopsychosocialPlan) {
     return (
-      <>
-        <PlanTypeChooser
-          visible={showChooser}
-          currentType={currentPlanType}
-          hasAgency
-          onClose={() => setShowChooser(false)}
-        />
-        <BiopsychosocialPlanScreen
-          currentPlanType={currentPlanType}
-          onChangePlanType={() => setShowChooser(true)}
-        />
-      </>
+      <BiopsychosocialPlanScreen
+        currentPlanType={currentPlanType}
+        onChangePlanType={openPlanTypeChooser}
+      />
     );
   }
 
@@ -649,13 +651,6 @@ export default function HealthPlanScreen() {
 
   return (
     <AppWrapper>
-      <PlanTypeChooser
-        visible={showChooser}
-        currentType={currentPlanType}
-        hasAgency
-        onClose={() => setShowChooser(false)}
-      />
-
       {/* Tab bar */}
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {
@@ -706,7 +701,7 @@ export default function HealthPlanScreen() {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
           currentPlanType={currentPlanType}
-          onChangePlanType={() => setShowChooser(true)}
+          onChangePlanType={() => openPlanTypeChooser()}
           refreshing={refreshing}
           onRefresh={onRefresh}
           generating={generating}
@@ -737,7 +732,7 @@ export default function HealthPlanScreen() {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
           currentPlanType={currentPlanType}
-          onChangePlanType={() => setShowChooser(true)}
+          onChangePlanType={() => openPlanTypeChooser()}
           refreshing={refreshing}
           onRefresh={onRefresh}
           generating={generating}
@@ -814,7 +809,7 @@ export default function HealthPlanScreen() {
             plan at a glance, instead of buried as a tiny pill in the tab
             bar. SCRUM-252. */}
         <Pressable
-          onPress={() => setShowChooser(true)}
+          onPress={() => openPlanTypeChooser()}
           accessibilityRole="button"
           accessibilityLabel={`Plan type: ${planTypeLabel(currentPlanType, planTypeDisplayName)}. Tap to change.`}
           style={({ pressed }) => [
