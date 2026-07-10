@@ -240,16 +240,23 @@ export function BiopsychosocialPlanScreen({
   // favor of push-triggered invalidation) — it only matters at initial
   // render to detect "another device's job was already running".
   const isRegenerating = planQuery.data?.generating === true;
-  // COS-421: primarily driven by this device's own tap. A stale
-  // `isRegenerating` from another device no longer disables the button —
-  // the backend's REGENERATION_IN_FLIGHT (409) is already swallowed by
-  // `useRegenerateBiopsychosocialPlan`, so tapping while another device is
-  // generating is harmless and just converges on the same invalidation.
-  const regenerateDisabled = regenerateMutation.isPending;
-  // True only when ANOTHER device's job was in flight as of the last
-  // fetch — this device's own tap is represented by
-  // `regenerateMutation.isPending` and gets the committed-loader UX on the
-  // button itself instead of this static banner.
+  /*
+   * COS-436: keep the loader state persistent across app close/reopen.
+   * Previously `regenerateDisabled = regenerateMutation.isPending` only —
+   * on cold start, isPending is false (fresh mutation instance) so the
+   * button re-enabled even when the backend job was still running (server
+   * returns generating: true). Kenneth reported this 2026-07-10: tapped
+   * regenerate → saw loader → closed app → reopened → button back to
+   * "Refresh my plan". The fix is to OR in the server-truth `isRegenerating`
+   * so the button reflects "a job is in flight, from any source" instead
+   * of only "this device's mutation is pending". Any tap during that
+   * window still no-ops server-side (409 REGENERATION_IN_FLIGHT), but now
+   * the UI never invites the tap.
+   */
+  const regenerateDisabled = regenerateMutation.isPending || isRegenerating;
+  const isGeneratingFromAnySource = regenerateMutation.isPending || isRegenerating;
+  // Static banner ("started X ago") only when it's specifically another
+  // device's job — this device's own tap already shows the button loader.
   const showOtherDeviceGenerating = isRegenerating && !regenerateMutation.isPending;
 
   // ── No tier selected yet (COS-411) ──────────────────────────────────────
@@ -432,16 +439,16 @@ export function BiopsychosocialPlanScreen({
           </View>
         )}
 
-        {/* Refresh my plan — COS-430: matches legacy PlanScreenRedesignedV2 copy. */}
+        {/* Refresh my plan — COS-430 copy, COS-436 persistent generating state. */}
         <TouchableOpacity
           style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
           onPress={onRegenerate}
           disabled={regenerateDisabled}
           accessibilityRole="button"
-          accessibilityLabel={regenerateMutation.isPending ? 'Generating your plan' : 'Refresh my plan'}
-          accessibilityState={{ disabled: regenerateDisabled, busy: regenerateMutation.isPending }}
+          accessibilityLabel={isGeneratingFromAnySource ? 'Generating your plan' : 'Refresh my plan'}
+          accessibilityState={{ disabled: regenerateDisabled, busy: isGeneratingFromAnySource }}
         >
-          {regenerateMutation.isPending ? (
+          {isGeneratingFromAnySource ? (
             <>
               <ActivityIndicator color="#fff" />
               <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
