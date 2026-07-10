@@ -305,6 +305,36 @@ export function SectionCard({
           ))}
         </CollapsibleGroup>
       )}
+
+      {/*
+        COS-440: guidance when the section came back completely empty from
+        the AI (0 bullets + 0 interventions + 0 goals — typically means
+        Bedrock returned malformed JSON and the normalizer fell back to
+        emptySection, or the patient's underlying data was too sparse for
+        a useful generation). Without this row the section renders as
+        just a header + trendSummary "Not enough data yet" and the user
+        has no idea what to do next. Kenneth reported this 2026-07-10.
+      */}
+      {bullets.length === 0 && groupedInterventions.length === 0 && goals.length === 0 && (
+        <View style={[styles.emptyHint, { borderColor: alpha(style.color, '33'), backgroundColor: alpha(style.color, '10') }]}>
+          <MaterialIcons name="lightbulb-outline" size={getScaledFontSize(16)} color={style.color} />
+          <Text
+            style={{
+              color: text,
+              fontSize: getScaledFontSize(13),
+              lineHeight: 18,
+              flex: 1,
+              marginLeft: 6,
+            }}
+          >
+            This section will populate once your care team has more data. Tap{' '}
+            <Text style={{ fontWeight: getScaledFontWeight(700) as any, color: style.color }}>
+              Refresh my plan
+            </Text>
+            {' '}below to try again, or complete pending assessments in the Assessments tab.
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -467,6 +497,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: Spacing.sm - 2,
+  },
+  emptyHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: Spacing.sm + 2,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    marginTop: Spacing.sm + 2,
   },
   bulletDot: {
     width: 6,
