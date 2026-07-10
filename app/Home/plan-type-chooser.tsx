@@ -71,6 +71,41 @@ const ASSESSMENT_LABEL: Record<AssessmentLevel, string> = {
 const AGENCY_PLANS_ENABLED = false
 const isAgencyType = (t: PlanType) => t === 'agency-supported' || t === 'agency-managed'
 
+/**
+ * COS-432: "Coming soon" cards — display-only entries in the chooser that
+ * advertise upcoming tiers so users know they're on the roadmap, without
+ * wiring them to the backend PlanType enum or the tier-switch mutation.
+ * Rendered by `ComingSoonPlanCard` below the selectable tiers, styled as
+ * disabled with a "COMING SOON" badge. Ken's stakeholder ask 2026-07-09:
+ * show Family as coming soon on the chooser (assessment-strategy-v2 §3.2
+ * has Family queued as a real tier for a later phase).
+ */
+interface ComingSoonSpec {
+  key: string
+  title: string
+  description: string
+  features: PlanCardSpec['features']
+  icon: keyof typeof MaterialIcons.glyphMap
+  assessmentLevel: AssessmentLevel
+}
+
+const COMING_SOON_CARDS: ComingSoonSpec[] = [
+  {
+    key: 'family',
+    title: 'Family',
+    description:
+      'Shared with your household — invited family members can view, comment on, and help track your goals together.',
+    features: {
+      assessment: 'Everything in Advanced, shared with invited family',
+      updates: 'Family can view + comment on your plan and goals',
+      support: 'Shared with your care circle',
+      bestFor: 'Households where family manages care together',
+    },
+    icon: 'groups',
+    assessmentLevel: 'standard',
+  },
+]
+
 const PLAN_CARDS: PlanCardSpec[] = [
   {
     type: 'basic',
@@ -241,6 +276,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
             </View>
           ) : null}
 
+          {/* Selectable tiers first, then coming-soon tiers underneath. */}
           {PLAN_CARDS.filter((c) => AGENCY_PLANS_ENABLED || !isAgencyType(c.type)).map((card) => {
             const isCurrent = card.type === currentType
             const isAgencyTier = card.type === 'agency-supported' || card.type === 'agency-managed'
@@ -505,9 +541,160 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
               </View>
             )
           })}
+
+          {/*
+           * COS-432: coming-soon tiers (Family, ...). Display-only, not
+           * selectable, not routed to the backend PlanType enum. Shown so
+           * users know these are on the roadmap.
+           */}
+          {COMING_SOON_CARDS.map((card) => (
+            <ComingSoonPlanCard
+              key={card.key}
+              spec={card}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          ))}
         </ScrollView>
       </View>
     </AppWrapper>
+  )
+}
+
+/**
+ * COS-432: read-only "coming soon" tier card. Same visual shell as a
+ * selectable card (icon + title + description + feature rows) so users
+ * see it belongs to the same list, but rendered non-interactive with a
+ * "COMING SOON" badge in place of a selection state. Not a Pressable —
+ * there is nothing to press yet.
+ */
+function ComingSoonPlanCard({
+  spec,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: {
+  spec: ComingSoonSpec
+  colors: { text: string; subtext: string; card: string; tint: string | undefined; border: string }
+  getScaledFontSize: (n: number) => number
+  getScaledFontWeight: (n: number) => string
+}): React.JSX.Element {
+  return (
+    <View
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`${spec.title} plan — coming soon. ${spec.description}`}
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.text + '20',
+          borderWidth: 1,
+          borderStyle: 'dashed',
+          opacity: 0.7,
+        },
+      ]}
+    >
+      <View style={styles.cardHeader}>
+        <MaterialIcons name={spec.icon} size={28} color={colors.subtext} />
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              styles.cardTitle,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(700) as any,
+              },
+            ]}
+          >
+            {spec.title}
+          </Text>
+        </View>
+        <View style={[styles.currentPill, { backgroundColor: colors.subtext }]}>
+          <Text
+            style={[
+              styles.currentPillText,
+              {
+                fontSize: getScaledFontSize(11),
+                fontWeight: getScaledFontWeight(700) as any,
+              },
+            ]}
+          >
+            COMING SOON
+          </Text>
+        </View>
+      </View>
+      <View
+        style={[
+          styles.assessmentBadge,
+          {
+            backgroundColor: ASSESSMENT_COLOR[spec.assessmentLevel] + '18',
+            borderColor: ASSESSMENT_COLOR[spec.assessmentLevel] + '80',
+          },
+        ]}
+      >
+        <MaterialIcons name="assignment" size={12} color={ASSESSMENT_COLOR[spec.assessmentLevel]} />
+        <Text
+          style={{
+            color: ASSESSMENT_COLOR[spec.assessmentLevel],
+            fontSize: getScaledFontSize(10),
+            fontWeight: getScaledFontWeight(700) as any,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            marginLeft: 4,
+          }}
+        >
+          {ASSESSMENT_LABEL[spec.assessmentLevel]}
+        </Text>
+      </View>
+      <Text
+        style={[styles.cardDescription, { color: colors.text, fontSize: getScaledFontSize(14), marginTop: 8 }]}
+      >
+        {spec.description}
+      </Text>
+      <View style={styles.includedList}>
+        <FeatureRow
+          icon="health-and-safety"
+          label="Assessment"
+          value={spec.features.assessment}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+        />
+        <FeatureRow
+          icon="autorenew"
+          label="Updates"
+          value={spec.features.updates}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+        />
+        <FeatureRow
+          icon="support-agent"
+          label="Support"
+          value={spec.features.support}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+        />
+        <FeatureRow
+          icon="favorite"
+          label="Best for"
+          value={spec.features.bestFor}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+        />
+      </View>
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: getScaledFontSize(12),
+          marginTop: 10,
+          fontStyle: 'italic',
+        }}
+      >
+        We'll let you know when this plan is available.
+      </Text>
+    </View>
   )
 }
 
