@@ -365,30 +365,65 @@ export function BiopsychosocialPlanScreen({
             getScaledFontWeight={getScaledFontWeight}
             onPress={onChangePlanType}
           />
-          {/*
-            COS-430: entry point to the NovoPsych Wellbeing map. Small text
-            link so it doesn't compete with the tier pill or the Refresh
-            button. Route is read-only — safe to open mid-generate.
-          */}
-          <Pressable
-            onPress={() => router.push('/Home/wellbeing-map' as never)}
-            accessibilityRole="link"
-            accessibilityLabel="Open Wellbeing map"
-            style={styles.mapLinkRow}
+        </View>
+
+        {/*
+          COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
+          map" text link inside the header block — Kenneth 2026-07-10:
+          "I was not aware we can click it and what does it do and how it
+          will be helpful to patients." Promoted to a proper card with
+          icon + title + explanatory subtitle so users can tell what it is
+          before tapping. Mirrors ViewBioInsightsLink's layout on the
+          legacy plan (COS-438) for visual consistency across the
+          bio-related entry points. Route is read-only — safe to open
+          mid-generate.
+        */}
+        <Pressable
+          onPress={() => router.push('/Home/wellbeing-map' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Open your Wellbeing map"
+          accessibilityHint="Shows how your goals cluster across the NovoPsych model"
+          style={({ pressed }) => [
+            styles.mapCard,
+            {
+              backgroundColor: (colors.tint as string) + '14',
+              borderColor: (colors.tint as string) + '33',
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.mapIconChip,
+              { backgroundColor: (colors.tint as string) + '22' },
+            ]}
           >
-            <MaterialIcons name="hub" size={16} color={colors.tint} />
+            <MaterialIcons name="hub" size={getScaledFontSize(22)} color={colors.tint} />
+          </View>
+          <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
             <Text
               style={{
-                color: colors.tint,
-                fontSize: getScaledFontSize(13),
-                fontWeight: getScaledFontWeight(600) as any,
-                marginLeft: 6,
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(700) as any,
               }}
             >
-              See your Wellbeing map
+              Your Wellbeing map
             </Text>
-          </Pressable>
-        </View>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: 2,
+                lineHeight: 17,
+              }}
+            >
+              See how your goals cluster across body, mind, and social
+              wellbeing — and which areas may need attention.
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.tint} />
+        </Pressable>
 
         {/*
           COS-430: monthly re-assessment nudge. Dark behind
@@ -482,7 +517,22 @@ const styles = StyleSheet.create({
   headerBlock: { marginBottom: Spacing.md },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 },
   metaText: {},
-  mapLinkRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  mapCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderRadius: Radii.xl,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  mapIconChip: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyIcon: {
     width: 64,
     height: 64,
