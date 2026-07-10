@@ -330,6 +330,14 @@ export interface AiPlanGoal {
   target?: string;
   timeframe?: string;
   status?: 'active' | 'achieved' | 'paused' | 'cancelled';
+  /**
+   * NovoPsych subdomain tags (COS-430). Each key from `lib/bps-subdomains.ts`
+   * — see `BPS_SUBDOMAINS`. Optional and backward-compatible: legacy goals
+   * (and older backends) omit it and render no chips. The client filters
+   * unknown keys via `knownSubdomains` so a future backend adding a key an
+   * older app doesn't recognize never crashes rendering.
+   */
+  subdomains?: string[];
   // Phase 3 additions (COS-382) — optional, never persisted (computed on read)
   metricSource?: { type: string; id: string };
   progress?: {

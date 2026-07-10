@@ -49,6 +49,7 @@ import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import { TryNewPlanCta } from '@/components/health-plan/TryNewPlanCta';
+import { SubdomainChipRow } from '@/components/health-plan/SubdomainChip';
 import type { AiPlanGoal, PlanTask, TaskType } from '@/services/api/types';
 import {
   CARE_PLAN_V2_ENABLED,
@@ -891,6 +892,17 @@ export function GoalCard(props: {
             {prog.trendSymbol} {prog.line}
           </Text>
         )}
+
+        {/*
+         * NovoPsych subdomain chips (COS-430) — optional per-goal tags from
+         * `MeasurableGoal.subdomains[]`. Renders `null` for legacy goals with
+         * no tags, so this row is invisible on plans that predate the taxonomy.
+         */}
+        <SubdomainChipRow
+          subdomainKeys={g.subdomains}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+        />
 
         {/* Footer: Edit is the single clear CTA. */}
         <View style={styles.goalFooter}>
