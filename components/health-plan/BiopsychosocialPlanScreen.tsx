@@ -22,19 +22,16 @@ import React from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -45,15 +42,8 @@ import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
-import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
-import {
-  BPS_SUBDOMAINS,
-  knownSubdomains,
-  subdomainsByDomain,
-  type BpsDomain,
-} from '@/lib/bps-subdomains';
 
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'biological', title: 'Biological Wellness' },
@@ -159,13 +149,23 @@ function PlanTierPill({
 export function BiopsychosocialPlanScreen({
   currentPlanType,
   onChangePlanType,
+  onEditGoal,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
+  /**
+   * COS-433: goal editing hoisted to the long-resident `health-plan.tsx`
+   * parent — its Modal, its `updatePlanGoal` mutation, and its edit-field
+   * state all live there. This screen just fires `onEditGoal(g)` on tap so
+   * the parent (already mounted, already resident) manages the sheet, in
+   * exactly the same shape legacy `PlanScreenRedesignedV2` already uses.
+   * See project_ios26_biopsychosocial_parked.md for the iOS 26.5 crash
+   * experiment motivation.
+   */
+  onEditGoal: (goal: MeasurableGoal) => void;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
-  const queryClient = useQueryClient();
   const planTypeDisplayName = usePlanTypeDisplayName();
 
   const planQuery = useBiopsychosocialPlan();
@@ -181,66 +181,6 @@ export function BiopsychosocialPlanScreen({
       setRefreshing(false);
     }
   }, [planQuery]);
-
-  // ── Goal editing — same GoalPatch/updatePlanGoal contract as the legacy
-  // Care Plan editor (COS-377). Reuses the identical endpoint rather than a
-  // second one because the backend dual-writes the same measurable goals to
-  // both the legacy AI_GENERATED_PLAN and the new BIOPSYCHOSOCIAL_PLAN record
-  // for one release cycle (see assessment-strategy-v2.md §3.1). On success we
-  // invalidate both query keys so every surface reflects the edit.
-  const [editGoal, setEditGoal] = React.useState<MeasurableGoal | null>(null);
-  const [editTitle, setEditTitle] = React.useState('');
-  const [editDesc, setEditDesc] = React.useState('');
-  const [editTarget, setEditTarget] = React.useState('');
-  const [editTimeframe, setEditTimeframe] = React.useState('');
-  // COS-430: NovoPsych subdomain tags editable per goal. Empty array is
-  // fine — legacy goals arrive without subdomains and stay unchanged unless
-  // the user toggles something.
-  const [editSubdomains, setEditSubdomains] = React.useState<string[]>([]);
-
-  const openGoalEditor = React.useCallback((g: MeasurableGoal) => {
-    setEditGoal(g);
-    setEditTitle(g.title);
-    setEditDesc(g.description ?? '');
-    setEditTarget(g.target ?? '');
-    setEditTimeframe(g.timeframe ?? '');
-    setEditSubdomains(knownSubdomains(g.subdomains));
-  }, []);
-  const closeGoalEditor = React.useCallback(() => setEditGoal(null), []);
-
-  const toggleSubdomain = React.useCallback((key: string) => {
-    setEditSubdomains((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  }, []);
-
-  const updateGoalMutation = useMutation({
-    mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) => updatePlanGoal(goalId, patch),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
-      queryClient.invalidateQueries({ queryKey: ['ai-health-plan'] });
-    },
-  });
-
-  const saveGoalEdit = React.useCallback(async () => {
-    if (!editGoal) return;
-    const patch: GoalPatch = {};
-    if (editTitle !== editGoal.title) patch.title = editTitle;
-    if (editDesc !== (editGoal.description ?? '')) patch.description = editDesc;
-    if (editTarget !== (editGoal.target ?? '')) patch.target = editTarget;
-    if (editTimeframe !== (editGoal.timeframe ?? '')) patch.timeframe = editTimeframe;
-    // COS-430: only send subdomains when they've actually changed to keep
-    // the patch minimal and avoid disturbing legacy fields on the server.
-    const currentSubs = knownSubdomains(editGoal.subdomains);
-    const nextSubs = editSubdomains;
-    if (currentSubs.length !== nextSubs.length || currentSubs.some((k, i) => k !== nextSubs[i])) {
-      patch.subdomains = nextSubs;
-    }
-    try {
-      await updateGoalMutation.mutateAsync({ goalId: editGoal.id, patch });
-      closeGoalEditor();
-    } catch {
-      Alert.alert('Error', 'Failed to save goal. Please try again.');
-    }
-  }, [editGoal, editTitle, editDesc, editTarget, editTimeframe, editSubdomains, updateGoalMutation, closeGoalEditor]);
 
   const onRegenerate = React.useCallback(() => {
     regenerateMutation.mutate(undefined, {
@@ -462,7 +402,7 @@ export function BiopsychosocialPlanScreen({
             colors={colors}
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
-            onEditGoal={openGoalEditor}
+            onEditGoal={onEditGoal}
           />
         ))}
 
@@ -513,141 +453,14 @@ export function BiopsychosocialPlanScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
-
-      {/* Goal editor modal */}
-      <Modal visible={editGoal !== null} animationType="slide" transparent onRequestClose={closeGoalEditor}>
-        <View style={modalStyles.overlay}>
-          <View style={[modalStyles.sheet, { backgroundColor: colors.card ?? colors.background }]}>
-            <View style={modalStyles.header}>
-              <Text style={[modalStyles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }]}>
-                Edit Goal
-              </Text>
-              <TouchableOpacity onPress={closeGoalEditor} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <MaterialIcons name="close" size={22} color={colors.subtext} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={modalStyles.scrollArea} keyboardShouldPersistTaps="handled">
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>TITLE</Text>
-              <TextInput
-                style={[modalStyles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editTitle}
-                onChangeText={setEditTitle}
-                maxLength={120}
-                placeholder="Goal title"
-                placeholderTextColor={colors.subtext}
-              />
-
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>DESCRIPTION</Text>
-              <TextInput
-                style={[modalStyles.input, modalStyles.multiline, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editDesc}
-                onChangeText={setEditDesc}
-                maxLength={300}
-                multiline
-                numberOfLines={3}
-                placeholder="Description"
-                placeholderTextColor={colors.subtext}
-              />
-
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>TARGET</Text>
-              <TextInput
-                style={[modalStyles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editTarget}
-                onChangeText={setEditTarget}
-                maxLength={40}
-                placeholder="Goal value"
-                placeholderTextColor={colors.subtext}
-              />
-
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>TIMEFRAME</Text>
-              <TextInput
-                style={[modalStyles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={editTimeframe}
-                onChangeText={setEditTimeframe}
-                maxLength={40}
-                placeholder="e.g. 3 months"
-                placeholderTextColor={colors.subtext}
-              />
-
-              {/*
-                COS-430: NovoPsych subdomain multi-picker. Grouped by domain
-                so each row's chips stay visually associated with their
-                domain header (Biological / Psychological / Social).
-              */}
-              <Text style={[modalStyles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }]}>
-                NOVOPSYCH SUBDOMAINS
-              </Text>
-              {(Object.entries(subdomainsByDomain()) as [BpsDomain, typeof BPS_SUBDOMAINS[number][]][])
-                .map(([domain, subs]) => (
-                <View key={domain} style={{ marginBottom: 10 }}>
-                  <Text
-                    style={{
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(11),
-                      textTransform: 'capitalize',
-                      marginBottom: 4,
-                    }}
-                  >
-                    {domain}
-                  </Text>
-                  <View style={modalStyles.chipRow}>
-                    {subs.map((s) => {
-                      const active = editSubdomains.includes(s.key);
-                      return (
-                        <Pressable
-                          key={s.key}
-                          onPress={() => toggleSubdomain(s.key)}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                          style={[
-                            modalStyles.pickerChip,
-                            {
-                              backgroundColor: active ? (colors.tint as string) + '22' : colors.background,
-                              borderColor: active ? (colors.tint as string) : colors.border,
-                              borderStyle: s.crossDomain ? 'dashed' : 'solid',
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={{
-                              color: active ? (colors.tint as string) : colors.text,
-                              fontSize: getScaledFontSize(12),
-                              fontWeight: '600',
-                            }}
-                          >
-                            {s.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-
-            <View style={modalStyles.footer}>
-              <Pressable onPress={closeGoalEditor} style={[modalStyles.footerBtn, { borderColor: colors.border }]}>
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={saveGoalEdit}
-                disabled={updateGoalMutation.isPending}
-                style={[
-                  modalStyles.footerBtn,
-                  { backgroundColor: colors.tint, borderColor: colors.tint, opacity: updateGoalMutation.isPending ? 0.7 : 1 },
-                ]}
-              >
-                {updateGoalMutation.isPending ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Save</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/*
+        COS-433: goal-editor Modal + its state + its updateGoalMutation
+        have been HOISTED into the long-resident `health-plan.tsx` parent
+        (mirrors legacy PlanScreenRedesignedV2 exactly). This screen no
+        longer instantiates a Modal host in its own subtree — it just
+        fires `onEditGoal(g)` prop callback on tap. See file header for
+        the iOS 26.5 EXUpdates experiment rationale.
+      */}
     </AppWrapper>
   );
 }
@@ -702,19 +515,4 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   tierPillCentered: { alignSelf: 'center' },
-});
-
-const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '85%', padding: Spacing.md },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  headerTitle: {},
-  scrollArea: { marginBottom: Spacing.sm },
-  fieldLabel: { marginTop: Spacing.sm, marginBottom: 4, letterSpacing: 0.6 },
-  input: { borderWidth: 1, borderRadius: Radii.sm, paddingHorizontal: 12, paddingVertical: 10 },
-  multiline: { minHeight: 72, textAlignVertical: 'top' },
-  footer: { flexDirection: 'row', gap: 12, marginTop: Spacing.sm },
-  footerBtn: { flex: 1, borderWidth: 1, borderRadius: Radii.md, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  pickerChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
 });
