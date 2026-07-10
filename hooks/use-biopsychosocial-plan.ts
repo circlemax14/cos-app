@@ -4,6 +4,7 @@ import {
   regenerateBiopsychosocialPlan,
   RegenerationInFlightError,
 } from '@/services/api/biopsychosocial-plan'
+import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan'
 
 /**
  * Phase 3 (COS-360 / SCRUM-518): wraps `GET /v1/health-plan/biopsychosocial`.
@@ -53,5 +54,27 @@ export function useRegenerateBiopsychosocialPlan() {
       }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] }),
+  })
+}
+
+/**
+ * COS-433: named-hook wrapper for editing a biopsychosocial goal via the
+ * shared `updatePlanGoal` endpoint. Same REST call as legacy's
+ * `useUpdatePlanGoal`, but this variant also invalidates
+ * `['biopsychosocial-plan']` (in addition to `['ai-health-plan']`) so the
+ * bio surface reflects the edit as soon as the mutation resolves. Moving
+ * this out of `BiopsychosocialPlanScreen`'s inline `useMutation` was one
+ * of the two structural asymmetries the July 10 forensic flagged as
+ * unique to bio vs. legacy — see project_ios26_biopsychosocial_parked.md.
+ */
+export function useUpdateBioGoal() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) =>
+      updatePlanGoal(goalId, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] })
+      qc.invalidateQueries({ queryKey: ['ai-health-plan'] })
+    },
   })
 }
