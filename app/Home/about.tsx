@@ -3,8 +3,10 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
+import * as Sentry from '@sentry/react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +34,7 @@ export default function AboutScreen() {
 
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const appVersion = Constants.expoConfig?.version ?? 'unknown';
   const buildNumber =
@@ -83,7 +86,21 @@ export default function AboutScreen() {
     }
   };
 
+  // Formatted build-details summary shared via the OS share sheet.
+  //
+  // Kenneth flagged that sharing to a paired Mac via AirDrop was landing
+  // as unstructured text that TextEdit couldn't open — RN's plain
+  // `Share.share({ message })` sends a raw string, and iOS AirDrop-to-Mac
+  // has no file extension to route on, so the receiving Mac just sees
+  // undelivered content. The fix: write the summary to a real `.txt`
+  // file in the cache directory and share the `file://` URL. Mac AirDrop
+  // now receives a proper text file that opens in TextEdit / Preview /
+  // pastes into any editor. Same pattern as `health-trends.tsx`'s CSV
+  // export (proven-safe on iOS 26.5). Falls back to plain-text `message:`
+  // on Android — Android's Share less reliably honours cache file URLs
+  // and the CSV export already documented that. No new native deps.
   const handleShare = async () => {
+    if (sharing) return;
     const body = [
       `App: Circle Support Health`,
       `Version: ${appVersion} (${buildNumber})`,
@@ -92,10 +109,36 @@ export default function AboutScreen() {
       `Update ID: ${updateId}`,
       `Platform: ${platform}`,
     ].join('\n');
+    setSharing(true);
     try {
-      await Share.share({ message: body });
-    } catch {
-      // ignore
+      let result: Awaited<ReturnType<typeof Share.share>>;
+      if (Platform.OS === 'ios') {
+        const filename = `csh-build-${(Constants.expoConfig?.ios?.buildNumber ?? 'unknown')}.txt`;
+        const path = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(path, body, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        result = await Share.share(
+          { url: path, message: body, title: 'Circle Support Health — Build Details' },
+          { subject: 'CSH Build Details', dialogTitle: 'Share build details' },
+        );
+      } else {
+        result = await Share.share(
+          { message: body, title: 'Circle Support Health — Build Details' },
+          { subject: 'CSH Build Details', dialogTitle: 'Share build details' },
+        );
+      }
+      // `dismissedAction` (iOS only) means the user closed the sheet
+      // without picking a target — not an error, nothing to surface.
+      if (result.action === Share.dismissedAction) {
+        return;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Sentry.captureException(err);
+      Alert.alert('Share failed', `Could not open the share sheet.\n\n${msg}`);
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -208,18 +251,25 @@ export default function AboutScreen() {
 
         <Pressable
           onPress={handleShare}
+          disabled={sharing}
           style={({ pressed }) => [
             styles.secondaryBtn,
             {
               borderColor: colors.border,
-              opacity: pressed ? 0.7 : 1,
+              opacity: pressed || sharing ? 0.7 : 1,
             },
           ]}
         >
-          <MaterialIcons name="share" size={getScaledFontSize(18)} color={colors.text} />
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as '600' }}>
-            Share build details
-          </Text>
+          {sharing ? (
+            <ActivityIndicator color={colors.text} />
+          ) : (
+            <>
+              <MaterialIcons name="share" size={getScaledFontSize(18)} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as '600' }}>
+                Share build details
+              </Text>
+            </>
+          )}
         </Pressable>
 
         <View style={{ height: 40 }} />
