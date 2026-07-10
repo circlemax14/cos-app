@@ -107,8 +107,16 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               { color: colors.subtext, fontSize: getScaledFontSize(13) },
             ]}
           >
-            Where your goals cluster across the NovoPsych model. Gaps highlight
-            subdomains not yet addressed by your plan.
+            A visual overview of your plan across three overlapping wellness
+            domains — biological, psychological, and social &amp; spiritual.
+            Each dot is a subdomain your goals are helping with; the empty
+            dots are areas your plan doesn&apos;t yet cover.{'\n\n'}
+            <Text style={{ color: colors.text, fontWeight: getScaledFontWeight(600) as any }}>
+              Why it matters:
+            </Text>{' '}
+            wellbeing improves fastest when goals span all three domains.
+            Use the coverage heatmap below to spot gaps and bring them up
+            with your care team.
           </Text>
         </View>
 
