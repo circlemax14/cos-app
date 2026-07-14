@@ -62,8 +62,8 @@ export function ViewBioInsightsLink(): React.JSX.Element | null {
     <Pressable
       onPress={() => router.push('/Home/biopsychosocial-plan' as never)}
       accessibilityRole="button"
-      accessibilityLabel="View your biopsychosocial insights"
-      accessibilityHint="Opens a deeper view of your plan across biological, psychological, and social wellness"
+      accessibilityLabel="Open your biopsychosocial plan"
+      accessibilityHint="Opens your plan reorganized across biological, psychological, and social wellness"
       style={({ pressed }) => [
         styles.banner,
         bannerElevation,
@@ -75,17 +75,17 @@ export function ViewBioInsightsLink(): React.JSX.Element | null {
       ]}
     >
       <View style={[styles.iconChip, { backgroundColor: alpha(tint, '22') }]}>
-        <MaterialIcons name="insights" size={getScaledFontSize(22)} color={tint} />
+        <MaterialIcons name="north-east" size={getScaledFontSize(22)} color={tint} />
       </View>
       <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
         <Text
           style={{
             color: colors.text,
-            fontSize: getScaledFontSize(16),
+            fontSize: getScaledFontSize(17),
             fontWeight: getScaledFontWeight(700) as any,
           }}
         >
-          View your biopsychosocial insights
+          Open your biopsychosocial plan
         </Text>
         <Text
           style={{
@@ -95,7 +95,7 @@ export function ViewBioInsightsLink(): React.JSX.Element | null {
             lineHeight: 18,
           }}
         >
-          A deeper view of your plan across Biological, Psychological, and Social &amp; Spiritual wellness.
+          Same goals, organized around body, mind, and social &amp; spiritual wellbeing.
         </Text>
       </View>
       <MaterialIcons name="chevron-right" size={getScaledFontSize(24)} color={tint} />
