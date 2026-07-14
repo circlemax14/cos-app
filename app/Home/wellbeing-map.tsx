@@ -221,16 +221,6 @@ export default function WellbeingMapRoute(): React.JSX.Element {
     router.push('/Home/biopsychosocial-plan' as never)
   }, [closeSheet])
 
-  const handleAskCareCircle = React.useCallback((sub: BpsSubdomain) => {
-    // Placeholder for v1 — real integration deferred until care-circle
-    // chat supports a prefilled draft message.
-    Alert.alert(
-      'Ask your care circle',
-      `Coming soon — you'll be able to send your care circle a message about "${sub.label}" from here.`,
-      [{ text: 'OK' }],
-    )
-  }, [])
-
   const handleAiSuggest = React.useCallback((sub: BpsSubdomain) => {
     // Placeholder for v1 — real integration deferred to Track 2 (backend
     // Bedrock prompt update needed to focus regeneration on a subdomain).
@@ -565,7 +555,6 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         getScaledFontWeight={getScaledFontWeight}
         onClose={closeSheet}
         onAddGoal={handleAddGoal}
-        onAskCareCircle={handleAskCareCircle}
         onAiSuggest={handleAiSuggest}
       />
     </AppWrapper>

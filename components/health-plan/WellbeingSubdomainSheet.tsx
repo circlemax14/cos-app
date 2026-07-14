@@ -70,8 +70,6 @@ export interface WellbeingSubdomainSheetProps {
   getScaledFontWeight: (n: number) => string | number
   onClose: () => void
   onAddGoal: (subdomain: BpsSubdomain) => void
-  onLearnMore?: (subdomain: BpsSubdomain) => void
-  onAskCareCircle: (subdomain: BpsSubdomain) => void
   onAiSuggest: (subdomain: BpsSubdomain) => void
 }
 
@@ -87,7 +85,6 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
     getScaledFontWeight,
     onClose,
     onAddGoal,
-    onAskCareCircle,
     onAiSuggest,
   } = props
 
@@ -336,18 +333,6 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
                 <MaterialIcons name={expanded ? 'expand-less' : 'info-outline'} size={16} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: getScaledFontSize(12), fontWeight: '600' }}>
                   {expanded ? 'Show less' : 'Learn more'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => onAskCareCircle(subdomain)}
-                style={[styles.actionSecondary, { borderColor: colors.border }]}
-                accessibilityRole="button"
-                accessibilityLabel="Ask my care circle"
-              >
-                <MaterialIcons name="chat-bubble-outline" size={16} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(12), fontWeight: '600' }}>
-                  Ask care circle
                 </Text>
               </TouchableOpacity>
 
