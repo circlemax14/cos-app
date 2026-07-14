@@ -331,6 +331,11 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* HS-1 / SCRUM-590 — patient intake wizard as a stack-pushed route (not a Modal), same pattern as plan-type-chooser and biopsychosocial-plan (iOS 26.5 modal-crash background). */}
+      <Tabs.Screen
+        name="patient-intake"
+        options={{ title: 'Health check-in', href: null, headerShown: false }}
+      />
       <Tabs.Screen
         name="assessment-stepper"
         options={{
