@@ -4,9 +4,15 @@ import { getCategoryIcon, getSubCategoryIcon } from './category-icons';
  * Category groups for Circle of Support
  * Structure: Category -> Sub-categories -> Providers
  *
- * Two categories are active:
- *  1. Care Manager – EHR-linked agencies
- *  2. Medical      – EHR-linked practitioners
+ * Four active categories, arranged to span the biopsychosocial spectrum:
+ *  1. Care Manager   – EHR-linked agencies (coordination axis)
+ *  2. Medical        – EHR-linked practitioners (biological axis)
+ *  3. Psychological  – mental-health supports (manual add; provider-
+ *                      categorization.ts still routes EHR psychiatrists
+ *                      to Medical > Others until Track B teaches it
+ *                      about this category)
+ *  4. Social         – family, friends, neighbors, community, faith
+ *                      (fully manual — FHIR doesn't model these)
  *  (Integrative – Non-EHR providers – temporarily disabled)
  */
 
@@ -44,6 +50,40 @@ export const SUPPORT_CATEGORIES: Category[] = [
       { id: 'physician-assistants', name: 'Physician Assistants', icon: getSubCategoryIcon('physician-assistants'), keywords: ['physician assistant', 'pa', 'pa-c', 'pa c', "physician's assistant"] },
       { id: 'physical-occupational-therapists', name: 'Physical/Occupational Therapists', icon: getSubCategoryIcon('physical-occupational-therapists'), keywords: ['physical therapist', 'pt', 'occupational therapist', 'ot', 'physical therapy', 'occupational therapy', 'physiotherapy', 'physiotherapist', 'rehabilitation', 'rehab'] },
       { id: 'others', name: 'Others', icon: getSubCategoryIcon('others'), keywords: ['healthcare', 'provider', 'practitioner', 'medical'] },
+    ],
+  },
+  // SCRUM-579 (2026-07-13, Ken feedback batch): BPS uniformity on
+  // Circle of Support. Ken wants Circle populated across all three
+  // BPS domains — Medical + Care Manager cover the biological /
+  // coordination axes; Psychological + Social close out the psy +
+  // soc axes. Sub-categories carry keyword hints for a follow-up
+  // where provider-categorization.ts learns about the new
+  // categories; today all EHR providers still land in Medical, so
+  // Psy + Soc start empty and users manually add supports.
+  {
+    id: 'psychological',
+    name: 'Psychological',
+    icon: getCategoryIcon('mental-health'),
+    subCategories: [
+      { id: 'psychiatrist', name: 'Psychiatrist', icon: getSubCategoryIcon('psychiatrist'), keywords: ['psychiatrist', 'psychiatry', 'psychiatric'] },
+      { id: 'psychologist', name: 'Psychologist', icon: getSubCategoryIcon('psychologist'), keywords: ['psychologist', 'psychology', 'clinical psychologist', 'psyd'] },
+      { id: 'therapist', name: 'Therapist / Counselor', icon: getSubCategoryIcon('mft'), keywords: ['therapist', 'counselor', 'lmft', 'mft', 'marriage and family therapist', 'lpc', 'licensed professional counselor', 'psychotherapist'] },
+      { id: 'social-worker', name: 'Clinical Social Worker', icon: getSubCategoryIcon('lcsw'), keywords: ['clinical social worker', 'lcsw', 'msw', 'social worker'] },
+      { id: 'support-group', name: 'Support Group', icon: getSubCategoryIcon('aa'), keywords: ['support group', 'aa', 'alcoholics anonymous', 'na', 'narcotics anonymous', 'recovery group', 'peer support'] },
+      { id: 'others-psychological', name: 'Others', icon: getSubCategoryIcon('others'), keywords: ['mental health', 'behavioral health'] },
+    ],
+  },
+  {
+    id: 'social',
+    name: 'Social',
+    icon: getCategoryIcon('family'),
+    subCategories: [
+      { id: 'family', name: 'Family', icon: getSubCategoryIcon('siblings'), keywords: [] },
+      { id: 'friend', name: 'Friend', icon: getSubCategoryIcon('friends'), keywords: [] },
+      { id: 'neighbor', name: 'Neighbor', icon: getSubCategoryIcon('friends'), keywords: [] },
+      { id: 'community', name: 'Community', icon: getSubCategoryIcon('groups'), keywords: [] },
+      { id: 'faith-community', name: 'Faith Community', icon: getSubCategoryIcon('church'), keywords: [] },
+      { id: 'others-social', name: 'Others', icon: getSubCategoryIcon('others'), keywords: [] },
     ],
   },
   // TODO: Re-enable when Integrative feature is ready
