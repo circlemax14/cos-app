@@ -27,7 +27,13 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
-import { BPS_SUBDOMAINS, knownSubdomains, type BpsDomain } from '@/lib/bps-subdomains'
+import {
+  BPS_SUBDOMAINS,
+  knownSubdomains,
+  type BpsDomain,
+  type BpsOverlap,
+  type BpsSubdomain,
+} from '@/lib/bps-subdomains'
 
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
@@ -129,7 +135,38 @@ interface SubdomainCoverage {
   label: string
   domain: BpsDomain
   crossDomain: boolean
+  overlap?: BpsOverlap
   count: number
+}
+
+// Chip-list groups — order matches the Ken Venn narrative
+// (Bio pure → Bio∩Psy overlap → Psy pure → Psy∩Soc overlap → Bio∩Soc
+// overlap → Social pure).
+type GroupKey = 'bio_pure' | 'bio_psy' | 'psy_pure' | 'psy_soc' | 'bio_soc' | 'soc_pure'
+
+interface GroupSpec {
+  key: GroupKey
+  header: string
+  color: string
+  italic: boolean
+}
+
+const GROUPS: GroupSpec[] = [
+  { key: 'bio_pure', header: 'BIOLOGICAL', color: DOMAIN_COLOR.biological, italic: false },
+  { key: 'bio_psy', header: '↔ shared with Psychological', color: DOMAIN_COLOR.biological, italic: true },
+  { key: 'psy_pure', header: 'PSYCHOLOGICAL', color: DOMAIN_COLOR.psychological, italic: false },
+  { key: 'psy_soc', header: '↔ shared with Social', color: DOMAIN_COLOR.psychological, italic: true },
+  { key: 'bio_soc', header: '↔ shared with Biological', color: DOMAIN_COLOR.social, italic: true },
+  { key: 'soc_pure', header: 'SOCIAL & SPIRITUAL', color: DOMAIN_COLOR.social, italic: false },
+]
+
+function groupOf(s: BpsSubdomain): GroupKey {
+  if (s.overlap === 'bio_psy') return 'bio_psy'
+  if (s.overlap === 'bio_soc') return 'bio_soc'
+  if (s.overlap === 'psy_soc') return 'psy_soc'
+  if (s.domain === 'biological') return 'bio_pure'
+  if (s.domain === 'psychological') return 'psy_pure'
+  return 'soc_pure'
 }
 
 export default function WellbeingMapRoute(): React.JSX.Element {
@@ -138,8 +175,17 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const planQuery = useBiopsychosocialPlan()
 
   const coverage = React.useMemo(() => computeCoverage(planQuery.data?.plan ?? null), [planQuery.data?.plan])
-  const gaps = coverage.filter((c) => c.count === 0)
-  const maxCount = coverage.reduce((m, c) => Math.max(m, c.count), 0)
+
+  const grouped = React.useMemo(() => {
+    const g: Record<GroupKey, SubdomainCoverage[]> = {
+      bio_pure: [], bio_psy: [], psy_pure: [], psy_soc: [], bio_soc: [], soc_pure: [],
+    }
+    for (const c of coverage) {
+      const sub = BPS_SUBDOMAINS.find((s) => s.key === c.key)
+      if (sub) g[groupOf(sub)].push(c)
+    }
+    return g
+  }, [coverage])
 
   const domainStats = React.useMemo(() => {
     const stats: Record<BpsDomain, { total: number; covered: number; gaps: SubdomainCoverage[] }> = {
@@ -361,7 +407,9 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           </Text>
         </View>
 
-        {/* Coverage heatmap grid — drilldown detail (COS-430 style, restored) */}
+        {/* Coverage by subdomain — chip list grouped by domain + overlap type.
+            Shows the same coverage info as the map but with the overlap
+            groupings explicit (Bio ∩ Psy, Bio ∩ Soc, Psy ∩ Soc). */}
         <View style={[styles.card, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>
           <Text
             style={[
@@ -371,54 +419,43 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           >
             Coverage by subdomain
           </Text>
-          <View style={styles.heatGrid}>
-            {coverage.map((c) => (
-              <View
-                key={c.key}
-                style={[
-                  styles.heatCell,
-                  { backgroundColor: heatColor(c.count, maxCount, c.domain, colors.background as string) },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: c.count === 0 ? colors.subtext : (isLikelyDarkBg(colors.background as string) ? '#F2F2F7' : '#1C1C1E'),
-                    fontSize: getScaledFontSize(10),
-                    fontWeight: '600',
-                    textAlign: 'center',
-                  }}
-                  numberOfLines={2}
-                >
-                  {c.label}
-                </Text>
-                <Text
-                  style={{
-                    color: c.count === 0 ? colors.subtext : (isLikelyDarkBg(colors.background as string) ? '#F2F2F7' : '#1C1C1E'),
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: '700',
-                    textAlign: 'center',
-                    marginTop: 2,
-                  }}
-                >
-                  {c.count}
-                </Text>
-              </View>
-            ))}
-          </View>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(11),
+              marginBottom: 10,
+              lineHeight: 15,
+            }}
+          >
+            Solid = at least one goal targets this subdomain. Dashed = no goal
+            yet. Overlap groups show cross-cutting items shared between two
+            circles of the Venn above.
+          </Text>
 
-          {gaps.length > 0 ? (
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(12),
-                lineHeight: 17,
-                marginTop: 10,
-              }}
-            >
-              <Text style={{ color: colors.text, fontWeight: '700' }}>Gaps: </Text>
-              {gaps.map((g) => g.label).join(', ')} — not yet addressed by any goal.
-            </Text>
-          ) : null}
+          {GROUPS.map((g) => {
+            const items = grouped[g.key]
+            if (!items || items.length === 0) return null
+            return (
+              <View key={g.key} style={{ marginTop: g.italic ? 8 : 12 }}>
+                <Text
+                  style={{
+                    color: g.color,
+                    fontSize: getScaledFontSize(g.italic ? 10 : 11),
+                    fontWeight: g.italic ? ('500' as any) : ('800' as any),
+                    fontStyle: g.italic ? 'italic' : 'normal',
+                    letterSpacing: g.italic ? 0 : 0.4,
+                    marginBottom: 6,
+                    textTransform: g.italic ? 'none' : 'uppercase',
+                  }}
+                >
+                  {g.header}
+                </Text>
+                <View style={styles.chipRow}>
+                  {items.map((c) => renderChip(c, colors, getScaledFontSize, isDark))}
+                </View>
+              </View>
+            )
+          })}
         </View>
 
         <Text
@@ -458,8 +495,45 @@ function computeCoverage(plan: import('@/services/api/biopsychosocial-plan').Bio
     label: s.label,
     domain: s.domain,
     crossDomain: !!s.crossDomain,
+    overlap: s.overlap,
     count: counts[s.key] ?? 0,
   }))
+}
+
+function renderChip(
+  c: SubdomainCoverage,
+  colors: typeof Colors['light'],
+  getScaledFontSize: (n: number) => number,
+  isDark: boolean,
+) {
+  const color = DOMAIN_COLOR[c.domain]
+  const bg = DOMAIN_BG[c.domain]
+  const covered = c.count > 0
+  return (
+    <View
+      key={c.key}
+      style={[
+        styles.chip,
+        {
+          backgroundColor: covered ? bg : 'transparent',
+          borderColor: color,
+          borderStyle: covered ? 'solid' : 'dashed',
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: covered ? color : (isDark ? '#8E8E93' : '#8E8E93'),
+          fontSize: getScaledFontSize(11),
+          fontWeight: covered ? '700' : '500',
+          fontStyle: covered ? 'normal' : 'italic',
+        }}
+      >
+        {c.label}
+        {covered ? ` · ${c.count}` : ''}
+      </Text>
+    </View>
+  )
 }
 
 /**
@@ -496,32 +570,6 @@ function pickNextMove(
   }
 }
 
-function heatColor(count: number, maxCount: number, domain: BpsDomain, bg: string): string {
-  if (count === 0) return isLikelyDarkBg(bg) ? '#2C2C2E' : '#F2F2F7'
-  const intensity = maxCount > 0 ? count / maxCount : 0
-  const light = {
-    biological: ['#D6F0E0', '#86DAA8', '#199C4F'],
-    psychological: ['#EBE0FD', '#BF9DFB', '#7B3FE4'],
-    social: ['#FFE8CB', '#FFB84D', '#C97600'],
-  }
-  const dark = {
-    biological: ['#0F2E1A', '#1F6E3B', '#34C759'],
-    psychological: ['#2A1B48', '#4A3080', '#BF9DFB'],
-    social: ['#3A2A0C', '#7A5615', '#FFB84D'],
-  }
-  const palette = (isLikelyDarkBg(bg) ? dark : light)[domain]
-  const idx = intensity >= 0.66 ? 2 : intensity >= 0.34 ? 1 : 0
-  return palette[idx]
-}
-
-function isLikelyDarkBg(bg: string | undefined): boolean {
-  if (!bg || typeof bg !== 'string') return false
-  const hex = bg.startsWith('#') ? bg.slice(1) : bg
-  if (hex.length < 2) return false
-  const r = parseInt(hex.slice(0, 2), 16)
-  return Number.isFinite(r) && r < 0x80
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
@@ -551,15 +599,16 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   cardHead: { marginBottom: 8 },
-  heatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  heatCell: {
-    width: '22.5%',
-    aspectRatio: 1.4,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   attribution: {
     textAlign: 'center',
