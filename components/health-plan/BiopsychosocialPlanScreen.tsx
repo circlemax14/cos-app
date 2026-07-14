@@ -40,6 +40,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
+import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
@@ -366,6 +367,21 @@ export function BiopsychosocialPlanScreen({
             onPress={onChangePlanType}
           />
         </View>
+
+        {/*
+          COS-448: Today's Medications card sits AT THE TOP of the plan
+          (above the wellbeing map link) so patients — especially older
+          adults — see meds at a glance without scrolling into Bio. Data
+          from usePlanMedications (COS-357). Renders null when the meds
+          feature flag is off or the endpoint hasn't answered yet, so
+          older-app / flag-off users see NO change (back-compat).
+        */}
+        <TodaysMedicationsCard
+          colors={colors}
+          isDark={settings.isDarkTheme}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
         {/*
           COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
