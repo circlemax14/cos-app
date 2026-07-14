@@ -1,25 +1,22 @@
 /**
- * Wellbeing map route (COS-430, extended in COS-444).
+ * Wellbeing map route (COS-430 → COS-444 → COS-445).
  *
- * COS-430 shipped an SVG Venn of Ken's NovoPsych biopsychosocial diagram
- * with subdomain "dots" sized by goal count. COS-444 (SCRUM-580) extends it
- * per Ken's second-round diagram (bio-psycho-socio-environmental Venn with
- * named items INSIDE each region + overlap regions dedicated to cross-cutting
- * items). Same 13-subdomain taxonomy — visual language only.
+ * COS-430 shipped the SVG Venn + subdomain-dots + coverage heatmap.
+ * COS-444 added coverage summary cards, labeled Venn (dot + text label
+ * per subdomain), and next-move card.
+ * COS-445 (SCRUM-581) expands the taxonomy from 13 → 26 subdomains per
+ * Ken's second Venn image and keeps the COS-444 labeled-Venn layout.
+ * Long labels get abbreviated visually so the density stays legible on a
+ * phone screen. The coverage heatmap grid returns below the map (users
+ * saw the chip-list variant briefly under an earlier revision of this
+ * ticket and preferred the labeled Venn + heatmap).
  *
- * Additions over the original:
- *   - Coverage summary strip at top (3 tinted cards: X-of-N covered per domain)
- *   - Labeled Venn: subdomain names sit next to their marker (Ken-image style),
- *     not just dots
- *   - Overlap subdomains (crossDomain: true) positioned visually at the
- *     matching intersection (stress_reactivity in Bio∩Psy, coping in Psy∩Soc)
- *   - Central Wellbeing marker made smaller so labels breathe
- *   - "Your next move" card: concrete gap-filling suggestion or a celebration
- *
- * Purely presentational, no new endpoint — same useBiopsychosocialPlan cache.
- * OTA-safe (no native fingerprint change). Backend taxonomy expansion (Ken's
- * image has ~21 subdomains vs our 13) deferred to a follow-up after Ken sees
- * the visual redesign.
+ * Purely presentational, no new endpoint — same useBiopsychosocialPlan
+ * cache. OTA-safe (no native fingerprint change). Backend Bedrock prompt
+ * update deferred to a Track 2 story — until it ships, new goals still
+ * get tagged with the older 13-key vocabulary (translated silently by
+ * LEGACY_ALIASES in lib/bps-subdomains.ts) and the 14 net-new subdomains
+ * render as gaps.
  */
 import React from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -30,7 +27,13 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
-import { BPS_SUBDOMAINS, knownSubdomains, type BpsDomain } from '@/lib/bps-subdomains'
+import {
+  BPS_SUBDOMAINS,
+  knownSubdomains,
+  type BpsDomain,
+  type BpsOverlap,
+  type BpsSubdomain,
+} from '@/lib/bps-subdomains'
 
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
@@ -53,51 +56,78 @@ const DOMAIN_LABEL: Record<BpsDomain, string> = {
   social: 'Social & Spiritual',
 }
 
-// Layout — 350×340 viewBox gives each subdomain label breathing room. Three
-// circles arranged in the classic Venn triangle with generous overlap for
-// the cross-domain items to sit at the intersections without collision.
+// Larger viewBox to fit 26 subdomain labels + 3 circles + wellbeing center.
 const VBW = 350
-const VBH = 340
-const CIRCLE_R = 100
-const BIO_C = { x: 120, y: 130 }
-const PSY_C = { x: 230, y: 130 }
-const SOC_C = { x: 175, y: 225 }
-const CENTER = { x: 175, y: 170 }
+const VBH = 350
+const CIRCLE_R = 95
+const BIO_C = { x: 125, y: 130 }
+const PSY_C = { x: 225, y: 130 }
+const SOC_C = { x: 175, y: 215 }
+const CENTER = { x: 175, y: 165 }
 
 type Anchor = 'start' | 'middle' | 'end'
 
 interface LabelPos {
-  /** Marker dot position. */
   dx: number
   dy: number
-  /** Label text position — placed relative to dot to avoid overlap. */
   lx: number
   ly: number
   anchor: Anchor
 }
 
-// Positions tuned per Ken's image — items placed INSIDE their primary domain
-// with labels aimed outward; overlap items sit at the intersection with the
-// label centered above/beside so both circles read as sharing that concept.
+// Some subdomain labels are too long for the phone-screen SVG; the map
+// uses these compact versions, while the coverage heatmap grid below the
+// map uses the full labels from BPS_SUBDOMAINS.
+const SVG_LABEL_OVERRIDES: Record<string, string> = {
+  metabolic_disorders: 'Metabolic Dis.',
+  immune_stress_response: 'Immune/Stress',
+  response_to_reward: 'Reward Resp.',
+  interpersonal_relationships: 'Interp. Rel.',
+  family_circumstances: 'Family Circ.',
+  socioeconomic_status: 'Socio-econ.',
+  faith_spiritual: 'Faith/Spirit',
+}
+
+// Positions tuned for the 26-subdomain taxonomy in the 350×350 viewBox.
+// Grouped by region so the pattern of adjustments stays readable.
 const SUBDOMAIN_POS: Record<string, LabelPos> = {
-  // Biological — top-left cluster
-  genes:            { dx:  55, dy:  65, lx:  50, ly:  55, anchor: 'end'    },
-  neurobiology:     { dx: 105, dy:  50, lx: 105, ly:  40, anchor: 'middle' },
-  sleep:            { dx:  50, dy: 110, lx:  45, ly: 113, anchor: 'end'    },
-  physical_health:  { dx:  60, dy: 155, lx:  55, ly: 158, anchor: 'end'    },
-  // Bio ∩ Psy overlap — top center
-  stress_reactivity:{ dx: 175, dy:  95, lx: 175, ly:  84, anchor: 'middle' },
-  // Psychological — top-right cluster
-  beliefs:          { dx: 300, dy:  70, lx: 305, ly:  73, anchor: 'start'  },
-  thought_patterns: { dx: 305, dy: 115, lx: 310, ly: 118, anchor: 'start'  },
-  emotions:         { dx: 295, dy: 160, lx: 300, ly: 163, anchor: 'start'  },
-  // Psy ∩ Soc overlap — right side of intersection
-  coping:           { dx: 240, dy: 215, lx: 285, ly: 218, anchor: 'start'  },
-  // Social — bottom band
-  relationships:    { dx:  85, dy: 250, lx:  80, ly: 253, anchor: 'end'    },
-  social_support:   { dx: 125, dy: 300, lx: 125, ly: 315, anchor: 'middle' },
-  life_stressors:   { dx: 215, dy: 300, lx: 215, ly: 315, anchor: 'middle' },
-  socioeconomic_status:{ dx: 260, dy: 260, lx: 265, ly: 263, anchor: 'start'  },
+  // ── Biological pure (top-left quadrant of Bio circle) ─────────────
+  genes:                  { dx:  60, dy:  55, lx:  55, ly:  57, anchor: 'end'    },
+  neurobiology:           { dx: 100, dy:  40, lx: 100, ly:  32, anchor: 'middle' },
+  sleep:                  { dx:  50, dy:  90, lx:  45, ly:  92, anchor: 'end'    },
+  physical_health:        { dx:  45, dy: 128, lx:  40, ly: 130, anchor: 'end'    },
+  metabolic_disorders:    { dx:  55, dy: 160, lx:  50, ly: 162, anchor: 'end'    },
+  immune_stress_response: { dx:  95, dy: 180, lx:  95, ly: 193, anchor: 'middle' },
+
+  // ── Bio ∩ Psy overlap (top center intersection) ───────────────────
+  emotions:               { dx: 175, dy:  85, lx: 175, ly:  76, anchor: 'middle' },
+  response_to_reward:     { dx: 175, dy: 110, lx: 175, ly: 122, anchor: 'middle' },
+
+  // ── Psychological pure (top-right quadrant of Psy circle) ─────────
+  attitudes_beliefs:      { dx: 285, dy:  55, lx: 290, ly:  57, anchor: 'start'  },
+  perceptions:            { dx: 300, dy:  90, lx: 305, ly:  92, anchor: 'start'  },
+  coping_skills:          { dx: 310, dy: 128, lx: 315, ly: 130, anchor: 'start'  },
+  self_esteem:            { dx: 300, dy: 160, lx: 305, ly: 162, anchor: 'start'  },
+  temperament:            { dx: 275, dy: 190, lx: 305, ly: 195, anchor: 'start'  },
+
+  // ── Bio ∩ Soc overlap (bottom-left intersection) ──────────────────
+  diet_lifestyle:         { dx: 115, dy: 200, lx: 115, ly: 192, anchor: 'middle' },
+  substance_use:          { dx: 130, dy: 225, lx: 130, ly: 237, anchor: 'middle' },
+
+  // ── Psy ∩ Soc overlap (bottom-right intersection) ─────────────────
+  interpersonal_relationships: { dx: 235, dy: 205, lx: 290, ly: 208, anchor: 'start' },
+  trauma:                 { dx: 250, dy: 230, lx: 295, ly: 233, anchor: 'start'  },
+  grief:                  { dx: 260, dy: 253, lx: 300, ly: 256, anchor: 'start'  },
+
+  // ── Social & Spiritual pure (bottom band around Soc circle) ───────
+  social_support:         { dx: 155, dy: 285, lx: 155, ly: 275, anchor: 'middle' },
+  family_circumstances:   { dx:  90, dy: 265, lx:  85, ly: 267, anchor: 'end'    },
+  peer_group:             { dx:  70, dy: 295, lx:  65, ly: 297, anchor: 'end'    },
+  work_school:            { dx: 195, dy: 285, lx: 200, ly: 275, anchor: 'middle' },
+  culture:                { dx: 255, dy: 290, lx: 260, ly: 285, anchor: 'start'  },
+  socioeconomic_status:   { dx: 280, dy: 265, lx: 285, ly: 267, anchor: 'start'  },
+  life_events:            { dx: 120, dy: 305, lx: 120, ly: 317, anchor: 'middle' },
+  faith_spiritual:        { dx: 225, dy: 315, lx: 225, ly: 327, anchor: 'middle' },
 }
 
 interface SubdomainCoverage {
@@ -105,7 +135,38 @@ interface SubdomainCoverage {
   label: string
   domain: BpsDomain
   crossDomain: boolean
+  overlap?: BpsOverlap
   count: number
+}
+
+// Chip-list groups — order matches the Ken Venn narrative
+// (Bio pure → Bio∩Psy overlap → Psy pure → Psy∩Soc overlap → Bio∩Soc
+// overlap → Social pure).
+type GroupKey = 'bio_pure' | 'bio_psy' | 'psy_pure' | 'psy_soc' | 'bio_soc' | 'soc_pure'
+
+interface GroupSpec {
+  key: GroupKey
+  header: string
+  color: string
+  italic: boolean
+}
+
+const GROUPS: GroupSpec[] = [
+  { key: 'bio_pure', header: 'BIOLOGICAL', color: DOMAIN_COLOR.biological, italic: false },
+  { key: 'bio_psy', header: '↔ shared with Psychological', color: DOMAIN_COLOR.biological, italic: true },
+  { key: 'psy_pure', header: 'PSYCHOLOGICAL', color: DOMAIN_COLOR.psychological, italic: false },
+  { key: 'psy_soc', header: '↔ shared with Social', color: DOMAIN_COLOR.psychological, italic: true },
+  { key: 'bio_soc', header: '↔ shared with Biological', color: DOMAIN_COLOR.social, italic: true },
+  { key: 'soc_pure', header: 'SOCIAL & SPIRITUAL', color: DOMAIN_COLOR.social, italic: false },
+]
+
+function groupOf(s: BpsSubdomain): GroupKey {
+  if (s.overlap === 'bio_psy') return 'bio_psy'
+  if (s.overlap === 'bio_soc') return 'bio_soc'
+  if (s.overlap === 'psy_soc') return 'psy_soc'
+  if (s.domain === 'biological') return 'bio_pure'
+  if (s.domain === 'psychological') return 'psy_pure'
+  return 'soc_pure'
 }
 
 export default function WellbeingMapRoute(): React.JSX.Element {
@@ -114,8 +175,17 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const planQuery = useBiopsychosocialPlan()
 
   const coverage = React.useMemo(() => computeCoverage(planQuery.data?.plan ?? null), [planQuery.data?.plan])
-  const gaps = coverage.filter((c) => c.count === 0)
-  const maxCount = coverage.reduce((m, c) => Math.max(m, c.count), 0)
+
+  const grouped = React.useMemo(() => {
+    const g: Record<GroupKey, SubdomainCoverage[]> = {
+      bio_pure: [], bio_psy: [], psy_pure: [], psy_soc: [], bio_soc: [], soc_pure: [],
+    }
+    for (const c of coverage) {
+      const sub = BPS_SUBDOMAINS.find((s) => s.key === c.key)
+      if (sub) g[groupOf(sub)].push(c)
+    }
+    return g
+  }, [coverage])
 
   const domainStats = React.useMemo(() => {
     const stats: Record<BpsDomain, { total: number; covered: number; gaps: SubdomainCoverage[] }> = {
@@ -212,7 +282,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>
-          <Svg viewBox={`0 0 ${VBW} ${VBH}`} width="100%" height={320}>
+          <Svg viewBox={`0 0 ${VBW} ${VBH}`} width="100%" height={340}>
             {/* Domain circles */}
             <Circle
               cx={BIO_C.x}
@@ -239,23 +309,23 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               strokeWidth={1.5}
             />
 
-            {/* Domain headers — bold, offset so they don't collide with subdomain labels */}
-            <SvgText x={40} y={25} fontSize={11} fontWeight="800" fill={DOMAIN_COLOR.biological} letterSpacing={0.4}>
+            {/* Domain headers */}
+            <SvgText x={40} y={20} fontSize={11} fontWeight="800" fill={DOMAIN_COLOR.biological} letterSpacing={0.4}>
               BIOLOGICAL
             </SvgText>
-            <SvgText x={310} y={25} fontSize={11} fontWeight="800" fill={DOMAIN_COLOR.psychological} textAnchor="end" letterSpacing={0.4}>
+            <SvgText x={310} y={20} fontSize={11} fontWeight="800" fill={DOMAIN_COLOR.psychological} textAnchor="end" letterSpacing={0.4}>
               PSYCHOLOGICAL
             </SvgText>
-            <SvgText x={175} y={335} fontSize={11} fontWeight="800" fill={DOMAIN_COLOR.social} textAnchor="middle" letterSpacing={0.4}>
+            <SvgText x={175} y={345} fontSize={11} fontWeight="800" fill={DOMAIN_COLOR.social} textAnchor="middle" letterSpacing={0.4}>
               SOCIAL &amp; SPIRITUAL
             </SvgText>
 
-            {/* Central wellbeing marker — subtler than before, doesn't dominate */}
-            <Circle cx={CENTER.x} cy={CENTER.y} r={16} fill={isDark ? '#1C1C1E' : '#FFFFFF'} stroke={isDark ? '#48484A' : '#8E8E93'} strokeWidth={0.8} />
+            {/* Central wellbeing marker */}
+            <Circle cx={CENTER.x} cy={CENTER.y} r={14} fill={isDark ? '#1C1C1E' : '#FFFFFF'} stroke={isDark ? '#48484A' : '#8E8E93'} strokeWidth={0.8} />
             <SvgText
               x={CENTER.x}
               y={CENTER.y - 1}
-              fontSize={6.5}
+              fontSize={6}
               textAnchor="middle"
               fontWeight="800"
               fill={isDark ? '#F2F2F7' : '#1C1C1E'}
@@ -263,7 +333,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
             >
               WELLBEING
             </SvgText>
-            <SvgText x={CENTER.x} y={CENTER.y + 8} fontSize={8} textAnchor="middle" fill="#FF3B30">
+            <SvgText x={CENTER.x} y={CENTER.y + 7} fontSize={7} textAnchor="middle" fill="#FF3B30">
               ♥
             </SvgText>
 
@@ -274,27 +344,28 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               const covered = c.count > 0
               const domainColor = DOMAIN_COLOR[c.domain]
               const labelFill = covered ? (isDark ? '#F2F2F7' : '#1C1C1E') : (isDark ? '#8E8E93' : '#8E8E93')
+              const shortLabel = SVG_LABEL_OVERRIDES[c.key] ?? c.label
               return (
                 <G key={c.key}>
                   <Circle
                     cx={pos.dx}
                     cy={pos.dy}
-                    r={covered ? 5 : 4}
+                    r={covered ? 4 : 3}
                     fill={covered ? domainColor : (isDark ? '#1C1C1E' : '#FFFFFF')}
                     stroke={domainColor}
-                    strokeWidth={c.crossDomain ? 1.4 : 1}
+                    strokeWidth={c.crossDomain ? 1.2 : 0.9}
                     strokeDasharray={c.crossDomain ? '2,2' : undefined}
                   />
                   <SvgText
                     x={pos.lx}
                     y={pos.ly}
-                    fontSize={9}
+                    fontSize={7.5}
                     fontWeight={covered ? '700' : '500'}
                     fontStyle={covered ? 'normal' : 'italic'}
                     fill={labelFill}
                     textAnchor={pos.anchor}
                   >
-                    {c.label}
+                    {shortLabel}
                   </SvgText>
                 </G>
               )
@@ -336,7 +407,9 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           </Text>
         </View>
 
-        {/* Coverage heatmap — drilldown grid, unchanged from COS-430 */}
+        {/* Coverage by subdomain — chip list grouped by domain + overlap type.
+            Shows the same coverage info as the map but with the overlap
+            groupings explicit (Bio ∩ Psy, Bio ∩ Soc, Psy ∩ Soc). */}
         <View style={[styles.card, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>
           <Text
             style={[
@@ -346,54 +419,43 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           >
             Coverage by subdomain
           </Text>
-          <View style={styles.heatGrid}>
-            {coverage.map((c) => (
-              <View
-                key={c.key}
-                style={[
-                  styles.heatCell,
-                  { backgroundColor: heatColor(c.count, maxCount, c.domain, colors.background as string) },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: c.count === 0 ? colors.subtext : (isLikelyDarkBg(colors.background as string) ? '#F2F2F7' : '#1C1C1E'),
-                    fontSize: getScaledFontSize(10),
-                    fontWeight: '600',
-                    textAlign: 'center',
-                  }}
-                  numberOfLines={2}
-                >
-                  {c.label}
-                </Text>
-                <Text
-                  style={{
-                    color: c.count === 0 ? colors.subtext : (isLikelyDarkBg(colors.background as string) ? '#F2F2F7' : '#1C1C1E'),
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: '700',
-                    textAlign: 'center',
-                    marginTop: 2,
-                  }}
-                >
-                  {c.count}
-                </Text>
-              </View>
-            ))}
-          </View>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(11),
+              marginBottom: 10,
+              lineHeight: 15,
+            }}
+          >
+            Solid = at least one goal targets this subdomain. Dashed = no goal
+            yet. Overlap groups show cross-cutting items shared between two
+            circles of the Venn above.
+          </Text>
 
-          {gaps.length > 0 ? (
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(12),
-                lineHeight: 17,
-                marginTop: 10,
-              }}
-            >
-              <Text style={{ color: colors.text, fontWeight: '700' }}>Gaps: </Text>
-              {gaps.map((g) => g.label).join(', ')} — not yet addressed by any goal.
-            </Text>
-          ) : null}
+          {GROUPS.map((g) => {
+            const items = grouped[g.key]
+            if (!items || items.length === 0) return null
+            return (
+              <View key={g.key} style={{ marginTop: g.italic ? 8 : 12 }}>
+                <Text
+                  style={{
+                    color: g.color,
+                    fontSize: getScaledFontSize(g.italic ? 10 : 11),
+                    fontWeight: g.italic ? ('500' as any) : ('800' as any),
+                    fontStyle: g.italic ? 'italic' : 'normal',
+                    letterSpacing: g.italic ? 0 : 0.4,
+                    marginBottom: 6,
+                    textTransform: g.italic ? 'none' : 'uppercase',
+                  }}
+                >
+                  {g.header}
+                </Text>
+                <View style={styles.chipRow}>
+                  {items.map((c) => renderChip(c, colors, getScaledFontSize, isDark))}
+                </View>
+              </View>
+            )
+          })}
         </View>
 
         <Text
@@ -411,8 +473,8 @@ export default function WellbeingMapRoute(): React.JSX.Element {
 
 /**
  * Count how many goals hit each subdomain across all three sections. Legacy
- * goals with no `subdomains` field contribute nothing (they don't crash and
- * they don't skew the coverage view — they just aren't tagged yet).
+ * subdomain keys are silently translated by knownSubdomains → existing goals
+ * with pre-COS-445 keys keep counting under their new canonical subdomain.
  */
 function computeCoverage(plan: import('@/services/api/biopsychosocial-plan').BiopsychosocialPlanRecord | null): SubdomainCoverage[] {
   const counts: Record<string, number> = Object.create(null)
@@ -433,8 +495,45 @@ function computeCoverage(plan: import('@/services/api/biopsychosocial-plan').Bio
     label: s.label,
     domain: s.domain,
     crossDomain: !!s.crossDomain,
+    overlap: s.overlap,
     count: counts[s.key] ?? 0,
   }))
+}
+
+function renderChip(
+  c: SubdomainCoverage,
+  colors: typeof Colors['light'],
+  getScaledFontSize: (n: number) => number,
+  isDark: boolean,
+) {
+  const color = DOMAIN_COLOR[c.domain]
+  const bg = DOMAIN_BG[c.domain]
+  const covered = c.count > 0
+  return (
+    <View
+      key={c.key}
+      style={[
+        styles.chip,
+        {
+          backgroundColor: covered ? bg : 'transparent',
+          borderColor: color,
+          borderStyle: covered ? 'solid' : 'dashed',
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: covered ? color : (isDark ? '#8E8E93' : '#8E8E93'),
+          fontSize: getScaledFontSize(11),
+          fontWeight: covered ? '700' : '500',
+          fontStyle: covered ? 'normal' : 'italic',
+        }}
+      >
+        {c.label}
+        {covered ? ` · ${c.count}` : ''}
+      </Text>
+    </View>
+  )
 }
 
 /**
@@ -471,32 +570,6 @@ function pickNextMove(
   }
 }
 
-function heatColor(count: number, maxCount: number, domain: BpsDomain, bg: string): string {
-  if (count === 0) return isLikelyDarkBg(bg) ? '#2C2C2E' : '#F2F2F7'
-  const intensity = maxCount > 0 ? count / maxCount : 0
-  const light = {
-    biological: ['#D6F0E0', '#86DAA8', '#199C4F'],
-    psychological: ['#EBE0FD', '#BF9DFB', '#7B3FE4'],
-    social: ['#FFE8CB', '#FFB84D', '#C97600'],
-  }
-  const dark = {
-    biological: ['#0F2E1A', '#1F6E3B', '#34C759'],
-    psychological: ['#2A1B48', '#4A3080', '#BF9DFB'],
-    social: ['#3A2A0C', '#7A5615', '#FFB84D'],
-  }
-  const palette = (isLikelyDarkBg(bg) ? dark : light)[domain]
-  const idx = intensity >= 0.66 ? 2 : intensity >= 0.34 ? 1 : 0
-  return palette[idx]
-}
-
-function isLikelyDarkBg(bg: string | undefined): boolean {
-  if (!bg || typeof bg !== 'string') return false
-  const hex = bg.startsWith('#') ? bg.slice(1) : bg
-  if (hex.length < 2) return false
-  const r = parseInt(hex.slice(0, 2), 16)
-  return Number.isFinite(r) && r < 0x80
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
@@ -526,15 +599,16 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   cardHead: { marginBottom: 8 },
-  heatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  heatCell: {
-    width: '22.5%',
-    aspectRatio: 1.4,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   attribution: {
     textAlign: 'center',
