@@ -41,6 +41,7 @@ import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
+import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
@@ -367,6 +368,20 @@ export function BiopsychosocialPlanScreen({
             onPress={onChangePlanType}
           />
         </View>
+
+        {/*
+          COS-449 (Chunk 1b): one-time welcome banner explaining the BPS
+          organization. Dismissible; state persisted via AsyncStorage so
+          it only appears once per install. Deliberately does NOT claim a
+          data migration — legacy + BPS are peer AI plans (COS-438) and
+          this banner is purely user-education.
+        */}
+        <BpsWelcomeBanner
+          colors={colors}
+          isDark={settings.isDarkTheme}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
         {/*
           COS-448: Today's Medications card sits AT THE TOP of the plan
