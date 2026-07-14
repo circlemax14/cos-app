@@ -152,6 +152,24 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           zIndex: 0,
         }} />
       <View style={styles.centerAvatarWrapper}>
+        {/* SCRUM-579 (2026-07-13): teal glow ring around the center
+            patient bubble on phone. Ken asked for a focal treatment on
+            phone (iPad gets the size bump). Wrapper View owns the
+            shadow so it follows the avatar's circular shape; the
+            TouchableOpacity + pendingBadge sit inside unchanged. */}
+        <View
+          style={{
+            width: getScaledFontSize(centerAvatarSize),
+            height: getScaledFontSize(centerAvatarSize),
+            borderRadius: getScaledFontSize(centerAvatarSize) / 2,
+            backgroundColor: colors.background,
+            shadowColor: '#008080',
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.45,
+            shadowRadius: 14,
+            elevation: 8,
+          }}
+        >
         <TouchableOpacity
           onPress={() => {
             try {
@@ -196,6 +214,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
             </View>
           )}
         </TouchableOpacity>
+        </View>
         <Text
           numberOfLines={2}
           adjustsFontSizeToFit
@@ -444,11 +463,15 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
   const maxRadius = (maxAvailableWidth - avatarContainerSize - (adjustedContainerPadding * 2)) / 2;
 
   // Avatar sizes - scale less aggressively than the circle (calculate early for radius calculation).
-  // SCRUM-279 (build 45): centerAvatarSize was 80×scaleFactor (~68px on
-  // iPad), orbit was 78×scaleFactor (~67px) — close but not identical.
-  // Ken wants the center user bubble visually identical to the orbit
-  // provider bubbles. Bind them to the same base so they always match.
-  const centerAvatarSize = 78 * Math.min(scaleFactor, 1.5);
+  // SCRUM-579 (2026-07-13): Ken reversed build-45's binding — the patient
+  // bubble should draw the eye when the app opens. iPad gets BOTH a
+  // 1.75× focal multiplier (78 × 1.75 × 0.855 ≈ 117px rendered on iPad
+  // Pro 11" vs the orbit's ~66.7px) AND a teal glow ring (added inline
+  // where the wrapper renders below). iPhone (PhoneCircleView) gets the
+  // glow ring only, no size bump — its 80px centerAvatarSize was
+  // already visually appropriate for the smaller screen.
+  const CENTER_FOCAL_MULTIPLIER = 1.75;
+  const centerAvatarSize = 78 * CENTER_FOCAL_MULTIPLIER * Math.min(scaleFactor, 1.5);
 
   // Adaptive multiplier based on screen width - larger screens get more spacing
   // 11-inch iPad: ~834px width, 13-inch iPad: ~1024px width
@@ -523,6 +546,24 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           zIndex: 0,
         }} />
       <View style={styles.centerAvatarWrapper}>
+        {/* SCRUM-579 (2026-07-13): teal glow ring around the center
+            patient bubble on iPad too. Same wrapper pattern as phone —
+            iPad also gets the 1.75× size bump above; glow reinforces
+            the focal-point treatment. shadowRadius scaled up on iPad
+            so the ring feels proportional to the larger avatar. */}
+        <View
+          style={{
+            width: getScaledFontSize(centerAvatarSize),
+            height: getScaledFontSize(centerAvatarSize),
+            borderRadius: getScaledFontSize(centerAvatarSize) / 2,
+            backgroundColor: colors.background,
+            shadowColor: '#008080',
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.45,
+            shadowRadius: 18,
+            elevation: 10,
+          }}
+        >
         <TouchableOpacity
           onPress={() => {
             try {
@@ -567,6 +608,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
             </View>
           )}
         </TouchableOpacity>
+        </View>
         <Text
           numberOfLines={2}
           adjustsFontSizeToFit

@@ -128,7 +128,7 @@ const PLAN_CARDS: PlanCardSpec[] = [
     features: {
       assessment: '3–5 AI-picked clinical screeners',
       updates: 'AI re-selects as conditions, meds, or labs change',
-      support: 'AI + light agency oversight',
+      support: 'AI',
       bestFor: 'Complex care, multiple specialists',
     },
     icon: 'auto-awesome',
