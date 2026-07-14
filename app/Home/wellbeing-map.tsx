@@ -19,9 +19,9 @@
  * render as gaps.
  */
 import React from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import Svg, { Circle, G, Text as SvgText } from 'react-native-svg'
-import { Stack } from 'expo-router'
+import { Stack, router } from 'expo-router'
 
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
@@ -34,6 +34,7 @@ import {
   type BpsOverlap,
   type BpsSubdomain,
 } from '@/lib/bps-subdomains'
+import { WellbeingSubdomainSheet } from '@/components/health-plan/WellbeingSubdomainSheet'
 
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
@@ -175,6 +176,60 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const planQuery = useBiopsychosocialPlan()
 
   const coverage = React.useMemo(() => computeCoverage(planQuery.data?.plan ?? null), [planQuery.data?.plan])
+
+  // Titles of the goals targeting each subdomain — powers the "Your goals for this"
+  // list in the drilldown sheet. Legacy keys resolved via knownSubdomains.
+  const goalTitlesByKey = React.useMemo(() => {
+    const out: Record<string, string[]> = {}
+    const plan = planQuery.data?.plan
+    if (!plan) return out
+    const allGoals = [
+      ...plan.sections.biological.goals,
+      ...plan.sections.psychological.goals,
+      ...plan.sections.social.goals,
+    ]
+    for (const g of allGoals) {
+      const title = (g as any).title ?? (g as any).name ?? ''
+      if (!title) continue
+      for (const key of knownSubdomains(g.subdomains)) {
+        if (!out[key]) out[key] = []
+        out[key].push(title)
+      }
+    }
+    return out
+  }, [planQuery.data?.plan])
+
+  // Drilldown sheet state.
+  const [sheetKey, setSheetKey] = React.useState<string | null>(null)
+  const openSheet = React.useCallback((key: string) => setSheetKey(key), [])
+  const closeSheet = React.useCallback(() => setSheetKey(null), [])
+
+  const activeSubdomain = React.useMemo(
+    () => (sheetKey ? BPS_SUBDOMAINS.find((s) => s.key === sheetKey) ?? null : null),
+    [sheetKey],
+  )
+  const activeCoverage = React.useMemo(
+    () => (sheetKey ? coverage.find((c) => c.key === sheetKey) : undefined),
+    [sheetKey, coverage],
+  )
+
+  const handleAddGoal = React.useCallback((sub: BpsSubdomain) => {
+    closeSheet()
+    // v1: navigate to the biopsychosocial-plan screen where the user
+    // can add a goal in the right section. Deep-link auto-open of the
+    // goal editor with subdomain pre-select is a follow-up.
+    router.push('/Home/biopsychosocial-plan' as never)
+  }, [closeSheet])
+
+  const handleAiSuggest = React.useCallback((sub: BpsSubdomain) => {
+    // Placeholder for v1 — real integration deferred to Track 2 (backend
+    // Bedrock prompt update needed to focus regeneration on a subdomain).
+    Alert.alert(
+      'AI suggest a goal',
+      `Coming soon — the AI will suggest a goal for "${sub.label}" based on your history and current plan.`,
+      [{ text: 'OK' }],
+    )
+  }, [])
 
   const grouped = React.useMemo(() => {
     const g: Record<GroupKey, SubdomainCoverage[]> = {
@@ -337,7 +392,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               ♥
             </SvgText>
 
-            {/* Subdomain markers + labels */}
+            {/* Subdomain markers + labels — whole group is tappable, opens the drilldown sheet */}
             {coverage.map((c) => {
               const pos = SUBDOMAIN_POS[c.key]
               if (!pos) return null
@@ -346,7 +401,9 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               const labelFill = covered ? (isDark ? '#F2F2F7' : '#1C1C1E') : (isDark ? '#8E8E93' : '#8E8E93')
               const shortLabel = SVG_LABEL_OVERRIDES[c.key] ?? c.label
               return (
-                <G key={c.key}>
+                <G key={c.key} onPress={() => openSheet(c.key)}>
+                  {/* Invisible larger hit target for the dot so it's finger-friendly */}
+                  <Circle cx={pos.dx} cy={pos.dy} r={12} fill="transparent" />
                   <Circle
                     cx={pos.dx}
                     cy={pos.dy}
@@ -405,6 +462,25 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           >
             {nextMove.body}
           </Text>
+          {nextMove.tone === 'suggest' && nextMove.suggestedKey ? (
+            <TouchableOpacity
+              onPress={() => openSheet(nextMove.suggestedKey!)}
+              activeOpacity={0.7}
+              style={{
+                marginTop: 12,
+                backgroundColor: DOMAIN_COLOR[nextMove.domain ?? 'biological'],
+                borderRadius: 10,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                alignSelf: 'flex-start',
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: getScaledFontSize(13), fontWeight: '700' }}>
+                Open {nextMove.suggestedLabel}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* Coverage by subdomain — chip list grouped by domain + overlap type.
@@ -451,7 +527,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
                   {g.header}
                 </Text>
                 <View style={styles.chipRow}>
-                  {items.map((c) => renderChip(c, colors, getScaledFontSize, isDark))}
+                  {items.map((c) => renderChip(c, colors, getScaledFontSize, isDark, openSheet))}
                 </View>
               </View>
             )
@@ -467,6 +543,20 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           Adapted from the NovoPsych biopsychosocial model
         </Text>
       </ScrollView>
+
+      <WellbeingSubdomainSheet
+        visible={sheetKey !== null && activeSubdomain !== null}
+        subdomain={activeSubdomain}
+        currentGoalCount={activeCoverage?.count ?? 0}
+        currentGoalTitles={sheetKey ? (goalTitlesByKey[sheetKey] ?? []) : []}
+        colors={colors}
+        isDark={isDark}
+        getScaledFontSize={getScaledFontSize}
+        getScaledFontWeight={getScaledFontWeight}
+        onClose={closeSheet}
+        onAddGoal={handleAddGoal}
+        onAiSuggest={handleAiSuggest}
+      />
     </AppWrapper>
   )
 }
@@ -505,13 +595,18 @@ function renderChip(
   colors: typeof Colors['light'],
   getScaledFontSize: (n: number) => number,
   isDark: boolean,
+  onPress: (key: string) => void,
 ) {
   const color = DOMAIN_COLOR[c.domain]
   const bg = DOMAIN_BG[c.domain]
   const covered = c.count > 0
   return (
-    <View
+    <TouchableOpacity
       key={c.key}
+      onPress={() => onPress(c.key)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${c.label}, ${covered ? `${c.count} goals` : 'no goals yet'}. Tap to learn more.`}
       style={[
         styles.chip,
         {
@@ -532,7 +627,7 @@ function renderChip(
         {c.label}
         {covered ? ` · ${c.count}` : ''}
       </Text>
-    </View>
+    </TouchableOpacity>
   )
 }
 
@@ -543,7 +638,13 @@ function renderChip(
  */
 function pickNextMove(
   stats: Record<BpsDomain, { total: number; covered: number; gaps: SubdomainCoverage[] }>,
-): { tone: 'suggest' | 'celebrate'; domain?: BpsDomain; body: string } {
+): {
+  tone: 'suggest' | 'celebrate'
+  domain?: BpsDomain
+  body: string
+  suggestedKey?: string
+  suggestedLabel?: string
+} {
   const domains: BpsDomain[] = ['biological', 'psychological', 'social']
   const ranked = domains
     .map((d) => ({ d, gapCount: stats[d].gaps.length }))
@@ -567,6 +668,8 @@ function pickNextMove(
     tone: 'suggest',
     domain: topDomain,
     body: `Try adding a goal that includes ${firstGap.label} to widen your ${domainNoun} coverage.${extra}`,
+    suggestedKey: firstGap.key,
+    suggestedLabel: firstGap.label,
   }
 }
 
