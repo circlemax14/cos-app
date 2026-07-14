@@ -7,8 +7,9 @@
  * for the plan query itself.
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { fetchAiHealthPlan } from '@/services/api/ai-health-plan';
 import {
   createPlanTask,
   updatePlanTask,
@@ -62,5 +63,13 @@ export function useLogTaskMeasurement() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
     },
+  });
+}
+
+export function useAiHealthPlan() {
+  return useQuery({
+    queryKey: AI_HEALTH_PLAN_QUERY_KEY,
+    queryFn: fetchAiHealthPlan,
+    staleTime: 60_000,
   });
 }
