@@ -1,0 +1,196 @@
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  type ViewStyle,
+  type TextStyle,
+} from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Colors } from '@/constants/theme';
+import { Spacing, Radii } from '@/constants/design-system';
+import { useAccessibility } from '@/stores/accessibility-store';
+
+// LayoutAnimation is opt-in on Android; enable once at module load so the
+// expand/collapse transition works there too.
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+export type SummaryCardShellProps = {
+  /** 1..9 — rendered as 'N / totalSections' chip. */
+  sectionNumber: number;
+  /** Denominator of the section chip. Defaults to 9. */
+  totalSections?: number;
+  /** Header title. Wraps to at most 2 lines. */
+  title: string;
+  /** MaterialIcons glyph name shown in the accent-tinted chip. */
+  icon: keyof typeof MaterialIcons.glyphMap;
+  /** 7-char hex (#RRGGBB). Non-7-char values render without alpha tint. */
+  accentColor: string;
+  /** Body content shown when expanded and `isEmpty` is false. */
+  children?: React.ReactNode;
+  /** When true, `emptyState` renders in place of `children`. */
+  isEmpty?: boolean;
+  /** Usually <EmptyStateHint text="…" />. */
+  emptyState?: React.ReactNode;
+  /** Whether the card is expanded on first render. Defaults to true. */
+  initiallyExpanded?: boolean;
+  testID?: string;
+};
+
+// Append a 2-char alpha suffix to a 7-char hex color (e.g. '#7B3FE4' + '1A').
+// Guards against short/invalid values so a mis-typed accent doesn't crash.
+const alpha = (hex: string, hh: string): string =>
+  hex?.length === 7 ? `${hex}${hh}` : hex;
+
+function elevation(level: number): ViewStyle {
+  return (Platform.select({
+    ios: {
+      shadowColor: '#000',
+      shadowOpacity: 0.06 * level,
+      shadowRadius: 4 * level,
+      shadowOffset: { width: 0, height: level },
+    },
+    android: { elevation: level },
+    default: {},
+  }) ?? {}) as ViewStyle;
+}
+
+function SummaryCardShell({
+  sectionNumber,
+  totalSections = 9,
+  title,
+  icon,
+  accentColor,
+  children,
+  isEmpty,
+  emptyState,
+  initiallyExpanded = true,
+  testID,
+}: SummaryCardShellProps) {
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const [expanded, setExpanded] = useState<boolean>(initiallyExpanded);
+
+  const toggle = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(v => !v);
+  }, []);
+
+  return (
+    <View
+      testID={testID}
+      style={[
+        styles.card,
+        { backgroundColor: colors.card, borderColor: colors.border },
+        elevation(1),
+      ]}
+    >
+      <Pressable
+        onPress={toggle}
+        style={styles.header}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`Section ${sectionNumber} of ${totalSections}: ${title}`}
+        accessibilityHint={expanded ? 'Double tap to collapse' : 'Double tap to expand'}
+        hitSlop={8}
+      >
+        <View style={[styles.numberChip, { borderColor: colors.border }]}>
+          <Text
+            style={{
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+              color: colors.subtext,
+              letterSpacing: 0.3,
+            }}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {sectionNumber} / {totalSections}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.iconChip,
+            { backgroundColor: alpha(accentColor, '1A') },
+          ]}
+        >
+          <MaterialIcons
+            name={icon}
+            size={getScaledFontSize(20)}
+            color={accentColor}
+          />
+        </View>
+
+        <Text
+          accessibilityRole="header"
+          numberOfLines={2}
+          style={[
+            styles.title,
+            {
+              color: colors.text,
+              fontSize: getScaledFontSize(17),
+              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+            },
+          ]}
+        >
+          {title}
+        </Text>
+
+        <MaterialIcons
+          name={expanded ? 'expand-less' : 'expand-more'}
+          size={getScaledFontSize(22)}
+          color={colors.subtext}
+        />
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.body}>{isEmpty ? emptyState : children}</View>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    borderWidth: 1,
+    borderRadius: Radii.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  numberChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+  },
+  iconChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    flex: 1,
+  },
+  body: {
+    marginTop: Spacing.md,
+  },
+});
+
+export default SummaryCardShell;

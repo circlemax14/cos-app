@@ -6,15 +6,24 @@
  *   1. Intake not complete (missing or in_progress)
  *      → prominent tint-tinted banner routing to /Home/patient-intake.
  *   2. Intake complete
- *      → subtle "Intake completed <date> · Retake" inline link.
+ *      → compact Section-1 card ("1 / 9" chip + icon + title + completed
+ *        date, with a small "Retake" text button at bottom-right)
+ *        matching SummaryCardShell's shape so it reads as the first
+ *        section on the Health Summary.
  *
  * Returns null while loading or if the hook errors so the host screen
- * never shows a placeholder / skeleton for this row. Visual shape
- * (banner + bannerIcon styles, alpha() helper) mirrors TryNewPlanCta so
- * both banners read at the same weight on the plan screen.
+ * never shows a placeholder / skeleton for this row. The outer container
+ * has no horizontal margin — the parent Health Summary ScrollView
+ * already applies screen padding; adding it here would double-indent.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type TextStyle,
+} from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 
@@ -29,6 +38,11 @@ import { usePatientIntake } from '@/hooks/use-patient-intake';
 function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
 }
+
+// Muted/positive accent used for the "completed" Section-1 card. Kept
+// distinct from the pre-intake CTA (which uses the prominent tint) so
+// finished users get a calmer, less-attention-grabbing signal.
+const COMPLETED_ACCENT = '#199C4F';
 
 export default function IntakeCtaCard(): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -53,25 +67,91 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
       ? new Date(intake.completedAt).toLocaleDateString()
       : '';
     return (
-      <Pressable
-        onPress={goRetake}
-        style={styles.subtle}
-        accessibilityRole="button"
-        accessibilityLabel="Retake intake"
-        accessibilityHint="Opens the patient intake wizard to retake"
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        accessibilityLabel={`Section 1 of 9: Health history intake, completed ${dateStr}`}
       >
-        <MaterialIcons name="check-circle" size={16} color={tint} />
-        <Text
-          style={{
-            color: colors.subtext,
-            marginLeft: 6,
-            fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(500) as any,
-          }}
-        >
-          Intake completed {dateStr} · <Text style={{ color: tint }}>Retake</Text>
-        </Text>
-      </Pressable>
+        <View style={styles.completedHeader}>
+          <View style={[styles.numberChip, { borderColor: colors.border }]}>
+            <Text
+              style={{
+                fontSize: getScaledFontSize(11),
+                fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                color: colors.subtext,
+                letterSpacing: 0.3,
+              }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
+              1 / 9
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.completedIconChip,
+              { backgroundColor: alpha(COMPLETED_ACCENT, '1A') },
+            ]}
+          >
+            <MaterialIcons
+              name="check-circle"
+              size={getScaledFontSize(20)}
+              color={COMPLETED_ACCENT}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text
+              accessibilityRole="header"
+              numberOfLines={2}
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+              }}
+            >
+              Health history intake
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                marginTop: 2,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
+              }}
+            >
+              Completed {dateStr}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.retakeRow}>
+          <Pressable
+            onPress={goRetake}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Retake intake"
+            accessibilityHint="Opens the patient intake wizard to retake"
+            style={({ pressed }) => [
+              styles.retakeButton,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+              }}
+            >
+              Retake
+            </Text>
+          </Pressable>
+        </View>
+      </View>
     );
   }
 
@@ -110,7 +190,7 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           style={{
             color: colors.text,
             fontSize: getScaledFontSize(16),
-            fontWeight: getScaledFontWeight(700) as any,
+            fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
           }}
         >
           {title}
@@ -120,7 +200,7 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
             color: colors.subtext,
             marginTop: 2,
             fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(400) as any,
+            fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
           }}
         >
           {body}
@@ -136,8 +216,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
-    marginHorizontal: Spacing.screenPadding,
     marginTop: Spacing.md - 2,
+    marginBottom: Spacing.md,
     borderWidth: 1,
     borderRadius: Radii.xl,
     shadowColor: '#000',
@@ -153,10 +233,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  subtle: {
+  card: {
+    borderWidth: 1,
+    borderRadius: Radii.xl,
+    padding: Spacing.md,
+    marginTop: Spacing.md - 2,
+    marginBottom: Spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  completedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.screenPadding,
-    paddingVertical: 8,
+    gap: Spacing.sm,
+  },
+  numberChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+  },
+  completedIconChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retakeRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: Spacing.sm,
+  },
+  retakeButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
 });
