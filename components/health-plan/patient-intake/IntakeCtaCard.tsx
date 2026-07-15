@@ -51,7 +51,11 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
   const tint = colors.tint as string;
 
   const q = usePatientIntake();
-  if (q.isLoading || q.isError) return null;
+  // Silent while loading; on error we still render the pre-intake CTA so
+  // the patient always has a path forward from the Health Summary tab
+  // (the tab fail-closes the summary body when intake status is unknown,
+  // so returning null here would strand them).
+  if (q.isLoading) return null;
 
   const intake = q.data?.intake ?? null;
   const isComplete = intake?.status === 'complete';

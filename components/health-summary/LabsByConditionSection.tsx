@@ -144,7 +144,7 @@ function LabsByConditionSection() {
   // "we couldn't load these", not "you have no labs" — the latter can panic
   // a patient. Empty and error are meaningfully different signals.
   const emptyNode = isError ? (
-    <EmptyStateHint text="Lab results are temporarily unavailable. Pull to refresh." />
+    <EmptyStateHint text="Lab results are temporarily unavailable. Try again in a moment." />
   ) : (
     <EmptyStateHint
       text={isLoading ? 'Loading your lab results…' : 'No recent lab results on file.'}

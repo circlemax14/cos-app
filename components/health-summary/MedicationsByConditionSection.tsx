@@ -64,7 +64,7 @@ function MedicationsByConditionSection() {
   const emptyText = isLoading
     ? 'Loading your medications…'
     : isError
-      ? 'We could not load your medications. Pull down to refresh.'
+      ? 'We could not load your medications. Try again in a moment.'
       : 'No medications on file yet.';
 
   return (

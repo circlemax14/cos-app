@@ -34,7 +34,7 @@ function RecommendationsSection() {
   const emptyText = isLoading
     ? 'Loading recommendations…'
     : isError
-      ? 'Recommendations are temporarily unavailable. Pull down to refresh.'
+      ? 'Recommendations are temporarily unavailable. Try again in a moment.'
       : 'No recommendations yet. Complete your intake to see personalized suggestions here.';
 
   return (

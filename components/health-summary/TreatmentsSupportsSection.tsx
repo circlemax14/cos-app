@@ -128,7 +128,7 @@ function TreatmentsSupportsSection() {
     : generating
       ? 'Generating your personalized treatments and supports…'
       : isError
-        ? 'Treatments are temporarily unavailable. Pull down to refresh.'
+        ? 'Treatments are temporarily unavailable. Try again in a moment.'
         : 'Complete your intake and generate your Care Plan to see personalized treatments, supports, and resources keyed to each condition.';
 
   const goToCarePlan = () => {
