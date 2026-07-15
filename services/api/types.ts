@@ -290,6 +290,42 @@ export type TaskType = 'medication' | 'exercise' | 'appointment' | 'reminder';
 export type TaskRecurrence = 'daily' | 'weekdays' | 'weekly' | 'once';
 export type TaskStatus = 'pending' | 'completed' | 'skipped';
 
+// ─── Chunk 1c (COS-450 / SCRUM-587-588) — orthogonal to TaskType ────────
+/**
+ * How a task is completed. Orthogonal to `TaskType`: `type` is the semantic
+ * category (drives icon), `completionStyle` is the completion mechanism.
+ * A task with `{type: 'reminder', completionStyle: 'measurable'}` (e.g.
+ * "check BP daily") shows a Log-value entry point instead of a plain
+ * check-off. Optional for back-compat: legacy tasks default to 'simple'.
+ */
+export type TaskCompletionStyle = 'simple' | 'measurable';
+
+/** Source of a logged measurement value. */
+export type TaskMeasurementSource = 'manual' | 'healthkit';
+
+/** One logged value on a measurable task. */
+export interface TaskMeasurement {
+  /** ISO 8601 UTC timestamp the measurement was recorded. */
+  timestamp: string;
+  /** Value payload — shape depends on the task's metric.key (e.g. { systolic, diastolic } for BP). */
+  value: Record<string, number | string>;
+  source: TaskMeasurementSource;
+}
+
+/**
+ * Metric attached to a measurable task. Optional even when
+ * completionStyle='measurable' — client falls back to a numeric input.
+ * Preset keys ship in a shared library; custom metrics use `custom:<slug>`.
+ */
+export interface TaskMetric {
+  key: string;
+  name: string;
+  unit: string;
+  target?: string;
+  /** Reserved for HealthKit auto-sync (Chunk 2 follow-up). */
+  healthKitType?: string;
+}
+
 export interface PlanTask {
   id: string;
   type: TaskType;
@@ -308,7 +344,7 @@ export interface PlanTask {
     durationMinutes?: number;
     relatedConditionFhirId?: string;
   };
-  source: 'ai' | 'care_manager';
+  source: 'ai' | 'care_manager' | 'patient';
   /**
    * Care-plan category this task belongs to (additive, COS-404 / SCRUM-539).
    * AI-tagged by the backend when `PLAN_CATEGORY_STATUS_ENABLED` is on. Read
@@ -316,6 +352,10 @@ export interface PlanTask {
    * type→category mapping. Mirrors cos-backend's `CarePlanCategoryKey`.
    */
   category?: string;
+  // ── Chunk 1c (COS-450 / SCRUM-588) — all optional/back-compat ──
+  completionStyle?: TaskCompletionStyle;
+  metric?: TaskMetric;
+  measurements?: TaskMeasurement[];
 }
 
 export interface AiPlanGoal {

@@ -22,6 +22,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Radii, Spacing } from '@/constants/design-system';
 import { BioGoalCard } from './BioGoalCard';
+import { TaskListSection } from './tasks/TaskListSection';
 import type {
   Intervention,
   InterventionKind,
@@ -30,12 +31,13 @@ import type {
   SectionStatus,
   SectionTrendDirection,
 } from '@/services/api/biopsychosocial-plan';
+import type { PlanTask } from '@/services/api/types';
 
 export type BiopsychosocialSectionKey = 'biological' | 'psychological' | 'social';
 
 type ColorMap = Record<string, string>;
 
-const SECTION_STYLE: Record<
+export const SECTION_STYLE: Record<
   BiopsychosocialSectionKey,
   { icon: keyof typeof MaterialIcons.glyphMap; color: string }
 > = {
@@ -109,6 +111,9 @@ export interface SectionCardProps {
   getScaledFontSize: (n: number) => number;
   getScaledFontWeight: (n: number) => string;
   onEditGoal: (g: MeasurableGoal) => void;
+  tasks?: PlanTask[];
+  onAddTask?: () => void;
+  onTaskPress?: (task: PlanTask) => void;
 }
 
 export function SectionCard({
@@ -119,6 +124,9 @@ export function SectionCard({
   getScaledFontSize,
   getScaledFontWeight,
   onEditGoal,
+  tasks: tasksProp,
+  onAddTask,
+  onTaskPress,
 }: SectionCardProps) {
   const style = SECTION_STYLE[sectionKey];
   const statusStyle = STATUS_STYLE[section.status] ?? STATUS_STYLE['just-started'];
@@ -157,6 +165,7 @@ export function SectionCard({
 
   const bullets = Array.isArray(section.planBullets) ? section.planBullets : [];
   const goals = Array.isArray(section.goals) ? section.goals : [];
+  const tasks = Array.isArray(tasksProp) ? tasksProp : [];
 
   return (
     <View style={[styles.card, elevation(1), { backgroundColor: card, borderColor: border }]}>
@@ -306,6 +315,18 @@ export function SectionCard({
         </CollapsibleGroup>
       )}
 
+      {onAddTask && onTaskPress && (
+        <TaskListSection
+          tasks={tasks}
+          accentColor={style.color}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          onAddTask={onAddTask}
+          onTaskPress={onTaskPress}
+        />
+      )}
+
       {/*
         COS-440: guidance when the section came back completely empty from
         the AI (0 bullets + 0 interventions + 0 goals — typically means
@@ -315,7 +336,7 @@ export function SectionCard({
         just a header + trendSummary "Not enough data yet" and the user
         has no idea what to do next. Kenneth reported this 2026-07-10.
       */}
-      {bullets.length === 0 && groupedInterventions.length === 0 && goals.length === 0 && (
+      {bullets.length === 0 && groupedInterventions.length === 0 && goals.length === 0 && tasks.length === 0 && (
         <View style={[styles.emptyHint, { borderColor: alpha(style.color, '33'), backgroundColor: alpha(style.color, '10') }]}>
           <MaterialIcons name="lightbulb-outline" size={getScaledFontSize(16)} color={style.color} />
           <Text

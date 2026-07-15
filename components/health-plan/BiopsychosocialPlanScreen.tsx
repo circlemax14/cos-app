@@ -39,12 +39,16 @@ import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
-import { SectionCard, type BiopsychosocialSectionKey } from './SectionCard';
+import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
+import { TaskEditorModal } from './TaskEditorModal';
+import { TaskDetailModal } from './tasks/TaskDetailModal';
+import { useAiHealthPlan } from '@/hooks/use-plan-tasks';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
+import type { PlanTask } from '@/services/api/types';
 
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'biological', title: 'Biological Wellness' },
@@ -65,6 +69,68 @@ function formatGeneratedDate(iso: string | undefined): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * Ground truth from cos-backend's `care-plan-categories.ts`: PlanTask.category
+ * is one of these 8 keys. NOT 'biological' | 'psychological' | 'social' — those
+ * are BPS *section* keys (a different taxonomy). BE POST validation is
+ * permissive (z.string().max(64)) so the wrong values won't 4xx, but the
+ * care-plan-normalizer's VALID_CATEGORY_KEYS filter drops them and AI
+ * regeneration will silently discard tasks tagged with section keys.
+ */
+type CarePlanCategoryKey =
+  | 'medical'
+  | 'cognitive'
+  | 'adl'
+  | 'medication'
+  | 'mentalHealth'
+  | 'integrative'
+  | 'social'
+  | 'spiritual';
+
+/**
+ * Canonical map from a task's care-plan category → the BPS section it renders
+ * under. Unknown/undefined strings fall through a keyword bucket so tasks that
+ * arrived tagged with an off-taxonomy label (e.g. Bedrock returning a section
+ * key by mistake) still land somewhere reasonable instead of being dropped.
+ */
+function sectionForCategory(
+  category: CarePlanCategoryKey | string | undefined,
+): BiopsychosocialSectionKey {
+  switch (category) {
+    case 'medical':
+    case 'medication':
+    case 'integrative':
+    case 'adl':
+    case 'cognitive':
+      return 'biological';
+    case 'mentalHealth':
+      return 'psychological';
+    case 'social':
+    case 'spiritual':
+      return 'social';
+    default: {
+      if (!category) return 'biological';
+      const c = category.toLowerCase();
+      if (/med|physical|sleep/.test(c)) return 'biological';
+      if (/mental|anxi|depress|stress/.test(c)) return 'psychological';
+      if (/social|family|spirit/.test(c)) return 'social';
+      return 'biological';
+    }
+  }
+}
+
+/**
+ * When the user taps "+ Add task" from a BPS section header, we need a concrete
+ * CarePlanCategoryKey to POST — sections are UI groupings, categories are the
+ * BE-enforced taxonomy. Each section picks its most-generic category so the
+ * task lands back in the same section on re-render.
+ */
+function categoryForNewTaskInSection(
+  section: BiopsychosocialSectionKey,
+): CarePlanCategoryKey {
+  return { biological: 'medical', psychological: 'mentalHealth', social: 'social' }[section] as CarePlanCategoryKey;
 }
 
 /**
@@ -178,7 +244,48 @@ export function BiopsychosocialPlanScreen({
   const planQuery = useBiopsychosocialPlan();
   const regenerateMutation = useRegenerateBiopsychosocialPlan();
 
+  // SCRUM-588 Chunk 1c: observer on ['ai-health-plan'] so the plan-tasks
+  // mutations' invalidations actually refetch. Legacy consumers use raw
+  // fetchAiHealthPlan outside react-query; without this hook the mutations
+  // invalidate a key nothing observes and the tasks list would stay stale.
+  const aiPlanQuery = useAiHealthPlan();
+  const allTasks: PlanTask[] = aiPlanQuery.data?.tasks ?? [];
+  const tasksBySection = React.useMemo(() => {
+    const b: Record<BiopsychosocialSectionKey, PlanTask[]> = { biological: [], psychological: [], social: [] };
+    for (const t of allTasks) {
+      b[sectionForCategory(t.category)].push(t);
+    }
+    return b;
+  }, [allTasks]);
+
   const [refreshing, setRefreshing] = React.useState(false);
+  // One consolidated modal state cell. A synchronous detail→edit swap
+  // (setTaskModal({mode:'edit'}) fired from TaskDetailModal.onEdit) races
+  // iOS's Modal presentation queue: the detail modal is still animating
+  // its dismiss when the editor modal tries to present, and iOS silently
+  // drops the new presentation. We stage the swap through `pendingTaskModal`
+  // instead — close first, then promote after the dismiss animation
+  // (~250ms slide-out) completes. TaskDetailModal doesn't surface RN
+  // Modal's onDismiss to its parent, so we use a fixed timer that covers
+  // both iOS and Android.
+  const [taskModal, setTaskModal] = React.useState<{
+    mode: 'create' | 'edit' | 'detail';
+    task?: PlanTask;
+    category?: string;
+  } | null>(null);
+  const [pendingTaskModal, setPendingTaskModal] = React.useState<{
+    mode: 'create' | 'edit' | 'detail';
+    task?: PlanTask;
+    category?: string;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!pendingTaskModal) return;
+    const t = setTimeout(() => {
+      setTaskModal(pendingTaskModal);
+      setPendingTaskModal(null);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [pendingTaskModal]);
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
@@ -479,6 +586,9 @@ export function BiopsychosocialPlanScreen({
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
             onEditGoal={onEditGoal}
+            tasks={tasksBySection[key]}
+            onAddTask={() => setTaskModal({ mode: 'create', category: categoryForNewTaskInSection(key) })}
+            onTaskPress={(t) => setTaskModal({ mode: 'detail', task: t })}
           />
         ))}
 
@@ -537,6 +647,45 @@ export function BiopsychosocialPlanScreen({
         fires `onEditGoal(g)` prop callback on tap. See file header for
         the iOS 26.5 EXUpdates experiment rationale.
       */}
+      {/*
+        SCRUM-588 Chunk 1c: task editor + detail modals live at the
+        screen level so all three BPS SectionCards share one instance
+        of each. If a Class-B iOS 26 crash resurfaces, the reversible
+        defensive pattern is to hoist these to `biopsychosocial-plan.tsx`
+        (mirroring the goal-editor hoist above).
+      */}
+      <TaskEditorModal
+        visible={taskModal?.mode === 'create' || taskModal?.mode === 'edit'}
+        onClose={() => setTaskModal(null)}
+        initialTask={taskModal?.mode === 'edit' ? taskModal.task : undefined}
+        defaultCategory={taskModal?.mode === 'create' ? taskModal.category : undefined}
+        colors={colors}
+        isDark={settings.isDarkTheme}
+        getScaledFontSize={getScaledFontSize}
+        getScaledFontWeight={getScaledFontWeight}
+        onSaved={() => setTaskModal(null)}
+      />
+      <TaskDetailModal
+        visible={taskModal?.mode === 'detail'}
+        task={taskModal?.mode === 'detail' ? taskModal.task ?? null : null}
+        accentColor={
+          taskModal?.mode === 'detail' && taskModal.task
+            ? SECTION_STYLE[sectionForCategory(taskModal.task.category)].color
+            : '#0D9488'
+        }
+        colors={colors}
+        getScaledFontSize={getScaledFontSize}
+        getScaledFontWeight={getScaledFontWeight}
+        onClose={() => setTaskModal(null)}
+        onEdit={(t) => {
+          // Stage the detail→edit swap: close the detail modal now, then
+          // let the useEffect above promote the edit modal once the
+          // dismiss animation is done (see comment on pendingTaskModal).
+          setTaskModal(null);
+          setPendingTaskModal({ mode: 'edit', task: t });
+        }}
+        onDeleted={() => setTaskModal(null)}
+      />
     </AppWrapper>
   );
 }
