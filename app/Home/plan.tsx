@@ -12,6 +12,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthSummary } from '@/hooks/use-health-summary';
+import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 interface SectionCardProps {
@@ -93,46 +94,56 @@ export default function HealthSummaryScreen() {
   if (isError) {
     return (
       <AppWrapper>
-        <View style={styles.centered}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>🩺</Text>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(16),
-              fontWeight: getScaledFontWeight(600) as any,
-              marginBottom: 8,
-              textAlign: 'center',
-            }}
-          >
-            Unable to load health summary
-          </Text>
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(14),
-              marginBottom: 20,
-              textAlign: 'center',
-            }}
-          >
-            Please check your connection and try again.
-          </Text>
-          <TouchableOpacity
-            onPress={() => refetch()}
-            style={[styles.retryButton, { backgroundColor: colors.tint }]}
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading health summary"
-          >
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* HS-1 / SCRUM-590 — intake CTA is reachable even when the summary
+              fetch errors, so first-time patients (who have no summary yet)
+              can still start their intake from this tab. */}
+          <IntakeCtaCard />
+          <View style={styles.centered}>
+            <Text style={{ fontSize: 48, marginBottom: 16 }}>🩺</Text>
             <Text
               style={{
-                color: '#fff',
+                color: colors.text,
                 fontSize: getScaledFontSize(16),
                 fontWeight: getScaledFontWeight(600) as any,
+                marginBottom: 8,
+                textAlign: 'center',
               }}
             >
-              Retry
+              Unable to load health summary
             </Text>
-          </TouchableOpacity>
-        </View>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                marginBottom: 20,
+                textAlign: 'center',
+              }}
+            >
+              Please check your connection and try again.
+            </Text>
+            <TouchableOpacity
+              onPress={() => refetch()}
+              style={[styles.retryButton, { backgroundColor: colors.tint }]}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading health summary"
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </AppWrapper>
     );
   }
@@ -151,6 +162,9 @@ export default function HealthSummaryScreen() {
           />
         }
       >
+        {/* HS-1 / SCRUM-590 — patient intake CTA. Self-gates on load/error/status. */}
+        <IntakeCtaCard />
+
         {/* Header */}
         <View style={styles.headerSection}>
           <Text style={{ fontSize: 40, marginBottom: 12 }}>🩺</Text>
