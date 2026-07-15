@@ -51,7 +51,6 @@ import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsRev
 import { TryNewPlanCta } from '@/components/health-plan/TryNewPlanCta';
 import { ViewBioInsightsLink } from '@/components/health-plan/ViewBioInsightsLink';
 import { SubdomainChipRow } from '@/components/health-plan/SubdomainChip';
-import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import type { AiPlanGoal, PlanTask, TaskType } from '@/services/api/types';
 import {
   CARE_PLAN_V2_ENABLED,
@@ -293,9 +292,6 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
       contentContainerStyle={{ paddingBottom: Spacing.xl + Spacing.sm }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tint} />}
     >
-      {/* HS-1 / SCRUM-590 — patient intake CTA. Self-gates on load/error/status. */}
-      <IntakeCtaCard />
-
       {/* Soft, recurring "review your medications" prompt — self-gates internally. */}
       <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
 
