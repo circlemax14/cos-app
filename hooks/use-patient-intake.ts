@@ -118,7 +118,13 @@ export function useRetakeIntake() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: retakeIntake,
-    onSuccess: () => {
+    onSuccess: (intake) => {
+      // Flip the cache to the new in-progress record synchronously so any
+      // consumer that reads between mutation-success and the invalidated
+      // refetch cannot observe the previous 'complete' intake (retake race).
+      qc.setQueryData<IntakeQueryData | undefined>(INTAKE_QUERY_KEY, (prev) =>
+        prev ? { ...prev, intake } : prev,
+      )
       void qc.invalidateQueries({ queryKey: INTAKE_QUERY_KEY })
       void qc.invalidateQueries({ queryKey: INTAKE_VERSIONS_QUERY_KEY })
     },

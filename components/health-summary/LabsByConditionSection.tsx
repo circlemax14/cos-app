@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, type TextStyle } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, type TextStyle } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useQuery } from '@tanstack/react-query';
 import SummaryCardShell from './SummaryCardShell';
 import EmptyStateHint from './EmptyStateHint';
@@ -18,6 +19,10 @@ const ACCENT = '#0891B2';
 // Bound render cost on chart-heavy accounts — never draw more than the most
 // recent 20 individual labs across all buckets. Sorted by date desc before slice.
 const MAX_LABS_RENDERED = 20;
+
+// When a bucket is expanded, show at most this many individual analyte rows.
+// Flagged results are ranked first so a patient always sees the abnormals.
+const MAX_RESULTS_PER_BUCKET = 5;
 
 // Condition → keyword list for matching lab test names. Keywords are matched
 // case-insensitively as substrings against `LabResultValue.name` and the parent
@@ -46,6 +51,55 @@ function isFlagged(v: LabResultValue): boolean {
   const raw = v.interpretation?.trim().toLowerCase();
   if (!raw) return false;
   return FLAGGED_INTERPRETATIONS.has(raw);
+}
+
+// Palette for the small per-result badge shown in expanded buckets. Keyed by
+// the same lowercased interpretation strings FLAGGED_INTERPRETATIONS recognizes
+// (plus 'hh', 'll', 'aa' aliases some EHRs emit). Returns null for anything
+// else (normal, pending, unknown, empty) so we don't paint a misleading badge.
+function flagStyle(
+  interpretation?: string,
+): { fg: string; bg: string; label: string } | null {
+  const raw = interpretation?.trim().toLowerCase();
+  if (!raw) return null;
+  switch (raw) {
+    case 'critical':
+      return { fg: '#DC2626', bg: '#DC262620', label: 'Critical' };
+    case 'high':
+    case 'hh':
+    case 'h':
+      return { fg: '#DC2626', bg: '#DC262620', label: 'High' };
+    case 'low':
+    case 'll':
+    case 'l':
+      return { fg: '#2563EB', bg: '#2563EB20', label: 'Low' };
+    case 'abnormal':
+    case 'aa':
+    case 'a':
+      return { fg: '#D97706', bg: '#D9770620', label: 'Abnormal' };
+    default:
+      return null;
+  }
+}
+
+// Flatten every report in a bucket into a single per-analyte list, tagging each
+// row with its parent report's date + id, then sort flagged-first (so abnormal
+// values always surface above the fold in a top-5 slice) and by date desc.
+function flattenAndRank(
+  list: LabReport[],
+): Array<LabResultValue & { reportDate?: string; reportId: string }> {
+  const flat: Array<LabResultValue & { reportDate?: string; reportId: string }> = [];
+  list.forEach(report => {
+    (report.results ?? []).forEach(r => {
+      flat.push({ ...r, reportDate: report.date, reportId: report.id });
+    });
+  });
+  return flat.sort((a, b) => {
+    const af = isFlagged(a) ? 1 : 0;
+    const bf = isFlagged(b) ? 1 : 0;
+    if (af !== bf) return bf - af;
+    return (b.reportDate ?? '').localeCompare(a.reportDate ?? '');
+  });
 }
 
 function formatDate(iso?: string): string {
@@ -82,6 +136,16 @@ function LabsByConditionSection() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { conditions } = useConditionList();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (label: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
 
   const { data: reports = [], isLoading, isError } = useQuery<LabReport[]>({
     queryKey: ['lab-reports'],
@@ -168,46 +232,151 @@ function LabsByConditionSection() {
           );
           const total = list.reduce((acc, r) => acc + (r.results ?? []).length, 0);
           const mostRecent = list[0];
+          const isExpanded = expanded.has(label);
+          const ranked = isExpanded ? flattenAndRank(list) : [];
+          const visible = ranked.slice(0, MAX_RESULTS_PER_BUCKET);
+          const overflow = ranked.length - visible.length;
           return (
-            <View key={label} style={[styles.row, { borderColor: colors.border }]}>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-                  }}
-                  numberOfLines={2}
-                >
-                  {label}
-                </Text>
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(13),
-                    marginTop: 2,
-                  }}
-                >
-                  {formatDate(mostRecent?.date)} · {total} result{total === 1 ? '' : 's'}
-                </Text>
-              </View>
-              {flagged > 0 && (
-                <View
-                  style={[
-                    styles.pill,
-                    { backgroundColor: '#DC262620', borderColor: '#DC2626' },
-                  ]}
-                  accessibilityLabel={`${flagged} flagged results`}
-                >
+            <View key={label}>
+              <Pressable
+                onPress={() => toggle(label)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: isExpanded }}
+                accessibilityLabel={`${label}, ${total} result${total === 1 ? '' : 's'}${
+                  flagged ? `, ${flagged} flagged` : ''
+                }, tap to ${isExpanded ? 'collapse' : 'expand'}`}
+                accessibilityHint="Shows individual lab values, units, reference range, and dates."
+                style={[styles.row, { borderColor: colors.border }]}
+              >
+                <View style={{ flex: 1 }}>
                   <Text
                     style={{
-                      color: '#DC2626',
-                      fontSize: getScaledFontSize(12),
+                      color: colors.text,
+                      fontSize: getScaledFontSize(15),
                       fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
                     }}
+                    numberOfLines={2}
                   >
-                    {flagged} flagged
+                    {label}
                   </Text>
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                      marginTop: 2,
+                    }}
+                  >
+                    {formatDate(mostRecent?.date)} · {total} result{total === 1 ? '' : 's'}
+                  </Text>
+                </View>
+                {flagged > 0 && (
+                  <View
+                    style={[
+                      styles.pill,
+                      { backgroundColor: '#DC262620', borderColor: '#DC2626' },
+                    ]}
+                    accessibilityLabel={`${flagged} flagged results`}
+                  >
+                    <Text
+                      style={{
+                        color: '#DC2626',
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                      }}
+                    >
+                      {flagged} flagged
+                    </Text>
+                  </View>
+                )}
+                <MaterialIcons
+                  name={isExpanded ? 'expand-less' : 'expand-more'}
+                  size={getScaledFontSize(20)}
+                  color={colors.subtext}
+                />
+              </Pressable>
+              {isExpanded && visible.length > 0 && (
+                <View style={styles.expandedList}>
+                  {visible.map((row, idx) => {
+                    const badge = flagStyle(row.interpretation);
+                    const valueColor = badge?.fg ?? colors.text;
+                    return (
+                      <View
+                        key={`${row.reportId}:${row.name}:${idx}`}
+                        style={[styles.resultRow, { borderColor: colors.border }]}
+                      >
+                        <View style={styles.valueLine}>
+                          <Text
+                            style={{
+                              flex: 1,
+                              color: colors.text,
+                              fontSize: getScaledFontSize(14),
+                              fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                            }}
+                            numberOfLines={2}
+                          >
+                            {row.name}
+                          </Text>
+                          <Text
+                            style={{
+                              color: valueColor,
+                              fontSize: getScaledFontSize(14),
+                              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                            }}
+                          >
+                            {row.value ?? '—'}
+                            {row.unit ? ` ${row.unit}` : ''}
+                          </Text>
+                          {badge && (
+                            <View
+                              style={[styles.flagBadge, { backgroundColor: badge.bg }]}
+                              accessibilityLabel={badge.label}
+                            >
+                              <Text
+                                style={{
+                                  color: badge.fg,
+                                  fontSize: getScaledFontSize(10),
+                                  fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                                }}
+                              >
+                                {badge.label}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        {row.referenceRange ? (
+                          <Text
+                            style={{
+                              color: colors.subtext,
+                              fontSize: getScaledFontSize(12),
+                              marginTop: 2,
+                            }}
+                          >
+                            Ref: {row.referenceRange}
+                          </Text>
+                        ) : null}
+                        <Text
+                          style={{
+                            color: colors.subtext,
+                            fontSize: getScaledFontSize(11),
+                            marginTop: 2,
+                          }}
+                        >
+                          {formatDate(row.reportDate)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  {overflow > 0 && (
+                    <Text
+                      style={{
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(12),
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      + {overflow} more result{overflow === 1 ? '' : 's'} in this category
+                    </Text>
+                  )}
                 </View>
               )}
             </View>
@@ -231,6 +400,24 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: Radii.full,
     borderWidth: 1,
+  },
+  expandedList: {
+    paddingTop: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  resultRow: {
+    paddingVertical: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  valueLine: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'baseline',
+  },
+  flagBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radii.full,
   },
 });
 

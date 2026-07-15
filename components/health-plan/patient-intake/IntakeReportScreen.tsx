@@ -1,11 +1,17 @@
 /**
- * IntakeReportScreen — read-only view of the patient's completed intake.
+ * IntakeReportScreen — read-only snapshot of the patient's completed intake.
  *
- * Renders every answered question grouped by section (Body / Mind / Life)
- * with the answer formatted per question type. Reachable via the "View my
- * intake" action on the IntakeCtaCard's completed-state card.
+ * Renders the answers grouped by clinical domain (Demographics, Conditions &
+ * medications, Lifestyle, Mental health, Social support, Work & finances)
+ * with screener score blocks (PHQ-2, GAD-2, PSS-4, LSNS-6 abbreviated)
+ * surfaced inline where they clinically belong. Data shaping is delegated
+ * to the pure `./intake-report-builder` helper so both this on-screen view
+ * and the PDF share pipeline stay in lockstep.
+ *
+ * Reachable via the "View my intake" action on the IntakeCtaCard's
+ * completed-state card.
  */
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -23,53 +29,41 @@ import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
-import type {
-  IntakeAnswerValue,
-  IntakeQuestion,
-  IntakeSection,
-} from '@/types/patient-intake';
+import ShareIntakeReportSection from './ShareIntakeReportSection';
+import {
+  buildReport,
+  type Group,
+  type ScoreBlock,
+  type ScoreInterpretation,
+} from './intake-report-builder';
 
-const SECTION_META: Record<
-  IntakeSection,
-  { label: string; color: string; icon: keyof typeof MaterialIcons.glyphMap }
-> = {
-  body: { label: 'Body', color: '#199C4F', icon: 'favorite' },
-  mind: { label: 'Mind', color: '#7B3FE4', icon: 'psychology' },
-  life: { label: 'Life & Support', color: '#C97600', icon: 'groups' },
-};
+// Interpretation pill palette. Kept local to the report — the group icon
+// colors come from the builder itself; only screener pills need bucketed
+// clinical hues here.
+const POSITIVE_FG = '#DC2626';
+const POSITIVE_BG = '#FEE2E2';
+const MODERATE_FG = '#D97706';
+const MODERATE_BG = '#FEF3C7';
+const STRONG_FG = '#199C4F';
+const STRONG_BG = '#DCFCE7';
 
-function formatAnswer(q: IntakeQuestion, v: IntakeAnswerValue): string {
-  if (v == null || v === '') return '—';
-  switch (q.type) {
-    case 'text':
-    case 'number':
-      return String(v);
-    case 'single':
-    case 'scale': {
-      const opt = q.options?.find(o => o.value === v);
-      return opt ? `${opt.label}` : String(v);
-    }
-    case 'multi': {
-      if (!Array.isArray(v)) return '—';
-      const labels = v.map(val => q.options?.find(o => o.value === val)?.label ?? String(val));
-      return labels.join(', ') || '—';
-    }
-    case 'add_list': {
-      if (!Array.isArray(v) || v.length === 0) return '—';
-      return v
-        .map(item => {
-          if (typeof item === 'string') return item;
-          if (typeof item === 'object' && item !== null && 'label' in item) {
-            const rec = item as { label: string; note?: string };
-            return rec.note ? `${rec.label} (${rec.note})` : rec.label;
-          }
-          return '';
-        })
-        .filter(Boolean)
-        .join(' · ');
-    }
+function pillPalette(
+  interp: ScoreInterpretation,
+  neutralFg: string,
+  neutralBg: string,
+): { fg: string; bg: string } {
+  switch (interp) {
+    case 'positive':
+    case 'low':
+      return { fg: POSITIVE_FG, bg: POSITIVE_BG };
+    case 'moderate':
+      return { fg: MODERATE_FG, bg: MODERATE_BG };
+    case 'strong':
+      return { fg: STRONG_FG, bg: STRONG_BG };
+    case 'below-threshold':
+    case 'info':
     default:
-      return '—';
+      return { fg: neutralFg, bg: neutralBg };
   }
 }
 
@@ -81,20 +75,10 @@ export default function IntakeReportScreen() {
   const intake = q.data?.intake ?? null;
   const questions = q.data?.questions ?? [];
 
-  const grouped = useMemo(() => {
-    const bySection: Record<IntakeSection, IntakeQuestion[]> = {
-      body: [],
-      mind: [],
-      life: [],
-    };
-    for (const question of questions) {
-      bySection[question.section].push(question);
-    }
-    return bySection;
-  }, [questions]);
-
   const goRetake = () => router.push('/Home/patient-intake?retake=1' as never);
-  const goBack = () => router.back();
+  // router.back() no-ops from this hidden Tabs.Screen (href:null), so
+  // route directly to the Health Summary tab that owns the intake CTA.
+  const goBack = () => router.replace('/Home/plan' as never);
 
   if (q.isLoading) {
     return (
@@ -106,12 +90,26 @@ export default function IntakeReportScreen() {
     );
   }
 
-  if (q.isError || !intake) {
+  // Report is a "completed intake" surface — an in-progress draft has no
+  // meaningful snapshot yet, so route the user back to the wizard instead
+  // of rendering half-empty rows. Same treatment for missing / errored.
+  const notReady = q.isError || !intake || intake.status !== 'complete';
+  if (notReady) {
+    const inProgress = intake?.status === 'in_progress';
+    const message = q.isError
+      ? 'Could not load your intake.'
+      : inProgress
+        ? "Your intake is still in progress. Finish it to see your report."
+        : 'No intake on file yet. Complete your intake first to view a report.';
+    const primaryLabel = inProgress ? 'Finish intake' : 'Go back';
+    const onPrimary = inProgress
+      ? () => router.push('/Home/patient-intake' as never)
+      : goBack;
     return (
       <AppWrapper>
         <View style={styles.centered}>
           <MaterialIcons
-            name="error-outline"
+            name={inProgress ? 'edit-note' : 'error-outline'}
             size={getScaledFontSize(48)}
             color={colors.subtext}
           />
@@ -124,10 +122,10 @@ export default function IntakeReportScreen() {
               paddingHorizontal: 24,
             }}
           >
-            {intake ? 'Could not load your intake.' : 'No intake on file yet. Complete your intake first to view a report.'}
+            {message}
           </Text>
           <Pressable
-            onPress={goBack}
+            onPress={onPrimary}
             style={[styles.backBtn, { backgroundColor: colors.tint, marginTop: 16 }]}
             accessibilityRole="button"
           >
@@ -138,7 +136,7 @@ export default function IntakeReportScreen() {
                 fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
               }}
             >
-              Go back
+              {primaryLabel}
             </Text>
           </Pressable>
         </View>
@@ -154,6 +152,8 @@ export default function IntakeReportScreen() {
       })
     : '';
   const answeredCount = Object.keys(intake.answers).filter(k => intake.answers[k] != null).length;
+
+  const groups: Group[] = buildReport(intake, questions);
 
   return (
     <AppWrapper>
@@ -240,72 +240,154 @@ export default function IntakeReportScreen() {
           </View>
         </View>
 
-        {(['body', 'mind', 'life'] as IntakeSection[]).map(section => {
-          const list = grouped[section];
-          if (list.length === 0) return null;
-          const meta = SECTION_META[section];
+        {groups.map(group => {
+          const scoreBlocks = group.scoreBlocks ?? [];
+          if (group.rows.length === 0 && scoreBlocks.length === 0) return null;
           return (
             <View
-              key={section}
-              style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+              key={group.id}
+              style={[styles.groupCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
-              <View style={styles.sectionHeader}>
-                <View style={[styles.sectionIcon, { backgroundColor: meta.color + '1A' }]}>
+              <View style={styles.groupHeader}>
+                <View style={[styles.groupIconChip, { backgroundColor: group.color + '1A' }]}>
                   <MaterialIcons
-                    name={meta.icon}
+                    name={group.icon as keyof typeof MaterialIcons.glyphMap}
                     size={getScaledFontSize(18)}
-                    color={meta.color}
+                    color={group.color}
                   />
                 </View>
                 <Text
                   style={{
-                    color: meta.color,
+                    color: group.color,
                     fontSize: getScaledFontSize(14),
                     fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
                     letterSpacing: 0.3,
                   }}
                 >
-                  {meta.label.toUpperCase()}
+                  {group.title.toUpperCase()}
                 </Text>
               </View>
-              {list.map((question, i) => {
-                const value = intake.answers[question.key];
-                const answered = value != null && value !== '';
+
+              {group.rows.map((row, i) => (
+                <View
+                  key={row.key}
+                  style={[
+                    styles.rowStack,
+                    i > 0 && { borderTopWidth: 1, borderTopColor: colors.border },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                      lineHeight: getScaledFontSize(18),
+                    }}
+                  >
+                    {row.label}
+                  </Text>
+                  {row.missing ? (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: colors.subtext,
+                        fontSize: getScaledFontSize(15),
+                        fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
+                        lineHeight: getScaledFontSize(22),
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      Not shared
+                    </Text>
+                  ) : (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: colors.text,
+                        fontSize: getScaledFontSize(15),
+                        fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                        lineHeight: getScaledFontSize(22),
+                      }}
+                    >
+                      {row.value}
+                    </Text>
+                  )}
+                </View>
+              ))}
+
+              {scoreBlocks.map((block: ScoreBlock, i) => {
+                const palette = pillPalette(block.interpretation, colors.subtext, colors.border);
+                const isNeutralPill =
+                  block.interpretation === 'below-threshold' || block.interpretation === 'info';
+                const showDivider = group.rows.length > 0 || i > 0;
                 return (
                   <View
-                    key={question.key}
+                    key={block.name}
                     style={[
-                      styles.qaRow,
-                      i > 0 && { borderTopWidth: 1, borderTopColor: colors.border },
+                      styles.scoreBlock,
+                      showDivider && { borderTopWidth: 1, borderTopColor: colors.border },
                     ]}
                   >
                     <Text
                       style={{
-                        color: colors.subtext,
-                        fontSize: getScaledFontSize(13),
-                        lineHeight: getScaledFontSize(18),
+                        color: colors.text,
+                        fontSize: getScaledFontSize(14),
+                        fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
                       }}
                     >
-                      {question.prompt}
+                      {block.name}: {block.sum}/{block.max}
                     </Text>
-                    <Text
-                      style={{
-                        marginTop: 4,
-                        color: answered ? colors.text : colors.subtext,
-                        fontSize: getScaledFontSize(15),
-                        fontWeight: getScaledFontWeight(answered ? 600 : 400) as TextStyle['fontWeight'],
-                        lineHeight: getScaledFontSize(22),
-                        fontStyle: answered ? 'normal' : 'italic',
-                      }}
+                    <View
+                      style={[
+                        isNeutralPill ? styles.scorePillNeutral : styles.scorePill,
+                        { backgroundColor: palette.bg },
+                      ]}
                     >
-                      {answered ? formatAnswer(question, value) : 'Skipped'}
-                    </Text>
+                      <Text
+                        style={{
+                          color: palette.fg,
+                          fontSize: getScaledFontSize(11),
+                          fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                          letterSpacing: 0.2,
+                        }}
+                      >
+                        {block.label}
+                      </Text>
+                    </View>
+                    {block.footnote ? (
+                      <Text
+                        style={{
+                          marginTop: 6,
+                          color: colors.subtext,
+                          fontSize: getScaledFontSize(12),
+                          fontStyle: 'italic',
+                          lineHeight: getScaledFontSize(16),
+                        }}
+                      >
+                        {block.footnote}
+                      </Text>
+                    ) : null}
                   </View>
                 );
               })}
             </View>
           );
         })}
+
+        <View style={[styles.disclaimer, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(12),
+              fontStyle: 'italic',
+              lineHeight: getScaledFontSize(17),
+              textAlign: 'center',
+            }}
+          >
+            This is a snapshot of your self-reported answers. It is not a medical record and may not include everything your care team knows.
+          </Text>
+        </View>
+
+        <ShareIntakeReportSection />
 
         <Pressable
           onPress={goRetake}
@@ -368,27 +450,54 @@ const styles = StyleSheet.create({
   metaCell: {
     flex: 1,
   },
-  sectionCard: {
+  groupCard: {
     borderWidth: 1,
     borderRadius: Radii.xl,
     padding: Spacing.md,
     marginBottom: Spacing.md,
   },
-  sectionHeader: {
+  groupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  sectionIcon: {
+  groupIconChip: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qaRow: {
+  rowStack: {
     paddingVertical: Spacing.sm + 2,
+  },
+  rowLabel: {},
+  rowValue: {},
+  rowValueMuted: {},
+  scoreBlock: {
+    paddingVertical: Spacing.sm + 2,
+    alignItems: 'flex-start',
+  },
+  scorePill: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  scorePillNeutral: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  scoreFootnote: {},
+  disclaimer: {
+    borderWidth: 1,
+    borderRadius: Radii.xl,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
   },
   retakeButton: {
     flexDirection: 'row',

@@ -61,6 +61,13 @@ export default function IntakeWizardScreen() {
   // version AND the server still has a complete intake, kick off retake first
   // and let the query invalidate. Guarded so we only fire the mutation once.
   const hasRetakenRef = useRef(false);
+  // Sticky latch: once ?retake=1 is observed, we never regress even if
+  // useLocalSearchParams commits a later render with retake=undefined
+  // (Expo Router param-lag under the persistent Tabs layout).
+  const intendsToRetakeRef = useRef(isRetakeRequest);
+  if (isRetakeRequest && !intendsToRetakeRef.current) {
+    intendsToRetakeRef.current = true;
+  }
   useEffect(() => {
     if (!isRetakeRequest) return;
     if (hasRetakenRef.current) return;
@@ -99,23 +106,24 @@ export default function IntakeWizardScreen() {
   // Resume at the first unanswered REQUIRED question when the questions load.
   // Optional questions never block progression, so a missing optional answer
   // shouldn't rewind the user. If every required question is answered, jump
-  // to the final question so Finish is one tap away.
+  // to the final question so Finish is one tap away. A fresh intake (no
+  // answers of any kind) ALWAYS starts at stepIdx=0 — otherwise the
+  // findIndex-returns-(-1) fallback would auto-jump the user to Q_last and
+  // fire completeMut on the very first Finish tap.
   useEffect(() => {
     if (!questions.length || !intake) return;
     const answered = intake.answers ?? {};
     const isBlank = (v: IntakeAnswerValue | undefined) =>
-      v === undefined ||
-      v === null ||
-      v === '' ||
+      v === undefined || v === null || v === '' ||
       (Array.isArray(v) && v.length === 0);
+    const hasAnyProgress = Object.keys(answered).some((k) => !isBlank(answered[k]));
+    if (!hasAnyProgress) { setStepIdx(0); return; }
     const firstUnansweredRequired = questions.findIndex(
       (q) => q.required && isBlank(answered[q.key]),
     );
-    setStepIdx(
-      firstUnansweredRequired >= 0
-        ? firstUnansweredRequired
-        : Math.max(0, questions.length - 1),
-    );
+    if (firstUnansweredRequired >= 0) { setStepIdx(firstUnansweredRequired); return; }
+    const firstBlank = questions.findIndex((q) => isBlank(answered[q.key]));
+    setStepIdx(firstBlank >= 0 ? firstBlank : Math.max(0, questions.length - 1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questions.length, intake?.version]);
 
@@ -143,7 +151,9 @@ export default function IntakeWizardScreen() {
 
   const goBack = useCallback(() => {
     if (stepIdx === 0) {
-      router.back();
+      // patient-intake is a hidden sibling Tabs.Screen (href:null), so
+      // router.back() no-ops — replace with the Health Summary tab.
+      router.replace('/Home/plan' as never);
       return;
     }
     setStepIdx((i) => Math.max(0, i - 1));
@@ -196,7 +206,11 @@ export default function IntakeWizardScreen() {
     // While we're waiting for the retake to kick in (params say retake, but
     // the mutation hasn't started yet or the query hasn't reflected the new
     // version), hold on the loader so we don't briefly flash IntakeComplete.
-    (isRetakeRequest && intake?.status === 'complete' && !hasRetakenRef.current)
+    // The sticky ref covers the case where params.retake momentarily reads
+    // as undefined during Expo Router's first commit after navigation.
+    ((isRetakeRequest || intendsToRetakeRef.current) &&
+      intake?.status === 'complete' && !hasRetakenRef.current) ||
+    (retakeMut.isSuccess && intake?.status === 'complete' && intakeQuery.isFetching)
   ) {
     return renderLoader(colors);
   }
@@ -210,12 +224,34 @@ export default function IntakeWizardScreen() {
       getScaledFontWeight,
     );
   }
+  // Retake mutation failed — otherwise we'd fall through and render the
+  // wizard against the still-complete intake, and every Next tap would
+  // silently 409 because there's no in-progress version to PATCH. Reset
+  // the sticky ref so the retry actually re-fires the mutation.
+  if (retakeMut.isError && intendsToRetakeRef.current) {
+    return renderError(
+      colors,
+      () => {
+        hasRetakenRef.current = false;
+        retakeMut.reset();
+        retakeMut.mutate();
+      },
+      getScaledFontSize,
+      getScaledFontWeight,
+    );
+  }
   // Only show the Complete view if we're not in the middle of a retake flow.
   // completeMut.isSuccess wins outright — the user just tapped Finish.
   if (completeMut.isSuccess) {
     return <IntakeCompleteView />;
   }
-  if (intake?.status === 'complete' && !isRetakeRequest) {
+  if (
+    intake?.status === 'complete' &&
+    !isRetakeRequest &&
+    !intendsToRetakeRef.current &&
+    !retakeMut.isPending &&
+    !retakeMut.isSuccess
+  ) {
     return <IntakeCompleteView />;
   }
   if (!questions.length) return renderLoader(colors);
@@ -240,7 +276,7 @@ export default function IntakeWizardScreen() {
             section={current.section}
             stepIdx={stepIdx}
             total={total}
-            onClose={() => router.back()}
+            onClose={() => router.replace('/Home/plan' as never)}
           />
           <IntakeQuestionRenderer
             question={current}
