@@ -72,6 +72,7 @@ function MedicationsByConditionSection() {
       title="Medications by condition"
       icon="medication"
       accentColor="#0EA5E9"
+      preview={meds.length > 0 ? `${meds.length} medication${meds.length === 1 ? '' : 's'}` : undefined}
       isEmpty={isEmpty}
       emptyState={<EmptyStateHint text={emptyText} />}
     >

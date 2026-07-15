@@ -6,56 +6,58 @@ import { Colors } from '@/constants/theme';
 import { Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 
-function formatDate(iso?: string): string {
-  if (!iso) return 'not yet generated';
+function formatRelativeOrDate(iso?: string): string {
+  if (!iso) return 'Not yet generated';
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return 'not yet generated';
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  if (isNaN(d.getTime())) return 'Not yet generated';
+  const diffMs = Date.now() - d.getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return 'Updated just now';
+  if (min < 60) return `Updated ${min} minute${min === 1 ? '' : 's'} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `Updated ${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `Updated ${days} day${days === 1 ? '' : 's'} ago`;
+  return `Updated ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
 function UpdatedAtFooter() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { data } = useHealthSummary();
-  const generatedLabel = formatDate(data?.generatedAt);
+  const label = formatRelativeOrDate(data?.generatedAt);
 
   return (
     <View
       style={styles.wrap}
       accessibilityRole="summary"
-      accessibilityLabel={`Section 9 of 9. Last updated ${generatedLabel}. Pull down to refresh. Automatic refresh coming soon.`}
+      accessibilityLabel={`${label}. Your health summary updates automatically as your data changes.`}
     >
       <View style={styles.headerRow}>
         <MaterialIcons
           name="autorenew"
-          size={getScaledFontSize(16)}
+          size={getScaledFontSize(14)}
           color={colors.subtext}
         />
         <Text
           style={{
             color: colors.subtext,
-            fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+            fontSize: getScaledFontSize(12),
+            fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
           }}
         >
-          9 / 9 · Last updated {generatedLabel}
+          {label}
         </Text>
       </View>
       <Text
         style={{
           color: colors.subtext,
-          fontSize: getScaledFontSize(12),
+          fontSize: getScaledFontSize(11),
           textAlign: 'center',
-          lineHeight: 18,
+          lineHeight: 16,
         }}
       >
-        Pull down to refresh. Automatic refresh coming soon.
+        Your summary updates automatically as your health data changes.
       </Text>
     </View>
   );

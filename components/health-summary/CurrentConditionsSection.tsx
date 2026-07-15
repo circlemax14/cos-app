@@ -80,6 +80,7 @@ function CurrentConditionsSection() {
       title="Current conditions"
       icon="medical-information"
       accentColor={ACCENT}
+      preview={conditions.length > 0 ? `${conditions.length} on file` : undefined}
       isEmpty={isEmpty}
       emptyState={<EmptyStateHint text={emptyText} />}
       testID="health-summary-current-conditions"

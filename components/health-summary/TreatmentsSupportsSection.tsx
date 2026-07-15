@@ -141,6 +141,7 @@ function TreatmentsSupportsSection() {
       title="Treatments, supports & resources"
       icon="volunteer-activism"
       accentColor={ACCENT}
+      preview={plan ? 'Personalized for you' : undefined}
       isEmpty={isEmpty}
       emptyState={
         <View style={styles.emptyStack}>

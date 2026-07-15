@@ -128,6 +128,18 @@ function LabsByConditionSection() {
 
   const isEmpty = !isError && reports.length === 0;
 
+  const totalFlagged = useMemo(
+    () => reports.reduce((acc, r) => acc + (r.results ?? []).filter(isFlagged).length, 0),
+    [reports],
+  );
+  const preview = isError
+    ? undefined
+    : totalFlagged > 0
+      ? `${totalFlagged} flagged`
+      : reports.length > 0
+        ? `${reports.length} recent`
+        : undefined;
+
   // Preserve the isError branch so a temporary FHIR fetch failure reads as
   // "we couldn't load these", not "you have no labs" — the latter can panic
   // a patient. Empty and error are meaningfully different signals.
@@ -144,6 +156,7 @@ function LabsByConditionSection() {
       title="Lab results"
       icon="science"
       accentColor={ACCENT}
+      preview={preview}
       isEmpty={isEmpty || isError}
       emptyState={emptyNode}
     >

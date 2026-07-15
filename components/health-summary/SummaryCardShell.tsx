@@ -31,13 +31,19 @@ export type SummaryCardShellProps = {
   icon: keyof typeof MaterialIcons.glyphMap;
   /** 7-char hex (#RRGGBB). Non-7-char values render without alpha tint. */
   accentColor: string;
+  /**
+   * Optional at-a-glance summary shown next to the caret while collapsed
+   * (e.g. "3 conditions", "2 flagged"). Keeps the collapsed grid scannable
+   * without expanding every card.
+   */
+  preview?: string;
   /** Body content shown when expanded and `isEmpty` is false. */
   children?: React.ReactNode;
   /** When true, `emptyState` renders in place of `children`. */
   isEmpty?: boolean;
   /** Usually <EmptyStateHint text="…" />. */
   emptyState?: React.ReactNode;
-  /** Whether the card is expanded on first render. Defaults to true. */
+  /** Whether the card is expanded on first render. Defaults to false. */
   initiallyExpanded?: boolean;
   testID?: string;
 };
@@ -64,10 +70,11 @@ function SummaryCardShell({
   title,
   icon,
   accentColor,
+  preview,
   children,
   isEmpty,
   emptyState,
-  initiallyExpanded = true,
+  initiallyExpanded = false,
   testID,
 }: SummaryCardShellProps) {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -93,7 +100,7 @@ function SummaryCardShell({
         style={styles.header}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        accessibilityLabel={title}
+        accessibilityLabel={preview ? `${title}. ${preview}.` : title}
         accessibilityHint={expanded ? 'Double tap to collapse' : 'Double tap to expand'}
         hitSlop={8}
       >
@@ -117,13 +124,28 @@ function SummaryCardShell({
             styles.title,
             {
               color: colors.text,
-              fontSize: getScaledFontSize(17),
+              fontSize: getScaledFontSize(16),
               fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
             },
           ]}
         >
           {title}
         </Text>
+
+        {!expanded && preview ? (
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(12),
+              fontWeight: getScaledFontWeight(500) as TextStyle['fontWeight'],
+              marginRight: 4,
+              maxWidth: 140,
+            }}
+          >
+            {preview}
+          </Text>
+        ) : null}
 
         <MaterialIcons
           name={expanded ? 'expand-less' : 'expand-more'}

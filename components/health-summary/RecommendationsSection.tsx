@@ -42,6 +42,7 @@ function RecommendationsSection() {
       title="Further recommendations"
       icon="tips-and-updates"
       accentColor={ACCENT}
+      preview={bullets.length > 0 ? `${bullets.length} suggestion${bullets.length === 1 ? '' : 's'}` : undefined}
       isEmpty={isEmpty}
       emptyState={<EmptyStateHint text={emptyText} />}
       testID="health-summary-recommendations"

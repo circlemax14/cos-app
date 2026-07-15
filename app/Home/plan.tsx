@@ -1,7 +1,6 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import {
   ActivityIndicator,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,7 +8,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useQueryClient } from '@tanstack/react-query';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -29,22 +27,7 @@ export default function HealthSummaryScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const qc = useQueryClient();
-  const { isLoading, isError, refetch, isRefetching } = useHealthSummary();
-
-  // Pull-to-refresh must invalidate ALL section queries — pulling only refetched
-  // the top-level summary before, leaving the 6 section widgets stale.
-  // isRefetching still binds to the summary query (the primary indicator);
-  // the rest refresh in the background.
-  const onPullToRefresh = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ['health-summary'] });
-    qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
-    qc.invalidateQueries({ queryKey: ['patient-medications'] });
-    qc.invalidateQueries({ queryKey: ['lab-reports'] });
-    qc.invalidateQueries({ queryKey: ['healthkit-trends'] });
-    qc.invalidateQueries({ queryKey: ['health-details'] });
-    refetch();
-  }, [qc, refetch]);
+  const { isLoading, isError, refetch } = useHealthSummary();
 
   if (isLoading) {
     return (
@@ -66,17 +49,10 @@ export default function HealthSummaryScreen() {
           style={styles.container}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={onPullToRefresh}
-              tintColor={colors.tint}
-            />
-          }
         >
-          {/* HS-1 / SCRUM-590 — intake CTA is reachable even when the summary
-              fetch errors, so first-time patients (who have no summary yet)
-              can still start their intake from this tab. */}
+          {/* Intake CTA is reachable even when the summary fetch errors,
+              so first-time patients (who have no summary yet) can still
+              start their intake from this tab. */}
           <IntakeCtaCard />
           <View style={styles.centered}>
             <Text style={{ fontSize: getScaledFontSize(48), marginBottom: 16 }}>🩺</Text>
@@ -129,16 +105,8 @@ export default function HealthSummaryScreen() {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={onPullToRefresh}
-            tintColor={colors.tint}
-          />
-        }
       >
-        {/* Section 1 — HS-1 / SCRUM-590 patient intake CTA. Self-gates on load/error/status. */}
-        {/* Header — always first so the page title anchors the tab. */}
+        {/* Header — anchors the tab. */}
         <View style={styles.headerSection}>
           <Text style={{ fontSize: getScaledFontSize(40), marginBottom: 12 }}>🩺</Text>
           <Text
@@ -153,10 +121,19 @@ export default function HealthSummaryScreen() {
           >
             Health Summary
           </Text>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              textAlign: 'center',
+              marginTop: 2,
+            }}
+          >
+            Tap any section to expand
+          </Text>
         </View>
 
-        {/* Intake sits below the header — self-gates on status (pre-intake = CTA,
-            post-intake = info card with completion date, count, and what it powers). */}
+        {/* Intake sits below the header — self-gates on status. */}
         <IntakeCtaCard />
 
         <BpsHistorySection />
