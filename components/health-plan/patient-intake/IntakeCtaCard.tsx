@@ -59,6 +59,8 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
   const go = () => router.push('/Home/patient-intake' as never);
   const goRetake = () =>
     router.push('/Home/patient-intake?retake=1' as never);
+  const goViewReport = () =>
+    router.push('/Home/patient-intake-report' as never);
 
   if (isComplete) {
     const dateStr = formatFullDate(intake?.completedAt);
@@ -181,33 +183,63 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           </Text>
         </View>
 
-        <Pressable
-          onPress={goRetake}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Retake health intake"
-          accessibilityHint="Opens the patient intake wizard to retake"
-          style={({ pressed }) => [
-            styles.retakeButton,
-            { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <MaterialIcons
-            name="refresh"
-            size={getScaledFontSize(16)}
-            color={colors.subtext}
-            style={{ marginRight: 6 }}
-          />
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(13),
-              fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
-            }}
+        <View style={styles.actionRow}>
+          <Pressable
+            onPress={goViewReport}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="View my intake report"
+            accessibilityHint="Opens a read-only report of your intake answers"
+            style={({ pressed }) => [
+              styles.actionButton,
+              styles.actionButtonPrimary,
+              { backgroundColor: COMPLETED_ACCENT, opacity: pressed ? 0.7 : 1 },
+            ]}
           >
-            Retake intake
-          </Text>
-        </Pressable>
+            <MaterialIcons
+              name="visibility"
+              size={getScaledFontSize(16)}
+              color="#fff"
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={{
+                color: '#fff',
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+              }}
+            >
+              View my intake
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={goRetake}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Retake health intake"
+            accessibilityHint="Opens the patient intake wizard to retake"
+            style={({ pressed }) => [
+              styles.actionButton,
+              { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <MaterialIcons
+              name="refresh"
+              size={getScaledFontSize(16)}
+              color={colors.subtext}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+              }}
+            >
+              Retake
+            </Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -332,14 +364,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Radii.md,
   },
-  retakeButton: {
+  actionRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    justifyContent: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: Spacing.md,
+    paddingVertical: 10,
     borderRadius: Radii.md,
     borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  actionButtonPrimary: {
+    borderWidth: 0,
   },
 });

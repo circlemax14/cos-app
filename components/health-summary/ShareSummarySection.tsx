@@ -1,13 +1,12 @@
 /**
  * ShareSummarySection (COS-452 / SCRUM-591).
  *
- * A card that lets the patient share their Health Summary with a doctor,
- * caregiver, or family member. Uses React Native's built-in Share API to
- * open the OS share sheet with a formatted text version of every section
- * currently on screen. OTA-safe (no new native deps).
+ * Renders a card that lets the patient share their Health Summary as a
+ * proper PDF file with a doctor, caregiver, or family member. Uses
+ * expo-print to render an HTML template to PDF and expo-sharing to open
+ * the OS share sheet with the file attached.
  *
- * FUTURE (needs binary cut): swap to expo-print + expo-sharing to export
- * a proper styled PDF. Tracked under HS-6.
+ * Native modules — requires a binary cut, not OTA-safe.
  */
 import React, { useState } from 'react';
 import {
@@ -20,6 +19,8 @@ import {
   type TextStyle,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
@@ -30,8 +31,12 @@ import { useConditionList } from './CurrentConditionsSection';
 
 const ACCENT = '#334155';
 
-function formatSectionText(title: string, body: string): string {
-  return `${title.toUpperCase()}\n${'-'.repeat(title.length)}\n${body.trim() || 'No data yet.'}\n`;
+function escape(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function stringifyValue(v: unknown): string {
@@ -45,6 +50,15 @@ function stringifyValue(v: unknown): string {
   return String(v);
 }
 
+function bulletHtml(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(l => `<li>${escape(l.replace(/^[•\-*]\s*/, ''))}</li>`)
+    .join('');
+}
+
 export default function ShareSummarySection() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -54,67 +68,128 @@ export default function ShareSummarySection() {
   const bpsQuery = useBiopsychosocialPlan();
   const { conditions } = useConditionList();
 
-  const buildShareText = (): string => {
-    const now = new Date().toLocaleDateString(undefined, {
+  const buildHtml = (): string => {
+    const generated = new Date().toLocaleDateString(undefined, {
       month: 'long',
       day: 'numeric',
       year: 'numeric',
     });
-    const parts: string[] = [];
-    parts.push(`HEALTH SUMMARY\nGenerated ${now}\n`);
-
     const sections = bpsQuery.data?.plan?.sections;
-    if (sections) {
-      const bioText = sections.biological?.planBullets?.join('\n• ') ?? '';
-      const psyText = sections.psychological?.planBullets?.join('\n• ') ?? '';
-      const socText = sections.social?.planBullets?.join('\n• ') ?? '';
-      parts.push(
-        formatSectionText(
-          'Biopsychosocial history',
-          [
-            bioText ? `Biological:\n• ${bioText}` : '',
-            psyText ? `\nPsychological:\n• ${psyText}` : '',
-            socText ? `\nSocial:\n• ${socText}` : '',
-          ]
-            .filter(Boolean)
-            .join('\n'),
-        ),
-      );
-    }
+    const bioBullets = sections?.biological?.planBullets ?? [];
+    const psyBullets = sections?.psychological?.planBullets ?? [];
+    const socBullets = sections?.social?.planBullets ?? [];
 
-    if (conditions.length > 0) {
-      parts.push(formatSectionText('Current conditions', conditions.map(c => `• ${c}`).join('\n')));
-    }
+    const bpsHtml = sections
+      ? `
+        <section>
+          <h2>Biopsychosocial history</h2>
+          ${bioBullets.length ? `<h3 style="color:#199C4F;">Biological</h3><ul>${bioBullets.map(b => `<li>${escape(b)}</li>`).join('')}</ul>` : ''}
+          ${psyBullets.length ? `<h3 style="color:#7B3FE4;">Psychological</h3><ul>${psyBullets.map(b => `<li>${escape(b)}</li>`).join('')}</ul>` : ''}
+          ${socBullets.length ? `<h3 style="color:#C97600;">Social</h3><ul>${socBullets.map(b => `<li>${escape(b)}</li>`).join('')}</ul>` : ''}
+        </section>`
+      : '';
 
-    if (summary?.medications) {
-      parts.push(formatSectionText('Medications', stringifyValue(summary.medications)));
-    }
+    const conditionsHtml =
+      conditions.length > 0
+        ? `<section><h2>Current conditions</h2><ul>${conditions.map(c => `<li>${escape(c)}</li>`).join('')}</ul></section>`
+        : '';
+    const medsHtml = summary?.medications
+      ? `<section><h2>Medications</h2><pre>${escape(stringifyValue(summary.medications))}</pre></section>`
+      : '';
+    const labsHtml = summary?.recentLabs
+      ? `<section><h2>Lab results</h2><pre>${escape(stringifyValue(summary.recentLabs))}</pre></section>`
+      : '';
+    const recsHtml = summary?.recommendations
+      ? `<section><h2>Recommendations</h2><ul>${bulletHtml(summary.recommendations)}</ul></section>`
+      : '';
 
-    if (summary?.recentLabs) {
-      parts.push(formatSectionText('Lab results', stringifyValue(summary.recentLabs)));
-    }
+    return `
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Health Summary</title>
+<style>
+  @page { margin: 0.75in; }
+  body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: #111827; font-size: 12pt; line-height: 1.45; }
+  header { border-bottom: 3px solid #199C4F; padding-bottom: 12px; margin-bottom: 20px; }
+  header h1 { font-size: 22pt; margin: 0 0 4px 0; color: #111827; }
+  header .meta { color: #64748b; font-size: 10pt; }
+  section { margin-bottom: 22px; page-break-inside: avoid; }
+  section h2 { font-size: 14pt; color: #199C4F; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin: 0 0 8px 0; }
+  section h3 { font-size: 11pt; margin: 12px 0 4px 0; }
+  ul { padding-left: 20px; margin: 4px 0; }
+  li { margin: 2px 0; }
+  pre { white-space: pre-wrap; font-family: inherit; margin: 4px 0; padding: 8px; background: #f8fafc; border-radius: 6px; }
+  footer { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 30px; color: #94a3b8; font-size: 9pt; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Health Summary</h1>
+    <div class="meta">Generated ${escape(generated)} · Circle Support Health</div>
+  </header>
+  ${bpsHtml}
+  ${conditionsHtml}
+  ${medsHtml}
+  ${labsHtml}
+  ${recsHtml}
+  <footer>
+    This is a snapshot at the moment of sharing. For the most current version, ask the patient to re-share their summary from the Circle Support Health app.
+  </footer>
+</body>
+</html>`;
+  };
 
-    if (summary?.recommendations) {
-      parts.push(formatSectionText('Recommendations', summary.recommendations));
-    }
+  // Fallback: strip HTML tags to plain text for older binaries that don't
+  // have the expo-print / expo-sharing native modules linked yet. Keeps
+  // the button working via RN's built-in Share on those installs.
+  const htmlToText = (html: string): string =>
+    html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-    parts.push(
-      '\n--\nGenerated from Circle Support Health\nThis is a snapshot at the moment of sharing. For the most current version, ask the patient to re-share.',
+  const shareTextFallback = async (html: string) => {
+    const message = htmlToText(html);
+    await Share.share(
+      { message, title: 'My Health Summary' },
+      { subject: 'My Health Summary' },
     );
-    return parts.join('\n');
   };
 
   const onShare = async () => {
     if (sharing) return;
     setSharing(true);
+    const html = buildHtml();
     try {
-      const message = buildShareText();
-      await Share.share(
-        { message, title: 'My Health Summary' },
-        { subject: 'My Health Summary' },
-      );
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Health Summary',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        // Native module present but sharing unavailable — degrade to text.
+        await shareTextFallback(html);
+      }
     } catch (err) {
-      Alert.alert('Could not share', 'Please try again in a moment.');
+      // Old binary without the expo-print/expo-sharing modules linked
+      // (or a transient failure) — fall back to a plain-text share so
+      // the button still works. Once the next binary ships, this branch
+      // is silent.
+      try {
+        await shareTextFallback(html);
+      } catch {
+        Alert.alert('Could not share', 'Please try again in a moment.');
+      }
     } finally {
       setSharing(false);
     }
@@ -127,7 +202,7 @@ export default function ShareSummarySection() {
       <View style={styles.headerRow}>
         <View style={[styles.iconChip, { backgroundColor: ACCENT + '1A' }]}>
           <MaterialIcons
-            name="ios-share"
+            name="picture-as-pdf"
             size={getScaledFontSize(20)}
             color={ACCENT}
           />
@@ -151,7 +226,7 @@ export default function ShareSummarySection() {
               fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
             }}
           >
-            Send a snapshot to a doctor, caregiver, or family member.
+            Send a PDF copy to a doctor, caregiver, or family member.
           </Text>
         </View>
       </View>
@@ -160,8 +235,8 @@ export default function ShareSummarySection() {
         onPress={onShare}
         disabled={sharing}
         accessibilityRole="button"
-        accessibilityLabel="Share health summary"
-        accessibilityHint="Opens the share sheet with your health summary as text"
+        accessibilityLabel="Share health summary as PDF"
+        accessibilityHint="Generates a PDF of your health summary and opens the share sheet"
         style={({ pressed }) => [
           styles.button,
           {
@@ -179,21 +254,9 @@ export default function ShareSummarySection() {
             fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
           }}
         >
-          {sharing ? 'Preparing…' : 'Share summary'}
+          {sharing ? 'Preparing PDF…' : 'Share as PDF'}
         </Text>
       </Pressable>
-
-      <Text
-        style={{
-          color: colors.subtext,
-          marginTop: Spacing.sm,
-          fontSize: getScaledFontSize(11),
-          fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
-          fontStyle: 'italic',
-        }}
-      >
-        PDF export coming in the next app update.
-      </Text>
     </View>
   );
 }

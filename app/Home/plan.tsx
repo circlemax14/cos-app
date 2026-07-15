@@ -13,6 +13,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthSummary } from '@/hooks/use-health-summary';
 import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
+import { usePatientIntake } from '@/hooks/use-patient-intake';
 import BpsHistorySection from '@/components/health-summary/BpsHistorySection';
 import CurrentConditionsSection from '@/components/health-summary/CurrentConditionsSection';
 import MedicationsByConditionSection from '@/components/health-summary/MedicationsByConditionSection';
@@ -28,6 +29,17 @@ export default function HealthSummaryScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const { isLoading, isError, refetch } = useHealthSummary();
+
+  // Gate the 9-section view behind a completed intake — Ken's directive:
+  // "whenever anyone opens health summary, they need to go through intake
+  // first; after that the current view will be visible". Pre-intake users
+  // see ONLY the intake CTA with an explainer. Intake query stays silent
+  // (returns null on load/error) so we don't flash the gate before the
+  // status is known — if the intake query itself is loading we treat as
+  // gated so we don't briefly show the full summary and then snap back.
+  const intakeQuery = usePatientIntake();
+  const intakeComplete = intakeQuery.data?.intake?.status === 'complete';
+  const intakeGateOpen = intakeComplete === true;
 
   if (isLoading) {
     return (
@@ -136,15 +148,40 @@ export default function HealthSummaryScreen() {
         {/* Intake sits below the header — self-gates on status. */}
         <IntakeCtaCard />
 
-        <BpsHistorySection />
-        <CurrentConditionsSection />
-        <MedicationsByConditionSection />
-        <LabsByConditionSection />
-        <VitalsRedFlagSection />
-        <TreatmentsSupportsSection />
-        <RecommendationsSection />
-        <ShareSummarySection />
-        <UpdatedAtFooter />
+        {intakeGateOpen ? (
+          <>
+            <BpsHistorySection />
+            <CurrentConditionsSection />
+            <MedicationsByConditionSection />
+            <LabsByConditionSection />
+            <VitalsRedFlagSection />
+            <TreatmentsSupportsSection />
+            <RecommendationsSection />
+            <ShareSummarySection />
+            <UpdatedAtFooter />
+          </>
+        ) : (
+          <View
+            style={{
+              alignItems: 'center',
+              paddingVertical: 32,
+              paddingHorizontal: 24,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                textAlign: 'center',
+                lineHeight: 22,
+              }}
+            >
+              Your personalized health summary — biopsychosocial history,
+              current conditions, medications, labs, vitals, treatments, and
+              recommendations — will appear here once you complete your intake.
+            </Text>
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>

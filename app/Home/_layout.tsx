@@ -336,6 +336,11 @@ export default function TabLayout() {
         name="patient-intake"
         options={{ title: 'Health check-in', href: null, headerShown: false }}
       />
+      {/* COS-452 — read-only intake report reachable from IntakeCtaCard. */}
+      <Tabs.Screen
+        name="patient-intake-report"
+        options={{ title: 'Your intake', href: null, headerShown: false }}
+      />
       <Tabs.Screen
         name="assessment-stepper"
         options={{
