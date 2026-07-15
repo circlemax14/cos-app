@@ -39,7 +39,6 @@ function RecommendationsSection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={8}
       title="Further recommendations"
       icon="tips-and-updates"
       accentColor={ACCENT}

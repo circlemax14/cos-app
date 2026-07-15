@@ -223,7 +223,6 @@ function VitalsRedFlagSection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={6}
       title="Vitals & red flags"
       icon="monitor-heart"
       accentColor="#DC2626"

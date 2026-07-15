@@ -69,7 +69,6 @@ function MedicationsByConditionSection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={4}
       title="Medications by condition"
       icon="medication"
       accentColor="#0EA5E9"

@@ -51,7 +51,6 @@ function BpsHistorySection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={2}
       title="Biopsychosocial history"
       icon="psychology"
       accentColor="#7B3FE4"

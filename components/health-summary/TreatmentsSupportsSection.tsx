@@ -138,7 +138,6 @@ function TreatmentsSupportsSection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={7}
       title="Treatments, supports & resources"
       icon="volunteer-activism"
       accentColor={ACCENT}

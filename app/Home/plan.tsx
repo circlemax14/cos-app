@@ -22,6 +22,7 @@ import LabsByConditionSection from '@/components/health-summary/LabsByConditionS
 import VitalsRedFlagSection from '@/components/health-summary/VitalsRedFlagSection';
 import TreatmentsSupportsSection from '@/components/health-summary/TreatmentsSupportsSection';
 import RecommendationsSection from '@/components/health-summary/RecommendationsSection';
+import ShareSummarySection from '@/components/health-summary/ShareSummarySection';
 import UpdatedAtFooter from '@/components/health-summary/UpdatedAtFooter';
 
 export default function HealthSummaryScreen() {
@@ -137,9 +138,7 @@ export default function HealthSummaryScreen() {
         }
       >
         {/* Section 1 — HS-1 / SCRUM-590 patient intake CTA. Self-gates on load/error/status. */}
-        <IntakeCtaCard />
-
-        {/* Header */}
+        {/* Header — always first so the page title anchors the tab. */}
         <View style={styles.headerSection}>
           <Text style={{ fontSize: getScaledFontSize(40), marginBottom: 12 }}>🩺</Text>
           <Text
@@ -156,14 +155,19 @@ export default function HealthSummaryScreen() {
           </Text>
         </View>
 
-        <BpsHistorySection />              {/* 2 */}
-        <CurrentConditionsSection />       {/* 3 */}
-        <MedicationsByConditionSection />  {/* 4 */}
-        <LabsByConditionSection />         {/* 5 */}
-        <VitalsRedFlagSection />           {/* 6 */}
-        <TreatmentsSupportsSection />      {/* 7 */}
-        <RecommendationsSection />         {/* 8 */}
-        <UpdatedAtFooter />                {/* 9 */}
+        {/* Intake sits below the header — self-gates on status (pre-intake = CTA,
+            post-intake = info card with completion date, count, and what it powers). */}
+        <IntakeCtaCard />
+
+        <BpsHistorySection />
+        <CurrentConditionsSection />
+        <MedicationsByConditionSection />
+        <LabsByConditionSection />
+        <VitalsRedFlagSection />
+        <TreatmentsSupportsSection />
+        <RecommendationsSection />
+        <ShareSummarySection />
+        <UpdatedAtFooter />
 
         <View style={{ height: 40 }} />
       </ScrollView>

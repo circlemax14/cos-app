@@ -141,7 +141,6 @@ function LabsByConditionSection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={5}
       title="Lab results"
       icon="science"
       accentColor={ACCENT}

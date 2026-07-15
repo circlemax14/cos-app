@@ -25,10 +25,6 @@ if (
 }
 
 export type SummaryCardShellProps = {
-  /** 1..9 — rendered as 'N / totalSections' chip. */
-  sectionNumber: number;
-  /** Denominator of the section chip. Defaults to 9. */
-  totalSections?: number;
   /** Header title. Wraps to at most 2 lines. */
   title: string;
   /** MaterialIcons glyph name shown in the accent-tinted chip. */
@@ -65,8 +61,6 @@ function elevation(level: number): ViewStyle {
 }
 
 function SummaryCardShell({
-  sectionNumber,
-  totalSections = 9,
   title,
   icon,
   accentColor,
@@ -99,25 +93,10 @@ function SummaryCardShell({
         style={styles.header}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        accessibilityLabel={`Section ${sectionNumber} of ${totalSections}: ${title}`}
+        accessibilityLabel={title}
         accessibilityHint={expanded ? 'Double tap to collapse' : 'Double tap to expand'}
         hitSlop={8}
       >
-        <View style={[styles.numberChip, { borderColor: colors.border }]}>
-          <Text
-            style={{
-              fontSize: getScaledFontSize(11),
-              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-              color: colors.subtext,
-              letterSpacing: 0.3,
-            }}
-            accessibilityElementsHidden
-            importantForAccessibility="no"
-          >
-            {sectionNumber} / {totalSections}
-          </Text>
-        </View>
-
         <View
           style={[
             styles.iconChip,
@@ -171,12 +150,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-  },
-  numberChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radii.full,
-    borderWidth: 1,
   },
   iconChip: {
     width: 40,

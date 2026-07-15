@@ -77,7 +77,6 @@ function CurrentConditionsSection() {
 
   return (
     <SummaryCardShell
-      sectionNumber={3}
       title="Current conditions"
       icon="medical-information"
       accentColor={ACCENT}
