@@ -23,12 +23,22 @@ import TreatmentsSupportsSection from '@/components/health-summary/TreatmentsSup
 import RecommendationsSection from '@/components/health-summary/RecommendationsSection';
 import ShareSummarySection from '@/components/health-summary/ShareSummarySection';
 import UpdatedAtFooter from '@/components/health-summary/UpdatedAtFooter';
+import { useVitalsRedFlagNotifications } from '@/hooks/use-vitals-red-flag-notifications';
 
 export default function HealthSummaryScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const { isLoading, isError, refetch } = useHealthSummary();
+
+  // HS-3b overlay: mount the vitals red-flag observer. Rules-of-hooks — called
+  // unconditionally, before any early returns. The hook itself no-ops when the
+  // patient is on Android or has Apple Health OFF (via useHealthKitTrends'
+  // `disabled` gate), so this line is safe on every device. Zero visual impact
+  // on v5's UI — the observer only computes verdicts from HK trends and, on
+  // fresh amber/red transitions, fires a local push + POSTs the verdict label
+  // to /v1/patients/me/vitals-red-flag-event. No new render subtree.
+  useVitalsRedFlagNotifications();
 
   // Gate the 9-section view behind a completed intake — Ken's directive:
   // "whenever anyone opens health summary, they need to go through intake
