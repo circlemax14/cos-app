@@ -12,6 +12,8 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthSummary } from '@/hooks/use-health-summary';
+import { useVitalsRedFlagNotifications } from '../../hooks/use-vitals-red-flag-notifications';
+import { VitalsRedFlagSection } from '@/components/health-summary/VitalsRedFlagSection';
 import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
@@ -77,6 +79,12 @@ export default function HealthSummaryScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const { data, isLoading, isError, refetch, isRefetching } = useHealthSummary();
+
+  // HS-3b: mount the vitals red-flag observer. Rules-of-hooks: the hook is
+  // called unconditionally; its internal `disabled` short-circuit (via
+  // useHealthKitTrends → Apple Health preference, COS-397 / SCRUM-535) is the
+  // runtime gate that mirrors the section's iosDisabled short-circuit.
+  useVitalsRedFlagNotifications();
 
   if (isLoading) {
     return (
@@ -198,6 +206,11 @@ export default function HealthSummaryScreen() {
             </Text>
           )}
         </View>
+
+        {/* HS-3b — vitals red-flag section. Self-gates on iOS + Apple Health
+            preference + trend availability; renders null otherwise. Placed
+            above the AI summary so red flags surface at the top of the tab. */}
+        <VitalsRedFlagSection />
 
         {/* Overview */}
         <SectionCard
