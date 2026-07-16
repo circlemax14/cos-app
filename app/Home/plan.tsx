@@ -207,11 +207,6 @@ export default function HealthSummaryScreen() {
           )}
         </View>
 
-        {/* HS-3b — vitals red-flag section. Self-gates on iOS + Apple Health
-            preference + trend availability; renders null otherwise. Placed
-            above the AI summary so red flags surface at the top of the tab. */}
-        <VitalsRedFlagSection />
-
         {/* Overview */}
         <SectionCard
           icon="summarize"
@@ -255,6 +250,12 @@ export default function HealthSummaryScreen() {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+
+        {/* HS-3b — vitals red-flag section. Self-gates on iOS + Apple Health
+            preference + trend availability; renders null otherwise. Placed
+            after Recent Labs and before Recommendations per user request
+            2026-07-16. */}
+        <VitalsRedFlagSection />
 
         {/* Recommendations */}
         <SectionCard
