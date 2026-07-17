@@ -331,6 +331,20 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        COS-467 — Unified BPS plan view (Phase 2). Opt-in peer to the
+        Care Plan and Biopsychosocial tabs — reached only via the
+        TryUnifiedPlanBanner CTA on those two tabs. Owns its own header,
+        so headerShown is false. Hidden from the tab bar (href: null).
+      */}
+      <Tabs.Screen
+        name="unified-plan"
+        options={{
+          title: 'Unified plan',
+          href: null,
+          headerShown: false,
+        }}
+      />
       {/* HS-1 / SCRUM-590 — patient intake wizard as a stack-pushed route (not a Modal), same pattern as plan-type-chooser and biopsychosocial-plan (iOS 26.5 modal-crash background). */}
       <Tabs.Screen
         name="patient-intake"
