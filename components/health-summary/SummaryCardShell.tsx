@@ -45,6 +45,19 @@ export type SummaryCardShellProps = {
   emptyState?: React.ReactNode;
   /** Whether the card is expanded on first render. Defaults to false. */
   initiallyExpanded?: boolean;
+  /**
+   * Optional at-a-glance badge/chip rendered in the header on the right side,
+   * between the title and the caret. Always visible (regardless of expanded
+   * state). Callers own their own show/hide gating.
+   */
+  titleBadge?: React.ReactNode;
+  /**
+   * Optional accessibility label appended to the header Pressable's own
+   * accessibilityLabel so VoiceOver reads the badge contents. iOS VoiceOver
+   * ignores nested accessibilityLabels under a focusable parent, so the
+   * badge's own View label is otherwise swallowed.
+   */
+  badgeAccessibilityLabel?: string;
   testID?: string;
 };
 
@@ -75,6 +88,8 @@ function SummaryCardShell({
   isEmpty,
   emptyState,
   initiallyExpanded = false,
+  titleBadge,
+  badgeAccessibilityLabel,
   testID,
 }: SummaryCardShellProps) {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -85,6 +100,10 @@ function SummaryCardShell({
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(v => !v);
   }, []);
+
+  const a11yLabel = [title, preview, badgeAccessibilityLabel]
+    .filter(Boolean)
+    .join('. ');
 
   return (
     <View
@@ -100,7 +119,7 @@ function SummaryCardShell({
         style={styles.header}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        accessibilityLabel={preview ? `${title}. ${preview}.` : title}
+        accessibilityLabel={a11yLabel}
         accessibilityHint={expanded ? 'Double tap to collapse' : 'Double tap to expand'}
         hitSlop={8}
       >
@@ -131,6 +150,8 @@ function SummaryCardShell({
         >
           {title}
         </Text>
+
+        {titleBadge ? <View style={styles.titleBadge}>{titleBadge}</View> : null}
 
         {!expanded && preview ? (
           <Text
@@ -185,6 +206,9 @@ const styles = StyleSheet.create({
   },
   body: {
     marginTop: Spacing.md,
+  },
+  titleBadge: {
+    marginLeft: 4,
   },
 });
 
