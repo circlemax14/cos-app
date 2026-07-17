@@ -53,6 +53,17 @@ function MedicationsByConditionSection() {
         const list = byCond.get(c) ?? [];
         list.push(m);
         byCond.set(c, list);
+      } else if (m.purpose?.trim()) {
+        // FE-side condition list (from summary + chronic conditions) didn't
+        // include this med's indication, but the BE populated purpose (via
+        // HS-4a med-inference — patient's FHIR Condition list is a superset
+        // of what the FE knows). Use the BE-populated indication as the
+        // synthetic group header so the med still surfaces under something
+        // meaningful instead of dumping into "Other medications".
+        const key = m.purpose.trim();
+        const list = byCond.get(key) ?? [];
+        list.push(m);
+        byCond.set(key, list);
       } else {
         unmatched.push(m);
       }
