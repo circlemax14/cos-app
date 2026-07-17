@@ -8,11 +8,25 @@ import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
+import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
   const { data: permissions } = useFeaturePermissions();
   const { panHandlers } = useInactivityTimeout();
+  /*
+   * COS-469 / Phase 4 — when the default-flip flag is ON, the visible
+   * Care Plan tab points at `unified-plan` and `health-plan` becomes
+   * an internal-only deep link (still reachable via ClassicViewLink).
+   * Defaults to `false` on load, so pre-flip users see zero change.
+   */
+  const unifiedDefault = useUnifiedPlanDefaultEnabled();
+  const carePlanTabOptions = {
+    title: 'Health Plan',
+    tabBarIcon: ({ color }: { color: string }) => (
+      <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
+    ),
+  };
 
   // Default to true (visible) while permissions are loading
   const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
@@ -53,14 +67,21 @@ export default function TabLayout() {
           }}
         />
       )}
+      {/*
+        COS-469 / Phase 4 — Care Plan tab default swap.
+        `unifiedDefault` OFF: legacy `health-plan` remains the visible
+        default (baseline). `unifiedDefault` ON: `health-plan` becomes
+        an internal-only deep link (`href: null`) reachable via the
+        ClassicViewLink icon in the unified-plan header. Same
+        Tabs.Screen entries — no navigator remount, no new file.
+      */}
       <Tabs.Screen
         name="health-plan"
-        options={{
-          title: 'Health Plan',
-          tabBarIcon: ({ color }) => (
-            <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
-          ),
-        }}
+        options={
+          unifiedDefault
+            ? { title: 'Classic care plan', href: null, headerShown: false }
+            : carePlanTabOptions
+        }
       />
       <Tabs.Screen
         name="plan"
@@ -339,11 +360,11 @@ export default function TabLayout() {
       */}
       <Tabs.Screen
         name="unified-plan"
-        options={{
-          title: 'Unified plan',
-          href: null,
-          headerShown: false,
-        }}
+        options={
+          unifiedDefault
+            ? carePlanTabOptions
+            : { title: 'Unified plan', href: null, headerShown: false }
+        }
       />
       {/* HS-1 / SCRUM-590 — patient intake wizard as a stack-pushed route (not a Modal), same pattern as plan-type-chooser and biopsychosocial-plan (iOS 26.5 modal-crash background). */}
       <Tabs.Screen

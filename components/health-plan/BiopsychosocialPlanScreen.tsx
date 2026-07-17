@@ -212,9 +212,18 @@ export function BiopsychosocialPlanScreen({
   onChangePlanType,
   onEditGoal,
   patientName,
+  headerRight,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
+  /**
+   * COS-469 / Phase 4 — optional slot rendered in the top-right of the
+   * header block. Used by the biopsychosocial-plan route to mount
+   * `TryUnifiedViewLink` when the default-flip flag is ON. Optional so
+   * the health-plan.tsx caller (which reaches this component via the
+   * legacy branch) doesn't need to change.
+   */
+  headerRight?: React.ReactNode;
   /**
    * COS-433: goal editing hoisted to the long-resident `health-plan.tsx`
    * parent — its Modal, its `updatePlanGoal` mutation, and its edit-field
@@ -447,33 +456,37 @@ export function BiopsychosocialPlanScreen({
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
       >
         {/* Header — patient greeting + last-generated date */}
-        <View style={styles.headerBlock}>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(26),
-              fontWeight: getScaledFontWeight(800) as any,
-              letterSpacing: -0.4,
-            }}
-          >
-            {patientName ? `${greetingForNow()}, ${patientName}` : greetingForNow()}
-          </Text>
-          {!!generatedDate && (
-            <View style={styles.metaRow}>
-              <MaterialIcons name="auto-awesome" size={12} color={colors.subtext} />
-              <Text style={[styles.metaText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-                Updated {generatedDate}
-                {planQuery.data?.staleness === 'stale' ? ' · may be out of date' : ''}
-              </Text>
-            </View>
-          )}
-          <PlanTierPill
-            label={planTypeDisplayName(currentPlanType ?? 'basic')}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            onPress={onChangePlanType}
-          />
+        <View style={[styles.headerBlock, { flexDirection: 'row', alignItems: 'flex-start' }]}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(26),
+                fontWeight: getScaledFontWeight(800) as any,
+                letterSpacing: -0.4,
+              }}
+            >
+              {patientName ? `${greetingForNow()}, ${patientName}` : greetingForNow()}
+            </Text>
+            {!!generatedDate && (
+              <View style={styles.metaRow}>
+                <MaterialIcons name="auto-awesome" size={12} color={colors.subtext} />
+                <Text style={[styles.metaText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                  Updated {generatedDate}
+                  {planQuery.data?.staleness === 'stale' ? ' · may be out of date' : ''}
+                </Text>
+              </View>
+            )}
+            <PlanTierPill
+              label={planTypeDisplayName(currentPlanType ?? 'basic')}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              onPress={onChangePlanType}
+            />
+          </View>
+          {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
+          {headerRight ? <View>{headerRight}</View> : null}
         </View>
 
         {/*
