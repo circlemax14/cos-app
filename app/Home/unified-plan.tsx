@@ -34,6 +34,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { UnifiedSectionCard } from '@/components/unified-plan/UnifiedSectionCard';
+import { ClassicViewLink } from '@/components/unified-plan/ClassicViewLink';
 import {
   UNIFIED_SECTION_META,
   UNIFIED_SECTION_ORDER,
@@ -42,6 +43,7 @@ import { EVER_VISITED_KEY } from '@/lib/unified-plan-banner';
 import { formatRelative } from '@/lib/plan-time';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
+import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 import { assessmentHrefForSection } from '@/lib/unified-plan-assessment-routing';
 import type {
   UnifiedPlanSection,
@@ -72,6 +74,16 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
     refetch,
     lastUpdated,
   } = useUnifiedPlan();
+
+  // COS-469 / Phase 4 — when default-flip is ON, unified-plan IS the Care
+  // Plan tab entry point, so a chevron-left back button no-ops (no stack)
+  // and the ClassicViewLink header affordance is the relevant escape hatch.
+  // When default-flip is OFF, the user reached this screen via banner-push
+  // from the classic Care Plan and the back button is meaningful.
+  const unifiedDefaultOn = useUnifiedPlanDefaultEnabled();
+  // `router.canGoBack()` is the authoritative check — hides the button in
+  // any config where pressing it would no-op (tab-entry point or root nav).
+  const canGoBack = router.canGoBack();
 
   const onEmptyAssessmentPress = useCallback((sectionKey: UnifiedSectionKey) => {
     router.push(assessmentHrefForSection(sectionKey) as never);
@@ -124,14 +136,28 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
             The unified plan view isn&apos;t available yet. You can still use your Care Plan
             and Biopsychosocial views.
           </Text>
+          {/*
+            COS-469 / Phase 4 — when PLAN_BPS_UNIFIED_DEFAULT_ENABLED is ON
+            but PLAN_BPS_UNIFIED_ENABLED (endpoint) is OFF, unified-plan is
+            the visible Care Plan tab but 404s. This CTA is the user's only
+            escape to a working plan. `router.replace` (not push) so
+            re-tapping the tab doesn't stack duplicates; `?classic=1` is
+            the stable bypass hook documented alongside ClassicViewLink.
+          */}
           <Pressable
-            onPress={() => router.replace('/Home/health-plan' as never)}
+            onPress={() =>
+              router.replace({
+                pathname: '/Home/health-plan',
+                params: { classic: '1' },
+              } as never)
+            }
             accessibilityRole="button"
-            accessibilityLabel="Back to Care Plan"
+            accessibilityLabel="Go to Classic care plan"
             style={({ pressed }) => [
               styles.primaryBtn,
               { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
             ]}
+            testID="unified-plan-disabled-classic-cta"
           >
             <Text
               style={{
@@ -140,7 +166,7 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
                 fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
               }}
             >
-              Back to Care Plan
+              Go to Classic care plan
             </Text>
           </Pressable>
         </View>
@@ -248,15 +274,26 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
       >
         {/* Screen header */}
         <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            hitSlop={12}
-            style={styles.iconBtn}
-          >
-            <MaterialIcons name="chevron-left" size={getScaledFontSize(28)} color={colors.text} />
-          </Pressable>
+          {/*
+            COS-469 / Phase 4 — the chevron-left back button only makes sense
+            when unified-plan was pushed onto a stack (banner-CTA from the
+            classic Care Plan, deep link, etc.). When the default-flip flag
+            is ON and unified-plan IS the tab entry point, there's no stack
+            to pop and the button silently no-ops — hide it. `canGoBack()`
+            is the authoritative check for the current nav state.
+          */}
+          {canGoBack ? (
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              hitSlop={12}
+              style={styles.iconBtn}
+              testID="unified-plan-back-btn"
+            >
+              <MaterialIcons name="chevron-left" size={getScaledFontSize(28)} color={colors.text} />
+            </Pressable>
+          ) : null}
           <View style={{ flex: 1 }}>
             <Text
               style={{
@@ -279,6 +316,13 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
               Organized by biopsychosocial
             </Text>
           </View>
+          {/* COS-469 / Phase 4 — Classic view escape hatch. Only rendered
+              when the default-flip flag is ON — pre-flip users reach this
+              screen only via banner-push from Care Plan, so the classic
+              route is already one back-tap away. */}
+          {unifiedDefaultOn ? (
+            <ClassicViewLink color={colors.subtext} size={getScaledFontSize(22)} />
+          ) : null}
           <Pressable
             onPress={onRefresh}
             accessibilityRole="button"

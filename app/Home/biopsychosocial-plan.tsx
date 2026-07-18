@@ -22,11 +22,12 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
 import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
+import { TryUnifiedViewLink } from '@/components/unified-plan/ClassicViewLink';
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { usePlanType } from '@/hooks/use-plan-type';
@@ -48,6 +49,14 @@ function firstNameFromPatient(
 export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  /*
+   * COS-469 / Phase 4 — `?classic=1` is the stable bypass-hook when the
+   * default-flip is on and the user came in via ClassicViewLink. Read
+   * defensively but take no action today; this param exists so any
+   * future auto-forward-to-unified redirect has a documented escape.
+   */
+  useLocalSearchParams<{ classic?: string }>();
 
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
   const planQuery = useBiopsychosocialPlan();
@@ -150,6 +159,9 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
         onChangePlanType={openPlanTypeChooser}
         onEditGoal={openBioGoalEditor}
         patientName={patientName}
+        headerRight={
+          <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
+        }
       />
       <BioGoalEditorModal
         visible={bioEditGoal !== null}
