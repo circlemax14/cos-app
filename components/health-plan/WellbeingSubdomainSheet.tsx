@@ -51,7 +51,7 @@ const DOMAIN_BG: Record<BpsDomain, string> = {
 const DOMAIN_LABEL: Record<BpsDomain, string> = {
   biological: 'Biological',
   psychological: 'Psychological',
-  social: 'Social & Spiritual',
+  social: 'Social & Faith',
 }
 const OVERLAP_LABEL: Record<string, string> = {
   bio_psy: 'This area sits at the overlap of Biological and Psychological — goals here help both.',

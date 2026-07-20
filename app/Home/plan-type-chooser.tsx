@@ -453,7 +453,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
                       ]}
                     >
                       {migrating
-                        ? 'Setting up your personalized plan across Biological, Psychological, and Social & Spiritual sections. This can take up to a minute.'
+                        ? 'Setting up your personalized plan across Biological, Psychological, and Social & Faith sections. This can take up to a minute.'
                         : CONSENT_COPY[card.type]}
                     </Text>
 

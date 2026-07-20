@@ -54,7 +54,7 @@ const DOMAIN_BG: Record<BpsDomain, string> = {
 const DOMAIN_LABEL: Record<BpsDomain, string> = {
   biological: 'Biological',
   psychological: 'Psychological',
-  social: 'Social & Spiritual',
+  social: 'Social & Faith',
 }
 
 // Larger viewBox to fit 26 subdomain labels + 3 circles + wellbeing center.

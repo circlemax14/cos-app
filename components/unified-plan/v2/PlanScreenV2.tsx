@@ -43,7 +43,11 @@ export default function PlanScreenV2(): React.JSX.Element {
   // react-query wrapper over GET /v1/plan (Phase 1). Same hook the
   // legacy path uses; not new bridge code, but the first time v2
   // pays for the fetch.
-  const { data } = useUnifiedPlan();
+  const { data, refetch } = useUnifiedPlan();
+
+  const onSwipeRefetch = React.useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   const onBack = React.useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -102,7 +106,7 @@ export default function PlanScreenV2(): React.JSX.Element {
 
         <WellbeingMapCard />
         <AISuggestionStrip view={data ?? null} />
-        <BpsAccordion view={data ?? null} />
+        <BpsAccordion view={data ?? null} onRefetch={onSwipeRefetch} />
       </ScrollView>
     </AppWrapper>
   );

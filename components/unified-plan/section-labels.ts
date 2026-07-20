@@ -48,8 +48,8 @@ export const UNIFIED_SECTION_META: Record<UnifiedSectionKey, UnifiedSectionMeta>
   socialSpiritual: {
     icon: 'groups',
     color: '#F59E0B',
-    title: 'Social & Spiritual',
-    shortLabel: 'social & spiritual',
+    title: 'Social & Faith',
+    shortLabel: 'social & faith',
   },
 };
 

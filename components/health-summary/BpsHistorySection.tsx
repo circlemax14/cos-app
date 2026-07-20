@@ -29,7 +29,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 const DOMAINS = [
   { key: 'biological', label: 'Biological', color: '#199C4F' },
   { key: 'psychological', label: 'Psychological', color: '#7B3FE4' },
-  { key: 'social', label: 'Social & Spiritual', color: '#C97600' },
+  { key: 'social', label: 'Social & Faith', color: '#C97600' },
 ] as const;
 
 function BpsHistorySection() {

@@ -17,7 +17,6 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
@@ -26,15 +25,18 @@ import {
   UNIFIED_SECTION_META,
   UNIFIED_SECTION_ORDER,
 } from '@/components/unified-plan/section-labels';
+import { SwipeableTaskRow } from '@/components/unified-plan/v2/SwipeableTaskRow';
 import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
 
 export interface BpsAccordionProps {
   /** Live plan payload from useUnifiedPlan. Optional so the shell still
    *  renders while the data is loading or when the BE flag is off. */
   view?: UnifiedPlanView | null;
+  /** Called after a swipe action succeeds so the parent can refetch. */
+  onRefetch?: () => void;
 }
 
-export function BpsAccordion({ view }: BpsAccordionProps = {}): React.JSX.Element {
+export function BpsAccordion({ view, onRefetch }: BpsAccordionProps = {}): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -203,98 +205,14 @@ export function BpsAccordion({ view }: BpsAccordionProps = {}): React.JSX.Elemen
                     No tasks in this domain.
                   </Text>
                 ) : (
-                  (view?.sections?.[key]?.tasks ?? []).map((t) => {
-                    const isDone = t.status === 'completed';
-                    const isSkipped = t.status === 'skipped';
-                    const renderLeftActions = () => (
-                      <View style={[styles.swipeAction, { backgroundColor: '#9CA3AF' }]}>
-                        <Text style={styles.swipeActionText}>Skip today</Text>
-                      </View>
-                    );
-                    const renderRightActions = () => (
-                      <View style={styles.swipeActionsRight}>
-                        <View style={[styles.swipeAction, { backgroundColor: '#F59E0B' }]}>
-                          <Text style={styles.swipeActionText}>Snooze 1h</Text>
-                        </View>
-                        <View style={[styles.swipeAction, { backgroundColor: '#3B82F6' }]}>
-                          <Text style={styles.swipeActionText}>Reschedule</Text>
-                        </View>
-                      </View>
-                    );
-                    return (
-                      <Swipeable
-                        key={`${key}-t-${t.id}`}
-                        renderLeftActions={renderLeftActions}
-                        renderRightActions={renderRightActions}
-                        friction={2}
-                        leftThreshold={40}
-                        rightThreshold={40}
-                      >
-                        <View
-                          style={[
-                            styles.taskRow,
-                            { borderColor: colors.border, backgroundColor: colors.background },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.taskCheckbox,
-                              {
-                                borderColor: isDone ? meta.color : colors.border,
-                                backgroundColor: isDone ? meta.color : 'transparent',
-                              },
-                            ]}
-                          >
-                            {isDone ? (
-                              <MaterialIcons
-                                name="check"
-                                size={getScaledFontSize(12)}
-                                color="#FFFFFF"
-                              />
-                            ) : null}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={{
-                                color: colors.text,
-                                fontSize: getScaledFontSize(14),
-                                fontWeight: getScaledFontWeight(500) as TextStyle['fontWeight'],
-                                textDecorationLine:
-                                  isDone || isSkipped ? 'line-through' : 'none',
-                                opacity: isDone || isSkipped ? 0.6 : 1,
-                              }}
-                              numberOfLines={2}
-                            >
-                              {t.title}
-                            </Text>
-                            {t.description ? (
-                              <Text
-                                style={{
-                                  color: colors.subtext,
-                                  fontSize: getScaledFontSize(12),
-                                  marginTop: 2,
-                                }}
-                                numberOfLines={2}
-                              >
-                                {t.description}
-                              </Text>
-                            ) : null}
-                            {t.source === 'care_manager' ? (
-                              <Text
-                                style={{
-                                  color: meta.color,
-                                  fontSize: getScaledFontSize(11),
-                                  marginTop: 4,
-                                }}
-                              >
-                                From your care team
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      </Swipeable>
-                    );
-                  })
+                  (view?.sections?.[key]?.tasks ?? []).map((t) => (
+                    <SwipeableTaskRow
+                      key={`${key}-t-${t.id}`}
+                      task={t}
+                      accentColor={meta.color}
+                      onRefetch={onRefetch}
+                    />
+                  ))
                 )}
               </View>
             ) : null}
