@@ -33,6 +33,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
+import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -100,6 +101,7 @@ export default function PlanScreenV2(): React.JSX.Element {
         </View>
 
         <WellbeingMapCard />
+        <AISuggestionStrip view={data ?? null} />
         <BpsAccordion view={data ?? null} />
       </ScrollView>
     </AppWrapper>
