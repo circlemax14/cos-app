@@ -60,6 +60,14 @@ export function TryUnifiedPlanBanner({
   const [dismissed, setDismissed] = React.useState<boolean | undefined>(undefined);
 
   React.useEffect(() => {
+    // COS-475b — when v2 flag is on, show the banner unconditionally so
+    // Ken can reach the chunked v2 shell regardless of prior EVER_VISITED
+    // or DISMISS state left over from Phase 4 / today's OTA iterations.
+    // Legacy path (v2 off) keeps the Phase 2 suppression semantics.
+    if (planScreenV2) {
+      setDismissed(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -68,7 +76,7 @@ export function TryUnifiedPlanBanner({
           AsyncStorage.getItem(EVER_VISITED_KEY),
         ]);
         if (cancelled) return;
-        if (everVisited && !planScreenV2) {
+        if (everVisited) {
           setDismissed(true);
           return;
         }
