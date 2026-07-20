@@ -54,7 +54,7 @@ export function AiClipboardIcon({
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      <MaterialCommunityIcons name="clipboard-text" size={size} color={color} />
+      <MaterialCommunityIcons name="clipboard-text-outline" size={size} color={color} />
       <Animated.View
         style={[
           styles.sparkle,
