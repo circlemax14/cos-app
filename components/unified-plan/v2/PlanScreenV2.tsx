@@ -30,11 +30,18 @@ import { router } from 'expo-router';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // COS-475b chunk 3 — first real data hook. useUnifiedPlan is a
+  // react-query wrapper over GET /v1/plan (Phase 1). Same hook the
+  // legacy path uses; not new bridge code, but the first time v2
+  // pays for the fetch.
+  const { data } = useUnifiedPlan();
 
   const onBack = React.useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -87,13 +94,12 @@ export default function PlanScreenV2(): React.JSX.Element {
           ]}
         >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), lineHeight: 20 }}>
-            Chunk 2 adds the three BPS section headers below. Tap any header to toggle its
-            chevron — no content inside yet. Later chunks add the plan bullets, goals, tasks,
-            routines, swipe actions, and wellbeing map.
+            Chunk 3 adds live plan bullets inside each expanded section. Tap a header to see
+            the bullets from your current plan.
           </Text>
         </View>
 
-        <BpsAccordion />
+        <BpsAccordion view={data ?? null} />
       </ScrollView>
     </AppWrapper>
   );
