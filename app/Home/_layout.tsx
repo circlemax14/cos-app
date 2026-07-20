@@ -88,7 +88,7 @@ export default function TabLayout() {
         options={{
           title: 'Health Summary',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+            <IconSymbol size={getScaledFontSize(24)} name="waveform.path.ecg" color={color} />
           ),
         }}
       />
