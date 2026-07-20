@@ -95,7 +95,11 @@ export function BpsAccordion({ view }: BpsAccordionProps = {}): React.JSX.Elemen
             </Pressable>
 
             {isOpen ? (
-              <View style={[styles.bulletsBlock, { borderTopColor: colors.border }]}>
+              <View style={[styles.expandedBlock, { borderTopColor: colors.border }]}>
+                {/* Plan bullets */}
+                <Text style={[styles.blockTitle, { color: colors.subtext }]}>
+                  Plan
+                </Text>
                 {bullets.length === 0 ? (
                   <Text
                     style={{
@@ -120,6 +124,65 @@ export function BpsAccordion({ view }: BpsAccordionProps = {}): React.JSX.Elemen
                       >
                         {line}
                       </Text>
+                    </View>
+                  ))
+                )}
+
+                {/* Goals (chunk 4) */}
+                <Text style={[styles.blockTitle, { color: colors.subtext, marginTop: 16 }]}>
+                  Goals · {view?.sections?.[key]?.goals?.length ?? 0}
+                </Text>
+                {(view?.sections?.[key]?.goals ?? []).length === 0 ? (
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    No goals in this domain.
+                  </Text>
+                ) : (
+                  (view?.sections?.[key]?.goals ?? []).map((g) => (
+                    <View
+                      key={`${key}-g-${g.id}`}
+                      style={[styles.goalRow, { borderColor: colors.border }]}
+                    >
+                      <Text
+                        style={{
+                          color: colors.text,
+                          fontSize: getScaledFontSize(14),
+                          fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                        }}
+                        numberOfLines={2}
+                      >
+                        {g.title}
+                      </Text>
+                      {g.metric || g.target ? (
+                        <Text
+                          style={{
+                            color: colors.subtext,
+                            fontSize: getScaledFontSize(12),
+                            marginTop: 4,
+                          }}
+                          numberOfLines={2}
+                        >
+                          {[g.metric, g.target ? `Target: ${g.target}` : null, g.timeframe]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                      ) : null}
+                      {g.source === 'care_manager' ? (
+                        <Text
+                          style={{
+                            color: meta.color,
+                            fontSize: getScaledFontSize(11),
+                            marginTop: 4,
+                          }}
+                        >
+                          From your care team
+                        </Text>
+                      ) : null}
                     </View>
                   ))
                 )}
@@ -156,12 +219,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bulletsBlock: {
+  expandedBlock: {
     paddingHorizontal: 14,
     paddingBottom: 14,
-    paddingTop: 6,
+    paddingTop: 10,
     borderTopWidth: 1,
-    gap: 10,
+    gap: 8,
+  },
+  blockTitle: {
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.06 * 11,
+    fontWeight: '500',
+    marginBottom: 2,
   },
   bulletRow: {
     flexDirection: 'row',
@@ -173,5 +243,11 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     marginTop: 7,
+  },
+  goalRow: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
 });
