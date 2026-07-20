@@ -186,6 +186,88 @@ export function BpsAccordion({ view }: BpsAccordionProps = {}): React.JSX.Elemen
                     </View>
                   ))
                 )}
+
+                {/* Tasks (chunk 5, read-only, no swipe) */}
+                <Text style={[styles.blockTitle, { color: colors.subtext, marginTop: 16 }]}>
+                  Tasks · {view?.sections?.[key]?.tasks?.length ?? 0}
+                </Text>
+                {(view?.sections?.[key]?.tasks ?? []).length === 0 ? (
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    No tasks in this domain.
+                  </Text>
+                ) : (
+                  (view?.sections?.[key]?.tasks ?? []).map((t) => {
+                    const isDone = t.status === 'completed';
+                    const isSkipped = t.status === 'skipped';
+                    return (
+                      <View
+                        key={`${key}-t-${t.id}`}
+                        style={[styles.taskRow, { borderColor: colors.border }]}
+                      >
+                        <View
+                          style={[
+                            styles.taskCheckbox,
+                            {
+                              borderColor: isDone ? meta.color : colors.border,
+                              backgroundColor: isDone ? meta.color : 'transparent',
+                            },
+                          ]}
+                        >
+                          {isDone ? (
+                            <MaterialIcons
+                              name="check"
+                              size={getScaledFontSize(12)}
+                              color="#FFFFFF"
+                            />
+                          ) : null}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={{
+                              color: colors.text,
+                              fontSize: getScaledFontSize(14),
+                              fontWeight: getScaledFontWeight(500) as TextStyle['fontWeight'],
+                              textDecorationLine: isDone || isSkipped ? 'line-through' : 'none',
+                              opacity: isDone || isSkipped ? 0.6 : 1,
+                            }}
+                            numberOfLines={2}
+                          >
+                            {t.title}
+                          </Text>
+                          {t.description ? (
+                            <Text
+                              style={{
+                                color: colors.subtext,
+                                fontSize: getScaledFontSize(12),
+                                marginTop: 2,
+                              }}
+                              numberOfLines={2}
+                            >
+                              {t.description}
+                            </Text>
+                          ) : null}
+                          {t.source === 'care_manager' ? (
+                            <Text
+                              style={{
+                                color: meta.color,
+                                fontSize: getScaledFontSize(11),
+                                marginTop: 4,
+                              }}
+                            >
+                              From your care team
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
               </View>
             ) : null}
           </View>
@@ -249,5 +331,23 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  taskCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    marginTop: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
