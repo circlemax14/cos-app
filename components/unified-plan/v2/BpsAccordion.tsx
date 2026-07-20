@@ -17,6 +17,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
@@ -205,66 +206,93 @@ export function BpsAccordion({ view }: BpsAccordionProps = {}): React.JSX.Elemen
                   (view?.sections?.[key]?.tasks ?? []).map((t) => {
                     const isDone = t.status === 'completed';
                     const isSkipped = t.status === 'skipped';
+                    const renderLeftActions = () => (
+                      <View style={[styles.swipeAction, { backgroundColor: '#9CA3AF' }]}>
+                        <Text style={styles.swipeActionText}>Skip today</Text>
+                      </View>
+                    );
+                    const renderRightActions = () => (
+                      <View style={styles.swipeActionsRight}>
+                        <View style={[styles.swipeAction, { backgroundColor: '#F59E0B' }]}>
+                          <Text style={styles.swipeActionText}>Snooze 1h</Text>
+                        </View>
+                        <View style={[styles.swipeAction, { backgroundColor: '#3B82F6' }]}>
+                          <Text style={styles.swipeActionText}>Reschedule</Text>
+                        </View>
+                      </View>
+                    );
                     return (
-                      <View
+                      <Swipeable
                         key={`${key}-t-${t.id}`}
-                        style={[styles.taskRow, { borderColor: colors.border }]}
+                        renderLeftActions={renderLeftActions}
+                        renderRightActions={renderRightActions}
+                        friction={2}
+                        leftThreshold={40}
+                        rightThreshold={40}
                       >
                         <View
                           style={[
-                            styles.taskCheckbox,
-                            {
-                              borderColor: isDone ? meta.color : colors.border,
-                              backgroundColor: isDone ? meta.color : 'transparent',
-                            },
+                            styles.taskRow,
+                            { borderColor: colors.border, backgroundColor: colors.background },
                           ]}
                         >
-                          {isDone ? (
-                            <MaterialIcons
-                              name="check"
-                              size={getScaledFontSize(12)}
-                              color="#FFFFFF"
-                            />
-                          ) : null}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={{
-                              color: colors.text,
-                              fontSize: getScaledFontSize(14),
-                              fontWeight: getScaledFontWeight(500) as TextStyle['fontWeight'],
-                              textDecorationLine: isDone || isSkipped ? 'line-through' : 'none',
-                              opacity: isDone || isSkipped ? 0.6 : 1,
-                            }}
-                            numberOfLines={2}
+                          <View
+                            style={[
+                              styles.taskCheckbox,
+                              {
+                                borderColor: isDone ? meta.color : colors.border,
+                                backgroundColor: isDone ? meta.color : 'transparent',
+                              },
+                            ]}
                           >
-                            {t.title}
-                          </Text>
-                          {t.description ? (
+                            {isDone ? (
+                              <MaterialIcons
+                                name="check"
+                                size={getScaledFontSize(12)}
+                                color="#FFFFFF"
+                              />
+                            ) : null}
+                          </View>
+                          <View style={{ flex: 1 }}>
                             <Text
                               style={{
-                                color: colors.subtext,
-                                fontSize: getScaledFontSize(12),
-                                marginTop: 2,
+                                color: colors.text,
+                                fontSize: getScaledFontSize(14),
+                                fontWeight: getScaledFontWeight(500) as TextStyle['fontWeight'],
+                                textDecorationLine:
+                                  isDone || isSkipped ? 'line-through' : 'none',
+                                opacity: isDone || isSkipped ? 0.6 : 1,
                               }}
                               numberOfLines={2}
                             >
-                              {t.description}
+                              {t.title}
                             </Text>
-                          ) : null}
-                          {t.source === 'care_manager' ? (
-                            <Text
-                              style={{
-                                color: meta.color,
-                                fontSize: getScaledFontSize(11),
-                                marginTop: 4,
-                              }}
-                            >
-                              From your care team
-                            </Text>
-                          ) : null}
+                            {t.description ? (
+                              <Text
+                                style={{
+                                  color: colors.subtext,
+                                  fontSize: getScaledFontSize(12),
+                                  marginTop: 2,
+                                }}
+                                numberOfLines={2}
+                              >
+                                {t.description}
+                              </Text>
+                            ) : null}
+                            {t.source === 'care_manager' ? (
+                              <Text
+                                style={{
+                                  color: meta.color,
+                                  fontSize: getScaledFontSize(11),
+                                  marginTop: 4,
+                                }}
+                              >
+                                From your care team
+                              </Text>
+                            ) : null}
+                          </View>
                         </View>
-                      </View>
+                      </Swipeable>
                     );
                   })
                 )}
@@ -349,5 +377,19 @@ const styles = StyleSheet.create({
     marginTop: 2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    minWidth: 88,
+  },
+  swipeActionsRight: {
+    flexDirection: 'row',
+  },
+  swipeActionText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
   },
 });
