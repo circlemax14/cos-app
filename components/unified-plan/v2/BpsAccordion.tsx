@@ -50,7 +50,12 @@ export function BpsAccordion(props: BpsAccordionProps): React.JSX.Element {
     onRefetch,
   } = props;
 
-  const [openKey, setOpenKey] = useState<UnifiedSectionKey | null>('biological');
+  // COS-475 hotfix 2026-07-20 — collapse all sections on first paint to
+  // avoid iOS 26.5 TurboModule SIGABRT triggered by mounting 6-12
+  // <Swipeable/> instances synchronously on first commit. Matches v1
+  // profile that Phase 2 users banner-pushed cleanly. User taps a section
+  // header to expand.
+  const [openKey, setOpenKey] = useState<UnifiedSectionKey | null>(null);
 
   const routinesBySection = useMemo(() => {
     const out: Record<UnifiedSectionKey, RoutineRow[]> = {
