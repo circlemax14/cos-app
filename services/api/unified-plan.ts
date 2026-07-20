@@ -153,8 +153,12 @@ export { isFeatureDisabledError };
  */
 export async function fetchUnifiedPlan(): Promise<UnifiedPlanFetchResult> {
   try {
-    const res = await apiClient.get<UnifiedPlanView>('/v1/plan');
-    return res.data;
+    // BE wraps as { success: true, data: <view> } (see utils/response.ts
+    // sendSuccess). Legacy code path had a latent bug returning the whole
+    // envelope; chunked v2 rollout exposed it because v2 shows empty
+    // states instead of crashing on undefined.sections access.
+    const res = await apiClient.get<{ success: boolean; data: UnifiedPlanView }>('/v1/plan');
+    return res.data?.data ?? res.data;
   } catch (err) {
     if (isFeatureDisabledError(err)) {
       // Tag on the error too — some callers (retry gates) inspect the raw
