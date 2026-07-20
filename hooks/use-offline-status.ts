@@ -1,49 +1,20 @@
 /**
  * useOfflineStatus (COS-475, Phase 6.4).
  *
- * Lightweight network reachability check. Uses RN's built-in `fetch` with
- * an AbortController — NO new native deps (expo-network / netinfo would
- * bump the runtime fingerprint and force a binary cut, violating the OTA
- * constraint on this branch).
+ * ⚠️ 2026-07-20 IOS 26 BYPASS #2 — hook body stubbed to a no-op after
+ * bypass #1 (accordion collapse) landed and Ken still hit a SIGABRT
+ * ~30s after launching v2. Thread-8 stack proved the crash was a
+ * JS-initiated NSInvocation call into a legacy bridge module — exactly
+ * the surface this hook's setInterval+fetch+AppState.addEventListener
+ * combo hits every 15s. Neutering the hook proves whether the timer
+ * path is the trigger.
  *
- * Polls every 15s while mounted; also re-runs on AppState 'active'.
- * Never queues mutations — offline=true is a UX gate on swipe gestures
- * only; API calls still fail through the normal error path.
+ * Original body preserved in git history (commit c069741^). If Ken's
+ * next test on 2026-07-20 also crashes, this hook was NOT the trigger
+ * and we fall through to bypass #3 (AsyncStorage migration no-op) then
+ * bypass #4 (Swipeable→View wrapper). Real fix is Path A —
+ * merge cos-app#266/267/268 and cut a new binary.
  */
-
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
-
-const POLL_MS = 15_000;
-const PROBE_TIMEOUT_MS = 4_000;
-
-// Fall back to a stable, low-cost 204 endpoint. Using the app's own API
-// base is preferable when available so a corp firewall that blocks the
-// public probe URL doesn't force the UI into "offline" mode.
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
-const PROBE_URL = API_BASE
-  ? `${API_BASE.replace(/\/$/, '')}/v1/health`
-  : 'https://clients3.google.com/generate_204';
-
-async function probeOnline(): Promise<boolean> {
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const res = await fetch(PROBE_URL, {
-      method: 'GET',
-      cache: 'no-store',
-      signal: ctrl.signal,
-    });
-    // Any 2xx/3xx counts as online — even 404 from the probe endpoint
-    // proves DNS + TCP + TLS worked. Only outright fetch failure (no
-    // response) means we're actually offline.
-    return res.status < 500;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 export interface UseOfflineStatusResult {
   offline: boolean;
@@ -52,39 +23,8 @@ export interface UseOfflineStatusResult {
 }
 
 export function useOfflineStatus(): UseOfflineStatusResult {
-  const [offline, setOffline] = useState(false);
-  const mounted = useRef(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const check = useCallback(async () => {
-    const online = await probeOnline();
-    if (!mounted.current) return online;
-    setOffline((prev) => (prev === !online ? prev : !online));
-    return online;
-  }, []);
-
-  useEffect(() => {
-    mounted.current = true;
-    void check();
-
-    const schedule = () => {
-      timerRef.current = setTimeout(async () => {
-        await check();
-        if (mounted.current) schedule();
-      }, POLL_MS);
-    };
-    schedule();
-
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') void check();
-    });
-
-    return () => {
-      mounted.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      sub.remove();
-    };
-  }, [check]);
-
-  return { offline, refresh: check };
+  return {
+    offline: false,
+    refresh: async () => true,
+  };
 }
