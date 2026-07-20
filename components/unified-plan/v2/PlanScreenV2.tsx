@@ -30,6 +30,7 @@ import { router } from 'expo-router';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -86,12 +87,13 @@ export default function PlanScreenV2(): React.JSX.Element {
           ]}
         >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), lineHeight: 20 }}>
-            If you can read this without the app crashing, the v2 mount path is safe on your
-            device. We&apos;ll layer the accordion, tasks, routines, and swipe grammar back on one
-            chunk at a time — each shipped as a separate OTA so we know exactly which piece
-            triggers any crash.
+            Chunk 2 adds the three BPS section headers below. Tap any header to toggle its
+            chevron — no content inside yet. Later chunks add the plan bullets, goals, tasks,
+            routines, swipe actions, and wellbeing map.
           </Text>
         </View>
+
+        <BpsAccordion />
       </ScrollView>
     </AppWrapper>
   );
