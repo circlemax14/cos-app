@@ -44,6 +44,8 @@ import { formatRelative } from '@/lib/plan-time';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
+import { usePlanScreenV2Enabled } from '@/hooks/use-plan-screen-v2-flag';
+import PlanScreenV2 from '@/components/unified-plan/v2/PlanScreenV2';
 import { assessmentHrefForSection } from '@/lib/unified-plan-assessment-routing';
 import type {
   UnifiedPlanSection,
@@ -64,6 +66,12 @@ function hasAiSourcedItems(view: UnifiedPlanView): boolean {
 export default function UnifiedPlanScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // COS-475b Phase 6.4 chunked rebuild — v2 flag gate. Hook must run
+  // unconditionally (rules-of-hooks); the swap happens after all other
+  // hooks return. Chunk 1's PlanScreenV2 owns none of the v1 data, so
+  // the useUnifiedPlan call below is only paid for on the legacy path.
+  const planScreenV2 = usePlanScreenV2Enabled();
 
   const {
     data,
@@ -100,6 +108,14 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
   const onRefresh = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  // COS-475b — swap to v2 after all hooks so rules-of-hooks holds. v2
+  // chunk 1 is a bare shell that doesn't touch useUnifiedPlan's data;
+  // the paid-for fetch above is discarded when v2 is on. That's fine
+  // for chunks 1–3; from chunk 4 v2 will consume this data.
+  if (planScreenV2) {
+    return <PlanScreenV2 />;
+  }
 
   // ── Disabled placeholder ─────────────────────────────────────────
   if (disabled) {

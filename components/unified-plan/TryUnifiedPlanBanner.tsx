@@ -21,6 +21,7 @@ import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
+import { usePlanScreenV2Enabled } from '@/hooks/use-plan-screen-v2-flag';
 import {
   DISMISS_KEY,
   DISMISS_WINDOW_MS,
@@ -49,11 +50,13 @@ export function TryUnifiedPlanBanner({
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { disabled } = useUnifiedPlan();
+  // COS-475b — when v2 is ON, banner invites into a NEW screen even if
+  // the user opened v1 during Phase 2. Bypass EVER_VISITED. 7-day
+  // dismiss window still applies.
+  const planScreenV2 = usePlanScreenV2Enabled();
 
   // `undefined` = not yet resolved (avoid flash). Once resolved becomes
-  // true/false and drives the visible/dismissed decision. Suppression has
-  // two independent sources: the 7-day dismissal window OR a permanent
-  // "user has already opened the unified plan once" flag.
+  // true/false and drives the visible/dismissed decision.
   const [dismissed, setDismissed] = React.useState<boolean | undefined>(undefined);
 
   React.useEffect(() => {
@@ -65,7 +68,7 @@ export function TryUnifiedPlanBanner({
           AsyncStorage.getItem(EVER_VISITED_KEY),
         ]);
         if (cancelled) return;
-        if (everVisited) {
+        if (everVisited && !planScreenV2) {
           setDismissed(true);
           return;
         }
@@ -77,7 +80,7 @@ export function TryUnifiedPlanBanner({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [planScreenV2]);
 
   const onDismiss = React.useCallback(() => {
     setDismissed(true);
