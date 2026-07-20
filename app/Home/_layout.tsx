@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { AiClipboardIcon } from '@/components/ui/ai-clipboard-icon';
 import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
@@ -88,7 +89,7 @@ export default function TabLayout() {
         options={{
           title: 'Health Summary',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="waveform.path.ecg" color={color} />
+            <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
           ),
         }}
       />
