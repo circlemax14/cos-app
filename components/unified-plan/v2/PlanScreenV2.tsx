@@ -32,6 +32,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
+import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -94,11 +95,11 @@ export default function PlanScreenV2(): React.JSX.Element {
           ]}
         >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), lineHeight: 20 }}>
-            Chunk 3 adds live plan bullets inside each expanded section. Tap a header to see
-            the bullets from your current plan.
+            Chunk 7 adds the wellbeing map card. Tap it to open your Bio · Psy · Soc map.
           </Text>
         </View>
 
+        <WellbeingMapCard />
         <BpsAccordion view={data ?? null} />
       </ScrollView>
     </AppWrapper>
