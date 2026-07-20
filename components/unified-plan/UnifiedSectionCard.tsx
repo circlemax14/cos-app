@@ -29,6 +29,7 @@ import { UNIFIED_SECTION_META } from './section-labels';
 import { UnifiedGoalRow } from './UnifiedGoalRow';
 import { UnifiedTaskList } from './UnifiedTaskList';
 import { UnifiedInterventionRow } from './UnifiedInterventionRow';
+import { CollapsibleGroup } from './CollapsibleGroup';
 
 type ColorMap = Record<string, string | undefined>;
 
@@ -406,63 +407,6 @@ export function UnifiedSectionCard({
           ))}
         </CollapsibleGroup>
       )}
-    </View>
-  );
-}
-
-function CollapsibleGroup({
-  label,
-  icon,
-  open,
-  onToggle,
-  colors,
-  getScaledFontSize,
-  getScaledFontWeight,
-  children,
-}: {
-  label: string;
-  icon: keyof typeof MaterialIcons.glyphMap;
-  open: boolean;
-  onToggle: () => void;
-  colors: ColorMap;
-  getScaledFontSize: (n: number) => number;
-  getScaledFontWeight: (n: number) => string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  const subtext = colors.subtext ?? '#6B7280';
-  const border = colors.border ?? '#D1D5DB';
-  return (
-    <View style={[styles.collapsible, { borderTopColor: border }]}>
-      <Pressable
-        onPress={onToggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${label}, ${open ? 'expanded' : 'collapsed'}`}
-        accessibilityHint="Double tap to toggle this section"
-        style={styles.collapsibleHeader}
-        hitSlop={6}
-      >
-        <MaterialIcons name={icon} size={getScaledFontSize(14)} color={subtext} />
-        <Text
-          style={{
-            color: subtext,
-            fontSize: getScaledFontSize(11),
-            fontWeight: getScaledFontWeight(800) as TextStyle['fontWeight'],
-            marginLeft: 6,
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            flex: 1,
-          }}
-        >
-          {label}
-        </Text>
-        <MaterialIcons
-          name={open ? 'expand-less' : 'expand-more'}
-          size={getScaledFontSize(20)}
-          color={subtext}
-        />
-      </Pressable>
-      {open ? <View style={styles.collapsibleBody}>{children}</View> : null}
     </View>
   );
 }

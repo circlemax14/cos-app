@@ -427,6 +427,71 @@ export interface TaskOccurrence extends PlanTask {
   completedAt?: string;
 }
 
+// ─── COS-475 / Phase 6.2/6.4 — Routines (FE mirror of BE types) ─────────
+/**
+ * Biopsychosocial domain. Mirrors BE `BpsDomain` in
+ * cos-backend/src/db/tables/patient-override.ts. FE-visible copy so
+ * client callers don't need to reach into the backend module graph.
+ */
+export type BpsDomain = 'bio' | 'psy' | 'soc' | 'spi';
+
+export type RoutineProvenance =
+  | 'patient_added'
+  | 'from_care_team'
+  | 'ai_suggestion'
+  | 'you_edited';
+
+/**
+ * A patient-owned routine row. Additive to legacy plan.tasks[] — older
+ * plans may not have this collection at all (BE returns []). Ids are
+ * prefixed `routine-<uuid>` to avoid colliding with plan-task ids.
+ */
+export interface RoutineRow {
+  id: string;
+  type: TaskType;
+  title: string;
+  description?: string;
+  /** HH:mm 24-hour local time */
+  scheduledTime: string;
+  recurrence: TaskRecurrence;
+  /** ISO date YYYY-MM-DD */
+  startDate: string;
+  endDate?: string;
+  daysOfWeek?: number[];
+  category?: string;
+  bpsDomain: BpsDomain;
+  provenance: RoutineProvenance;
+  createdBy: 'patient' | 'care_manager';
+  createdByActorRole?: string;
+  createdByActorSub?: string;
+  updatedBy: 'patient' | 'care_manager';
+  updatedByActorRole?: string;
+  updatedByActorSub?: string;
+  createdAt: string;
+  /** Server-authoritative — doubles as ETag for If-Match on PATCH. */
+  updatedAt: string;
+  archived?: boolean;
+  archivedAt?: string;
+  archivedBy?: 'patient' | 'care_manager';
+  idempotencyKey?: string;
+}
+
+export type CreateRoutineBody = Pick<
+  RoutineRow,
+  | 'type'
+  | 'title'
+  | 'description'
+  | 'scheduledTime'
+  | 'recurrence'
+  | 'startDate'
+  | 'endDate'
+  | 'daysOfWeek'
+  | 'category'
+  | 'bpsDomain'
+>;
+
+export type UpdateRoutineBody = Partial<CreateRoutineBody>;
+
 // ─── Health Plan ─────────────────────────────────────────────────────────────
 export interface HealthPlan {
   careManagerPlan: {

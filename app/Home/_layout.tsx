@@ -10,6 +10,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
+import { MedsSignalProvider } from '@/contexts/MedsSignalContext';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
@@ -33,6 +34,7 @@ export default function TabLayout() {
   const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
 
   return (
+    <MedsSignalProvider>
     <View style={{ flex: 1 }} {...panHandlers}>
     <Tabs
       tabBar={(props) => <CustomScrollableTabBar {...props} />}
@@ -385,7 +387,17 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* COS-475 / Phase 6.4 — Plan V2 action sheets (reschedule, routine
+          editor, task detail, suggestion actions). Registered as a
+          hidden Tabs.Screen so expo-router picks up the group `(plan)`
+          folder without adding a tab-bar entry. `headerShown:false`
+          because the group's own Stack layout owns headers per sheet. */}
+      <Tabs.Screen
+        name="(plan)"
+        options={{ href: null, headerShown: false }}
+      />
     </Tabs>
     </View>
+    </MedsSignalProvider>
   );
 }

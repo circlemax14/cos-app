@@ -15,6 +15,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { AppWrapper } from '@/components/app-wrapper';
+import { useMedsSignal } from '@/contexts/MedsSignalContext';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import {
@@ -352,7 +353,11 @@ export default function HealthPlanScreen() {
   // ScrollView and a monotonic signal that tells the section to open Add.
   const planScrollRef = React.useRef<ScrollView | null>(null);
   const medsSectionYRef = React.useRef<number | null>(null);
-  const [openMedsAddSignal, setOpenMedsAddSignal] = useState(0);
+  // COS-475 / Phase 6.4 — signal counter elevated to a shared context so
+  // the v2 plan screen can trigger the meds-add flow via deep-link
+  // without prop drilling. Legacy callers keep the same shape (monotonic
+  // counter, bump() replaces the old setState((n) => n + 1) semantics).
+  const { openMedsAddSignal, bump: bumpOpenMedsAddSignal } = useMedsSignal();
 
   const onReviewMedications = useCallback(() => {
     setActiveTab('plan');
@@ -361,8 +366,8 @@ export default function HealthPlanScreen() {
       planScrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
     }
     // Open the section's add/confirm flow so the patient can act immediately.
-    setOpenMedsAddSignal((n) => n + 1);
-  }, []);
+    bumpOpenMedsAddSignal();
+  }, [bumpOpenMedsAddSignal]);
 
   // COS-361 (Bug #9): deep-link from a MEDICATION_REFILL_REMINDER push.
   // The notification routes to /Home/health-plan?focus=medications; when

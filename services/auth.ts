@@ -16,11 +16,18 @@ import { queryClient } from '@/providers/QueryProvider';
  *  - 'doctor_data_<providerId>' — cached doctor lookups (PHI: who the user sees).
  *  - 'assessment-draft:<instrumentId>' — in-flight PROMIS / PHQ-9 / etc. drafts.
  *  - 'assessment_' — defensive: catches any legacy/alternate assessment key naming.
+ *  - 'planV2:' — COS-475 Phase 6.4 round 2. Covers both the per-user
+ *    namespace (`planV2:<userSub>:...`) and any residual pre-round-2
+ *    device-wide keys (`planV2:suggestion:*`, `planV2:hideReadings:*`)
+ *    that the in-app migration hasn't yet swept. Device-wide sweep is
+ *    intentional — a signed-out user shouldn't leave their plan
+ *    preferences behind for whoever signs in next.
  */
 export const PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT = [
   'doctor_data_',
   'assessment-draft:',
   'assessment_',
+  'planV2:',
 ] as const;
 
 /**

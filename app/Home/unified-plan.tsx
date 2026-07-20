@@ -44,6 +44,8 @@ import { formatRelative } from '@/lib/plan-time';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
+import { usePlanScreenV2Enabled } from '@/hooks/use-plan-screen-v2-flag';
+import PlanScreenV2 from '@/components/unified-plan/v2/PlanScreenV2';
 import { assessmentHrefForSection } from '@/lib/unified-plan-assessment-routing';
 import type {
   UnifiedPlanSection,
@@ -64,6 +66,13 @@ function hasAiSourcedItems(view: UnifiedPlanView): boolean {
 export default function UnifiedPlanScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-475 / Phase 6.4 — when `plan_screen_v2_enabled` is ON, render the
+  // interactive v2 experience instead of the read-only Phase 2 screen.
+  // Default false → OTA-safe. Existing banner-CTA / deep-link entry
+  // points (URL /Home/unified-plan) transparently resolve to v2 or v1.
+  // Hook call must precede any conditional return to satisfy the
+  // rules-of-hooks ordering contract.
+  const planScreenV2 = usePlanScreenV2Enabled();
 
   const {
     data,
@@ -100,6 +109,15 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
   const onRefresh = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  // COS-475 / Phase 6.4 — swap to the v2 interactive experience after
+  // all hook calls, satisfying rules-of-hooks. The v2 screen owns its
+  // own useUnifiedPlan/etc. calls so nothing above is wasted work —
+  // useUnifiedPlan is react-query cache-keyed so a second call in v2
+  // hits the same in-memory result immediately.
+  if (planScreenV2) {
+    return <PlanScreenV2 />;
+  }
 
   // ── Disabled placeholder ─────────────────────────────────────────
   if (disabled) {
