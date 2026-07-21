@@ -18,6 +18,7 @@
  * Chunk 20 (2026-07-21): collapsed-section count+progress subtitle. Pure render-only addition — a module-scope summarizeSection helper feeds a one-line "N goals · X of Y tasks done" (or "No plan yet") secondary Text under each collapsed section header. Widens the header Pressable a11y label to speak the summary in one VoiceOver utterance. Bio auto-open (chunk 15/15.1) means Bio never shows the subtitle on first paint — intentional. No new hooks/effects/state/timers/imports; iOS 26.5 hard constraints preserved by construction.
  * Chunk 21 (2026-07-21): inline section-task progress rail — a 3px section-tinted bar rendered as a sibling immediately after each header Pressable (visible in BOTH collapsed AND expanded states, so Bio auto-open gets an ambient adherence signal on first paint that chunk 20's suppressed subtitle doesn't cover). Sourced from a new module-scope sectionTaskProgress helper that summarizeSection now also consumes — bar and subtitle share one source of truth and cannot visually disagree. pointerEvents='none' + both a11y hide props on the outer track so it never intercepts header taps and never double-utters over chunk 20's already-widened label. marginBottom:-1 visually merges the rail with expandedBlock's borderTopWidth:1 so an expanded section never reads as a doubled border. Fill child always mounted (width:'0%' when 0) to avoid a null-vs-View reconciliation flash. No new hooks/effects/state/timers/imports; still all-View/Text/StyleSheet — iOS 26.5 hard constraints preserved by construction.
  * Chunk 23 (2026-07-21): completed/skipped tasks sink to the bottom of each BPS section. Module-scope pure orderTasksForDisplay helper does a two-pass filter+concat partition (stable by construction; not sort-engine dependent). Enum-drift default treats null/undefined/unknown status as pending (top) — mirrors chunks 20/21 degrade philosophy so unknown statuses stay actionable, not visually retired. Header count reads from rawTasks.length (unchanged), map iterates displayTasks — a partition bug is visually detectable as a count-mismatch. SwipeableTaskRow key stays `${key}-t-${t.id}` (id-only) so React reconciles by id and each row instance survives the reorder — preserves chunk-22's pendingSkip / skipTimerRef / refetchTimerRef through a status flip and avoids double-firing the fire-and-forget Skip POST. Instantaneous jump with no animation (LayoutAnimation is on the iOS 26.5 forbidden list); chunk 22's 4s undo + t+5.5s refetch cadence already softens the transition and the state change is user-initiated (expected). No new hooks/effects/state/timers/imports.
+ * Chunk 24 (2026-07-21): honest-affordance goal-row tap-to-expand. New module-scope pure helpers formatGoalStatusLabel (enum-drift discipline: 'active'/unknown → null, lowercase-only match, never a raw enum key) + hasExpandableGoalContent (row is Pressable ONLY when description/baseline/statusLabel/care-team-edit is present — plain View otherwise, no chevron, no accessibilityRole=button so VoiceOver reads plain text on non-expandable rows). One new useState (goalExpandedMap: Record<string, boolean>) + one new useCallback (onToggleGoal). Composite key `${sectionKey}-${goal.id}` avoids cross-section id collisions from BE id reuse. Chevron is a MaterialIcons name swap ('expand-more' ↔ 'expand-less'), NOT a rotate transform / Animated.Value / Reanimated worklet. Detail block is a plain conditional mount — no LayoutAnimation. Session-only state (no AsyncStorage) by design. Expanded rows drop numberOfLines=2 on the title; collapsed rows keep the two-line cap so the collapsed row height stays byte-identical to chunk-23 (preserves chunk-20 subtitle math + chunk-21 progress-rail alignment). Two new StyleSheet entries (goalDetailBlock, goalStatusChip); no existing style modified. iOS 26.5 hard constraints preserved by construction.
  */
 
 import React from 'react';
@@ -31,7 +32,7 @@ import {
   UNIFIED_SECTION_ORDER,
 } from '@/components/unified-plan/section-labels';
 import { SwipeableTaskRow } from '@/components/unified-plan/v2/SwipeableTaskRow';
-import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
+import type { UnifiedGoal, UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
 
 /**
  * Chunk 21 — module-scope pure helper. Returns the trustworthy
@@ -155,6 +156,77 @@ function summarizeSection(
   return goalLabel ? `${goalLabel} · ${taskLabel}` : taskLabel;
 }
 
+/**
+ * Chunk 24 — module-scope pure helper. Maps a UnifiedGoal.status enum to
+ * a display label for the expanded goal detail block, or null when we
+ * refuse to render a chip.
+ *
+ * Contract mirrors chunks 20/21 enum-drift discipline EXACTLY:
+ *   - 'active'                              → null (invisible default;
+ *                                              chip would be visual noise
+ *                                              on the majority of goals)
+ *   - 'achieved' / 'paused' / 'cancelled'   → capitalized label
+ *   - null / undefined / unknown /
+ *     any capitalized-variant BE drift      → null
+ *
+ * NEVER returns a raw enum key. If BE ever ships a new lowercase status
+ * ('deferred', 'archived', …) it degrades to null silently until this
+ * app version catches up — same pattern as sectionTaskProgress + the
+ * task-status enum default.
+ *
+ * Pure — no React, no closures. O(1).
+ */
+function formatGoalStatusLabel(
+  status: UnifiedGoal['status'] | undefined | null,
+): string | null {
+  switch (status) {
+    case 'achieved':
+      return 'Achieved';
+    case 'paused':
+      return 'Paused';
+    case 'cancelled':
+      return 'Cancelled';
+    // 'active' and anything else (null / undefined / unknown / capitalized
+    // drift) intentionally fall through to null — no raw enum key ever
+    // reaches the UI.
+    default:
+      return null;
+  }
+}
+
+/**
+ * Chunk 24 — honest-affordance gate. Returns true iff a goal has any
+ * detail worth revealing on expand. When false, the goal row renders
+ * as a plain View (no chevron, no Pressable, no accessibilityRole=button)
+ * so VoiceOver reads plain text and the row is not falsely tappable.
+ *
+ * A goal is "expandable" if ANY of:
+ *   - description present
+ *   - baseline present
+ *   - status renders a visible chip (formatGoalStatusLabel non-null)
+ *   - edited by the care team AND there's at least one edited field
+ *
+ * The `source === 'care_manager'` chip in the collapsed title stack is
+ * an INDEPENDENT signal (provenance of the whole goal) — that chip
+ * alone does not warrant an expand affordance because there's nothing
+ * further to reveal.
+ *
+ * Pure — no React, no closures, safe to call inline per goal per render.
+ */
+function hasExpandableGoalContent(g: UnifiedGoal): boolean {
+  if (g.description) return true;
+  if (g.baseline) return true;
+  if (formatGoalStatusLabel(g.status) !== null) return true;
+  if (
+    g.editedBy === 'care_manager' &&
+    Array.isArray(g.editedFields) &&
+    g.editedFields.length > 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export interface BpsAccordionProps {
   /** Live plan payload from useUnifiedPlan. Optional so the shell still
    *  renders while the data is loading or when the BE flag is off. */
@@ -214,6 +286,23 @@ export function BpsAccordion({
 
   const onToggle = React.useCallback((key: UnifiedSectionKey) => {
     setOpenMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  // Chunk 24 (2026-07-21): per-goal expansion state, keyed by the same
+  // `${section}-${goal.id}` composite the render map already uses. BE has
+  // historically reused ids across BPS sections; a bare goal.id would
+  // cause cross-section expansion collisions. Session-only by design —
+  // no AsyncStorage (avoids per-goal storage churn and cross-device
+  // drift; matches chunk 8.5's per-user namespacing philosophy in reverse
+  // — this is intentionally NOT persisted).
+  const [goalExpandedMap, setGoalExpandedMap] = React.useState<
+    Record<string, boolean>
+  >({});
+  const onToggleGoal = React.useCallback((compositeKey: string) => {
+    setGoalExpandedMap((prev) => ({
+      ...prev,
+      [compositeKey]: !prev[compositeKey],
+    }));
   }, []);
 
   // Chunk 19 (2026-07-21): Expand-all / Collapse-all control.
@@ -413,48 +502,189 @@ export function BpsAccordion({
                     No goals in this domain.
                   </Text>
                 ) : (
-                  (view?.sections?.[key]?.goals ?? []).map((g) => (
-                    <View
-                      key={`${key}-g-${g.id}`}
-                      style={[styles.goalRow, { borderColor: colors.border }]}
-                    >
-                      <Text
+                  (view?.sections?.[key]?.goals ?? []).map((g) => {
+                    // Chunk 24: composite key MUST include the section key —
+                    // BE has historically reused goal.id across BPS
+                    // sections, and a bare id would cross-collide the
+                    // expansion state across sections.
+                    const compositeKey = `${key}-${g.id}`;
+                    const expandable = hasExpandableGoalContent(g);
+                    const expanded =
+                      expandable && !!goalExpandedMap[compositeKey];
+                    const statusLabel = formatGoalStatusLabel(g.status);
+
+                    // Honest-affordance gate: only wrap in Pressable when
+                    // there's actual content to reveal. Non-expandable
+                    // rows stay plain View with no accessibilityRole so
+                    // VoiceOver reads plain text (not "button").
+                    const titleStack = (
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontSize: getScaledFontSize(14),
+                            fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                          }}
+                          numberOfLines={expanded ? undefined : 2}
+                        >
+                          {g.title}
+                        </Text>
+                        {g.metric || g.target ? (
+                          <Text
+                            style={{
+                              color: colors.subtext,
+                              fontSize: getScaledFontSize(12),
+                              marginTop: 4,
+                            }}
+                            numberOfLines={2}
+                          >
+                            {[g.metric, g.target ? `Target: ${g.target}` : null, g.timeframe]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </Text>
+                        ) : null}
+                        {g.source === 'care_manager' ? (
+                          <Text
+                            style={{
+                              color: meta.color,
+                              fontSize: getScaledFontSize(11),
+                              marginTop: 4,
+                            }}
+                          >
+                            From your care team
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+
+                    // Chevron is a name SWAP (expand-more ↔ expand-less)
+                    // — NOT a transform:[{rotate}] or Animated.Value. iOS
+                    // 26.5 crash-class avoidance.
+                    const topRow = (
+                      <View
                         style={{
-                          color: colors.text,
-                          fontSize: getScaledFontSize(14),
-                          fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                          flexDirection: 'row',
+                          alignItems: 'flex-start',
                         }}
-                        numberOfLines={2}
                       >
-                        {g.title}
-                      </Text>
-                      {g.metric || g.target ? (
-                        <Text
-                          style={{
-                            color: colors.subtext,
-                            fontSize: getScaledFontSize(12),
-                            marginTop: 4,
-                          }}
-                          numberOfLines={2}
+                        {titleStack}
+                        {expandable ? (
+                          <MaterialIcons
+                            name={expanded ? 'expand-less' : 'expand-more'}
+                            size={20}
+                            color={colors.subtext}
+                            style={{ marginLeft: 8, marginTop: 2 }}
+                          />
+                        ) : null}
+                      </View>
+                    );
+
+                    // Chunk 24: detail block. Plain conditional mount —
+                    // no LayoutAnimation, matches chunks 2/22/23. Each
+                    // child is independently guarded so the block
+                    // gracefully degrades if a BE change drops a field.
+                    // meta.color + '1A' relies on section colors being
+                    // 6-digit hex (verified in section-labels.ts today);
+                    // if a future 3-digit shorthand slips in, swap to
+                    // an inline rgba() here.
+                    const detailBlock = expanded ? (
+                      <View
+                        style={[
+                          styles.goalDetailBlock,
+                          { borderTopColor: colors.border },
+                        ]}
+                      >
+                        {g.description ? (
+                          <Text
+                            style={{
+                              color: colors.text,
+                              fontSize: getScaledFontSize(13),
+                              lineHeight: getScaledFontSize(19),
+                            }}
+                          >
+                            {g.description}
+                          </Text>
+                        ) : null}
+                        {g.baseline ? (
+                          <Text
+                            style={{
+                              color: colors.subtext,
+                              fontSize: getScaledFontSize(12),
+                            }}
+                          >
+                            Baseline: {g.baseline}
+                          </Text>
+                        ) : null}
+                        {statusLabel ? (
+                          <View
+                            style={[
+                              styles.goalStatusChip,
+                              { backgroundColor: meta.color + '1A' },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                color: meta.color,
+                                fontSize: getScaledFontSize(11),
+                                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                              }}
+                            >
+                              {statusLabel}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {g.editedBy === 'care_manager' &&
+                        Array.isArray(g.editedFields) &&
+                        g.editedFields.length > 0 ? (
+                          <Text
+                            style={{
+                              color: meta.color,
+                              fontSize: getScaledFontSize(11),
+                            }}
+                            numberOfLines={2}
+                          >
+                            {g.editedFields.length <= 2
+                              ? `Edited by your care team (${g.editedFields.join(', ')})`
+                              : `Edited by your care team (${g.editedFields
+                                  .slice(0, 2)
+                                  .join(', ')} +${g.editedFields.length - 2} more)`}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null;
+
+                    if (expandable) {
+                      return (
+                        <Pressable
+                          key={`${key}-g-${g.id}`}
+                          onPress={() => onToggleGoal(compositeKey)}
+                          accessibilityRole="button"
+                          accessibilityState={{ expanded }}
+                          accessibilityLabel={`${g.title}, ${expanded ? 'expanded' : 'collapsed'}. Double tap to ${expanded ? 'collapse' : 'expand'} details.`}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          style={({ pressed }) => [
+                            styles.goalRow,
+                            {
+                              borderColor: colors.border,
+                              opacity: pressed ? 0.85 : 1,
+                            },
+                          ]}
                         >
-                          {[g.metric, g.target ? `Target: ${g.target}` : null, g.timeframe]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </Text>
-                      ) : null}
-                      {g.source === 'care_manager' ? (
-                        <Text
-                          style={{
-                            color: meta.color,
-                            fontSize: getScaledFontSize(11),
-                            marginTop: 4,
-                          }}
-                        >
-                          From your care team
-                        </Text>
-                      ) : null}
-                    </View>
-                  ))
+                          {topRow}
+                          {detailBlock}
+                        </Pressable>
+                      );
+                    }
+
+                    return (
+                      <View
+                        key={`${key}-g-${g.id}`}
+                        style={[styles.goalRow, { borderColor: colors.border }]}
+                      >
+                        {topRow}
+                      </View>
+                    );
+                  })
                 )}
 
                 {/* Tasks (chunk 5, read-only, no swipe).
@@ -604,6 +834,27 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  // Chunk 24: expanded goal-row detail block. marginTop + paddingTop +
+  // hairline top border give a subtle divider from the collapsed title
+  // stack without adding a heavy rule. gap: 6 stacks the description /
+  // baseline / status chip / edited-by line with breathing room. No
+  // horizontal padding — inherits from the goalRow wrapper.
+  goalDetailBlock: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+  },
+  // Chunk 24: status chip inside the detail block. alignSelf:'flex-start'
+  // keeps the chip hugging its text so it doesn't stretch to row width.
+  // backgroundColor is applied inline as `meta.color + '1A'` (~10% alpha)
+  // so each section keeps its tint (Bio blue, Psy purple, Soc green).
+  goalStatusChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   taskRow: {
     flexDirection: 'row',
