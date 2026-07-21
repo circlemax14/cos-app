@@ -35,29 +35,28 @@ import type { UnifiedTask } from '@/services/api/unified-plan';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 
-// CHUNK 9.5 experiment — RAW fire-and-forget fetch. Bypasses axios,
-// bypasses response reading, bypasses interceptors. Tests the
-// hypothesis that iOS 26.5's crash on user-tap → fetch is in response
-// processing rather than request initiation.
-async function skipTaskFireAndForget(taskId: string, scheduledFor: string): Promise<void> {
+// CHUNK 9.5 discovery — raw fire-and-forget fetch dodges the iOS 26.5
+// SIGABRT that hits when axios processes a response initiated from a
+// user-tap event handler. All Phase 6.1 interactive endpoints (skip,
+// snooze, reschedule) route through this helper on this binary until
+// cos-app#266/267/268 land + a new binary ships.
+type FireAndForgetBody = Record<string, unknown>;
+async function fireAndForgetPost(path: string, body: FireAndForgetBody): Promise<void> {
   try {
     const token = await getAccessToken();
-    const url = `${API_BASE.replace(/\/$/, '')}/v1/patients/me/tasks/${encodeURIComponent(taskId)}/skip`;
-    // No await on the fetch. No response.json(). No .then(). Nothing to
-    // consume. If iOS 26 chokes on response deserialization or an axios
-    // interceptor callback, this dodges it.
+    const url = `${API_BASE.replace(/\/$/, '')}${path}`;
     fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ scheduledFor }),
+      body: JSON.stringify(body),
     }).catch(() => {
-      // Swallow every error — this is fire-and-forget; next poll reconciles.
+      // Swallow every error — reconcile on next poll.
     });
   } catch {
-    // getAccessToken failed; nothing else to do.
+    // getAccessToken failed; nothing to do.
   }
 }
 
@@ -86,6 +85,7 @@ export function SwipeableTaskRow({
   const [expanded, setExpanded] = React.useState(false);
   const [acting, setActing] = React.useState(false);
   const [locallySkipped, setLocallySkipped] = React.useState(false);
+  const [locallySnoozed, setLocallySnoozed] = React.useState(false);
 
   const isDone = task.status === 'completed';
   const isSkipped = task.status === 'skipped' || locallySkipped;
@@ -97,14 +97,27 @@ export function SwipeableTaskRow({
 
   const doSkip = React.useCallback(() => {
     if (acting) return;
-    // CHUNK 9.5 — optimistic hide first, fire-and-forget fetch second.
-    // No await, no response processing. If Ken doesn't crash on this,
-    // response-side processing is the iOS 26.5 trigger (not the
-    // request itself). We reconcile on next poll via onRefetch.
     setLocallySkipped(true);
     setActing(true);
-    skipTaskFireAndForget(task.id, todayYYYYMMDD());
-    // Schedule refetch a bit later so BE has time to receive the POST.
+    fireAndForgetPost(
+      `/v1/patients/me/tasks/${encodeURIComponent(task.id)}/skip`,
+      { scheduledFor: todayYYYYMMDD() },
+    );
+    setTimeout(() => {
+      onRefetch?.();
+      setActing(false);
+    }, 1500);
+  }, [acting, task.id, onRefetch]);
+
+  const doSnooze = React.useCallback(() => {
+    if (acting) return;
+    setLocallySnoozed(true);
+    setExpanded(false);
+    setActing(true);
+    fireAndForgetPost(
+      `/v1/patients/me/tasks/${encodeURIComponent(task.id)}/snooze`,
+      { scheduledFor: todayYYYYMMDD(), deltaMinutes: 60 },
+    );
     setTimeout(() => {
       onRefetch?.();
       setActing(false);
@@ -172,6 +185,18 @@ export function SwipeableTaskRow({
               From your care team
             </Text>
           ) : null}
+          {locallySnoozed ? (
+            <Text
+              style={{
+                color: '#F59E0B',
+                fontSize: getScaledFontSize(11),
+                marginTop: 4,
+                fontWeight: '600',
+              }}
+            >
+              Snoozed 1 hour
+            </Text>
+          ) : null}
         </View>
         <Pressable
           onPress={onKebabTap}
@@ -209,9 +234,21 @@ export function SwipeableTaskRow({
               <Text style={styles.actionBtnText}>Skip today</Text>
             )}
           </Pressable>
-          <View style={[styles.actionBtn, { backgroundColor: '#F59E0B', opacity: 0.5 }]}>
+          <Pressable
+            onPress={doSnooze}
+            accessibilityRole="button"
+            accessibilityLabel={`Snooze ${task.title} for 1 hour`}
+            disabled={acting || locallySnoozed}
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: '#F59E0B',
+                opacity: pressed || acting || locallySnoozed ? 0.75 : 1,
+              },
+            ]}
+          >
             <Text style={styles.actionBtnText}>Snooze 1h</Text>
-          </View>
+          </Pressable>
           <View style={[styles.actionBtn, { backgroundColor: '#3B82F6', opacity: 0.5 }]}>
             <Text style={styles.actionBtnText}>Reschedule</Text>
           </View>
