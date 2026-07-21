@@ -54,9 +54,20 @@ export default function PlanScreenV2(): React.JSX.Element {
     if (router.canGoBack()) router.back();
   }, []);
 
+  // DEBUG (chunk 12.1): increment to force-show the care-manager toast
+  // so Ken can visually verify it without waiting for a real plan
+  // update. Remove in a follow-up chunk once verified.
+  const [debugToastTrigger, setDebugToastTrigger] = React.useState(0);
+  const onDebugToast = React.useCallback(() => {
+    setDebugToastTrigger((n) => n + 1);
+  }, []);
+
   return (
     <AppWrapper>
-      <CareManagerToast generatedAt={data?.meta?.generatedAt} />
+      <CareManagerToast
+        generatedAt={data?.meta?.generatedAt}
+        debugTrigger={debugToastTrigger}
+      />
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
@@ -69,6 +80,16 @@ export default function PlanScreenV2(): React.JSX.Element {
             hitSlop={12}
           >
             <Text style={{ color: colors.tint, fontSize: getScaledFontSize(16) }}>‹ Back</Text>
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <Pressable
+            onPress={onDebugToast}
+            accessibilityRole="button"
+            accessibilityLabel="Test care-manager toast"
+            hitSlop={12}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13) }}>Test toast</Text>
           </Pressable>
         </View>
 

@@ -24,15 +24,28 @@ export interface CareManagerToastProps {
   /** Timestamp of the currently-visible plan. Toast fires when this
    *  advances from a previously-seen value. */
   generatedAt?: string | null;
+  /** DEBUG (chunk 12.1): incrementing this force-shows the toast so Ken
+   *  can visually verify rendering without waiting for a real
+   *  care-manager plan update. Remove in a follow-up chunk once verified. */
+  debugTrigger?: number;
 }
 
-export function CareManagerToast({ generatedAt }: CareManagerToastProps): React.JSX.Element | null {
+export function CareManagerToast({
+  generatedAt,
+  debugTrigger,
+}: CareManagerToastProps): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const previousRef = React.useRef<string | null | undefined>(undefined);
   const [visible, setVisible] = React.useState(false);
   const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = React.useCallback(() => {
+    setVisible(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setVisible(false), AUTO_HIDE_MS);
+  }, []);
 
   React.useEffect(() => {
     // First observed value seeds the ref without firing.
@@ -48,12 +61,24 @@ export function CareManagerToast({ generatedAt }: CareManagerToastProps): React.
       previousRef.current &&
       previousRef.current !== generatedAt
     ) {
-      setVisible(true);
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(() => setVisible(false), AUTO_HIDE_MS);
+      showToast();
     }
     previousRef.current = generatedAt ?? null;
-  }, [generatedAt]);
+  }, [generatedAt, showToast]);
+
+  // DEBUG: force-show when debugTrigger changes. Initial mount (0 or
+  // undefined) does nothing.
+  const debugSeenRef = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => {
+    if (debugSeenRef.current === undefined) {
+      debugSeenRef.current = debugTrigger;
+      return;
+    }
+    if (debugTrigger !== debugSeenRef.current) {
+      showToast();
+      debugSeenRef.current = debugTrigger;
+    }
+  }, [debugTrigger, showToast]);
 
   React.useEffect(
     () => () => {
