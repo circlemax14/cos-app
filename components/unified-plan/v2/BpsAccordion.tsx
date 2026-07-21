@@ -42,8 +42,20 @@ export function BpsAccordion({ view, onRefetch }: BpsAccordionProps = {}): React
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
+  // Chunk 15.1: function-form initializer + one-shot safety effect. Value-form
+  // useState in chunk 15 didn't visibly auto-open on Ken's device (possibly
+  // OTA-propagation timing, possibly a bundler edge case). Function form is
+  // canonical; the mount-only effect is a belt-and-suspenders guarantee that
+  // if openKey is null on first paint we set it to Bio exactly once. Empty
+  // deps + null-guard means user closing Bio afterwards is not fought.
   // keep in sync with UNIFIED_SECTION_ORDER
-  const [openKey, setOpenKey] = React.useState<UnifiedSectionKey | null>(UNIFIED_SECTION_ORDER[0] ?? null);
+  const [openKey, setOpenKey] = React.useState<UnifiedSectionKey | null>(
+    () => UNIFIED_SECTION_ORDER[0] ?? null,
+  );
+
+  React.useEffect(() => {
+    setOpenKey((prev) => (prev === null ? (UNIFIED_SECTION_ORDER[0] ?? null) : prev));
+  }, []);
 
   const onToggle = React.useCallback((key: UnifiedSectionKey) => {
     setOpenKey((prev) => (prev === key ? null : key));
