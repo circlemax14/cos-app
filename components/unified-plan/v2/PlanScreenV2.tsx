@@ -24,13 +24,14 @@
  */
 
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
+import { formatRelative } from '@/lib/plan-time';
 import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
@@ -44,9 +45,13 @@ export default function PlanScreenV2(): React.JSX.Element {
   // react-query wrapper over GET /v1/plan (Phase 1). Same hook the
   // legacy path uses; not new bridge code, but the first time v2
   // pays for the fetch.
-  const { data, refetch } = useUnifiedPlan();
+  const { data, refetch, isRefetching } = useUnifiedPlan();
 
   const onSwipeRefetch = React.useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  const onPullRefresh = React.useCallback(() => {
     void refetch();
   }, [refetch]);
 
@@ -54,12 +59,24 @@ export default function PlanScreenV2(): React.JSX.Element {
     if (router.canGoBack()) router.back();
   }, []);
 
+  const freshness = React.useMemo(
+    () => formatRelative(data?.meta?.generatedAt ?? null),
+    [data?.meta?.generatedAt],
+  );
+
   return (
     <AppWrapper>
       <CareManagerToast generatedAt={data?.meta?.generatedAt} />
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={onPullRefresh}
+            tintColor={colors.tint}
+          />
+        }
       >
         <View style={styles.headerRow}>
           <Pressable
@@ -82,29 +99,24 @@ export default function PlanScreenV2(): React.JSX.Element {
         >
           Your plan
         </Text>
-        <Text
-          style={{
-            color: colors.subtext,
-            fontSize: getScaledFontSize(15),
-            marginTop: 4,
-          }}
-        >
-          Phase 6.4 v2 — Chunk 1 shell
-        </Text>
-
-        <View
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.background,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), lineHeight: 20 }}>
-            Chunk 7 adds the wellbeing map card. Tap it to open your Bio · Psy · Soc map.
-          </Text>
-        </View>
+        {freshness ? (
+          <View style={styles.freshnessPill}>
+            <View
+              style={[
+                styles.freshnessDot,
+                { backgroundColor: isRefetching ? colors.tint : colors.subtext },
+              ]}
+            />
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+              }}
+            >
+              {isRefetching ? 'Updating…' : `Updated ${freshness}`}
+            </Text>
+          </View>
+        ) : null}
 
         <WellbeingMapCard />
         <AISuggestionStrip view={data ?? null} />
@@ -123,6 +135,17 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  freshnessPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  freshnessDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   card: {
     marginTop: 20,
