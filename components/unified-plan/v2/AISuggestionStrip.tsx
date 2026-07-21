@@ -18,16 +18,27 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useUser } from '@/hooks/use-user';
 import {
   UNIFIED_SECTION_META,
   UNIFIED_SECTION_ORDER,
 } from '@/components/unified-plan/section-labels';
 import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
 
-// CHUNK 8.5 — permanent dismiss for suggestion chips, AsyncStorage-backed.
-// Namespacing per-user is a future improvement; for now this is a global
-// device-wide key. Single-user Ken doesn't hit the cross-account issue.
-const DISMISSED_STORAGE_KEY = 'planV2:suggestion:dismissed';
+// CHUNK 14 — per-user AsyncStorage namespacing. Key format:
+//   planV2:{sub}:suggestion:dismissed
+// Closes the shared-device leak from the Phase 6.4 design memo known
+// issue #4: on a clinic iPad with 2+ users, previous device-wide
+// dismisses would leak across account switches. Now each user's
+// dismissed set is scoped to their Cognito sub.
+//
+// Migration: the previous global key (planV2:suggestion:dismissed) is
+// silently orphaned on first load. Users who dismissed chips before
+// this chunk will see them re-appear once; they can dismiss again to
+// persist under the new per-user key.
+function dismissedKeyFor(sub: string | undefined): string | null {
+  return sub ? `planV2:${sub}:suggestion:dismissed` : null;
+}
 
 const MAX_SUGGESTIONS = 6;
 
@@ -77,48 +88,66 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
+  const { data: user } = useUser();
+  const storageKey = React.useMemo(() => dismissedKeyFor(user?.sub), [user?.sub]);
+
   const rawSuggestions = React.useMemo(() => deriveSuggestions(view), [view]);
   const [dismissed, setDismissed] = React.useState<Set<string>>(() => new Set());
   const [hydrated, setHydrated] = React.useState(false);
 
-  // Hydrate dismissed set from AsyncStorage on mount (fire-and-forget —
-  // strip shows all suggestions until this settles, one-frame flash is
-  // acceptable and matches the design memo's "avoid flash" note).
+  // Hydrate dismissed set from AsyncStorage every time the user sub
+  // changes (covers account switches on shared devices — the previous
+  // user's dismisses are dropped, the new user's are loaded).
   React.useEffect(() => {
+    if (!storageKey) {
+      // No user yet — treat as unhydrated so the strip still renders
+      // during auth resolution.
+      setDismissed(new Set());
+      setHydrated(false);
+      return;
+    }
     let cancelled = false;
-    AsyncStorage.getItem(DISMISSED_STORAGE_KEY)
+    setHydrated(false);
+    AsyncStorage.getItem(storageKey)
       .then((raw) => {
         if (cancelled) return;
         if (raw) {
           try {
             const arr = JSON.parse(raw);
             if (Array.isArray(arr)) setDismissed(new Set(arr as string[]));
+            else setDismissed(new Set());
           } catch {
-            // Corrupt JSON — start fresh
+            setDismissed(new Set());
           }
+        } else {
+          setDismissed(new Set());
         }
         setHydrated(true);
       })
       .catch(() => {
-        if (!cancelled) setHydrated(true);
+        if (!cancelled) {
+          setDismissed(new Set());
+          setHydrated(true);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storageKey]);
 
-  const onDismiss = React.useCallback((text: string) => {
-    setDismissed((prev) => {
-      if (prev.has(text)) return prev;
-      const next = new Set(prev);
-      next.add(text);
-      // Persist fire-and-forget. AsyncStorage writes are safe from the
-      // iOS 26 crash pattern (that was fetch-response processing, not
-      // native module writes).
-      AsyncStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([...next])).catch(() => {});
-      return next;
-    });
-  }, []);
+  const onDismiss = React.useCallback(
+    (text: string) => {
+      if (!storageKey) return;
+      setDismissed((prev) => {
+        if (prev.has(text)) return prev;
+        const next = new Set(prev);
+        next.add(text);
+        AsyncStorage.setItem(storageKey, JSON.stringify([...next])).catch(() => {});
+        return next;
+      });
+    },
+    [storageKey],
+  );
 
   const suggestions = React.useMemo(
     () => (hydrated ? rawSuggestions.filter((s) => !dismissed.has(s.text)) : rawSuggestions),
