@@ -13,6 +13,8 @@
 
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -21,6 +23,11 @@ import {
   UNIFIED_SECTION_ORDER,
 } from '@/components/unified-plan/section-labels';
 import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
+
+// CHUNK 8.5 — permanent dismiss for suggestion chips, AsyncStorage-backed.
+// Namespacing per-user is a future improvement; for now this is a global
+// device-wide key. Single-user Ken doesn't hit the cross-account issue.
+const DISMISSED_STORAGE_KEY = 'planV2:suggestion:dismissed';
 
 const MAX_SUGGESTIONS = 6;
 
@@ -70,7 +77,54 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const suggestions = React.useMemo(() => deriveSuggestions(view), [view]);
+  const rawSuggestions = React.useMemo(() => deriveSuggestions(view), [view]);
+  const [dismissed, setDismissed] = React.useState<Set<string>>(() => new Set());
+  const [hydrated, setHydrated] = React.useState(false);
+
+  // Hydrate dismissed set from AsyncStorage on mount (fire-and-forget —
+  // strip shows all suggestions until this settles, one-frame flash is
+  // acceptable and matches the design memo's "avoid flash" note).
+  React.useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(DISMISSED_STORAGE_KEY)
+      .then((raw) => {
+        if (cancelled) return;
+        if (raw) {
+          try {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) setDismissed(new Set(arr as string[]));
+          } catch {
+            // Corrupt JSON — start fresh
+          }
+        }
+        setHydrated(true);
+      })
+      .catch(() => {
+        if (!cancelled) setHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onDismiss = React.useCallback((text: string) => {
+    setDismissed((prev) => {
+      if (prev.has(text)) return prev;
+      const next = new Set(prev);
+      next.add(text);
+      // Persist fire-and-forget. AsyncStorage writes are safe from the
+      // iOS 26 crash pattern (that was fetch-response processing, not
+      // native module writes).
+      AsyncStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const suggestions = React.useMemo(
+    () => (hydrated ? rawSuggestions.filter((s) => !dismissed.has(s.text)) : rawSuggestions),
+    [rawSuggestions, dismissed, hydrated],
+  );
+
   if (suggestions.length === 0) return null;
 
   return (
@@ -92,16 +146,13 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
         contentContainerStyle={styles.strip}
       >
         {suggestions.map((s) => (
-          <Pressable
+          <View
             key={s.key}
-            accessibilityRole="button"
-            accessibilityLabel={`Suggestion: ${s.text}`}
-            style={({ pressed }) => [
+            style={[
               styles.chip,
               {
                 backgroundColor: colors.background,
                 borderColor: colors.border,
-                opacity: pressed ? 0.85 : 1,
               },
             ]}
           >
@@ -117,7 +168,16 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
             >
               {s.text}
             </Text>
-          </Pressable>
+            <Pressable
+              onPress={() => onDismiss(s.text)}
+              accessibilityRole="button"
+              accessibilityLabel={`Dismiss suggestion: ${s.text}`}
+              hitSlop={8}
+              style={({ pressed }) => ({ opacity: pressed ? 0.5 : 0.85 })}
+            >
+              <MaterialIcons name="close" size={getScaledFontSize(16)} color={colors.subtext} />
+            </Pressable>
+          </View>
         ))}
       </ScrollView>
     </View>
