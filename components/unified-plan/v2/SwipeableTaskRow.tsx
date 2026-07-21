@@ -17,7 +17,15 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  InteractionManager,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type TextStyle,
+} from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
@@ -56,24 +64,58 @@ export function SwipeableTaskRow({
   const isSkipped = task.status === 'skipped' || locallySkipped;
   if (locallySkipped) return null;
 
-  const doSkip = React.useCallback(async () => {
-    if (acting) return;
-    setActing(true);
+  // CHUNK 9.2 (2026-07-21) — iOS 26.5 SIGABRT fix.
+  //
+  // Ken's device crashed on Skip tap: firing a fetch inside a
+  // gesture-handler tap callback triggers iOS 26.5's TurboModule
+  // objc_exception_rethrow. The gesture is safe (chunks 6, 6.1) and
+  // the fetch is safe (chunk 3), but running them in the same call
+  // stack isn't.
+  //
+  // Fix: split into two synchronous steps. The tap callback ONLY
+  // updates local state + closes the swipeable — no network. A
+  // separate effect (deferred via InteractionManager) picks up the
+  // pending intent AFTER the gesture stack has fully unwound and
+  // fires the actual skipTask. This is the standard RN pattern for
+  // gesture-triggered async work; it also improves perceived
+  // responsiveness because the row visibly reacts before the
+  // network round-trip completes.
+  const [pendingSkip, setPendingSkip] = React.useState(false);
+
+  const onSkipTap = React.useCallback(() => {
+    if (acting || pendingSkip) return;
     try {
       swipeableRef.current?.close();
     } catch {
-      // No-op — closing a swipeable shouldn't throw, but guard anyway
+      // ignore
     }
-    try {
-      const res = await skipTask(task.id, todayYYYYMMDD());
-      if (res.ok) {
-        setLocallySkipped(true);
-        onRefetch?.();
+    setPendingSkip(true);
+  }, [acting, pendingSkip]);
+
+  React.useEffect(() => {
+    if (!pendingSkip) return;
+    let cancelled = false;
+    setActing(true);
+    const handle = InteractionManager.runAfterInteractions(async () => {
+      try {
+        const res = await skipTask(task.id, todayYYYYMMDD());
+        if (cancelled) return;
+        if (res.ok) {
+          setLocallySkipped(true);
+          onRefetch?.();
+        }
+      } finally {
+        if (!cancelled) {
+          setActing(false);
+          setPendingSkip(false);
+        }
       }
-    } finally {
-      setActing(false);
-    }
-  }, [acting, task.id, onRefetch]);
+    });
+    return () => {
+      cancelled = true;
+      handle.cancel?.();
+    };
+  }, [pendingSkip, task.id, onRefetch]);
 
   // gesture-handler naming: renderRightActions = actions live on the
   // RIGHT edge of the row = user drags finger LEFT to reveal them.
@@ -81,7 +123,7 @@ export function SwipeableTaskRow({
   // it goes here.
   const renderRightActions = () => (
     <Pressable
-      onPress={doSkip}
+      onPress={onSkipTap}
       accessibilityRole="button"
       accessibilityLabel={`Skip ${task.title} today`}
       style={[styles.swipeAction, { backgroundColor: '#9CA3AF' }]}
