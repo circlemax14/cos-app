@@ -30,8 +30,36 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { skipTask } from '@/services/api/ai-health-plan';
+import { getAccessToken } from '@/lib/auth-tokens';
 import type { UnifiedTask } from '@/services/api/unified-plan';
+
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
+
+// CHUNK 9.5 experiment — RAW fire-and-forget fetch. Bypasses axios,
+// bypasses response reading, bypasses interceptors. Tests the
+// hypothesis that iOS 26.5's crash on user-tap → fetch is in response
+// processing rather than request initiation.
+async function skipTaskFireAndForget(taskId: string, scheduledFor: string): Promise<void> {
+  try {
+    const token = await getAccessToken();
+    const url = `${API_BASE.replace(/\/$/, '')}/v1/patients/me/tasks/${encodeURIComponent(taskId)}/skip`;
+    // No await on the fetch. No response.json(). No .then(). Nothing to
+    // consume. If iOS 26 chokes on response deserialization or an axios
+    // interceptor callback, this dodges it.
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ scheduledFor }),
+    }).catch(() => {
+      // Swallow every error — this is fire-and-forget; next poll reconciles.
+    });
+  } catch {
+    // getAccessToken failed; nothing else to do.
+  }
+}
 
 export interface SwipeableTaskRowProps {
   task: UnifiedTask;
@@ -67,18 +95,20 @@ export function SwipeableTaskRow({
     setExpanded((prev) => !prev);
   }, []);
 
-  const doSkip = React.useCallback(async () => {
+  const doSkip = React.useCallback(() => {
     if (acting) return;
+    // CHUNK 9.5 — optimistic hide first, fire-and-forget fetch second.
+    // No await, no response processing. If Ken doesn't crash on this,
+    // response-side processing is the iOS 26.5 trigger (not the
+    // request itself). We reconcile on next poll via onRefetch.
+    setLocallySkipped(true);
     setActing(true);
-    try {
-      const res = await skipTask(task.id, todayYYYYMMDD());
-      if (res.ok) {
-        setLocallySkipped(true);
-        onRefetch?.();
-      }
-    } finally {
+    skipTaskFireAndForget(task.id, todayYYYYMMDD());
+    // Schedule refetch a bit later so BE has time to receive the POST.
+    setTimeout(() => {
+      onRefetch?.();
       setActing(false);
-    }
+    }, 1500);
   }, [acting, task.id, onRefetch]);
 
   return (
