@@ -39,6 +39,17 @@ import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStri
 import { CareManagerToast } from '@/components/unified-plan/v2/CareManagerToast';
 import { PlanSkeleton, PlanErrorCard } from '@/components/unified-plan/v2/PlanSkeleton';
 import { CachedPlanBanner } from '@/components/unified-plan/v2/CachedPlanBanner';
+import {
+  NoTierEmptyState,
+  BasicGenerateEmptyState,
+  HasTierNoPlanEmptyState,
+  hasPlanContent,
+} from '@/components/unified-plan/v2/PlanEmptyStates';
+import { useFirstVisitChooser } from '@/components/unified-plan/v2/useFirstVisitChooser';
+import { fireAndForgetPost } from '@/components/unified-plan/v2/net';
+import { usePlanType } from '@/hooks/use-plan-type';
+import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
+import type { PlanType } from '@/services/api/plan-type';
 import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
 export default function PlanScreenV2(): React.JSX.Element {
@@ -58,6 +69,59 @@ export default function PlanScreenV2(): React.JSX.Element {
     isFetching,
     failureCount,
   } = useUnifiedPlan();
+
+  // CHUNK 32 (2026-07-21) — plan-type hook reused from the shared
+  // ['plan-type'] react-query cache. Legacy already primes this cache
+  // (app/Home/health-plan.tsx line 390), so bouncing between paths is a
+  // no-op fetch — no flicker, no double network trip.
+  const planTypeQ = usePlanType();
+  const planTypeDisplayNameFn = usePlanTypeDisplayName();
+
+  // CHUNK 32 — first-visit auto-open of the plan-type chooser. Byte-
+  // identical AsyncStorage key + double-guard as legacy.
+  useFirstVisitChooser({
+    isLoading: planTypeQ.isLoading,
+    data: planTypeQ.planType,
+  });
+
+  // CHUNK 32 — Basic-tier Generate CTA state + staged refetch cadence.
+  // Bedrock plan generation p95 is ~8–15s with 25s+ tails; three staged
+  // refetches at t=5s / 15s / 30s beat a single fire so users don't
+  // have to pull-to-refresh. All timers ref-tracked for unmount cleanup
+  // so a stray refetch after navigate-away can't hit a dead queryClient.
+  const [generating, setGenerating] = React.useState(false);
+  const refetchTimerRef = React.useRef<Array<ReturnType<typeof setTimeout>>>([]);
+
+  React.useEffect(
+    () => () => {
+      refetchTimerRef.current.forEach(clearTimeout);
+      refetchTimerRef.current = [];
+    },
+    [],
+  );
+
+  const handleGenerate = React.useCallback(() => {
+    if (generating) return;
+    setGenerating(true);
+    // Fire-and-forget POST — NEVER await axios inside a tap handler on
+    // this binary (chunk 9.5 SIGABRT). Reconcile via staged refetches.
+    void fireAndForgetPost('/v1/patients/me/health-plan/ai/generate', { force: false });
+    const schedule = (ms: number, isLast: boolean) => {
+      const t = setTimeout(() => {
+        void refetch().finally(() => {
+          if (isLast) setGenerating(false);
+        });
+      }, ms);
+      refetchTimerRef.current.push(t);
+    };
+    schedule(5000, false);
+    schedule(15000, false);
+    schedule(30000, true);
+  }, [generating, refetch]);
+
+  const onChoosePlan = React.useCallback(() => {
+    router.push('/Home/plan-type-chooser' as never);
+  }, []);
 
   const onSwipeRefetch = React.useCallback(() => {
     void refetch();
@@ -331,10 +395,52 @@ export default function PlanScreenV2(): React.JSX.Element {
             (some react-query versions transiently surface
             isError=true on mount before any query runs).
         */}
+        {/*
+          CHUNK 32 (2026-07-21) — empty-state gates layered under the
+          skeleton/error gates. ORDER IS LOAD-BEARING:
+            1) skeleton  — cold fetch, no data
+            2) error     — no data + failed retries
+            3) NoTier    — plan-type resolved AND is undefined (no tier
+                           chosen). Gated on !planTypeQ.isLoading to
+                           avoid a 200ms flash of "Choose your plan first"
+                           on cold boot before the type query resolves.
+            4) Basic     — has data envelope AND zero content AND tier
+                           is 'basic' → Generate CTA. `'sections' in data`
+                           narrows against a hypothetical __featureDisabled
+                           envelope reaching this branch (useUnifiedPlan
+                           already folds it to null, defensive belt).
+            5) Preparing — has data envelope AND zero content, any tier
+                           other than Basic → "Your care plan is being
+                           prepared" + Change plan pill.
+            6) Accordion — real content, or feature-disabled null data
+                           (accordion already handles null gracefully).
+        */}
         {(isLoading || isFetching) && !data ? (
           <PlanSkeleton />
         ) : isError && !data && !isFetching && failureCount > 0 ? (
           <PlanErrorCard onRetry={handleRetry} disabled={isRefetching} />
+        ) : !planTypeQ.isLoading && !planTypeQ.isError && planTypeQ.planType === undefined ? (
+          // Only fire when we've CONFIRMED (query didn't error) that the
+          // user has no tier. A transient plan-type API failure previously
+          // fell into this branch and force-pushed users into the chooser
+          // as if they'd never picked a tier — misleading and worse UX than
+          // just falling through to the accordion (which handles null data
+          // gracefully; a real re-choose is still one Change-plan tap away
+          // from the has-tier state).
+          <NoTierEmptyState onChoose={onChoosePlan} />
+        ) : data &&
+          'sections' in data &&
+          !hasPlanContent(data) &&
+          planTypeQ.planType === 'basic' ? (
+          <BasicGenerateEmptyState onGenerate={handleGenerate} generating={generating} />
+        ) : data &&
+          'sections' in data &&
+          !hasPlanContent(data) &&
+          planTypeQ.planType !== undefined ? (
+          <HasTierNoPlanEmptyState
+            planTypeDisplayName={planTypeDisplayNameFn(planTypeQ.planType as PlanType)}
+            onChangePlan={onChoosePlan}
+          />
         ) : (
           <View onLayout={onBpsLayout}>
             <BpsAccordion

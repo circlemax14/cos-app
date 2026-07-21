@@ -36,35 +36,13 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { getAccessToken } from '@/lib/auth-tokens';
 import type { UnifiedTask } from '@/services/api/unified-plan';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
-
-// CHUNK 9.5 discovery — raw fire-and-forget fetch dodges the iOS 26.5
-// SIGABRT that hits when axios processes a response initiated from a
-// user-tap event handler. All Phase 6.1 interactive endpoints (skip,
-// snooze, reschedule) route through this helper on this binary until
-// cos-app#266/267/268 land + a new binary ships.
-type FireAndForgetBody = Record<string, unknown>;
-async function fireAndForgetPost(path: string, body: FireAndForgetBody): Promise<void> {
-  try {
-    const token = await getAccessToken();
-    const url = `${API_BASE.replace(/\/$/, '')}${path}`;
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(body),
-    }).catch(() => {
-      // Swallow every error — reconcile on next poll.
-    });
-  } catch {
-    // getAccessToken failed; nothing to do.
-  }
-}
+// CHUNK 32 (2026-07-21) — extracted the local fire-and-forget POST helper
+// into components/unified-plan/v2/net.ts so PlanEmptyStates + any future
+// v2 chunk consume the same battle-tested shape. Byte-identical semantics
+// (raw fetch, no await, .catch swallow, try/catch outer). See net.ts
+// header for the iOS 26.5 SIGABRT background.
+import { fireAndForgetPost } from './net';
 
 export interface SwipeableTaskRowProps {
   task: UnifiedTask;
