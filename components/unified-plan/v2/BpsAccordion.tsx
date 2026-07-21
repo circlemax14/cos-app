@@ -13,6 +13,8 @@
  *   - Chunk 5: tasks list (read-only)
  *   - Chunk 6: swipe actions on tasks
  *   - ...
+ *
+ * Chunk 15 (2026-07-20): first section (Biological) auto-opens on mount so plan content is visible on first paint. Tap-to-toggle and single-open semantics unchanged.
  */
 
 import React from 'react';
@@ -40,7 +42,8 @@ export function BpsAccordion({ view, onRefetch }: BpsAccordionProps = {}): React
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const [openKey, setOpenKey] = React.useState<UnifiedSectionKey | null>(null);
+  // keep in sync with UNIFIED_SECTION_ORDER
+  const [openKey, setOpenKey] = React.useState<UnifiedSectionKey | null>(UNIFIED_SECTION_ORDER[0] ?? null);
 
   const onToggle = React.useCallback((key: UnifiedSectionKey) => {
     setOpenKey((prev) => (prev === key ? null : key));
