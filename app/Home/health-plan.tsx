@@ -58,7 +58,6 @@ import {
 import { PlanScreenRedesigned } from '@/components/health-plan/PlanScreenRedesigned';
 import { PlanScreenRedesignedV2 } from '@/components/health-plan/PlanScreenRedesignedV2';
 import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
-import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
 import { TryUnifiedViewLink } from '@/components/unified-plan/ClassicViewLink';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
@@ -769,10 +768,6 @@ export default function HealthPlanScreen() {
 
   return (
     <AppWrapper>
-      {/* COS-467 Phase 2 — opt-in banner for the unified BPS plan view.
-          Self-gates on useUnifiedPlan().disabled + 7-day AsyncStorage
-          dismissal, so this is inert whenever the BE flag is off. */}
-      <TryUnifiedPlanBanner source="care-plan" />
       {/* Tab bar */}
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {

@@ -26,7 +26,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
-import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
 import { TryUnifiedViewLink } from '@/components/unified-plan/ClassicViewLink';
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
@@ -150,10 +149,6 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
 
   return (
     <>
-      {/* COS-467 Phase 2 — opt-in banner for the unified BPS plan view.
-          Self-gates on useUnifiedPlan().disabled + 7-day AsyncStorage
-          dismissal, so this is inert whenever the BE flag is off. */}
-      <TryUnifiedPlanBanner source="bps" />
       <BiopsychosocialPlanScreen
         currentPlanType={currentPlanType}
         onChangePlanType={openPlanTypeChooser}
