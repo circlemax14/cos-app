@@ -25,7 +25,7 @@
 
 import React from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -49,9 +49,11 @@ import { useFirstVisitChooser } from '@/components/unified-plan/v2/useFirstVisit
 import { PlanTierPill } from '@/components/unified-plan/v2/PlanTierPill';
 import { RegenerateButton } from '@/components/unified-plan/v2/RegenerateButton';
 import { GeneratingBanner } from '@/components/unified-plan/v2/GeneratingBanner';
+import { PersonalizePlanBanner } from '@/components/unified-plan/v2/PersonalizePlanBanner';
 import { fireAndForgetPost } from '@/components/unified-plan/v2/net';
 import { usePlanType } from '@/hooks/use-plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
+import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import type { PlanType } from '@/services/api/plan-type';
 import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
@@ -86,6 +88,81 @@ export default function PlanScreenV2(): React.JSX.Element {
     isLoading: planTypeQ.isLoading,
     data: planTypeQ.planType,
   });
+
+  // CHUNK 35 (2026-07-21) — assessments-complete gate + Personalize CTA.
+  //
+  // Backend serves per-plan-type assignment progress at
+  // /v1/patients/me/health-plan/assignments (SCRUM-254). `canGenerate`
+  // is the one-field gate: basic → always true, advanced/agency → true
+  // iff every assigned check-in is complete. Legacy consumes the same
+  // hook at app/Home/health-plan.tsx line 416 (current file).
+  //
+  // Two effects flow from this:
+  //   1. RegenerateButton disable predicate unions `!canGeneratePlan`
+  //      so a non-Basic user with incomplete check-ins sees the reload
+  //      icon greyed. Byte-identical to legacy line 926.
+  //   2. PersonalizePlanBanner renders (below the tier pill) when
+  //      `isNonBasicPlan && !canGeneratePlan`, routing the user to the
+  //      check-ins catalog. Copy mirrors legacy verbatim.
+  //
+  // FAIL-OPEN FALLBACK: when the assignments query hasn't resolved or
+  // errored, we fall back to `planTypeQ.planType === 'basic'`. This is
+  // byte-identical to legacy line 422 and intentional: Basic never
+  // needs check-ins, so Basic users are permissive by default, and
+  // non-Basic users get the safer "disabled until we know" stance.
+  // If the BE returns a defined `false` during a plan-tier transition
+  // it WILL block Basic — that matches legacy exactly. Don't "fix" it.
+  const assignmentsQuery = useHealthPlanAssignments();
+  const assignments = assignmentsQuery.data;
+  const isNonBasicPlan =
+    planTypeQ.planType === 'advanced' ||
+    planTypeQ.planType === 'agency-supported' ||
+    planTypeQ.planType === 'agency-managed';
+  const canGeneratePlan = assignments?.canGenerate ?? (planTypeQ.planType === 'basic');
+
+  // SCRUM-535 focus-refetch: when the user completes a check-in on the
+  // assessments-catalog screen the query is invalidated, but invalidation
+  // only refetches an *active* observer. PlanScreenV2 is backgrounded
+  // during that flow, so on return the stale canGenerate=false snapshot
+  // is re-served and both the Regenerate button and Personalize banner
+  // stay in their pre-completion state. Refetching on focus reflects the
+  // live backend truth the moment the user comes back.
+  //
+  // Only assignments is refetched here — v2 does not consume the raw
+  // assessments query for progress copy (legacy line 407-412 does; v2
+  // shows the banner as a binary gate), so adding it would enlarge
+  // surface for no user-visible gain. Keep an eye on CloudWatch QPS on
+  // /v1/patients/me/health-plan/assignments — this is the first v2
+  // observer on that query key, and the 60s staleTime + useFocusEffect
+  // are non-compounding but any v2-side check-in flow that invalidates
+  // the key will multiply refetches across surfaces.
+  const refetchAssignments = assignmentsQuery.refetch;
+  useFocusEffect(
+    React.useCallback(() => {
+      void refetchAssignments();
+    }, [refetchAssignments]),
+  );
+
+  // CHUNK 35 EXPLICIT NON-GOAL — AI_AWAITING_ASSESSMENTS re-route.
+  //
+  // Legacy app/Home/health-plan.tsx lines 529-530 inspect a POST error
+  // code from /v1/patients/me/health-plan/ai/generate and route the
+  // user to the check-ins catalog on `AI_AWAITING_ASSESSMENTS`. We
+  // deliberately DO NOT port that here in chunk 35:
+  //   - `handleGenerate` above uses `fireAndForgetPost` because chunk
+  //     9.5 proved that awaiting an axios/fetch response inside a tap
+  //     handler is a repeatable iOS 26.5 SIGABRT source.
+  //   - The `!canGeneratePlan` gate we just added prevents the button
+  //     from firing at all in 99% of cases where BE would return that
+  //     code. The remaining <1% window is a BE flag lag where the
+  //     `canGenerate` value we have is momentarily stale; in that
+  //     case the POST fires, the BE noops, and the next 60s
+  //     assignments refetch resurfaces the banner. Tolerating one
+  //     wasted click beats re-introducing a crash risk.
+  //   - A proper port needs either (a) proven-safe raw-fetch response
+  //     inspection on iOS 26.5, or (b) the async 202/jobId flow (see
+  //     project_biopsychosocial_async_regenerate_followup.md).
+  // Deferred to chunk 36 with a linked follow-up SCRUM story.
 
   // CHUNK 32 — Basic-tier Generate CTA state + staged refetch cadence.
   // Bedrock plan generation p95 is ~8–15s with 25s+ tails; three staged
@@ -164,6 +241,14 @@ export default function PlanScreenV2(): React.JSX.Element {
 
   const onChoosePlan = React.useCallback(() => {
     router.push('/Home/plan-type-chooser' as never);
+  }, []);
+
+  // CHUNK 35 fix (adversarial-verify nit): hoisted from inline arrow so
+  // PersonalizePlanBanner gets a stable prop identity render-to-render,
+  // matching the useCallback discipline of onChoosePlan/handleRegenerate/
+  // handleRetry.
+  const handlePersonalize = React.useCallback(() => {
+    router.push('/Home/assessments-catalog?source=plan-upgrade' as never);
   }, []);
 
   const onSwipeRefetch = React.useCallback(() => {
@@ -351,8 +436,21 @@ export default function PlanScreenV2(): React.JSX.Element {
           !planTypeQ.isError ? (
             <RegenerateButton
               onPress={handleRegenerate}
-              disabled={isGeneratingFromAnySource}
+              /*
+                CHUNK 35 (2026-07-21) — union `!canGeneratePlan` into the
+                disable predicate. Byte-identical to legacy line 926
+                (`disabled={generating || !canGeneratePlan}`). Spinner
+                is still driven by `isGeneratingFromAnySource` alone —
+                greyed vs spinning are two distinct stories and the
+                spinner should reflect generation state, not gate state.
+              */
+              disabled={isGeneratingFromAnySource || !canGeneratePlan}
               isGenerating={isGeneratingFromAnySource}
+              accessibilityHint={
+                !canGeneratePlan && !isGeneratingFromAnySource
+                  ? 'Complete required check-ins first'
+                  : undefined
+              }
             />
           ) : null}
         </View>
@@ -463,6 +561,54 @@ export default function PlanScreenV2(): React.JSX.Element {
         ) : null}
 
         {/*
+          CHUNK 35 (2026-07-21) — PersonalizePlanBanner.
+          Renders BELOW the PlanTierPill block (tier identity leads) and
+          ABOVE both GeneratingBanner and CachedPlanBanner.
+          Gate composed of eight conjuncts so it never flashes:
+            - isNonBasicPlan: Basic never needs check-ins.
+            - !canGeneratePlan: the actual gate. Fails-open via legacy's
+              `?? (planType === basic)` fallback (see derivation above).
+            - !assignmentsQuery.isLoading && !assignmentsQuery.isError:
+              hide during cold-fetch AND on chronic query error. On
+              chronic error the RegenerateButton also stays greyed via
+              the same ?? fallback — followup UX ticket to consider a
+              "Check-in status unavailable" hint if this becomes user-
+              visible in the wild.
+            - !planTypeQ.isLoading && !planTypeQ.isError: parity with
+              the assignments gate — a transient plan-type failure
+              could otherwise flicker isNonBasicPlan false→true on
+              recovery and flash the banner.
+            - !!data && 'sections' in data && hasPlanContent(data): the
+              empty-state branches below (NoTier/Basic/HasTierNoPlan)
+              already expose their own CTAs; don't stack a second one.
+          Precedence over CachedPlanBanner: when both would otherwise
+          render, Personalize wins because it's actionable (tap → route
+          to check-ins) while Cached is informational (tap → retry
+          fetch). CachedPlanBanner's gate below excludes this state.
+        */}
+        {isNonBasicPlan &&
+        !canGeneratePlan &&
+        !assignmentsQuery.isLoading &&
+        !assignmentsQuery.isError &&
+        !planTypeQ.isLoading &&
+        !planTypeQ.isError &&
+        !!data &&
+        'sections' in data &&
+        hasPlanContent(data) &&
+        // CHUNK 35 fix (adversarial-verify major): suppress when a
+        // regeneration is in flight — GeneratingBanner shows below, and
+        // Personalize would stack two banners in the rare "incomplete
+        // check-ins + another device is regenerating" state. The tap
+        // target on Personalize (route to check-ins) is still valid but
+        // the banner will re-appear naturally when refreshInFlight goes
+        // false (via the transition effect chunk 34 established).
+        !refreshInFlight ? (
+          <PersonalizePlanBanner
+            onPress={handlePersonalize}
+          />
+        ) : null}
+
+        {/*
           CHUNK 34 (2026-07-21) — cross-device "already regenerating" banner.
           Fires when the BE has surfaced `meta.refreshInFlight === true` but
           the local tap flag is false — i.e. another device (or the legacy
@@ -495,8 +641,29 @@ export default function PlanScreenV2(): React.JSX.Element {
           cached-plan requires a failed one) but a mid-regen fetch error
           can briefly satisfy both — precedence goes to the regenerating
           story since a retry now would 409 anyway.
+          CHUNK 35 (2026-07-21) — additional precedence rule: when the
+          PersonalizePlanBanner above is visible, suppress the cached-plan
+          banner. Both use accent-left color stripes and both could be
+          truthy on a non-Basic user with incomplete check-ins whose last
+          background refetch also failed. Personalize wins because it's
+          actionable (route to check-ins) while Cached is informational
+          (retry fetch); the retry is available via pull-to-refresh anyway.
         */}
-        {data && isError && !isFetching && failureCount > 0 && !refreshInFlight ? (
+        {data &&
+        isError &&
+        !isFetching &&
+        failureCount > 0 &&
+        !refreshInFlight &&
+        !(
+          isNonBasicPlan &&
+          !canGeneratePlan &&
+          !assignmentsQuery.isLoading &&
+          !assignmentsQuery.isError &&
+          !planTypeQ.isLoading &&
+          !planTypeQ.isError &&
+          'sections' in data &&
+          hasPlanContent(data)
+        ) ? (
           <CachedPlanBanner onRetry={handleRetry} disabled={isRefetching} />
         ) : null}
 

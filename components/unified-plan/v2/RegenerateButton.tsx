@@ -42,12 +42,22 @@ export interface RegenerateButtonProps {
   onPress: () => void;
   disabled: boolean;
   isGenerating: boolean;
+  /**
+   * CHUNK 35 (2026-07-21) — screen-reader explanation for the disabled
+   * state. When the parent disables the button because assessments are
+   * incomplete (`!canGeneratePlan`), passing an explicit hint keeps the
+   * a11y story audible: users hear WHY the button is greyed instead of
+   * a silent "dimmed" state. Optional so the chunk-34 shape (data-
+   * presence-only disable) still compiles unchanged.
+   */
+  accessibilityHint?: string;
 }
 
 export function RegenerateButton({
   onPress,
   disabled,
   isGenerating,
+  accessibilityHint,
 }: RegenerateButtonProps): React.JSX.Element {
   const { settings } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -65,6 +75,7 @@ export function RegenerateButton({
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityRole="button"
         accessibilityLabel={isGenerating ? 'Regenerating plan' : 'Regenerate plan'}
+        accessibilityHint={accessibilityHint}
         accessibilityState={{ disabled, busy: isGenerating }}
         style={({ pressed }) => [
           styles.btn,
