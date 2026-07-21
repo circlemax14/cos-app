@@ -34,6 +34,7 @@ import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
+import { CareManagerToast } from '@/components/unified-plan/v2/CareManagerToast';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -55,6 +56,7 @@ export default function PlanScreenV2(): React.JSX.Element {
 
   return (
     <AppWrapper>
+      <CareManagerToast generatedAt={data?.meta?.generatedAt} />
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
