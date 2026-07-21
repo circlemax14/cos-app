@@ -37,6 +37,7 @@ import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard'
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
 import { CareManagerToast } from '@/components/unified-plan/v2/CareManagerToast';
 import { PlanSkeleton, PlanErrorCard } from '@/components/unified-plan/v2/PlanSkeleton';
+import { CachedPlanBanner } from '@/components/unified-plan/v2/CachedPlanBanner';
 import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
 export default function PlanScreenV2(): React.JSX.Element {
@@ -225,6 +226,23 @@ export default function PlanScreenV2(): React.JSX.Element {
                 : `Updated ${freshness}${staleness === 'stale' ? ' · Stale' : ''}`}
             </Text>
           </View>
+        ) : null}
+
+        {/*
+          Cached-plan banner (Chunk 26):
+          Fires ONLY when we already have a plan cached AND the last refetch
+          attempt failed AND no refetch is currently in flight. Symmetric
+          complement to the PlanErrorCard gate below (which fires when `data`
+          is absent), so the two are mutually exclusive on `data` truthiness
+          and never double-render.
+          Note: `failureCount > 0` is intentionally kept to match the exact
+          shape of the existing PlanErrorCard gate for consistency; react-query
+          resets failureCount to 0 on a successful refetch (verified in the
+          version currently bundled — see hooks/use-unified-plan.ts), so the
+          banner clears on the next successful retry.
+        */}
+        {data && isError && !isFetching && failureCount > 0 ? (
+          <CachedPlanBanner onRetry={handleRetry} disabled={isRefetching} />
         ) : null}
 
         <WellbeingMapCard />
