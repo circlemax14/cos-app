@@ -91,8 +91,44 @@ export function BpsAccordion({
     setOpenMap((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
+  // Chunk 19 (2026-07-21): Expand-all / Collapse-all control.
+  // allOpen derived INLINE from live openMap every render — do NOT mirror
+  // into a separate useState or the label goes stale after a user toggles
+  // an individual section header. handleToggleAll writes a SINGLE object
+  // literal (not three sequential setState calls) so the chunk-16
+  // openRequest merge effect never observes a partial state.
+  const allOpen = UNIFIED_SECTION_ORDER.every((k) => openMap[k] === true);
+  const handleToggleAll = React.useCallback(() => {
+    setOpenMap(
+      allOpen
+        ? { biological: false, psychological: false, socialSpiritual: false }
+        : { biological: true, psychological: true, socialSpiritual: true },
+    );
+  }, [allOpen]);
+
   return (
     <View style={styles.container}>
+      <View style={styles.controlsRow}>
+        <Pressable
+          onPress={handleToggleAll}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={allOpen ? 'Collapse all' : 'Expand all'}
+          style={({ pressed }) => [
+            styles.toggleAllPressable,
+            { opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <MaterialIcons
+            name={allOpen ? 'unfold-less' : 'unfold-more'}
+            size={16}
+            color={colors.subtext}
+          />
+          <Text style={[styles.toggleAllLabel, { color: colors.subtext }]}>
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </Text>
+        </Pressable>
+      </View>
       {UNIFIED_SECTION_ORDER.map((key) => {
         const meta = UNIFIED_SECTION_META[key];
         const isOpen = openMap[key] === true;
@@ -273,6 +309,23 @@ const styles = StyleSheet.create({
   container: {
     marginTop: 20,
     gap: 10,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  toggleAllPressable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  toggleAllLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
   },
   sectionCard: {
     borderWidth: 1,
