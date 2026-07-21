@@ -22,6 +22,12 @@
  * actions), but bulletproof on iOS 26.5. Once cos-app#266/267/268 land
  * and Ken's binary picks them up, we can restore the Swipeable path
  * behind a Platform.Version >= 26 fallback gate.
+ *
+ * CHUNK 22 (2026-07-21) — Skip Undo. Tapping Skip enters a 4s pending state
+ * (line-through + inline 'Skipped — undo?' pill). Undo cancels the pending
+ * fire-and-forget POST cleanly; timer is cancelled on unmount via useEffect
+ * cleanup (same pattern as CareManagerToast chunk 12). Snooze/Reschedule
+ * are disabled during the pending window to prevent conflicting actions.
  */
 
 import React from 'react';
@@ -88,28 +94,66 @@ export function SwipeableTaskRow({
   const [locallySkipped, setLocallySkipped] = React.useState(false);
   const [locallySnoozed, setLocallySnoozed] = React.useState(false);
   const [locallyRescheduledTo, setLocallyRescheduledTo] = React.useState<string | null>(null);
+  const [skipPending, setSkipPending] = React.useState(false);
+  const skipTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // CHUNK 22 fix (adversarial-verify addendum): track the inner post-fire
+  // refetch timer so an unmount between t=4000 and t=5500ms cannot leak
+  // an onRefetch call on a dead component (the outer 4s timer already
+  // has ref-tracked cleanup below).
+  const refetchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(
+    () => () => {
+      if (skipTimerRef.current) {
+        clearTimeout(skipTimerRef.current);
+        skipTimerRef.current = null;
+      }
+      if (refetchTimerRef.current) {
+        clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const isDone = task.status === 'completed';
   const isSkipped = task.status === 'skipped' || locallySkipped;
-  if (locallySkipped) return null;
 
   const onKebabTap = React.useCallback(() => {
     setExpanded((prev) => !prev);
   }, []);
 
   const doSkip = React.useCallback(() => {
-    if (acting) return;
-    setLocallySkipped(true);
-    setActing(true);
-    fireAndForgetPost(
-      `/v1/patients/me/tasks/${encodeURIComponent(task.id)}/skip`,
-      { scheduledFor: todayYYYYMMDD() },
-    );
-    setTimeout(() => {
-      onRefetch?.();
-      setActing(false);
-    }, 1500);
-  }, [acting, task.id, onRefetch]);
+    if (acting || skipPending) return;
+    const scheduledFor = todayYYYYMMDD(); // captured at tap-time, not at fire-time
+    setSkipPending(true);
+    setExpanded(false);
+    if (skipTimerRef.current) {
+      clearTimeout(skipTimerRef.current);
+    }
+    skipTimerRef.current = setTimeout(() => {
+      // Idempotency guard: if undoSkip cleared the ref, do nothing.
+      // (This branch is defensive — undoSkip also nulls the ref before setSkipPending(false).)
+      if (skipTimerRef.current === null) return;
+      skipTimerRef.current = null;
+      setLocallySkipped(true);
+      fireAndForgetPost(
+        `/v1/patients/me/tasks/${encodeURIComponent(task.id)}/skip`,
+        { scheduledFor },
+      );
+      refetchTimerRef.current = setTimeout(() => {
+        refetchTimerRef.current = null;
+        onRefetch?.();
+      }, 1500);
+    }, 4000);
+  }, [acting, skipPending, task.id, onRefetch]);
+
+  const undoSkip = React.useCallback(() => {
+    if (skipTimerRef.current) {
+      clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = null;
+    }
+    setSkipPending(false);
+  }, []);
 
   const doSnooze = React.useCallback(() => {
     if (acting) return;
@@ -158,6 +202,15 @@ export function SwipeableTaskRow({
     [acting, task.id, onRefetch],
   );
 
+  // CHUNK 22 fix (adversarial-verify addendum): guard moved from above
+  // the useCallback declarations to just before the render return. The
+  // previous position violated the Rules of Hooks — once chunk 22 first
+  // called setLocallySkipped(true) inside the 4s timer, the next render
+  // would bail before the 6 useCallback hooks and React would throw
+  // "Rendered fewer hooks than expected." Now all hooks always run,
+  // and only the render output is conditional. Same visual outcome.
+  if (locallySkipped) return null;
+
   return (
     <View
       style={[
@@ -189,8 +242,8 @@ export function SwipeableTaskRow({
               color: colors.text,
               fontSize: getScaledFontSize(14),
               fontWeight: getScaledFontWeight(500) as TextStyle['fontWeight'],
-              textDecorationLine: isDone || isSkipped ? 'line-through' : 'none',
-              opacity: isDone || isSkipped ? 0.6 : 1,
+              textDecorationLine: isDone || isSkipped || skipPending ? 'line-through' : 'none',
+              opacity: isDone || isSkipped || skipPending ? 0.6 : 1,
             }}
             numberOfLines={2}
           >
@@ -243,6 +296,39 @@ export function SwipeableTaskRow({
               Rescheduled to {locallyRescheduledTo}
             </Text>
           ) : null}
+          {skipPending && !isDone ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                  fontWeight: '600',
+                }}
+                accessibilityLabel={`Task will be skipped in 4 seconds. Double tap Undo to cancel.`}
+              >
+                Skipped — undo?
+              </Text>
+              <Pressable
+                onPress={undoSkip}
+                accessibilityRole="button"
+                accessibilityLabel={`Undo skip for ${task.title}`}
+                accessibilityHint="Cancels the pending skip before it saves"
+                hitSlop={10}
+                style={({ pressed }) => ({
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: colors.subtext,
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(12), fontWeight: '600' }}>
+                  Undo
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
         <Pressable
           onPress={onKebabTap}
@@ -265,12 +351,12 @@ export function SwipeableTaskRow({
             onPress={doSkip}
             accessibilityRole="button"
             accessibilityLabel={`Skip ${task.title} today`}
-            disabled={acting}
+            disabled={acting || skipPending}
             style={({ pressed }) => [
               styles.actionBtn,
               {
                 backgroundColor: '#9CA3AF',
-                opacity: pressed || acting ? 0.75 : 1,
+                opacity: pressed || acting || skipPending ? 0.75 : 1,
               },
             ]}
           >
@@ -284,12 +370,12 @@ export function SwipeableTaskRow({
             onPress={doSnooze}
             accessibilityRole="button"
             accessibilityLabel={`Snooze ${task.title} for 1 hour`}
-            disabled={acting || locallySnoozed}
+            disabled={acting || locallySnoozed || skipPending}
             style={({ pressed }) => [
               styles.actionBtn,
               {
                 backgroundColor: '#F59E0B',
-                opacity: pressed || acting || locallySnoozed ? 0.75 : 1,
+                opacity: pressed || acting || locallySnoozed || skipPending ? 0.75 : 1,
               },
             ]}
           >
@@ -299,12 +385,12 @@ export function SwipeableTaskRow({
             onPress={onRescheduleTap}
             accessibilityRole="button"
             accessibilityLabel={`Reschedule ${task.title}`}
-            disabled={acting}
+            disabled={acting || skipPending}
             style={({ pressed }) => [
               styles.actionBtn,
               {
                 backgroundColor: '#3B82F6',
-                opacity: pressed || acting ? 0.75 : 1,
+                opacity: pressed || acting || skipPending ? 0.75 : 1,
               },
             ]}
           >
