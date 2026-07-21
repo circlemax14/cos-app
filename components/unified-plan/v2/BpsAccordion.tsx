@@ -16,6 +16,7 @@
  *
  * Chunk 15 (2026-07-20): first section (Biological) auto-opens on mount so plan content is visible on first paint. Tap-to-toggle and single-open semantics unchanged.
  * Chunk 20 (2026-07-21): collapsed-section count+progress subtitle. Pure render-only addition — a module-scope summarizeSection helper feeds a one-line "N goals · X of Y tasks done" (or "No plan yet") secondary Text under each collapsed section header. Widens the header Pressable a11y label to speak the summary in one VoiceOver utterance. Bio auto-open (chunk 15/15.1) means Bio never shows the subtitle on first paint — intentional. No new hooks/effects/state/timers/imports; iOS 26.5 hard constraints preserved by construction.
+ * Chunk 21 (2026-07-21): inline section-task progress rail — a 3px section-tinted bar rendered as a sibling immediately after each header Pressable (visible in BOTH collapsed AND expanded states, so Bio auto-open gets an ambient adherence signal on first paint that chunk 20's suppressed subtitle doesn't cover). Sourced from a new module-scope sectionTaskProgress helper that summarizeSection now also consumes — bar and subtitle share one source of truth and cannot visually disagree. pointerEvents='none' + both a11y hide props on the outer track so it never intercepts header taps and never double-utters over chunk 20's already-widened label. marginBottom:-1 visually merges the rail with expandedBlock's borderTopWidth:1 so an expanded section never reads as a doubled border. Fill child always mounted (width:'0%' when 0) to avoid a null-vs-View reconciliation flash. No new hooks/effects/state/timers/imports; still all-View/Text/StyleSheet — iOS 26.5 hard constraints preserved by construction.
  */
 
 import React from 'react';
@@ -30,6 +31,44 @@ import {
 } from '@/components/unified-plan/section-labels';
 import { SwipeableTaskRow } from '@/components/unified-plan/v2/SwipeableTaskRow';
 import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
+
+/**
+ * Chunk 21 — module-scope pure helper. Returns the trustworthy
+ * {completed, total} pair for a section's tasks, or null when we cannot
+ * make a defensible progress claim.
+ *
+ * Contract:
+ *   - null / undefined section        → null (rail unmounts)
+ *   - empty or absent .tasks array    → null (no bare 3px track on goal-only sections)
+ *   - ANY task missing/unknown status AND completed === 0
+ *                                     → null (mirrors chunk 20's enum-drift
+ *                                       degrade — the bar hides in the exact
+ *                                       same case the subtitle drops its
+ *                                       "N done" fragment, so the two
+ *                                       visuals can never contradict)
+ *   - otherwise                       → { completed, total }
+ *
+ * Caller is responsible for `Math.min(completed, total)` before dividing
+ * so a future BE double-mark race that ships completed > total cannot
+ * overflow 100% width.
+ *
+ * Pure — no React, no closures. O(tasks.length).
+ */
+function sectionTaskProgress(
+  section: UnifiedPlanView['sections'][UnifiedSectionKey] | null | undefined,
+): { completed: number; total: number } | null {
+  if (!section) return null;
+  const tasks = section.tasks ?? [];
+  const total = tasks.length;
+  if (total === 0) return null;
+  const completed = tasks.reduce(
+    (n, task) => (task.status === 'completed' ? n + 1 : n),
+    0,
+  );
+  const hasMissingStatus = tasks.some((task) => task.status == null);
+  if (completed === 0 && hasMissingStatus) return null;
+  return { completed, total };
+}
 
 /**
  * Chunk 20 — module-scope pure helper. Returns a short "at-a-glance"
@@ -48,6 +87,10 @@ import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-
  * Math.min(completed, t) caps the "done" count at the task count so a future
  * BE bug that ships completed > total can't render "7 of 5 done".
  *
+ * Chunk 21: {completed, total} sourced from sectionTaskProgress so the
+ * progress rail and this subtitle share one source of truth — bar hides
+ * exactly when the subtitle drops its "N done" fragment.
+ *
  * Pure — no React, no closures, safe to call inline per section per render.
  * O(tasks.length); trivially cheap even on the largest plans.
  */
@@ -62,19 +105,16 @@ function summarizeSection(
   if (g === 0 && t === 0) return 'No plan yet';
   const goalLabel = g === 0 ? null : `${g} goal${g === 1 ? '' : 's'}`;
   if (t === 0) return goalLabel;
-  const completed = tasks.reduce(
-    (n, task) => (task.status === 'completed' ? n + 1 : n),
-    0,
-  );
-  const hasMissingStatus = tasks.some((task) => task.status == null);
+  const progress = sectionTaskProgress(section);
   let taskLabel: string;
-  if (completed === 0 && hasMissingStatus) {
+  if (progress == null) {
     // Enum-drift fallback — never show a misleading "0 done" when the BE
-    // stopped shipping the status field.
+    // stopped shipping the status field. Matches sectionTaskProgress's
+    // null-return case exactly so the rail hides in lockstep.
     taskLabel = `${t} task${t === 1 ? '' : 's'}`;
   } else {
-    const done = Math.min(completed, t);
-    taskLabel = `${done} of ${t} task${t === 1 ? '' : 's'} done`;
+    const done = Math.min(progress.completed, progress.total);
+    taskLabel = `${done} of ${progress.total} task${progress.total === 1 ? '' : 's'} done`;
   }
   return goalLabel ? `${goalLabel} · ${taskLabel}` : taskLabel;
 }
@@ -184,6 +224,18 @@ export function BpsAccordion({
         const bullets = view?.sections?.[key]?.planBullets ?? [];
         // Chunk 20: pure per-render summary for the collapsed header.
         const summary = summarizeSection(view?.sections?.[key]);
+        // Chunk 21: pure per-render {completed, total} for the inline
+        // progress rail. null → rail unmounts (empty tasks or enum drift).
+        const progress = sectionTaskProgress(view?.sections?.[key]);
+        const pct =
+          progress == null
+            ? 0
+            : Math.min(
+                100,
+                Math.round(
+                  (Math.min(progress.completed, progress.total) / progress.total) * 100,
+                ),
+              );
         return (
           <View
             key={key}
@@ -244,6 +296,37 @@ export function BpsAccordion({
                 color={colors.subtext}
               />
             </Pressable>
+
+            {/* Chunk 21: inline section-task progress rail. SIBLING of the
+                header Pressable (not nested) to avoid any hit-test
+                propagation quirk. pointerEvents='none' as belt-and-
+                suspenders so the rail never intercepts header taps. Both
+                a11y hide props set — iOS honors accessibilityElementsHidden,
+                Android honors importantForAccessibility — so VoiceOver
+                doesn't double-utter on top of the chunk-20 header label
+                which already speaks "X of Y done". marginBottom: -1
+                visually merges with expandedBlock's borderTopWidth:1 when
+                the section is expanded so it doesn't read as a doubled
+                border. Fill child is always rendered (width: '0%' when
+                pct===0) to avoid a null-vs-View reconciliation flash. */}
+            {progress != null ? (
+              <View
+                style={[
+                  styles.progressTrack,
+                  { backgroundColor: colors.border, marginBottom: -1 },
+                ]}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                pointerEvents="none"
+              >
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${pct}%`, backgroundColor: meta.color },
+                  ]}
+                />
+              </View>
+            ) : null}
 
             {isOpen ? (
               <View style={[styles.expandedBlock, { borderTopColor: colors.border }]}>
@@ -418,6 +501,25 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     marginTop: 2,
     fontWeight: '400',
+  },
+  // Chunk 21: inline section-task progress rail. flexDirection:'row' +
+  // alignItems:'flex-start' set explicitly so the percent-string width
+  // on the child fill resolves reliably on both iOS and Android RN Yoga
+  // — some builds ignore a percent width when the parent stretches its
+  // children. Colors are NOT set here; the track uses theme
+  // `colors.border` and the fill uses the section's meta color inline
+  // so it stays section-tinted (Bio blue, Psy purple, Soc green).
+  progressTrack: {
+    height: 3,
+    width: '100%',
+    borderRadius: 1.5,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  progressFill: {
+    height: 3,
+    borderRadius: 1.5,
   },
   expandedBlock: {
     paddingHorizontal: 14,
