@@ -80,11 +80,30 @@ function deriveSuggestions(view: UnifiedPlanView | null | undefined): Suggestion
   return out;
 }
 
-export interface AISuggestionStripProps {
-  view?: UnifiedPlanView | null;
+// CHUNK 16 (2026-07-21) — canonical section key for a chip. The chip is
+// derived directly from a planBullet.section (see deriveSuggestions), so
+// the sectionKey it stores IS the same UNIFIED_SECTION_ORDER key
+// ('biological' | 'psychological' | 'socialSpiritual') the accordion
+// expects. This helper is a pure passthrough — deliberately NOT a
+// keyword classifier, and NOT reading the display label ("Social & Faith"
+// is a rename only). Keeping it as a named helper documents that
+// contract at the call site.
+function chipToSection(chip: Suggestion): UnifiedSectionKey {
+  return chip.sectionKey;
 }
 
-export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.JSX.Element | null {
+export interface AISuggestionStripProps {
+  view?: UnifiedPlanView | null;
+  /** CHUNK 16: fired when the user taps a chip body (NOT the x). The
+   *  parent (PlanScreenV2) uses this to force-open the matching BPS
+   *  accordion section. Optional to keep chunk-8/8.5 callers compiling. */
+  onSuggestionPress?: (section: UnifiedSectionKey) => void;
+}
+
+export function AISuggestionStrip({
+  view,
+  onSuggestionPress,
+}: AISuggestionStripProps = {}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -94,6 +113,13 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
   const rawSuggestions = React.useMemo(() => deriveSuggestions(view), [view]);
   const [dismissed, setDismissed] = React.useState<Set<string>>(() => new Set());
   const [hydrated, setHydrated] = React.useState(false);
+
+  // Mirror of dismissed state so onDismiss can read current value
+  // without stale-closure risk while keeping its setState call pure.
+  const dismissedRef = React.useRef(dismissed);
+  React.useEffect(() => {
+    dismissedRef.current = dismissed;
+  }, [dismissed]);
 
   // Hydrate dismissed set from AsyncStorage every time the user sub
   // changes (covers account switches on shared devices — the previous
@@ -138,13 +164,16 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
   const onDismiss = React.useCallback(
     (text: string) => {
       if (!storageKey) return;
-      setDismissed((prev) => {
-        if (prev.has(text)) return prev;
-        const next = new Set(prev);
-        next.add(text);
-        AsyncStorage.setItem(storageKey, JSON.stringify([...next])).catch(() => {});
-        return next;
-      });
+      // Keep the setState updater pure (React can double-invoke under
+      // StrictMode / concurrent rendering — an AsyncStorage write inside
+      // the updater would fire twice). Compute the next set from the
+      // ref of the current value, set state, then persist.
+      const prev = dismissedRef.current;
+      if (prev.has(text)) return;
+      const next = new Set(prev);
+      next.add(text);
+      setDismissed(next);
+      AsyncStorage.setItem(storageKey, JSON.stringify([...next])).catch(() => {});
     },
     [storageKey],
   );
@@ -175,13 +204,18 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
         contentContainerStyle={styles.strip}
       >
         {suggestions.map((s) => (
-          <View
+          <Pressable
             key={s.key}
-            style={[
+            onPress={() => onSuggestionPress?.(chipToSection(s))}
+            accessibilityRole="button"
+            accessibilityLabel={`${s.text}, opens ${UNIFIED_SECTION_META[s.sectionKey].title} section`}
+            android_ripple={{ color: colors.border }}
+            style={({ pressed }) => [
               styles.chip,
               {
                 backgroundColor: colors.background,
                 borderColor: colors.border,
+                opacity: pressed ? 0.7 : 1,
               },
             ]}
           >
@@ -198,15 +232,26 @@ export function AISuggestionStrip({ view }: AISuggestionStripProps = {}): React.
               {s.text}
             </Text>
             <Pressable
-              onPress={() => onDismiss(s.text)}
+              // CHUNK 16: nested Pressable — stop propagation on BOTH
+              // onPressIn and onPress so the outer chip Pressable never
+              // sees the x tap. onPressIn guards platforms where onPress
+              // stopPropagation is honored inconsistently; onPress guard
+              // is the standard path. Never triggers the outer onPress.
+              onPressIn={(e) => {
+                e.stopPropagation?.();
+              }}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onDismiss(s.text);
+              }}
               accessibilityRole="button"
               accessibilityLabel={`Dismiss suggestion: ${s.text}`}
-              hitSlop={8}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={({ pressed }) => ({ opacity: pressed ? 0.5 : 0.85 })}
             >
               <MaterialIcons name="close" size={getScaledFontSize(16)} color={colors.subtext} />
             </Pressable>
-          </View>
+          </Pressable>
         ))}
       </ScrollView>
     </View>

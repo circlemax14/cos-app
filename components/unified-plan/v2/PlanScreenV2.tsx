@@ -36,6 +36,7 @@ import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
 import { CareManagerToast } from '@/components/unified-plan/v2/CareManagerToast';
+import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
@@ -59,6 +60,56 @@ export default function PlanScreenV2(): React.JSX.Element {
     if (router.canGoBack()) router.back();
   }, []);
 
+  // CHUNK 16 (2026-07-21) — controlled-open bridge from AISuggestionStrip
+  // chip taps into BpsAccordion. Nonce bumps on every request so the child
+  // effect re-fires even when the same section is requested twice in a row
+  // (e.g. tap a Bio chip, manually collapse Bio, tap the same chip again).
+  // React coalesces same-value setState, so a plain SectionKey state would
+  // silently drop the second tap — the { section, nonce } object identity
+  // change avoids that.
+  const [openRequest, setOpenRequest] = React.useState<
+    { section: UnifiedSectionKey; nonce: number } | null
+  >(null);
+
+  const requestOpenSection = React.useCallback((section: UnifiedSectionKey) => {
+    setOpenRequest((prev) => ({ section, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
+  // CHUNK 16 addendum — scroll-to-section on chip tap. Without this the
+  // Bio chip tap is a no-op visually (Bio auto-opens on first paint;
+  // section is already open, no state change) and the Psy/Soc chip taps
+  // open a section that's below the fold. Refs (not state) so a layout
+  // pass never triggers a re-render.
+  const scrollRef = React.useRef<ScrollView>(null);
+  const bpsYRef = React.useRef(0);
+  const sectionYRef = React.useRef<Record<UnifiedSectionKey, number>>({
+    biological: 0,
+    psychological: 0,
+    socialSpiritual: 0,
+  });
+
+  const onBpsLayout = React.useCallback(
+    (e: { nativeEvent: { layout: { y: number } } }) => {
+      bpsYRef.current = e.nativeEvent.layout.y;
+    },
+    [],
+  );
+
+  const onSectionLayout = React.useCallback(
+    (section: UnifiedSectionKey, y: number) => {
+      sectionYRef.current[section] = y;
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    if (!openRequest) return;
+    // Small negative padding so the section header lands a hair below
+    // the top edge of the viewport instead of flush against it.
+    const target = bpsYRef.current + (sectionYRef.current[openRequest.section] ?? 0) - 12;
+    scrollRef.current?.scrollTo({ y: Math.max(0, target), animated: true });
+  }, [openRequest]);
+
   const freshness = React.useMemo(
     () => formatRelative(data?.meta?.generatedAt ?? null),
     [data?.meta?.generatedAt],
@@ -68,6 +119,7 @@ export default function PlanScreenV2(): React.JSX.Element {
     <AppWrapper>
       <CareManagerToast generatedAt={data?.meta?.generatedAt} />
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
         refreshControl={
@@ -119,8 +171,15 @@ export default function PlanScreenV2(): React.JSX.Element {
         ) : null}
 
         <WellbeingMapCard />
-        <AISuggestionStrip view={data ?? null} />
-        <BpsAccordion view={data ?? null} onRefetch={onSwipeRefetch} />
+        <AISuggestionStrip view={data ?? null} onSuggestionPress={requestOpenSection} />
+        <View onLayout={onBpsLayout}>
+          <BpsAccordion
+            view={data ?? null}
+            onRefetch={onSwipeRefetch}
+            openRequest={openRequest}
+            onSectionLayout={onSectionLayout}
+          />
+        </View>
       </ScrollView>
     </AppWrapper>
   );

@@ -36,40 +36,71 @@ export interface BpsAccordionProps {
   view?: UnifiedPlanView | null;
   /** Called after a swipe action succeeds so the parent can refetch. */
   onRefetch?: () => void;
+  /** CHUNK 16: parent-driven open request bridged from AISuggestionStrip
+   *  chip taps. The nonce bumps on every request (even for the same
+   *  section) so the effect below re-fires and re-opens the section
+   *  after a manual collapse. */
+  openRequest?: { section: UnifiedSectionKey; nonce: number } | null;
+  /** CHUNK 16 addendum: parent uses this to record each section's y
+   *  position within the accordion so it can scrollTo the section
+   *  when a chip is tapped. Fired on every layout pass; parent should
+   *  store in a ref, not state (no re-render per layout). */
+  onSectionLayout?: (section: UnifiedSectionKey, y: number) => void;
 }
 
-export function BpsAccordion({ view, onRefetch }: BpsAccordionProps = {}): React.JSX.Element {
+export function BpsAccordion({
+  view,
+  onRefetch,
+  openRequest,
+  onSectionLayout,
+}: BpsAccordionProps = {}): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  // Chunk 15.1: function-form initializer + one-shot safety effect. Value-form
-  // useState in chunk 15 didn't visibly auto-open on Ken's device (possibly
-  // OTA-propagation timing, possibly a bundler edge case). Function form is
-  // canonical; the mount-only effect is a belt-and-suspenders guarantee that
-  // if openKey is null on first paint we set it to Bio exactly once. Empty
-  // deps + null-guard means user closing Bio afterwards is not fought.
-  // keep in sync with UNIFIED_SECTION_ORDER
-  const [openKey, setOpenKey] = React.useState<UnifiedSectionKey | null>(
-    () => UNIFIED_SECTION_ORDER[0] ?? null,
+  // Chunk 15 → 16: sections-open state as a Record (per-section boolean)
+  // so multiple sections can be open independently. Chunk 15.1's Bio
+  // auto-open on first mount is preserved via the function-form
+  // initializer, and the one-shot safety effect below is the same
+  // belt-and-suspenders pattern (if Bio somehow ended up closed on
+  // first paint, force it open exactly once — empty deps, so a user's
+  // manual collapse afterwards is not fought).
+  const [openMap, setOpenMap] = React.useState<Record<UnifiedSectionKey, boolean>>(
+    () => ({
+      biological: (UNIFIED_SECTION_ORDER[0] ?? 'biological') === 'biological',
+      psychological: false,
+      socialSpiritual: false,
+    }),
   );
 
   React.useEffect(() => {
-    setOpenKey((prev) => (prev === null ? (UNIFIED_SECTION_ORDER[0] ?? null) : prev));
+    setOpenMap((prev) => (prev.biological ? prev : { ...prev, biological: true }));
   }, []);
 
+  // Chunk 16: merge-in effect for the parent-driven openRequest. Only
+  // overrides the ONE requested key — Bio's auto-open and any
+  // user-toggled Psy/Soc state survive unchanged. The nonce in the
+  // openRequest object identity change is what makes this effect re-fire
+  // even when the same section is requested twice (React would coalesce
+  // a same-value primitive setState and silently drop the second tap).
+  React.useEffect(() => {
+    if (!openRequest) return;
+    setOpenMap((prev) => ({ ...prev, [openRequest.section]: true }));
+  }, [openRequest]);
+
   const onToggle = React.useCallback((key: UnifiedSectionKey) => {
-    setOpenKey((prev) => (prev === key ? null : key));
+    setOpenMap((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
   return (
     <View style={styles.container}>
       {UNIFIED_SECTION_ORDER.map((key) => {
         const meta = UNIFIED_SECTION_META[key];
-        const isOpen = openKey === key;
+        const isOpen = openMap[key] === true;
         const bullets = view?.sections?.[key]?.planBullets ?? [];
         return (
           <View
             key={key}
+            onLayout={(e) => onSectionLayout?.(key, e.nativeEvent.layout.y)}
             style={[
               styles.sectionCard,
               {
