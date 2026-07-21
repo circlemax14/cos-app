@@ -46,6 +46,7 @@ import {
   hasPlanContent,
 } from '@/components/unified-plan/v2/PlanEmptyStates';
 import { useFirstVisitChooser } from '@/components/unified-plan/v2/useFirstVisitChooser';
+import { PlanTierPill } from '@/components/unified-plan/v2/PlanTierPill';
 import { fireAndForgetPost } from '@/components/unified-plan/v2/net';
 import { usePlanType } from '@/hooks/use-plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
@@ -355,6 +356,39 @@ export default function PlanScreenV2(): React.JSX.Element {
               {`Care team update · ${formatRelative(lastCareUpdateAt)}`}
             </Text>
           </Pressable>
+        ) : null}
+
+        {/*
+          CHUNK 33 (2026-07-21) — persistent plan-tier pill.
+          Renders BELOW the freshness pill / care-team chip and ABOVE
+          the CachedPlanBanner / WellbeingMapCard so top-of-plan
+          identity ("what tier am I on") is always visible when the
+          user has real plan content. Mutually exclusive with the
+          NoTier / BasicGenerate / HasTierNoPlan empty states below
+          (each already exposes its own Choose/Change CTA) — reuses
+          `hasPlanContent(data)` from PlanEmptyStates so the gate can't
+          drift. The `!isLoading && !isFetching && !isError` clause
+          prevents flash-in-empty-space during cold fetch; the
+          `!planTypeQ.isLoading && !planTypeQ.isError` + `planType !==
+          undefined` check keeps the pill hidden until the plan-type
+          query confirms a tier. `usePlanType()` deliberately does not
+          expose `isSuccess` (see hooks/use-plan-type.ts) — the trio
+          above is the equivalent success-branch predicate.
+        */}
+        {planTypeQ.planType !== undefined &&
+        !planTypeQ.isLoading &&
+        !planTypeQ.isError &&
+        data &&
+        'sections' in data &&
+        hasPlanContent(data) &&
+        !isLoading &&
+        !isFetching &&
+        !isError ? (
+          <PlanTierPill
+            planType={planTypeQ.planType as PlanType}
+            displayName={planTypeDisplayNameFn(planTypeQ.planType as PlanType)}
+            onPress={onChoosePlan}
+          />
         ) : null}
 
         {/*
