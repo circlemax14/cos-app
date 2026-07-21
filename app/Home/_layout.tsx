@@ -84,6 +84,34 @@ export default function TabLayout() {
             : carePlanTabOptions
         }
       />
+      {/*
+        Chunk 29 (2026-07-21) — unified-plan Tabs.Screen moved from the
+        end of the file (line ~362 previously) to sit RIGHT AFTER
+        health-plan so both share the same Care Plan slot in the tab bar.
+        When unifiedDefault flips, the visible tab now stays in slot 3
+        instead of jumping to the end of the tab bar (past all the
+        href:null hidden screens). This was the 2026-07-18 Phase 4
+        rollback's "tab visual regression on Vishal's build 62" —
+        expo-router renders tabs in file-order after filtering
+        href:null; the old position pushed unified-plan visually to
+        the far right when the flag flipped on.
+
+        COS-467 — Unified BPS plan view (Phase 2/4). When unifiedDefault
+        is OFF (baseline), this screen is a hidden deep-link peer to
+        the Care Plan tab, reached only via the TryUnifiedPlanBanner
+        CTA on health-plan and biopsychosocial-plan. When ON, it takes
+        over the Care Plan tab slot (health-plan becomes hidden and
+        deep-linkable via ClassicViewLink). Owns its own header, so
+        headerShown is false in the hidden variant.
+      */}
+      <Tabs.Screen
+        name="unified-plan"
+        options={
+          unifiedDefault
+            ? carePlanTabOptions
+            : { title: 'Unified plan', href: null, headerShown: false }
+        }
+      />
       <Tabs.Screen
         name="plan"
         options={{
@@ -352,20 +380,6 @@ export default function TabLayout() {
           href: null,
           headerShown: false,
         }}
-      />
-      {/*
-        COS-467 — Unified BPS plan view (Phase 2). Opt-in peer to the
-        Care Plan and Biopsychosocial tabs — reached only via the
-        TryUnifiedPlanBanner CTA on those two tabs. Owns its own header,
-        so headerShown is false. Hidden from the tab bar (href: null).
-      */}
-      <Tabs.Screen
-        name="unified-plan"
-        options={
-          unifiedDefault
-            ? carePlanTabOptions
-            : { title: 'Unified plan', href: null, headerShown: false }
-        }
       />
       {/* HS-1 / SCRUM-590 — patient intake wizard as a stack-pushed route (not a Modal), same pattern as plan-type-chooser and biopsychosocial-plan (iOS 26.5 modal-crash background). */}
       <Tabs.Screen
