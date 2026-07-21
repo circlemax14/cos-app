@@ -1,31 +1,31 @@
 /**
- * SwipeableTaskRow — CHUNK 9 (2026-07-20).
+ * SwipeableTaskRow — CHUNK 9.4 (2026-07-21) — Swipeable-free fallback.
  *
- * Owns per-row swipe + acting state so BpsAccordion stays declarative.
- * Chunk 9 wires ONLY the Skip today handler → legacy skipTask endpoint
- * (POST /v1/patients/me/tasks/:id/skip). Snooze + Reschedule are still
- * visual-only chips; their handlers land in chunk 10 + 11.
+ * Ken's iOS 26.5 (build 62) reliably crashes any time a fetch fires as a
+ * downstream effect of tapping a Pressable rendered INSIDE Swipeable's
+ * renderRightActions callback. We tried three deferral strategies
+ * (InteractionManager, setTimeout, direct-await) — all crash the same
+ * way (SIGABRT on com.meta.react.turbomodulemanager.queue). The gesture
+ * itself + the fetch itself are each individually safe; the composition
+ * isn't, and no amount of tick-deferral fixes it.
  *
- * On successful skip:
- *   - Row is instantly hidden (setLocalSkipped(true)) so Ken sees the
- *     item disappear without waiting for the poll.
- *   - onRefetch fires so the underlying data catches up.
+ * Fallback: DROP react-native-gesture-handler entirely from this row.
+ * Show a small "…" (kebab) Pressable on the right edge of the row that
+ * toggles an inline action bar (Skip today / Snooze 1h / Reschedule) as
+ * plain View children. No gesture-handler, no Swipeable, no
+ * renderXActions callbacks. All Pressables are top-level React children
+ * of the row, so tapping any of them dispatches through the normal RN
+ * touch pipeline — the same pipeline that already works for every other
+ * button in chunks 1–8.
  *
- * On failure (network, 4xx): row un-hides, next poll reconciles. No
- * toast — Alert is a Modal, which is exactly the iOS 26 surface we're
- * avoiding on this build.
+ * Trade-off: slightly less delightful than swipe (extra tap to reveal
+ * actions), but bulletproof on iOS 26.5. Once cos-app#266/267/268 land
+ * and Ken's binary picks them up, we can restore the Swipeable path
+ * behind a Platform.Version >= 26 fallback gate.
  */
 
 import React from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type TextStyle,
-} from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
@@ -55,123 +55,44 @@ export function SwipeableTaskRow({
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
+  const [expanded, setExpanded] = React.useState(false);
   const [acting, setActing] = React.useState(false);
   const [locallySkipped, setLocallySkipped] = React.useState(false);
-  const swipeableRef = React.useRef<Swipeable | null>(null);
 
   const isDone = task.status === 'completed';
   const isSkipped = task.status === 'skipped' || locallySkipped;
   if (locallySkipped) return null;
 
-  // CHUNK 9.2 (2026-07-21) — iOS 26.5 SIGABRT fix.
-  //
-  // Ken's device crashed on Skip tap: firing a fetch inside a
-  // gesture-handler tap callback triggers iOS 26.5's TurboModule
-  // objc_exception_rethrow. The gesture is safe (chunks 6, 6.1) and
-  // the fetch is safe (chunk 3), but running them in the same call
-  // stack isn't.
-  //
-  // Fix: split into two synchronous steps. The tap callback ONLY
-  // updates local state + closes the swipeable — no network. A
-  // separate effect (deferred via InteractionManager) picks up the
-  // pending intent AFTER the gesture stack has fully unwound and
-  // fires the actual skipTask. This is the standard RN pattern for
-  // gesture-triggered async work; it also improves perceived
-  // responsiveness because the row visibly reacts before the
-  // network round-trip completes.
-  const [pendingSkip, setPendingSkip] = React.useState(false);
+  const onKebabTap = React.useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
 
-  const onSkipTap = React.useCallback(() => {
-    if (acting || pendingSkip) return;
-    try {
-      swipeableRef.current?.close();
-    } catch {
-      // ignore
-    }
-    setPendingSkip(true);
-  }, [acting, pendingSkip]);
-
-  React.useEffect(() => {
-    if (!pendingSkip) return;
-    let cancelled = false;
+  const doSkip = React.useCallback(async () => {
+    if (acting) return;
     setActing(true);
-    // CHUNK 9.3 — InteractionManager.runAfterInteractions froze on iOS
-    // 26.5 (gesture-handler apparently doesn't release its interaction
-    // handle after Swipeable closes on this build). Plain setTimeout
-    // with a 50ms delay lets the gesture stack fully unwind without
-    // depending on the handle-release mechanism.
-    const timeoutId = setTimeout(async () => {
-      try {
-        const res = await skipTask(task.id, todayYYYYMMDD());
-        if (cancelled) return;
-        if (res.ok) {
-          setLocallySkipped(true);
-          onRefetch?.();
-        }
-      } finally {
-        if (!cancelled) {
-          setActing(false);
-          setPendingSkip(false);
-        }
+    try {
+      const res = await skipTask(task.id, todayYYYYMMDD());
+      if (res.ok) {
+        setLocallySkipped(true);
+        onRefetch?.();
       }
-    }, 50);
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [pendingSkip, task.id, onRefetch]);
-
-  // gesture-handler naming: renderRightActions = actions live on the
-  // RIGHT edge of the row = user drags finger LEFT to reveal them.
-  // We want "Skip today" on left-swipe (standard iOS Mail pattern) so
-  // it goes here.
-  const renderRightActions = () => (
-    <Pressable
-      onPress={onSkipTap}
-      accessibilityRole="button"
-      accessibilityLabel={`Skip ${task.title} today`}
-      style={[styles.swipeAction, { backgroundColor: '#9CA3AF' }]}
-    >
-      {acting ? (
-        <ActivityIndicator color="#FFFFFF" size="small" />
-      ) : (
-        <Text style={styles.swipeActionText}>Skip today</Text>
-      )}
-    </Pressable>
-  );
-
-  // renderLeftActions = actions on the LEFT edge = user drags finger
-  // RIGHT to reveal. Snooze + Reschedule (visual-only for now) go here.
-  const renderLeftActions = () => (
-    <View style={styles.swipeActionsRight}>
-      <View style={[styles.swipeAction, { backgroundColor: '#F59E0B' }]}>
-        <Text style={styles.swipeActionText}>Snooze 1h</Text>
-      </View>
-      <View style={[styles.swipeAction, { backgroundColor: '#3B82F6' }]}>
-        <Text style={styles.swipeActionText}>Reschedule</Text>
-      </View>
-    </View>
-  );
+    } finally {
+      setActing(false);
+    }
+  }, [acting, task.id, onRefetch]);
 
   return (
-    <Swipeable
-      ref={swipeableRef}
-      renderLeftActions={renderLeftActions}
-      renderRightActions={renderRightActions}
-      friction={2}
-      leftThreshold={40}
-      rightThreshold={40}
+    <View
+      style={[
+        styles.container,
+        {
+          borderColor: colors.border,
+          backgroundColor: colors.background,
+          opacity: acting ? 0.7 : 1,
+        },
+      ]}
     >
-      <View
-        style={[
-          styles.taskRow,
-          {
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-            opacity: acting ? 0.6 : 1,
-          },
-        ]}
-      >
+      <View style={styles.headRow}>
         <View
           style={[
             styles.taskCheckbox,
@@ -222,17 +143,63 @@ export function SwipeableTaskRow({
             </Text>
           ) : null}
         </View>
+        <Pressable
+          onPress={onKebabTap}
+          accessibilityRole="button"
+          accessibilityLabel={`Actions for ${task.title}`}
+          hitSlop={12}
+          style={({ pressed }) => [styles.kebab, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <MaterialIcons
+            name={expanded ? 'expand-less' : 'more-horiz'}
+            size={getScaledFontSize(22)}
+            color={colors.subtext}
+          />
+        </Pressable>
       </View>
-    </Swipeable>
+
+      {expanded ? (
+        <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+          <Pressable
+            onPress={doSkip}
+            accessibilityRole="button"
+            accessibilityLabel={`Skip ${task.title} today`}
+            disabled={acting}
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: '#9CA3AF',
+                opacity: pressed || acting ? 0.75 : 1,
+              },
+            ]}
+          >
+            {acting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.actionBtnText}>Skip today</Text>
+            )}
+          </Pressable>
+          <View style={[styles.actionBtn, { backgroundColor: '#F59E0B', opacity: 0.5 }]}>
+            <Text style={styles.actionBtnText}>Snooze 1h</Text>
+          </View>
+          <View style={[styles.actionBtn, { backgroundColor: '#3B82F6', opacity: 0.5 }]}>
+            <Text style={styles.actionBtnText}>Reschedule</Text>
+          </View>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  container: {
     borderWidth: 1,
     borderRadius: 6,
+    overflow: 'hidden',
+  },
+  headRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 12,
@@ -246,16 +213,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  swipeAction: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    minWidth: 88,
+  kebab: {
+    padding: 4,
+    marginTop: -2,
   },
-  swipeActionsRight: {
+  actionsRow: {
     flexDirection: 'row',
+    gap: 6,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  swipeActionText: {
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  actionBtnText: {
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 13,
