@@ -36,7 +36,16 @@ export interface UseUnifiedPlanResult {
   disabled: boolean;
   isLoading: boolean;
   isRefetching: boolean;
+  /** Raw react-query isFetching (true whenever a fetch is in flight,
+   *  including background refetch after a cache hit). Chunk 17 uses
+   *  this to gate the error card so a mid-flight refetch never flashes
+   *  an error card over stale data. */
+  isFetching: boolean;
   isError: boolean;
+  /** Number of consecutive failed fetch attempts. Chunk 17 uses this
+   *  to avoid a first-mount isError=true false-positive before any
+   *  fetch has been attempted. */
+  failureCount: number;
   error: unknown;
   refetch: () => Promise<unknown>;
   lastUpdated: string | null;
@@ -67,7 +76,9 @@ export function useUnifiedPlan(): UseUnifiedPlanResult {
     disabled,
     isLoading: query.isLoading,
     isRefetching: query.isFetching && !query.isLoading,
+    isFetching: query.isFetching,
     isError: query.isError,
+    failureCount: query.failureCount,
     error: query.error,
     refetch: query.refetch,
     lastUpdated: data?.meta?.generatedAt ?? null,

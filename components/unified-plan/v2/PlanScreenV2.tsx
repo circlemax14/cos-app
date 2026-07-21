@@ -36,6 +36,7 @@ import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
 import { CareManagerToast } from '@/components/unified-plan/v2/CareManagerToast';
+import { PlanSkeleton, PlanErrorCard } from '@/components/unified-plan/v2/PlanSkeleton';
 import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
 export default function PlanScreenV2(): React.JSX.Element {
@@ -46,13 +47,30 @@ export default function PlanScreenV2(): React.JSX.Element {
   // react-query wrapper over GET /v1/plan (Phase 1). Same hook the
   // legacy path uses; not new bridge code, but the first time v2
   // pays for the fetch.
-  const { data, refetch, isRefetching } = useUnifiedPlan();
+  const {
+    data,
+    refetch,
+    isRefetching,
+    isLoading,
+    isError,
+    isFetching,
+    failureCount,
+  } = useUnifiedPlan();
 
   const onSwipeRefetch = React.useCallback(() => {
     void refetch();
   }, [refetch]);
 
   const onPullRefresh = React.useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  // CHUNK 17 — stable identity for the error-card retry button so
+  // react-query's refetch identity churn does not force the Pressable
+  // to re-render on every fetch tick. Also acts as the fire-and-forget
+  // adapter (Pressable onPress signature is void, refetch returns a
+  // Promise) — no floating-promise warning.
+  const handleRetry = React.useCallback(() => {
     void refetch();
   }, [refetch]);
 
@@ -104,11 +122,25 @@ export default function PlanScreenV2(): React.JSX.Element {
 
   React.useEffect(() => {
     if (!openRequest) return;
+    // CHUNK 17 defense-in-depth: BpsAccordion is unmounted while the
+    // skeleton/error card renders, so onBpsLayout / onSectionLayout
+    // never fire and both refs stay at their initial 0 sentinels.
+    // AISuggestionStrip returns null with no bullets pre-data so a
+    // chip tap is unreachable today — but if a future chunk feeds
+    // the strip a static "getting started" chip during loading, this
+    // guard prevents a stray scrollTo(y=0). Zero is legitimate at
+    // the top of the accordion, so we can't distinguish "unset" from
+    // "top" — the cheap fix is to bail if the accordion is not
+    // currently mounted (checked via the same isLoading/isError gate
+    // that controls the swap below).
+    if ((isLoading && !data) || (isError && !data && !isFetching && failureCount > 0)) {
+      return;
+    }
     // Small negative padding so the section header lands a hair below
     // the top edge of the viewport instead of flush against it.
     const target = bpsYRef.current + (sectionYRef.current[openRequest.section] ?? 0) - 12;
     scrollRef.current?.scrollTo({ y: Math.max(0, target), animated: true });
-  }, [openRequest]);
+  }, [openRequest, isLoading, isError, isFetching, failureCount, data]);
 
   const freshness = React.useMemo(
     () => formatRelative(data?.meta?.generatedAt ?? null),
@@ -172,14 +204,39 @@ export default function PlanScreenV2(): React.JSX.Element {
 
         <WellbeingMapCard />
         <AISuggestionStrip view={data ?? null} onSuggestionPress={requestOpenSection} />
-        <View onLayout={onBpsLayout}>
-          <BpsAccordion
-            view={data ?? null}
-            onRefetch={onSwipeRefetch}
-            openRequest={openRequest}
-            onSectionLayout={onSectionLayout}
-          />
-        </View>
+        {/*
+          CHUNK 17 — accordion slot swap.
+          - `(isLoading || isFetching) && !data`: cold fetch OR retry
+            while we still have no data. Gating on isFetching too
+            (chunk 17 fix) closes the mid-retry flash where the error
+            card would unmount → empty BpsAccordion mounts for a beat
+            → data or new error arrives. Never gate on `isLoading`
+            alone — react-query returns cached data immediately and
+            isLoading is false in that case, so a bare gate would
+            flash the skeleton on every cache-hit remount.
+          - `isError && !data && !isFetching && failureCount > 0`: only
+            show the error card when (a) there is no cached data to
+            fall back on, (b) no fetch is in flight (a background
+            refetch failing over stale data should keep the plan
+            visible and let the freshness pill handle the story),
+            and (c) at least one fetch has actually been attempted
+            (some react-query versions transiently surface
+            isError=true on mount before any query runs).
+        */}
+        {(isLoading || isFetching) && !data ? (
+          <PlanSkeleton />
+        ) : isError && !data && !isFetching && failureCount > 0 ? (
+          <PlanErrorCard onRetry={handleRetry} disabled={isRefetching} />
+        ) : (
+          <View onLayout={onBpsLayout}>
+            <BpsAccordion
+              view={data ?? null}
+              onRefetch={onSwipeRefetch}
+              openRequest={openRequest}
+              onSectionLayout={onSectionLayout}
+            />
+          </View>
+        )}
       </ScrollView>
     </AppWrapper>
   );
