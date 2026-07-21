@@ -31,7 +31,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
-import { formatRelative } from '@/lib/plan-time';
+import { formatRelative, stalenessLevel, FRESHNESS_COLORS } from '@/lib/plan-time';
 import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
@@ -147,6 +147,19 @@ export default function PlanScreenV2(): React.JSX.Element {
     [data?.meta?.generatedAt],
   );
 
+  // COS-475b CHUNK 18 — stale-plan color escalation. Memo dep is the same
+  // `generatedAt` string reference used by `freshness` above, so the two
+  // memos flip in lockstep. NO setInterval / AppState here by design (iOS
+  // 26.5 forbidden-primitives list); a plan that ages past a threshold
+  // mid-session keeps its previous color until the next refetch bumps
+  // generatedAt. See `stalenessLevel` JSDoc for the invariant.
+  const staleness = React.useMemo(
+    () => stalenessLevel(data?.meta?.generatedAt),
+    [data?.meta?.generatedAt],
+  );
+  const freshnessScheme = settings.isDarkTheme ? 'dark' : 'light';
+  const stalenessColor = FRESHNESS_COLORS[staleness][freshnessScheme];
+
   return (
     <AppWrapper>
       <CareManagerToast generatedAt={data?.meta?.generatedAt} />
@@ -184,20 +197,32 @@ export default function PlanScreenV2(): React.JSX.Element {
           Your plan
         </Text>
         {freshness ? (
-          <View style={styles.freshnessPill}>
+          <View
+            style={styles.freshnessPill}
+            accessible={true}
+            accessibilityLabel={
+              isRefetching
+                ? 'Plan updating'
+                : `Plan updated ${freshness}${
+                    staleness === 'stale' ? ', stale' : staleness === 'aging' ? ', aging' : ''
+                  }`
+            }
+          >
             <View
               style={[
                 styles.freshnessDot,
-                { backgroundColor: isRefetching ? colors.tint : colors.subtext },
+                { backgroundColor: isRefetching ? colors.tint : stalenessColor },
               ]}
             />
             <Text
               style={{
-                color: colors.subtext,
+                color: isRefetching || staleness === 'fresh' ? colors.subtext : stalenessColor,
                 fontSize: getScaledFontSize(12),
               }}
             >
-              {isRefetching ? 'Updating…' : `Updated ${freshness}`}
+              {isRefetching
+                ? 'Updating…'
+                : `Updated ${freshness}${staleness === 'stale' ? ' · Stale' : ''}`}
             </Text>
           </View>
         ) : null}
