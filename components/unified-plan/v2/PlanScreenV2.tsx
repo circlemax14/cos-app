@@ -47,6 +47,8 @@ import {
 } from '@/components/unified-plan/v2/PlanEmptyStates';
 import { useFirstVisitChooser } from '@/components/unified-plan/v2/useFirstVisitChooser';
 import { PlanTierPill } from '@/components/unified-plan/v2/PlanTierPill';
+import { RegenerateButton } from '@/components/unified-plan/v2/RegenerateButton';
+import { GeneratingBanner } from '@/components/unified-plan/v2/GeneratingBanner';
 import { fireAndForgetPost } from '@/components/unified-plan/v2/net';
 import { usePlanType } from '@/hooks/use-plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
@@ -101,24 +103,64 @@ export default function PlanScreenV2(): React.JSX.Element {
     [],
   );
 
-  const handleGenerate = React.useCallback(() => {
+  const handleGenerate = React.useCallback((force: unknown = false) => {
     if (generating) return;
     setGenerating(true);
     // Fire-and-forget POST — NEVER await axios inside a tap handler on
     // this binary (chunk 9.5 SIGABRT). Reconcile via staged refetches.
-    void fireAndForgetPost('/v1/patients/me/health-plan/ai/generate', { force: false });
-    const schedule = (ms: number, isLast: boolean) => {
+    // CHUNK 34 (2026-07-21) — `force` param threaded through so the header
+    // RegenerateButton can force-regenerate an existing plan (force=true).
+    // Chunk 32's Basic-tier CTA passes handleGenerate directly to a
+    // Pressable's onPress, which invokes it with a GestureResponderEvent
+    // as arg 0 — under a naive `force: boolean = false` signature that
+    // truthy event object would silently flip the Basic CTA to force=true.
+    // Type is `unknown` + explicit `=== true` normalize to prevent that.
+    const forceBool = force === true;
+    void fireAndForgetPost('/v1/patients/me/health-plan/ai/generate', { force: forceBool });
+    // CHUNK 34 fix (adversarial-verify major #1): don't clear `generating`
+    // on the last timer's finally — Bedrock has 25s+ tails, so a t=30s
+    // clear would mislabel a still-running own-tap as cross-device via the
+    // GeneratingBanner. Instead, let the effect below observe the
+    // refreshInFlight true→false transition and clear `generating` then.
+    // The timers here still refetch for optimistic freshness; they just
+    // don't touch the local flag.
+    const schedule = (ms: number) => {
       const t = setTimeout(() => {
-        void refetch().finally(() => {
-          if (isLast) setGenerating(false);
-        });
+        void refetch();
       }, ms);
       refetchTimerRef.current.push(t);
     };
-    schedule(5000, false);
-    schedule(15000, false);
-    schedule(30000, true);
+    schedule(5000);
+    schedule(15000);
+    schedule(30000);
   }, [generating, refetch]);
+
+  // CHUNK 34 (2026-07-21) — server-truth "a generation is running" flag.
+  // `data?.meta?.refreshInFlight === true` is explicit-`=== true` so that
+  // pre-COS-475 BE deploys that omit the field entirely are treated as
+  // false rather than truthy-undefined. Union with the local `generating`
+  // tap flag gives us the "any-source generating" signal that gates both
+  // the header button spinner/disable AND the cross-device banner.
+  const refreshInFlight = data?.meta?.refreshInFlight === true;
+  const isGeneratingFromAnySource = generating || refreshInFlight;
+
+  // CHUNK 34 fix (adversarial-verify major #1 tail): clear local `generating`
+  // when server refreshInFlight transitions true → false. This means the
+  // spinner stays on for the entire real generation, not just an arbitrary
+  // 30s window — and GeneratingBanner (which requires `refreshInFlight &&
+  // !generating`) never fires for the user who tapped Regenerate themselves
+  // because their `generating` stays true as long as refreshInFlight is true.
+  const prevRefreshInFlightRef = React.useRef(refreshInFlight);
+  React.useEffect(() => {
+    if (prevRefreshInFlightRef.current === true && refreshInFlight === false) {
+      setGenerating(false);
+    }
+    prevRefreshInFlightRef.current = refreshInFlight;
+  }, [refreshInFlight]);
+
+  const handleRegenerate = React.useCallback(() => {
+    handleGenerate(true);
+  }, [handleGenerate]);
 
   const onChoosePlan = React.useCallback(() => {
     router.push('/Home/plan-type-chooser' as never);
@@ -284,6 +326,35 @@ export default function PlanScreenV2(): React.JSX.Element {
           >
             <Text style={{ color: colors.tint, fontSize: getScaledFontSize(16) }}>‹ Back</Text>
           </Pressable>
+          {/*
+            CHUNK 34 (2026-07-21) — flex:1 spacer pushes the RegenerateButton
+            to the right edge without switching the parent row to
+            justifyContent:'space-between' (chunk-17 diary flagged that
+            change as a wrap regression for the freshness pill on narrow
+            devices at large dynamic-type).
+          */}
+          <View style={{ flex: 1 }} />
+          {/*
+            CHUNK 34 fix (adversarial-verify major #2): gate button on
+            hasPlanContent so it only renders when a real plan exists to
+            regenerate. In empty-state branches (NoTier / BasicGenerate /
+            HasTierNoPlan) the header button is hidden and each empty
+            state's own CTA is the sole entry point — no competing CTAs
+            firing the same POST twice. Predicate mirrors PlanTierPill's
+            gate for consistency.
+          */}
+          {data &&
+          'sections' in data &&
+          hasPlanContent(data) &&
+          planTypeQ.planType !== undefined &&
+          !planTypeQ.isLoading &&
+          !planTypeQ.isError ? (
+            <RegenerateButton
+              onPress={handleRegenerate}
+              disabled={isGeneratingFromAnySource}
+              isGenerating={isGeneratingFromAnySource}
+            />
+          ) : null}
         </View>
 
         <Text
@@ -392,6 +463,20 @@ export default function PlanScreenV2(): React.JSX.Element {
         ) : null}
 
         {/*
+          CHUNK 34 (2026-07-21) — cross-device "already regenerating" banner.
+          Fires when the BE has surfaced `meta.refreshInFlight === true` but
+          the local tap flag is false — i.e. another device (or the legacy
+          surface) kicked off a regeneration and this device's 60s poll
+          picked it up. Placed BETWEEN the PlanTierPill block above and the
+          CachedPlanBanner below so at most one amber banner is in view
+          (see the CachedPlanBanner gate — chunk 34 concern #9 — which now
+          short-circuits when refreshInFlight is true).
+          Also gated on `!!data` so it never flashes into the skeleton /
+          error-card layout branches, which own their own empty space.
+        */}
+        <GeneratingBanner visible={refreshInFlight && !generating && !!data} />
+
+        {/*
           Cached-plan banner (Chunk 26):
           Fires ONLY when we already have a plan cached AND the last refetch
           attempt failed AND no refetch is currently in flight. Symmetric
@@ -403,8 +488,15 @@ export default function PlanScreenV2(): React.JSX.Element {
           resets failureCount to 0 on a successful refetch (verified in the
           version currently bundled — see hooks/use-unified-plan.ts), so the
           banner clears on the next successful retry.
+          CHUNK 34 (2026-07-21) — precedence rule: when the GeneratingBanner
+          above is visible (refreshInFlight true), suppress the cached-plan
+          banner so at most one amber banner stacks. Mathematically the two
+          are rarely co-truthy (refreshInFlight requires a successful GET,
+          cached-plan requires a failed one) but a mid-regen fetch error
+          can briefly satisfy both — precedence goes to the regenerating
+          story since a retry now would 409 anyway.
         */}
-        {data && isError && !isFetching && failureCount > 0 ? (
+        {data && isError && !isFetching && failureCount > 0 && !refreshInFlight ? (
           <CachedPlanBanner onRetry={handleRetry} disabled={isRefetching} />
         ) : null}
 
