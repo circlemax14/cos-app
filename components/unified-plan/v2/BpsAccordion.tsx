@@ -15,6 +15,7 @@
  *   - ...
  *
  * Chunk 15 (2026-07-20): first section (Biological) auto-opens on mount so plan content is visible on first paint. Tap-to-toggle and single-open semantics unchanged.
+ * Chunk 20 (2026-07-21): collapsed-section count+progress subtitle. Pure render-only addition — a module-scope summarizeSection helper feeds a one-line "N goals · X of Y tasks done" (or "No plan yet") secondary Text under each collapsed section header. Widens the header Pressable a11y label to speak the summary in one VoiceOver utterance. Bio auto-open (chunk 15/15.1) means Bio never shows the subtitle on first paint — intentional. No new hooks/effects/state/timers/imports; iOS 26.5 hard constraints preserved by construction.
  */
 
 import React from 'react';
@@ -29,6 +30,54 @@ import {
 } from '@/components/unified-plan/section-labels';
 import { SwipeableTaskRow } from '@/components/unified-plan/v2/SwipeableTaskRow';
 import type { UnifiedPlanView, UnifiedSectionKey } from '@/services/api/unified-plan';
+
+/**
+ * Chunk 20 — module-scope pure helper. Returns a short "at-a-glance"
+ * summary of a section for the COLLAPSED header subtitle.
+ *
+ * Rules:
+ *   - null section / undefined section     → null (render nothing)
+ *   - 0 goals + 0 tasks                    → "No plan yet"
+ *   - N goals + 0 tasks                    → "N goal(s)"
+ *   - 0 goals + M tasks (with metadata)    → "X of M tasks done"
+ *   - N goals + M tasks (with metadata)    → "N goal(s) · X of M tasks done"
+ *   - Metadata missing on ANY task row AND completed === 0
+ *                                          → degrade to raw "N goal(s) · M task(s)"
+ *     so a silent BE enum drift never renders a misleading "0 done" anti-signal.
+ *
+ * Math.min(completed, t) caps the "done" count at the task count so a future
+ * BE bug that ships completed > total can't render "7 of 5 done".
+ *
+ * Pure — no React, no closures, safe to call inline per section per render.
+ * O(tasks.length); trivially cheap even on the largest plans.
+ */
+function summarizeSection(
+  section: UnifiedPlanView['sections'][UnifiedSectionKey] | null | undefined,
+): string | null {
+  if (!section) return null;
+  const goals = section.goals ?? [];
+  const tasks = section.tasks ?? [];
+  const g = goals.length;
+  const t = tasks.length;
+  if (g === 0 && t === 0) return 'No plan yet';
+  const goalLabel = g === 0 ? null : `${g} goal${g === 1 ? '' : 's'}`;
+  if (t === 0) return goalLabel;
+  const completed = tasks.reduce(
+    (n, task) => (task.status === 'completed' ? n + 1 : n),
+    0,
+  );
+  const hasMissingStatus = tasks.some((task) => task.status == null);
+  let taskLabel: string;
+  if (completed === 0 && hasMissingStatus) {
+    // Enum-drift fallback — never show a misleading "0 done" when the BE
+    // stopped shipping the status field.
+    taskLabel = `${t} task${t === 1 ? '' : 's'}`;
+  } else {
+    const done = Math.min(completed, t);
+    taskLabel = `${done} of ${t} task${t === 1 ? '' : 's'} done`;
+  }
+  return goalLabel ? `${goalLabel} · ${taskLabel}` : taskLabel;
+}
 
 export interface BpsAccordionProps {
   /** Live plan payload from useUnifiedPlan. Optional so the shell still
@@ -133,6 +182,8 @@ export function BpsAccordion({
         const meta = UNIFIED_SECTION_META[key];
         const isOpen = openMap[key] === true;
         const bullets = view?.sections?.[key]?.planBullets ?? [];
+        // Chunk 20: pure per-render summary for the collapsed header.
+        const summary = summarizeSection(view?.sections?.[key]);
         return (
           <View
             key={key}
@@ -149,7 +200,7 @@ export function BpsAccordion({
               onPress={() => onToggle(key)}
               accessibilityRole="button"
               accessibilityState={{ expanded: isOpen }}
-              accessibilityLabel={`${meta.title} section, ${isOpen ? 'expanded' : 'collapsed'}`}
+              accessibilityLabel={`${meta.title} section, ${isOpen ? 'expanded' : 'collapsed'}${summary ? ', ' + summary : ''}`}
               style={({ pressed }) => [
                 styles.headerRow,
                 { opacity: pressed ? 0.8 : 1 },
@@ -162,16 +213,31 @@ export function BpsAccordion({
                   color={meta.color}
                 />
               </View>
-              <Text
-                style={{
-                  flex: 1,
-                  color: colors.text,
-                  fontSize: getScaledFontSize(16),
-                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
-                }}
-              >
-                {meta.title}
-              </Text>
+              {/* Chunk 20: title + collapsed subtitle stack; wrapper owns
+                  the flex:1 so the chevron stays right-aligned and
+                  vertically centered when the stack grows to two lines. */}
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(16),
+                    fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                  }}
+                >
+                  {meta.title}
+                </Text>
+                {!isOpen && summary != null ? (
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.headerSubtitle,
+                      { color: colors.subtext, fontSize: getScaledFontSize(12) },
+                    ]}
+                  >
+                    {summary}
+                  </Text>
+                ) : null}
+              </View>
               <MaterialIcons
                 name={isOpen ? 'expand-less' : 'expand-more'}
                 size={getScaledFontSize(22)}
@@ -345,6 +411,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Chunk 20: collapsed-section summary line. fontSize is applied
+  // inline via getScaledFontSize(12) at the call site so dynamic type
+  // stays honored (StyleSheet.create is module-scope, no hooks).
+  headerSubtitle: {
+    marginTop: 2,
+    fontWeight: '400',
   },
   expandedBlock: {
     paddingHorizontal: 14,
