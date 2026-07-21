@@ -24,6 +24,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -319,6 +320,36 @@ export function BpsAccordion({
         : { biological: true, psychological: true, socialSpiritual: true },
     );
   }, [allOpen]);
+
+  // Chunk 28 (2026-07-21): stable per-section navigation handlers to the
+  // wellbeing-map with a domain preselect (?section=<UnifiedSectionKey>).
+  // Memoized as a Record so the "View in wellbeing map" Pressable inside
+  // each expandedBlock gets a stable onPress across renders — mirrors
+  // chunk-24's per-goal onToggle memoization pattern. Hook placed BEFORE
+  // the render return (chunk-22 Rules-of-Hooks discipline). The
+  // socialSpiritual→'social' rename hop is centralized in
+  // section-labels.ts (unifiedSectionToWellbeingMapDomain); this file
+  // does NOT duplicate it.
+  const openInWellbeingMap = React.useMemo<Record<UnifiedSectionKey, () => void>>(
+    () => ({
+      biological: () =>
+        router.push({
+          pathname: '/Home/wellbeing-map',
+          params: { section: 'biological' },
+        } as never),
+      psychological: () =>
+        router.push({
+          pathname: '/Home/wellbeing-map',
+          params: { section: 'psychological' },
+        } as never),
+      socialSpiritual: () =>
+        router.push({
+          pathname: '/Home/wellbeing-map',
+          params: { section: 'socialSpiritual' },
+        } as never),
+    }),
+    [],
+  );
 
   return (
     <View style={styles.container}>
@@ -728,6 +759,40 @@ export function BpsAccordion({
                     </>
                   );
                 })()}
+
+                {/* Chunk 28 (2026-07-21): right-aligned "View in wellbeing
+                    map" footer link. Preselects this BPS section on the
+                    wellbeing-map route via ?section=<UnifiedSectionKey>.
+                    Pressable is a plain child of expandedBlock (not
+                    nested in tasks/goals) so its hit-target never
+                    competes with a SwipeableTaskRow. Stable onPress via
+                    memoized openInWellbeingMap record — mirrors chunk
+                    24's per-goal handler stability. */}
+                <Pressable
+                  onPress={openInWellbeingMap[key]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View ${meta.title} in wellbeing map`}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={({ pressed }) => [
+                    styles.viewOnMapRow,
+                    { opacity: pressed ? 0.7 : 1 },
+                  ]}
+                >
+                  <MaterialIcons name="hub" size={14} color={meta.color} />
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(12),
+                    }}
+                  >
+                    View in wellbeing map
+                  </Text>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={14}
+                    color={colors.subtext}
+                  />
+                </Pressable>
               </View>
             ) : null}
           </View>
@@ -887,5 +952,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 13,
+  },
+  // Chunk 28: "View in wellbeing map" footer link. Right-aligned so it
+  // reads as an ambient "learn more" affordance, not a primary action.
+  // gap:6 spaces the icon/label/chevron; marginTop:12 separates the
+  // link from the tasks list above; paddingVertical:6 gives finger
+  // room without competing with the built-in hitSlop.
+  viewOnMapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 6,
   },
 });

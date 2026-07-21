@@ -21,6 +21,11 @@
 
 import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
+// Re-export so callers (BpsAccordion, wellbeing-map, PlanScreenV2, etc.)
+// have a single import path for the BPS section-key type + the helpers +
+// the order constant. Chunk 28.
+export type { UnifiedSectionKey };
+
 export interface UnifiedSectionMeta {
   /** MaterialIcons glyph name — string keeps this file RN-agnostic. */
   icon: string;
@@ -59,3 +64,32 @@ export const UNIFIED_SECTION_ORDER: readonly UnifiedSectionKey[] = [
   'psychological',
   'socialSpiritual',
 ];
+
+/**
+ * Chunk 28 (2026-07-21): unified-plan `UnifiedSectionKey` → wellbeing-map
+ * `BpsDomain` translation. The wellbeing-map screen's internal
+ * `BpsDomain` uses the shorter key `'social'` (not `'socialSpiritual'`),
+ * and this file is the SINGLE source of truth for that rename hop —
+ * do NOT inline the mapping in BpsAccordion, PlanScreenV2, or the
+ * wellbeing-map route. Any future `UnifiedSectionKey` addition will
+ * fail to compile here via the `satisfies never` exhaustive branch,
+ * so the drift shows up at build time instead of as a silent no-op.
+ */
+export function unifiedSectionToWellbeingMapDomain(
+  section: UnifiedSectionKey,
+): 'biological' | 'psychological' | 'social' {
+  switch (section) {
+    case 'biological':
+      return 'biological';
+    case 'psychological':
+      return 'psychological';
+    case 'socialSpiritual':
+      return 'social';
+    default: {
+      // Exhaustiveness check — a future UnifiedSectionKey addition
+      // makes this line a compile error.
+      const _exhaustive: never = section;
+      return _exhaustive;
+    }
+  }
+}
