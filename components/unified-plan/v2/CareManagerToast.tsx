@@ -28,11 +28,20 @@ export interface CareManagerToastProps {
    *  can visually verify rendering without waiting for a real
    *  care-manager plan update. Remove in a follow-up chunk once verified. */
   debugTrigger?: number;
+  /** CHUNK 27 (2026-07-21): incrementing this re-shows the toast on
+   *  demand (persistent care-team update chip tap in PlanScreenV2).
+   *  First observed value seeds a sentinel without firing so an initial
+   *  mount / undefined→number transition is not a phantom re-open.
+   *  Reuses the existing showToast callback which internally clears the
+   *  in-flight hideTimerRef, so rapid double-taps cancel and re-schedule
+   *  cleanly without a second timer variable. */
+  reopenNonce?: number;
 }
 
 export function CareManagerToast({
   generatedAt,
   debugTrigger,
+  reopenNonce,
 }: CareManagerToastProps): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -79,6 +88,24 @@ export function CareManagerToast({
       debugSeenRef.current = debugTrigger;
     }
   }, [debugTrigger, showToast]);
+
+  // CHUNK 27 — external reopen trigger from the persistent care-team
+  // update chip. Byte-identical seed pattern to debugSeenRef above so
+  // the first observed value (including undefined) never fires. Only
+  // subsequent nonce changes call the existing showToast, which itself
+  // clears the in-flight hideTimerRef before scheduling a fresh 4s
+  // window — no second timer variable required.
+  const reopenSeenRef = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => {
+    if (reopenSeenRef.current === undefined) {
+      reopenSeenRef.current = reopenNonce;
+      return;
+    }
+    if (reopenNonce !== reopenSeenRef.current) {
+      showToast();
+      reopenSeenRef.current = reopenNonce;
+    }
+  }, [reopenNonce, showToast]);
 
   React.useEffect(
     () => () => {

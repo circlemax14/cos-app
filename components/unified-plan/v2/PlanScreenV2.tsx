@@ -26,6 +26,7 @@
 import React from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -148,6 +149,39 @@ export default function PlanScreenV2(): React.JSX.Element {
     [data?.meta?.generatedAt],
   );
 
+  // CHUNK 27 (2026-07-21) — persistent care-team update chip. When
+  // `data.meta.generatedAt` advances between polls the CareManagerToast
+  // auto-hides after 4s and Ken loses the affordance to review the
+  // update. We independently observe the same field with our own
+  // sentinel (byte-identical to CareManagerToast's previousRef pattern
+  // at lines 40, 50-67 so cold-boot never registers a phantom update)
+  // and remember the timestamp session-scoped. The chip renders below
+  // the freshness pill and taps bump `reopenNonce` which CareManagerToast
+  // consumes via its optional prop to re-show its toast.
+  const [lastCareUpdateAt, setLastCareUpdateAt] = React.useState<string | null>(null);
+  const [reopenNonce, setReopenNonce] = React.useState<number>(0);
+  const careUpdateSeenRef = React.useRef<string | null | undefined>(undefined);
+
+  React.useEffect(() => {
+    const generatedAt = data?.meta?.generatedAt ?? null;
+    if (careUpdateSeenRef.current === undefined) {
+      careUpdateSeenRef.current = generatedAt;
+      return;
+    }
+    if (
+      generatedAt &&
+      careUpdateSeenRef.current &&
+      careUpdateSeenRef.current !== generatedAt
+    ) {
+      setLastCareUpdateAt(generatedAt);
+    }
+    careUpdateSeenRef.current = generatedAt;
+  }, [data?.meta?.generatedAt]);
+
+  const handleChipPress = React.useCallback(() => {
+    setReopenNonce((n) => n + 1);
+  }, []);
+
   // COS-475b CHUNK 18 — stale-plan color escalation. Memo dep is the same
   // `generatedAt` string reference used by `freshness` above, so the two
   // memos flip in lockstep. NO setInterval / AppState here by design (iOS
@@ -163,7 +197,7 @@ export default function PlanScreenV2(): React.JSX.Element {
 
   return (
     <AppWrapper>
-      <CareManagerToast generatedAt={data?.meta?.generatedAt} />
+      <CareManagerToast generatedAt={data?.meta?.generatedAt} reopenNonce={reopenNonce} />
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -226,6 +260,37 @@ export default function PlanScreenV2(): React.JSX.Element {
                 : `Updated ${freshness}${staleness === 'stale' ? ' · Stale' : ''}`}
             </Text>
           </View>
+        ) : null}
+
+        {/*
+          CHUNK 27 — persistent care-team update chip. Renders BELOW the
+          freshness pill (not next to it) so wrapping is clean at large
+          dynamic-type on iPhone14,3. Gated mutually exclusive with the
+          skeleton/error branches (chunk 17) — never flashes into empty
+          space during loading/first-error. Visually weaker than the
+          freshness pill (subtext color, 12/400, no fill) so the pill
+          stays the primary trust signal.
+        */}
+        {lastCareUpdateAt && data && !isLoading && !isFetching && !isError ? (
+          <Pressable
+            onPress={handleChipPress}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={`Care team updated ${formatRelative(lastCareUpdateAt)}. Tap to review.`}
+            accessibilityHint="Reopens the care team update notice"
+            style={({ pressed }) => [styles.careChip, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <MaterialIcons name="history" size={14} color={colors.subtext} />
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                fontWeight: '400',
+              }}
+            >
+              {`Care team update · ${formatRelative(lastCareUpdateAt)}`}
+            </Text>
+          </Pressable>
         ) : null}
 
         {/*
@@ -305,6 +370,13 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
+  },
+  careChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
   },
   card: {
     marginTop: 20,
