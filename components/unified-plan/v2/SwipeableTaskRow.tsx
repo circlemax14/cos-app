@@ -330,19 +330,45 @@ export function SwipeableTaskRow({
             </View>
           ) : null}
         </View>
-        <Pressable
-          onPress={onKebabTap}
-          accessibilityRole="button"
-          accessibilityLabel={`Actions for ${task.title}`}
-          hitSlop={12}
-          style={({ pressed }) => [styles.kebab, { opacity: pressed ? 0.6 : 1 }]}
-        >
-          <MaterialIcons
-            name={expanded ? 'expand-less' : 'more-horiz'}
-            size={getScaledFontSize(22)}
-            color={colors.subtext}
-          />
-        </Pressable>
+        {/* CHUNK 25 — Labeled "More" affordance pill replacing naked ⋮ kebab.
+            Hide gate is intentionally narrow: only `locallySkipped && !skipPending`
+            (i.e. after the 4s undo window has expired and the row is already in
+            the return-null path via line 212). BE-side completed / skipped rows
+            keep the pill so reschedule-on-completed stays reachable — this is the
+            conservative variant per plan Step 2 (unknown BE contract). Enum-drift
+            discipline: no `task.status !== 'pending'` shortcut — unknown status
+            degrades to *showing* the pill. */}
+        {locallySkipped && !skipPending ? null : (
+          <Pressable
+            onPress={onKebabTap}
+            accessibilityRole="button"
+            accessibilityLabel={
+              skipPending
+                ? `Skipping ${task.title}`
+                : expanded
+                ? `Hide actions for ${task.title}`
+                : `More actions for ${task.title}`
+            }
+            accessibilityHint={skipPending ? undefined : 'Skip, snooze, or reschedule'}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.kebab,
+              {
+                borderColor: colors.border,
+                opacity: skipPending ? 0.5 : pressed ? 0.6 : 1,
+              },
+            ]}
+          >
+            <MaterialIcons
+              name={expanded ? 'expand-less' : 'more-horiz'}
+              size={getScaledFontSize(18)}
+              color={colors.subtext}
+            />
+            <Text style={[styles.kebabLabel, { color: colors.subtext, fontSize: getScaledFontSize(11) }]}>
+              {skipPending ? 'Skipping…' : expanded ? 'Close' : 'More'}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {expanded ? (
@@ -466,8 +492,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   kebab: {
-    padding: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: 'transparent',
     marginTop: -2,
+  },
+  kebabLabel: {
+    fontWeight: '500',
   },
   actionsRow: {
     flexDirection: 'row',
