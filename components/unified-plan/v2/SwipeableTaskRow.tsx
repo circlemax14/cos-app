@@ -19,7 +19,6 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  InteractionManager,
   Pressable,
   StyleSheet,
   Text,
@@ -96,7 +95,12 @@ export function SwipeableTaskRow({
     if (!pendingSkip) return;
     let cancelled = false;
     setActing(true);
-    const handle = InteractionManager.runAfterInteractions(async () => {
+    // CHUNK 9.3 — InteractionManager.runAfterInteractions froze on iOS
+    // 26.5 (gesture-handler apparently doesn't release its interaction
+    // handle after Swipeable closes on this build). Plain setTimeout
+    // with a 50ms delay lets the gesture stack fully unwind without
+    // depending on the handle-release mechanism.
+    const timeoutId = setTimeout(async () => {
       try {
         const res = await skipTask(task.id, todayYYYYMMDD());
         if (cancelled) return;
@@ -110,10 +114,10 @@ export function SwipeableTaskRow({
           setPendingSkip(false);
         }
       }
-    });
+    }, 50);
     return () => {
       cancelled = true;
-      handle.cancel?.();
+      clearTimeout(timeoutId);
     };
   }, [pendingSkip, task.id, onRefetch]);
 
