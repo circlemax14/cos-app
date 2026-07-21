@@ -83,9 +83,11 @@ export function SwipeableTaskRow({
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const [expanded, setExpanded] = React.useState(false);
+  const [showReschedulePicker, setShowReschedulePicker] = React.useState(false);
   const [acting, setActing] = React.useState(false);
   const [locallySkipped, setLocallySkipped] = React.useState(false);
   const [locallySnoozed, setLocallySnoozed] = React.useState(false);
+  const [locallyRescheduledTo, setLocallyRescheduledTo] = React.useState<string | null>(null);
 
   const isDone = task.status === 'completed';
   const isSkipped = task.status === 'skipped' || locallySkipped;
@@ -123,6 +125,38 @@ export function SwipeableTaskRow({
       setActing(false);
     }, 1500);
   }, [acting, task.id, onRefetch]);
+
+  const onRescheduleTap = React.useCallback(() => {
+    setShowReschedulePicker((prev) => !prev);
+  }, []);
+
+  const doReschedule = React.useCallback(
+    (deltaHours: number, tomorrow = false) => {
+      if (acting) return;
+      const now = new Date();
+      const target = new Date(now.getTime() + deltaHours * 3600_000);
+      if (tomorrow) {
+        target.setDate(target.getDate() + 1);
+        target.setHours(9, 0, 0, 0);
+      }
+      const hh = String(target.getHours()).padStart(2, '0');
+      const mm = String(target.getMinutes()).padStart(2, '0');
+      const newTime = `${hh}:${mm}`;
+      setLocallyRescheduledTo(newTime);
+      setShowReschedulePicker(false);
+      setExpanded(false);
+      setActing(true);
+      fireAndForgetPost(
+        `/v1/patients/me/tasks/${encodeURIComponent(task.id)}/reschedule-occurrence`,
+        { scheduledFor: todayYYYYMMDD(), newTime },
+      );
+      setTimeout(() => {
+        onRefetch?.();
+        setActing(false);
+      }, 1500);
+    },
+    [acting, task.id, onRefetch],
+  );
 
   return (
     <View
@@ -197,6 +231,18 @@ export function SwipeableTaskRow({
               Snoozed 1 hour
             </Text>
           ) : null}
+          {locallyRescheduledTo ? (
+            <Text
+              style={{
+                color: '#3B82F6',
+                fontSize: getScaledFontSize(11),
+                marginTop: 4,
+                fontWeight: '600',
+              }}
+            >
+              Rescheduled to {locallyRescheduledTo}
+            </Text>
+          ) : null}
         </View>
         <Pressable
           onPress={onKebabTap}
@@ -249,9 +295,62 @@ export function SwipeableTaskRow({
           >
             <Text style={styles.actionBtnText}>Snooze 1h</Text>
           </Pressable>
-          <View style={[styles.actionBtn, { backgroundColor: '#3B82F6', opacity: 0.5 }]}>
+          <Pressable
+            onPress={onRescheduleTap}
+            accessibilityRole="button"
+            accessibilityLabel={`Reschedule ${task.title}`}
+            disabled={acting}
+            style={({ pressed }) => [
+              styles.actionBtn,
+              {
+                backgroundColor: '#3B82F6',
+                opacity: pressed || acting ? 0.75 : 1,
+              },
+            ]}
+          >
             <Text style={styles.actionBtnText}>Reschedule</Text>
-          </View>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {expanded && showReschedulePicker ? (
+        <View style={[styles.pickerRow, { borderTopColor: colors.border }]}>
+          <Pressable
+            onPress={() => doReschedule(1)}
+            style={({ pressed }) => [
+              styles.pickerBtn,
+              { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[styles.pickerBtnText, { color: colors.text }]}>+1 h</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => doReschedule(2)}
+            style={({ pressed }) => [
+              styles.pickerBtn,
+              { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[styles.pickerBtnText, { color: colors.text }]}>+2 h</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => doReschedule(4)}
+            style={({ pressed }) => [
+              styles.pickerBtn,
+              { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[styles.pickerBtnText, { color: colors.text }]}>+4 h</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => doReschedule(0, true)}
+            style={({ pressed }) => [
+              styles.pickerBtn,
+              { borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[styles.pickerBtnText, { color: colors.text }]}>Tomorrow</Text>
+          </Pressable>
         </View>
       ) : null}
     </View>
@@ -303,5 +402,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 13,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 6,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pickerBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+  },
+  pickerBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
