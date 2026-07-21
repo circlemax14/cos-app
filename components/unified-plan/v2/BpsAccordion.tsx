@@ -17,6 +17,7 @@
  * Chunk 15 (2026-07-20): first section (Biological) auto-opens on mount so plan content is visible on first paint. Tap-to-toggle and single-open semantics unchanged.
  * Chunk 20 (2026-07-21): collapsed-section count+progress subtitle. Pure render-only addition — a module-scope summarizeSection helper feeds a one-line "N goals · X of Y tasks done" (or "No plan yet") secondary Text under each collapsed section header. Widens the header Pressable a11y label to speak the summary in one VoiceOver utterance. Bio auto-open (chunk 15/15.1) means Bio never shows the subtitle on first paint — intentional. No new hooks/effects/state/timers/imports; iOS 26.5 hard constraints preserved by construction.
  * Chunk 21 (2026-07-21): inline section-task progress rail — a 3px section-tinted bar rendered as a sibling immediately after each header Pressable (visible in BOTH collapsed AND expanded states, so Bio auto-open gets an ambient adherence signal on first paint that chunk 20's suppressed subtitle doesn't cover). Sourced from a new module-scope sectionTaskProgress helper that summarizeSection now also consumes — bar and subtitle share one source of truth and cannot visually disagree. pointerEvents='none' + both a11y hide props on the outer track so it never intercepts header taps and never double-utters over chunk 20's already-widened label. marginBottom:-1 visually merges the rail with expandedBlock's borderTopWidth:1 so an expanded section never reads as a doubled border. Fill child always mounted (width:'0%' when 0) to avoid a null-vs-View reconciliation flash. No new hooks/effects/state/timers/imports; still all-View/Text/StyleSheet — iOS 26.5 hard constraints preserved by construction.
+ * Chunk 23 (2026-07-21): completed/skipped tasks sink to the bottom of each BPS section. Module-scope pure orderTasksForDisplay helper does a two-pass filter+concat partition (stable by construction; not sort-engine dependent). Enum-drift default treats null/undefined/unknown status as pending (top) — mirrors chunks 20/21 degrade philosophy so unknown statuses stay actionable, not visually retired. Header count reads from rawTasks.length (unchanged), map iterates displayTasks — a partition bug is visually detectable as a count-mismatch. SwipeableTaskRow key stays `${key}-t-${t.id}` (id-only) so React reconciles by id and each row instance survives the reorder — preserves chunk-22's pendingSkip / skipTimerRef / refetchTimerRef through a status flip and avoids double-firing the fire-and-forget Skip POST. Instantaneous jump with no animation (LayoutAnimation is on the iOS 26.5 forbidden list); chunk 22's 4s undo + t+5.5s refetch cadence already softens the transition and the state change is user-initiated (expected). No new hooks/effects/state/timers/imports.
  */
 
 import React from 'react';
@@ -68,6 +69,41 @@ function sectionTaskProgress(
   const hasMissingStatus = tasks.some((task) => task.status == null);
   if (completed === 0 && hasMissingStatus) return null;
   return { completed, total };
+}
+
+/**
+ * Chunk 23 — module-scope pure helper. Reorders a section's tasks so
+ * pending rows render first and non-pending (completed/skipped) rows
+ * sink to the bottom, preserving BE-supplied ordering within each
+ * partition. Two-pass filter+concat is stable by construction (does
+ * NOT rely on Array.prototype.sort engine stability).
+ *
+ * Enum-drift default: null / undefined / unknown status → treated
+ * as pending (top). Rationale — BE has shipped new task statuses
+ * ahead of the app before; unknown should stay actionable, not be
+ * visually retired. Mirrors chunks 20/21 degrade philosophy.
+ *
+ * Chunk 22 interaction: locallySkipped lives inside SwipeableTaskRow;
+ * task.status only flips to 'skipped' after the 4s undo window commits
+ * and a refetch lands. During the undo countdown the row still reads
+ * as 'pending' from the server payload, so it stays in the top bucket.
+ * After commit + refetch it sinks — matches the user's mental model.
+ *
+ * Pure — O(n), safe to call inline per render (do NOT wrap in useMemo:
+ * n ≤ ~30 realistically; a useMemo dep-array on the react-query-
+ * returned tasks reference would silently thrash).
+ */
+function orderTasksForDisplay<T extends { status?: string | null }>(
+  tasks: readonly T[] | null | undefined,
+): T[] {
+  if (!tasks || tasks.length === 0) return [];
+  const top: T[] = [];
+  const bottom: T[] = [];
+  for (const t of tasks) {
+    if (t.status == null || t.status === 'pending') top.push(t);
+    else bottom.push(t);
+  }
+  return top.concat(bottom);
 }
 
 /**
@@ -421,30 +457,47 @@ export function BpsAccordion({
                   ))
                 )}
 
-                {/* Tasks (chunk 5, read-only, no swipe) */}
-                <Text style={[styles.blockTitle, { color: colors.subtext, marginTop: 16 }]}>
-                  Tasks · {view?.sections?.[key]?.tasks?.length ?? 0}
-                </Text>
-                {(view?.sections?.[key]?.tasks ?? []).length === 0 ? (
-                  <Text
-                    style={{
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(13),
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    No tasks in this domain.
-                  </Text>
-                ) : (
-                  (view?.sections?.[key]?.tasks ?? []).map((t) => (
-                    <SwipeableTaskRow
-                      key={`${key}-t-${t.id}`}
-                      task={t}
-                      accentColor={meta.color}
-                      onRefetch={onRefetch}
-                    />
-                  ))
-                )}
+                {/* Tasks (chunk 5, read-only, no swipe).
+                    Chunk 23: compute rawTasks (source of truth for the
+                    header count — a partition bug becomes visually
+                    detectable as a count-mismatch) and displayTasks
+                    (visual-only reorder: completed/skipped sink under
+                    pending). Keys stay id-only so react preserves each
+                    SwipeableTaskRow instance across a status-driven
+                    reorder — preserves chunk-22's pendingSkip / timer
+                    refs and avoids a double-fire of the fire-and-forget
+                    Skip POST. */}
+                {(() => {
+                  const rawTasks = view?.sections?.[key]?.tasks ?? [];
+                  const displayTasks = orderTasksForDisplay(rawTasks);
+                  return (
+                    <>
+                      <Text style={[styles.blockTitle, { color: colors.subtext, marginTop: 16 }]}>
+                        Tasks · {rawTasks.length}
+                      </Text>
+                      {displayTasks.length === 0 ? (
+                        <Text
+                          style={{
+                            color: colors.subtext,
+                            fontSize: getScaledFontSize(13),
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          No tasks in this domain.
+                        </Text>
+                      ) : (
+                        displayTasks.map((t) => (
+                          <SwipeableTaskRow
+                            key={`${key}-t-${t.id}`}
+                            task={t}
+                            accentColor={meta.color}
+                            onRefetch={onRefetch}
+                          />
+                        ))
+                      )}
+                    </>
+                  );
+                })()}
               </View>
             ) : null}
           </View>
