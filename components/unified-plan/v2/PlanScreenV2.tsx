@@ -27,6 +27,7 @@ import React from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -50,6 +51,9 @@ import { PlanTierPill } from '@/components/unified-plan/v2/PlanTierPill';
 import { RegenerateButton } from '@/components/unified-plan/v2/RegenerateButton';
 import { GeneratingBanner } from '@/components/unified-plan/v2/GeneratingBanner';
 import { PersonalizePlanBanner } from '@/components/unified-plan/v2/PersonalizePlanBanner';
+import { AssessmentDueBanner } from '@/components/unified-plan/v2/AssessmentDueBanner';
+import { InlineAssessmentCatalog } from '@/components/unified-plan/v2/InlineAssessmentCatalog';
+import { useIsAssessmentDueVisible } from '@/components/unified-plan/v2/useIsAssessmentDueVisible';
 import { fireAndForgetPost } from '@/components/unified-plan/v2/net';
 import { usePlanType } from '@/hooks/use-plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
@@ -120,6 +124,13 @@ export default function PlanScreenV2(): React.JSX.Element {
     planTypeQ.planType === 'agency-managed';
   const canGeneratePlan = assignments?.canGenerate ?? (planTypeQ.planType === 'basic');
 
+  // CHUNK 36 fix (adversarial-verify blocker): shared signal for whether
+  // v2's AssessmentDueBanner would render. Used below to suppress
+  // CachedPlanBanner when they'd otherwise stack. Returns false always
+  // when ASSESSMENT_DUE_BANNER_ENABLED is off (day 1), so today this
+  // adds zero behavior change; it's the guard for the flag-on future.
+  const isAssessmentDueVisible = useIsAssessmentDueVisible();
+
   // SCRUM-535 focus-refetch: when the user completes a check-in on the
   // assessments-catalog screen the query is invalidated, but invalidation
   // only refetches an *active* observer. PlanScreenV2 is backgrounded
@@ -137,10 +148,21 @@ export default function PlanScreenV2(): React.JSX.Element {
   // are non-compounding but any v2-side check-in flow that invalidates
   // the key will multiply refetches across surfaces.
   const refetchAssignments = assignmentsQuery.refetch;
+  const queryClient = useQueryClient();
   useFocusEffect(
     React.useCallback(() => {
       void refetchAssignments();
-    }, [refetchAssignments]),
+      // CHUNK 36 (2026-07-21) — extend chunk 35's focus effect to also
+      // invalidate the two query keys InlineAssessmentCatalog and
+      // AssessmentDueBanner read from. Without this the completed-count
+      // subhead ("N of M completed") and the due-nudge list stay stale
+      // until manual pull-to-refresh after a user returns from completing
+      // a check-in on the assessments-catalog stepper. Invalidate (not
+      // refetch) so the queries only re-fire if InlineAssessmentCatalog
+      // is actually mounted this render — the non-basic-no-plan branch.
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      queryClient.invalidateQueries({ queryKey: ['instruments-recommended'] });
+    }, [refetchAssignments, queryClient]),
   );
 
   // CHUNK 35 EXPLICIT NON-GOAL — AI_AWAITING_ASSESSMENTS re-route.
@@ -561,6 +583,37 @@ export default function PlanScreenV2(): React.JSX.Element {
         ) : null}
 
         {/*
+          CHUNK 36 (2026-07-21) — AssessmentDueBanner (monthly retake nudge).
+          Renders BELOW the PlanTierPill block and ABOVE the PersonalizePlanBanner
+          / GeneratingBanner / CachedPlanBanner. Internally returns null when
+          `ASSESSMENT_DUE_BANNER_ENABLED` is off (day 1) or nothing is due, so
+          the day-1 render is a no-op regardless of the outer gate below.
+          Mutual-exclusion truth table (documented in the PR body):
+            - hasPlanContent required — the empty-state branches (Basic/Preparing/
+              InlineCatalog/NoTier) own their own guidance; a due-retake nudge on
+              top of an empty state would be noise.
+            - !refreshInFlight, !generating — during regeneration we already show
+              GeneratingBanner (amber); stacking two amber banners at the top
+              was the visual regression that killed chunks 26/34/35's precedence
+              work if we didn't hold this invariant.
+            - !isNonBasicPlan || canGeneratePlan — PersonalizePlanBanner takes
+              precedence when both would fire (rare, but a non-Basic user with
+              incomplete initial check-ins + a stale monthly retake will hit
+              both). Personalize routes to check-ins, DueBanner also routes to
+              check-ins — the same destination, so priority goes to Personalize
+              because its ONE-of-Y semantics are stronger than "and one of your
+              monthlies is due" when the initial set isn't done.
+        */}
+        {data &&
+        'sections' in data &&
+        hasPlanContent(data) &&
+        !refreshInFlight &&
+        !generating &&
+        (!isNonBasicPlan || canGeneratePlan) ? (
+          <AssessmentDueBanner />
+        ) : null}
+
+        {/*
           CHUNK 35 (2026-07-21) — PersonalizePlanBanner.
           Renders BELOW the PlanTierPill block (tier identity leads) and
           ABOVE both GeneratingBanner and CachedPlanBanner.
@@ -654,6 +707,11 @@ export default function PlanScreenV2(): React.JSX.Element {
         !isFetching &&
         failureCount > 0 &&
         !refreshInFlight &&
+        // CHUNK 36 fix (adversarial-verify blocker): also suppress when
+        // AssessmentDueBanner would render. Both are amber and would
+        // stack otherwise. Precedence: actionable retake > informational
+        // cached-error (retry is still one pull-to-refresh away).
+        !isAssessmentDueVisible &&
         !(
           isNonBasicPlan &&
           !canGeneratePlan &&
@@ -729,7 +787,36 @@ export default function PlanScreenV2(): React.JSX.Element {
         ) : data &&
           'sections' in data &&
           !hasPlanContent(data) &&
+          isNonBasicPlan ? (
+          /*
+            CHUNK 36 (2026-07-21) — Non-basic (advanced/agency) users with
+            a tier chosen but no plan yet get the inline assessment catalog
+            so they can start check-ins directly on the plan tab. Legacy
+            renders this at app/Home/health-plan.tsx line 724; v2 chunk 32
+            previously showed HasTierNoPlanEmptyState ("Your care plan is
+            being prepared") here, which was a parity gap — non-basic users
+            couldn't start check-ins without navigating.
+
+            `handleGenerate` (parent-owned fire-and-forget POST + staged
+            refetch) is passed as `onBuildPlan`; `generating` unions the
+            local tap flag with the server refreshInFlight signal, matching
+            the RegenerateButton disable predicate for consistency.
+          */
+          <InlineAssessmentCatalog
+            onBuildPlan={handleGenerate}
+            generating={isGeneratingFromAnySource}
+          />
+        ) : data &&
+          'sections' in data &&
+          !hasPlanContent(data) &&
           planTypeQ.planType !== undefined ? (
+          /*
+            CHUNK 36 defensive fallback: any tier we didn't recognize as
+            basic OR non-basic (future tier introductions we haven't
+            special-cased yet) still gets a graceful empty state instead
+            of the accordion mounting against no content. HasTierNoPlanEmptyState
+            is kept imported for exactly this branch.
+          */
           <HasTierNoPlanEmptyState
             planTypeDisplayName={planTypeDisplayNameFn(planTypeQ.planType as PlanType)}
             onChangePlan={onChoosePlan}
