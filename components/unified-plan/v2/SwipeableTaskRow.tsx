@@ -75,7 +75,11 @@ export function SwipeableTaskRow({
     }
   }, [acting, task.id, onRefetch]);
 
-  const renderLeftActions = () => (
+  // gesture-handler naming: renderRightActions = actions live on the
+  // RIGHT edge of the row = user drags finger LEFT to reveal them.
+  // We want "Skip today" on left-swipe (standard iOS Mail pattern) so
+  // it goes here.
+  const renderRightActions = () => (
     <Pressable
       onPress={doSkip}
       accessibilityRole="button"
@@ -90,7 +94,9 @@ export function SwipeableTaskRow({
     </Pressable>
   );
 
-  const renderRightActions = () => (
+  // renderLeftActions = actions on the LEFT edge = user drags finger
+  // RIGHT to reveal. Snooze + Reschedule (visual-only for now) go here.
+  const renderLeftActions = () => (
     <View style={styles.swipeActionsRight}>
       <View style={[styles.swipeAction, { backgroundColor: '#F59E0B' }]}>
         <Text style={styles.swipeActionText}>Snooze 1h</Text>
