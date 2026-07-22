@@ -109,6 +109,33 @@ export function MedicationsSection({
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
 
+  // CHUNK 52.2 — session-local "recently hidden" restore banner.
+  //
+  // Background: the Medication type has no `removed` field, and the server
+  // drops hidden meds from the response entirely on refetch. So a hidden med
+  // never re-mounts as a MedicationCard — the per-card Restore Pressable that
+  // used to live inside MedicationCard was unreachable in the typical flow.
+  // Chunk 52.1's "removed the source==='ehr' gate" was a no-op for this
+  // reason; Ken flagged that the restore path was un-findable during
+  // dogfood. Chunk 52.2 deleted that unreachable Pressable entirely (see
+  // the comment inside MedicationCard where it used to live) and replaced
+  // the whole affordance with this session-local banner.
+  //
+  // Fix without a backend change: keep a session-local list of what the user
+  // hid in this session and render a banner at the top of the section with a
+  // Restore link. On tap, fire unremove + drop from the local list. Server
+  // accepts the id regardless of source. If the mutation errors, keep the
+  // entry so the user can retry.
+  //
+  // Persistence: session-only — clears on cold app relaunch. That's
+  // acceptable given the alternative is nothing. A real backend `removed`
+  // flag + a per-user "hidden meds" section is the durable fix (queued as
+  // BE follow-up; do NOT ship pre-BE OTA to legacy without this banner or
+  // patient-reported meds lose their only restore path).
+  const [recentlyHidden, setRecentlyHidden] = React.useState<
+    Array<{ id: string; name: string }>
+  >([]);
+
   // CHUNK 52.1 (Concern 5): announce save failures to VoiceOver / TalkBack so
   // users of assistive tech notice the inline error View. Uses a rising-edge
   // detector on `updateMutation.isError` (false → true transition) — announces
@@ -177,10 +204,43 @@ export function MedicationsSection({
   const medications = query.data.medications;
 
   const onRemove = (med: Medication) => {
-    updateMutation.mutate({ remove: [med.id] });
+    // CHUNK 52.2 fix (adversarial verify major #2): only push to
+    // recentlyHidden AFTER the remove mutation succeeds. If we push
+    // synchronously and the mutation errors, the banner asserts the med is
+    // hidden while its card is still in the list — user sees the same med
+    // as both a live card and a "recently hidden" entry, with no way to
+    // reconcile without unremove-ing something the server never removed.
+    // De-dupe on id so a same-med re-hide after a rollback doesn't push a
+    // second banner entry.
+    updateMutation.mutate(
+      { remove: [med.id] },
+      {
+        onSuccess: () => {
+          setRecentlyHidden((prev) =>
+            prev.some((e) => e.id === med.id)
+              ? prev
+              : [...prev, { id: med.id, name: med.name }],
+          );
+        },
+      },
+    );
   };
-  const onUnremove = (id: string) => {
-    updateMutation.mutate({ unremove: [id] });
+  // CHUNK 52.2 fix (adversarial verify major #1): drop the banner entry
+  // ONLY on unremove success. On error we keep the entry so the user can
+  // retry — otherwise a network blip during Restore leaves the med
+  // server-hidden with no in-UI recovery path (per-card Restore is
+  // unreachable since the server drops hidden meds from the response, see
+  // recentlyHidden useState comment). react-query v5 accepts per-invocation
+  // mutation options via the second arg to mutate().
+  const restoreFromBanner = (id: string) => {
+    updateMutation.mutate(
+      { unremove: [id] },
+      {
+        onSuccess: () => {
+          setRecentlyHidden((prev) => prev.filter((e) => e.id !== id));
+        },
+      },
+    );
   };
   const onToggleTracked = (med: Medication) => {
     updateMutation.mutate({ setTracked: [{ id: med.id, tracked: !med.tracked }] });
@@ -262,6 +322,61 @@ export function MedicationsSection({
         </View>
       ) : null}
 
+      {/* CHUNK 52.2: session-local recently-hidden banner. One row per med
+          the user hid in this session, with a prominent Restore link. See
+          the recentlyHidden useState comment for why this exists (the
+          server drops hidden meds so per-card Restore is unreachable). */}
+      {recentlyHidden.length > 0 ? (
+        <View
+          style={[
+            styles.recentlyHiddenCard,
+            { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' },
+          ]}
+        >
+          {recentlyHidden.map((entry) => (
+            <View key={entry.id} style={styles.recentlyHiddenRow}>
+              <MaterialIcons
+                name="visibility-off"
+                size={getScaledFontSize(16)}
+                color={colors.subtext}
+              />
+              <Text
+                style={{
+                  flex: 1,
+                  marginLeft: 8,
+                  color: colors.text,
+                  fontSize: getScaledFontSize(13),
+                }}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {entry.name} <Text style={{ color: colors.subtext }}>hidden</Text>
+              </Text>
+              <Pressable
+                onPress={() => restoreFromBanner(entry.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Restore ${entry.name}`}
+                accessibilityState={{ disabled: updateMutation.isPending }}
+                disabled={updateMutation.isPending}
+                hitSlop={8}
+                style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+              >
+                <Text
+                  style={{
+                    color: colors.tint as string,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    opacity: updateMutation.isPending ? 0.5 : 1,
+                  }}
+                >
+                  Restore
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {medications.length === 0 ? (
         <View style={[styles.emptyRow, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
@@ -279,7 +394,6 @@ export function MedicationsSection({
             busy={updateMutation.isPending}
             onEdit={() => setEditor({ kind: 'edit', med })}
             onRemove={() => onRemove(med)}
-            onUnremove={() => onUnremove(med.id)}
             onToggleTracked={() => onToggleTracked(med)}
             onUpdateSupply={() => setSupplyEditor({ med })}
             onSnooze={() => onSnooze(med)}
@@ -399,7 +513,6 @@ function MedicationCard({
   busy,
   onEdit,
   onRemove,
-  onUnremove,
   onToggleTracked,
   onUpdateSupply,
   onSnooze,
@@ -410,7 +523,6 @@ function MedicationCard({
   busy: boolean;
   onEdit: () => void;
   onRemove: () => void;
-  onUnremove: () => void;
   onToggleTracked: () => void;
   onUpdateSupply: () => void;
   onSnooze: () => void;
@@ -619,26 +731,13 @@ function MedicationCard({
         ) : null}
       </View>
 
-      {/* Un-hide affordance for any hidden med the server still returns.
-          CHUNK 52.1 (Concern 2): the source==='ehr' gate is removed —
-          patient-reported meds also need an in-UI restore path after Hide.
-          Server drops truly-removed rows on refetch, so this stays
-          lightweight regardless of source. Backend contract: the
-          `unremove` payload in useUpdatePlanMedications is a bare
-          string[] id list (services/api/plan-medications.ts), with no
-          source gate on the request shape. */}
-      <Pressable
-        onPress={onUnremove}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={`Restore ${med.name} if you hid it`}
-        style={{ marginTop: 6, alignSelf: 'flex-start' }}
-        hitSlop={6}
-      >
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textDecorationLine: 'underline' }}>
-          Hid this by mistake? Restore
-        </Text>
-      </Pressable>
+      {/* CHUNK 52.2: the per-card "Hid this by mistake? Restore" Pressable
+          was removed. It was unreachable — the server drops hidden meds
+          from the response, so no MedicationCard mounts for a hidden med
+          in the first place. Chunk 52.1 removed the source==='ehr' gate
+          in a well-meaning-but-no-op fix; this chunk replaces the whole
+          affordance with the session-local recently-hidden banner rendered
+          by MedicationsSection above the med list. */}
     </View>
   );
 }
@@ -1122,6 +1221,20 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 10,
     borderWidth: 1,
+  },
+  // CHUNK 52.2: recently-hidden banner styles. Match errorBox visual weight
+  // so the affordance reads as "sits above the list, one action".
+  recentlyHiddenCard: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  recentlyHiddenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
   },
   emptyRow: {
     marginHorizontal: 20,
