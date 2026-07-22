@@ -21,7 +21,6 @@
  * empty bio screen.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
@@ -100,7 +99,29 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
     );
   }, []);
 
-  const saveBioGoalEdit = useCallback(async () => {
+  /*
+   * CHUNK 41 (2026-07-21): fire-and-forget Save.
+   *
+   * Prior shape was `await mutateAsync(...)` then `closeBioGoalEditor()`
+   * in a try/catch with an Alert.alert on failure. Awaiting the axios
+   * response while the BioGoalEditorModal was STILL mounted was the exact
+   * chunk-9.5 SIGABRT shape on iOS 26.5 (turbomodule queue) — same class
+   * as the regen crash chunk 40 fixed.
+   *
+   * New shape: fire `.mutate` (no await, no return-value read), close the
+   * Modal on the very next line (same tick as the tap). Modal unmounts
+   * before any HTTP response could arrive. The `useUpdateBioGoal` hook's
+   * pending-window latch (8s) keeps `isPending` true so `onSuccess`
+   * invalidate fires AFTER the server has landed the write; on the bio
+   * route that pending flag is presentational dead code because the
+   * Modal is already gone.
+   *
+   * No Alert.alert on failure: server-side reconcile happens on next
+   * refetch (staleTime 5min or pull-to-refresh). The tradeoff is
+   * accepted — pull-to-refresh is the recovery path, same discipline as
+   * chunks 32 / 34 / 40.
+   */
+  const saveBioGoalEdit = useCallback(() => {
     if (!bioEditGoal) return;
     const patch: GoalPatch = {};
     if (bioEditTitle !== bioEditGoal.title) patch.title = bioEditTitle;
@@ -114,12 +135,8 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
     ) {
       patch.subdomains = bioEditSubdomains;
     }
-    try {
-      await updateBioGoalMutation.mutateAsync({ goalId: bioEditGoal.id, patch });
-      closeBioGoalEditor();
-    } catch {
-      Alert.alert('Error', 'Failed to save goal. Please try again.');
-    }
+    updateBioGoalMutation.mutate({ goalId: bioEditGoal.id, patch });
+    closeBioGoalEditor();
   }, [
     bioEditGoal,
     bioEditTitle,
@@ -163,6 +180,10 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
           <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
         }
       />
+      {/* CHUNK 41: `saving` prop is presentational dead code on this route —
+          saveBioGoalEdit closes the Modal same-tick, so this ActivityIndicator
+          branch never renders. Wire retained for contract stability with the
+          other caller (health-plan.tsx) where the Modal stays mounted. */}
       <BioGoalEditorModal
         visible={bioEditGoal !== null}
         colors={colors as unknown as Record<string, string>}

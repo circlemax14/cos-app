@@ -2,8 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchBiopsychosocialPlan,
 } from '@/services/api/biopsychosocial-plan'
-import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan'
-import { fireAndForgetPost } from '@/components/unified-plan/v2/net'
+// `updatePlanGoal` service export is intentionally not imported here after
+// chunk 41 — the mutationFn now uses `fireAndForgetPut` directly. Service
+// export stays live in `services/api/ai-health-plan.ts` so revert is a
+// one-line re-import + 3-line mutationFn restore.
+import type { GoalPatch } from '@/services/api/ai-health-plan'
+import { fireAndForgetPost, fireAndForgetPut } from '@/components/unified-plan/v2/net'
 
 /**
  * Phase 3 (COS-360 / SCRUM-518): wraps `GET /v1/health-plan/biopsychosocial`.
@@ -86,12 +90,61 @@ export function useRegenerateBiopsychosocialPlan() {
  * this out of `BiopsychosocialPlanScreen`'s inline `useMutation` was one
  * of the two structural asymmetries the July 10 forensic flagged as
  * unique to bio vs. legacy — see project_ios26_biopsychosocial_parked.md.
+ *
+ * CHUNK 41 (2026-07-21): rewritten to fire-and-forget via `fireAndForgetPut`
+ * from `v2/net.ts` (chunk 37 helper), same template as chunk 40's
+ * `useRegenerateBiopsychosocialPlan`. The prior `await updatePlanGoal()`
+ * was an awaited axios response inside a tap-triggered mutation whose
+ * Save button was bound from a still-mounted Modal — the exact chunk-9.5
+ * SIGABRT shape on iOS 26.5 (turbomodule queue). Chunks 9.5 / 32 / 34 / 37
+ * document the pattern; chunk 40 established the pending-window latch.
+ *
+ * Endpoint verb: PUT — verified against
+ * `services/api/ai-health-plan.ts:150-156` (`apiClient.put`). The audit
+ * brief said PATCH; that was incorrect. If `updatePlanGoal` is ever
+ * swapped to PATCH, swap this call to `fireAndForgetPatch` (also exported
+ * from `v2/net.ts`).
+ *
+ * The service export (`updatePlanGoal`) stays in place so tests continue
+ * to import it and a one-line mutationFn restore is the calm-window
+ * revert path.
+ *
+ * Two callers today: `app/Home/biopsychosocial-plan.tsx` (Modal closes
+ * same-tick, so `mutation.isPending` is presentational dead code there)
+ * and `app/Home/health-plan.tsx` (Modal stays mounted; `isPending` still
+ * drives the Save spinner for the full pending window). If a future
+ * caller re-awaits `mutateAsync`, they lose the chunk-9.5 protection —
+ * see the same-tick close in biopsychosocial-plan.tsx for the correct
+ * shape.
+ *
+ * iOS background-timer note: the setTimeout latch below can be delayed
+ * when the app is backgrounded — invalidateQueries then fires on next
+ * foreground. Not a correctness issue (5min staleTime + pull-to-refresh
+ * reconcile), just don't chase a phantom.
  */
+// See chunk 40's REGENERATE_PENDING_WINDOW_MS comment for the mechanism.
+// A single-goal DDB write is much cheaper than a Bedrock regen — 8s is
+// enough headroom for cold-Lambda + DDB write + read-back on p95 while
+// keeping the Save spinner on health-plan.tsx from feeling stuck. If
+// canary p99 goal-edit latency on Ken's build 62 blows past this, bump
+// to 15s.
+const EDIT_GOAL_PENDING_WINDOW_MS = 8_000
+
 export function useUpdateBioGoal() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) =>
-      updatePlanGoal(goalId, patch),
+    mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) => {
+      // Fire the actual PUT immediately — no await (chunk 9.5 rule).
+      void fireAndForgetPut(
+        `/v1/patients/me/health-plan/ai/goals/${encodeURIComponent(goalId)}`,
+        patch as unknown as Record<string, unknown>,
+      )
+      // Latch mutation.isPending for the pending window so onSuccess
+      // (invalidate) fires AFTER the server has landed the write.
+      return new Promise<void>((resolve) =>
+        setTimeout(resolve, EDIT_GOAL_PENDING_WINDOW_MS),
+      )
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] })
       qc.invalidateQueries({ queryKey: ['ai-health-plan'] })
