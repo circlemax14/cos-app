@@ -57,8 +57,23 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
    * default-flip is on and the user came in via ClassicViewLink. Read
    * defensively but take no action today; this param exists so any
    * future auto-forward-to-unified redirect has a documented escape.
+   *
+   * CHUNK 55 (2026-07-22): also read `?focus=` and forward its value
+   * unmodified to BiopsychosocialPlanScreen as `deepLinkFocus`. The
+   * child owns the scroll/timer/refs so the meds-focus behavior lives
+   * in a single place (not split across the route and screen).
+   * Non-'medications' values are no-ops downstream — the child
+   * short-circuits before its timer registers. Route-parent reads
+   * only, no local effect: everything happens inside the screen.
+   *
+   * NOTE: MEDICATION_REFILL_REMINDER push currently routes to
+   * `/Home/health-plan?focus=medications` (lib/notification-routing.ts:63-64),
+   * not this route. Once BPS is the default surface (or once we ship a
+   * BPS-first push handler), a one-line change to that router points the
+   * push here and this `focus` read starts firing on push taps too.
    */
-  useLocalSearchParams<{ classic?: string }>();
+  const { focus } = useLocalSearchParams<{ classic?: string; focus?: string }>();
+  const deepLinkFocus = typeof focus === 'string' ? focus : null;
 
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
   const planQuery = useBiopsychosocialPlan();
@@ -182,6 +197,7 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
         headerRight={
           <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
         }
+        deepLinkFocus={deepLinkFocus}
       />
       {/*
         CHUNK 53 (2026-07-22): under BPS_MODAL_CONSOLIDATION_ENABLED, the

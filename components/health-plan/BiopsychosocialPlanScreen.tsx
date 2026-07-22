@@ -20,6 +20,7 @@
  */
 import React from 'react';
 import {
+  AccessibilityInfo,
   Modal,
   Pressable,
   RefreshControl,
@@ -43,11 +44,14 @@ import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { MedicationsSection } from './MedicationsSection';
+import { MedicationsReviewPrompt } from './MedicationsReviewPrompt';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { BpsTodayHeroCard } from './BpsTodayHeroCard';
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
+import IntakeCtaCard from './patient-intake/IntakeCtaCard';
+import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { TaskEditorModal, TaskEditorBody } from './TaskEditorModal';
 import { TaskDetailModal, TaskDetailBody } from './tasks/TaskDetailModal';
 import { BioGoalEditorBody } from './BioGoalEditorModal';
@@ -135,11 +139,14 @@ const BPS_NOTIFICATION_CATEGORIES_ENABLED = true;
  * app/Home/health-plan.tsx) are untouched — additive parity, not a
  * swap.
  *
- * NOTE: the legacy "Review your medications" prompt + scroll-to
- * (`onLayout` / `openAddSignal` props on MedicationsSection) is
- * intentionally NOT wired here — deferred to chunk 53 which will
- * port MedicationsReviewPrompt as a sibling above this mount and
- * pass those props at that time.
+ * NOTE (chunk 52 deferral, RESOLVED by chunk 55 on 2026-07-22): the
+ * legacy "Review your medications" prompt + scroll-to
+ * (`onLayout` / `openAddSignal` props on MedicationsSection) is now
+ * wired in — MedicationsReviewPrompt mounts as a sibling above this
+ * section, `onLayout` writes into medsSectionYRef, and
+ * `openAddSignal` receives the monotonic counter bumped by
+ * onReviewMedications. See BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED
+ * below for the chunk-55 kill-switch + the paired deep-link handler.
  */
 const BPS_MEDICATIONS_EDITOR_ENABLED = true;
 
@@ -168,6 +175,126 @@ const BPS_MEDICATIONS_EDITOR_ENABLED = true;
  * but must be called out in the ship report.
  */
 export const BPS_MODAL_CONSOLIDATION_ENABLED = true;
+
+/**
+ * CHUNK 55 (2026-07-22) kill-switch — ports the legacy "Review your
+ * medications" soft prompt + scroll-to + openAddSignal wiring + the
+ * MEDICATION_REFILL_REMINDER `focus=medications` deep-link handler onto
+ * the BPS surface. Closes the deferral called out in CHUNK 52's block
+ * comment (~lines 129-142 pre-chunk-55): BPS could mount the meds editor
+ * but had no persistent nudge to review it and no auto-scroll on push
+ * tap.
+ *
+ * Kill-switch behavior — flip to false to fully inert BOTH the review
+ * card AND the deep-link scroll/open path in one line:
+ *   - MedicationsReviewPrompt is not mounted (card gone).
+ *   - The deepLinkFocus effect early-returns before its timer registers,
+ *     so a `?focus=medications` param on the route is silently ignored
+ *     (same visual as an older / flag-off build — back-compat holds).
+ *
+ * Two-layer kill defense on the CARD itself:
+ *   (a) this JS module const — one-line OTA flip
+ *       (~30-60s via `npm run eas:update:production`).
+ *   (b) server `flagEnabled` bit on usePlanMedications — a BE flip hides
+ *       the card on BOTH BPS and legacy. MedicationsReviewPrompt
+ *       already self-guards on flagEnabled === true, medsReviewNeeded
+ *       === true, snoozeUntil not yet read (null), and snoozeUntil >
+ *       Date.now() — all four states return null with zero layout
+ *       shift, so no fixed-height placeholder wrapper is needed here
+ *       (matches the MedicationsSection pattern from chunk 52).
+ *
+ * iOS 26.5 safety: MedicationsReviewPrompt owns exactly one internal
+ * Modal (MedicationsReviewModal, animationType="slide" transparent —
+ * default; same shape MedicationsSection uses). Both Modals are
+ * already prod-hardened on legacy under the same conditions. Under
+ * BPS_MODAL_CONSOLIDATION_ENABLED (true) the consolidated Modal owned
+ * by this screen hosts task-editor / task-detail / bio-goal — meds
+ * Modals are DISJOINT from that surface (only ever fire in response
+ * to a user action inside the meds cards, never simultaneously with
+ * a task/goal editor session), so no "multiple Modal transparent at
+ * once" hazard is introduced.
+ *
+ * Deep-link semantics: `deepLinkFocus` prop is the URL `?focus=` param
+ * read by the route parent. `focusHandledRef` keys on the VALUE (not
+ * on a boolean latch) — a repeat identical value is a no-op, but a
+ * re-entry with a fresh param (e.g. leave → tap another refill push →
+ * come back) fires the scroll+add-signal again. Matches legacy
+ * semantics (app/Home/health-plan.tsx:379-388) modulo legacy's
+ * boolean latch, which never re-fires; the value-keyed guard here is
+ * strictly more correct.
+ *
+ * NOTE (out of scope for chunk 55): the MEDICATION_REFILL_REMINDER
+ * notification handler (lib/notification-routing.ts:60-64) still hard-
+ * routes to `/Home/health-plan?focus=medications`. Tapping the push
+ * lands on LEGACY, not BPS. Queued as chunk-56 follow-up. This chunk
+ * fully wires the BPS side so re-routing the push is a one-line
+ * `notification-routing.ts` change when we're ready.
+ */
+const BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED = true;
+
+/**
+ * CHUNK 56 (2026-07-22) kill-switch — ports the COS-452 / SCRUM-590
+ * `IntakeCtaCard` onto the BPS Care Plan surface. Legacy mounts it on the
+ * Health Summary tab only (app/Home/plan.tsx:78,159); BPS Care Plan
+ * currently has NO entry point to start / finish / view / retake the
+ * patient intake, even though HS-3a (see
+ * project_hs_health_summary_chunks.md) already shipped the intake INTO the
+ * BPS-driving Bedrock prompt. Patients who haven't completed intake see
+ * BPS categories driven by FHIR alone with no CTA to close the gap.
+ *
+ * The card self-guards on `q.isLoading` (returns null) and on
+ * `q.data?.intake` shape:
+ *   - `complete`   → info card with "COMPLETED" chip, date, answer count,
+ *                    "View my intake" primary + "Retake" secondary.
+ *   - `in_progress`→ "Finish your health check-in" banner.
+ *   - other        → "Complete your health check-in" banner.
+ * On query error the card intentionally still renders the pre-intake CTA
+ * banner so the patient always has a forward path — the source component
+ * documents this ("returning null here would strand them"). BPS keeps
+ * that contract intact.
+ *
+ * iOS 26.5 safety: `IntakeCtaCard` uses ONLY `Pressable` / `View` /
+ * `Text` / `MaterialIcons` and StyleSheet. No `Modal`, no `Animated`, no
+ * `ActivityIndicator`, no rotate transforms, no `Portal`, no gradient, no
+ * blur. Both visual variants are pure static views — cold-mount safe. No
+ * new native rendering surface introduced anywhere in the BPS tree.
+ *
+ * Layout-shift discipline (chunks 47 / 48 pattern): during
+ * `intakeQuery.isLoading && !intakeQuery.data` we render a fixed-height
+ * placeholder `View` so the first-paint reserves the slot instead of
+ * flashing null → then push-down when the fetch resolves. `usePatientIntake`
+ * carries a 2 min `staleTime` so intra-session re-visits skip the
+ * placeholder entirely (data is fresh). `auth-prefetch.ts` does NOT warm
+ * `['patient-intake']` today, so first cold-mount does fire a fetch —
+ * hence the placeholder is load-bearing on cold mount only. Placeholder
+ * height 100pt approximates the not-started / in-progress banner (the
+ * common case). The `complete` variant lands ~180pt taller, producing
+ * ONE intended downward shift when the data arrives, not jitter — matches
+ * how chunk 47's hero card and chunk 48's AI-summary banner handle the
+ * variant-height case.
+ *
+ * Observer sharing: hoisting `usePatientIntake()` up to the screen level
+ * so the placeholder can gate on `isLoading` piggybacks on the SAME
+ * `['patient-intake']` query key that `IntakeCtaCard` already subscribes
+ * to internally — react-query dedupes by key, so this adds ZERO extra
+ * network requests. The hook call is unconditional (rules-of-hooks
+ * discipline); only the render is flag-gated.
+ *
+ * Kill-switch: BPS_INTAKE_CTA_ENABLED=false makes the entire slot inert
+ * — no placeholder, no card — in one line. The hoisted `usePatientIntake`
+ * observer would still subscribe (cheap; staleTime 2 min; same query
+ * legacy plan.tsx already runs), so flag-off produces zero UI change on
+ * BPS and zero network delta vs. pre-chunk-56. Recovery cost: ~30-60s via
+ * `npm run eas:update:production` (compile-time JS const, so OTA — no
+ * SSM flip).
+ *
+ * Back-compat: `usePatientIntake` / `IntakeCtaCard` shipped with HS-1
+ * (SCRUM-590) and are already in prod on legacy — no new endpoint, no new
+ * schema, no data model impact. Older builds (flag off) simply don't
+ * render the card; flag-on requires no server change. Legacy plan.tsx
+ * mount sites are UNTOUCHED — additive parity, not a swap.
+ */
+const BPS_INTAKE_CTA_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -392,6 +519,7 @@ export function BiopsychosocialPlanScreen({
   onEditGoal,
   patientName,
   headerRight,
+  deepLinkFocus,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
@@ -403,6 +531,22 @@ export function BiopsychosocialPlanScreen({
    * legacy branch) doesn't need to change.
    */
   headerRight?: React.ReactNode;
+  /**
+   * CHUNK 55: URL `?focus=` param, forwarded from the route parent so
+   * this screen can auto-scroll to the meds section + open the add flow
+   * when the value is 'medications'. `null` / `undefined` / any other
+   * string is a no-op. Value-keyed inside so a repeat identical value
+   * doesn't re-fire, but a fresh value on re-entry does. Route parent
+   * (app/Home/biopsychosocial-plan.tsx) owns the useLocalSearchParams
+   * read; this screen owns the scroll refs + timer + signal so the
+   * child is the single source of the "meds focus" behavior across
+   * both entry points (in-app card tap + push tap).
+   *
+   * Optional so health-plan.tsx's flag=false legacy caller (which
+   * reaches this component via the pre-COS-438 branch) doesn't need to
+   * change — it just doesn't pass this prop and the effect no-ops.
+   */
+  deepLinkFocus?: string | null;
   /**
    * COS-433: goal editing hoisted to the long-resident `health-plan.tsx`
    * parent — its Modal, its `updatePlanGoal` mutation, and its edit-field
@@ -458,6 +602,16 @@ export function BiopsychosocialPlanScreen({
     enabled: BPS_TODAY_HERO_ENABLED,
   });
   const todayTasks: TaskOccurrence[] = todayTasksQuery.data ?? [];
+
+  // CHUNK 56: hoisted observer on the shared ['patient-intake'] key so we
+  // can gate a fixed-height placeholder on `isLoading` without adding a
+  // second network call — react-query dedupes by key, so this piggybacks
+  // on the same fetch IntakeCtaCard's own usePatientIntake() would fire.
+  // The hook call is unconditional (rules-of-hooks); the render below is
+  // flag-gated. Deliberately NOT `enabled: BPS_INTAKE_CTA_ENABLED` so
+  // toggling the flag off doesn't cause the observer to disappear and
+  // reappear on flip (compile-time const anyway; adds nothing to net).
+  const intakeQuery = usePatientIntake();
   const tasksBySection = React.useMemo(() => {
     const b: Record<BiopsychosocialSectionKey, PlanTask[]> = { biological: [], psychological: [], social: [] };
     for (const t of allTasks) {
@@ -572,6 +726,134 @@ export function BiopsychosocialPlanScreen({
   const onRegenerate = React.useCallback(() => {
     regenerateMutation.mutate();
   }, [regenerateMutation]);
+
+  // ── CHUNK 55: meds review + scroll-to + deep-link plumbing ─────────────
+  // Legacy parity port from app/Home/health-plan.tsx:354-388 + 1142-1146.
+  // `scrollRef` targets the outer ScrollView in the loaded branch below
+  // (the only branch that mounts MedicationsSection). The three other
+  // branches — skeleton / error / no-tier / empty — do not carry the
+  // meds section so they intentionally don't set the ref; a deep-link
+  // arriving while any of those is rendered would time-out its 350ms
+  // scroll attempt with medsSectionYRef.current == null and drop
+  // silently (correct back-compat: no crash, no misleading scroll).
+  // Once the plan loads and MedicationsSection lays out, subsequent
+  // re-entries with `?focus=medications` will fire cleanly.
+  //
+  // `openMedsAddSignal` is a monotonic counter — MedicationsSection's
+  // effect (line ~190 of that file) fires on strict-increment only,
+  // guarding against StrictMode double-invocation. `onReviewMedications`
+  // bumps it via functional setState so back-to-back taps don't miss.
+  const scrollRef = React.useRef<ScrollView | null>(null);
+  const medsSectionYRef = React.useRef<number | null>(null);
+  // Value-keyed guard (not a boolean latch): stores the last focus VALUE
+  // handled. Repeat identical value = no-op; a fresh value on route
+  // re-entry re-fires. Strictly more correct than legacy's boolean
+  // `focusHandledRef` which never re-fires.
+  const focusHandledRef = React.useRef<string | null>(null);
+  const [openMedsAddSignal, setOpenMedsAddSignal] = React.useState(0);
+  const onReviewMedications = React.useCallback(() => {
+    // Scroll first (best-effort — no-op if the meds section hasn't laid
+    // out yet), then bump the add-signal. MedicationsSection reads the
+    // signal in its own effect and opens the add editor on strict
+    // increment.
+    //
+    // CHUNK 55 adversarial-verify major fix (Modal fade-out overlap):
+    // Called from MedicationsReviewPrompt.handleReviewNow, which does
+    // setModalVisible(false) SYNCHRONOUSLY before this. RN Modal's
+    // animationType='fade' close takes ~300ms during which the modal
+    // is still natively presented. If we bump openMedsAddSignal in the
+    // same tick, MedicationEditorModal begins its own fade-in and two
+    // <Modal transparent> are natively presented simultaneously →
+    // iOS 26.5 SIGABRT class the chunk-53 consolidation targeted.
+    // 400ms defer clears the review modal's fade-out with a small
+    // safety margin before the editor modal begins its fade-in. On
+    // paths where no review modal is being closed (deep-link, direct
+    // + Add tap), the 400ms is invisible.
+    const y = medsSectionYRef.current;
+    if (y != null && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
+    setTimeout(() => setOpenMedsAddSignal((n) => n + 1), 400);
+  }, []);
+
+  // CHUNK 55 deep-link effect: fires when the route arrives with a
+  // fresh `?focus=medications` param. Polls medsSectionYRef every
+  // 200ms up to ~2s until the meds section has completed its first
+  // layout pass, then scrolls to it. Marks the value as handled ONLY
+  // after the scroll actually fires — a cold mount where meds haven't
+  // laid out at the timer fire no longer silently drops the deep-link
+  // (chunk 55 adversarial-verify majors #5 + #9 fix).
+  //
+  // Chunk 55 adversarial-verify major #6 fix (Modal coexistence): the
+  // handler INTENTIONALLY does NOT bump openMedsAddSignal. On a cold
+  // mount with an outstanding review cycle, MedicationsReviewPrompt
+  // auto-shows its internal Modal; auto-bumping openMedsAddSignal
+  // would then mount MedicationEditorModal on top, and two
+  // <Modal transparent> visible simultaneously is the iOS 26.5
+  // SIGABRT class chunk 53 was built to avoid. Instead, we scroll the
+  // user to the meds surface and let them either interact with the
+  // review prompt (if shown) or tap "+ Add" themselves. One extra tap
+  // in the rare cold-mount push flow is a strictly-better trade than
+  // a Modal-over-Modal crash.
+  //
+  // Chunk 55 adversarial-verify major #7 fix (VoiceOver focus): fires
+  // an AccessibilityInfo announcement after the scroll so VoiceOver
+  // users get a signal that navigation completed. Full a11y focus
+  // move to the meds section would require findNodeHandle + a target
+  // ref; deferring to a follow-up in favor of the simpler announce.
+  //
+  // Kill-switch short-circuit: BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED
+  // = false fully inerts BOTH the review card AND this deep-link
+  // handler (one-line kill covers everything chunk 55 adds).
+  React.useEffect(() => {
+    if (!BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED) return;
+    if (!deepLinkFocus || deepLinkFocus !== 'medications') return;
+    if (focusHandledRef.current === deepLinkFocus) return;
+    // The plan must have loaded its data before MedicationsSection
+    // mounts and lays out. Effect deps include `planQuery.data` so a
+    // slow-cold-mount (Lambda cold-start / API Gateway 29s wall)
+    // simply defers the effect run until data lands; the effect then
+    // starts fresh polling with a full ~2s window. Without this dep,
+    // the effect would exhaust its polls against a skeleton branch
+    // and give up before the meds section ever mounted.
+    if (!planQuery.data) return;
+    // ~2s total polling window covers cold-mount + first-layout
+    // typical p99 AFTER planQuery has resolved. Give-up marks
+    // handled to prevent an infinite retry loop on legitimate
+    // empty-state / flag-off branches where meds never lays out.
+    const POLL_MS = 200;
+    const MAX_ATTEMPTS = 10;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tryScroll = () => {
+      const y = medsSectionYRef.current;
+      if (y != null && scrollRef.current) {
+        scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+        focusHandledRef.current = deepLinkFocus;
+        // Queue the announcement so it fires after any in-flight
+        // VoiceOver read (plan header, MedicationsReviewPrompt modal
+        // a11y focus) instead of preempting it. announceForAccessibility
+        // with queue:true is available from RN 0.68+; cos-app is on
+        // 0.83.10.
+        AccessibilityInfo.announceForAccessibilityWithOptions(
+          'Navigated to your medications.',
+          { queue: true },
+        );
+        return;
+      }
+      if (++attempts >= MAX_ATTEMPTS) {
+        // Give up — mark handled so the effect doesn't loop across
+        // future re-renders of the same still-unresolved value.
+        focusHandledRef.current = deepLinkFocus;
+        return;
+      }
+      timer = setTimeout(tryScroll, POLL_MS);
+    };
+    timer = setTimeout(tryScroll, POLL_MS);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [deepLinkFocus, planQuery.data]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   // CHUNK 39: port v2's static-View PlanSkeleton pattern (chunk 17) to BPS's
@@ -728,6 +1010,7 @@ export function BiopsychosocialPlanScreen({
   return (
     <AppWrapper>
       <ScrollView
+        ref={scrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={{ padding: Spacing.md, paddingBottom: Spacing.xl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
@@ -837,6 +1120,43 @@ export function BiopsychosocialPlanScreen({
         />
 
         {/*
+          CHUNK 56 (2026-07-22): COS-452 / SCRUM-590 IntakeCtaCard port.
+          Sits between the BpsWelcomeBanner (first-time education) and
+          BpsAiSummaryBanner (AI summary that depends on intake). Narrative
+          order: "welcome to BPS → complete your intake so BPS can
+          personalize → here's the AI summary that used your intake."
+          Legacy plan.tsx mounts this on the Health Summary tab (L78, L159);
+          BPS Care Plan had NO intake entry point until now. Card
+          self-guards on q.isLoading (returns null) and switches between
+          three variants (not-started banner / in-progress banner /
+          completed info card). Fixed-height placeholder while loading
+          matches chunks 47/48 pattern — 100pt approximates the banner
+          height (majority case); the ~280pt completed variant lands as
+          one intended downward shift when data arrives, not jitter.
+          Kill-switch BPS_INTAKE_CTA_ENABLED at module top; card component
+          itself null-renders on loading, giving two-layer defense.
+          iOS 26.5 safe: static Pressable/View/Text/MaterialIcons only, no
+          Modal / Animated / ActivityIndicator / rotate / Portal / gradient.
+        */}
+        {BPS_INTAKE_CTA_ENABLED && (
+          intakeQuery.isLoading && !intakeQuery.data ? (
+            <View
+              style={{
+                height: 100,
+                marginHorizontal: Spacing.md,
+                marginBottom: Spacing.md,
+                borderRadius: 16,
+                backgroundColor: 'rgba(148,163,184,0.12)',
+              }}
+              accessible
+              accessibilityLabel="Loading your intake status"
+            />
+          ) : (
+            <IntakeCtaCard />
+          )
+        )}
+
+        {/*
           CHUNK 48 (port of PlanScreenRedesignedV2.tsx:422-433) —
           teal-tinted "AI SUMMARY" card carrying the Bedrock-generated
           overall plan summary plus the compact AICitationsFooter
@@ -933,19 +1253,55 @@ export function BiopsychosocialPlanScreen({
         />
 
         {/*
-          CHUNK 52: full legacy Medications editor directly below the
-          read-only glimpse above. Reuses the same MedicationsSection
-          component mounted on legacy (PlanScreenRedesignedV2.tsx +
-          app/Home/health-plan.tsx) — single source of truth, no fork.
-          Self-guards on server `flagEnabled` and null-renders on
-          cold-mount / flag-off, so back-compat holds. The
-          `onLayout` / `openAddSignal` props are intentionally omitted
-          — the legacy "Review your medications" prompt + scroll-to
-          path is deferred to chunk 53. Modal(fade) is the only iOS 26
-          crash-class surface here and is already prod-hardened on
-          legacy; two-layer kill: this JS flag + server flagEnabled.
+          CHUNK 55: soft, recurring "Review your medications" prompt —
+          sibling above the full MedicationsSection editor below. Self-
+          guards on server flagEnabled + medsReviewNeeded + local
+          snooze + first-cycle modal (see MedicationsReviewPrompt.tsx
+          for the full four-state gate), so it null-renders during
+          load / off / snoozed / not-needed with zero layout shift.
+          Tapping "Review now" fires onReviewMedications: scrollTo the
+          MedicationsSection y-offset captured in the onLayout wrapper
+          below, then bump openMedsAddSignal so the section opens its
+          add editor on the next commit. Two-layer kill:
+          BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED (client OTA flip) and
+          the server flagEnabled bit (BE flip covers both BPS + legacy).
         */}
-        {BPS_MEDICATIONS_EDITOR_ENABLED && <MedicationsSection />}
+        {BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED && (
+          <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
+        )}
+
+        {/*
+          CHUNK 52 + CHUNK 55 (2026-07-22): full legacy Medications
+          editor directly below the read-only glimpse above. Reuses the
+          same MedicationsSection component mounted on legacy
+          (PlanScreenRedesignedV2.tsx + app/Home/health-plan.tsx) —
+          single source of truth, no fork. Self-guards on server
+          `flagEnabled` and null-renders on cold-mount / flag-off, so
+          back-compat holds. Modal(fade) is the only iOS 26 crash-class
+          surface here and is already prod-hardened on legacy; two-layer
+          kill: this JS flag + server flagEnabled.
+
+          CHUNK 55 closes the chunk-52 deferral: `onLayout` writes the
+          section's y-offset into medsSectionYRef so the review-prompt
+          "Review now" tap + the `?focus=medications` deep-link handler
+          can scrollTo it, and `openAddSignal` is threaded to the
+          monotonic counter bumped by onReviewMedications so the same
+          tap opens the section's add editor on the next commit. The
+          outer <View> wrapper preserves the section's onLayout
+          semantics (LayoutChangeEvent fires against the wrapper, not
+          the section's own onLayout prop — MedicationsSection accepts
+          onLayout as an optional prop but we match the legacy
+          app/Home/health-plan.tsx:1142-1146 shape byte-for-byte,
+          which passes onLayout directly to the section).
+        */}
+        {BPS_MEDICATIONS_EDITOR_ENABLED && (
+          <MedicationsSection
+            onLayout={(e) => {
+              medsSectionYRef.current = e.nativeEvent.layout.y;
+            }}
+            openAddSignal={openMedsAddSignal}
+          />
+        )}
 
         {/*
           COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
