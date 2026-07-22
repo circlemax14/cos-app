@@ -23,6 +23,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Radii, Spacing } from '@/constants/design-system';
 import { BioGoalCard } from './BioGoalCard';
 import { TaskListSection } from './tasks/TaskListSection';
+import { categoryLabel, groupGoalsByCategory } from '@/lib/care-plan';
 import type {
   Intervention,
   InterventionKind,
@@ -34,6 +35,22 @@ import type {
 import type { PlanTask } from '@/services/api/types';
 
 export type BiopsychosocialSectionKey = 'biological' | 'psychological' | 'social';
+
+/**
+ * CHUNK 49 kill-switch — port of the legacy 8-category goal grouping
+ * (Ken's Care Plan taxonomy: medical / cognitive / adl / medication /
+ * mentalHealth / integrative / social / spiritual, shipped in
+ * PlanScreenRedesigned behind CARE_PLAN_ENABLED) into the BPS surface as
+ * a SUB-grouping inside each SectionCard's Goals block. Users get the
+ * both-view: BPS framework at the section header, Ken's clinical
+ * taxonomy inside. Grouping is presentational only — reuses the pure
+ * `groupGoalsByCategory` helper from `lib/care-plan.ts` (already used
+ * by legacy V2), so goals missing a `.category` fall into the "Your
+ * Goals" bucket at the tail (back-compat with pre-COS-377 plans, older
+ * Bedrock outputs, and manually-added goals with no category tag).
+ * One-line OTA flip if the sub-grouping regresses in the wild.
+ */
+const BPS_8_CATEGORY_GROUPING_ENABLED = true;
 
 type ColorMap = Record<string, string>;
 
@@ -150,6 +167,22 @@ export function SectionCard({
       items: items.filter((i) => i.kind === kind),
     })).filter((g) => g.items.length > 0);
   }, [section.interventions]);
+
+  /*
+   * CHUNK 49: sub-group goals by Ken's 8 Care Plan categories inside
+   * the section's Goals block (see BPS_8_CATEGORY_GROUPING_ENABLED at
+   * module top). `groupGoalsByCategory` is the same pure helper legacy
+   * V2 uses, so goals with no `.category` fall into the "Your Goals"
+   * tail bucket — a plan whose goals are ALL uncategorized renders as
+   * a single group with the legacy heading, which visually collapses
+   * back to the pre-chunk-49 flat list. Computed unconditionally so
+   * the hook order stays stable across a flag flip; result is only
+   * consumed inside the flag branch.
+   */
+  const goalGroups = React.useMemo(
+    () => groupGoalsByCategory(Array.isArray(section.goals) ? section.goals : []),
+    [section.goals],
+  );
 
   const text = colors.text;
   const subtext = colors.subtext;
@@ -301,17 +334,78 @@ export function SectionCard({
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         >
-          {goals.map((g) => (
-            <BioGoalCard
-              key={g.id}
-              goal={g}
-              accentColor={style.color}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-              onEdit={onEditGoal}
-            />
-          ))}
+          {BPS_8_CATEGORY_GROUPING_ENABLED && goalGroups.length > 1 ? (
+            /*
+             * CHUNK 49: BPS × 8-category both-view. Only branch here
+             * when there are 2+ groups — a single group (all goals
+             * uncategorized, or all in one category) would just render
+             * an extra sub-header for no informational gain, so we
+             * fall through to the flat list. Sub-headers use the
+             * existing kindHeaderRow visual language (small uppercase
+             * label + section-accent color) so they read as PART OF
+             * the SectionCard, not floating cards.
+             */
+            goalGroups.map((group) => (
+              <View key={group.key} style={{ marginBottom: Spacing.sm }}>
+                <View
+                  style={[
+                    styles.categoryHeaderRow,
+                    { backgroundColor: alpha(style.color, '14'), borderColor: alpha(style.color, '2A') },
+                  ]}
+                >
+                  <MaterialIcons name="folder-open" size={getScaledFontSize(13)} color={style.color} />
+                  <Text
+                    style={{
+                      color: style.color,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(800) as any,
+                      marginLeft: 5,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.4,
+                      flex: 1,
+                    }}
+                    numberOfLines={2}
+                  >
+                    {group.key === 'general' ? group.label : categoryLabel(group.key)}
+                  </Text>
+                  <Text
+                    style={{
+                      color: style.color,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(700) as any,
+                      opacity: 0.75,
+                    }}
+                    accessibilityLabel={`${group.goals.length} goal${group.goals.length === 1 ? '' : 's'}`}
+                  >
+                    {group.goals.length}
+                  </Text>
+                </View>
+                {group.goals.map((g) => (
+                  <BioGoalCard
+                    key={g.id}
+                    goal={g}
+                    accentColor={style.color}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                    onEdit={onEditGoal}
+                  />
+                ))}
+              </View>
+            ))
+          ) : (
+            goals.map((g) => (
+              <BioGoalCard
+                key={g.id}
+                goal={g}
+                accentColor={style.color}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onEdit={onEditGoal}
+              />
+            ))
+          )}
         </CollapsibleGroup>
       )}
 
@@ -538,6 +632,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  // CHUNK 49: sub-header row for the 8-category goal grouping inside the
+  // section's Goals block. Tinted background (section-accent 14 alpha) +
+  // hairline border so the header sits within the SectionCard's visual
+  // rhythm — not a floating chip and not another card.
+  categoryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radii.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 8,
   },
   interventionRow: {
     flexDirection: 'row',
