@@ -72,6 +72,19 @@ const BPS_TODAY_HERO_ENABLED = true;
  */
 const BPS_AI_SUMMARY_ENABLED = true;
 
+/**
+ * CHUNK 50 kill-switch — surfaces a compact "View Progress" link in the
+ * BPS header row that pushes to `/Home/bps-progress`. Renamed from the
+ * originally-proposed BPS_PROGRESS_TAB_ENABLED because there is no tab
+ * bar in this surface (unlike legacy health-plan.tsx which owns a
+ * Plan/Progress tab pair) — the entry point is a single link. Flipping
+ * to false hides the header link; the /Home/bps-progress route file
+ * itself remains bundled but becomes UI-orphan (defensive redirect
+ * inside that route still handles deep-link entries). Recovery cost:
+ * ~30-60s via `npm run eas:update:production`.
+ */
+const BPS_PROGRESS_LINK_ENABLED = true;
+
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
  *  entry — the hero rides that warm read on first render. */
@@ -232,6 +245,59 @@ function PlanTierPill({
         Plan: {label} · Change
       </Text>
       <MaterialIcons name="swap-horiz" size={getScaledFontSize(14)} color={colors.tint} style={{ marginLeft: 4 }} />
+    </Pressable>
+  );
+}
+
+/**
+ * CHUNK 50: compact "View Progress" affordance styled after PlanTierPill so
+ * the two sit naturally in the same header row (or wrap to a stacked column
+ * on narrow widths — flexWrap on the parent row handles that). Tapping
+ * pushes to /Home/bps-progress, which renders legacy ProgressTab against
+ * BPS-warmed today-tasks data.
+ */
+function ViewProgressLink({
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  onPress,
+}: {
+  colors: Record<string, string>;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => number | string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel="View Progress"
+      accessibilityHint="Opens adherence, streak, and self-reported metrics"
+      style={({ pressed }) => [
+        styles.tierPill,
+        {
+          backgroundColor: (colors.tint ?? '#0D9488') + '14',
+          borderColor: (colors.tint ?? '#0D9488') + '33',
+          marginLeft: 8,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <MaterialIcons
+        name="trending-up"
+        size={getScaledFontSize(14)}
+        color={colors.tint}
+        style={{ marginRight: 4 }}
+      />
+      <Text
+        style={{
+          color: colors.tint,
+          fontSize: getScaledFontSize(12),
+          fontWeight: getScaledFontWeight(700) as any,
+        }}
+      >
+        View Progress
+      </Text>
     </Pressable>
   );
 }
@@ -543,13 +609,27 @@ export function BiopsychosocialPlanScreen({
                 </Text>
               </View>
             )}
-            <PlanTierPill
-              label={planTypeDisplayName(currentPlanType ?? 'basic')}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-              onPress={onChangePlanType}
-            />
+            {/* CHUNK 50: PlanTierPill + optional ViewProgressLink share a
+                row that wraps to a second row on narrow widths (iPhone SE
+                class) when both pills + the headerRight banner would
+                otherwise overflow. */}
+            <View style={styles.tierRow}>
+              <PlanTierPill
+                label={planTypeDisplayName(currentPlanType ?? 'basic')}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onPress={onChangePlanType}
+              />
+              {BPS_PROGRESS_LINK_ENABLED && (
+                <ViewProgressLink
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                  onPress={() => router.push('/Home/bps-progress' as never)}
+                />
+              )}
+            </View>
           </View>
           {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
           {headerRight ? <View>{headerRight}</View> : null}
@@ -936,4 +1016,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   tierPillCentered: { alignSelf: 'center' },
+  // CHUNK 50: PlanTierPill + ViewProgressLink share this row; flexWrap
+  // lets ViewProgressLink drop under the tier pill on iPhone SE-class
+  // widths (or when the headerRight banner is present) without clipping.
+  tierRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
 });
