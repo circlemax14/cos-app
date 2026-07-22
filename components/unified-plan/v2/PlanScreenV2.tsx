@@ -38,7 +38,7 @@ import { BpsAccordion } from '@/components/unified-plan/v2/BpsAccordion';
 import { WellbeingMapCard } from '@/components/unified-plan/v2/WellbeingMapCard';
 import { AISuggestionStrip } from '@/components/unified-plan/v2/AISuggestionStrip';
 import { CareManagerToast } from '@/components/unified-plan/v2/CareManagerToast';
-import { PlanSkeleton, PlanErrorCard } from '@/components/unified-plan/v2/PlanSkeleton';
+import { PlanSkeleton, PlanErrorCard } from '@/components/plan-shared/PlanSkeleton';
 import { CachedPlanBanner } from '@/components/unified-plan/v2/CachedPlanBanner';
 import {
   NoTierEmptyState,

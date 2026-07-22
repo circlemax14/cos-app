@@ -1,7 +1,14 @@
 /**
  * PlanSkeleton + PlanErrorCard — CHUNK 17 (2026-07-21).
+ * Promoted to `components/plan-shared/` in CHUNK 39 (2026-07-21).
  *
- * First-paint placeholder + retryable error card for PlanScreenV2.
+ * First-paint placeholder + retryable error card for the plan surfaces.
+ * Consumed by:
+ *   • PlanScreenV2 (components/unified-plan/v2/PlanScreenV2.tsx) — original
+ *     chunk-17 consumer.
+ *   • BiopsychosocialPlanScreen (components/health-plan/…) — added in
+ *     chunk 39 to replace an <ActivityIndicator size="large"> in BPS's
+ *     cold-mount branch (same iOS-26 crash class chunk 17 fixed for v2).
  *
  * WHY: before Chunk 17, if useUnifiedPlan is still loading on cold
  * start, PlanScreenV2 renders WellbeingMapCard + (AISuggestionStrip
@@ -13,15 +20,16 @@
  * header footprint pixel-for-pixel, so the WellbeingMapCard +
  * AISuggestionStrip stack above does NOT jump on data arrival.
  *
- * iOS 26.5 SAFE PRIMITIVES ONLY:
+ * iOS 26.5 SAFE PRIMITIVES ONLY (reaffirmed for chunk 39 BPS consumer):
  *   View · Text · Pressable · StyleSheet
  * Explicitly avoided (all forbidden per crash rules):
  *   Animated · Reanimated worklets · LayoutAnimation · Modal ·
- *   gesture-handler · BlurView · LinearGradient · Image
+ *   gesture-handler · BlurView · LinearGradient · Image ·
+ *   ActivityIndicator (native, continuously animated).
  *
  * No animation anywhere. No shimmer, no pulse, no opacity fade-in.
  * First-paint is an explicit no-animation path — same mount/unmount
- * pattern as chunks 2/7/8.
+ * pattern as chunks 2/7/8. Only static rgba literals (no color-cycling).
  *
  * BLOCK GEOMETRY (must match BpsAccordion, verified 2026-07-21):
  *   BpsAccordion container: marginTop 20, gap 10 between cards
@@ -34,6 +42,11 @@
  * If BpsAccordion ever changes header padding or icon-chip height,
  * update these constants in lockstep or the first-paint jump will
  * come back.
+ *
+ * CHUNK 39 NOTE: BPS SectionCards are ~74px (iconChip 40 + 2×16 padding
+ * + 2×1 border), not 64px. Real BPS content will land with a small
+ * vertical jump on data arrival. Non-blocking for crash-fix; a BPS-tuned
+ * variant / geometry bump is queued as a follow-up chunk.
  */
 
 import React from 'react';

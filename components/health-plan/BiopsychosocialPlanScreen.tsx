@@ -39,6 +39,7 @@ import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
+import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
@@ -313,15 +314,31 @@ export function BiopsychosocialPlanScreen({
   }, [regenerateMutation]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
-  if (planQuery.isLoading) {
+  // CHUNK 39: port v2's static-View PlanSkeleton pattern (chunk 17) to BPS's
+  // cold-mount path. The previous <ActivityIndicator size="large"> is the
+  // exact iOS-26.5 crash class that flipped BIOPSYCHOSOCIAL_PLAN_ENABLED off
+  // on prod on 2026-07-09 — a continuously animating native primitive on the
+  // first-paint path. Static Views are safe.
+  //
+  // Guard on `!planQuery.data` (mirrors PlanScreenV2's `(isLoading || isFetching)
+  // && !data` shape) so background refetches do NOT flash the skeleton over
+  // already-loaded content — the skeleton is a cold-mount surface only.
+  if ((planQuery.isLoading || planQuery.isFetching) && !planQuery.data) {
     return (
       <AppWrapper>
-        <View style={[styles.center, { backgroundColor: colors.background }]}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-            Loading your plan…
-          </Text>
-        </View>
+        <ScrollView
+          style={[styles.container, { backgroundColor: colors.background }]}
+          contentContainerStyle={{ paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg }}
+          refreshControl={
+            // CHUNK 39 fix (adversarial-verify minor): every other BPS
+            // branch (error/no-tier/empty/loaded) attaches a RefreshControl.
+            // Skeleton branch omitted it, so a hung cold-fetch had no
+            // in-screen recovery — user had to background the app.
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          <PlanSkeleton />
+        </ScrollView>
       </AppWrapper>
     );
   }
