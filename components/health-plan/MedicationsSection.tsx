@@ -20,6 +20,8 @@
 
 import React from 'react';
 import {
+  AccessibilityInfo,
+  Alert,
   type LayoutChangeEvent,
   Modal,
   Pressable,
@@ -107,14 +109,64 @@ export function MedicationsSection({
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
 
+  // CHUNK 52.1 (Concern 5): announce save failures to VoiceOver / TalkBack so
+  // users of assistive tech notice the inline error View. Uses a rising-edge
+  // detector on `updateMutation.isError` (false → true transition) — announces
+  // once per new failure event without depending on error-instance identity
+  // (a cached sentinel Error would defeat identity dedup) or on the mutation's
+  // `failureCount` (react-query v5 resets that to 0 on every mutate() so a
+  // strict-greater guard would suppress the 2nd + subsequent identical
+  // failures). Between failures the query lib flips isError back to false
+  // during pending, so wasError re-arms cleanly for the next fail.
+  const wasError = React.useRef(false);
+  React.useEffect(() => {
+    const isErr = updateMutation.isError;
+    if (isErr && !wasError.current) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't save that change. Please try again.",
+      );
+    }
+    wasError.current = isErr;
+  }, [updateMutation.isError]);
+
+  // CHUNK 52.1 (Concern 7 + adversarial-verify majors #4 + nit #3): track how
+  // many destructive Hide confirm Alerts are currently visible so the
+  // openAddSignal effect below can skip mounting the editor Modal on top of a
+  // live Alert (Alert-over-Modal is the iOS 26.5 forbidden pairing). A COUNTER
+  // (not a boolean) so nested / rapid multi-tap stacking on Android — where
+  // Alert.alert doesn't dedupe — doesn't accidentally flip the guard to false
+  // while an underlying Alert is still visible. Increment on Alert.alert start,
+  // decrement (floor 0) on each branch resolution + iOS/Android backdrop
+  // dismiss. Ref, not state — no re-render needed to gate the effect.
+  const confirmAlertInFlight = React.useRef(0);
+  const beginConfirmAlert = React.useCallback(() => {
+    confirmAlertInFlight.current += 1;
+  }, []);
+  const endConfirmAlert = React.useCallback(() => {
+    if (confirmAlertInFlight.current > 0) {
+      confirmAlertInFlight.current -= 1;
+    }
+  }, []);
+
   // Open the add flow when the parent bumps openAddSignal (skip the initial 0).
+  // CHUNK 52.1 (Concern 7 + adversarial-verify majors #2 + #4): guard against
+  // stacking a 2nd RN Modal on top of an in-flight one. Firing setEditor while
+  // supplyEditor is open would mount MedicationEditorModal on top of the
+  // open SupplyEditorModal → two <Modal transparent> visible simultaneously,
+  // which is the iOS 26.5 multi-Modal crash class. Same defense against the
+  // Alert-over-Modal pairing: if a Hide confirm Alert is in flight, defer.
+  // Skip (don't queue): the parent's signal is a nudge, not an authoritative
+  // command; user can always tap "+ Add" manually. Idempotent-open case
+  // (editor already {kind:'add'}) also skips — nothing to do.
   const lastOpenSignal = React.useRef(0);
   React.useEffect(() => {
     if (openAddSignal > 0 && openAddSignal !== lastOpenSignal.current) {
       lastOpenSignal.current = openAddSignal;
-      setEditor({ kind: 'add' });
+      if (supplyEditor === null && editor === null && confirmAlertInFlight.current === 0) {
+        setEditor({ kind: 'add' });
+      }
     }
-  }, [openAddSignal]);
+  }, [openAddSignal, supplyEditor, editor]);
 
   // Flag gate — render NOTHING until the server explicitly enables the
   // feature. Off-by-default for back-compat and while the query is loading.
@@ -189,9 +241,20 @@ export function MedicationsSection({
         </Text>
       </View>
 
-      {/* Inline error (mutation failures) — non-blocking */}
+      {/* Inline error (mutation failures) — non-blocking.
+          CHUNK 52.1 (Concern 5): mark as alert + live region so screen readers
+          pick up the failure. iOS honors accessibilityRole="alert"; Android
+          honors accessibilityLiveRegion="polite". The useEffect above also
+          fires AccessibilityInfo.announceForAccessibility as a belt-and-
+          suspenders announcement, gated by a wasError rising-edge ref (see
+          the effect's comment for why we don't key on failureCount or error
+          identity). */}
       {updateMutation.isError ? (
-        <View style={[styles.errorBox, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}>
+        <View
+          style={[styles.errorBox, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
           <MaterialIcons name="error-outline" size={getScaledFontSize(16)} color="#991B1B" />
           <Text style={{ color: '#991B1B', flex: 1, fontSize: getScaledFontSize(12), marginLeft: 6 }}>
             Couldn&apos;t save that change. Please try again.
@@ -220,11 +283,20 @@ export function MedicationsSection({
             onToggleTracked={() => onToggleTracked(med)}
             onUpdateSupply={() => setSupplyEditor({ med })}
             onSnooze={() => onSnooze(med)}
+            onConfirmAlertOpen={beginConfirmAlert}
+            onConfirmAlertResolve={endConfirmAlert}
           />
         ))
       )}
 
-      {/* Add / Edit modal */}
+      {/* Add / Edit modal.
+          CHUNK 52.1 (Concern 7 / chunk-53 groundwork): conditionally mounted
+          so no <Modal> node lives in the tree at rest. Defuses the multi-
+          Modal-at-rest iOS 26 crash primitive on both BPS and legacy
+          /Home/health-plan surfaces. The child's [existing, visible] reset
+          effect still runs on the fresh mount and initializes state from
+          `existing`, so behavior on open is unchanged. */}
+      {editor !== null ? (
       <MedicationEditorModal
         mode={editor}
         colors={colors}
@@ -276,8 +348,12 @@ export function MedicationsSection({
           setEditor(null);
         }}
       />
+      ) : null}
 
-      {/* Supply / refill modal */}
+      {/* Supply / refill modal.
+          CHUNK 52.1 (Concern 7): conditionally mounted, same rationale as
+          the editor modal above. */}
+      {supplyEditor !== null ? (
       <SupplyEditorModal
         mode={supplyEditor}
         colors={colors}
@@ -302,6 +378,7 @@ export function MedicationsSection({
           setSupplyEditor(null);
         }}
       />
+      ) : null}
     </View>
   );
 }
@@ -326,6 +403,8 @@ function MedicationCard({
   onToggleTracked,
   onUpdateSupply,
   onSnooze,
+  onConfirmAlertOpen,
+  onConfirmAlertResolve,
 }: ThemeProps & {
   med: Medication;
   busy: boolean;
@@ -335,6 +414,13 @@ function MedicationCard({
   onToggleTracked: () => void;
   onUpdateSupply: () => void;
   onSnooze: () => void;
+  /** Signal the parent that a destructive-confirm Alert is presenting.
+   *  Parent uses this to gate its openAddSignal effect so it doesn't
+   *  mount MedicationEditorModal on top of a live Alert (iOS 26.5
+   *  Alert-over-Modal forbidden pairing). Both handlers must be called
+   *  in pairs — open on Alert.alert start, resolve on either branch. */
+  onConfirmAlertOpen: () => void;
+  onConfirmAlertResolve: () => void;
 }): React.JSX.Element {
   const isEhr = med.source === 'ehr';
   const badgeColor = isEhr ? (colors.primary as string) : (colors.tint as string);
@@ -344,6 +430,32 @@ function MedicationCard({
   // COS-372: form-derived display (only surfaced when MED_FORMS_ENABLED).
   const isInjectable = normalizeForm(med.form) === 'injectable';
   const formTag = formTagLabel(med.form);
+
+  // CHUNK 52.1 (Concern 1): confirm before firing the destructive Hide
+  // mutation. INVARIANT: MedicationsSection must be rendered as INLINE content
+  // on the plan surface, NEVER inside a <Modal>. If that ever changes, this
+  // Alert becomes the iOS 26 Alert-over-Modal forbidden pairing — swap to a
+  // custom in-tree confirm before re-parenting. Verified: BPS
+  // (BiopsychosocialPlanScreen) and legacy (/Home/health-plan) both mount
+  // this section inline.
+  const confirmRemove = () => {
+    // CHUNK 52.1 adversarial-verify major #4 fix: signal alert-in-flight to
+    // the parent so it can skip openAddSignal-triggered Modal mounts while
+    // the Alert is visible (Alert-over-Modal is the iOS 26.5 forbidden
+    // pairing). Every branch (Cancel + Hide) resolves the ref before firing
+    // its user-facing action, so the ref is guaranteed cleared once the
+    // Alert dismisses regardless of user choice.
+    onConfirmAlertOpen();
+    Alert.alert(
+      'Hide medication?',
+      `${med.name} will be hidden from your medication list. You can restore it later.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: onConfirmAlertResolve },
+        { text: 'Hide', style: 'destructive', onPress: () => { onConfirmAlertResolve(); onRemove(); } },
+      ],
+      { onDismiss: onConfirmAlertResolve },
+    );
+  };
 
   return (
     <View style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
@@ -416,13 +528,19 @@ function MedicationCard({
         >
           <MaterialIcons name="edit" size={getScaledFontSize(18)} color={colors.subtext} />
         </Pressable>
+        {/* CHUNK 52.1 (Concerns 1 + 3): destructive Hide is now confirm-
+            gated via Alert.alert and spatially separated from Edit with
+            iconBtnDestructive (marginLeft: 12) + asymmetric hitSlop (smaller
+            on the left) so a stray finger between Edit and Hide falls on
+            Edit — the non-destructive side. */}
         <Pressable
-          onPress={onRemove}
+          onPress={confirmRemove}
           disabled={busy}
-          hitSlop={8}
+          hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel={`Hide ${med.name}`}
-          style={styles.iconBtn}
+          accessibilityHint="Opens a confirmation dialog before hiding"
+          style={styles.iconBtnDestructive}
         >
           <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
         </Pressable>
@@ -501,24 +619,26 @@ function MedicationCard({
         ) : null}
       </View>
 
-      {/* Un-hide affordance only matters right after a remove; the list
-          re-fetches and drops removed meds, so this stays simple — an EHR
-          med that was removed can be re-added via the same backend by
-          un-removing if the server still returns it. Kept lightweight. */}
-      {med.source === 'ehr' ? (
-        <Pressable
-          onPress={onUnremove}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityLabel={`Restore ${med.name} if you hid it`}
-          style={{ marginTop: 6, alignSelf: 'flex-start' }}
-          hitSlop={6}
-        >
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textDecorationLine: 'underline' }}>
-            Hid this by mistake? Restore
-          </Text>
-        </Pressable>
-      ) : null}
+      {/* Un-hide affordance for any hidden med the server still returns.
+          CHUNK 52.1 (Concern 2): the source==='ehr' gate is removed —
+          patient-reported meds also need an in-UI restore path after Hide.
+          Server drops truly-removed rows on refetch, so this stays
+          lightweight regardless of source. Backend contract: the
+          `unremove` payload in useUpdatePlanMedications is a bare
+          string[] id list (services/api/plan-medications.ts), with no
+          source gate on the request shape. */}
+      <Pressable
+        onPress={onUnremove}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={`Restore ${med.name} if you hid it`}
+        style={{ marginTop: 6, alignSelf: 'flex-start' }}
+        hitSlop={6}
+      >
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textDecorationLine: 'underline' }}>
+          Hid this by mistake? Restore
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -598,7 +718,14 @@ function MedicationEditorModal({
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
-        <View style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}>
+        {/* CHUNK 52.1 (Concern 6): accessibilityViewIsModal contains
+            VoiceOver focus inside this sheet on iOS so it can't leak into
+            the plan surface behind. iOS-only prop; Android ignores it (native
+            RN Modal already contains focus via Dialog). */}
+        <View
+          style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}
+          accessibilityViewIsModal
+        >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, marginBottom: 12 }}>
             {isEdit ? 'Edit medication' : 'Add medication'}
           </Text>
@@ -746,6 +873,12 @@ function MedicationEditorModal({
                 { backgroundColor: nameValid ? (colors.tint as string) : colors.subtext + '60', opacity: saving ? 0.6 : 1 },
               ]}
               accessibilityRole="button"
+              accessibilityLabel={isEdit ? 'Save medication' : 'Add medication'}
+              // CHUNK 52.1 (Concern 4): expose pending + disabled state to
+              // VoiceOver / TalkBack. Chunk 46.1 dropped ActivityIndicator, so
+              // AT had no way to detect the saving/disabled state visually
+              // encoded by opacity/disabled.
+              accessibilityState={{ busy: saving, disabled: !nameValid || saving }}
             >
               {/* CHUNK 46.1: dropped ActivityIndicator (chunk-17 crash
                   class). Parent Pressable already has opacity: 0.6 while
@@ -824,7 +957,12 @@ function SupplyEditorModal({
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
-        <View style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}>
+        {/* CHUNK 52.1 (Concern 6): contain VoiceOver focus inside this sheet
+            on iOS — same rationale as the editor modal. */}
+        <View
+          style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}
+          accessibilityViewIsModal
+        >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, marginBottom: 4 }}>
             Update supply
           </Text>
@@ -917,6 +1055,10 @@ function SupplyEditorModal({
                 { backgroundColor: valid ? (colors.tint as string) : colors.subtext + '60', opacity: saving ? 0.6 : 1 },
               ]}
               accessibilityRole="button"
+              accessibilityLabel="Save supply"
+              // CHUNK 52.1 (Concern 4): expose pending + disabled state to
+              // VoiceOver / TalkBack.
+              accessibilityState={{ busy: saving, disabled: !valid || saving }}
             >
               {/* CHUNK 46.1: dropped ActivityIndicator (chunk-17 crash
                   class). Parent Pressable already dims + disables while
@@ -1015,6 +1157,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   iconBtn: { padding: 6, marginLeft: 2 },
+  // CHUNK 52.1 (Concern 3): Hide sits 12pt to the right of Edit so a mis-tap
+  // between the two lands on Edit (non-destructive). Paired with asymmetric
+  // hitSlop on the Hide Pressable (smaller left extent).
+  iconBtnDestructive: { padding: 6, marginLeft: 12 },
   refillBanner: {
     flexDirection: 'row',
     alignItems: 'center',
