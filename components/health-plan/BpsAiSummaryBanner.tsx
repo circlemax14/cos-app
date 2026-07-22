@@ -132,7 +132,15 @@ export function BpsAiSummaryBanner({
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: Spacing.md,
+    // CHUNK 57 alignment: dropped `marginHorizontal: Spacing.md`. The
+    // parent BPS ScrollView already contributes contentContainer
+    // padding: Spacing.md=16 horizontally, so this card's own mH:16
+    // stacked to a 32pt inset from the screen edge — visibly farther in
+    // than sibling BPS cards (BpsWelcomeBanner, BpsTodayHeroCard,
+    // TodaysMedicationsCard, SectionCard) which sit at the 16pt padding
+    // boundary. Component is BPS-only (grep for BpsAiSummaryBanner —
+    // only mounted in BiopsychosocialPlanScreen), so removing mH here
+    // has no back-compat impact.
     marginBottom: Spacing.md,
     padding: Spacing.md,
     borderRadius: Radii.xl,

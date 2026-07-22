@@ -299,10 +299,20 @@ export function BpsNotificationCategoriesCard({
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 20,
+    // CHUNK 57 alignment: dropped `marginHorizontal: 20`. The parent BPS
+    // ScrollView already contributes contentContainer padding:
+    // Spacing.md=16 horizontally, so this card's own mH:20 stacked to a
+    // 36pt inset from the screen edge — visibly farther in than sibling
+    // cards which sit at the 16pt padding boundary. borderRadius bumped
+    // 18 → 16 to match Radii.xl used by BpsWelcomeBanner /
+    // BpsAiSummaryBanner / SectionCard / mapCard so all card corners
+    // share one radius across the surface. Component is BPS-only (grep
+    // for BpsNotificationCategoriesCard — only mounted in
+    // BiopsychosocialPlanScreen), so both edits have no back-compat
+    // impact.
     marginBottom: 16,
     padding: 16,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
   },
   head: {

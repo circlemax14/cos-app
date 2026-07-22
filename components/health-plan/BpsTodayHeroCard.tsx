@@ -214,14 +214,21 @@ export default BpsTodayHeroCard;
 
 const styles = StyleSheet.create({
   card: {
-    padding: 18,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: Spacing.md,
-    // Legacy heroCard sat inside a horizontally-padded ScrollView; the BPS
+    // CHUNK 57 alignment: padding 18 → Spacing.md (16) and borderRadius
+    // 20 → Radii.xl (16). Matches every sibling BPS card
+    // (BpsWelcomeBanner / BpsAiSummaryBanner / BpsNotificationCategoriesCard
+    // / TodaysMedicationsCard / SectionCard / mapCard) so radii and
+    // internal spacing read as one system across the surface. Legacy
+    // heroCard sat inside a horizontally-padded ScrollView; the BPS
     // ScrollView already contentContainer-pads by Spacing.md, so we don't
     // add marginHorizontal here — matches how BpsWelcomeBanner /
-    // TodaysMedicationsCard sit within the same container.
+    // TodaysMedicationsCard sit within the same container. Component is
+    // BPS-only (grep for BpsTodayHeroCard — only mounted in
+    // BiopsychosocialPlanScreen).
+    padding: Spacing.md,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
   },
   topRow: {
     flexDirection: 'row',

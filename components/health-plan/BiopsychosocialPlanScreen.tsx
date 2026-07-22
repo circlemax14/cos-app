@@ -51,6 +51,7 @@ import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
+import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { TaskEditorModal, TaskEditorBody } from './TaskEditorModal';
 import { TaskDetailModal, TaskDetailBody } from './tasks/TaskDetailModal';
@@ -294,7 +295,45 @@ const BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED = true;
  * render the card; flag-on requires no server change. Legacy plan.tsx
  * mount sites are UNTOUCHED — additive parity, not a swap.
  */
-const BPS_INTAKE_CTA_ENABLED = true;
+/**
+ * CHUNK 57 (2026-07-22): Ken dogfood ask #1 — flip false. "Health history
+ * intake is not required in plan screen, its already available in health
+ * summary." The IntakeCtaCard import + hoisted usePatientIntake() observer
+ * are intentionally kept in place so the switch can be flipped back on in
+ * one line if we ever want the entry point back on this surface. Under
+ * flag=false: no placeholder, no card — inert. Recovery cost: ~30-60s via
+ * `npm run eas:update:production`.
+ */
+const BPS_INTAKE_CTA_ENABLED = false;
+
+/**
+ * CHUNK 57 (2026-07-22) kill-switch — Ken dogfood ask #2 — ports the
+ * SCRUM-268 Phase 3 Self-Assessments horizontal carousel from
+ * app/Home/health-trends.tsx (L343-353) onto the BPS Care Plan surface,
+ * mounted in the SLOT previously occupied by IntakeCtaCard (chunk 56).
+ * Reuses the SAME <SelfAssessmentTrends /> component that Health Trends
+ * mounts — single source of truth, no fork. Section header uses the
+ * identical MaterialIcons "assignment" + label pattern for cross-surface
+ * consistency.
+ *
+ * The component self-guards on `query.isLoading` (loading card) and
+ * `records.length === 0` (empty card that reads "Take your first check-in
+ * to see results trend here.") so cold-mount / no-data cases are handled
+ * inside the leaf. Data uses the shared ['assessments-trends'] react-query
+ * key with a 60s staleTime.
+ *
+ * iOS 26.5 safety: SelfAssessmentTrends uses only static Pressable /
+ * ScrollView (horizontal) / View / Text / MaterialIcons + StyleSheet. No
+ * Modal, no Animated, no ActivityIndicator, no Portal, no gradient, no
+ * blur, no rotate. Same primitive envelope BpsNotificationCategoriesCard
+ * / BpsWelcomeBanner already sit within — no new native rendering
+ * surface.
+ *
+ * Kill-switch: flip false to fully inert the header + carousel in one
+ * line. Recovery cost: ~30-60s via `npm run eas:update:production` (JS
+ * module constant, so OTA — not SSM).
+ */
+const BPS_SELF_ASSESSMENTS_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -1087,9 +1126,8 @@ export function BiopsychosocialPlanScreen({
             <View
               style={{
                 height: 150,
-                marginHorizontal: Spacing.md,
                 marginBottom: Spacing.md,
-                borderRadius: 16,
+                borderRadius: Radii.xl,
                 backgroundColor: 'rgba(148,163,184,0.15)',
               }}
               accessible
@@ -1143,9 +1181,8 @@ export function BiopsychosocialPlanScreen({
             <View
               style={{
                 height: 100,
-                marginHorizontal: Spacing.md,
                 marginBottom: Spacing.md,
-                borderRadius: 16,
+                borderRadius: Radii.xl,
                 backgroundColor: 'rgba(148,163,184,0.12)',
               }}
               accessible
@@ -1154,6 +1191,49 @@ export function BiopsychosocialPlanScreen({
           ) : (
             <IntakeCtaCard />
           )
+        )}
+
+        {/*
+          CHUNK 57 (2026-07-22): Ken dogfood ask #2 — Self-Assessments
+          horizontal carousel ported from Health Trends
+          (app/Home/health-trends.tsx L339-353). Mounted in the slot
+          previously owned by IntakeCtaCard (chunk 56, flipped OFF in
+          chunk 57 ask #1). Reuses the same <SelfAssessmentTrends />
+          leaf that Health Trends mounts — single source of truth. See
+          BPS_SELF_ASSESSMENTS_ENABLED at module top for the kill-switch
+          rationale and iOS 26.5 primitive safety notes.
+
+          Layout-shift discipline: SelfAssessmentTrends self-guards on
+          isLoading (renders a loadingCard with its own dimensions) and
+          length===0 (emptyCard). Both static View primitives, no
+          animation. First cold mount reserves ~50pt for the loading
+          card, then swaps to either the ~146pt carousel or the ~90pt
+          empty card — one intended shift, not jitter. `assessments`
+          react-query cache is warmed by auth-prefetch on sign-in, so
+          the common resident-user path skips isLoading entirely and
+          hits the carousel on first paint.
+        */}
+        {BPS_SELF_ASSESSMENTS_ENABLED && (
+          <View style={styles.selfAssessmentsWrap}>
+            <View style={styles.selfAssessmentsHeader}>
+              <MaterialIcons
+                name="assignment"
+                size={getScaledFontSize(16)}
+                color={colors.text as string}
+              />
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  marginLeft: 6,
+                }}
+              >
+                Self-Assessments
+              </Text>
+            </View>
+            <SelfAssessmentTrends />
+          </View>
         )}
 
         {/*
@@ -1192,9 +1272,8 @@ export function BiopsychosocialPlanScreen({
             <View
               style={{
                 height: 140,
-                marginHorizontal: Spacing.md,
                 marginBottom: Spacing.md,
-                borderRadius: 16,
+                borderRadius: Radii.xl,
                 backgroundColor: 'rgba(148,163,184,0.12)',
               }}
               accessible
@@ -1267,7 +1346,20 @@ export function BiopsychosocialPlanScreen({
           the server flagEnabled bit (BE flip covers both BPS + legacy).
         */}
         {BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED && (
-          <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
+          // CHUNK 57 alignment: MedicationsReviewPrompt bakes
+          // `marginHorizontal: 20` into its own StyleSheet (shared with
+          // legacy /Home/health-plan). Inside our ScrollView contentContainer
+          // padding of Spacing.md=16, that lands the card 36pt from the
+          // screen edge — 20pt farther in than sibling BPS cards, which
+          // sit at 16pt. Wrapping in a `marginHorizontal: -Spacing.screenPadding`
+          // View cancels the built-in 20pt exactly, so the card renders at
+          // the same 16pt edge as BpsWelcomeBanner / TodaysMedicationsCard /
+          // SectionCard. Legacy /Home/health-plan.tsx is left untouched
+          // (its own container has different padding, so its author-intended
+          // 20pt inset there still holds).
+          <View style={styles.legacyCardWrap}>
+            <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
+          </View>
         )}
 
         {/*
@@ -1295,12 +1387,27 @@ export function BiopsychosocialPlanScreen({
           which passes onLayout directly to the section).
         */}
         {BPS_MEDICATIONS_EDITOR_ENABLED && (
-          <MedicationsSection
+          // CHUNK 57 alignment: MedicationsSection's internal cards and
+          // header sit at `paddingHorizontal: 20` / `marginHorizontal: 20`
+          // — 36pt from screen edge inside our 16pt-padded ScrollView.
+          // The same negative-mH wrapper cancels the 20pt exactly, aligning
+          // its cards with the 16pt-edge BPS card baseline. Shared with
+          // legacy — leaf styles untouched.
+          <View
+            style={styles.legacyCardWrap}
+            // CHUNK 57 blocker fix: chunk-55 scroll-to-meds requires
+            // layout.y measured relative to the ScrollView content, but
+            // MedicationsSection's own onLayout fires relative to its
+            // IMMEDIATE parent — which is now this wrapper View. Attaching
+            // onLayout to the wrapper (whose parent is the ScrollView) gives
+            // the correct ScrollView-content y-offset; dropped the
+            // section-level onLayout prop.
             onLayout={(e) => {
               medsSectionYRef.current = e.nativeEvent.layout.y;
             }}
-            openAddSignal={openMedsAddSignal}
-          />
+          >
+            <MedicationsSection openAddSignal={openMedsAddSignal} />
+          </View>
         )}
 
         {/*
@@ -1367,11 +1474,18 @@ export function BiopsychosocialPlanScreen({
           nothing is due, or when the assessments query errors out. Safe
           to render on every plan-screen mount.
         */}
-        <AssessmentDueBanner
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
+        {/* CHUNK 57 alignment: AssessmentDueBanner bakes
+            `marginHorizontal: Spacing.screenPadding` (=20) into its own
+            StyleSheet (shared with legacy). Wrap in
+            `marginHorizontal: -Spacing.screenPadding` so it renders at
+            the same 16pt edge as sibling BPS cards. */}
+        <View style={styles.legacyCardWrap}>
+          <AssessmentDueBanner
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+        </View>
 
         {/* Three section cards */}
         {SECTION_ORDER.map(({ key, title }) => (
@@ -1617,8 +1731,13 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderWidth: 1,
     borderRadius: Radii.xl,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
+    // CHUNK 57 alignment: previously marginTop: Spacing.md +
+    // marginBottom: Spacing.sm gave asymmetric vertical rhythm vs. the
+    // surrounding cards (all use marginBottom: Spacing.md). Standardize
+    // on marginBottom: Spacing.md so the wellbeing card sits in the
+    // same vertical grid as its siblings; drop marginTop since the
+    // preceding card already contributes marginBottom: Spacing.md.
+    marginBottom: Spacing.md,
   },
   mapIconChip: {
     width: 40,
@@ -1676,5 +1795,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
+  },
+  // CHUNK 57 alignment: negative-mH wrapper that cancels the built-in
+  // `marginHorizontal: Spacing.screenPadding` (=20) baked into the shared
+  // MedicationsReviewPrompt / MedicationsSection / AssessmentDueBanner
+  // leaves. Inside our ScrollView contentContainer padding of
+  // Spacing.md=16, this pulls them from 36pt-from-edge → 16pt-from-edge,
+  // aligning with sibling BPS cards (BpsWelcomeBanner, BpsTodayHeroCard,
+  // TodaysMedicationsCard, SectionCard, mapCard) that all sit at the
+  // 16pt padding boundary. Legacy /Home/health-plan mounts these
+  // components directly (no wrapper) so their author-intended 20pt
+  // inset is preserved on that surface. Overflow default (visible)
+  // allows the negative margin to extend past the padding without
+  // clipping.
+  legacyCardWrap: {
+    marginHorizontal: -Spacing.screenPadding,
+  },
+  // CHUNK 57 (ask #2) Self-Assessments carousel wrapper. Its inner
+  // horizontal ScrollView already has paddingHorizontal:16 baked into
+  // its carousel contentContainerStyle, so we don't add extra mH here.
+  // The section header sits at the same 16pt padding boundary as
+  // sibling card headers via the ScrollView contentContainer padding.
+  selfAssessmentsWrap: {
+    marginBottom: Spacing.md,
+  },
+  selfAssessmentsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
   },
 });
