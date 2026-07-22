@@ -41,6 +41,7 @@ import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hook
 import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
+import { MedicationsSection } from './MedicationsSection';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { BpsTodayHeroCard } from './BpsTodayHeroCard';
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
@@ -98,6 +99,47 @@ const BPS_PROGRESS_LINK_ENABLED = true;
  * `npm run eas:update:production` (JS module constant, OTA not SSM).
  */
 const BPS_NOTIFICATION_CATEGORIES_ENABLED = true;
+
+/**
+ * CHUNK 52 kill-switch — ports the legacy full Medications editor
+ * (`MedicationsSection`, mounted today on legacy at
+ * PlanScreenRedesignedV2.tsx and app/Home/health-plan.tsx) onto BPS.
+ * Ken's audit flagged this as the LARGEST feature gap between BPS
+ * and legacy: BPS could VIEW meds via TodaysMedicationsCard but had
+ * no way to Add / Edit / Remove. This mounts the same editor
+ * component (single source of truth — no fork/wrapper) directly
+ * below the read-only glimpse, preserving the "see-then-edit"
+ * narrative.
+ *
+ * iOS 26.5 safety: `MedicationsSection` uses only Modal
+ * (animationType='fade', transparent) at its editor + supply
+ * surfaces — no Animated / Reanimated / Portal / ActivityIndicator
+ * / gradient / blur / rotate. Chunk 46.1 already scrubbed
+ * ActivityIndicator from its Save/Add buttons (pending affordance =
+ * parent Pressable opacity 0.6 + disabled). Same Modal shape is
+ * already prod-hardened on legacy iOS 26.5 mounts, so porting adds
+ * ZERO new native rendering surface.
+ *
+ * Two-layer kill defense: (a) this JS module const — one-line OTA
+ * flip hides the editor on BPS while legacy keeps working; (b) the
+ * server `flagEnabled` bit on `usePlanMedications` — a BE flip
+ * hides the editor on BOTH BPS and legacy in the same second.
+ * `MedicationsSection` itself null-renders while flagEnabled is
+ * false / loading / errored, so no layout-shift work is needed and
+ * older / flag-off users see zero change (back-compat).
+ *
+ * Recovery cost: ~30-60s via `npm run eas:update:production` (OTA,
+ * not SSM). Legacy mount sites (PlanScreenRedesignedV2.tsx,
+ * app/Home/health-plan.tsx) are untouched — additive parity, not a
+ * swap.
+ *
+ * NOTE: the legacy "Review your medications" prompt + scroll-to
+ * (`onLayout` / `openAddSignal` props on MedicationsSection) is
+ * intentionally NOT wired here — deferred to chunk 53 which will
+ * port MedicationsReviewPrompt as a sibling above this mount and
+ * pass those props at that time.
+ */
+const BPS_MEDICATIONS_EDITOR_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -800,6 +842,21 @@ export function BiopsychosocialPlanScreen({
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+
+        {/*
+          CHUNK 52: full legacy Medications editor directly below the
+          read-only glimpse above. Reuses the same MedicationsSection
+          component mounted on legacy (PlanScreenRedesignedV2.tsx +
+          app/Home/health-plan.tsx) — single source of truth, no fork.
+          Self-guards on server `flagEnabled` and null-renders on
+          cold-mount / flag-off, so back-compat holds. The
+          `onLayout` / `openAddSignal` props are intentionally omitted
+          — the legacy "Review your medications" prompt + scroll-to
+          path is deferred to chunk 53. Modal(fade) is the only iOS 26
+          crash-class surface here and is already prod-hardened on
+          legacy; two-layer kill: this JS flag + server flagEnabled.
+        */}
+        {BPS_MEDICATIONS_EDITOR_ENABLED && <MedicationsSection />}
 
         {/*
           COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
