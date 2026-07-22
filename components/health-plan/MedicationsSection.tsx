@@ -20,7 +20,6 @@
 
 import React from 'react';
 import {
-  ActivityIndicator,
   type LayoutChangeEvent,
   Modal,
   Pressable,
@@ -748,13 +747,12 @@ function MedicationEditorModal({
               ]}
               accessibilityRole="button"
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
-                  {isEdit ? 'Save' : 'Add'}
-                </Text>
-              )}
+              {/* CHUNK 46.1: dropped ActivityIndicator (chunk-17 crash
+                  class). Parent Pressable already has opacity: 0.6 while
+                  saving + disabled state — sufficient pending affordance. */}
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                {isEdit ? 'Save' : 'Add'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -920,11 +918,10 @@ function SupplyEditorModal({
               ]}
               accessibilityRole="button"
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Save</Text>
-              )}
+              {/* CHUNK 46.1: dropped ActivityIndicator (chunk-17 crash
+                  class). Parent Pressable already dims + disables while
+                  saving — sufficient pending affordance. */}
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Save</Text>
             </Pressable>
           </View>
         </View>
