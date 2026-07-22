@@ -1,5 +1,5 @@
 import React from 'react'
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
@@ -90,8 +90,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
   if (query.isLoading) {
     return (
       <View style={[styles.loadingCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-        <ActivityIndicator color={colors.tint as string} />
-        <Text style={{ color: colors.subtext, fontSize: fontSize(13), marginLeft: 12 }}>
+        <Text style={{ color: colors.subtext, fontSize: fontSize(13), marginLeft: 0 }}>
           Loading self-assessments…
         </Text>
       </View>

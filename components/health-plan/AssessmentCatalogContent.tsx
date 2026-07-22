@@ -1,6 +1,5 @@
 import React from 'react'
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   StyleSheet,
@@ -294,9 +293,24 @@ export function AssessmentCatalogContent({
   )
 
   if (instrumentsQuery.isLoading || assessmentsQuery.isLoading) {
+    // CHUNK 44 fix (adversarial-verify major): the previous single-strip
+    // placeholder caused a large layout shift when the actual 2-8 card
+    // grid loaded, and read as "broken tile" rather than "loading grid."
+    // Skeleton now mirrors the loaded state's styles.grid layout (2-col,
+    // 48% width, aspectRatio 1, borderRadius 16) with 4 tiles — matches
+    // the typical assigned check-in count on this surface. Static rgba
+    // background, no animation (iOS 26.5 rule).
     return (
-      <View style={{ alignItems: 'center', padding: 24 }}>
-        <ActivityIndicator size="large" color={colors.tint as string} />
+      <View style={styles.grid}>
+        {[0, 1, 2, 3].map((i) => (
+          <View
+            key={`catalog-skel-${i}`}
+            style={[
+              styles.card,
+              { borderColor: colors.border, backgroundColor: 'rgba(148,163,184,0.20)' },
+            ]}
+          />
+        ))}
       </View>
     )
   }
@@ -378,7 +392,9 @@ export function AssessmentCatalogContent({
         accessibilityState={{ disabled: !canBuildPlan }}
       >
         {buildPlan.isPending ? (
-          <ActivityIndicator color="#fff" />
+          <Text style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
+            Building…
+          </Text>
         ) : (
           <Text style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
             {canBuildPlan
