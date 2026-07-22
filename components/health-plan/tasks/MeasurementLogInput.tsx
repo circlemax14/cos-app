@@ -18,7 +18,7 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { Spacing } from '@/constants/design-system';
 import { useLogTaskMeasurement } from '@/hooks/use-plan-tasks';
@@ -168,19 +168,20 @@ export function MeasurementLogInput({
             },
           ]}
         >
-          {logMut.isPending ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text
-              style={{
-                color: '#FFFFFF',
-                fontSize: getScaledFontSize(13),
-                fontWeight: getScaledFontWeight(700) as '700',
-              }}
-            >
-              Log
-            </Text>
-          )}
+          {/* Chunk 46: dropped ActivityIndicator (iOS 26.5 crash class).
+              Chunk 43 already made the log fire-and-forget, composed a
+              synthetic PlanTask, and reset inputs same-tick, so this
+              branch was dead-code on the happy path. Parent
+              TouchableOpacity's 0.7 opacity dim + disabled state remain. */}
+          <Text
+            style={{
+              color: '#FFFFFF',
+              fontSize: getScaledFontSize(13),
+              fontWeight: getScaledFontWeight(700) as '700',
+            }}
+          >
+            Log
+          </Text>
         </TouchableOpacity>
       </View>
       {error ? (

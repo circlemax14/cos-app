@@ -17,12 +17,11 @@
  * Presentation-only, no data ownership, no hooks that fetch — all state
  * and callbacks come from props (`health-plan.tsx`). Uses the same
  * primitives legacy's editor Modal already uses (Modal, TextInput,
- * Pressable, ScrollView, ActivityIndicator, MaterialIcons) — no new
+ * Pressable, ScrollView, MaterialIcons) — no new
  * native surface.
  */
 import React from 'react'
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -264,19 +263,20 @@ export function BioGoalEditorModal(props: BioGoalEditorModalProps): React.JSX.El
                 },
               ]}
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text
-                  style={{
-                    color: '#fff',
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(700) as any,
-                  }}
-                >
-                  Save
-                </Text>
-              )}
+              {/* Chunk 46: dropped ActivityIndicator (iOS 26.5 crash class).
+                  Chunk 41 already made the save fire-and-forget and closes
+                  the modal same-tick, so the spinner branch was dead-code
+                  on the happy path. Parent Pressable's 0.7 opacity dim +
+                  disabled state remain as the pending-state signal. */}
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(700) as any,
+                }}
+              >
+                Save
+              </Text>
             </Pressable>
           </View>
         </View>

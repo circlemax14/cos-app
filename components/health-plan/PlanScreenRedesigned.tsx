@@ -32,7 +32,6 @@
  */
 import React from 'react';
 import {
-  ActivityIndicator,
   LayoutChangeEvent,
   Pressable,
   RefreshControl,
@@ -287,18 +286,15 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
           { backgroundColor: tint, opacity: generating || !canGeneratePlan ? 0.5 : 1 },
         ]}
       >
-        {generating ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <MaterialIcons name="refresh" size={getScaledFontSize(20)} color="#fff" />
-            <Text
-              style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }}
-            >
-              {goals.length > 0 ? 'Refresh my plan' : 'Build my plan'}
-            </Text>
-          </>
-        )}
+        {/* Chunk 46: dropped ActivityIndicator (iOS 26.5 crash class). Parent
+            TouchableOpacity already dims to 0.5 opacity + disables while
+            generating, which is the entire pending-state signal now. */}
+        <MaterialIcons name="refresh" size={getScaledFontSize(20)} color="#fff" />
+        <Text
+          style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }}
+        >
+          {goals.length > 0 ? 'Refresh my plan' : 'Build my plan'}
+        </Text>
       </TouchableOpacity>
 
       {/* Plan-type strip — small, single line. Taps open the chooser. */}
