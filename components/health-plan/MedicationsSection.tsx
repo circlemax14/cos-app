@@ -262,7 +262,17 @@ export function MedicationsSection({
           MEDICATIONS
         </Text>
         <Pressable
-          onPress={() => setEditor({ kind: 'add' })}
+          onPress={() => {
+            // CHUNK 52.3 (adversarial verify minor): guard against opening
+            // MedicationEditorModal on top of a live Hide confirm Alert
+            // (Alert-over-Modal is the iOS 26 forbidden pairing). Matches
+            // the openAddSignal effect's guard. Also skips if the
+            // MedicationEditor or SupplyEditor is already open (rapid
+            // multi-tap safety).
+            if (confirmAlertInFlight.current > 0) return;
+            if (editor !== null || supplyEditor !== null) return;
+            setEditor({ kind: 'add' });
+          }}
           accessibilityRole="button"
           accessibilityLabel="Add a medication"
           style={[styles.addBtn, { backgroundColor: (colors.tint as string) + '18' }]}
@@ -322,35 +332,55 @@ export function MedicationsSection({
         </View>
       ) : null}
 
-      {/* CHUNK 52.2: session-local recently-hidden banner. One row per med
-          the user hid in this session, with a prominent Restore link. See
-          the recentlyHidden useState comment for why this exists (the
-          server drops hidden meds so per-card Restore is unreachable). */}
+      {/* CHUNK 52.2 + 52.3 (Ken 2026-07-22 dogfood): session-local
+          recently-hidden banner. One row per med the user hid in this
+          session, with a prominent Restore pill. See recentlyHidden
+          useState comment for why this exists (the server drops hidden
+          meds so a per-card Restore affordance is unreachable). Ken
+          couldn't find the previous banner (subtle grey card blended
+          with sibling meds); redesigned with warm amber background, a
+          "Recently hidden" header row, and a real teal-pill Restore
+          button so the affordance reads as "action available here". */}
       {recentlyHidden.length > 0 ? (
         <View
           style={[
             styles.recentlyHiddenCard,
-            { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' },
+            { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' },
           ]}
         >
+          <View style={styles.recentlyHiddenHead}>
+            <MaterialIcons name="history" size={getScaledFontSize(16)} color="#92400E" />
+            <Text
+              style={{
+                marginLeft: 6,
+                color: '#92400E',
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 0.5,
+              }}
+            >
+              RECENTLY HIDDEN — TAP RESTORE →
+            </Text>
+          </View>
           {recentlyHidden.map((entry) => (
             <View key={entry.id} style={styles.recentlyHiddenRow}>
               <MaterialIcons
                 name="visibility-off"
                 size={getScaledFontSize(16)}
-                color={colors.subtext}
+                color="#92400E"
               />
               <Text
                 style={{
                   flex: 1,
                   marginLeft: 8,
-                  color: colors.text,
-                  fontSize: getScaledFontSize(13),
+                  color: '#78350F',
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(600) as any,
                 }}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {entry.name} <Text style={{ color: colors.subtext }}>hidden</Text>
+                {entry.name}
               </Text>
               <Pressable
                 onPress={() => restoreFromBanner(entry.id)}
@@ -359,14 +389,21 @@ export function MedicationsSection({
                 accessibilityState={{ disabled: updateMutation.isPending }}
                 disabled={updateMutation.isPending}
                 hitSlop={8}
-                style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+                style={({ pressed }) => [
+                  styles.restorePill,
+                  {
+                    backgroundColor: '#0D9488',
+                    opacity: updateMutation.isPending ? 0.5 : pressed ? 0.8 : 1,
+                  },
+                ]}
               >
+                <MaterialIcons name="undo" size={getScaledFontSize(14)} color="#FFFFFF" />
                 <Text
                   style={{
-                    color: colors.tint as string,
+                    marginLeft: 4,
+                    color: '#FFFFFF',
                     fontSize: getScaledFontSize(13),
                     fontWeight: getScaledFontWeight(700) as any,
-                    opacity: updateMutation.isPending ? 0.5 : 1,
                   }}
                 >
                   Restore
@@ -404,13 +441,26 @@ export function MedicationsSection({
       )}
 
       {/* Add / Edit modal.
-          CHUNK 52.1 (Concern 7 / chunk-53 groundwork): conditionally mounted
-          so no <Modal> node lives in the tree at rest. Defuses the multi-
-          Modal-at-rest iOS 26 crash primitive on both BPS and legacy
-          /Home/health-plan surfaces. The child's [existing, visible] reset
-          effect still runs on the fresh mount and initializes state from
-          `existing`, so behavior on open is unchanged. */}
-      {editor !== null ? (
+          CHUNK 52.3 revert (Ken 2026-07-22 dogfood): chunk 52.1's
+          conditional mount pattern (`{editor !== null ? ... : null}`)
+          broke the "+ Add" flow on Ken's iPhone 14,3 / iOS 26.5 build 62.
+          Fresh-mounting an RN <Modal animationType="fade" transparent>
+          with visible=true in the same commit is a known-brittle
+          pattern — RN docs + community canonical usage universally
+          prefer always-mount + toggle visible so the false→true
+          transition drives the animation. Reverted to unconditional
+          mount with visible={mode !== null} internally. This restores
+          2 <Modal transparent> nodes at rest inside MedicationsSection
+          (this + SupplyEditorModal below), matching pre-52.1 behavior
+          and matching what /Home/health-plan legacy has shipped since
+          the meds feature launched.
+          Total <Modal transparent> at rest on BPS after 52.3:
+            1 (chunk-53 consolidated BPS-owned) + 2 (MedicationsSection)
+            = 3, same as the pre-chunk-53 BPS state Ken tested clean
+            during chunks 47-52 dogfood. No new coexistence pattern
+            introduced. If a future crash surfaces, the chunk-52.1
+            conditional mount can be reintroduced with a
+            requestAnimationFrame-deferred visible toggle. */}
       <MedicationEditorModal
         mode={editor}
         colors={colors}
@@ -462,12 +512,13 @@ export function MedicationsSection({
           setEditor(null);
         }}
       />
-      ) : null}
 
       {/* Supply / refill modal.
           CHUNK 52.1 (Concern 7): conditionally mounted, same rationale as
           the editor modal above. */}
-      {supplyEditor !== null ? (
+      {/* CHUNK 52.3 revert: same rationale as MedicationEditorModal above.
+          Unconditional mount so RN's Modal fade animation gets the
+          false→true visible transition it needs to present on iOS 26.5. */}
       <SupplyEditorModal
         mode={supplyEditor}
         colors={colors}
@@ -492,7 +543,6 @@ export function MedicationsSection({
           setSupplyEditor(null);
         }}
       />
-      ) : null}
     </View>
   );
 }
@@ -1222,19 +1272,33 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-  // CHUNK 52.2: recently-hidden banner styles. Match errorBox visual weight
-  // so the affordance reads as "sits above the list, one action".
+  // CHUNK 52.2 + 52.3 (Ken 2026-07-22 dogfood): recently-hidden banner
+  // styles. Warm amber palette + prominent teal Restore pill so Ken can
+  // FIND the restore path — the previous grey card blended with the
+  // sibling med cards and wasn't legibly distinct.
   recentlyHiddenCard: {
     marginHorizontal: 20,
-    marginBottom: 10,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  recentlyHiddenHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   recentlyHiddenRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 6,
+  },
+  restorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   emptyRow: {
     marginHorizontal: 20,
