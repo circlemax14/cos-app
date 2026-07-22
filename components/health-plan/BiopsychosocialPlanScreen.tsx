@@ -44,6 +44,7 @@ import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { BpsTodayHeroCard } from './BpsTodayHeroCard';
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
+import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import { TaskEditorModal } from './TaskEditorModal';
 import { TaskDetailModal } from './tasks/TaskDetailModal';
@@ -84,6 +85,19 @@ const BPS_AI_SUMMARY_ENABLED = true;
  * ~30-60s via `npm run eas:update:production`.
  */
 const BPS_PROGRESS_LINK_ENABLED = true;
+
+/**
+ * CHUNK 51 kill-switch — port of the COS-373 legacy read-only
+ * "Here's what you'll be notified about" glimpse card
+ * (app/Home/health-plan.tsx:1091-1136) onto the BPS surface. The card
+ * self-guards on both the shared client kill-switch
+ * (NOTIFICATION_CATEGORIES_ENABLED) and the server `flagEnabled` bit,
+ * so a BE flip alone will hide it on both BPS and legacy. This flag is
+ * BPS-only: flip false to hide the card on BPS while legacy keeps
+ * rendering. Recovery cost: ~30-60s via
+ * `npm run eas:update:production` (JS module constant, OTA not SSM).
+ */
+const BPS_NOTIFICATION_CATEGORIES_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -744,6 +758,32 @@ export function BiopsychosocialPlanScreen({
               getScaledFontWeight={getScaledFontWeight}
             />
           )
+        )}
+
+        {/*
+          CHUNK 51: read-only "Here's what you'll be notified about"
+          preview card — port of the COS-373 legacy glimpse
+          (app/Home/health-plan.tsx:1091-1136) onto the BPS surface.
+          Lists the 5 notification categories with on/off + a Manage
+          link that pushes to /Home/reminder-settings. Component
+          self-guards on both the client kill-switch
+          (NOTIFICATION_CATEGORIES_ENABLED) and the server flagEnabled
+          bit + preferences presence, so this is inert for back-compat /
+          older builds / silent load. BPS-only kill-switch here so we
+          can hide the card on BPS while legacy keeps rendering.
+          Placement rationale: mirrors legacy ordering — sits between
+          the AI-summary card and TodaysMedicationsCard so the
+          user's read is "here's the plan → here's what you'll hear
+          from us → here's what to take today". Static card, no
+          animation — iOS 26.5 safe.
+        */}
+        {BPS_NOTIFICATION_CATEGORIES_ENABLED && (
+          <BpsNotificationCategoriesCard
+            colors={colors}
+            isDark={settings.isDarkTheme}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
         )}
 
         {/*
