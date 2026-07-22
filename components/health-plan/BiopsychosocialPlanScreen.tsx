@@ -28,6 +28,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 
@@ -41,13 +42,28 @@ import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
+import { BpsTodayHeroCard } from './BpsTodayHeroCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import { TaskEditorModal } from './TaskEditorModal';
 import { TaskDetailModal } from './tasks/TaskDetailModal';
 import { useAiHealthPlan } from '@/hooks/use-plan-tasks';
+import { fetchTasksForDate } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
-import type { PlanTask } from '@/services/api/types';
+import type { PlanTask, TaskOccurrence } from '@/services/api/types';
+
+/**
+ * CHUNK 47 kill-switch — port of the SCRUM-252 Today hero card into the
+ * BPS surface. One-line OTA flip if the hero regresses in the wild.
+ */
+const BPS_TODAY_HERO_ENABLED = true;
+
+/** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
+ *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
+ *  entry — the hero rides that warm read on first render. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'biological', title: 'Biological Wellness' },
@@ -258,6 +274,26 @@ export function BiopsychosocialPlanScreen({
   // invalidate a key nothing observes and the tasks list would stay stale.
   const aiPlanQuery = useAiHealthPlan();
   const allTasks: PlanTask[] = aiPlanQuery.data?.tasks ?? [];
+
+  // CHUNK 47: today's task OCCURRENCES (with .status) for the Today
+  // hero card. `allTasks` above is PlanTask[] — the plan template — and
+  // has no per-day completion state, so it can't drive the hero's
+  // done/skipped/to-go counts. We fetch occurrences under the shared
+  // ['plan-tasks', todayIso()] key so we ride the warm cache written
+  // by auth-prefetch.ts:96 on sign-in (no cold fetch on first render
+  // in the common path). Off-tree failure returns [] and the hero
+  // renders null — no throw, no empty-state noise.
+  const todayTasksQuery = useQuery<TaskOccurrence[]>({
+    queryKey: ['plan-tasks', todayIso()],
+    queryFn: () => fetchTasksForDate(todayIso()),
+    staleTime: 60_000,
+    // Only run when the flag is on — cheap OTA kill-switch (no observer
+    // registered when disabled). Also gate on `enabled`-time plan
+    // presence check happening downstream (the hero renders only
+    // inside the loaded ScrollView branch).
+    enabled: BPS_TODAY_HERO_ENABLED,
+  });
+  const todayTasks: TaskOccurrence[] = todayTasksQuery.data ?? [];
   const tasksBySection = React.useMemo(() => {
     const b: Record<BiopsychosocialSectionKey, PlanTask[]> = { biological: [], psychological: [], social: [] };
     for (const t of allTasks) {
@@ -504,6 +540,48 @@ export function BiopsychosocialPlanScreen({
           {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
           {headerRight ? <View>{headerRight}</View> : null}
         </View>
+
+        {/*
+          CHUNK 47 (SCRUM-252 port): Today hero card — big focal
+          percent-complete number + progress bar + done/to-go/skipped
+          triplet. Sits ABOVE BpsWelcomeBanner so it owns the "how am I
+          doing today" glance-signal that BPS was missing. Returns null
+          when today has zero task occurrences (matches legacy hero's
+          `tasks.length > 0` guard, so patients without a plan-driven
+          schedule see NO change). Kill-switch: `BPS_TODAY_HERO_ENABLED`
+          at module top — one-line OTA flip.
+        */}
+        {BPS_TODAY_HERO_ENABLED && (
+          // CHUNK 47 fix (adversarial-verify major): reserve fixed-height
+          // space while today-tasks fetch is in flight. Without this,
+          // a cache miss (deep-link, staleTime expiry, dev build without
+          // auth-prefetch) rendered hero=null on first paint then mounted
+          // ~150pt of content when the fetch resolved — pushing everything
+          // else down. Static View placeholder (chunk-17/39 pattern) fills
+          // the slot until data arrives; card renders or stays null based
+          // on totalToday. If totalToday === 0 after fetch, placeholder
+          // collapses to 0 — one intended shift, not a jitter.
+          todayTasksQuery.isLoading && !todayTasksQuery.data ? (
+            <View
+              style={{
+                height: 150,
+                marginHorizontal: Spacing.md,
+                marginBottom: Spacing.md,
+                borderRadius: 16,
+                backgroundColor: 'rgba(148,163,184,0.15)',
+              }}
+              accessible
+              accessibilityLabel="Loading today's progress"
+            />
+          ) : (
+            <BpsTodayHeroCard
+              tasks={todayTasks}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          )
+        )}
 
         {/*
           COS-449 (Chunk 1b): one-time welcome banner explaining the BPS
