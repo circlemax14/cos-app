@@ -13,24 +13,33 @@
  * iOS 26.5 SIGABRT primitive documented in components/unified-plan/v2/net.ts.
  * Mirrors chunk 40 (regenerate) and chunk 41 (bio-goal edit).
  *
+ * CHUNK 43 (2026-07-21): useLogTaskMeasurement rewritten to fire-and-forget
+ * the POST + optimistically append the composed measurement to the
+ * ai-health-plan cache. Same iOS 26.5 SIGABRT class as chunks 40-42 —
+ * awaiting axios inside the Log button's tap handler was the primitive.
+ * Optimistic append is REQUIRED (per BPS audit) so MeasurementHistoryList
+ * re-renders same-tick — without it the just-logged value disappears
+ * from the user's view until the 8s invalidate lands.
+ *
  * Revert path (if the pending-window latch causes user-visible weirdness):
- * flip the two mutationFns back to `createPlanTask(body)` /
- * `updatePlanTask(args.id, args.body)` — the axios wrappers in
- * services/api/plan-tasks.ts are still live for non-tap callers.
+ * flip the three mutationFns back to `createPlanTask(body)` /
+ * `updatePlanTask(args.id, args.body)` / `logTaskMeasurement(args.id, args.body)`
+ * — the axios wrappers in services/api/plan-tasks.ts are still live for
+ * non-tap callers, and drop the onMutate/onError optimistic patch blocks.
  *
  * iOS background-timer note: the setTimeout latch below can be delayed
  * when the app is backgrounded — invalidateQueries then fires on next
  * foreground. Not a correctness issue, just don't chase a phantom.
  *
- * useDeletePlanTask + useLogTaskMeasurement intentionally untouched here
- * — separate audit chunks own those hot paths.
+ * useDeletePlanTask intentionally untouched here — separate audit chunk
+ * owns that hot path.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fireAndForgetPost, fireAndForgetPatch } from '@/components/unified-plan/v2/net';
 import { fetchAiHealthPlan } from '@/services/api/ai-health-plan';
-import type { AiHealthPlan, PlanTask } from '@/services/api/types';
+import type { AiHealthPlan, PlanTask, TaskMeasurement } from '@/services/api/types';
 import {
   createPlanTask,
   updatePlanTask,
@@ -134,8 +143,54 @@ export function useDeletePlanTask() {
 export function useLogTaskMeasurement() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: string; body: LogMeasurementBody }) => logTaskMeasurement(args.id, args.body),
-    onSuccess: () => {
+    mutationFn: (args: { id: string; body: LogMeasurementBody }) => {
+      // Fire the POST immediately — no await (chunk 9.5 rule; see
+      // components/unified-plan/v2/net.ts header for the SIGABRT trap).
+      void fireAndForgetPost(
+        `${BASE_PATH}/${encodeURIComponent(args.id)}/measurements`,
+        args.body as unknown as Record<string, unknown>,
+      );
+      // Latch mutation.isPending for the pending window so the invalidate
+      // in onSettled fires AFTER the server has landed the write, AND the
+      // Log button stays disabled to prevent double-fires.
+      return new Promise<void>((resolve) =>
+        setTimeout(resolve, TASK_MUTATION_PENDING_WINDOW_MS),
+      );
+    },
+    // CHUNK 43 optimistic append: without this, MeasurementHistoryList
+    // doesn't re-render until the 8s invalidate — the user's just-logged
+    // measurement disappears from view. Compose the row locally with a
+    // client-side ISO timestamp; the server-authoritative row replaces
+    // it on invalidate. Shape must match types.ts:307 exactly
+    // ({ timestamp, value, source }) — same shape MeasurementLogInput's
+    // onLog composer builds for the synthetic PlanTask it hands upward.
+    onMutate: async ({ id, body }) => {
+      await qc.cancelQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
+      const prev = qc.getQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY);
+      const composed: TaskMeasurement = {
+        timestamp: new Date().toISOString(),
+        value: body.value,
+        source: body.source ?? 'manual',
+      };
+      if (prev?.tasks) {
+        const nextTasks = prev.tasks.map((t): PlanTask =>
+          t.id === id
+            ? { ...t, measurements: [...(t.measurements ?? []), composed] }
+            : t,
+        );
+        qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, {
+          ...prev,
+          tasks: nextTasks,
+        });
+      }
+      return { prevAiPlan: prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevAiPlan) {
+        qc.setQueryData(AI_HEALTH_PLAN_QUERY_KEY, context.prevAiPlan);
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
     },
   });
