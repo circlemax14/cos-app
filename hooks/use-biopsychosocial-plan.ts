@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchBiopsychosocialPlan,
+  type BiopsychosocialPlanResponse,
+  type SectionPlan,
+  type MeasurableGoal,
 } from '@/services/api/biopsychosocial-plan'
 // `updatePlanGoal` service export is intentionally not imported here after
 // chunk 41 — the mutationFn now uses `fireAndForgetPut` directly. Service
@@ -130,6 +133,27 @@ export function useRegenerateBiopsychosocialPlan() {
 // to 15s.
 const EDIT_GOAL_PENDING_WINDOW_MS = 8_000
 
+// CHUNK 41.1 fix (Ken reported "loader but not updated value"): apply an
+// optimistic cache update on tap so the goal card shows the edited fields
+// INSTANTLY, not 8s later after the pending window + refetch. Also fixes
+// the case where the server write succeeds silently but the refetch
+// arrives before the DDB read-back has propagated — the user was seeing
+// stale data for the full 8s window with no visible confirmation their
+// tap did anything.
+function applyGoalPatchToSection(
+  section: SectionPlan,
+  goalId: string,
+  patch: GoalPatch,
+): SectionPlan {
+  let touched = false
+  const nextGoals = section.goals.map((g): MeasurableGoal => {
+    if (g.id !== goalId) return g
+    touched = true
+    return { ...g, ...patch }
+  })
+  return touched ? { ...section, goals: nextGoals } : section
+}
+
 export function useUpdateBioGoal() {
   const qc = useQueryClient()
   return useMutation({
@@ -144,6 +168,37 @@ export function useUpdateBioGoal() {
       return new Promise<void>((resolve) =>
         setTimeout(resolve, EDIT_GOAL_PENDING_WINDOW_MS),
       )
+    },
+    onMutate: async ({ goalId, patch }) => {
+      // CHUNK 41.1: optimistic update. Cancel any in-flight refetch so
+      // it can't overwrite our optimistic write, snapshot the previous
+      // plan for rollback, then patch the goal in whichever section it
+      // lives in (we don't know which, so try all three — the helper
+      // no-ops for sections that don't contain the goal).
+      await qc.cancelQueries({ queryKey: ['biopsychosocial-plan'] })
+      const prev = qc.getQueryData<BiopsychosocialPlanResponse>(['biopsychosocial-plan'])
+      if (prev?.plan) {
+        qc.setQueryData<BiopsychosocialPlanResponse>(['biopsychosocial-plan'], {
+          ...prev,
+          plan: {
+            ...prev.plan,
+            sections: {
+              biological: applyGoalPatchToSection(prev.plan.sections.biological, goalId, patch),
+              psychological: applyGoalPatchToSection(prev.plan.sections.psychological, goalId, patch),
+              social: applyGoalPatchToSection(prev.plan.sections.social, goalId, patch),
+            },
+          },
+        })
+      }
+      return { prevBioPlan: prev }
+    },
+    onError: (_err, _vars, context) => {
+      // If the mutation "fails" (in practice fireAndForgetPut swallows
+      // everything, so this fires only if the setTimeout wrapper rejects
+      // — near impossible). Roll back the optimistic write.
+      if (context?.prevBioPlan) {
+        qc.setQueryData(['biopsychosocial-plan'], context.prevBioPlan)
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] })
