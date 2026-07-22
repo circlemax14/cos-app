@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -309,24 +308,21 @@ export default function IntakeWizardScreen() {
                 styles.primaryBtn,
                 {
                   backgroundColor: currentAnswered ? colors.tint : colors.subtext + '60',
+                  opacity: patchMut.isPending || completeMut.isPending ? 0.6 : 1,
                 },
               ]}
               accessibilityRole="button"
               accessibilityLabel={primaryLabel}
             >
-              {patchMut.isPending || completeMut.isPending ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text
-                  style={{
-                    color: '#fff',
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(700) as any,
-                  }}
-                >
-                  {primaryLabel}
-                </Text>
-              )}
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(700) as any,
+                }}
+              >
+                {primaryLabel}
+              </Text>
             </Pressable>
           </View>
           {(patchMut.isError || completeMut.isError) && (
@@ -360,7 +356,19 @@ function renderLoader(colors: ColorPalette) {
           backgroundColor: colors.background,
         }}
       >
-        <ActivityIndicator size="large" color={colors.tint} />
+        <View
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 12,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        />
+        <Text style={{ marginTop: 12, color: colors.subtext, fontSize: 14 }}>
+          Loading your intake…
+        </Text>
       </View>
     </AppWrapper>
   );

@@ -13,7 +13,6 @@
  */
 import React from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -84,7 +83,19 @@ export default function IntakeReportScreen() {
     return (
       <AppWrapper>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 12,
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          />
+          <Text style={{ marginTop: 12, color: colors.subtext, fontSize: 14 }}>
+            Loading report…
+          </Text>
         </View>
       </AppWrapper>
     );
