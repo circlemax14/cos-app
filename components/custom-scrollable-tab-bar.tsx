@@ -8,18 +8,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAccessibility } from '@/stores/accessibility-store';
 
 /**
- * Short one-word label per tab route. Kept in-file (small map) so we
- * don't reach into descriptors.options.title for the display label —
- * some titles are multi-word ("Health Summary") and would wrap or
- * ellipsize awkwardly on small iPhones. Values chosen to fit ~5 tabs
- * within a 320pt iPhone SE row at 10pt scale without clashing.
+ * Display label per tab route. Ken 2026-07-22: prefers "Care Plan" and
+ * "Health Summary" spelled out rather than the terser single-word forms
+ * ("Care" / "Summary"). Multi-word labels wrap naturally to 2 lines
+ * under the icon on small phones (see numberOfLines below) so they
+ * stack cleanly instead of ellipsizing or pushing neighbors sideways.
  */
 const TAB_LABELS: Record<string, string> = {
   index: 'Home',
   appointments: 'Calendar',
-  'health-plan': 'Care',
-  'unified-plan': 'Care',
-  plan: 'Summary',
+  'health-plan': 'Care Plan',
+  'unified-plan': 'Care Plan',
+  plan: 'Health Summary',
   reports: 'Reports',
 };
 
@@ -182,17 +182,27 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
             )
           )}
           <Text
-            numberOfLines={1}
+            numberOfLines={2}
             ellipsizeMode="tail"
-            allowFontScaling
-            maxFontSizeMultiplier={1.4}
+            // App-side scaling via getScaledFontSize is already applied
+            // below; don't stack iOS system Dynamic Type on top or the
+            // effective multiplier can hit ~2x and blow past the
+            // column width mid-word.
+            allowFontScaling={false}
             style={[
               styles.tabLabel,
               {
-                // 10pt base scales with accessibility multiplier but is capped
-                // above (maxFontSizeMultiplier=1.4) so 5 tabs still fit an
-                // iPhone SE row without ellipsizing.
+                // 10pt base scales with the app's accessibility multiplier
+                // via getScaledFontSize. Two-word labels ("Care Plan",
+                // "Health Summary") wrap at the space when the tab's
+                // bounded width (flex:1 in distributed mode, see
+                // tabButtonDistributed) forces the wrap. Single-word
+                // labels ("Home", "Calendar", "Reports") stay on one line.
                 fontSize: getScaledFontSize(10),
+                // No lineHeight override — RN's natural leading gives the
+                // font enough vertical room to avoid clipping ascenders,
+                // and both single and two-line labels use the same
+                // leading so baselines stay consistent.
                 color: isFocused ? '#008080' : '#4B5563',
                 fontWeight: isFocused ? '700' : '500',
               },
@@ -250,7 +260,14 @@ const styles = StyleSheet.create({
   },
   tabsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // Align tabs to the top so all icon slots (fixed 46pt) share the same
+    // y-origin regardless of how many lines each label takes. Without
+    // this, a tab whose label wraps to 2 lines grows taller than its
+    // 1-line neighbors and 'alignItems: center' pushes the shorter tabs'
+    // icons DOWN to re-center within the row — icons zig-zag across
+    // the bar. Ken 2026-07-22 caught the equivalent regression when the
+    // 46pt Care pill lifted its label baseline vs 24pt siblings.
+    alignItems: 'flex-start',
   },
   tabsContainerDistributed: {
     width: '100%',
@@ -259,14 +276,30 @@ const styles = StyleSheet.create({
   tabButton: {
     paddingVertical: 10,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
+  // In distributed mode (content fits container), each tab claims 1/N of
+  // the available width so labels have a bounded column to wrap in. RN
+  // Text won't wrap without a bounded ancestor width — minWidth alone
+  // isn't enough because Text grows to natural width otherwise. flexBasis:0
+  // + flexGrow:1 gives all 5 tabs an equal share of the container.
   tabButtonDistributed: {
     paddingHorizontal: 4,
+    flexGrow: 1,
+    flexBasis: 0,
   },
   tabContent: {
+    // Take the tabButton's full width so Yoga propagates the flex:1
+    // width constraint from tabButtonDistributed all the way down to the
+    // Text. Without this the intermediate tabContent has no width bound
+    // and RN Text keeps its natural single-line width, no-oping the
+    // numberOfLines={2} wrap and pushing "Health Summary" wider than
+    // neighboring tabs. Ken 2026-07-22 dogfood: the wrap must actually
+    // fire on iPhone 14 (390pt) at default text scale for the row to
+    // look coherent.
+    width: '100%',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     flexDirection: 'column',
     gap: 2,
   },
