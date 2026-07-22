@@ -381,6 +381,22 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        CHUNK 50 — BPS Progress screen, reached via the "View Progress"
+        link in the BPS header. Explicitly registered as href: null so
+        expo-router does NOT auto-surface it as a bottom tab. Ken
+        2026-07-22 dogfood: unregistered files still get inferred as tabs;
+        we saw the Progress route appearing in the bottom nav next to
+        Home/Calendar/etc. This makes it internal-only.
+      */}
+      <Tabs.Screen
+        name="bps-progress"
+        options={{
+          title: 'Progress',
+          href: null,
+          headerShown: false,
+        }}
+      />
       {/* HS-1 / SCRUM-590 — patient intake wizard as a stack-pushed route (not a Modal), same pattern as plan-type-chooser and biopsychosocial-plan (iOS 26.5 modal-crash background). */}
       <Tabs.Screen
         name="patient-intake"
