@@ -23,7 +23,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 
-import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
+import {
+  BiopsychosocialPlanScreen,
+  BPS_MODAL_CONSOLIDATION_ENABLED,
+} from '@/components/health-plan/BiopsychosocialPlanScreen';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
 import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
 import { TryUnifiedViewLink } from '@/components/unified-plan/ClassicViewLink';
@@ -180,29 +183,41 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
           <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
         }
       />
-      {/* CHUNK 41: `saving` prop is presentational dead code on this route —
-          saveBioGoalEdit closes the Modal same-tick, so this ActivityIndicator
-          branch never renders. Wire retained for contract stability with the
-          other caller (health-plan.tsx) where the Modal stays mounted. */}
-      <BioGoalEditorModal
-        visible={bioEditGoal !== null}
-        colors={colors as unknown as Record<string, string>}
-        getScaledFontSize={getScaledFontSize}
-        getScaledFontWeight={getScaledFontWeight}
-        title={bioEditTitle}
-        description={bioEditDesc}
-        target={bioEditTarget}
-        timeframe={bioEditTimeframe}
-        subdomains={bioEditSubdomains}
-        onChangeTitle={setBioEditTitle}
-        onChangeDescription={setBioEditDesc}
-        onChangeTarget={setBioEditTarget}
-        onChangeTimeframe={setBioEditTimeframe}
-        onToggleSubdomain={toggleBioSubdomain}
-        onClose={closeBioGoalEditor}
-        onSave={saveBioGoalEdit}
-        saving={updateBioGoalMutation.isPending}
-      />
+      {/*
+        CHUNK 53 (2026-07-22): under BPS_MODAL_CONSOLIDATION_ENABLED, the
+        bio-goal editor lives INSIDE the consolidated Modal owned by
+        BiopsychosocialPlanScreen — the child intercepts `onEditGoal` locally
+        and never fires the prop, so `bioEditGoal` state below never gets
+        set. The five draft-state cells + `updateBioGoalMutation` above are
+        harmless dead code in that path (kept in-tree so the kill-switch
+        revert is a one-flag flip with no state migration).
+
+        Under flag=false, this Modal is the primary editor path exactly as
+        before — CHUNK 41 `saving` is presentational dead code (fire-and-
+        forget close same-tick) but the wire is retained for contract
+        stability with health-plan.tsx which also imports BioGoalEditorModal.
+      */}
+      {!BPS_MODAL_CONSOLIDATION_ENABLED && (
+        <BioGoalEditorModal
+          visible={bioEditGoal !== null}
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          title={bioEditTitle}
+          description={bioEditDesc}
+          target={bioEditTarget}
+          timeframe={bioEditTimeframe}
+          subdomains={bioEditSubdomains}
+          onChangeTitle={setBioEditTitle}
+          onChangeDescription={setBioEditDesc}
+          onChangeTarget={setBioEditTarget}
+          onChangeTimeframe={setBioEditTimeframe}
+          onToggleSubdomain={toggleBioSubdomain}
+          onClose={closeBioGoalEditor}
+          onSave={saveBioGoalEdit}
+          saving={updateBioGoalMutation.isPending}
+        />
+      )}
     </>
   );
 }

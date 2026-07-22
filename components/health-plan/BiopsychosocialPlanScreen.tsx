@@ -20,6 +20,7 @@
  */
 import React from 'react';
 import {
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -47,8 +48,9 @@ import { BpsTodayHeroCard } from './BpsTodayHeroCard';
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
-import { TaskEditorModal } from './TaskEditorModal';
-import { TaskDetailModal } from './tasks/TaskDetailModal';
+import { TaskEditorModal, TaskEditorBody } from './TaskEditorModal';
+import { TaskDetailModal, TaskDetailBody } from './tasks/TaskDetailModal';
+import { BioGoalEditorBody } from './BioGoalEditorModal';
 import { useAiHealthPlan } from '@/hooks/use-plan-tasks';
 import { fetchTasksForDate } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
@@ -140,6 +142,32 @@ const BPS_NOTIFICATION_CATEGORIES_ENABLED = true;
  * pass those props at that time.
  */
 const BPS_MEDICATIONS_EDITOR_ENABLED = true;
+
+/**
+ * CHUNK 53 (2026-07-22) kill-switch — consolidates the three parent-hoisted
+ * Modals (TaskEditorModal, TaskDetailModal, BioGoalEditorModal) into a
+ * SINGLE parent-hoisted <Modal> node whose child is switched on an
+ * `editor.kind` discriminated union. Motivation: iOS 26.5 SIGABRT has fired
+ * in the wild when multiple `<Modal transparent>` nodes coexist in the
+ * tree at once (working hypothesis, matches project_ios26_biopsychosocial_
+ * parked forensic — no MEMORY file yet confirms the exact crash class).
+ * With this flag ON, only one Modal node ever mounts; the interior swaps.
+ *
+ * Kill-switch behavior:
+ *   true  → single consolidated Modal (default). BiopsychosocialPlanScreen
+ *           also owns bio-goal editor state (fed by `onEditGoal` prop from
+ *           the route parent, intercepted locally). Route parent's own
+ *           BioGoalEditorModal must be skipped — see biopsychosocial-plan.tsx.
+ *   false → original three-Modal shape. onEditGoal fires up to the route
+ *           parent as before, TaskEditorModal + TaskDetailModal mount from
+ *           this screen. Byte-for-byte behavioral identity with pre-chunk-53.
+ *
+ * Compile-time constant → revert requires an OTA (~30-60s via
+ * `npm run eas:update:production`), NOT the 30-second SSM/Lambda flip
+ * available for server-side flags. Acceptable for a client-only refactor
+ * but must be called out in the ship report.
+ */
+export const BPS_MODAL_CONSOLIDATION_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -439,15 +467,76 @@ export function BiopsychosocialPlanScreen({
   }, [allTasks]);
 
   const [refreshing, setRefreshing] = React.useState(false);
-  // One consolidated modal state cell. A synchronous detail→edit swap
-  // (setTaskModal({mode:'edit'}) fired from TaskDetailModal.onEdit) races
-  // iOS's Modal presentation queue: the detail modal is still animating
-  // its dismiss when the editor modal tries to present, and iOS silently
-  // drops the new presentation. We stage the swap through `pendingTaskModal`
-  // instead — close first, then promote after the dismiss animation
-  // (~250ms slide-out) completes. TaskDetailModal doesn't surface RN
-  // Modal's onDismiss to its parent, so we use a fixed timer that covers
-  // both iOS and Android.
+
+  // ── CHUNK 53: consolidated editor state ─────────────────────────────────
+  // Under BPS_MODAL_CONSOLIDATION_ENABLED, ONE parent-hoisted <Modal> hosts
+  // any one of task-editor / task-detail / bio-goal at a time. Discriminated
+  // union keeps the create vs. edit vs. detail sessions strictly disjoint
+  // (no optional-field collapse) so downstream renders can pattern-match
+  // safely.
+  //
+  // The 300ms `pendingEditor → editor` promotion timer preserves the
+  // load-bearing iOS Modal-race guard from the old `pendingTaskModal`
+  // pattern: a synchronous detail→edit swap fires from TaskDetailBody
+  // (setEditor(null) then setPendingEditor({kind:'task-editor', task})),
+  // and iOS silently drops the second presentation if the first hasn't
+  // finished dismissing. DO NOT collapse this into a single setState — the
+  // 300ms cover accounts for both iOS (~250ms slide-out) and Android.
+  type BpsEditor =
+    | { kind: 'task-editor'; task?: PlanTask; category?: string }
+    | { kind: 'task-detail'; task: PlanTask }
+    | { kind: 'bio-goal'; goal: MeasurableGoal };
+  const [editor, setEditor] = React.useState<BpsEditor | null>(null);
+  const [pendingEditor, setPendingEditor] = React.useState<BpsEditor | null>(null);
+  // CHUNK 53 adversarial-verify nit #1 fix: retain the last non-null editor
+  // so the consolidated Modal renders its outgoing body during the ~250ms
+  // slide-out animation on close. Without this, the child branch swaps to
+  // <View /> in the same commit that flips visible=false, and the user sees
+  // a blank overlay slide down instead of the outgoing body.
+  //
+  // sessionNonce (monotonic per open) is spliced into each Body's key so
+  // successive sessions of the SAME identity (same task id, same goal id,
+  // same category slot) still remount cleanly — TaskDetailBody's
+  // `confirming` (chunk 38 delete arm), TaskEditorBody's savedThisSession
+  // + form drafts, BioGoalEditorBody's draft fields all reset per session.
+  // Increments each null→non-null transition. Without this, the polish
+  // fix would leak session-scoped state across reopens (e.g. delete-arm
+  // survives a dismiss-then-reopen of the same task — one stray tap
+  // deletes the task).
+  const lastNonNullEditor = React.useRef<BpsEditor | null>(null);
+  const editorSessionNonce = React.useRef(0);
+  const prevEditorWasNull = React.useRef(true);
+  if (editor !== null) {
+    lastNonNullEditor.current = editor;
+    if (prevEditorWasNull.current) editorSessionNonce.current += 1;
+    prevEditorWasNull.current = false;
+  } else {
+    prevEditorWasNull.current = true;
+  }
+  const bodyEditor = editor ?? lastNonNullEditor.current;
+  const bodyKeySuffix = editorSessionNonce.current;
+  React.useEffect(() => {
+    if (!pendingEditor) return;
+    const t = setTimeout(() => {
+      // CHUNK 53 adversarial-verify minor #4/#6 fix: session-clobber guard.
+      // If the user opened a NEW editor (task detail, bio goal, add-task)
+      // during the 300ms cover window after a detail→edit swap started,
+      // don't overwrite that fresh session with the pending detail→edit
+      // promotion. Functional setState reads the latest editor value at
+      // the moment the timer fires, avoiding the stale-closure trap the
+      // pre-fix `setEditor(pendingEditor)` had. If the guard fires,
+      // pendingEditor drops silently — the swap effectively cancels.
+      setEditor((current) => (current !== null ? current : pendingEditor));
+      setPendingEditor(null);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [pendingEditor]);
+  const closeEditor = React.useCallback(() => setEditor(null), []);
+
+  // ── Legacy (flag=false) modal state ─────────────────────────────────────
+  // Only these two cells drive the flag-off path (bio-goal continues to be
+  // route-parent-owned in that mode via onEditGoal). Kept in-tree at all
+  // times so revert = single-flag flip with no state migration.
   const [taskModal, setTaskModal] = React.useState<{
     mode: 'create' | 'edit' | 'detail';
     task?: PlanTask;
@@ -938,10 +1027,36 @@ export function BiopsychosocialPlanScreen({
             colors={colors}
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
-            onEditGoal={onEditGoal}
+            // CHUNK 53: intercept goal-edit locally when consolidation is ON
+            // so the bio-goal editor renders inside the one consolidated
+            // Modal owned by this screen. Under flag=false, forward to the
+            // route parent's Modal as before — byte-for-byte legacy shape.
+            onEditGoal={
+              BPS_MODAL_CONSOLIDATION_ENABLED
+                ? (g) => setEditor({ kind: 'bio-goal', goal: g })
+                : onEditGoal
+            }
             tasks={tasksBySection[key]}
-            onAddTask={() => setTaskModal({ mode: 'create', category: categoryForNewTaskInSection(key) })}
-            onTaskPress={(t) => setTaskModal({ mode: 'detail', task: t })}
+            // CHUNK 53: same routing rule for add-task and task-row taps —
+            // ON writes to `editor`, OFF writes to `taskModal`.
+            onAddTask={
+              BPS_MODAL_CONSOLIDATION_ENABLED
+                ? () =>
+                    setEditor({
+                      kind: 'task-editor',
+                      category: categoryForNewTaskInSection(key),
+                    })
+                : () =>
+                    setTaskModal({
+                      mode: 'create',
+                      category: categoryForNewTaskInSection(key),
+                    })
+            }
+            onTaskPress={
+              BPS_MODAL_CONSOLIDATION_ENABLED
+                ? (t) => setEditor({ kind: 'task-detail', task: t })
+                : (t) => setTaskModal({ mode: 'detail', task: t })
+            }
           />
         ))}
 
@@ -1006,44 +1121,129 @@ export function BiopsychosocialPlanScreen({
         the iOS 26.5 EXUpdates experiment rationale.
       */}
       {/*
-        SCRUM-588 Chunk 1c: task editor + detail modals live at the
-        screen level so all three BPS SectionCards share one instance
-        of each. If a Class-B iOS 26 crash resurfaces, the reversible
-        defensive pattern is to hoist these to `biopsychosocial-plan.tsx`
-        (mirroring the goal-editor hoist above).
+        CHUNK 53 (2026-07-22): consolidated single-Modal path. When
+        BPS_MODAL_CONSOLIDATION_ENABLED is true, exactly ONE <Modal
+        transparent> node is mounted for the entire BPS surface — its
+        child is switched on `editor.kind`. Removes the "multiple Modal
+        transparent nodes in the same tree" primitive that iOS 26.5 has
+        crashed on. When the flag is false, the original two-Modal shape
+        renders below (bio-goal continues to live at the route parent).
+
+        Modal attributes reconciled across all three prior wrappers were
+        IDENTICAL: `animationType="slide" transparent onRequestClose`. No
+        divergence, no attribute superset needed. `presentationStyle`,
+        `hardwareAccelerated`, `statusBarTranslucent`, and
+        `supportedOrientations` were unset on every wrapper → left unset.
+
+        Body identity keying: the `key` on each rendered *Body forces a
+        full remount when the session identity changes (task id, goal id,
+        or category slot). Session-scoped state (savedThisSession in
+        TaskEditorBody, confirming in TaskDetailBody, bio-goal drafts in
+        BioGoalEditorBody) resets cleanly across kind transitions and
+        across successive sessions of the same kind — no cross-kind leak.
+
+        NOTE: `TaskEditorModal` remains imported (default export) to keep
+        the type export chain intact for callers under flag=false and to
+        preserve TaskDetailModal / BioGoalEditorModal as stable back-compat
+        surfaces (`app/Home/health-plan.tsx` still imports BioGoalEditorModal).
       */}
-      <TaskEditorModal
-        visible={taskModal?.mode === 'create' || taskModal?.mode === 'edit'}
-        onClose={() => setTaskModal(null)}
-        initialTask={taskModal?.mode === 'edit' ? taskModal.task : undefined}
-        defaultCategory={taskModal?.mode === 'create' ? taskModal.category : undefined}
-        colors={colors}
-        isDark={settings.isDarkTheme}
-        getScaledFontSize={getScaledFontSize}
-        getScaledFontWeight={getScaledFontWeight}
-        onSaved={() => setTaskModal(null)}
-      />
-      <TaskDetailModal
-        visible={taskModal?.mode === 'detail'}
-        task={taskModal?.mode === 'detail' ? taskModal.task ?? null : null}
-        accentColor={
-          taskModal?.mode === 'detail' && taskModal.task
-            ? SECTION_STYLE[sectionForCategory(taskModal.task.category)].color
-            : '#0D9488'
-        }
-        colors={colors}
-        getScaledFontSize={getScaledFontSize}
-        getScaledFontWeight={getScaledFontWeight}
-        onClose={() => setTaskModal(null)}
-        onEdit={(t) => {
-          // Stage the detail→edit swap: close the detail modal now, then
-          // let the useEffect above promote the edit modal once the
-          // dismiss animation is done (see comment on pendingTaskModal).
-          setTaskModal(null);
-          setPendingTaskModal({ mode: 'edit', task: t });
-        }}
-        onDeleted={() => setTaskModal(null)}
-      />
+      {BPS_MODAL_CONSOLIDATION_ENABLED ? (
+        <Modal
+          visible={editor !== null}
+          animationType="slide"
+          transparent
+          onRequestClose={closeEditor}
+        >
+          {bodyEditor?.kind === 'task-editor' ? (
+            <TaskEditorBody
+              key={`task-editor:${bodyEditor.task?.id ?? `new:${bodyEditor.category ?? 'none'}`}:${bodyKeySuffix}`}
+              onClose={closeEditor}
+              initialTask={bodyEditor.task}
+              defaultCategory={bodyEditor.category}
+              colors={colors}
+              isDark={settings.isDarkTheme}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          ) : bodyEditor?.kind === 'task-detail' ? (
+            <TaskDetailBody
+              key={`task-detail:${bodyEditor.task.id}:${bodyKeySuffix}`}
+              task={bodyEditor.task}
+              accentColor={SECTION_STYLE[sectionForCategory(bodyEditor.task.category)].color}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              onClose={closeEditor}
+              onEdit={(t) => {
+                // Preserve the load-bearing 300ms staged detail→edit swap.
+                // Setting kind directly on the same tick would race iOS's
+                // Modal presentation queue (silent drop). Route through
+                // pendingEditor + useEffect (mirrors the pre-chunk-53
+                // pendingTaskModal → taskModal timer byte-for-byte).
+                setEditor(null);
+                setPendingEditor({ kind: 'task-editor', task: t });
+              }}
+              onDeleted={() => setEditor(null)}
+            />
+          ) : bodyEditor?.kind === 'bio-goal' ? (
+            <BioGoalEditorBody
+              key={`bio-goal:${bodyEditor.goal.id}:${bodyKeySuffix}`}
+              goal={bodyEditor.goal}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              onClose={closeEditor}
+            />
+          ) : (
+            /* No editor ever opened this session — still-mounted Modal
+               with visible=false needs a child. Render an invisible
+               placeholder View so the tree stays valid. Once any editor
+               has opened once, lastNonNullEditor pins the outgoing body
+               here for the ~250ms slide-out animation on close. */
+            <View />
+          )}
+        </Modal>
+      ) : (
+        <>
+          {/*
+            SCRUM-588 Chunk 1c: task editor + detail modals live at the
+            screen level so all three BPS SectionCards share one instance
+            of each. Preserved verbatim for the flag=false path.
+          */}
+          <TaskEditorModal
+            visible={taskModal?.mode === 'create' || taskModal?.mode === 'edit'}
+            onClose={() => setTaskModal(null)}
+            initialTask={taskModal?.mode === 'edit' ? taskModal.task : undefined}
+            defaultCategory={taskModal?.mode === 'create' ? taskModal.category : undefined}
+            colors={colors}
+            isDark={settings.isDarkTheme}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+            onSaved={() => setTaskModal(null)}
+          />
+          <TaskDetailModal
+            visible={taskModal?.mode === 'detail'}
+            task={taskModal?.mode === 'detail' ? taskModal.task ?? null : null}
+            accentColor={
+              taskModal?.mode === 'detail' && taskModal.task
+                ? SECTION_STYLE[sectionForCategory(taskModal.task.category)].color
+                : '#0D9488'
+            }
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+            onClose={() => setTaskModal(null)}
+            onEdit={(t) => {
+              // Stage the detail→edit swap: close the detail modal now, then
+              // let the useEffect above promote the edit modal once the
+              // dismiss animation is done (see comment on pendingTaskModal).
+              setTaskModal(null);
+              setPendingTaskModal({ mode: 'edit', task: t });
+            }}
+            onDeleted={() => setTaskModal(null)}
+          />
+        </>
+      )}
     </AppWrapper>
   );
 }

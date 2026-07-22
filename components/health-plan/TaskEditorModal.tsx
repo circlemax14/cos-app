@@ -98,11 +98,39 @@ const CADENCE_OPTIONS: { key: TaskRecurrence; label: string }[] = [
   { key: 'once', label: 'Once' },
 ];
 
+/**
+ * CHUNK 53 (2026-07-22): props for the bodyless TaskEditorBody variant.
+ * Identical to TaskEditorModalProps except `visible` is dropped — the Body
+ * is only mounted when its parent Modal is visible. Used by the
+ * consolidated BPS Modal in BiopsychosocialPlanScreen so multiple <Modal
+ * transparent> nodes no longer coexist in the tree at once.
+ */
+export type TaskEditorBodyProps = Omit<TaskEditorModalProps, 'visible'>;
+
 export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element | null {
+  const { visible, ...bodyProps } = props;
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={bodyProps.onClose}>
+      <TaskEditorBody {...bodyProps} />
+    </Modal>
+  );
+}
+
+/**
+ * CHUNK 53 (2026-07-22): bodyless variant — the entire interior of
+ * TaskEditorModal minus the outer <Modal> wrapper. Extracted so the
+ * consolidated BPS editor Modal in BiopsychosocialPlanScreen can host any
+ * one of task-editor / task-detail / bio-goal without stacking multiple
+ * <Modal transparent> presentations. Behavior IDENTICAL to the wrapped
+ * default export — same state reset semantics, same fire-and-forget save,
+ * same iOS 26.5 discipline.
+ */
+export function TaskEditorBody(props: TaskEditorBodyProps): React.JSX.Element | null {
   // CHUNK 42: onSaved intentionally NOT destructured — no longer invoked
   // (see prop @deprecated note). Reconcile via query invalidation inside
   // useCreatePlanTask / useUpdatePlanTask.
-  const { visible, onClose, initialTask, defaultCategory, defaultType, colors, getScaledFontSize, getScaledFontWeight } = props;
+  const { onClose, initialTask, defaultCategory, defaultType, colors, getScaledFontSize, getScaledFontWeight } = props;
   const editing = !!initialTask;
 
   const [title, setTitle] = React.useState('');
@@ -117,9 +145,14 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
   const [recurrence, setRecurrence] = React.useState<TaskRecurrence>('daily');
   const [manualStyleOverride, setManualStyleOverride] = React.useState(false);
 
-  // Reset when opened / initialTask changes
+  // Reset when opened / initialTask changes.
+  // CHUNK 53: no more `visible` gate — Body is only mounted while its
+  // parent Modal is visible. The `initialTask` / `defaultType` deps keep
+  // the same reset semantics as before when the parent swaps sessions
+  // without unmounting (the consolidated Modal in BPS keys on session
+  // identity so full remount is the common path; this effect still
+  // covers the wrapper-mode callers that toggle initialTask in place).
   React.useEffect(() => {
-    if (!visible) return;
     if (initialTask) {
       setTitle(initialTask.title ?? '');
       setDescription(initialTask.description ?? '');
@@ -145,7 +178,7 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
       setRecurrence('daily');
       setManualStyleOverride(false);
     }
-  }, [visible, initialTask, defaultType]);
+  }, [initialTask, defaultType]);
 
   // Smart-default detection: when NOT editing and user hasn't manually
   // touched the type toggle, auto-set completionStyle + preset metric
@@ -176,10 +209,11 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
   // false→true. Multi-tap protection within the SAME session survives
   // (rare — modal closes same-tick on Save anyway) but the flag never
   // leaks to the next session.
+  // CHUNK 53: reset once on mount — the Body's lifetime IS the session,
+  // so mount = fresh session. Wrapper callers get equivalent behavior
+  // because the Modal wrapper also mounts/unmounts on visible toggle
+  // (visible-false renders null via the guard above).
   const [savedThisSession, setSavedThisSession] = React.useState(false);
-  React.useEffect(() => {
-    if (visible) setSavedThisSession(false);
-  }, [visible]);
   const saving = savedThisSession;
 
   const chosenPreset: TaskMetric | undefined = React.useMemo(() => {
@@ -228,14 +262,11 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
     onClose();
   }, [canSave, type, title, description, scheduledTime, recurrence, initialTask, defaultCategory, completionStyle, chosenPreset, editing, updateMut, createMut, onClose]);
 
-  if (!visible) return null;
-
   const tint = (colors.tint as string) ?? '#0D9488';
   const detectedActive = !editing && !manualStyleOverride && title.trim().length > 0 && completionStyle === 'measurable';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
+    <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: colors.card ?? colors.background }]}>
           <View style={styles.header}>
@@ -443,7 +474,6 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
           </View>
         </View>
       </View>
-    </Modal>
   );
 }
 

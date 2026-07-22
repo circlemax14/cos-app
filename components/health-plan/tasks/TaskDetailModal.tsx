@@ -52,9 +52,33 @@ export interface TaskDetailModalProps {
   onDeleted?: (task: PlanTask) => void;
 }
 
+/**
+ * CHUNK 53 (2026-07-22): bodyless variant props. Identical to
+ * TaskDetailModalProps minus `visible`. Used by the consolidated BPS Modal
+ * so the interior can be re-hosted without stacking multiple
+ * <Modal transparent> nodes on iOS 26.5.
+ */
+export type TaskDetailBodyProps = Omit<TaskDetailModalProps, 'visible'>;
+
 export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element | null {
+  const { visible, ...bodyProps } = props;
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={bodyProps.onClose}>
+      <TaskDetailBody {...bodyProps} />
+    </Modal>
+  );
+}
+
+/**
+ * CHUNK 53 (2026-07-22): interior-only. Contains the overlay, backdrop tap,
+ * KeyboardAvoidingView, sheet, log/history and Delete/Edit footer — every
+ * primitive TaskDetailModal had minus the outer <Modal>. Behavior identical:
+ * two-step inline delete, arm-time debounce, auto-revert timer, no
+ * Alert.alert, fire-and-forget delete via v2/net.
+ */
+export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | null {
   const {
-    visible,
     onClose,
     task,
     accentColor,
@@ -84,10 +108,11 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
     setLocalTask(task);
     setConfirming(false);
   }, [task]);
-  // Re-opened sheet should never land pre-armed in the destructive state.
-  React.useEffect(() => {
-    if (!visible) setConfirming(false);
-  }, [visible]);
+  // CHUNK 53: Body is only mounted while visible, so mount = fresh open →
+  // confirming already starts false (useState default). Wrapper mode also
+  // gets equivalent behavior via the `if (!visible) return null` guard in
+  // TaskDetailModal above. The prior `[visible]` effect became dead code
+  // once Body carries no visible prop.
   // Auto-revert the confirming state after a short window so a user who
   // taps Delete, gets interrupted, and returns minutes later has to re-read
   // the confirm before the second tap fires.
@@ -99,7 +124,7 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
 
   const qc = useQueryClient();
 
-  if (!visible || !localTask) return null;
+  if (!localTask) return null;
 
   const isMeasurable = localTask.completionStyle === 'measurable';
   const measurements = Array.isArray(localTask.measurements) ? localTask.measurements : [];
@@ -132,7 +157,6 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <KeyboardAvoidingView
@@ -333,7 +357,6 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
         </View>
         </KeyboardAvoidingView>
       </View>
-    </Modal>
   );
 }
 
