@@ -43,6 +43,7 @@ import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './Se
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { BpsTodayHeroCard } from './BpsTodayHeroCard';
+import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import { TaskEditorModal } from './TaskEditorModal';
 import { TaskDetailModal } from './tasks/TaskDetailModal';
@@ -57,6 +58,19 @@ import type { PlanTask, TaskOccurrence } from '@/services/api/types';
  * BPS surface. One-line OTA flip if the hero regresses in the wild.
  */
 const BPS_TODAY_HERO_ENABLED = true;
+
+/**
+ * CHUNK 48 kill-switch — port of the legacy AI-summary teal card
+ * (PlanScreenRedesignedV2.tsx:422-433) onto the BPS surface. Also
+ * carries the Apple 1.4.1 disclaimer + citations footer, which BPS
+ * had been missing on its AI-generated bullets. One-line OTA flip if
+ * the banner or citations footer regress in the wild. Recovery cost:
+ * ~30-60s via `npm run eas:update:production` (JS module constant, so
+ * OTA — not SSM). Two-layer defense: BpsAiSummaryBanner itself
+ * null-renders when summary is empty, so a data-source outage
+ * short-circuits without any flip needed.
+ */
+const BPS_AI_SUMMARY_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -596,6 +610,61 @@ export function BiopsychosocialPlanScreen({
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+
+        {/*
+          CHUNK 48 (port of PlanScreenRedesignedV2.tsx:422-433) —
+          teal-tinted "AI SUMMARY" card carrying the Bedrock-generated
+          overall plan summary plus the compact AICitationsFooter
+          (Apple Review 1.4.1 disclaimer + authoritative-sources
+          links). Summary is intentionally sourced from `aiPlanQuery`
+          (the legacy AiHealthPlan record) because
+          BiopsychosocialPlanRecord has no `summary` field today —
+          paired BE follow-up is filed to mirror the summary onto the
+          bio-native record (Bedrock prompt update + schema
+          v2→v3 in-lockstep, HS-3a pattern). When BE ships, swap the
+          `summary` prop source in-place. `aiPlanQuery` is already
+          declared once at the top of this component (chunk-47 today
+          hero reuse) — do not add a second useAiHealthPlan() call.
+          Placement rationale: legacy V2 puts this card immediately
+          above MedicationsSection (V2:436); the BPS analog is above
+          TodaysMedicationsCard, preserving the first-time-user
+          narrative order (learn BPS → why-this-plan → what-to-take →
+          drill into Wellbeing map + sections). Kill-switch:
+          `BPS_AI_SUMMARY_ENABLED` at module top. Component itself
+          null-renders when summary is empty (two-layer defense).
+        */}
+        {BPS_AI_SUMMARY_ENABLED && (
+          // CHUNK 48 fix (adversarial-verify major): reserve fixed-height
+          // slot while ai-health-plan is loading. Cold mount had banner
+          // paint null → then mount 120-180pt of card once fetch resolved,
+          // pushing every downstream card down. auth-prefetch does NOT
+          // warm ai-health-plan cache (only patient-info / medications-
+          // summary / plan-tasks / self-reported-metrics / appointments),
+          // so cold-mount is common. Placeholder collapses to 0 when
+          // aiPlanQuery.data.summary is empty (banner returns null),
+          // an intended one-shift not jitter — mirrors chunk 47 pattern.
+          aiPlanQuery.isLoading && !aiPlanQuery.data ? (
+            <View
+              style={{
+                height: 140,
+                marginHorizontal: Spacing.md,
+                marginBottom: Spacing.md,
+                borderRadius: 16,
+                backgroundColor: 'rgba(148,163,184,0.12)',
+              }}
+              accessible
+              accessibilityLabel="Loading AI summary"
+            />
+          ) : (
+            <BpsAiSummaryBanner
+              summary={aiPlanQuery.data?.summary}
+              colors={colors}
+              isDark={settings.isDarkTheme}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          )
+        )}
 
         {/*
           COS-448: Today's Medications card sits AT THE TOP of the plan
