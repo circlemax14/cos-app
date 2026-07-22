@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchBiopsychosocialPlan,
-  regenerateBiopsychosocialPlan,
-  RegenerationInFlightError,
 } from '@/services/api/biopsychosocial-plan'
 import { updatePlanGoal, type GoalPatch } from '@/services/api/ai-health-plan'
+import { fireAndForgetPost } from '@/components/unified-plan/v2/net'
 
 /**
  * Phase 3 (COS-360 / SCRUM-518): wraps `GET /v1/health-plan/biopsychosocial`.
@@ -27,31 +26,52 @@ export function useBiopsychosocialPlan() {
 }
 
 /**
- * Mutation for `POST /v1/health-plan/biopsychosocial/regenerate`. On success,
- * invalidates ['biopsychosocial-plan'] so `useBiopsychosocialPlan` refetches
- * once the async regeneration job has had a moment to land.
+ * Mutation for `POST /v1/health-plan/biopsychosocial/regenerate`.
  *
- * COS-415: a `RegenerationInFlightError` (409 `REGENERATION_IN_FLIGHT` — a
- * job for this patient is already running) is NOT propagated to the caller.
- * We swallow it silently and invalidate `['biopsychosocial-plan']` the same
- * as on success — that refetch will observe `generating: true` and kick off
- * `useBiopsychosocialPlan`'s polling cycle, so the UI converges on the same
- * "generating…" state regardless of whether this tap started the job or
- * just found one already in progress. Every other error still throws for
- * the caller's `onError` handler.
+ * CHUNK 40 (2026-07-21): rewritten to fire-and-forget via `fireAndForgetPost`
+ * from `v2/net.ts`. The prior `await regenerateBiopsychosocialPlan()` was an
+ * awaited axios response inside a tap-triggered mutation — the exact
+ * chunk-9.5 SIGABRT shape on iOS 26.5 (turbomodule queue). No response is
+ * awaited here; server state is reconciled on the next
+ * `['biopsychosocial-plan']` fetch (invalidated in `onSuccess`), which will
+ * observe `generating: true` and the existing poll cycle converges the UI.
+ *
+ * Because nothing awaits the response, the old 409 `REGENERATION_IN_FLIGHT`
+ * (`RegenerationInFlightError`) swallow is structurally unnecessary — the
+ * fire-and-forget `.catch` inside `net.ts` is the replacement. The service
+ * export (`regenerateBiopsychosocialPlan` + `RegenerationInFlightError`)
+ * stays in place so tests continue to import them and a one-line hook
+ * restore is the calm-window revert path.
+ *
+ * We keep `useMutation` (rather than an inline fire-and-forget) so
+ * `mutation.isPending` remains available synchronously on tap for the CTA's
+ * disabled state — closes the extra-tap re-enable window.
  */
+// CHUNK 40 fix (adversarial-verify blocker): minimum pending window.
+// fireAndForgetPost only awaits getAccessToken (a memory read) then
+// returns — so a naive `mutationFn: fireAndForgetPost(...)` resolves in
+// ~1ms and mutation.isPending flips back to false before Bedrock has even
+// received the POST. That re-enables the "Refresh my plan" CTA within a
+// frame and lets the user multi-tap-fire multiple regen jobs, and
+// onSuccess's invalidateQueries races back to the pre-regen snapshot.
+// Fix: wrap the fire-and-forget in a promise that resolves after
+// PENDING_WINDOW_MS. This keeps mutation.isPending true for a bounded
+// window matching Bedrock's p95 (~8-15s) with tail headroom, so the CTA
+// stays visibly regenerating and onSuccess (invalidate) fires AFTER the
+// server has had time to record generating:true.
+const REGENERATE_PENDING_WINDOW_MS = 30_000
+
 export function useRegenerateBiopsychosocialPlan() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async () => {
-      try {
-        return await regenerateBiopsychosocialPlan()
-      } catch (err) {
-        if (err instanceof RegenerationInFlightError) {
-          return null
-        }
-        throw err
-      }
+    mutationFn: () => {
+      // Fire the actual request immediately — no await (chunk 9.5 rule).
+      void fireAndForgetPost('/v1/health-plan/biopsychosocial/regenerate', {})
+      // Return a promise that keeps mutation.isPending latched for the
+      // pending window. See comment above.
+      return new Promise<void>((resolve) =>
+        setTimeout(resolve, REGENERATE_PENDING_WINDOW_MS),
+      )
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] }),
   })

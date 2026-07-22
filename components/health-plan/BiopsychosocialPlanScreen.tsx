@@ -20,8 +20,6 @@
  */
 import React from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -305,12 +303,13 @@ export function BiopsychosocialPlanScreen({
     }
   }, [planQuery]);
 
+  // CHUNK 40 (2026-07-21): fire-and-forget under the hood via the hook's
+  // rewritten mutationFn (see use-biopsychosocial-plan.ts). Alert.alert
+  // onError removed — Alert opens a native modal whose turbomodule
+  // interactions were exactly the crash surface we're trying to leave.
+  // Errors are reconciled on the next ['biopsychosocial-plan'] fetch.
   const onRegenerate = React.useCallback(() => {
-    regenerateMutation.mutate(undefined, {
-      onError: () => {
-        Alert.alert('Error', "Couldn't regenerate your plan right now. Try again in a moment.");
-      },
-    });
+    regenerateMutation.mutate();
   }, [regenerateMutation]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -654,13 +653,18 @@ export function BiopsychosocialPlanScreen({
           accessibilityLabel={isGeneratingFromAnySource ? 'Generating your plan' : 'Refresh my plan'}
           accessibilityState={{ disabled: regenerateDisabled, busy: isGeneratingFromAnySource }}
         >
+          {/*
+            CHUNK 40 (2026-07-21): Text-label swap replaces <ActivityIndicator>
+            (v2 chunk-34 RegenerateButton parity). ActivityIndicator is a
+            continuously animating native primitive — even post-mount, on
+            iOS 26.5 it participates in the turbomodule surface we're
+            hardening against. Static Text is safe; the button opacity +
+            disabled state still communicate the pending state.
+          */}
           {isGeneratingFromAnySource ? (
-            <>
-              <ActivityIndicator color="#fff" />
-              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
-                Generating your plan…
-              </Text>
-            </>
+            <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
+              Regenerating…
+            </Text>
           ) : (
             <>
               <MaterialIcons name="refresh" size={16} color="#fff" />
