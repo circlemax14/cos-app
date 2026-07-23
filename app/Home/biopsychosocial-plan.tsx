@@ -185,10 +185,13 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
 
   return (
     <>
-      {/* COS-467 Phase 2 — opt-in banner for the unified BPS plan view.
-          Self-gates on useUnifiedPlan().disabled + 7-day AsyncStorage
-          dismissal, so this is inert whenever the BE flag is off. */}
-      <TryUnifiedPlanBanner source="bps" />
+      {/* CHUNK 61 (Ken 2026-07-22): TryUnifiedPlanBanner removed from BPS.
+          Ken parked unified-plan v2 on 2026-07-22 and confirmed the CTA
+          banner should come down. Kept the import for a fast revert if
+          a future decision brings v2 back, and left the legacy
+          /Home/health-plan mount untouched in the same chunk since Ken
+          may still want the reverse CTA on the classic surface — remove
+          separately if desired. */}
       <BiopsychosocialPlanScreen
         currentPlanType={currentPlanType}
         onChangePlanType={openPlanTypeChooser}

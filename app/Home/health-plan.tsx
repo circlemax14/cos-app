@@ -769,10 +769,11 @@ export default function HealthPlanScreen() {
 
   return (
     <AppWrapper>
-      {/* COS-467 Phase 2 — opt-in banner for the unified BPS plan view.
-          Self-gates on useUnifiedPlan().disabled + 7-day AsyncStorage
-          dismissal, so this is inert whenever the BE flag is off. */}
-      <TryUnifiedPlanBanner source="care-plan" />
+      {/* CHUNK 61 (Ken 2026-07-22): TryUnifiedPlanBanner removed here too.
+          Ken parked unified-plan v2 and asked the CTA to come down; both
+          surfaces (this legacy screen + biopsychosocial-plan) no longer
+          push v2. Import left in place for a fast revert if the decision
+          reverses. */}
       {/* Tab bar */}
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {
