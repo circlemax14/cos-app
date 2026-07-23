@@ -52,6 +52,7 @@ import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
+import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { TaskEditorModal, TaskEditorBody } from './TaskEditorModal';
 import { TaskDetailModal, TaskDetailBody } from './tasks/TaskDetailModal';
@@ -334,6 +335,24 @@ const BPS_INTAKE_CTA_ENABLED = false;
  * module constant, so OTA — not SSM).
  */
 const BPS_SELF_ASSESSMENTS_ENABLED = true;
+
+/**
+ * CHUNK 59 (2026-07-22) kill-switch — composite "Wellbeing Score" card
+ * mounted at the very top of the BPS surface (above the Today hero) as
+ * the daily wake-up-and-glance number Ken asked for ("kind of like a
+ * flash that somebody wakes up to every day", Oura-sleep-score analogy).
+ *
+ * The card ONLY consumes self-assessment bands via lib/assessment-bands.ts
+ * — no wearables/EHR/labs this chunk (scope discipline; Ken v2 can add).
+ * It shares the ['assessments-trends'] + ['assessment-history', id]
+ * react-query cache keys with SelfAssessmentTrends so there's exactly
+ * one round-trip per instrument even though this card renders above
+ * SelfAssessmentTrends in the layout.
+ *
+ * Flip false to hide the card without a binary cut — OTA-revertible if
+ * Ken hates the v1 formula and wants to iterate before re-enabling.
+ */
+const BPS_WELLBEING_SCORE_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -784,6 +803,18 @@ export function BiopsychosocialPlanScreen({
   // bumps it via functional setState so back-to-back taps don't miss.
   const scrollRef = React.useRef<ScrollView | null>(null);
   const medsSectionYRef = React.useRef<number | null>(null);
+  // CHUNK 59: Y-position of the Self-Assessments section so the top
+  // Wellbeing Score card can scroll the user there on tap. Same
+  // pattern as medsSectionYRef — parent-owned ref, filled by the
+  // section's onLayout, consumed by scrollToSelfAssessments below.
+  // Best-effort: no-op if the section hasn't laid out yet.
+  const selfAssessmentsSectionYRef = React.useRef<number | null>(null);
+  const scrollToSelfAssessments = React.useCallback(() => {
+    const y = selfAssessmentsSectionYRef.current;
+    if (y != null && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
+  }, []);
   // Value-keyed guard (not a boolean latch): stores the last focus VALUE
   // handled. Repeat identical value = no-op; a fresh value on route
   // re-entry re-fires. Strictly more correct than legacy's boolean
@@ -1103,6 +1134,34 @@ export function BiopsychosocialPlanScreen({
         </View>
 
         {/*
+          CHUNK 59 (2026-07-22): composite Wellbeing Score card. Sits
+          directly under the greeting so the number IS the "wake up and
+          glance" flash Ken asked for ("kind of like a flash that
+          somebody wakes up to every day", Oura-sleep-score analogy),
+          ABOVE the Today hero (task-completion is task-level; wellbeing
+          is the person-level headline). Tap → scroll down to the
+          Self-Assessments carousel where each contributing instrument
+          band is legible.
+
+          Layout-shift discipline: the card ALWAYS renders — LOADING /
+          EMPTY / READY share one shell with minHeight so downstream
+          cards don't jitter when the composite resolves. Card is
+          static View / Text / Pressable / MaterialIcons only (iOS
+          26.5 primitive envelope proven by chunks 47/50/57).
+
+          Kill-switch: `BPS_WELLBEING_SCORE_ENABLED` at module top —
+          one-line OTA flip. See notes there for scope rationale.
+        */}
+        {BPS_WELLBEING_SCORE_ENABLED && (
+          <BpsWellbeingScoreCard
+            colors={colors as unknown as Record<string, string>}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+            onPressDetails={scrollToSelfAssessments}
+          />
+        )}
+
+        {/*
           CHUNK 47 (SCRUM-252 port): Today hero card — big focal
           percent-complete number + progress bar + done/to-go/skipped
           triplet. Sits ABOVE BpsWelcomeBanner so it owns the "how am I
@@ -1214,7 +1273,16 @@ export function BiopsychosocialPlanScreen({
           hits the carousel on first paint.
         */}
         {BPS_SELF_ASSESSMENTS_ENABLED && (
-          <View style={styles.selfAssessmentsWrap}>
+          <View
+            style={styles.selfAssessmentsWrap}
+            // CHUNK 59: capture the section's Y position on layout so
+            // the top BpsWellbeingScoreCard's onPress can scroll here.
+            // Mirrors the medsSectionYRef pattern above. Only writes
+            // the ref (no state), so this triggers no re-render cost.
+            onLayout={(e) => {
+              selfAssessmentsSectionYRef.current = e.nativeEvent.layout.y;
+            }}
+          >
             <View style={styles.selfAssessmentsHeader}>
               <MaterialIcons
                 name="assignment"
