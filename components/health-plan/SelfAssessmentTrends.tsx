@@ -17,6 +17,8 @@ import {
   computeTrend,
   extractScore,
   getBandDef,
+  type AssessmentBandDef,
+  type AssessmentBandResult,
   type BandTone,
   type TrendResult,
 } from '@/lib/assessment-bands'
@@ -118,6 +120,44 @@ function trendIconName(direction: TrendResult['direction']): 'trending-up' | 'tr
   if (direction === 'up') return 'trending-up'
   if (direction === 'down') return 'trending-down'
   return 'trending-flat'
+}
+
+/**
+ * CHUNK 93 (2026-07-23): direction-of-goodness phrasing for VoiceOver.
+ * A user hearing "Depression: Low" doesn't know whether Low is better or
+ * worse without context. We translate the current band into a plain-
+ * language health interpretation using the instrument's direction-of-
+ * goodness (pulled from ASSESSMENT_BANDS via getBandDef). The tone
+ * already encodes band-level × direction (green = healthy regardless
+ * of whether high or low is better), so we lean on it rather than
+ * re-deriving the mapping and risking drift from computeBand.
+ */
+function bandDirectionPhrasing(
+  def: AssessmentBandDef | undefined,
+  band: AssessmentBandResult | undefined,
+): string | undefined {
+  if (!def || !band) return undefined
+  switch (band.tone) {
+    case 'good': return 'healthy'
+    case 'warn': return 'attention needed'
+    case 'bad':  return 'concerning'
+    case 'neutral': return undefined
+  }
+}
+
+/**
+ * CHUNK 93: describe the visual trend arrow that's already rendered.
+ * Reads the ARROW direction (up/down/flat), NOT the semantic tone —
+ * chunk 58's existing accessibilityLabel already announces the meaning
+ * ("improving"/"worsening"), and pairing that with a visual descriptor
+ * would be redundant. Here we describe what the pill+arrow region
+ * looks like, and the direction-of-goodness clause carries the meaning.
+ */
+function trendArrowPhrasing(direction: TrendResult['direction'] | undefined): string | undefined {
+  if (!direction) return undefined
+  if (direction === 'up') return 'trending upward'
+  if (direction === 'down') return 'trending downward'
+  return 'no change'
 }
 
 export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsProps): React.JSX.Element | null {
@@ -355,6 +395,29 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
               : 'worsening'
           : undefined
 
+        // CHUNK 93 (2026-07-23): direction-of-goodness announcement.
+        // Old label: "Depression, Low, improving, 2w ago" — VoiceOver
+        // user can't tell if "Low" is good or bad for this instrument.
+        // New label: "Depression: low. Healthy. Trending downward.
+        // Improving. 2w ago." — pill container + arrow read via one
+        // composed sentence. Inner Text + arrow are marked hidden
+        // (see below) so nothing gets double-announced.
+        //
+        // Rule (d): direction pulled from ASSESSMENT_BANDS via
+        // getBandDef(def) — computeBand already folds direction into
+        // band.tone (good/warn/bad), so bandDirectionPhrasing reads
+        // tone rather than re-deriving the mapping.
+        const directionPhrase = bandDirectionPhrasing(def, band)
+        const arrowPhrase = trendArrowPhrasing(trend?.direction)
+        const spokenBand = band ? pillLabel.toLowerCase() : 'no band available'
+        const composedA11yLabel =
+          `${humanTitle}: ${spokenBand}.` +
+          (directionPhrase ? ` ${directionPhrase[0].toUpperCase()}${directionPhrase.slice(1)}.` : '') +
+          (arrowPhrase ? ` ${arrowPhrase[0].toUpperCase()}${arrowPhrase.slice(1)}.` : '') +
+          (trendA11y ? ` ${trendA11y[0].toUpperCase()}${trendA11y.slice(1)}.` : '') +
+          ` ${formatRelative(record.completedAt)}` +
+          (isOverdue ? '. Due.' : '.')
+
         return (
           <Pressable
             key={record.instrumentId}
@@ -368,11 +431,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
               },
             ]}
             accessibilityRole="button"
-            accessibilityLabel={
-              `${humanTitle}, ${pillLabel}` +
-              (trendA11y ? `, ${trendA11y}` : '') +
-              `, ${formatRelative(record.completedAt)}`
-            }
+            accessibilityLabel={composedA11yLabel}
           >
             {/* Row 1: small-caps human label */}
             <Text
@@ -389,7 +448,15 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
               {humanTitle}
             </Text>
 
-            {/* Row 2: High/Medium/Low pill — the visual focal point */}
+            {/* Row 2: High/Medium/Low pill — the visual focal point.
+              * CHUNK 93 (2026-07-23): pill container is hidden from
+              * VoiceOver so the outer Pressable's composed label
+              * ("Depression: low. Healthy. Trending downward.")
+              * reads once instead of the bare "Low" bubbling up.
+              * accessibilityElementsHidden covers iOS;
+              * importantForAccessibility="no-hide-descendants" covers
+              * Android (the pill's dot + Text are decorative here).
+              */}
             <View
               style={[
                 styles.humanBandPill,
@@ -398,6 +465,8 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
                   backgroundColor: pillColor + '1A', // ~10% alpha tint
                 },
               ]}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
             >
               <View style={[styles.bandDot, { backgroundColor: pillColor }]} />
               <Text
@@ -412,8 +481,17 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
               </Text>
             </View>
 
-            {/* Row 3: trend arrow (reserves space so cards are same height) */}
-            <View style={styles.trendRow}>
+            {/* Row 3: trend arrow (reserves space so cards are same
+              * height). CHUNK 93: hidden from VoiceOver — arrow shape
+              * + "Improving/Worsening/Steady" are already spoken by
+              * the parent Pressable's composed label. Keeping them
+              * a11y-visible here would produce a double-read.
+              */}
+            <View
+              style={styles.trendRow}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
               {trend ? (
                 <>
                   <MaterialIcons
