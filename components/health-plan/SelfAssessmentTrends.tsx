@@ -210,15 +210,20 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
               params: { source: 'self-assessments-empty' },
             } as never)
           }
-          hitSlop={8}
+          hitSlop={12}
           style={({ pressed }) => ({
             marginTop: 12,
-            paddingHorizontal: 4,
-            paddingVertical: 2,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            minHeight: 44,
+            minWidth: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
             opacity: pressed ? 0.6 : 1,
           })}
-          accessibilityRole="link"
-          accessibilityLabel="Take a check-in"
+          accessibilityRole="button"
+          accessibilityLabel="Take a check-in for self-assessments"
+          accessibilityHint="Opens the assessment for this domain"
         >
           <Text
             style={{
