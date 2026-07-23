@@ -354,18 +354,24 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
         >
           <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={text} />
         </Pressable>
-        <Text
-          style={{
-            color: text,
-            fontSize: getScaledFontSize(16),
-            fontWeight: getScaledFontWeight(700) as any,
-            marginLeft: 12,
-            flex: 1,
-          }}
-          numberOfLines={1}
+        <View
+          ref={headerRef}
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel={`${DOMAIN_TITLE[domain]} check-ins`}
+          style={{ marginLeft: 12, flex: 1 }}
         >
-          {DOMAIN_TITLE[domain]} check-ins
-        </Text>
+          <Text
+            style={{
+              color: text,
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+            numberOfLines={1}
+          >
+            {DOMAIN_TITLE[domain]} check-ins
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -402,16 +408,45 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
               We couldn&apos;t load check-ins. Please try again.
             </Text>
           ) : rows.length === 0 ? (
-            <Text
-              style={{
-                color: subtext,
-                fontSize: getScaledFontSize(13),
-                textAlign: 'center',
-                marginTop: 24,
-              }}
+            /* Chunk 76: friendlier empty state. Extreme edge — hit only
+               when every member of the domain is coming-soon OR unknown
+               to the instrument catalog. Icon + two-line copy, all
+               inside a single accessible group so VoiceOver reads it as
+               one utterance instead of icon-then-text-then-text. */
+            <View
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel="Nothing to take here yet. Come back soon."
+              style={styles.emptyBlock}
             >
-              No check-ins are available for this area yet.
-            </Text>
+              <MaterialIcons
+                name="hourglass-empty"
+                size={getScaledFontSize(36)}
+                color={subtext}
+                style={{ marginBottom: 10 }}
+              />
+              <Text
+                style={{
+                  color: text,
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  textAlign: 'center',
+                  marginBottom: 4,
+                }}
+              >
+                Nothing to take here yet
+              </Text>
+              <Text
+                style={{
+                  color: subtext,
+                  fontSize: getScaledFontSize(13),
+                  textAlign: 'center',
+                  lineHeight: getScaledFontSize(18),
+                }}
+              >
+                Come back soon — we&apos;re still building out check-ins for this area.
+              </Text>
+            </View>
           ) : (
             rows.map((row) => {
               const pillStyle = PILL_STYLE_FOR_STATUS[row.status]
@@ -538,6 +573,15 @@ const styles = StyleSheet.create({
   loadingBlock: {
     // Deliberately empty visual — matches wellbeing card's discipline
     // (no spinner). Occupies the min-height sentinel above.
+    minHeight: 220,
+  },
+  emptyBlock: {
+    // Chunk 76: centered friendly empty state. minHeight matches the
+    // sentinel above so the block fills the reserved area cleanly.
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 32,
     minHeight: 220,
   },
   row: {
