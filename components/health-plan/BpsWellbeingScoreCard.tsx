@@ -350,6 +350,36 @@ export function BpsWellbeingScoreCard({
 
   const bigNumberText = isLoading ? '—' : typeof composite === 'number' ? String(composite) : '—'
 
+  // CHUNK 92 (2026-07-23) — accessibility label for the composite score
+  // CONTAINER (numberRow). Prior to this chunk the Text nodes making up
+  // the score ("65", "/100", trend "Improving") were each their own
+  // VoiceOver node — swiping into the card read "65" in isolation with
+  // no context of what the number represents. The outer Pressable's
+  // a11yLabel already reads a full summary, but VoiceOver still
+  // fragments the numberRow because Text defaults to accessible=true.
+  // Fix pattern (iOS + Android parity):
+  //   - Mark numberRow accessible=true with a natural-language label
+  //     that folds in the trend line adjacent to the number ("improving"
+  //     / "worsening" / "steady") so one swipe reads the composite as
+  //     one utterance.
+  //   - Hide inner Text nodes from a11y (accessibilityElementsHidden on
+  //     iOS, importantForAccessibility="no-hide-descendants" on Android)
+  //     so the parent label wins and children don't double-read.
+  // Empty-state icon is decorative — the same hidden treatment applies.
+  const numberRowA11yLabel = (() => {
+    if (isLoading) return 'Your wellbeing score: loading'
+    if (typeof composite !== 'number') return 'Your wellbeing score: not yet calculated'
+    const trendPhrase =
+      trend?.arrow === 'up'
+        ? ', improving'
+        : trend?.arrow === 'down'
+          ? ', worsening'
+          : trend
+            ? ', steady'
+            : ''
+    return `Your wellbeing score: ${composite} out of 100${trendPhrase}`
+  })()
+
   // -------------------------------------------------------------
   // CHUNK 66 (2026-07-23): PROMINENT CTA below the domain pills.
   //
@@ -669,18 +699,26 @@ export function BpsWellbeingScoreCard({
           160 remains the floor). Non-empty/non-loading paths keep the
           reserved trend slot so real trend flip-in doesn't reflow the row
           (chunk 59 CLS discipline). */}
-      <View style={styles.numberRow}>
+      <View
+        style={styles.numberRow}
+        accessible
+        accessibilityLabel={numberRowA11yLabel}
+      >
         {isEmpty ? (
           <MaterialIcons
             name="self-improvement"
             size={getScaledFontSize(44)}
             color={subtext}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           />
         ) : (
           <>
             <Text
               adjustsFontSizeToFit
               numberOfLines={1}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
               style={{
                 color: focalColor,
                 fontSize: getScaledFontSize(48),
@@ -692,6 +730,8 @@ export function BpsWellbeingScoreCard({
               {bigNumberText}
             </Text>
             <Text
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
               style={{
                 color: subtext,
                 fontSize: getScaledFontSize(14),
@@ -707,9 +747,16 @@ export function BpsWellbeingScoreCard({
         <View style={{ flex: 1 }} />
         {/* Reserve fixed slot so trend flip-in doesn't reflow the row.
             CHUNK 74: suppressed on empty state so the row doesn't carry a
-            phantom reserved footprint next to the value-prop icon. */}
+            phantom reserved footprint next to the value-prop icon.
+            CHUNK 92: trend nodes hidden from a11y — the natural-language
+            phrase is folded into numberRowA11yLabel above so VoiceOver
+            reads score + trend as one utterance. */}
         {!isEmpty ? (
-          <View style={styles.trendSlot}>
+          <View
+            style={styles.trendSlot}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
             {trend ? (
               <>
                 <MaterialIcons
