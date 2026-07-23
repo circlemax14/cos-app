@@ -52,7 +52,7 @@
 import React from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useIsMutating, useQueries, useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 
 import { Radii, Spacing } from '@/constants/design-system'
@@ -73,6 +73,24 @@ import {
   type TrendArrow,
   type WellbeingDerivation,
 } from '@/lib/wellbeing-score'
+import {
+  REGENERATE_BIO_PLAN_MUTATION_KEY,
+} from '@/hooks/use-biopsychosocial-plan'
+
+/**
+ * CHUNK 67 (2026-07-23) — kill-switch for the domain-scoped picker
+ * introduced this chunk. When true, tapping the empty-pill CTA lands
+ * the user in /Home/wellbeing-domain-checkins?domain=… where they can
+ * pick which check-in to take. When false, the CTA falls back to the
+ * chunk-66 behavior (deep-link straight into the stepper for the first
+ * available incomplete instrument in the empty domain), which was
+ * exactly what Ken complained about on 2026-07-23 ("nice to have extra
+ * button for 0 completed"). Kept as a module const rather than a
+ * server flag so the OTA revert is one-line. Cheaper than the churn of
+ * a real feature flag for a chunk 66/67 tandem release.
+ */
+const WELLBEING_DOMAIN_PICKER_ENABLED = true
+
 
 // Match the shape BiopsychosocialPlanScreen already casts `colors` to
 // (Record<string, string>) so this drop-in component types cleanly at
@@ -202,6 +220,20 @@ export function BpsWellbeingScoreCard({
     queryFn: fetchAssessments,
     staleTime: 60 * 1000,
   })
+
+  // CHUNK 67 (2026-07-23): observe the biopsychosocial-plan regen
+  // mutation CROSS-INSTANCE via useIsMutating + the shared mutation
+  // key so that when the picker fires regen and immediately unmounts
+  // on router.replace('/Home/biopsychosocial-plan'), this card still
+  // sees the in-flight mutation. useMutation's per-instance `isPending`
+  // would be false here (this card's own hook never called .mutate()),
+  // so useIsMutating is the correct primitive. Returns the count of
+  // in-flight mutations matching the key — treat any non-zero as
+  // "pending" for pill display purposes.
+  const regenPendingCount = useIsMutating({
+    mutationKey: [...REGENERATE_BIO_PLAN_MUTATION_KEY],
+  })
+  const regenIsPending = regenPendingCount > 0
 
   // CHUNK 66: instruments catalog — needed by the CTA row to know which
   // domain-member instrumentIds are actually visible + not `comingSoon`
@@ -352,6 +384,29 @@ export function BpsWellbeingScoreCard({
   // to it.
   // -------------------------------------------------------------
 
+  // CHUNK 67 adversarial-verify majors #1/#2/#3 fix: dropped the
+  // justCompletedRecently window. Three problems the heuristic had:
+  //   (a) render-time Date.now() snapshot with no timer → "Processing…"
+  //       could stick indefinitely if no re-render fired at t=60s;
+  //   (b) account-wide latest completedAt → a completion in ONE domain
+  //       painted EVERY empty pill as processing, misrepresenting what
+  //       Ken asked for ("processing until plan is updated");
+  //   (c) sticks past the 30s regen latch when the plan is actually
+  //       done regenerating.
+  //
+  // Only regenIsPending faithfully represents "plan is currently being
+  // updated" — the user tapped Refresh my plan in the picker, which
+  // fired useRegenerateBiopsychosocialPlan().mutate(); observed here
+  // via the shared REGENERATE_BIO_PLAN_MUTATION_KEY. When regen
+  // resolves, the invalidation cascade refetches ['assessments-trends']
+  // and the derivation, and the pill flips to real data.
+  //
+  // Completions that never reach the Refresh step (user backs out of
+  // the picker mid-flow) intentionally do NOT show "Processing…" —
+  // the pill flips to the real contributor count as soon as the
+  // record's subscore lands in the derivation.
+  const isProcessing = regenIsPending
+
   const emptyDomains = React.useMemo<BpsDomain[]>(() => {
     if (isLoading || isEmpty) return []
     // Preserve DOMAIN_ORDER so "first empty" is deterministic and matches
@@ -441,7 +496,13 @@ export function BpsWellbeingScoreCard({
   // when it was most useful.
   const ctaDataReady =
     !!summaryQuery.data && !!instrumentsQuery.data && !summaryQuery.isLoading && !instrumentsQuery.isLoading
-  const showCta = !isLoading && emptyDomains.length > 0 && ctaDataReady
+  // Chunk 67 adversarial-verify major #3 fix: hide the CTA while regen
+  // is in flight. Ken's exact repro was "tap Refresh → land back on BPS
+  // → pill still 0 → CTA still shows → tap again → loop." Hiding the
+  // CTA under isProcessing lets the pill's "Processing…" state be the
+  // sole affordance during regen; CTA returns once the pill flips to
+  // real data or stays 0 after regen resolves.
+  const showCta = !isLoading && !isProcessing && emptyDomains.length > 0 && ctaDataReady
 
   const ctaCopy = (() => {
     if (emptyDomains.length === 1) {
@@ -452,11 +513,30 @@ export function BpsWellbeingScoreCard({
 
   const onPressCta = React.useCallback(() => {
     if (emptyDomains.length === 0) return
-    // Walk empty domains in DOMAIN_ORDER; first one with a resolvable
-    // target wins. pickTargetForDomain now returns retake-oldest as a
-    // last resort so we always route to a real take-flow instead of
-    // dumping the user on a catalog page of "all completed" items —
-    // the exact chunk-65 UX complaint Ken raised on 2026-07-23.
+    const firstEmpty = emptyDomains[0]
+
+    // CHUNK 67 (2026-07-23): default path now hands control to the
+    // domain-scoped picker so Ken sees a LIST of available check-ins
+    // for the empty pill and picks one himself — his verbatim dogfood
+    // ask. The picker owns the entire multi-check-in cycle (return to
+    // list after each submit, "Refresh my plan" only when every member
+    // is fresh) so this component no longer needs to model any of
+    // that. Kill-switch WELLBEING_DOMAIN_PICKER_ENABLED = false
+    // restores the chunk-66 deep-link-straight-into-stepper behavior
+    // as a one-line OTA revert if the picker misbehaves in prod.
+    if (WELLBEING_DOMAIN_PICKER_ENABLED) {
+      router.push({
+        pathname: '/Home/wellbeing-domain-checkins',
+        params: { domain: firstEmpty, source: 'wellbeing-empty-pill' },
+      } as never)
+      return
+    }
+
+    // FALLBACK (chunk 66 behavior — kept for OTA revert only). Walk
+    // empty domains in DOMAIN_ORDER; first one with a resolvable
+    // target wins. pickTargetForDomain returns retake-oldest as a last
+    // resort so we always route to a real take-flow instead of
+    // dumping the user on a catalog page of "all completed" items.
     for (const domain of emptyDomains) {
       const instrumentId = pickTargetForDomain(domain)
       if (instrumentId) {
@@ -470,7 +550,6 @@ export function BpsWellbeingScoreCard({
     // True final fallback (all members are coming-soon or unknown to
     // the catalog — extremely rare): route to catalog so the user at
     // least sees the section, with a distinct analytics source.
-    const firstEmpty = emptyDomains[0]
     router.push({
       pathname: '/Home/assessments-catalog',
       params: {
@@ -649,9 +728,22 @@ export function BpsWellbeingScoreCard({
           // Chunk 63 adversarial-verify major fix: suppress the
           // contributor suffix during LOADING (see chunk-63 comment
           // history for the CLS + "0 completed" flash rationale).
+          // CHUNK 67 (2026-07-23): when a regen is in flight OR a
+          // completion just landed within JUST_COMPLETED_WINDOW_MS,
+          // swap the "0 completed" copy for "Processing…" on empty
+          // pills. Rows that already have contributors keep their
+          // real number — safer than blanking a good pill during a
+          // regen. Only the SUFFIX text changes; the pill container +
+          // layout are untouched so LOADING/EMPTY/READY minHeight
+          // discipline from chunks 47/48 holds. "Processing…" (12ch)
+          // is within the existing pill width — no CLS.
           const suffixText = isLoading
             ? ''
-            : hasContributors ? `· ${d.contributors}` : `${d.contributors} completed`
+            : hasContributors
+              ? `· ${d.contributors}`
+              : isProcessing
+                ? 'Processing…'
+                : `${d.contributors} completed`
           const suffixColor = hasContributors ? pillColor : subtext
           // CHUNK 66 (2026-07-23): REVERTED chunk-65 empty-pill Pressable.
           // Ken's 2026-07-23 dogfood showed the chevron affordance on the

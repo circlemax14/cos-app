@@ -415,6 +415,22 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        CHUNK 67 (2026-07-23) — domain-scoped check-in picker.
+        Reachable ONLY via the BpsWellbeingScoreCard empty-pill CTA
+        (see WELLBEING_DOMAIN_PICKER_ENABLED in that file). Same hidden
+        Tabs.Screen pattern used above so expo-router doesn't
+        auto-surface it as a bottom tab. iOS 26.5 safe primitives only
+        (see file header for the full discipline list).
+      */}
+      <Tabs.Screen
+        name="wellbeing-domain-checkins"
+        options={{
+          title: 'Check-ins',
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
     </View>
   );

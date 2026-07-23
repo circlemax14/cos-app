@@ -68,9 +68,22 @@ export function useBiopsychosocialPlan() {
 // server has had time to record generating:true.
 const REGENERATE_PENDING_WINDOW_MS = 30_000
 
+/**
+ * CHUNK 67 (2026-07-23): mutation key so that OTHER components can
+ * observe pending state cross-instance via `useIsMutating({ mutationKey })`.
+ * Without a key, useMutation's `isPending` is scoped to the individual
+ * hook instance — meaning the picker fires .mutate() then unmounts on
+ * router.replace, and BpsWellbeingScoreCard's own hook instance would
+ * see isPending=false even though the mutation is still in flight. The
+ * shared mutation key + useIsMutating pair lets any screen render the
+ * "Processing…" state during the pending window.
+ */
+export const REGENERATE_BIO_PLAN_MUTATION_KEY = ['regen-biopsychosocial-plan'] as const
+
 export function useRegenerateBiopsychosocialPlan() {
   const qc = useQueryClient()
   return useMutation({
+    mutationKey: [...REGENERATE_BIO_PLAN_MUTATION_KEY],
     mutationFn: () => {
       // Fire the actual request immediately — no await (chunk 9.5 rule).
       void fireAndForgetPost('/v1/health-plan/biopsychosocial/regenerate', {})
