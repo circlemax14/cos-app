@@ -703,6 +703,34 @@ export function BiopsychosocialPlanScreen({
   });
   const isRegenPending = regenPendingCount > 0;
 
+  // CHUNK 86 v2 (2026-07-23): explicit VoiceOver/TalkBack announcements for
+  // regen start AND end. The chunk-86 v1 wrapper landed accessibilityRole=
+  // "alert" + accessibilityLiveRegion="polite" + an `accessible` toggle, but
+  // 3-lens verify caught two silent-failure modes those props can't cover:
+  //   1) accessibilityLiveRegion is Android-only in RN 0.83 — no-op on iOS.
+  //   2) accessibilityRole="alert" only announces on MOUNT; the v1 wrapper is
+  //      kept mounted (idle = collapsed style) so the rising-edge alert trait
+  //      fires zero times. Result: iOS never announces at all.
+  //   3) Android's live-region announces added descendants but NOT removals,
+  //      so the regen-END transition is silent on BOTH platforms.
+  // Fix mirrors the pattern already in this file at ~L1032 (chunk 55) and in
+  // MedicationsSection.tsx L149-157 (rising-edge error announce): a ref tracks
+  // the prev value of isRegenPending and an effect fires
+  // AccessibilityInfo.announceForAccessibility on the false→true and true→false
+  // edges. This is the ONE cross-platform primitive that announces
+  // unconditionally on both iOS VoiceOver and Android TalkBack. The chunk-86 v1
+  // props stay in place — additive on Android, harmless on iOS.
+  const prevIsRegenPendingRef = React.useRef(isRegenPending);
+  React.useEffect(() => {
+    const prev = prevIsRegenPendingRef.current;
+    if (!prev && isRegenPending) {
+      AccessibilityInfo.announceForAccessibility('Refreshing your plan');
+    } else if (prev && !isRegenPending) {
+      AccessibilityInfo.announceForAccessibility('Plan refreshed');
+    }
+    prevIsRegenPendingRef.current = isRegenPending;
+  }, [isRegenPending]);
+
   // SCRUM-588 Chunk 1c: observer on ['ai-health-plan'] so the plan-tasks
   // mutations' invalidations actually refetch. Legacy consumers use raw
   // fetchAiHealthPlan outside react-query; without this hook the mutations
@@ -1234,30 +1262,71 @@ export function BiopsychosocialPlanScreen({
           misbehaves: ~30-60s via `npm run eas:update:production` to
           delete the block.
         */}
-        {isRegenPending && (
-          <View
-            style={[
-              styles.regenBanner,
-              {
-                backgroundColor: (colors.tint ?? '#0D9488') + '14',
-                borderColor: (colors.tint ?? '#0D9488') + '33',
-              },
-            ]}
-            accessibilityRole="text"
-            accessibilityLabel="Refreshing your plan"
-            accessibilityLiveRegion="polite"
-          >
-            <MaterialIcons name="info-outline" size={16} color={colors.tint} />
-            <Text
-              style={[
-                styles.regenBannerText,
-                { color: colors.text, fontSize: getScaledFontSize(13) },
-              ]}
-            >
-              Refreshing your plan...
-            </Text>
-          </View>
-        )}
+        {/*
+          CHUNK 86 v2 (2026-07-23): a11y — VoiceOver/TalkBack must announce
+          the regen start AND end. The primary driver is the effect above
+          (prevIsRegenPendingRef + AccessibilityInfo.announceForAccessibility
+          on both rising and falling edges) — that is the ONE cross-platform
+          primitive that fires unconditionally on iOS and Android for both
+          transitions. The wrapper View is ALWAYS mounted (collapsed to 0pt
+          when idle via styles.regenBannerHidden) so the additive props below
+          have a stable node:
+            • Android: accessibilityLiveRegion="polite" is a COMPLEMENT to
+              the explicit announce — TalkBack also emits when the descendant
+              Text appears, giving a belt-and-suspenders behavior on the
+              start edge. It does NOT announce descendant removal, which is
+              precisely why the falling-edge explicit announce is required.
+              Keeping the wrapper mounted means the live-region subscription
+              survives across the transition (some Android versions drop the
+              first announcement when the region node itself unmounts).
+            • iOS: accessibilityLiveRegion is a NO-OP in RN 0.83 (Android-
+              only), and accessibilityRole="alert" only announces on MOUNT
+              — with the wrapper kept mounted the rising-edge alert trait
+              never fires. iOS therefore relies entirely on the explicit
+              AccessibilityInfo.announceForAccessibility calls in the effect
+              above. The role="alert" + accessible toggle props are retained
+              because they are harmless on iOS (no announcement side-effect
+              once mounted) and preserve intent for future RN versions that
+              may light up cross-platform live-region support.
+          Sighted UX is bit-identical to pre-chunk-86: collapsed style zeros
+          height/padding/margin/border, so the "one intentional 44pt shift
+          on start/finish" behavior from chunk 77 is preserved. When idle we
+          also set importantForAccessibility="no-hide-descendants" so
+          TalkBack cannot land focus on the empty shell.
+          Props-only + one effect; no Modal/Animated/LayoutAnimation/Portal/
+          gradient/blur/ActivityIndicator added — iOS 26.5 primitive envelope
+          (View/Text/MaterialIcons) unchanged.
+        */}
+        <View
+          style={[
+            styles.regenBanner,
+            isRegenPending
+              ? {
+                  backgroundColor: (colors.tint ?? '#0D9488') + '14',
+                  borderColor: (colors.tint ?? '#0D9488') + '33',
+                }
+              : styles.regenBannerHidden,
+          ]}
+          accessible={isRegenPending}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={isRegenPending ? 'Refreshing your plan' : undefined}
+          importantForAccessibility={isRegenPending ? 'yes' : 'no-hide-descendants'}
+        >
+          {isRegenPending && (
+            <>
+              <MaterialIcons name="info-outline" size={16} color={colors.tint} />
+              <Text
+                style={[
+                  styles.regenBannerText,
+                  { color: colors.text, fontSize: getScaledFontSize(13) },
+                ]}
+              >
+                Refreshing your plan...
+              </Text>
+            </>
+          )}
+        </View>
 
         {/* Header — patient greeting + last-generated date */}
         <View style={[styles.headerBlock, { flexDirection: 'row', alignItems: 'flex-start' }]}>
@@ -2089,6 +2158,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regenBannerText: { flex: 1, lineHeight: 18, fontWeight: '600' },
+  // CHUNK 86 (2026-07-23): collapsed state for the always-mounted regen
+  // banner wrapper. Zeroes height, padding, margin, and border so idle
+  // layout is bit-identical to pre-chunk-86 (when the wrapper unmounted
+  // entirely). overflow:hidden guards against any stray descendant text
+  // during the render frame where isRegenPending is transitioning.
+  regenBannerHidden: {
+    height: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    marginBottom: 0,
+    borderWidth: 0,
+    overflow: 'hidden',
+  },
   tierPill: {
     flexDirection: 'row',
     alignItems: 'center',
