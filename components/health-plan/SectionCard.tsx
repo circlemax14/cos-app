@@ -250,6 +250,19 @@ export function SectionCard({
             marginLeft: Spacing.sm + 2,
           }}
           numberOfLines={2}
+          /*
+           * CHUNK 90 (2026-07-23): compose the FOCUS pill's meaning into
+           * the header label + tag as `header` so VoiceOver reads a
+           * single natural line — e.g. "Biological Wellness, Focus area,
+           * prioritized this week, heading" — instead of two separate
+           * reads (title, then a bare "FOCUS" glyph). The pill itself is
+           * hidden from the a11y tree below to avoid a double-read.
+           * Visual-only when !isFocus (label falls back to raw title),
+           * so sections that aren't the focus target render identically
+           * to pre-chunk-90. Props-only, no layout change.
+           */
+          accessibilityRole="header"
+          accessibilityLabel={isFocus ? `${title}, Focus area, prioritized this week` : title}
         >
           {title}
         </Text>
@@ -288,8 +301,22 @@ export function SectionCard({
       {isFocus ? (
         <View
           style={[styles.focusPill, { backgroundColor: FOCUS_PILL_BG, borderColor: FOCUS_PILL_BORDER }]}
-          accessible
-          accessibilityLabel="Focus area for this week"
+          /*
+           * CHUNK 90 (2026-07-23): the pill's meaning is now composed
+           * into the header Text's accessibilityLabel above (VoiceOver
+           * reads "…, Focus area, prioritized this week, heading" in
+           * one pass). Hide the pill from the a11y tree here so it
+           * isn't re-announced as a second focus stop. Fallback label
+           * kept intentionally-consistent with the header composition
+           * ("Focus area, prioritized this week") so if a future
+           * change re-exposes the pill (removes the hide props), VO
+           * copy stays coherent instead of reverting to the older
+           * "for this week" phrasing.
+           */
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          accessibilityLabel="Focus area, prioritized this week"
         >
           <MaterialIcons name="center-focus-strong" size={12} color={FOCUS_PILL_INK} />
           <Text
