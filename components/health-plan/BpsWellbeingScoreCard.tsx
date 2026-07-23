@@ -61,10 +61,13 @@ import {
   fetchAssessments,
   type AssessmentRecord,
 } from '@/services/api/assessments'
+import { fetchInstruments, type InstrumentSummary } from '@/services/api/instruments'
 import {
   ALL_TRACKED_INSTRUMENTS,
   DOMAIN_CALLOUT_NAME,
   DOMAIN_LABEL,
+  DOMAIN_MEMBERS,
+  DOMAIN_ORDER,
   deriveWellbeing,
   type BpsDomain,
   type TrendArrow,
@@ -128,30 +131,24 @@ const TONE_COLOR = {
 } as const
 
 /**
- * CHUNK 65 (2026-07-22) — deep-link focus param per BpsDomain.
- * Matches ASSESSMENT_ROUTE_FOR_SECTION in lib/unified-plan-assessment-routing.ts
- * (bio / psy / soc). The `focus` param is CURRENTLY IGNORED by
- * app/Home/assessments-catalog.tsx — it lands the user at the top of
- * the catalog regardless. Included so a follow-up chunk can teach the
- * catalog to scroll-to-domain without a separate deep-link handshake;
- * back-compatible today because the target screen just drops the unknown
- * param on the floor.
+ * CHUNK 65/66 (2026-07-23) — deep-link focus param per BpsDomain for the
+ * assessments-catalog fallback route. Matches ASSESSMENT_ROUTE_FOR_SECTION
+ * in lib/unified-plan-assessment-routing.ts (bio / psy / soc). Kept for the
+ * chunk-66 fallback path only (all-domain-members-completed edge case);
+ * primary CTA now deep-links straight to /Home/assessment-stepper with
+ * an instrumentId, bypassing the catalog entirely (see CTA onPress below).
+ *
+ * The `focus` param is CURRENTLY IGNORED by app/Home/assessments-catalog.tsx
+ * — it lands the user at the top of the catalog regardless. Included so a
+ * follow-up chunk (SCRUM follow-up filed by user) can teach the catalog to
+ * scroll-to-domain + filter-hide already-completed items without a separate
+ * deep-link handshake; back-compatible today because the target screen just
+ * drops the unknown param on the floor.
  */
-const DOMAIN_TO_CATALOG_FOCUS: Record<BpsDomain, 'bio' | 'psy' | 'soc'> = {
+const BPS_TO_CATALOG_FOCUS: Record<BpsDomain, 'bio' | 'psy' | 'soc'> = {
   bio: 'bio',
   mind: 'psy',
   social: 'soc',
-}
-
-/**
- * CHUNK 65: build the assessments-catalog href for an empty domain pill.
- * Distinct `source=wellbeing-empty-pill` so engagement analytics can
- * attribute check-in completions back to this specific nudge (vs the
- * plan-upgrade banner, due banner, unified-plan-empty deep link, etc.).
- * `focus` is aspirational (see DOMAIN_TO_CATALOG_FOCUS docstring).
- */
-function catalogHrefForDomain(domain: BpsDomain): string {
-  return `/Home/assessments-catalog?source=wellbeing-empty-pill&focus=${DOMAIN_TO_CATALOG_FOCUS[domain]}`
 }
 
 /** Warm palette for the composite number based on the score band. */
@@ -189,11 +186,41 @@ export function BpsWellbeingScoreCard({
   // If SelfAssessmentTrends has already primed the cache (parent mounts
   // this card ABOVE it, but auth-prefetch may have warmed it), first
   // paint is READY, not LOADING.
+  //
+  // CHUNK 66 (2026-07-23): summaryQuery is now ALWAYS enabled — the CTA
+  // row below the pills needs record presence (fetchAssessments) to pick
+  // the first incomplete instrument in the empty domain, so we can't gate
+  // this observer behind `usingParentDerivation` anymore. React Query
+  // dedupes on the shared `['assessments-trends']` cache key, so when the
+  // parent hoists derivation (and is therefore already fetching the same
+  // data), this extra observer is free — same round-trip, same cache
+  // entry. The pure-derivation code path below still uses `derivationProp`
+  // for the composite/domains/trend/focus values; summaryQuery.data is only
+  // consumed by the CTA routing algorithm.
   const summaryQuery = useQuery({
     queryKey: ['assessments-trends'],
     queryFn: fetchAssessments,
     staleTime: 60 * 1000,
-    enabled: !usingParentDerivation,
+  })
+
+  // CHUNK 66: instruments catalog — needed by the CTA row to know which
+  // domain-member instrumentIds are actually visible + not `comingSoon`
+  // (comingSoon rows are catalog-visible but non-tappable, so routing a
+  // patient straight to /Home/assessment-stepper for one would land them
+  // on an unavailable take-flow). Reuses the SAME `['instruments']` cache
+  // key that assessment-stepper.tsx (line 51) already uses, so it hits the
+  // React Query cache instead of firing a duplicate network round-trip.
+  // Deliberately NOT using fetchRecommendedInstruments — that endpoint's
+  // AI-recommender subset can drop alcohol-3 / loneliness-3 from a
+  // patient's list even though they're the ONLY members of DOMAIN_MEMBERS.social,
+  // which was one of the failure modes behind Ken's 2026-07-23 dogfood
+  // report ("clicked social & faith → all check-ins already completed").
+  // The full instrument list guarantees every DOMAIN_MEMBERS entry has a
+  // chance to be matched, then completion state gates the actual pick.
+  const instrumentsQuery = useQuery({
+    queryKey: ['instruments'],
+    queryFn: fetchInstruments,
+    staleTime: 5 * 60 * 1000,
   })
 
   // Per-instrument history — same key SelfAssessmentTrends uses.
@@ -290,6 +317,168 @@ export function BpsWellbeingScoreCard({
   const isEmpty = usingParentDerivation ? !!isEmptyProp : internalIsEmpty
 
   const bigNumberText = isLoading ? '—' : typeof composite === 'number' ? String(composite) : '—'
+
+  // -------------------------------------------------------------
+  // CHUNK 66 (2026-07-23): PROMINENT CTA below the domain pills.
+  //
+  // Ken's 2026-07-23 dogfood on chunk 65 reported two problems:
+  //   (1) the tap-affordance on empty pills (subtle chevron) was not
+  //       discoverable — patients didn't realize the pill was tappable.
+  //   (2) tapping an empty pill routed to /Home/assessments-catalog which
+  //       showed all check-ins as "Done" for his account — the catalog
+  //       ignores `?focus=` and, worse, `fetchRecommendedInstruments`
+  //       (the AI subset the catalog prefers) can drop the very instruments
+  //       that feed the empty pill, so no card matches.
+  //
+  // Fix: empty pills revert to non-tappable transparency text (kept in
+  // pill render below). A single prominent TEAL CTA row appears below the
+  // pills row whenever at least one domain has contributors === 0. Its
+  // onPress deep-links straight to /Home/assessment-stepper?instrumentId=…
+  // for the first available incomplete member of the first empty domain
+  // — bypassing the catalog entirely. If every member is already
+  // completed-and-current (edge case), fall back to the catalog with
+  // `source=wellbeing-empty-pill-all-done` so downstream analytics can
+  // distinguish "user needed a check-in" from "user had none to take".
+  //
+  // Routing is driven by RECORD PRESENCE from fetchAssessments, NOT by
+  // the wellbeing derivation's `contributors` count. This matters because
+  // subscoreFromRecord() can return undefined for a completed record when
+  // ASSESSMENT_BANDS is missing an entry for that instrument (Ken's
+  // alcohol-3 / loneliness-3 records fell into this trap in his 07-23
+  // report). Without this decoupling, the CTA would happily route the
+  // patient to an instrument they already completed — the same trap
+  // that broke chunk 65 for him. The underlying bands-coverage bug is
+  // filed as a separate follow-up; chunk 66 only makes the CTA robust
+  // to it.
+  // -------------------------------------------------------------
+
+  const emptyDomains = React.useMemo<BpsDomain[]>(() => {
+    if (isLoading || isEmpty) return []
+    // Preserve DOMAIN_ORDER so "first empty" is deterministic and matches
+    // the reading order of the pills row.
+    return DOMAIN_ORDER.filter((d) => {
+      const agg = domains.find((x) => x.domain === d)
+      return !!agg && agg.contributors === 0
+    })
+  }, [isLoading, isEmpty, domains])
+
+  const completedById = React.useMemo(() => {
+    const map = new Map<string, AssessmentRecord>()
+    const rows = summaryQuery.data ?? []
+    rows.forEach((r) => {
+      if (r && r.instrumentId && r.completedAt) {
+        map.set(String(r.instrumentId), r)
+      }
+    })
+    return map
+  }, [summaryQuery.data])
+
+  const visibleInstruments = React.useMemo(() => {
+    const set = new Set<string>()
+    const rows: InstrumentSummary[] = instrumentsQuery.data ?? []
+    rows.forEach((it) => {
+      if (it && it.instrumentId && !it.comingSoon) set.add(String(it.instrumentId))
+    })
+    return set
+  }, [instrumentsQuery.data])
+
+  /**
+   * Pick an actionable instrumentId for a given empty BPS domain.
+   * Chunk 66 adversarial-verify blocker fix (Ken 2026-07-23 repro):
+   *
+   * The domain landed in `emptyDomains` because its pill shows 0
+   * contributors. That can happen for two reasons:
+   *   (a) user genuinely has no records for any member instrument, OR
+   *   (b) user HAS records but their scores don't produce a valid band
+   *       (ASSESSMENT_BANDS coverage gap, or extractScore returns
+   *       undefined for their record shape) — the wellbeing pill can't
+   *       count them.
+   *
+   * Pre-fix behavior: this function returned undefined for case (b) and
+   * the caller fell through to routing to /Home/assessments-catalog,
+   * which showed Ken the same "all completed" screen he had already
+   * complained about. Now we ALWAYS return an actionable instrumentId
+   * when the domain has any visible member — walking a priority order:
+   *   1. No record at all      → return it (truly incomplete)
+   *   2. Record expired        → return it (retake overdue)
+   *   3. Record present + fresh → return the OLDEST-completed one
+   *                                (retake so the score refreshes)
+   * Only returns undefined when the domain has ZERO visible members
+   * (e.g. every member is coming-soon or unknown to the catalog).
+   */
+  const pickTargetForDomain = React.useCallback(
+    (domain: BpsDomain): string | undefined => {
+      const members = DOMAIN_MEMBERS[domain]
+      const now = Date.now()
+      let oldestCompleted: { id: string; completedAt: number } | undefined
+      for (const id of members) {
+        const idStr = String(id)
+        if (!visibleInstruments.has(idStr)) continue
+        const record = completedById.get(idStr)
+        if (!record) return idStr
+        const exp = Date.parse(record.expiresAt ?? '')
+        if (Number.isFinite(exp) && exp <= now) return idStr
+        const completedAt = Date.parse(record.completedAt ?? '')
+        if (Number.isFinite(completedAt)) {
+          if (!oldestCompleted || completedAt < oldestCompleted.completedAt) {
+            oldestCompleted = { id: idStr, completedAt }
+          }
+        } else if (!oldestCompleted) {
+          // Fall back to the first record without a valid completedAt
+          // — still lets the user retake something in this domain.
+          oldestCompleted = { id: idStr, completedAt: Infinity }
+        }
+      }
+      return oldestCompleted?.id
+    },
+    [completedById, visibleInstruments],
+  )
+
+  // Chunk 66 adversarial-verify major #2 fix: show the CTA for
+  // first-time users too. isEmpty === true means every domain has 0
+  // contributors — exactly the users who most need the "take a
+  // check-in" nudge. Pre-fix `!isEmpty` gate hid the CTA precisely
+  // when it was most useful.
+  const ctaDataReady =
+    !!summaryQuery.data && !!instrumentsQuery.data && !summaryQuery.isLoading && !instrumentsQuery.isLoading
+  const showCta = !isLoading && emptyDomains.length > 0 && ctaDataReady
+
+  const ctaCopy = (() => {
+    if (emptyDomains.length === 1) {
+      return `Take a check-in for your ${DOMAIN_CALLOUT_NAME[emptyDomains[0]]}`
+    }
+    return `You have ${emptyDomains.length} areas with no data. Take a check-in`
+  })()
+
+  const onPressCta = React.useCallback(() => {
+    if (emptyDomains.length === 0) return
+    // Walk empty domains in DOMAIN_ORDER; first one with a resolvable
+    // target wins. pickTargetForDomain now returns retake-oldest as a
+    // last resort so we always route to a real take-flow instead of
+    // dumping the user on a catalog page of "all completed" items —
+    // the exact chunk-65 UX complaint Ken raised on 2026-07-23.
+    for (const domain of emptyDomains) {
+      const instrumentId = pickTargetForDomain(domain)
+      if (instrumentId) {
+        router.push({
+          pathname: '/Home/assessment-stepper',
+          params: { instrumentId, source: 'wellbeing-empty-pill' },
+        } as never)
+        return
+      }
+    }
+    // True final fallback (all members are coming-soon or unknown to
+    // the catalog — extremely rare): route to catalog so the user at
+    // least sees the section, with a distinct analytics source.
+    const firstEmpty = emptyDomains[0]
+    router.push({
+      pathname: '/Home/assessments-catalog',
+      params: {
+        source: 'wellbeing-empty-pill-no-visible-instruments',
+        focus: BPS_TO_CATALOG_FOCUS[firstEmpty],
+      },
+    } as never)
+  }, [emptyDomains, pickTargetForDomain])
 
   // CHUNK 63 (2026-07-22): "How is this calculated?" expandable panel.
   // Component-local state — no persistence. Straight conditional render
@@ -458,49 +647,40 @@ export function BpsWellbeingScoreCard({
           const pillColor = isDomainScored ? compositeColor(d.score, tint) : subtext
           const hasContributors = !isLoading && d.contributors > 0
           // Chunk 63 adversarial-verify major fix: suppress the
-          // contributor suffix during LOADING. Before data lands,
-          // deriveWellbeing() reports contributors: 0 for every
-          // domain — showing "0 completed" during that window
-          // misleads the patient into thinking they have no data,
-          // AND the wider "0 completed" text triggers pill flexWrap
-          // which then unwraps once real data arrives (CLS). Under
-          // loading, render only the label (no score, no suffix) so
-          // the pill footprint matches chunk 62. The suffix reveals
-          // once we actually have a signal.
+          // contributor suffix during LOADING (see chunk-63 comment
+          // history for the CLS + "0 completed" flash rationale).
           const suffixText = isLoading
             ? ''
             : hasContributors ? `· ${d.contributors}` : `${d.contributors} completed`
           const suffixColor = hasContributors ? pillColor : subtext
-          // CHUNK 65 (2026-07-22): empty pills (contributors === 0) become
-          // tap targets that route to the assessments catalog so patients
-          // can act on the transparency chunk 63 introduced ("0 completed"
-          // → "tap here to take a check-in"). Scored pills stay
-          // non-interactive (existing behavior). Loading pills stay
-          // non-interactive — the suffix is suppressed during load so the
-          // chevron never flashes in and out (no CLS, no misleading
-          // "tap here" state before we know the real contributor count).
-          //
-          // RN responder system: nested Pressable — the child wins the
-          // press, so tapping an empty pill navigates without also
-          // triggering the outer scroll-to-Self-Assessments handler.
-          //
-          // Discoverability: a small chevron-right sits after the "N
-          // completed" suffix so the pill visually reads as tappable.
-          // Icon size is derived from getScaledFontSize so accessibility
-          // scaling scales the affordance with everything else — no CLS
-          // because the icon slot is only inserted for empty pills,
-          // which is a stable state (empty stays empty until the patient
-          // completes a check-in, at which point the whole pill
-          // re-renders as a scored, non-tappable View).
-          const isEmptyTappable = !isLoading && !hasContributors
-          const chevronSize = getScaledFontSize(12)
+          // CHUNK 66 (2026-07-23): REVERTED chunk-65 empty-pill Pressable.
+          // Ken's 2026-07-23 dogfood showed the chevron affordance on the
+          // pill was not discoverable AND the catalog it routed to
+          // confused him ("all check-ins were already completed"). The
+          // tap affordance is now a PROMINENT teal CTA row rendered
+          // below this pillsRow — see the CTA block after this View.
+          // Empty pills go back to being plain Views with the "0 completed"
+          // transparency text, non-tappable. Kept the transparency copy
+          // so the patient still learns WHY a domain scored — the CTA
+          // below explains WHAT to do about it.
           const pillA11y = isLoading
             ? `${DOMAIN_LABEL[d.domain as BpsDomain]} loading`
             : hasContributors
               ? `${DOMAIN_LABEL[d.domain as BpsDomain]} ${scoreText} out of 100, based on ${d.contributors} ${d.contributors === 1 ? 'assessment' : 'assessments'}`
-              : `${DOMAIN_LABEL[d.domain as BpsDomain]} score not available, 0 assessments completed. Tap to take a check-in.`
-          const pillContent = (
-            <>
+              : `${DOMAIN_LABEL[d.domain as BpsDomain]} score not available, 0 assessments completed`
+          return (
+            <View
+              key={d.domain}
+              style={[
+                styles.pill,
+                {
+                  borderColor: pillColor,
+                  backgroundColor: pillColor + '14',
+                },
+              ]}
+              accessible
+              accessibilityLabel={pillA11y}
+            >
               <Text
                 style={{
                   color: pillColor,
@@ -534,64 +714,57 @@ export function BpsWellbeingScoreCard({
                   {suffixText}
                 </Text>
               ) : null}
-              {isEmptyTappable ? (
-                <MaterialIcons
-                  name="chevron-right"
-                  size={chevronSize}
-                  color={suffixColor}
-                  style={{ marginLeft: 2, width: chevronSize, height: chevronSize }}
-                />
-              ) : null}
-            </>
-          )
-          if (isEmptyTappable) {
-            const href = catalogHrefForDomain(d.domain as BpsDomain)
-            return (
-              <Pressable
-                key={d.domain}
-                onPress={() => router.push(href as never)}
-                // Chunk 65 adversarial-verify fix: asymmetric hitSlop so the
-                // horizontal extension doesn't overlap the pillsRow gap (6pt)
-                // between adjacent empty pills — on cold-mount all 3 domains
-                // are empty and adjacent, and a symmetric hitSlop:6 has hit
-                // regions meeting at the gap midpoint so RN's sibling-order
-                // tiebreak decides which domain the tap goes to. Vertical
-                // padding preserved for accessibility taps above/below.
-                hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
-                accessibilityRole="button"
-                accessibilityLabel={pillA11y}
-                accessibilityHint="Opens the assessments catalog to take a related check-in"
-                style={({ pressed }) => [
-                  styles.pill,
-                  {
-                    borderColor: pillColor,
-                    backgroundColor: pillColor + '14',
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                {pillContent}
-              </Pressable>
-            )
-          }
-          return (
-            <View
-              key={d.domain}
-              style={[
-                styles.pill,
-                {
-                  borderColor: pillColor,
-                  backgroundColor: pillColor + '14',
-                },
-              ]}
-              accessible
-              accessibilityLabel={pillA11y}
-            >
-              {pillContent}
             </View>
           )
         })}
       </View>
+
+      {/* CHUNK 66 (2026-07-23) — prominent teal CTA row.
+          Only mounts when at least one domain has contributors === 0 AND
+          all routing data is resolved (see showCta). Conditional-null
+          render is intentional: reserving whitespace for the CTA on
+          healthy accounts would eat ~46pt of always-present padding and
+          regress the compact card design. Because the whole card is gated
+          on data-ready (chunk 63 loading suppression), the CTA appears in
+          the same render as the pills — no user-visible flash beyond what
+          the card already causes on cold mount.
+          iOS 26.5 safe: plain Pressable + Text + MaterialIcons (all
+          already used in this file). No Animated / Modal / LayoutAnimation
+          / shadow — solid teal fill + rounded corners carries the visual
+          prominence Ken asked for. */}
+      {showCta ? (
+        <Pressable
+          onPress={onPressCta}
+          accessibilityRole="button"
+          accessibilityLabel={ctaCopy}
+          accessibilityHint="Opens the next check-in"
+          style={({ pressed }) => [
+            styles.ctaRow,
+            {
+              backgroundColor: tint,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <Text
+            numberOfLines={2}
+            style={{
+              color: '#ffffff',
+              fontSize: getScaledFontSize(14),
+              fontWeight: getScaledFontWeight(600) as any,
+              flexShrink: 1,
+            }}
+          >
+            {ctaCopy}
+          </Text>
+          <MaterialIcons
+            name="chevron-right"
+            size={getScaledFontSize(22)}
+            color="#ffffff"
+            style={{ marginLeft: 8 }}
+          />
+        </Pressable>
+      ) : null}
 
       {/* Focus callout — reserves height even when empty so the
           appearance of the line doesn't shift the following cards. */}
@@ -702,6 +875,25 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1.5,
+  },
+  // CHUNK 66 (2026-07-23): prominent teal CTA row below the pills.
+  // Solid fill + rounded corners (borderRadius 12, not the pill's 999)
+  // so it reads as a distinct button, not another pill. minHeight 44
+  // hits the iOS tap-target guideline at default text scale, and grows
+  // naturally at larger scales because the Text uses flexShrink instead
+  // of a fixed size. marginTop 4 keeps it visually attached to the pills
+  // it explains; marginBottom 8 matches the pillsRow's own marginBottom
+  // so the callout slot below stays put.
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    minHeight: 44,
+    marginTop: 4,
+    marginBottom: 8,
   },
   // Reserve space for the callout line so its appearance/disappearance
   // doesn't shift downstream cards. Enough for one wrapped line at
