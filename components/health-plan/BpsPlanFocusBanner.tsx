@@ -103,14 +103,21 @@ export function BpsPlanFocusBanner({
   // ultimately renders. Prescriptive copy still deferred pending Ken
   // sign-off on clinical tone.
   const copy = `Focus this week: your ${domainNoun}. Tap to jump there.`
-  const a11y = `${copy} Scrolls to the ${domainNoun} section.`
+  // Chunk 88 accessibility split: label carries the human-readable copy
+  // (screen reader announces the same sentence a sighted user reads),
+  // hint carries the action outcome per Apple's HIG — "Buttons should
+  // have a label that describes what the button does, and a hint that
+  // describes what happens after activation."
+  const a11yLabel = `Focus this week: your ${domainNoun}. Tap to jump there.`
+  const a11yHint = 'Scrolls to your focus domain section'
 
   return (
     <Pressable
       onPress={() => onPress(target)}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={a11y}
+      accessibilityLabel={a11yLabel}
+      accessibilityHint={a11yHint}
       android_ripple={{ color: palette.border }}
       style={({ pressed }) => [
         styles.banner,
@@ -160,6 +167,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     marginBottom: Spacing.md,
+    // Chunk 88: guarantee 44pt Apple HIG minimum tap target height even
+    // when the OS shrinks Dynamic Type — hitSlop:8 adds a further 16pt
+    // of forgiveness on top for large-fingered / low-motor-precision
+    // users. Belt-and-suspenders per WCAG 2.5.5 + Apple HIG.
+    minHeight: 44,
   },
   leadIcon: {
     marginRight: 8,
