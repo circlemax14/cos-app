@@ -762,15 +762,19 @@ export function BpsWellbeingScoreCard({
           // Chunk 63 adversarial-verify major fix: suppress the
           // contributor suffix during LOADING (see chunk-63 comment
           // history for the CLS + "0 completed" flash rationale).
-          // CHUNK 67 (2026-07-23): when a regen is in flight OR a
-          // completion just landed within JUST_COMPLETED_WINDOW_MS,
-          // swap the "0 completed" copy for "Processing…" on empty
-          // pills. Rows that already have contributors keep their
-          // real number — safer than blanking a good pill during a
-          // regen. Only the SUFFIX text changes; the pill container +
-          // layout are untouched so LOADING/EMPTY/READY minHeight
-          // discipline from chunks 47/48 holds. "Processing…" (12ch)
-          // is within the existing pill width — no CLS.
+          // CHUNK 67 (2026-07-23): when a regen is in flight
+          // (isProcessing = regenIsPending, sourced from the shared
+          // REGENERATE_BIO_PLAN_MUTATION_KEY — see the isProcessing
+          // derivation above for the rationale behind sourcing this
+          // solely from the regen mutation state), swap the
+          // "0 completed" copy for "Processing…" on empty pills.
+          // Rows that already
+          // have contributors keep their real number — safer than
+          // blanking a good pill during a regen. Only the SUFFIX text
+          // changes; the pill container + layout are untouched so
+          // LOADING/EMPTY/READY minHeight discipline from chunks 47/48
+          // holds. "Processing…" (12ch) is within the existing pill
+          // width — no CLS.
           const suffixText = isLoading
             ? ''
             : hasContributors

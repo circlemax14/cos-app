@@ -350,7 +350,8 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
           onPress={() => router.back()}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Back"
+          accessibilityLabel="Back to Care Plan"
+          accessibilityHint="Returns to your Care Plan"
         >
           <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={text} />
         </Pressable>
