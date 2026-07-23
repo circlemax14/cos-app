@@ -43,6 +43,36 @@ test('MEDICATION_REFILL_REMINDER → BPS Care Plan when bpsEnabled=true (chunk 6
   );
 });
 
+test('BIOPSYCHOSOCIAL_PLAN_READY → legacy Health Plan when BPS-ineligible (default)', () => {
+  // Back-compat: no opts / bpsEnabled omitted / bpsEnabled=false all
+  // preserve the pre-chunk-70 legacy destination so ineligible builds
+  // never get routed to a screen their flags won't render.
+  assert.equal(
+    routeForNotificationData({ type: 'BIOPSYCHOSOCIAL_PLAN_READY' }),
+    '/Home/health-plan',
+  );
+  assert.equal(
+    routeForNotificationData(
+      { type: 'BIOPSYCHOSOCIAL_PLAN_READY' },
+      { bpsEnabled: false },
+    ),
+    '/Home/health-plan',
+  );
+});
+
+test('BIOPSYCHOSOCIAL_PLAN_READY → BPS Care Plan when bpsEnabled=true (chunk 70)', () => {
+  // Bio-eligible caller lands on the BPS surface where the freshly
+  // regenerated plan actually renders. No focus param — the ready
+  // push should show the whole plan from the top.
+  assert.equal(
+    routeForNotificationData(
+      { type: 'BIOPSYCHOSOCIAL_PLAN_READY' },
+      { bpsEnabled: true },
+    ),
+    '/Home/biopsychosocial-plan',
+  );
+});
+
 test('existing types keep their routes', () => {
   assert.equal(routeForNotificationData({ type: 'APPOINTMENT_REMINDER' }), '/Home/appointments');
   assert.equal(routeForNotificationData({ type: 'RECOMMENDED_APPOINTMENTS' }), '/Home/appointments');

@@ -60,6 +60,31 @@ export type NotificationData = Record<string, unknown> | null | undefined;
 export const NOTIFICATION_MEDS_ROUTE_BPS_ENABLED = true;
 
 /**
+ * CHUNK 70 (2026-07-23) — client-side kill-switch to repoint the
+ * BIOPSYCHOSOCIAL_PLAN_READY push (fired by cos-backend when the AI
+ * plan finishes regenerating, COS-421 / cos-backend PR #260) at the
+ * BPS surface. Post-BPS-pivot the ready notification should land the
+ * user on the surface where the newly-regenerated plan actually
+ * renders — legacy `/Home/health-plan` no longer shows the fresh BPS
+ * output for bio-eligible patients.
+ *
+ * Kill-switch semantics mirror NOTIFICATION_MEDS_ROUTE_BPS_ENABLED:
+ *   - true (default): bio-eligible patients (caller passes
+ *     `bpsEnabled: true`) land on `/Home/biopsychosocial-plan` (no
+ *     `focus` param — the ready push lands at the top of the plan so
+ *     the patient sees the regenerated plan holistically, not scrolled
+ *     into a single section). Non-eligible patients still land on
+ *     legacy — the flag DOES NOT force BPS on someone whose surface
+ *     can't render it.
+ *   - false: everyone routes to legacy (pre-chunk-70 behavior). Flip
+ *     via OTA (~30-60s) if a regression surfaces.
+ *
+ * Follow-up (same as chunk 64): promote to a runtime SSM /
+ * feature-flags entry so the flip doesn't require an OTA.
+ */
+export const NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED = true;
+
+/**
  * Eligibility hints for the caller. Pure/optional — every field defaults
  * to conservative (legacy-preserving) behavior so back-compat with older
  * callers (and the unit-test contract) holds.
@@ -121,9 +146,23 @@ export function routeForNotificationData(
       return '/Home/health-plan?focus=medications';
 
     // ── New in COS-421 ───────────────────────────────────────────────
-    // Biopsychosocial plan regeneration finished server-side → Health
-    // Plan, so the patient lands on their freshly-regenerated plan.
+    // Biopsychosocial plan regeneration finished server-side → the
+    // patient's plan surface, so they land on their freshly-regenerated
+    // plan.
+    //
+    // CHUNK 70 (2026-07-23): with the platform pivot to BPS as the
+    // primary Care Plan surface, bio-eligible patients now land on the
+    // BPS screen (where the regenerated plan actually renders) instead
+    // of legacy `/Home/health-plan`. No `focus` param — the ready push
+    // should show the whole regenerated plan from the top, not scroll
+    // into one section. Ineligible patients (flag off) still land on
+    // legacy — we never route someone to a surface their build/flags
+    // can't render. The kill-switch above gates the repoint; setting
+    // it to false restores pre-chunk-70 routing.
     case 'BIOPSYCHOSOCIAL_PLAN_READY':
+      if (bpsEnabled && NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED) {
+        return '/Home/biopsychosocial-plan';
+      }
       return '/Home/health-plan';
 
     // ── Existing mappings (unchanged behavior) ──────────────────────
