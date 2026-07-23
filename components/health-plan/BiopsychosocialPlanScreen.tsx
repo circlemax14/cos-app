@@ -411,7 +411,7 @@ function todayIso(): string {
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'biological', title: 'Biological Wellness' },
   { key: 'psychological', title: 'Psychological Wellness' },
-  { key: 'social', title: 'Social & Spiritual Wellness' },
+  { key: 'social', title: 'Social & Faith' },
 ];
 
 function greetingForNow(): string {

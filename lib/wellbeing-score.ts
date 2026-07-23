@@ -99,11 +99,16 @@ export const DOMAIN_MEMBERS: Record<BpsDomain, readonly InstrumentId[]> = {
   social: ['alcohol-3', 'loneliness-3'],
 }
 
-/** Patient-facing pill label per domain — matches Ken's transcript. */
+/**
+ * Patient-facing pill label per domain — matches Ken's transcript.
+ * Chunk 62 (2026-07-22): SOCIAL → 'SOCIAL & FAITH' per Ken's dogfood
+ * ask; the section on BPS is already titled 'Social & Faith' and the
+ * compact wellbeing pill needs to match.
+ */
 export const DOMAIN_LABEL: Record<BpsDomain, string> = {
   bio: 'BIO',
   mind: 'MIND',
-  social: 'SOCIAL',
+  social: 'SOCIAL & FAITH',
 }
 
 /**
@@ -119,7 +124,12 @@ export const DOMAIN_LABEL: Record<BpsDomain, string> = {
 export const DOMAIN_CALLOUT_NAME: Record<BpsDomain, string> = {
   bio: 'physical health',
   mind: 'mental health',
-  social: 'social connection',
+  // Chunk 62 (2026-07-22): "social connection" → "social & faith" so the
+  // callout sentence matches Ken's rename of the section title. Reads as
+  // "Focus this week: your social & faith. Tap to jump there." — a hair
+  // awkward grammatically but matches the section header verbatim, which
+  // Ken preferred over "social & faith connection" during dogfood.
+  social: 'social & faith',
 }
 
 /** Union of every domain member, in stable order. Useful for callers
@@ -225,13 +235,28 @@ export function buildComposite(
       contributors: subs.length,
     }
   })
-  const domainScores = domains
-    .map((d) => d.score)
-    .filter((v): v is number => typeof v === 'number')
+  // Chunk 62 (Ken 2026-07-22 dogfood): composite denominator is ALWAYS
+  // DOMAIN_ORDER.length (3), not just the count of scored domains.
+  // Missing domains contribute 0 to the numerator. Ken saw a score
+  // that felt inflated because the earlier mean-of-scored formula
+  // divided by 2 when SOCIAL had no signal — "calculated by 200
+  // when it should be by 300". The new formula honestly reflects
+  // that missing data reduces overall wellbeing rather than being
+  // invisible.
+  //
+  // Composite is undefined only when NO domain has any signal at all
+  // (patient has zero completed assessments) — that stays a card
+  // "empty" state, not a score of 0.
+  const scoredCount = domains.filter((d) => typeof d.score === 'number').length
+  let composite: number | undefined
+  if (scoredCount > 0) {
+    const sum = domains.reduce((acc, d) => acc + (typeof d.score === 'number' ? d.score : 0), 0)
+    composite = sum / DOMAIN_ORDER.length
+  }
   return {
     // Composite is NOT rounded here — the card rounds for display so
     // debug/test callers see the raw mean.
-    composite: mean(domainScores),
+    composite,
     domains,
   }
 }
