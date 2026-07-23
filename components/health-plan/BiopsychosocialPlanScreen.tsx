@@ -59,6 +59,10 @@ import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
+import HeroScoreBlock from './senior/HeroScoreBlock';
+import OneThingTodayCard from './senior/OneThingTodayCard';
+import WellbeingMapGlimpse from './senior/WellbeingMapGlimpse';
+import { DetailsAccordion } from './senior/DetailsAccordion';
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
 import { bpsToSection } from '@/lib/wellbeing-score';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
@@ -407,6 +411,37 @@ const BPS_WELLBEING_SCORE_ENABLED = true;
  * safe on iPhone 14 iOS 26.5 build 62.
  */
 const BPS_PLAN_FOCUS_SIGNAL_ENABLED = true;
+
+/**
+ * COS-479 (2026-07-23) kill-switch — Direction 1 "Hero Score + One Thing
+ * Today" layout with wellbeing-map glimpse. Ken-approved composition.
+ *
+ * DEFAULT FALSE. When false, the screen renders EXACTLY today's UI (zero
+ * delta, zero regression). When true, the screen renders the new hero
+ * stack — greeting, 96pt composite hero, plain-English caption, three
+ * domain dots, OneThingTodayCard, WellbeingMapGlimpse — followed by
+ * everything from today's layout hosted verbatim inside a "See details"
+ * DetailsAccordion.
+ *
+ * Compile-time const → revert requires an OTA (~30-60s via
+ * `npm run eas:update:production`), NOT the 30-second SSM/Lambda flip.
+ * Acceptable for a client-only surface change.
+ *
+ * iOS 26.5 safety: HeroScoreBlock / OneThingTodayCard / WellbeingMapGlimpse
+ * / DetailsAccordion are all View/Text/Pressable/MaterialIcons/StyleSheet
+ * only — no Modal, no Animated, no LayoutAnimation, no Portal, no gradient,
+ * no blur, no ActivityIndicator, no rotate transforms. Static primitives
+ * only. See each component's header block for the primitive envelope
+ * commentary.
+ *
+ * a11y preservation: chunks 82-124 are SHIPPED. When the switch is on,
+ * their render trees mount verbatim as DetailsAccordion children — no
+ * prop edits, no wrappers that break flex, no accessibility overrides.
+ * BpsWellbeingScoreCard / BpsPlanFocusBanner / SectionCard /
+ * SelfAssessmentTrends / MedicationsSection render bit-identically to
+ * how they render today.
+ */
+const BPS_HERO_LAYOUT_ENABLED = false as const;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -933,6 +968,24 @@ export function BiopsychosocialPlanScreen({
       scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
     }
   }, []);
+  // COS-479: Y-position of the DetailsAccordion header so the three
+  // domain dots in HeroScoreBlock can scroll the user down to the
+  // shipped content when tapped. Same pattern as
+  // selfAssessmentsSectionYRef — parent-owned ref, filled by the
+  // accordion's onLayoutHeader callback, consumed by scrollToSeeDetails
+  // below. Best-effort: no-op if the accordion hasn't laid out yet.
+  // scrollTo({ animated: true }) is a user-initiated navigation
+  // (not a cold-mount animation) and matches the shipped
+  // scrollToSelfAssessments call — does NOT violate the iOS 26.5
+  // Animated ban (that rule targets Animated / LayoutAnimation on
+  // render/mount paths, not native ScrollView.scrollTo).
+  const detailsAccordionYRef = React.useRef<number | null>(null);
+  const scrollToSeeDetails = React.useCallback(() => {
+    const y = detailsAccordionYRef.current;
+    if (y != null && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
+  }, []);
   // CHUNK 60: Y-positions of the three SectionCards, keyed by section
   // key, so BpsPlanFocusBanner can scroll to the matching section on
   // tap. Same pattern as medsSectionYRef / selfAssessmentsSectionYRef —
@@ -1376,6 +1429,63 @@ export function BiopsychosocialPlanScreen({
           {headerRight ? <View>{headerRight}</View> : null}
         </View>
 
+        {/*
+          COS-479 (2026-07-23): D1 hero stack — greeting + 96pt composite
+          + plain-English caption + three domain dots, then a
+          OneThingTodayCard, then the WellbeingMapGlimpse. Gated on
+          BPS_HERO_LAYOUT_ENABLED; when false, this block compiles out and
+          the screen falls through to the current shipped layout below.
+          The three dots scroll to the DetailsAccordion header via the
+          detailsAccordionYRef captured in onLayoutHeader below.
+        */}
+        {BPS_HERO_LAYOUT_ENABLED && (
+          <>
+            <HeroScoreBlock
+              userFirstName={patientName ?? undefined}
+              composite={wellbeing.derivation.composite}
+              priorComposite={
+                typeof wellbeing.derivation.composite === 'number' &&
+                wellbeing.derivation.trend
+                  ? wellbeing.derivation.composite - wellbeing.derivation.trend.delta
+                  : undefined
+              }
+              // Per-domain trend arrows are not currently exposed on
+              // WellbeingDerivation (chunk 60 only carries the overall
+              // composite trend). Default all three to 'flat' so the
+              // dots always have an arrow. Additive extension to
+              // deriveWellbeing is queued as a follow-up.
+              domainTrends={{ bio: 'flat', mind: 'flat', social: 'flat' }}
+              onDotsPress={scrollToSeeDetails}
+              colors={colors as unknown as Record<string, string>}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+            <OneThingTodayCard
+              focusDomain={focusDomain}
+              // No actionForFocus() exists yet in lib/wellbeing-caption.ts —
+              // OneThingTodayCard hides the action line entirely when this
+              // is undefined (spec-compliant), so passing undefined here is
+              // the correct v1 wire.
+              focusActionSentence={undefined}
+              onCompleted={() => undefined}
+            />
+            <WellbeingMapGlimpse />
+          </>
+        )}
+        {/*
+          COS-479 IIFE wrap: captures the current shipped body (from the
+          Wellbeing Score card through the Refresh button) into a JSX
+          const, then either renders it verbatim (flag=false, ZERO delta)
+          or hosts it verbatim inside the DetailsAccordion (flag=true).
+          Bit-identical to today's layout when BPS_HERO_LAYOUT_ENABLED is
+          false — the accordion is never mounted, the const is inlined
+          into the ScrollView tree. Chunks 82-124 a11y contracts are
+          preserved because the shipped children mount with the same
+          props / hooks / render paths in both branches.
+        */}
+        {(() => {
+          const detailsBody = (
+            <>
         {/*
           CHUNK 59 (2026-07-22): composite Wellbeing Score card. Sits
           directly under the greeting so the number IS the "wake up and
@@ -1947,6 +2057,24 @@ export function BiopsychosocialPlanScreen({
             </>
           )}
         </TouchableOpacity>
+            </>
+          );
+          if (BPS_HERO_LAYOUT_ENABLED) {
+            return (
+              <DetailsAccordion
+                colors={colors as unknown as Record<string, string>}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onLayoutHeader={(y) => {
+                  detailsAccordionYRef.current = y;
+                }}
+              >
+                {detailsBody}
+              </DetailsAccordion>
+            );
+          }
+          return detailsBody;
+        })()}
       </ScrollView>
       {/*
         COS-433: goal-editor Modal + its state + its updateGoalMutation
