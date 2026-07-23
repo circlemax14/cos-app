@@ -616,6 +616,11 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
             disabled={regen.isPending}
             accessibilityRole="button"
             accessibilityLabel={regen.isPending ? 'Refreshing your plan' : 'Refresh my plan'}
+            accessibilityHint={
+              regen.isPending
+                ? 'Waiting for the current refresh to finish'
+                : 'Regenerates your care plan with your latest check-ins'
+            }
             accessibilityState={{ disabled: regen.isPending, busy: regen.isPending }}
             hitSlop={8}
             style={({ pressed }) => [
