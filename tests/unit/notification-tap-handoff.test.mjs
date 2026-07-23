@@ -54,71 +54,20 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
+// stripComments is now shared with sibling source-drift trip-wire tests
+// (e.g. tests/unit/wellbeing-card-a11y-labels.test.mjs — chunk 103) via
+// tests/unit/strip-comments.mjs. Kept as a plain relative import so the
+// helper is co-located with its callers and needs no build step.
+// The v2 line-oriented state machine (chunk 98 v2 lesson) lives in the
+// helper module — the self-checks at the bottom of this file exercise
+// it against synthetic drift sources to prove it still snaps shut.
+import { stripComments } from './strip-comments.mjs'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const REPO_ROOT = join(__dirname, '..', '..')
 const USE_NOTIFICATIONS_TS_PATH = join(REPO_ROOT, 'hooks', 'use-notifications.ts')
 const USE_NOTIFICATIONS_TS_SRC_RAW = readFileSync(USE_NOTIFICATIONS_TS_PATH, 'utf8')
-
-// Strip comments before running the load-bearing "the code literally does X"
-// matchers. Without this, a commented-out `// router.push((route ?? '/Home')…)`
-// line would still contain the substring `router.push(...route...)` and
-// silently satisfy every downstream matcher — exactly the drift shape this
-// file is meant to catch (see the self-check tests at the bottom of this
-// file which enforce it against a synthetic drift source).
-//
-// v2 (chunk 98): a naive regex like /\/\/[^\n]*/g both (1) fails to track
-// block-comment state — a `//` sitting INSIDE `/* … */` splits the block
-// early — and (2) unsafely bites into `//` sequences that live inside
-// string literals such as `'https://…'`. We use a line-oriented state
-// machine that:
-//   - blanks any line whose first non-whitespace chars are `//`
-//   - tracks whether we're currently inside a `/* … */` block and blanks
-//     every line that opens, sits fully inside, or closes such a block
-//     (leaving code on the opening line before the `/*` intact)
-// String literals with `//` inside are untouched — the machine only blanks
-// lines that BEGIN as comments; a `foo('https://x')` line survives verbatim.
-function stripComments(src) {
-  const out = []
-  let inBlock = false
-  for (const rawLine of src.split('\n')) {
-    if (inBlock) {
-      // We're inside a multi-line block comment. Blank the line and
-      // watch for the closing `*/`. Any code AFTER the `*/` on the
-      // closing line is dropped too — this is intentional: the source
-      // file we scan doesn't put load-bearing code on a block-close
-      // line, and keeping the state machine simple beats the extra
-      // branch. If that ever becomes untrue we'd revisit here.
-      if (rawLine.includes('*/')) inBlock = false
-      out.push('')
-      continue
-    }
-    const trimmed = rawLine.trimStart()
-    if (trimmed.startsWith('//')) {
-      // Whole-line line comment — drop it.
-      out.push('')
-      continue
-    }
-    if (trimmed.startsWith('/*')) {
-      // Block comment opens the (trimmed) line. If it also closes on
-      // the same line, drop just the comment span; otherwise flip
-      // state and blank the line.
-      if (trimmed.slice(2).includes('*/')) {
-        out.push(rawLine.replace(/\/\*[\s\S]*?\*\//g, ''))
-      } else {
-        out.push('')
-        inBlock = true
-      }
-      continue
-    }
-    // Regular code line — keep as-is. We deliberately leave any trailing
-    // `// …` inline comment on a code line untouched: for the wires below
-    // the code BEFORE the `//` is what matters, and killing the tail could
-    // corrupt strings like `'https://…'`.
-    out.push(rawLine)
-  }
-  return out.join('\n')
-}
 
 const USE_NOTIFICATIONS_TS_SRC = stripComments(USE_NOTIFICATIONS_TS_SRC_RAW)
 
