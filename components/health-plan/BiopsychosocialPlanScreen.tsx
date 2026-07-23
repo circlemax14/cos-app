@@ -21,6 +21,7 @@
 import React from 'react';
 import {
   AccessibilityInfo,
+  findNodeHandle,
   Modal,
   Pressable,
   RefreshControl,
@@ -864,6 +865,15 @@ export function BiopsychosocialPlanScreen({
   // bumps it via functional setState so back-to-back taps don't miss.
   const scrollRef = React.useRef<ScrollView | null>(null);
   const medsSectionYRef = React.useRef<number | null>(null);
+  // CHUNK 71: node ref for AccessibilityInfo.setAccessibilityFocus so the
+  // ?focus=medications deep-link moves VoiceOver focus ONTO the meds
+  // section (rotor lands there) instead of only firing an announcement.
+  // Attached to the same wrapper View that owns medsSectionYRef's
+  // onLayout, so the two stay in lockstep. iOS-only under the hood;
+  // findNodeHandle returns null on unmounted refs and setAccessibilityFocus
+  // is a no-op on Android — the existing announce below is the
+  // graceful-degrade fallback for both cases.
+  const medsSectionRef = React.useRef<View | null>(null);
   // CHUNK 59: Y-position of the Self-Assessments section so the top
   // Wellbeing Score card can scroll the user there on tap. Same
   // pattern as medsSectionYRef — parent-owned ref, filled by the
@@ -945,9 +955,13 @@ export function BiopsychosocialPlanScreen({
   //
   // Chunk 55 adversarial-verify major #7 fix (VoiceOver focus): fires
   // an AccessibilityInfo announcement after the scroll so VoiceOver
-  // users get a signal that navigation completed. Full a11y focus
-  // move to the meds section would require findNodeHandle + a target
-  // ref; deferring to a follow-up in favor of the simpler announce.
+  // users get a signal that navigation completed. CHUNK 71 promotes
+  // this to a real focus move — findNodeHandle(medsSectionRef.current)
+  // + AccessibilityInfo.setAccessibilityFocus lands the rotor ON the
+  // meds section wrapper (iOS). Android has no setAccessibilityFocus
+  // implementation (native no-op), and findNodeHandle returns null on
+  // unmounted refs — in both degrade cases the announce still runs so
+  // the user gets audible confirmation the deep-link fired.
   //
   // Kill-switch short-circuit: BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED
   // = false fully inerts BOTH the review card AND this deep-link
@@ -977,9 +991,23 @@ export function BiopsychosocialPlanScreen({
       if (y != null && scrollRef.current) {
         scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
         focusHandledRef.current = deepLinkFocus;
+        // CHUNK 71: move VoiceOver focus onto the meds section wrapper
+        // so the rotor lands there. iOS-only in practice — Android's
+        // AccessibilityInfo.setAccessibilityFocus is a native no-op and
+        // findNodeHandle returns null for unmounted refs, so we
+        // null-guard and always fall through to the announcement below
+        // as a graceful degrade path.
+        const medsNode = medsSectionRef.current
+          ? findNodeHandle(medsSectionRef.current)
+          : null;
+        if (medsNode != null) {
+          AccessibilityInfo.setAccessibilityFocus(medsNode);
+        }
         // Queue the announcement so it fires after any in-flight
         // VoiceOver read (plan header, MedicationsReviewPrompt modal
-        // a11y focus) instead of preempting it. announceForAccessibility
+        // a11y focus) instead of preempting it. Retained as the
+        // fallback when setAccessibilityFocus is unavailable (Android)
+        // or the node ref hadn't attached yet. announceForAccessibility
         // with queue:true is available from RN 0.68+; cos-app is on
         // 0.83.10.
         AccessibilityInfo.announceForAccessibilityWithOptions(
@@ -1546,6 +1574,12 @@ export function BiopsychosocialPlanScreen({
           // its cards with the 16pt-edge BPS card baseline. Shared with
           // legacy — leaf styles untouched.
           <View
+            // CHUNK 71: same wrapper doubles as the a11y focus target for
+            // the ?focus=medications deep-link. findNodeHandle(ref) +
+            // AccessibilityInfo.setAccessibilityFocus lands the VoiceOver
+            // rotor here (iOS). Ref lives alongside medsSectionYRef so
+            // both are populated by the same mount cycle.
+            ref={medsSectionRef}
             style={styles.legacyCardWrap}
             // CHUNK 57 blocker fix: chunk-55 scroll-to-meds requires
             // layout.y measured relative to the ScrollView content, but
