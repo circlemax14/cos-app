@@ -129,6 +129,34 @@ interface Props {
    * without a tier has no assigned assessment set to key off of.
    */
   hasPlanType?: boolean
+  /**
+   * CHUNK 69 (`?focus=bio|psy|soc` scroll deep-link): parent-owned callback
+   * fired on each domain group's onLayout so the containing ScrollView can
+   * scroll to a target section. Additive + opt-in — omitted callers
+   * (`health-plan.tsx` inline usage) get today's behavior byte-for-byte.
+   * Only fires in the domain-grouped render branch; the flat-grid branch
+   * has no per-domain sections and stays silent by design.
+   */
+  onSectionLayout?: (key: CatalogDomainBucket, y: number) => void
+  /**
+   * CHUNK 69 (hide-completed filter half): when the user deep-linked to a
+   * single domain (from BpsWellbeingScoreCard's bio/psy/soc slice tap),
+   * their intent is "show me what's LEFT to do in this area." Passing this
+   * key hides already-completed instruments *inside the matching domain
+   * group only* — every other group still renders in full, and the flat
+   * grid branch (v2 flag OFF) is completely untouched.
+   *
+   * Safe-fallback: if filtering would leave the focused group empty (user
+   * has completed every check-in in that domain), we keep the full
+   * unfiltered list so the scroll target still exists and the user sees
+   * something instead of a hidden section. That empty-filter branch is
+   * the same reason the scroll-poll effect above tolerates a missing
+   * section key — the two paths degrade together.
+   *
+   * Omitted (default) preserves today's behavior byte-for-byte: no per-
+   * group filtering, all instruments visible in every section.
+   */
+  focusedDomain?: CatalogDomainBucket
 }
 
 /**
@@ -142,6 +170,8 @@ export function AssessmentCatalogContent({
   emptyMessage,
   biopsychosocialPlanEnabled,
   hasPlanType,
+  onSectionLayout,
+  focusedDomain,
 }: Props): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
@@ -252,10 +282,30 @@ export function AssessmentCatalogContent({
 
   // COS-360 / SCRUM-518 Phase 2: null when the flag is off, so the render
   // below falls through to today's flat grid untouched.
-  const domainGroups = React.useMemo(
-    () => (assessmentStrategyV2Enabled ? groupInstrumentsByDomain(visible) : null),
-    [assessmentStrategyV2Enabled, visible],
-  )
+  //
+  // CHUNK 69 (hide-completed filter): when a deep-link `focusedDomain` is
+  // present, filter completed instruments OUT of that one group's items
+  // list. All other groups render in full — we only reshape what the user
+  // asked to focus on. If the filter would empty the focused group (every
+  // check-in in that domain already done), fall back to the unfiltered
+  // list so the scroll target still exists and the user isn't dropped on
+  // a silently-hidden section. Filter runs BEFORE the `items.length > 0`
+  // pruning inside groupInstrumentsByDomain, but we apply it after the
+  // grouping call so we never need to re-implement the bucketing logic.
+  const domainGroups = React.useMemo(() => {
+    if (!assessmentStrategyV2Enabled) return null
+    const groups = groupInstrumentsByDomain(visible)
+    if (!focusedDomain) return groups
+    return groups.map((g) => {
+      if (g.key !== focusedDomain) return g
+      const remaining = g.items.filter(
+        (it) => !completedById.has(it.instrumentId),
+      )
+      // Safe-fallback: user completed everything in the focused domain →
+      // keep full list so section still renders and scroll target exists.
+      return remaining.length > 0 ? { ...g, items: remaining } : g
+    })
+  }, [assessmentStrategyV2Enabled, visible, focusedDomain, completedById])
 
   // SCRUM-521 / COS-380: gate button on the backend's canGenerate truth,
   // falling back to the local heuristic only when assignments aren't loaded
@@ -342,7 +392,15 @@ export function AssessmentCatalogContent({
       {domainGroups ? (
         // COS-360 / SCRUM-518 Phase 2 — grouped under domain section headers.
         domainGroups.map((group) => (
-          <View key={group.key} style={styles.domainGroup}>
+          <View
+            key={group.key}
+            style={styles.domainGroup}
+            onLayout={
+              onSectionLayout
+                ? (e) => onSectionLayout(group.key, e.nativeEvent.layout.y)
+                : undefined
+            }
+          >
             <Text style={[styles.domainHeader, { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }]}>
               {group.label.toUpperCase()}
             </Text>
