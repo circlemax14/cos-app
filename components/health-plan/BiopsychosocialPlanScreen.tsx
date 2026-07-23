@@ -1540,6 +1540,7 @@ export function BiopsychosocialPlanScreen({
                 color={colors.text as string}
               />
               <Text
+                accessibilityRole="header"
                 style={{
                   color: colors.text,
                   fontSize: getScaledFontSize(15),
