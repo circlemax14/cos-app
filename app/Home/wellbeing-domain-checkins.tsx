@@ -1,6 +1,37 @@
 /**
  * app/Home/wellbeing-domain-checkins.tsx — CHUNK 67 (2026-07-23) +
- * CHUNK 72 polish (2026-07-23) + CHUNK 76 polish (2026-07-23)
+ * CHUNK 72 polish (2026-07-23) + CHUNK 76 polish (2026-07-23) +
+ * CHUNK 108 polish (2026-07-23)
+ *
+ * CHUNK 108 layers row-level VoiceOver hygiene on the check-in picker
+ * without any visual or behavioral change for sighted users:
+ *   1. Each row Pressable now carries a pre-composed accessibilityLabel
+ *      built once in the useMemo where `ago` is already computed:
+ *        - "{Human name}. Take now. Tap to start."
+ *        - "{Human name}. Completed N days ago. Tap to retake."
+ *          (used for both fresh-completed and expired-retake rows —
+ *           both are tappable and both re-open the stepper)
+ *        - "{Human name}. Coming soon."
+ *      The "N days ago" form is spoken (not the "2d ago" pill
+ *      abbreviation, which VoiceOver reads as "two dee ago").
+ *   2. The Pressable sets `accessible` explicitly to group descendants,
+ *      and the two inner Text nodes (name + pill label) carry
+ *      accessibilityElementsHidden=true + importantForAccessibility=
+ *      "no-hide-descendants" so VoiceOver reads the parent label ONCE
+ *      instead of name + pill as separate utterances.
+ *   3. Coming-soon rows carry accessibilityState.disabled=true so
+ *      VoiceOver appends "dimmed" and the user is told the row is not
+ *      yet available. Behavior unchanged: onPress no-ops via the
+ *      existing `!row.tappable` guard AND `disabled={!row.tappable}`
+ *      on the Pressable.
+ *   4. accessibilityHint dropped from the row — the composed label
+ *      already carries the "Tap to start / Tap to retake" trailer, so
+ *      the hint would double-announce.
+ *
+ * Protected regions preserved (do not touch):
+ *   - Chunk 83 back-button accessibilityLabel at the header top.
+ *   - Chunk 76 empty-state hourglass + accessible group + focus.
+ *   - Chunk 72 "Refresh my plan" Pressable at the footer.
  *
  * CHUNK 76 layers two additive polish items on top of chunk 72:
  *   1. Empty-state friendliness — when the domain resolves to zero
@@ -109,6 +140,13 @@ interface CheckinRow {
   status: RowStatus
   pillLabel: string
   tappable: boolean
+  /**
+   * Chunk 108: pre-composed VoiceOver label for the row Pressable.
+   * Built once in the useMemo where `ago` is already computed so the
+   * render path stays cheap and we never leak the pill's abbreviated
+   * "2d ago" form to screen-reader users.
+   */
+  a11yLabel: string
 }
 
 const DOMAIN_TITLE: Record<BpsDomain, string> = {
@@ -129,6 +167,20 @@ function formatAgoLabel(completedMs: number): string {
   if (days <= 0) return 'today'
   if (days === 1) return '1d ago'
   return `${days}d ago`
+}
+
+/**
+ * Chunk 108: VoiceOver-friendly form of the ago label. The visual pill
+ * uses the compact "2d ago" form to fit the row layout, but a screen
+ * reader announcing "two dee ago" is nonsense — expand to the spoken
+ * form "N days ago" (with "today" and "1 day ago" specials).
+ */
+function formatAgoA11yLabel(completedMs: number): string {
+  if (!Number.isFinite(completedMs)) return ''
+  const days = Math.floor((Date.now() - completedMs) / 86_400_000)
+  if (days <= 0) return 'today'
+  if (days === 1) return '1 day ago'
+  return `${days} days ago`
 }
 
 export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | null {
@@ -243,21 +295,38 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
       const expMs = rec ? Date.parse(rec.expiresAt ?? '') : NaN
       const expired = Number.isFinite(expMs) && expMs <= now
       const ago = Number.isFinite(completedMs) ? formatAgoLabel(completedMs) : ''
+      const agoA11y = Number.isFinite(completedMs) ? formatAgoA11yLabel(completedMs) : ''
 
       let status: RowStatus
       let pillLabel: string
+      let a11yLabel: string
       if (inst.comingSoon) {
         status = 'coming-soon'
         pillLabel = 'Coming soon'
+        // Chunk 108: non-tappable row — announce as coming-soon, and
+        // the Pressable itself carries accessibilityState.disabled=true
+        // so VoiceOver appends "dimmed" and the rotor doesn't invite a
+        // tap that would no-op.
+        a11yLabel = `${inst.name}. Coming soon.`
       } else if (!rec) {
         status = 'not-taken'
         pillLabel = 'Take now'
+        a11yLabel = `${inst.name}. Take now. Tap to start.`
       } else if (expired) {
         status = 'retake'
         pillLabel = ago ? `Completed ${ago} · Retake` : 'Retake'
+        a11yLabel = agoA11y
+          ? `${inst.name}. Completed ${agoA11y}. Tap to retake.`
+          : `${inst.name}. Tap to retake.`
       } else {
         status = 'completed'
         pillLabel = ago ? `Completed ${ago}` : 'Completed'
+        // Fresh-completed rows are still tappable (they open the
+        // stepper for a re-take), so use the same "Tap to retake."
+        // trailer as the expired-retake case above.
+        a11yLabel = agoA11y
+          ? `${inst.name}. Completed ${agoA11y}. Tap to retake.`
+          : `${inst.name}. Tap to retake.`
       }
 
       // "All fresh" excludes coming-soon (uncompletable) — treat those
@@ -273,6 +342,7 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
         status,
         pillLabel,
         tappable: status !== 'coming-soon',
+        a11yLabel,
       })
     }
 
@@ -456,9 +526,20 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
                   key={row.id}
                   onPress={() => onPressRow(row)}
                   disabled={!row.tappable}
+                  /* Chunk 108: explicit `accessible` groups descendants so
+                     VoiceOver reads the composed a11yLabel once instead of
+                     name + pillLabel as two utterances. */
+                  accessible
                   accessibilityRole="button"
-                  accessibilityLabel={`${row.name}, ${row.pillLabel}`}
-                  accessibilityHint={row.tappable ? 'Opens this check-in' : undefined}
+                  accessibilityLabel={row.a11yLabel}
+                  /* accessibilityHint intentionally omitted — the composed
+                     label already includes the "Tap to start / Tap to
+                     retake" trailer, so a duplicate hint would double the
+                     announcement. Coming-soon rows announce as disabled
+                     via accessibilityState below, which is the
+                     recommended VoiceOver signal for "not yet
+                     available". */
+                  accessibilityState={{ disabled: !row.tappable }}
                   style={({ pressed }) => [
                     styles.row,
                     {
@@ -470,6 +551,13 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
                 >
                   <View style={{ flex: 1 }}>
                     <Text
+                      /* Chunk 108: name + pill Text nodes hidden from AT
+                         so the parent Pressable's composed label is the
+                         only utterance. iOS uses
+                         accessibilityElementsHidden, Android uses
+                         importantForAccessibility. */
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
                       style={{
                         color: text,
                         fontSize: getScaledFontSize(15),
@@ -490,6 +578,8 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
                       ]}
                     >
                       <Text
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
                         style={{
                           color: pillStyle.fg,
                           fontSize: getScaledFontSize(11),
