@@ -136,8 +136,16 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     return (
       <PlatformPressable
         key={route.key}
-        accessibilityRole="button"
-        accessibilityState={isFocused ? { selected: true } : {}}
+        // CHUNK 101 — surface tab semantics to VoiceOver. Role "tab" tells
+        // AT this is one item of a tablist (the parent tabsContainer sets
+        // role="tablist"), and accessibilityState.selected — set on every
+        // tab, not just the focused one — makes VoiceOver append
+        // "selected" to the active tab's announcement and omit it on the
+        // others. Prior code only set { selected: true } on the focused
+        // tab, which meant AT never heard an explicit "not selected"
+        // cue for the inactive tabs.
+        accessibilityRole="tab"
+        accessibilityState={{ selected: isFocused }}
         // CHUNK 54 a11y nit fix: fall back to the route's full options.title
         // (e.g. "Health Summary") so VoiceOver disambiguates between short
         // labels like "Care" vs "Summary" that sighted users see; the
@@ -147,6 +155,10 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
           options.tabBarAccessibilityLabel ??
           (typeof options.title === 'string' ? options.title : route.name)
         }
+        // CHUNK 101 — dynamic hint per tab. Uses the visible displayLabel
+        // (matches TAB_LABELS map, e.g. "Care Plan" / "Health Summary")
+        // so the spoken hint tracks the sighted label 1:1.
+        accessibilityHint={`Switches to the ${displayLabel} section`}
         testID={(options as any).tabBarTestID}
         onPress={onPress}
         onLongPress={onLongPress}
@@ -247,6 +259,11 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
         bounces={false}
         scrollEnabled={!shouldDistributeEvenly}>
         <View
+          // CHUNK 101 — semantic group for the tab strip. Pairs with each
+          // child Pressable's accessibilityRole="tab" so VoiceOver
+          // announces the row as a tab list and navigates between tabs
+          // as a set (rotor / swipe-between-tabs), not as loose buttons.
+          accessibilityRole="tablist"
           style={[
             styles.tabsContainer,
             shouldDistributeEvenly && styles.tabsContainerDistributed
