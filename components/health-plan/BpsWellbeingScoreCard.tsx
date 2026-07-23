@@ -644,6 +644,8 @@ export function BpsWellbeingScoreCard({
       {/* Top row — eyebrow + honest self-report label */}
       <View style={styles.topRow}>
         <Text
+          accessibilityRole="header"
+          accessibilityLabel="Wellbeing overview"
           style={{
             color: subtext,
             fontSize: getScaledFontSize(11),
