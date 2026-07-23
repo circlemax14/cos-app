@@ -31,7 +31,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useIsMutating, useQuery } from '@tanstack/react-query';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 
@@ -40,7 +40,11 @@ import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
-import { useBiopsychosocialPlan, useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
+import {
+  REGENERATE_BIO_PLAN_MUTATION_KEY,
+  useBiopsychosocialPlan,
+  useRegenerateBiopsychosocialPlan,
+} from '@/hooks/use-biopsychosocial-plan';
 import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
 import { TodaysMedicationsCard } from './TodaysMedicationsCard';
@@ -684,6 +688,21 @@ export function BiopsychosocialPlanScreen({
   const planQuery = useBiopsychosocialPlan();
   const regenerateMutation = useRegenerateBiopsychosocialPlan();
 
+  // CHUNK 77 (2026-07-23): cross-instance observer on the shared regen
+  // mutation key so a subtle top banner can render whenever ANY caller
+  // (this screen's Refresh button, BpsWellbeingScoreCard's empty-pill
+  // picker, a future entry point) has a regen in flight. Matches the
+  // chunk 67 pattern in BpsWellbeingScoreCard — `useIsMutating` returns
+  // the count of mutations matching the key across every hook instance,
+  // so we treat any non-zero as pending. Cheap (subscription only), and
+  // this component already renders on regenerateMutation.isPending
+  // changes so the extra subscription adds no wasted work. No kill
+  // switch — inert (renders null) when count is zero.
+  const regenPendingCount = useIsMutating({
+    mutationKey: [...REGENERATE_BIO_PLAN_MUTATION_KEY],
+  });
+  const isRegenPending = regenPendingCount > 0;
+
   // SCRUM-588 Chunk 1c: observer on ['ai-health-plan'] so the plan-tasks
   // mutations' invalidations actually refetch. Legacy consumers use raw
   // fetchAiHealthPlan outside react-query; without this hook the mutations
@@ -1190,6 +1209,56 @@ export function BiopsychosocialPlanScreen({
         contentContainerStyle={{ padding: Spacing.md, paddingBottom: Spacing.xl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
       >
+        {/*
+          CHUNK 77 (2026-07-23): subtle top "Refreshing your plan..."
+          banner. Chunks 40 + 67 wired regen to run cross-instance
+          (BpsWellbeingScoreCard's empty-pill picker fires .mutate()
+          then immediately unmounts on router.replace); the Wellbeing
+          pill shows "Processing…" but the rest of the BPS surface
+          previously had no signal. This soft teal callout reserves
+          ~44pt only while ANY regen call is pending (via useIsMutating
+          on the shared REGENERATE_BIO_PLAN_MUTATION_KEY) and renders
+          null otherwise — one intentional shift on start/finish, no
+          jitter.
+
+          iOS 26.5 primitive envelope only: static View / Text /
+          MaterialIcons (info-outline). NO ActivityIndicator, NO
+          Animated, NO rotate transform, NO Portal, NO gradient — the
+          "…" trailing the label is the entire progress affordance. Same
+          Modal-free primitive shape chunks 47/50/57/59 proved safe on
+          iPhone 14 iOS 26.5 build 62.
+
+          Inert when no regen is pending, so no kill switch is needed —
+          removing chunk 77's contribution reverts to zero UI on both
+          idle AND regen states. Recovery cost if the observer itself
+          misbehaves: ~30-60s via `npm run eas:update:production` to
+          delete the block.
+        */}
+        {isRegenPending && (
+          <View
+            style={[
+              styles.regenBanner,
+              {
+                backgroundColor: (colors.tint ?? '#0D9488') + '14',
+                borderColor: (colors.tint ?? '#0D9488') + '33',
+              },
+            ]}
+            accessibilityRole="text"
+            accessibilityLabel="Refreshing your plan"
+            accessibilityLiveRegion="polite"
+          >
+            <MaterialIcons name="info-outline" size={16} color={colors.tint} />
+            <Text
+              style={[
+                styles.regenBannerText,
+                { color: colors.text, fontSize: getScaledFontSize(13) },
+              ]}
+            >
+              Refreshing your plan...
+            </Text>
+          </View>
+        )}
+
         {/* Header — patient greeting + last-generated date */}
         <View style={[styles.headerBlock, { flexDirection: 'row', alignItems: 'flex-start' }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -2004,6 +2073,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   generatingBannerText: { flex: 1, lineHeight: 18 },
+  // CHUNK 77 (2026-07-23): subtle top "Refreshing your plan..." banner
+  // shown while a regen mutation is in flight. ~44pt tall (10+10 vertical
+  // padding + ~18 line-height + border) matches the scope spec of
+  // reserving ~44pt only when the banner is present. Rendered null when
+  // idle so idle layout is unchanged from pre-chunk-77.
+  regenBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: Spacing.sm,
+    gap: 8,
+  },
+  regenBannerText: { flex: 1, lineHeight: 18, fontWeight: '600' },
   tierPill: {
     flexDirection: 'row',
     alignItems: 'center',

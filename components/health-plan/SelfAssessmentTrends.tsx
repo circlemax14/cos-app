@@ -1,6 +1,7 @@
 import React from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { useRouter } from 'expo-router'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
@@ -124,6 +125,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const fontSize = getScaledFontSize
   const fontWeight = getScaledFontWeight
+  const router = useRouter()
 
   const query = useQuery({
     queryKey: ['assessments-trends'],
@@ -182,12 +184,52 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
   }
 
   if (records.length === 0) {
+    // CHUNK 79 (2026-07-23): warmer empty state that mirrors the chunk-74
+    // wellbeing empty pattern — same MaterialIcons "self-improvement"
+    // glyph in muted subtext color, same "Complete your first check-in
+    // to see your progress over time" voice, plus a tappable CTA that
+    // routes to the assessments catalog with a distinct analytics source
+    // so downstream funnel analysis can attribute conversions to this
+    // specific empty state (vs banner / wellbeing-empty-pill / etc).
+    //
+    // minHeight preserves layout so empty ↔ populated doesn't CLS: the
+    // populated ScrollView carousel renders cards of minHeight 130 +
+    // 4 paddingTop + 8 paddingBottom = ~142pt. Matching that here keeps
+    // the surrounding Health Trends screen jitter-free on cold mount
+    // and again the moment the user completes their first check-in.
     return (
       <View style={[styles.emptyCard, { borderColor: colors.border }]}>
-        <MaterialIcons name="assignment" size={fontSize(28)} color={colors.subtext} />
-        <Text style={{ color: colors.subtext, fontSize: fontSize(13), textAlign: 'center', marginTop: 8 }}>
-          Take your first check-in to see results trend here.
+        <MaterialIcons name="self-improvement" size={fontSize(32)} color={colors.subtext} />
+        <Text style={{ color: colors.subtext, fontSize: fontSize(13), textAlign: 'center', marginTop: 10 }}>
+          Complete your first check-in to see your progress over time.
         </Text>
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: '/Home/assessments-catalog',
+              params: { source: 'self-assessments-empty' },
+            } as never)
+          }
+          hitSlop={8}
+          style={({ pressed }) => ({
+            marginTop: 12,
+            paddingHorizontal: 4,
+            paddingVertical: 2,
+            opacity: pressed ? 0.6 : 1,
+          })}
+          accessibilityRole="link"
+          accessibilityLabel="Take a check-in"
+        >
+          <Text
+            style={{
+              color: colors.tint as string,
+              fontSize: fontSize(13),
+              fontWeight: fontWeight(600) as any,
+            }}
+          >
+            Take a check-in →
+          </Text>
+        </Pressable>
       </View>
     )
   }
@@ -461,6 +503,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    // Match the populated carousel's rendered height (card minHeight 130
+    // + 4 paddingTop + 8 paddingBottom = 142) so empty ↔ populated
+    // doesn't cause a layout shift on the Health Trends screen.
+    minHeight: 142,
   },
   loadingCard: {
     flexDirection: 'row',
