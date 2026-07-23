@@ -582,7 +582,7 @@ export function BpsWellbeingScoreCard({
   const a11yLabel = (() => {
     if (isLoading) return 'Loading your wellbeing score'
     if (isEmpty)
-      return 'Wellbeing score not yet available. Complete a self-assessment to see your score.'
+      return 'Wellbeing score not yet available. Take a quick check-in to see your daily wellbeing snapshot.'
     const trendWord =
       trend?.arrow === 'up'
         ? 'improving'
@@ -659,55 +659,78 @@ export function BpsWellbeingScoreCard({
         </Pressable>
       </View>
 
-      {/* Focal number + trend arrow */}
+      {/* Focal number + trend arrow.
+          CHUNK 74 (2026-07-23): on true empty state (composite === undefined
+          AND !isLoading), swap the "—" focal + "/100" suffix for a warmer
+          MaterialIcons "self-improvement" glyph in the muted subtext color,
+          and hide the reserved trendSlot entirely. The 48pt/52pt line-height
+          number slot would leave the icon looking small and misplaced, so
+          size the icon to ~44pt to preserve card intrinsic-height (minHeight
+          160 remains the floor). Non-empty/non-loading paths keep the
+          reserved trend slot so real trend flip-in doesn't reflow the row
+          (chunk 59 CLS discipline). */}
       <View style={styles.numberRow}>
-        <Text
-          adjustsFontSizeToFit
-          numberOfLines={1}
-          style={{
-            color: focalColor,
-            fontSize: getScaledFontSize(48),
-            fontWeight: getScaledFontWeight(800) as any,
-            letterSpacing: -1,
-            lineHeight: getScaledFontSize(52),
-          }}
-        >
-          {bigNumberText}
-        </Text>
-        <Text
-          style={{
-            color: subtext,
-            fontSize: getScaledFontSize(14),
-            fontWeight: getScaledFontWeight(600) as any,
-            marginLeft: 4,
-            marginBottom: 6,
-          }}
-        >
-          /100
-        </Text>
+        {isEmpty ? (
+          <MaterialIcons
+            name="self-improvement"
+            size={getScaledFontSize(44)}
+            color={subtext}
+          />
+        ) : (
+          <>
+            <Text
+              adjustsFontSizeToFit
+              numberOfLines={1}
+              style={{
+                color: focalColor,
+                fontSize: getScaledFontSize(48),
+                fontWeight: getScaledFontWeight(800) as any,
+                letterSpacing: -1,
+                lineHeight: getScaledFontSize(52),
+              }}
+            >
+              {bigNumberText}
+            </Text>
+            <Text
+              style={{
+                color: subtext,
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(600) as any,
+                marginLeft: 4,
+                marginBottom: 6,
+              }}
+            >
+              /100
+            </Text>
+          </>
+        )}
         <View style={{ flex: 1 }} />
-        {/* Reserve fixed slot so trend flip-in doesn't reflow the row. */}
-        <View style={styles.trendSlot}>
-          {trend ? (
-            <>
-              <MaterialIcons
-                name={trendIcon(trend.arrow)}
-                size={getScaledFontSize(20)}
-                color={TONE_COLOR[trendTone(trend.arrow)]}
-              />
-              <Text
-                style={{
-                  color: TONE_COLOR[trendTone(trend.arrow)],
-                  fontSize: getScaledFontSize(12),
-                  fontWeight: getScaledFontWeight(700) as any,
-                  marginLeft: 4,
-                }}
-              >
-                {trend.arrow === 'up' ? 'Improving' : trend.arrow === 'down' ? 'Worsening' : 'Steady'}
-              </Text>
-            </>
-          ) : null}
-        </View>
+        {/* Reserve fixed slot so trend flip-in doesn't reflow the row.
+            CHUNK 74: suppressed on empty state so the row doesn't carry a
+            phantom reserved footprint next to the value-prop icon. */}
+        {!isEmpty ? (
+          <View style={styles.trendSlot}>
+            {trend ? (
+              <>
+                <MaterialIcons
+                  name={trendIcon(trend.arrow)}
+                  size={getScaledFontSize(20)}
+                  color={TONE_COLOR[trendTone(trend.arrow)]}
+                />
+                <Text
+                  style={{
+                    color: TONE_COLOR[trendTone(trend.arrow)],
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    marginLeft: 4,
+                  }}
+                >
+                  {trend.arrow === 'up' ? 'Improving' : trend.arrow === 'down' ? 'Worsening' : 'Steady'}
+                </Text>
+              </>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       {/* Three domain pills.
@@ -892,8 +915,15 @@ export function BpsWellbeingScoreCard({
             could use some focus.
           </Text>
         ) : isEmpty ? (
+          // CHUNK 74 (2026-07-23): warmer value-prop copy. Prior version
+          // ("Complete a self-assessment to see your wellbeing score.")
+          // read as an instruction and duplicated the CTA row above it.
+          // New copy names WHAT the patient gets (a daily snapshot) rather
+          // than what to do — the CTA row already carries the "take a
+          // check-in" action, so the callout complements instead of
+          // repeating it.
           <Text style={{ color: subtext, fontSize: getScaledFontSize(12) }}>
-            Complete a self-assessment to see your wellbeing score.
+            Take a quick check-in to see your daily wellbeing snapshot.
           </Text>
         ) : null}
       </View>

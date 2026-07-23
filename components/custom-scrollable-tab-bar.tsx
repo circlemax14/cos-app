@@ -24,7 +24,19 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 export function CustomScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { getScaledFontSize } = useAccessibility();
+  const { getScaledFontSize, settings } = useAccessibility();
+  // CHUNK 73 — WCAG 1.4.4 (200% resize text) compliance.
+  // When the user has NOT enabled the app-side accessibility toggle, honor
+  // iOS Dynamic Type on the label (allowFontScaling=true) so low-vision
+  // users get real system-level text scaling without having to discover
+  // the in-app toggle first. When the app-side toggle IS on,
+  // getScaledFontSize is already boosting via accessibilityMultiplier —
+  // stacking iOS Dynamic Type on top would double-compound (potentially
+  // ~2x on top of the 1.05×1.15 in-app cap), so we suppress OS scaling
+  // in that branch. Either way, cap the effective OS multiplier at 1.4
+  // so the tab bar can't overflow on iPhone SE at max Dynamic Type.
+  const labelAllowFontScaling = !settings.isAccessibilityMode;
+  const labelMaxFontSizeMultiplier = 1.4;
   const insets = useSafeAreaInsets();
   const [containerWidth, setContainerWidth] = useState(0);
   const [contentWidth, setContentWidth] = useState(0);
@@ -184,11 +196,16 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
           <Text
             numberOfLines={2}
             ellipsizeMode="tail"
-            // App-side scaling via getScaledFontSize is already applied
-            // below; don't stack iOS system Dynamic Type on top or the
-            // effective multiplier can hit ~2x and blow past the
-            // column width mid-word.
-            allowFontScaling={false}
+            // CHUNK 73 — WCAG 1.4.4 compliance. When app-side accessibility
+            // mode is OFF, defer to iOS Dynamic Type so low-vision users
+            // get their OS-level scaling without needing to find the
+            // in-app toggle. When it's ON, getScaledFontSize is already
+            // applying the app's accessibilityMultiplier below — stacking
+            // OS Dynamic Type on top would double-compound. Either branch
+            // is capped by maxFontSizeMultiplier so the tab row can't
+            // overflow on iPhone SE at max Dynamic Type.
+            allowFontScaling={labelAllowFontScaling}
+            maxFontSizeMultiplier={labelMaxFontSizeMultiplier}
             style={[
               styles.tabLabel,
               {

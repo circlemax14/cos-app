@@ -1,5 +1,46 @@
 /**
- * app/Home/wellbeing-domain-checkins.tsx — CHUNK 67 (2026-07-23)
+ * app/Home/wellbeing-domain-checkins.tsx — CHUNK 67 (2026-07-23) +
+ * CHUNK 72 polish (2026-07-23) + CHUNK 76 polish (2026-07-23)
+ *
+ * CHUNK 76 layers two additive polish items on top of chunk 72:
+ *   1. Empty-state friendliness — when the domain resolves to zero
+ *      visible rows (extreme edge: every member coming-soon, or every
+ *      member unknown to the instrument catalog), swap the flat
+ *      "No check-ins are available for this area yet." line for a
+ *      friendlier illustrated block: a subtle icon + a two-line
+ *      "Nothing to take here yet, come back soon" message. Still
+ *      lives inside the same min-height sentinel so the initial paint
+ *      does not jump.
+ *   2. VoiceOver focus-on-mount — after the picker screen mounts and
+ *      lays out (deferred via requestAnimationFrame so RN has actually
+ *      committed the header View), call
+ *      AccessibilityInfo.setAccessibilityFocus(findNodeHandle(headerRef))
+ *      so the rotor lands on the "<Domain> check-ins" title instead of
+ *      wherever iOS decides. Guarded on isScreenReaderEnabled so we do
+ *      not pay the RAF/native-bridge cost when nobody is using VO.
+ *      try/catch around findNodeHandle + setAccessibilityFocus so this
+ *      polish never crashes the screen (native handle can be null if
+ *      the ref detaches mid-transition on iOS 26.5).
+ *
+ * CHUNK 72 layered three additive tweaks on the "Refresh my plan"
+ * primary button already shipped in chunk 67 (retained verbatim below):
+ * CHUNK 72 layers three additive tweaks on the "Refresh my plan"
+ * primary button already shipped in chunk 67:
+ *   1. disabled + opacity 0.6 + label change to "Refreshing…" while
+ *      the regen mutation is in-flight (guards a double-tap racing
+ *      the router.replace).
+ *   2. VoiceOver announcement fired via
+ *      AccessibilityInfo.announceForAccessibilityWithOptions with
+ *      { queue: true } BEFORE regen.mutate() + router.replace so the
+ *      utterance is queued while the button is still on-screen and
+ *      does not preempt any in-flight announcement. Graceful fallback
+ *      to announceForAccessibility on platforms without the queued
+ *      variant; try/catch so this polish never crashes the CTA.
+ *   3. accessibilityState.busy so screen readers describe the button
+ *      as busy during the ~150ms between tap and router.replace
+ *      instead of merely "dimmed".
+ * No ActivityIndicator — matches the iOS 26.5 crash-class discipline
+ * enforced elsewhere in the file.
  *
  * Domain-scoped check-in picker that resolves Ken's 2026-07-23 dogfood
  * complaint on chunk 66: he tapped the empty pill CTA, was auto-routed
@@ -33,7 +74,15 @@
  * constraints. Reachable only via CTA deep-link.
  */
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  AccessibilityInfo,
+  findNodeHandle,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
@@ -125,6 +174,41 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
   })
 
   const regen = useRegenerateBiopsychosocialPlan()
+
+  // Chunk 76 polish: land VoiceOver rotor on the header title after the
+  // screen has actually laid out, instead of wherever iOS decides
+  // (usually the back chevron, which reads "Back" — not useful context
+  // for the screen the user just navigated into). Deferred via RAF so
+  // RN has committed the header View, wrapped in try/catch because
+  // findNodeHandle can return null on a torn-down ref during a fast
+  // back-swipe and setAccessibilityFocus is a no-op on Android — a
+  // best-effort polish must never crash the picker.
+  const headerRef = React.useRef<View | null>(null)
+  React.useEffect(() => {
+    if (!domainValid) return
+    let cancelled = false
+    let rafId: number | null = null
+    ;(async () => {
+      try {
+        const enabled = await AccessibilityInfo.isScreenReaderEnabled()
+        if (cancelled || !enabled) return
+        rafId = requestAnimationFrame(() => {
+          try {
+            const node = headerRef.current ? findNodeHandle(headerRef.current) : null
+            if (node != null) AccessibilityInfo.setAccessibilityFocus(node)
+          } catch {
+            // no-op — a11y focus is best-effort
+          }
+        })
+      } catch {
+        // isScreenReaderEnabled can reject on cold-start races; ignore.
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (rafId != null) cancelAnimationFrame(rafId)
+    }
+  }, [domainValid])
 
   const { rows, allDone } = React.useMemo(() => {
     const members = DOMAIN_MEMBERS[domain]
@@ -218,9 +302,39 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
   }
 
   const onPressRefreshPlan = () => {
+    // Guard against a rapid second tap that would double-fire the mutation
+    // while the loading affordance is already up. Cheap belt-and-suspenders
+    // on top of the Pressable's own `disabled={regen.isPending}`.
+    if (regen.isPending) return
+
+    // VoiceOver hand-off: announce BEFORE mutate() + router.replace so the
+    // utterance is queued while we're still on this screen. `queue: true`
+    // means it won't clobber any in-flight announcement (e.g. the pill
+    // status change on BPS a moment later). Wrapped in try/catch because
+    // announceForAccessibilityWithOptions is a no-op on some platforms and
+    // an accessibility polish call must never crash the primary CTA.
+    try {
+      const info: any = AccessibilityInfo
+      if (typeof info?.announceForAccessibilityWithOptions === 'function') {
+        info.announceForAccessibilityWithOptions(
+          'Refreshing your plan. You will be returned to your Care Plan.',
+          { queue: true },
+        )
+      } else if (typeof info?.announceForAccessibility === 'function') {
+        info.announceForAccessibility(
+          'Refreshing your plan. You will be returned to your Care Plan.',
+        )
+      }
+    } catch {
+      // Swallow — a11y announcement is best-effort polish; do not block the
+      // regen fire-and-forget on a screen-reader API hiccup.
+    }
+
     // Fire-and-forget regen (chunk 40 pattern — do not await). Same-tick
     // router.replace is safe: no awaited response, no Modal is mounted
-    // by this screen, so iOS 26.5 turbomodule queue is not stressed.
+    // by this screen, so iOS 26.5 turbomodule queue is not stressed. Once
+    // the replace lands on BPS, the Processing pill on BpsWellbeingScoreCard
+    // (chunk 67) takes over as the visible loading affordance.
     regen.mutate()
     router.replace('/Home/biopsychosocial-plan' as never)
   }
@@ -376,6 +490,8 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
             disabled={regen.isPending}
             accessibilityRole="button"
             accessibilityLabel={regen.isPending ? 'Refreshing your plan' : 'Refresh my plan'}
+            accessibilityState={{ disabled: regen.isPending, busy: regen.isPending }}
+            hitSlop={8}
             style={({ pressed }) => [
               styles.primaryBtn,
               {
