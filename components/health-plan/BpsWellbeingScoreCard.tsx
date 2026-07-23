@@ -67,6 +67,7 @@ import {
   deriveWellbeing,
   type BpsDomain,
   type TrendArrow,
+  type WellbeingDerivation,
 } from '@/lib/wellbeing-score'
 
 // Match the shape BiopsychosocialPlanScreen already casts `colors` to
@@ -85,6 +86,20 @@ export interface BpsWellbeingScoreCardProps {
    * fed it. Parent no-ops if the section hasn't laid out yet.
    */
   onPressDetails?: () => void
+  /**
+   * CHUNK 60 (2026-07-22): parent-hoisted wellbeing derivation.
+   * When supplied, the card SKIPS its internal
+   * useQuery / useQueries / deriveWellbeing pass and renders directly
+   * from these props — the "compute once" guarantee the parent needs
+   * so BpsPlanFocusBanner and each SectionCard's isFocus tag can
+   * consume the SAME focus value without a second deriveWellbeing()
+   * CPU pass. When absent, the card falls back to the original
+   * internal path so it remains drop-in usable anywhere else with no
+   * regressions.
+   */
+  derivation?: WellbeingDerivation
+  isLoading?: boolean
+  isEmpty?: boolean
 }
 
 // ---------------------------------------------------------------
@@ -128,7 +143,20 @@ export function BpsWellbeingScoreCard({
   getScaledFontSize,
   getScaledFontWeight,
   onPressDetails,
+  derivation: derivationProp,
+  isLoading: isLoadingProp,
+  isEmpty: isEmptyProp,
 }: BpsWellbeingScoreCardProps): React.JSX.Element {
+  // CHUNK 60: when the parent hoisted the derivation (via
+  // useWellbeingDerivation), skip our own query observers AND the
+  // deriveWellbeing() pass. Rules-of-hooks: `enabled: false` keeps
+  // the observer registrations stable across renders without firing
+  // network work. React Query dedupes on identical cache keys, so the
+  // parent's active observers are the sole source of truth — this
+  // card and BpsPlanFocusBanner + SectionCard.isFocus render from ONE
+  // deriveWellbeing() pass per render.
+  const usingParentDerivation = derivationProp !== undefined
+
   // Shared with SelfAssessmentTrends — same cache key, same staleTime.
   // If SelfAssessmentTrends has already primed the cache (parent mounts
   // this card ABOVE it, but auth-prefetch may have warmed it), first
@@ -137,6 +165,7 @@ export function BpsWellbeingScoreCard({
     queryKey: ['assessments-trends'],
     queryFn: fetchAssessments,
     staleTime: 60 * 1000,
+    enabled: !usingParentDerivation,
   })
 
   // Per-instrument history — same key SelfAssessmentTrends uses.
@@ -150,6 +179,7 @@ export function BpsWellbeingScoreCard({
       queryKey: ['assessment-history', id] as const,
       queryFn: () => fetchAssessmentHistory(id),
       staleTime: 5 * 60 * 1000,
+      enabled: !usingParentDerivation,
     })),
   })
 
@@ -158,6 +188,8 @@ export function BpsWellbeingScoreCard({
   // even when /assessments has). Chunk 58 pattern: never let a stale
   // per-instrument cache silently drop a valid score.
   const historyById = React.useMemo(() => {
+    // Fast-path when parent supplied the derivation — no merge needed.
+    if (usingParentDerivation) return new Map<string, AssessmentRecord[]>()
     const map = new Map<string, AssessmentRecord[]>()
     ALL_TRACKED_INSTRUMENTS.forEach((id, i) => {
       const data = historyQueries[i]?.data ?? []
@@ -187,10 +219,20 @@ export function BpsWellbeingScoreCard({
       })
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyQueries.map((q) => q.dataUpdatedAt).join('|'), summaryQuery.data])
+  }, [
+    usingParentDerivation,
+    historyQueries.map((q) => q.dataUpdatedAt).join('|'),
+    summaryQuery.data,
+  ])
 
-  // Pure derivation — no React, no I/O. Everything the render needs.
-  const derived = React.useMemo(() => deriveWellbeing(historyById), [historyById])
+  // Pure derivation — no React, no I/O. When the parent hoisted the
+  // derivation, use it directly (single-pass guarantee); otherwise
+  // compute internally so this component stays drop-in usable
+  // anywhere else without regressions.
+  const derived = React.useMemo(
+    () => (usingParentDerivation ? (derivationProp as WellbeingDerivation) : deriveWellbeing(historyById)),
+    [usingParentDerivation, derivationProp, historyById],
+  )
   const { composite, domains, trend, focus } = derived
 
   // -------------------------------------------------------------
@@ -205,14 +247,19 @@ export function BpsWellbeingScoreCard({
   const tint = colors.tint ?? '#0D9488'
   const focalColor = compositeColor(composite, tint)
 
-  // Any history query still loading AND we don't yet have a composite → LOADING.
+  // CHUNK 60: when the parent hoisted derivation, it also computes
+  // isLoading + isEmpty using the same shared cache — trust those
+  // values so all consumers reason from ONE truth. Fall back to the
+  // internal query-observer gates otherwise (drop-in mode).
   const anyHistoryLoading = historyQueries.some((q) => q.isLoading && !q.data)
-  const isLoading =
+  const internalIsLoading =
     (summaryQuery.isLoading && !summaryQuery.data) ||
     (anyHistoryLoading && typeof composite !== 'number')
+  const isLoading = usingParentDerivation ? !!isLoadingProp : internalIsLoading
 
   const summaryReady = !summaryQuery.isLoading || !!summaryQuery.data
-  const isEmpty = summaryReady && typeof composite !== 'number' && !isLoading
+  const internalIsEmpty = summaryReady && typeof composite !== 'number' && !internalIsLoading
+  const isEmpty = usingParentDerivation ? !!isEmptyProp : internalIsEmpty
 
   const bigNumberText = isLoading ? '—' : typeof composite === 'number' ? String(composite) : '—'
 

@@ -97,6 +97,23 @@ const INTERVENTION_KIND_ICON: Record<InterventionKind, keyof typeof MaterialIcon
   resource: 'menu-book',
 };
 
+/*
+ * CHUNK 60 (2026-07-22): teal family for the FOCUS pill. Slightly more
+ * saturated than the BpsPlanFocusBanner surface (which is ~8% teal) so
+ * the pill reads clearly as a badge without competing with the banner
+ * as the primary tap affordance. Kept as local literals so the pill
+ * stays readable in isolation and doesn't introduce a new design-system
+ * token.
+ */
+// Chunk 60 adversarial-verify major #2 fix: solid teal pill with white
+// ink so the FOCUS badge reads on both light and dark section cards.
+// The earlier 15% teal tint on teal-800 ink failed contrast (~1.5:1)
+// against colors.card in dark mode. Solid teal-500 background reads
+// crisply on any card surface regardless of theme.
+const FOCUS_PILL_BG = '#0D9488'; // teal-500 — solid
+const FOCUS_PILL_BORDER = '#0D9488'; // matches bg — border is decorative
+const FOCUS_PILL_INK = '#FFFFFF'; // white — WCAG AA on teal-500
+
 function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
 }
@@ -131,6 +148,22 @@ export interface SectionCardProps {
   tasks?: PlanTask[];
   onAddTask?: () => void;
   onTaskPress?: (task: PlanTask) => void;
+  /**
+   * CHUNK 60 (2026-07-22): when true, render a small teal "FOCUS" pill
+   * as a dedicated sibling row directly beneath the header. The pill is
+   * visual-only (banner owns the tap affordance). Parent computes this
+   * from the wellbeing focus signal — see BpsPlanFocusBanner + the
+   * BPS_PLAN_FOCUS_SIGNAL_ENABLED kill-switch in BiopsychosocialPlanScreen.
+   *
+   * When false / omitted the pill is not rendered at all — no wrapper,
+   * no reserved height — so a section that isn't the focus target has
+   * ZERO visual delta from pre-chunk-60. Only ever true on exactly one
+   * of the three SectionCards per render (mapping is injective and
+   * focus is a single BpsDomain). Flipping the parent kill-switch to
+   * false makes this always-false at the call site, compiling the pill
+   * out across all cards in one line.
+   */
+  isFocus?: boolean;
 }
 
 export function SectionCard({
@@ -144,6 +177,7 @@ export function SectionCard({
   tasks: tasksProp,
   onAddTask,
   onTaskPress,
+  isFocus,
 }: SectionCardProps) {
   const style = SECTION_STYLE[sectionKey];
   const statusStyle = STATUS_STYLE[section.status] ?? STATUS_STYLE['just-started'];
@@ -237,6 +271,40 @@ export function SectionCard({
           </Text>
         </View>
       </View>
+
+      {/*
+        CHUNK 60 (2026-07-22): FOCUS pill — visual anchor that shows the
+        user why they landed here after tapping the BpsPlanFocusBanner.
+        Rendered as a SIBLING row beneath headerRow (not inside it) so
+        the header doesn't crush at large dynamic type on iPhone
+        SE-class widths. Returns null when !isFocus (genuinely
+        null-when-absent — no wrapper, no reserved height). Pill borrows
+        the statusPill visual language for cross-card consistency, but
+        uses a teal family (banner primary CTA color) so it reads as a
+        "matches the focus above" hint rather than a status change.
+        Hard-coded uppercase literal ("FOCUS") avoids iOS 26
+        textTransform type-metric edge cases proven fragile elsewhere.
+      */}
+      {isFocus ? (
+        <View
+          style={[styles.focusPill, { backgroundColor: FOCUS_PILL_BG, borderColor: FOCUS_PILL_BORDER }]}
+          accessible
+          accessibilityLabel="Focus area for this week"
+        >
+          <MaterialIcons name="center-focus-strong" size={12} color={FOCUS_PILL_INK} />
+          <Text
+            style={{
+              color: FOCUS_PILL_INK,
+              fontSize: getScaledFontSize(10),
+              fontWeight: getScaledFontWeight(700) as any,
+              letterSpacing: 0.6,
+              marginLeft: 4,
+            }}
+          >
+            FOCUS
+          </Text>
+        </View>
+      ) : null}
 
       {/* Trend summary + arrow */}
       {!!section.trendSummary && (
@@ -589,6 +657,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     marginLeft: Spacing.sm,
+  },
+  // CHUNK 60: FOCUS pill sits as a sibling row directly beneath the
+  // header. alignSelf:'flex-start' keeps it snug to the left edge so it
+  // reads as attached to the section title above; borderRadius:Radii.full
+  // + borderWidth:1 mirrors the statusPill visual language so the pill
+  // family reads as one system across the card.
+  focusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+    marginBottom: 4,
   },
   trendRow: {
     flexDirection: 'row',

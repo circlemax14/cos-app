@@ -53,6 +53,9 @@ import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
+import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
+import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
+import { bpsToSection } from '@/lib/wellbeing-score';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { TaskEditorModal, TaskEditorBody } from './TaskEditorModal';
 import { TaskDetailModal, TaskDetailBody } from './tasks/TaskDetailModal';
@@ -353,6 +356,50 @@ const BPS_SELF_ASSESSMENTS_ENABLED = true;
  * Ken hates the v1 formula and wants to iterate before re-enabling.
  */
 const BPS_WELLBEING_SCORE_ENABLED = true;
+
+/**
+ * CHUNK 60 (2026-07-22) kill-switch — Ken transcript ask: "our treatment
+ * plan needs to change based upon these trends"; "everything is
+ * elevating except that domain" — that domain becomes the plan's focus
+ * target. Surfaces the wellbeing focus signal (already computed in
+ * chunk 59's deriveWellbeing) as two coordinated affordances:
+ *
+ *   (a) BpsPlanFocusBanner — soft teal callout mounted directly above
+ *       the three SectionCards. Copy is strictly generic per the v1
+ *       scope gate ("Focus this week: your {mental|physical|social}
+ *       health / connection. Explore tasks below."). Tap → scrolls the
+ *       ScrollView to the matching SectionCard. Renders NULL when
+ *       focus is undefined (all domains flat, no assessment history,
+ *       insufficient trend data — genuinely null-when-absent, not a
+ *       fixed-height placeholder).
+ *
+ *   (b) SectionCard `isFocus` pill — small teal "FOCUS" badge under
+ *       the header of exactly the one section that matches the focus
+ *       domain, so a user who scrolls to it sees why they're there.
+ *       Purely visual, no behavior change.
+ *
+ * v1 scope discipline: strictly generic copy. NO prescriptive language
+ * ("talk to your psychiatrist about medication issues", "consider a
+ * med change") — that surface is deferred to a future chunk pending
+ * Ken sign-off on tone + clinical guardrails.
+ *
+ * Compute-once guarantee: `useWellbeingDerivation()` runs ONCE at this
+ * parent level; the derivation is passed down into
+ * BpsWellbeingScoreCard (which skips its internal deriveWellbeing when
+ * props are supplied), into the banner (as `focus`), and into each
+ * SectionCard (as `isFocus`). Same query keys as before, so the
+ * hoisted observer piggybacks on the shared react-query cache —
+ * ZERO NEW BE CALLS.
+ *
+ * Kill-switch flip false → banner AND SectionCard pill both compile
+ * out cleanly in one line. Recovery cost: ~30-60s via
+ * `npm run eas:update:production` (JS module const, so OTA — not SSM).
+ *
+ * iOS 26.5 safe: banner + pill use only Pressable/View/Text/
+ * MaterialIcons/StyleSheet — same envelope chunks 47/50/57/59 proved
+ * safe on iPhone 14 iOS 26.5 build 62.
+ */
+const BPS_PLAN_FOCUS_SIGNAL_ENABLED = true;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
@@ -670,6 +717,18 @@ export function BiopsychosocialPlanScreen({
   // toggling the flag off doesn't cause the observer to disappear and
   // reappear on flip (compile-time const anyway; adds nothing to net).
   const intakeQuery = usePatientIntake();
+
+  // CHUNK 60 (2026-07-22): hoisted wellbeing derivation — computed ONCE
+  // at this parent level so BpsWellbeingScoreCard, BpsPlanFocusBanner,
+  // and each SectionCard's `isFocus` gate all read the SAME focus value
+  // from a single deriveWellbeing() pass. Shares react-query cache keys
+  // with the card + SelfAssessmentTrends, so this observer adds zero
+  // extra network (dedupe on ['assessments-trends'] +
+  // ['assessment-history', id]). Hook call is unconditional
+  // (rules-of-hooks); the FLAG gates only the render below.
+  const wellbeing = useWellbeingDerivation();
+  const focusDomain = BPS_PLAN_FOCUS_SIGNAL_ENABLED ? wellbeing.derivation.focus : undefined;
+  const focusSectionKey = bpsToSection(focusDomain);
   const tasksBySection = React.useMemo(() => {
     const b: Record<BiopsychosocialSectionKey, PlanTask[]> = { biological: [], psychological: [], social: [] };
     for (const t of allTasks) {
@@ -811,6 +870,22 @@ export function BiopsychosocialPlanScreen({
   const selfAssessmentsSectionYRef = React.useRef<number | null>(null);
   const scrollToSelfAssessments = React.useCallback(() => {
     const y = selfAssessmentsSectionYRef.current;
+    if (y != null && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+    }
+  }, []);
+  // CHUNK 60: Y-positions of the three SectionCards, keyed by section
+  // key, so BpsPlanFocusBanner can scroll to the matching section on
+  // tap. Same pattern as medsSectionYRef / selfAssessmentsSectionYRef —
+  // parent-owned Map ref, filled by each section's onLayout wrapper,
+  // consumed by scrollToSection below. Best-effort: no-op if the target
+  // section hasn't laid out yet (matches meds/self-assessments
+  // discipline; do not scroll to y=0 which would jump to the top).
+  const sectionYByKey = React.useRef<Map<BiopsychosocialSectionKey, number>>(
+    new Map<BiopsychosocialSectionKey, number>(),
+  );
+  const scrollToSection = React.useCallback((key: BiopsychosocialSectionKey) => {
+    const y = sectionYByKey.current.get(key);
     if (y != null && scrollRef.current) {
       scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
     }
@@ -1158,6 +1233,13 @@ export function BiopsychosocialPlanScreen({
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
             onPressDetails={scrollToSelfAssessments}
+            // CHUNK 60: hand the parent-hoisted derivation to the card
+            // so it skips its internal deriveWellbeing() pass. Single-
+            // pass guarantee — BpsPlanFocusBanner and each SectionCard's
+            // isFocus gate below consume the same value.
+            derivation={wellbeing.derivation}
+            isLoading={wellbeing.isLoading}
+            isEmpty={wellbeing.isEmpty}
           />
         )}
 
@@ -1555,47 +1637,88 @@ export function BiopsychosocialPlanScreen({
           />
         </View>
 
+        {/*
+          CHUNK 60 (2026-07-22): plan-focus banner. Renders NULL when
+          BPS_PLAN_FOCUS_SIGNAL_ENABLED is false OR when the wellbeing
+          formula couldn't identify a focus domain (all domains flat,
+          all elevating together, insufficient signal). Tap → scrolls
+          to the matching SectionCard via sectionYByKey. Reuses the
+          same derivation the wellbeing card is rendering from —
+          single deriveWellbeing() pass, single source of truth.
+          Genuinely null-when-absent affordance: no wrapper, no
+          reserved height (unlike chunks 47/48 fixed placeholders,
+          because there's nothing to WAIT FOR here — focus is either
+          computed or absent, not delayed).
+        */}
+        <BpsPlanFocusBanner
+          enabled={BPS_PLAN_FOCUS_SIGNAL_ENABLED}
+          focus={focusDomain}
+          onPress={scrollToSection}
+          colors={colors as unknown as Record<string, string>}
+          isDark={settings.isDarkTheme}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
+
         {/* Three section cards */}
         {SECTION_ORDER.map(({ key, title }) => (
-          <SectionCard
+          // CHUNK 60: wrap SectionCard in an outer <View onLayout> so
+          // the banner's tap handler knows where to scroll. onLayout
+          // fires against the wrapper (whose parent is the ScrollView
+          // content) — sets sectionYByKey without triggering a re-render
+          // (ref write, no state). Deliberately NOT attaching onLayout
+          // to SectionCard itself so the section's render tree isn't
+          // re-invalidated on layout events.
+          <View
             key={key}
-            sectionKey={key}
-            title={title}
-            section={plan.sections[key]}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            // CHUNK 53: intercept goal-edit locally when consolidation is ON
-            // so the bio-goal editor renders inside the one consolidated
-            // Modal owned by this screen. Under flag=false, forward to the
-            // route parent's Modal as before — byte-for-byte legacy shape.
-            onEditGoal={
-              BPS_MODAL_CONSOLIDATION_ENABLED
-                ? (g) => setEditor({ kind: 'bio-goal', goal: g })
-                : onEditGoal
-            }
-            tasks={tasksBySection[key]}
-            // CHUNK 53: same routing rule for add-task and task-row taps —
-            // ON writes to `editor`, OFF writes to `taskModal`.
-            onAddTask={
-              BPS_MODAL_CONSOLIDATION_ENABLED
-                ? () =>
-                    setEditor({
-                      kind: 'task-editor',
-                      category: categoryForNewTaskInSection(key),
-                    })
-                : () =>
-                    setTaskModal({
-                      mode: 'create',
-                      category: categoryForNewTaskInSection(key),
-                    })
-            }
-            onTaskPress={
-              BPS_MODAL_CONSOLIDATION_ENABLED
-                ? (t) => setEditor({ kind: 'task-detail', task: t })
-                : (t) => setTaskModal({ mode: 'detail', task: t })
-            }
-          />
+            onLayout={(e) => {
+              sectionYByKey.current.set(key, e.nativeEvent.layout.y);
+            }}
+          >
+            <SectionCard
+              sectionKey={key}
+              title={title}
+              section={plan.sections[key]}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              // CHUNK 60: mark this card as the focus target when the
+              // hoisted focus domain maps to it. When the flag is off,
+              // focusSectionKey is undefined and this evaluates false
+              // on every card — pill compiles out everywhere in one line.
+              isFocus={focusSectionKey === key}
+              // CHUNK 53: intercept goal-edit locally when consolidation is ON
+              // so the bio-goal editor renders inside the one consolidated
+              // Modal owned by this screen. Under flag=false, forward to the
+              // route parent's Modal as before — byte-for-byte legacy shape.
+              onEditGoal={
+                BPS_MODAL_CONSOLIDATION_ENABLED
+                  ? (g) => setEditor({ kind: 'bio-goal', goal: g })
+                  : onEditGoal
+              }
+              tasks={tasksBySection[key]}
+              // CHUNK 53: same routing rule for add-task and task-row taps —
+              // ON writes to `editor`, OFF writes to `taskModal`.
+              onAddTask={
+                BPS_MODAL_CONSOLIDATION_ENABLED
+                  ? () =>
+                      setEditor({
+                        kind: 'task-editor',
+                        category: categoryForNewTaskInSection(key),
+                      })
+                  : () =>
+                      setTaskModal({
+                        mode: 'create',
+                        category: categoryForNewTaskInSection(key),
+                      })
+              }
+              onTaskPress={
+                BPS_MODAL_CONSOLIDATION_ENABLED
+                  ? (t) => setEditor({ kind: 'task-detail', task: t })
+                  : (t) => setTaskModal({ mode: 'detail', task: t })
+              }
+            />
+          </View>
         ))}
 
         {/* Another device's regeneration in flight — static message, no

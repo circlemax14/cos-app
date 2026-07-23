@@ -132,6 +132,37 @@ export const ALL_TRACKED_INSTRUMENTS: readonly InstrumentId[] = ([] as Instrumen
 export const DOMAIN_ORDER: readonly BpsDomain[] = ['bio', 'mind', 'social']
 
 /**
+ * CHUNK 60 (2026-07-22) — crosswalk from the wellbeing formula's BpsDomain
+ * (`bio` | `mind` | `social`) to SectionCard's BiopsychosocialSectionKey
+ * (`biological` | `psychological` | `social`). Single source of truth so
+ * the banner, the screen's scroll-to helper, and the SectionCard `isFocus`
+ * check can't drift on a taxonomy rename.
+ *
+ * Kept as a plain string-literal record here (not `BiopsychosocialSectionKey`
+ * from SectionCard.tsx) so lib/ stays free of a component-tree import; the
+ * two string sets are asserted equal at the SectionCard call site via
+ * TypeScript's structural typing when the parent does
+ * `bpsToSection(focus) === key`.
+ */
+export const BPS_TO_SECTION: Record<BpsDomain, 'biological' | 'psychological' | 'social'> = {
+  bio: 'biological',
+  mind: 'psychological',
+  social: 'social',
+}
+
+/**
+ * Convenience helper — mirrors BPS_TO_SECTION lookups without callers
+ * having to import the map. Undefined input yields undefined so the
+ * banner / screen can pass `focus` through without a null-check dance.
+ */
+export function bpsToSection(
+  domain: BpsDomain | undefined,
+): 'biological' | 'psychological' | 'social' | undefined {
+  if (!domain) return undefined
+  return BPS_TO_SECTION[domain]
+}
+
+/**
  * band-level → 0-100 subscore. Direction is folded in at the caller so
  * this table stays symmetric.
  */
