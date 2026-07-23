@@ -374,14 +374,25 @@ export function BpsWellbeingScoreCard({
   //
   // Routing is driven by RECORD PRESENCE from fetchAssessments, NOT by
   // the wellbeing derivation's `contributors` count. This matters because
-  // subscoreFromRecord() can return undefined for a completed record when
-  // ASSESSMENT_BANDS is missing an entry for that instrument (Ken's
-  // alcohol-3 / loneliness-3 records fell into this trap in his 07-23
-  // report). Without this decoupling, the CTA would happily route the
-  // patient to an instrument they already completed — the same trap
-  // that broke chunk 65 for him. The underlying bands-coverage bug is
-  // filed as a separate follow-up; chunk 66 only makes the CTA robust
-  // to it.
+  // subscoreFromRecord() can return undefined for a completed record whose
+  // scores payload arrives empty from the backend (Ken's alcohol-3 /
+  // loneliness-3 records exhibited scores:{} in his 07-23 report).
+  //
+  // CHUNK 68 (2026-07-23) UPDATE: the root cause was NOT a missing
+  // ASSESSMENT_BANDS entry — both alcohol-3 and loneliness-3 have valid
+  // band defs. The real cause is the cos-backend legacy `computeScores`
+  // switch (assessments.service.ts:236-250) lacking cases for these two
+  // instrumentIds, so when getActive() returns null it falls through to
+  // scoreFreeform() and writes scores:{} with populated responses. Chunk
+  // 68 added a client-side defensive recompute via
+  // extractScoreFromRecord() + computeFallback:'sum-responses' on the
+  // two bands, so the contributors count no longer drops these records.
+  // The parallel BE follow-up (missing switch cases + one-shot backfill
+  // + investigate why getActive returned null for Ken's tenant) is
+  // tracked separately; the client fallback is scaffolding to be
+  // revisited for removal once that ships. The record-presence decoupling
+  // below is retained belt-and-suspenders in case another instrument hits
+  // the same trap before the BE fix lands.
   // -------------------------------------------------------------
 
   // CHUNK 67 adversarial-verify majors #1/#2/#3 fix: dropped the

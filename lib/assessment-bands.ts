@@ -46,6 +46,36 @@ export interface AssessmentBandDef {
    * Defaults to 'total'. ADL/IADL use 'independent' historically.
    */
   scoreField?: 'total' | 'independent'
+  /**
+   * CHUNK 68 (2026-07-23) — defensive client-side recompute fallback.
+   *
+   * Some records land with `scores: {}` even though completedAt is set
+   * and responses are populated — the backend legacy `computeScores`
+   * switch (cos-backend/src/services/assessments.service.ts:236-250)
+   * has no case for alcohol-3 or loneliness-3, so when
+   * `getActive(instrumentId)` returns null it falls through to
+   * `scoreFreeform()` and writes `{}`. Ken's gvtechsolutions21@gmail.com
+   * account exhibited this on 2026-07-23: both AUDIT-C and UCLA-3
+   * records had completedAt set but no total, so subscoreFromRecord()
+   * silently dropped them and the SOCIAL & FAITH pill reported 0
+   * contributors.
+   *
+   * `computeFallback: 'sum-responses'` opts the instrument into a
+   * client-side recompute: extractScoreFromRecord() first tries
+   * scores.total (byte-identical happy path), and only if undefined
+   * sums the finite numeric response values. Flip this ONLY for
+   * instruments whose `kind: 'sum'` contract is verified in the BE
+   * instrument definition AND whose responses are raw numeric option
+   * values (assessment-stepper.tsx writes opt.value into
+   * answers[item.id]). Do NOT blanket-apply — a future instrument
+   * that stores structured response objects would silently under-count.
+   *
+   * The BE-side fix (missing switch cases + one-shot backfill for
+   * historical scores:{} rows) is filed as a parallel follow-up; this
+   * flag is defensive scaffolding that should be revisited for removal
+   * once the BE backfill lands in prod.
+   */
+  computeFallback?: 'sum-responses'
   /** score <= lowMax  => level 'low'  (Ken cutoff line #1) */
   lowMax: number
   /** score <= mediumMax => level 'medium'; else 'high' */
@@ -144,6 +174,11 @@ export const ASSESSMENT_BANDS: Record<string, AssessmentBandDef> = {
     lowMax: 2,
     mediumMax: 3,
     source: 'AUDIT-C: 0-12, >=4 positive (Bush 1998)',
+    // CHUNK 68: BE kind:'sum' contract confirmed in system-instruments.ts
+    // (q1..q3 numeric options 0-4). Responses are raw numeric values from
+    // assessment-stepper.tsx (opt.value → answers[item.id]). Ken's
+    // 2026-07-23 report exhibited scores:{} with populated responses.
+    computeFallback: 'sum-responses',
   },
   'loneliness-3': {
     humanLabel: 'Loneliness',
@@ -153,6 +188,11 @@ export const ASSESSMENT_BANDS: Record<string, AssessmentBandDef> = {
     lowMax: 4,
     mediumMax: 5,
     source: 'UCLA-3: 3-9, >=6 lonely (Hughes 2004)',
+    // CHUNK 68: BE kind:'sum' contract confirmed in system-instruments.ts
+    // (q1..q3 numeric options 1-3). Responses are raw numeric values from
+    // assessment-stepper.tsx. Ken's 2026-07-23 report exhibited scores:{}
+    // with populated responses.
+    computeFallback: 'sum-responses',
   },
   'falls-12': {
     humanLabel: 'Falls risk',
@@ -342,4 +382,69 @@ export function extractScore(
   const primary = scores[field]
   if (typeof primary === 'number' && Number.isFinite(primary)) return primary
   return undefined
+}
+
+/**
+ * CHUNK 68 (2026-07-23) — defensive score extraction from a full
+ * AssessmentRecord (or lightweight snapshot). Prefers the canonical
+ * `scores[scoreField]` value; only when that is missing AND the def
+ * opts in via `computeFallback: 'sum-responses'` does this helper
+ * recompute the total by summing finite numeric response values.
+ *
+ * WHY THIS EXISTS: cos-backend's legacy `computeScores` switch does
+ * not carry cases for every sum-scored instrument (alcohol-3 and
+ * loneliness-3 fell through to scoreFreeform → {} on Ken's account
+ * 2026-07-23). Rather than silently drop those completed records
+ * from the wellbeing composite, we recompute client-side from
+ * responses — which the stepper stores as raw numeric option values.
+ *
+ * GUARANTEES:
+ *  - Byte-identical to extractScore() on the happy path (scores.total
+ *    present) — no double-count, no accidental band shift.
+ *  - Returns undefined for instruments without `computeFallback` when
+ *    scores are missing (ADL/IADL ratio scoring MUST NOT fall back).
+ *  - Returns undefined for empty responses (nothing to sum) so the
+ *    caller renders a neutral "—" pill.
+ *  - Ignores non-finite / non-numeric response values (string, null,
+ *    nested objects) so a future response-shape change surfaces as
+ *    "no data" rather than a wrong number.
+ *  - Dev-only warn (__DEV__ guard) fires when the fallback engages so
+ *    ongoing BE score-shape drift is visible in DEV builds.
+ */
+export function extractScoreFromRecord(
+  def: AssessmentBandDef | undefined,
+  record:
+    | {
+        instrumentId?: unknown
+        scores?: Record<string, number>
+        responses?: Record<string, unknown>
+      }
+    | undefined,
+): number | undefined {
+  if (!record) return undefined
+  const primary = extractScore(def, record.scores ?? {})
+  if (typeof primary === 'number') return primary
+  if (!def || def.computeFallback !== 'sum-responses') return undefined
+  const responses = record.responses
+  if (!responses || typeof responses !== 'object') return undefined
+  let sum = 0
+  let count = 0
+  for (const key of Object.keys(responses)) {
+    const v = (responses as Record<string, unknown>)[key]
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      sum += v
+      count += 1
+    }
+  }
+  if (count === 0) return undefined
+  if (__DEV__) {
+    // Signal-to-noise: one warn per fallback fire is fine in DEV but
+    // must never reach production RN logs (iOS 26.5 app-debugging
+    // playbook: chatty console.warn is a known regression vector).
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[assessment-bands] extractScoreFromRecord: scores.${def.scoreField ?? 'total'} missing for instrumentId=${String(record.instrumentId ?? 'unknown')}; recomputed sum=${sum} from responses`,
+    )
+  }
+  return sum
 }

@@ -43,7 +43,7 @@
  */
 
 import type { AssessmentRecord, InstrumentId } from '@/services/api/assessments'
-import { computeBand, extractScore, getBandDef } from '@/lib/assessment-bands'
+import { computeBand, extractScoreFromRecord, getBandDef } from '@/lib/assessment-bands'
 
 // ---------------------------------------------------------------
 // Public types
@@ -78,10 +78,19 @@ export interface TrendResult {
  * Snapshot passed by callers. `completedAt` is required for trend math
  * but optional here because callers sometimes have a raw record whose
  * completedAt they already validated at the query layer.
+ *
+ * CHUNK 68 (2026-07-23): widened to also carry `responses` so
+ * subscoreFromRecord() can hand the full snapshot to
+ * extractScoreFromRecord() and recover a total via the
+ * `computeFallback: 'sum-responses'` path when the BE emits scores:{}
+ * (see lib/assessment-bands.ts extractScoreFromRecord doc). All current
+ * call sites already pass a full AssessmentRecord (see
+ * hooks/use-wellbeing-derivation.ts), so this is a type-only widen with
+ * no consumer change required.
  */
 export type RecordSnapshot = Pick<
   AssessmentRecord,
-  'instrumentId' | 'scores' | 'completedAt'
+  'instrumentId' | 'scores' | 'completedAt' | 'responses'
 >
 
 // ---------------------------------------------------------------
@@ -199,7 +208,14 @@ export function subscoreFromRecord(record: RecordSnapshot | undefined): number |
   if (!record) return undefined
   const def = getBandDef(String(record.instrumentId))
   if (!def) return undefined
-  const raw = extractScore(def, record.scores)
+  // CHUNK 68 (2026-07-23): use extractScoreFromRecord so instruments
+  // flagged with `computeFallback: 'sum-responses'` (alcohol-3,
+  // loneliness-3 today) recover a total from responses when the BE
+  // emits scores:{}. Byte-identical to the previous extractScore path
+  // for records that already carry a valid scores.total — the fallback
+  // only engages when the primary lookup returns undefined AND the def
+  // opts in. See lib/assessment-bands.ts for details.
+  const raw = extractScoreFromRecord(def, record)
   const band = computeBand(def, raw)
   if (!band) return undefined
   return def.direction === 'higher-is-better'
