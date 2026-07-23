@@ -53,6 +53,7 @@ import React from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { router } from 'expo-router'
 
 import { Radii, Spacing } from '@/constants/design-system'
 import {
@@ -125,6 +126,33 @@ const TONE_COLOR = {
   bad: '#DC2626',
   neutral: '#6B7280',
 } as const
+
+/**
+ * CHUNK 65 (2026-07-22) — deep-link focus param per BpsDomain.
+ * Matches ASSESSMENT_ROUTE_FOR_SECTION in lib/unified-plan-assessment-routing.ts
+ * (bio / psy / soc). The `focus` param is CURRENTLY IGNORED by
+ * app/Home/assessments-catalog.tsx — it lands the user at the top of
+ * the catalog regardless. Included so a follow-up chunk can teach the
+ * catalog to scroll-to-domain without a separate deep-link handshake;
+ * back-compatible today because the target screen just drops the unknown
+ * param on the floor.
+ */
+const DOMAIN_TO_CATALOG_FOCUS: Record<BpsDomain, 'bio' | 'psy' | 'soc'> = {
+  bio: 'bio',
+  mind: 'psy',
+  social: 'soc',
+}
+
+/**
+ * CHUNK 65: build the assessments-catalog href for an empty domain pill.
+ * Distinct `source=wellbeing-empty-pill` so engagement analytics can
+ * attribute check-in completions back to this specific nudge (vs the
+ * plan-upgrade banner, due banner, unified-plan-empty deep link, etc.).
+ * `focus` is aspirational (see DOMAIN_TO_CATALOG_FOCUS docstring).
+ */
+function catalogHrefForDomain(domain: BpsDomain): string {
+  return `/Home/assessments-catalog?source=wellbeing-empty-pill&focus=${DOMAIN_TO_CATALOG_FOCUS[domain]}`
+}
 
 /** Warm palette for the composite number based on the score band. */
 function compositeColor(composite: number | undefined, tint: string): string {
@@ -443,24 +471,36 @@ export function BpsWellbeingScoreCard({
             ? ''
             : hasContributors ? `· ${d.contributors}` : `${d.contributors} completed`
           const suffixColor = hasContributors ? pillColor : subtext
+          // CHUNK 65 (2026-07-22): empty pills (contributors === 0) become
+          // tap targets that route to the assessments catalog so patients
+          // can act on the transparency chunk 63 introduced ("0 completed"
+          // → "tap here to take a check-in"). Scored pills stay
+          // non-interactive (existing behavior). Loading pills stay
+          // non-interactive — the suffix is suppressed during load so the
+          // chevron never flashes in and out (no CLS, no misleading
+          // "tap here" state before we know the real contributor count).
+          //
+          // RN responder system: nested Pressable — the child wins the
+          // press, so tapping an empty pill navigates without also
+          // triggering the outer scroll-to-Self-Assessments handler.
+          //
+          // Discoverability: a small chevron-right sits after the "N
+          // completed" suffix so the pill visually reads as tappable.
+          // Icon size is derived from getScaledFontSize so accessibility
+          // scaling scales the affordance with everything else — no CLS
+          // because the icon slot is only inserted for empty pills,
+          // which is a stable state (empty stays empty until the patient
+          // completes a check-in, at which point the whole pill
+          // re-renders as a scored, non-tappable View).
+          const isEmptyTappable = !isLoading && !hasContributors
+          const chevronSize = getScaledFontSize(12)
           const pillA11y = isLoading
             ? `${DOMAIN_LABEL[d.domain as BpsDomain]} loading`
             : hasContributors
               ? `${DOMAIN_LABEL[d.domain as BpsDomain]} ${scoreText} out of 100, based on ${d.contributors} ${d.contributors === 1 ? 'assessment' : 'assessments'}`
-              : `${DOMAIN_LABEL[d.domain as BpsDomain]} score not available, 0 assessments completed`
-          return (
-            <View
-              key={d.domain}
-              style={[
-                styles.pill,
-                {
-                  borderColor: pillColor,
-                  backgroundColor: pillColor + '14',
-                },
-              ]}
-              accessible
-              accessibilityLabel={pillA11y}
-            >
+              : `${DOMAIN_LABEL[d.domain as BpsDomain]} score not available, 0 assessments completed. Tap to take a check-in.`
+          const pillContent = (
+            <>
               <Text
                 style={{
                   color: pillColor,
@@ -482,18 +522,72 @@ export function BpsWellbeingScoreCard({
                 {scoreText}
               </Text>
               {suffixText ? (
-              <Text
-                style={{
-                  color: suffixColor,
-                  fontSize: getScaledFontSize(10),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  marginLeft: 5,
-                  opacity: hasContributors ? 0.75 : 1,
-                }}
-              >
-                {suffixText}
-              </Text>
+                <Text
+                  style={{
+                    color: suffixColor,
+                    fontSize: getScaledFontSize(10),
+                    fontWeight: getScaledFontWeight(600) as any,
+                    marginLeft: 5,
+                    opacity: hasContributors ? 0.75 : 1,
+                  }}
+                >
+                  {suffixText}
+                </Text>
               ) : null}
+              {isEmptyTappable ? (
+                <MaterialIcons
+                  name="chevron-right"
+                  size={chevronSize}
+                  color={suffixColor}
+                  style={{ marginLeft: 2, width: chevronSize, height: chevronSize }}
+                />
+              ) : null}
+            </>
+          )
+          if (isEmptyTappable) {
+            const href = catalogHrefForDomain(d.domain as BpsDomain)
+            return (
+              <Pressable
+                key={d.domain}
+                onPress={() => router.push(href as never)}
+                // Chunk 65 adversarial-verify fix: asymmetric hitSlop so the
+                // horizontal extension doesn't overlap the pillsRow gap (6pt)
+                // between adjacent empty pills — on cold-mount all 3 domains
+                // are empty and adjacent, and a symmetric hitSlop:6 has hit
+                // regions meeting at the gap midpoint so RN's sibling-order
+                // tiebreak decides which domain the tap goes to. Vertical
+                // padding preserved for accessibility taps above/below.
+                hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+                accessibilityRole="button"
+                accessibilityLabel={pillA11y}
+                accessibilityHint="Opens the assessments catalog to take a related check-in"
+                style={({ pressed }) => [
+                  styles.pill,
+                  {
+                    borderColor: pillColor,
+                    backgroundColor: pillColor + '14',
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                {pillContent}
+              </Pressable>
+            )
+          }
+          return (
+            <View
+              key={d.domain}
+              style={[
+                styles.pill,
+                {
+                  borderColor: pillColor,
+                  backgroundColor: pillColor + '14',
+                },
+              ]}
+              accessible
+              accessibilityLabel={pillA11y}
+            >
+              {pillContent}
             </View>
           )
         })}
