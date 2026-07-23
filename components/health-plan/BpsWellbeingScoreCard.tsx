@@ -840,11 +840,23 @@ export function BpsWellbeingScoreCard({
           // transparency text, non-tappable. Kept the transparency copy
           // so the patient still learns WHY a domain scored — the CTA
           // below explains WHAT to do about it.
+          // CHUNK 96 (2026-07-23): compose an accessibilityLabel that
+          // reads as a full natural-language sentence — prior version's
+          // bare number ("70") on the score Text was VoiceOver-meaningless
+          // when swiping through the pill. Domain name is lowercased so
+          // screen-readers don't over-spell "SOCIAL & FAITH" as letters.
+          // Suffix mirrors the visual suffix states (chunk 63 empty +
+          // loading, chunk 67 processing) so a11y and visual read the same
+          // story. Inner Text nodes are hidden from a11y below so this
+          // parent label reads once instead of fragmenting per node.
+          const domainNameLower = DOMAIN_LABEL[d.domain as BpsDomain].toLowerCase()
           const pillA11y = isLoading
-            ? `${DOMAIN_LABEL[d.domain as BpsDomain]} loading`
+            ? `${domainNameLower}: not yet available.`
             : hasContributors
-              ? `${DOMAIN_LABEL[d.domain as BpsDomain]} ${scoreText} out of 100, based on ${d.contributors} ${d.contributors === 1 ? 'assessment' : 'assessments'}`
-              : `${DOMAIN_LABEL[d.domain as BpsDomain]} score not available, 0 assessments completed`
+              ? `${domainNameLower}: ${scoreText} out of 100. ${d.contributors} ${d.contributors === 1 ? 'check-in' : 'check-ins'} contributing.`
+              : isProcessing
+                ? `${domainNameLower}: refreshing.`
+                : `${domainNameLower}: not yet available.`
           return (
             <View
               key={d.domain}
@@ -859,6 +871,8 @@ export function BpsWellbeingScoreCard({
               accessibilityLabel={pillA11y}
             >
               <Text
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
                 style={{
                   color: pillColor,
                   fontSize: getScaledFontSize(10),
@@ -869,6 +883,8 @@ export function BpsWellbeingScoreCard({
                 {DOMAIN_LABEL[d.domain as BpsDomain]}
               </Text>
               <Text
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
                 style={{
                   color: pillColor,
                   fontSize: getScaledFontSize(14),
@@ -880,6 +896,8 @@ export function BpsWellbeingScoreCard({
               </Text>
               {suffixText ? (
                 <Text
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
                   style={{
                     color: suffixColor,
                     fontSize: getScaledFontSize(10),
