@@ -76,6 +76,85 @@ function parseTimes(raw: string): string[] {
     .filter((t) => t.length > 0);
 }
 
+/**
+ * CHUNK 99 — Signed days until the ISO date (positive = future, negative = past,
+ * null = missing/invalid). Distinct from `daysUntil` above, which clamps at 0
+ * for the visual "days left" line. This variant preserves the sign so the
+ * composed a11y label can distinguish "Refill in 3 days" from "Refill overdue
+ * by 2 days". Rounded whole days.
+ */
+function signedDaysUntil(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const target = new Date(iso).getTime();
+  if (Number.isNaN(target)) return null;
+  return Math.round((target - Date.now()) / 86_400_000);
+}
+
+/**
+ * CHUNK 99 — VoiceOver / TalkBack composed label for a single medication card.
+ *
+ * VoiceOver previously heard each Text node as a separate utterance
+ * ("Lisinopril", "10 mg", "Once daily", "Refill in 3 days") — four swipes to
+ * assemble one med. This function composes a single coherent sentence:
+ *
+ *   "{name}, {dose}. {schedule}. {refill status}."
+ *
+ * Rules honored:
+ *   - Missing fields fall back to natural phrases ("Schedule not specified",
+ *     "Refill status unknown") — never "undefined".
+ *   - Sentence-ending periods separate clauses so VoiceOver pauses naturally.
+ *   - Refill clause distinguishes needs-refill / overdue / days-left / unknown.
+ *
+ * Pure function; no rendering side effects. Safe to compute on every render.
+ */
+function composeMedA11yLabel(med: Medication): string {
+  // Name + dose. If dose is missing, name stands alone (no dangling comma).
+  const name = (med.name ?? '').trim() || 'Medication';
+  const dose = (med.dose ?? '').trim();
+  const namePart = dose.length > 0 ? `${name}, ${dose}` : name;
+
+  // Schedule from frequency + times. Either may be missing.
+  const freq = (med.frequency ?? '').trim();
+  const times = med.times.length > 0 ? med.times.join(', ') : '';
+  let schedulePart: string;
+  if (freq && times) {
+    schedulePart = `${freq} at ${times}`;
+  } else if (freq) {
+    schedulePart = freq;
+  } else if (times) {
+    schedulePart = `Take at ${times}`;
+  } else {
+    schedulePart = 'Schedule not specified';
+  }
+
+  // Refill status. Priority:
+  //   1. needsRefill + past runOutDate → "Refill overdue by N days"
+  //   2. needsRefill + future runOutDate → "Refill in N days"
+  //   3. needsRefill only → "Refill needed"
+  //   4. Not needsRefill but future runOutDate → "Refill in N days"
+  //   5. Neither → "Refill status unknown"
+  const signedDays = signedDaysUntil(med.supply?.runOutDate ?? null);
+  const needsRefill = med.supply?.needsRefill === true;
+  let refillPart: string;
+  if (needsRefill && signedDays != null && signedDays < 0) {
+    const overdue = Math.abs(signedDays);
+    refillPart = `Refill overdue by ${overdue} day${overdue === 1 ? '' : 's'}`;
+  } else if (needsRefill && signedDays != null && signedDays >= 0) {
+    refillPart = `Refill in ${signedDays} day${signedDays === 1 ? '' : 's'}`;
+  } else if (needsRefill) {
+    refillPart = 'Refill needed';
+  } else if (signedDays != null && signedDays >= 0) {
+    refillPart = `Refill in ${signedDays} day${signedDays === 1 ? '' : 's'}`;
+  } else if (signedDays != null && signedDays < 0) {
+    const overdue = Math.abs(signedDays);
+    refillPart = `Refill overdue by ${overdue} day${overdue === 1 ? '' : 's'}`;
+  } else {
+    refillPart = 'Refill status unknown';
+  }
+
+  return `${namePart}. ${schedulePart}. ${refillPart}.`;
+}
+
 type EditorMode =
   | { kind: 'add' }
   | { kind: 'edit'; med: Medication };
@@ -619,28 +698,74 @@ function MedicationCard({
     );
   };
 
+  // CHUNK 99 v2 — Composed VoiceOver / TalkBack label for the whole card. See
+  // composeMedA11yLabel above for the sentence shape and fallback rules.
+  //
+  // v1 put accessible={true} + this label on the OUTER card View, which on
+  // iOS/Android collapses the card into a single AT leaf and subsumes the
+  // Edit / Hide / Track switch / Update supply / Snooze controls — a swipe
+  // through the card could not reach any of them. v2 moves the accessibility
+  // grouping to a NEW inner View that wraps ONLY the passive descriptive
+  // block (name / dose+frequency / times / badges). Each interactive control
+  // (Edit Pressable, Hide Pressable, Track adherence Switch, Update supply
+  // Pressable, Snooze Pressable) stays OUTSIDE that inner grouping as a
+  // sibling inside the outer card, so each remains individually swipe-
+  // focusable with its own accessibilityLabel. The refill banner / supply
+  // summary Text / Track-adherence label Text remain marked
+  // accessibilityElementsHidden + importantForAccessibility
+  // "no-hide-descendants" — the composed label already narrates refill and
+  // supply state, so those visual lines stay silent to AT.
+  const composedA11yLabel = composeMedA11yLabel(med);
+
   return (
-    <View style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+    <View
+      style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}
+    >
       <View style={styles.cardTopRow}>
         <View style={[styles.medIcon, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
           <MaterialIcons name="medication" size={getScaledFontSize(20)} color="#8B5CF6" />
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
+        {/* CHUNK 99 v2: NEW inner accessibility grouping. This View is the
+            single a11y leaf for the card's passive descriptive text (name,
+            dose+frequency, times, and badges). The Edit / Hide Pressables
+            below are siblings of this View — NOT descendants — so VoiceOver /
+            TalkBack still focuses them individually after this leaf. */}
+        <View
+          style={{ flex: 1, minWidth: 0 }}
+          accessible={true}
+          accessibilityLabel={composedA11yLabel}
+        >
           <Text
             style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
             numberOfLines={1}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
           >
             {med.name}
           </Text>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }} numberOfLines={1}>
+          <Text
+            style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
+            numberOfLines={1}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
             {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose set'}
           </Text>
           {med.times.length > 0 ? (
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }} numberOfLines={1}>
+            <Text
+              style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}
+              numberOfLines={1}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
               {med.times.join(', ')}
             </Text>
           ) : null}
-          <View style={styles.badgeRow}>
+          <View
+            style={styles.badgeRow}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
             <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
               <MaterialIcons
                 name={isEhr ? 'verified' : 'edit'}
@@ -708,9 +833,15 @@ function MedicationCard({
         </Pressable>
       </View>
 
-      {/* Refill banner */}
+      {/* Refill banner.
+          CHUNK 99: hidden from AT — refill status is already in the card's
+          composed accessibilityLabel. Visual banner unchanged. */}
       {needsRefill ? (
-        <View style={[styles.refillBanner, { backgroundColor: '#F59E0B18', borderColor: '#F59E0B' }]}>
+        <View
+          style={[styles.refillBanner, { backgroundColor: '#F59E0B18', borderColor: '#F59E0B' }]}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
           <MaterialIcons name="warning-amber" size={getScaledFontSize(16)} color="#B45309" />
           <Text style={{ flex: 1, marginLeft: 8, color: '#92400E', fontSize: getScaledFontSize(12), lineHeight: getScaledFontSize(18) }}>
             {daysLeft != null
@@ -720,9 +851,15 @@ function MedicationCard({
         </View>
       ) : null}
 
-      {/* Supply summary line */}
+      {/* Supply summary line.
+          CHUNK 99: hidden from AT — supply detail is subsumed by the
+          composed card label. Visual line unchanged. */}
       {med.supply && (med.supply.remainingQuantity != null || med.supply.dosesPerDay != null) ? (
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}>
+        <Text
+          style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
           {med.supply.remainingQuantity != null ? `${med.supply.remainingQuantity} left` : 'Supply unknown'}
           {/* COS-372: injectables read as "· weekly"; consumables keep "· N/day".
               When the flag is off this is byte-for-byte today's "/day" line. */}
@@ -740,7 +877,18 @@ function MedicationCard({
       {/* Action row: track toggle + supply / refill actions */}
       <View style={styles.cardActions}>
         <View style={styles.trackToggle}>
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), marginRight: 8 }}>Track adherence</Text>
+          {/* CHUNK 99: "Track adherence" is the visual label for the Switch
+              beside it. The Switch itself has accessibilityLabel="Track
+              adherence for {name}", so this Text is redundant to AT and is
+              hidden to keep the card's composed label the sole utterance
+              until the user swipes forward to interactive controls. */}
+          <Text
+            style={{ color: colors.text, fontSize: getScaledFontSize(13), marginRight: 8 }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            Track adherence
+          </Text>
           <Switch
             value={med.tracked}
             onValueChange={onToggleTracked}
