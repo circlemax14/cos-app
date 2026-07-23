@@ -29,7 +29,10 @@ import {
 } from '@/components/health-plan/BiopsychosocialPlanScreen';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
 import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
-import { TryUnifiedViewLink } from '@/components/unified-plan/ClassicViewLink';
+// CHUNK 75 (Ken 2026-07-23): TryUnifiedViewLink import removed — unified-plan
+// surface is parked post-BPS-pivot, so the header affordance pointed nowhere
+// useful. Legacy /Home/health-plan header still imports ClassicViewLink for
+// the reverse CTA and is intentionally untouched.
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { usePlanType } from '@/hooks/use-plan-type';
@@ -205,15 +208,19 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
           a future decision brings v2 back, and left the legacy
           /Home/health-plan mount untouched in the same chunk since Ken
           may still want the reverse CTA on the classic surface — remove
-          separately if desired. */}
+          separately if desired.
+
+          CHUNK 75 (Ken 2026-07-23): follow-up — the TryUnifiedViewLink
+          icon that lived in this screen's headerRight also routed into
+          the parked unified-plan surface, so we drop the prop entirely.
+          BiopsychosocialPlanScreen treats `headerRight` as optional and
+          collapses the slot when absent. Legacy /Home/health-plan header
+          untouched (still has the reverse CTA for now). */}
       <BiopsychosocialPlanScreen
         currentPlanType={currentPlanType}
         onChangePlanType={openPlanTypeChooser}
         onEditGoal={openBioGoalEditor}
         patientName={patientName}
-        headerRight={
-          <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
-        }
         deepLinkFocus={deepLinkFocus}
       />
       {/*
