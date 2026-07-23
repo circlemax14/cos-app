@@ -66,11 +66,12 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
    * short-circuits before its timer registers. Route-parent reads
    * only, no local effect: everything happens inside the screen.
    *
-   * NOTE: MEDICATION_REFILL_REMINDER push currently routes to
-   * `/Home/health-plan?focus=medications` (lib/notification-routing.ts:63-64),
-   * not this route. Once BPS is the default surface (or once we ship a
-   * BPS-first push handler), a one-line change to that router points the
-   * push here and this `focus` read starts firing on push taps too.
+   * CHUNK 64 (2026-07-22): MEDICATION_REFILL_REMINDER push now routes
+   * bio-eligible patients HERE (lib/notification-routing.ts +
+   * hooks/use-notifications.ts pass `bpsEnabled` from the cached
+   * feature-flags query). Ineligible patients still land on legacy
+   * `/Home/health-plan?focus=medications`. Kill-switch:
+   * `NOTIFICATION_MEDS_ROUTE_BPS_ENABLED` — flip to false to OTA-revert.
    */
   const { focus } = useLocalSearchParams<{ classic?: string; focus?: string }>();
   const deepLinkFocus = typeof focus === 'string' ? focus : null;
@@ -177,9 +178,22 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
 
   useEffect(() => {
     if (hasBioPlanDataReady && !hasBioPlan) {
-      router.replace('/Home/health-plan' as never);
+      // Chunk 64 adversarial-verify fix: preserve the ?focus= param when
+      // redirecting to the legacy Care Plan. Without this a med-refill push
+      // tap on a BPS-eligible user WITHOUT a bio plan record (edge:
+      // record deleted server-side, or notification-routing.ts's
+      // isBpsEligibleCached read the flag as on) would route to
+      // /Home/biopsychosocial-plan?focus=medications, this redirect
+      // would fire, and the user would land on /Home/health-plan with
+      // NO pre-scroll — strictly worse than pre-chunk-64. Legacy meds
+      // deep-link handler on /Home/health-plan accepts ?focus=medications.
+      const target =
+        deepLinkFocus === 'medications'
+          ? '/Home/health-plan?focus=medications'
+          : '/Home/health-plan';
+      router.replace(target as never);
     }
-  }, [hasBioPlanDataReady, hasBioPlan]);
+  }, [hasBioPlanDataReady, hasBioPlan, deepLinkFocus]);
 
   if (!hasBioPlan) return null;
 

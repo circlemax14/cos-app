@@ -228,12 +228,14 @@ export const BPS_MODAL_CONSOLIDATION_ENABLED = true;
  * boolean latch, which never re-fires; the value-keyed guard here is
  * strictly more correct.
  *
- * NOTE (out of scope for chunk 55): the MEDICATION_REFILL_REMINDER
- * notification handler (lib/notification-routing.ts:60-64) still hard-
- * routes to `/Home/health-plan?focus=medications`. Tapping the push
- * lands on LEGACY, not BPS. Queued as chunk-56 follow-up. This chunk
- * fully wires the BPS side so re-routing the push is a one-line
- * `notification-routing.ts` change when we're ready.
+ * CHUNK 64 (2026-07-22): the MEDICATION_REFILL_REMINDER push router
+ * now points bio-eligible patients here — the deep-link handler on
+ * this screen fires on push tap for BPS users, activating the scroll
+ * + VoiceOver announce that has been dormant since chunk 55.
+ * Ineligible patients still land on legacy `/Home/health-plan
+ * ?focus=medications` so no one is routed to a surface their flags
+ * won't render. Kill-switch: `NOTIFICATION_MEDS_ROUTE_BPS_ENABLED` in
+ * lib/notification-routing.ts (single-line OTA revert).
  */
 const BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED = true;
 

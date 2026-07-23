@@ -13,10 +13,33 @@ test('HEALTH_PLAN_REMINDER → Today\'s Schedule', () => {
   );
 });
 
-test('MEDICATION_REFILL_REMINDER → Health Plan, focused on medications', () => {
+test('MEDICATION_REFILL_REMINDER → legacy Health Plan when BPS-ineligible (default)', () => {
+  // Back-compat: no opts / bpsEnabled omitted / bpsEnabled=false all
+  // preserve the pre-chunk-64 legacy destination so ineligible builds
+  // never get routed to a screen their flags won't render.
   assert.equal(
     routeForNotificationData({ type: 'MEDICATION_REFILL_REMINDER', count: 1, localDate: '2026-06-22' }),
     '/Home/health-plan?focus=medications',
+  );
+  assert.equal(
+    routeForNotificationData(
+      { type: 'MEDICATION_REFILL_REMINDER', count: 1 },
+      { bpsEnabled: false },
+    ),
+    '/Home/health-plan?focus=medications',
+  );
+});
+
+test('MEDICATION_REFILL_REMINDER → BPS Care Plan when bpsEnabled=true (chunk 64)', () => {
+  // Bio-eligible caller — the chunk-55 deep-link handler on
+  // BiopsychosocialPlanScreen reads ?focus=medications and scrolls to
+  // the meds section + announces to VoiceOver.
+  assert.equal(
+    routeForNotificationData(
+      { type: 'MEDICATION_REFILL_REMINDER', count: 1, localDate: '2026-06-22' },
+      { bpsEnabled: true },
+    ),
+    '/Home/biopsychosocial-plan?focus=medications',
   );
 });
 
