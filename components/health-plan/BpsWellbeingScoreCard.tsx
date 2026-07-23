@@ -263,6 +263,13 @@ export function BpsWellbeingScoreCard({
 
   const bigNumberText = isLoading ? '—' : typeof composite === 'number' ? String(composite) : '—'
 
+  // CHUNK 63 (2026-07-22): "How is this calculated?" expandable panel.
+  // Component-local state — no persistence. Straight conditional render
+  // (no LayoutAnimation / Animated / Modal) per iOS 26.5 safe primitives
+  // discipline. Card grows taller when expanded; that's user-initiated
+  // so the layout-shift discipline still holds (card top stays put).
+  const [howExpanded, setHowExpanded] = React.useState(false)
+
   // Accessibility: read as a single summary line so VoiceOver doesn't
   // fragment the score, trend, and callout across nodes.
   const a11yLabel = (() => {
@@ -310,14 +317,39 @@ export function BpsWellbeingScoreCard({
         >
           WELLBEING
         </Text>
-        <Text
-          style={{
-            color: subtext,
-            fontSize: getScaledFontSize(10),
-          }}
+        {/* CHUNK 63: "Self-report only" caption is now the tap target for
+            the "How is this calculated?" panel — a small info icon sits
+            adjacent so the interaction is discoverable without adding a
+            second row. Whole label+icon is one Pressable so VoiceOver
+            reads "How is your wellbeing score calculated, button". */}
+        <Pressable
+          onPress={() => setHowExpanded((v) => !v)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="How is your wellbeing score calculated"
+          accessibilityHint={howExpanded ? 'Hides the explanation' : 'Shows how the score is calculated'}
+          accessibilityState={{ expanded: howExpanded }}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            opacity: pressed ? 0.6 : 1,
+          })}
         >
-          Self-report only
-        </Text>
+          <Text
+            style={{
+              color: subtext,
+              fontSize: getScaledFontSize(10),
+            }}
+          >
+            Self-report only
+          </Text>
+          <MaterialIcons
+            name={howExpanded ? 'expand-less' : 'info-outline'}
+            size={getScaledFontSize(14)}
+            color={subtext}
+            style={{ marginLeft: 4 }}
+          />
+        </Pressable>
       </View>
 
       {/* Focal number + trend arrow */}
@@ -371,11 +403,51 @@ export function BpsWellbeingScoreCard({
         </View>
       </View>
 
-      {/* Three domain pills */}
+      {/* Three domain pills.
+          CHUNK 63 (2026-07-22): inline contributor count so the patient
+          sees WHY a domain's number is what it is — a low MIND score
+          with only 1 assessment behind it is a different story than a
+          low MIND with 5 assessments behind it. Ken transcript: "we
+          can also give users some option, how they can improve it" —
+          transparency is the first step before prescription.
+            - Non-zero: subtle "· N" suffix in the pill color, smaller
+              font, so it reads as metadata not as part of the score.
+            - Zero: "0 completed" in muted subtext so the patient
+              understands this domain currently contributes 0 to the
+              composite (chunk 62 always-divide-by-3 formula).
+          The pill row already has flexWrap:'wrap' as a safety net for
+          iPhone SE at large text scale — SOCIAL & FAITH with a full
+          suffix can wrap to the next row without breaking layout. */}
       <View style={styles.pillsRow}>
         {domains.map((d) => {
-          const scoreText = typeof d.score === 'number' ? String(Math.round(d.score)) : '—'
-          const pillColor = typeof d.score === 'number' ? compositeColor(d.score, tint) : subtext
+          // Under loading, treat every domain as "score not yet known"
+          // so the pill footprint matches the pre-chunk-63 loading
+          // shape (bare label + "—"). Prevents both the misleading
+          // "0 completed" flash AND the CLS from label-width changes
+          // between load and ready.
+          const isDomainScored = !isLoading && typeof d.score === 'number'
+          const scoreText = isDomainScored ? String(Math.round(d.score as number)) : '—'
+          const pillColor = isDomainScored ? compositeColor(d.score, tint) : subtext
+          const hasContributors = !isLoading && d.contributors > 0
+          // Chunk 63 adversarial-verify major fix: suppress the
+          // contributor suffix during LOADING. Before data lands,
+          // deriveWellbeing() reports contributors: 0 for every
+          // domain — showing "0 completed" during that window
+          // misleads the patient into thinking they have no data,
+          // AND the wider "0 completed" text triggers pill flexWrap
+          // which then unwraps once real data arrives (CLS). Under
+          // loading, render only the label (no score, no suffix) so
+          // the pill footprint matches chunk 62. The suffix reveals
+          // once we actually have a signal.
+          const suffixText = isLoading
+            ? ''
+            : hasContributors ? `· ${d.contributors}` : `${d.contributors} completed`
+          const suffixColor = hasContributors ? pillColor : subtext
+          const pillA11y = isLoading
+            ? `${DOMAIN_LABEL[d.domain as BpsDomain]} loading`
+            : hasContributors
+              ? `${DOMAIN_LABEL[d.domain as BpsDomain]} ${scoreText} out of 100, based on ${d.contributors} ${d.contributors === 1 ? 'assessment' : 'assessments'}`
+              : `${DOMAIN_LABEL[d.domain as BpsDomain]} score not available, 0 assessments completed`
           return (
             <View
               key={d.domain}
@@ -387,7 +459,7 @@ export function BpsWellbeingScoreCard({
                 },
               ]}
               accessible
-              accessibilityLabel={`${DOMAIN_LABEL[d.domain as BpsDomain]} ${scoreText} out of 100`}
+              accessibilityLabel={pillA11y}
             >
               <Text
                 style={{
@@ -409,6 +481,19 @@ export function BpsWellbeingScoreCard({
               >
                 {scoreText}
               </Text>
+              {suffixText ? (
+              <Text
+                style={{
+                  color: suffixColor,
+                  fontSize: getScaledFontSize(10),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  marginLeft: 5,
+                  opacity: hasContributors ? 0.75 : 1,
+                }}
+              >
+                {suffixText}
+              </Text>
+              ) : null}
             </View>
           )
         })}
@@ -442,6 +527,36 @@ export function BpsWellbeingScoreCard({
           </Text>
         ) : null}
       </View>
+
+      {/* CHUNK 63: "How is this calculated?" inline explanation.
+          Straight conditional render — no LayoutAnimation, Animated,
+          or Modal (iOS 26.5 safe primitives per chunks 47/50/57). Card
+          grows taller when open; that's a user-initiated action so it
+          doesn't violate the layout-shift discipline that governs cold
+          mount. Copy is patient-facing and non-clinical — it explains
+          the always-divide-by-3 formula (chunk 62) in plain language
+          so a low score reads as "incomplete data" rather than "I am
+          unwell". */}
+      {howExpanded ? (
+        <View
+          style={[
+            styles.howPanel,
+            { borderTopColor: border, backgroundColor: (colors.card ?? '#ffffff') + '00' },
+          ]}
+          accessible
+          accessibilityLabel="How your wellbeing score is calculated"
+        >
+          <Text
+            style={{
+              color: text,
+              fontSize: getScaledFontSize(12),
+              lineHeight: getScaledFontSize(17),
+            }}
+          >
+            {`Your score is the average of three areas: physical health, mental health, and social & faith. Each area's score comes from your recent self-assessments. Missing data in any area lowers the overall score — the more check-ins you complete, the more accurate the number becomes.`}
+          </Text>
+        </View>
+      ) : null}
     </Pressable>
   )
 }
@@ -499,5 +614,14 @@ const styles = StyleSheet.create({
   // default text scale.
   calloutSlot: {
     minHeight: 18,
+  },
+  // CHUNK 63: how-is-this-calculated inline panel. Divider on top +
+  // padding so it reads as a distinct section within the card. No
+  // fixed height — the card grows to fit the explanatory copy, which
+  // is fine because opening is user-initiated (chunk 63 constraints).
+  howPanel: {
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 })
