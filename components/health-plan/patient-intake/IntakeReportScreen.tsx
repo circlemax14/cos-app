@@ -28,10 +28,15 @@ import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
+import { useImmunizations } from '@/hooks/use-immunizations';
+import { immunizationToRow } from '@/services/api/patient-immunizations';
 import ShareIntakeReportSection from './ShareIntakeReportSection';
 import {
   buildReport,
+  IMMUNIZATIONS_EHR_ENABLED,
+  type EhrRowsByGroup,
   type Group,
+  type Row,
   type ScoreBlock,
   type ScoreInterpretation,
 } from './intake-report-builder';
@@ -73,6 +78,19 @@ export default function IntakeReportScreen() {
   const q = usePatientIntake();
   const intake = q.data?.intake ?? null;
   const questions = q.data?.questions ?? [];
+
+  // COS-481 Phase 2: EHR-hydrated immunizations. The hook itself is gated on
+  // IMMUNIZATIONS_EHR_ENABLED (`enabled` on the useQuery), so when the kill
+  // switch is off the query never fires and `.data` stays undefined. We also
+  // gate the payload construction below so a network hiccup silently renders
+  // the pre-Phase-2 single-block card instead of an error state.
+  const immunizations = useImmunizations();
+  const ehrRowsByGroup: EhrRowsByGroup | undefined = React.useMemo(() => {
+    if (!IMMUNIZATIONS_EHR_ENABLED) return undefined;
+    const list = immunizations.data;
+    if (!list || list.length === 0) return undefined;
+    return { vaccines: list.map(immunizationToRow) };
+  }, [immunizations.data]);
 
   const goRetake = () => router.push('/Home/patient-intake?retake=1' as never);
   // router.back() no-ops from this hidden Tabs.Screen (href:null), so
@@ -164,7 +182,7 @@ export default function IntakeReportScreen() {
     : '';
   const answeredCount = Object.keys(intake.answers).filter(k => intake.answers[k] != null).length;
 
-  const groups: Group[] = buildReport(intake, questions);
+  const groups: Group[] = buildReport(intake, questions, ehrRowsByGroup);
 
   return (
     <AppWrapper>
@@ -253,7 +271,69 @@ export default function IntakeReportScreen() {
 
         {groups.map(group => {
           const scoreBlocks = group.scoreBlocks ?? [];
-          if (group.rows.length === 0 && scoreBlocks.length === 0) return null;
+          const ehrRows = group.ehrRows ?? [];
+          // A group is "patient-added visible" only when at least one row
+          // has an actual answer. If every row is missing but ehrRows are
+          // present, we suppress the self-reported block entirely (per the
+          // COS-481 Phase 2 layered-card rule) — otherwise a patient with
+          // EHR-only records would see an italic "Not shared" line below
+          // their real records, which reads as an error.
+          const hasSelfReportedContent = group.rows.some(r => !r.missing);
+          const hasEhrRows = ehrRows.length > 0;
+          const showBothBlocks = hasEhrRows && hasSelfReportedContent;
+          if (
+            group.rows.length === 0 &&
+            scoreBlocks.length === 0 &&
+            !hasEhrRows
+          )
+            return null;
+          const renderRow = (row: Row, showDivider: boolean) => (
+            <View
+              key={row.key}
+              style={[
+                styles.rowStack,
+                showDivider && { borderTopWidth: 1, borderTopColor: colors.border },
+              ]}
+            >
+              {row.label ? (
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(13),
+                    lineHeight: getScaledFontSize(18),
+                  }}
+                >
+                  {row.label}
+                </Text>
+              ) : null}
+              {row.missing ? (
+                <Text
+                  style={{
+                    marginTop: row.label ? 4 : 0,
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(15),
+                    fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
+                    lineHeight: getScaledFontSize(22),
+                    fontStyle: 'italic',
+                  }}
+                >
+                  Not shared
+                </Text>
+              ) : (
+                <Text
+                  style={{
+                    marginTop: row.label ? 4 : 0,
+                    color: colors.text,
+                    fontSize: getScaledFontSize(15),
+                    fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                    lineHeight: getScaledFontSize(22),
+                  }}
+                >
+                  {row.value}
+                </Text>
+              )}
+            </View>
+          );
           return (
             <View
               key={group.id}
@@ -279,51 +359,60 @@ export default function IntakeReportScreen() {
                 </Text>
               </View>
 
-              {group.rows.map((row, i) => (
-                <View
-                  key={row.key}
-                  style={[
-                    styles.rowStack,
-                    i > 0 && { borderTopWidth: 1, borderTopColor: colors.border },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(13),
-                      lineHeight: getScaledFontSize(18),
-                    }}
-                  >
-                    {row.label}
-                  </Text>
-                  {row.missing ? (
+              {hasEhrRows ? (
+                <>
+                  {showBothBlocks ? (
                     <Text
-                      style={{
-                        marginTop: 4,
-                        color: colors.subtext,
-                        fontSize: getScaledFontSize(15),
-                        fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
-                        lineHeight: getScaledFontSize(22),
-                        fontStyle: 'italic',
-                      }}
+                      accessibilityRole="header"
+                      style={[
+                        styles.subheader,
+                        {
+                          color: colors.subtext,
+                          fontSize: getScaledFontSize(12),
+                          fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                        },
+                      ]}
                     >
-                      Not shared
+                      FROM YOUR HEALTH RECORDS
                     </Text>
-                  ) : (
+                  ) : null}
+                  {ehrRows.map((row, i) => renderRow(row, i > 0))}
+                </>
+              ) : null}
+
+              {hasSelfReportedContent ? (
+                <>
+                  {showBothBlocks ? (
                     <Text
-                      style={{
-                        marginTop: 4,
-                        color: colors.text,
-                        fontSize: getScaledFontSize(15),
-                        fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
-                        lineHeight: getScaledFontSize(22),
-                      }}
+                      accessibilityRole="header"
+                      style={[
+                        styles.subheader,
+                        styles.subheaderSecondary,
+                        {
+                          color: colors.subtext,
+                          fontSize: getScaledFontSize(12),
+                          fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                        },
+                      ]}
                     >
-                      {row.value}
+                      YOU ADDED THIS
                     </Text>
+                  ) : null}
+                  {group.rows.map((row, i) =>
+                    renderRow(row, i > 0 && !showBothBlocks),
                   )}
-                </View>
-              ))}
+                </>
+              ) : null}
+
+              {/* When neither ehrRows nor any patient-added rows carry
+                  content, we still render the plain self-reported rows so
+                  the pre-Phase-2 "Not shared" italic empty-state stays
+                  intact for groups that never opted into EHR hydration.
+                  This branch only fires when ehrRows is empty AND every
+                  self-reported row is missing — the pre-Phase-2 default. */}
+              {!hasEhrRows && !hasSelfReportedContent
+                ? group.rows.map((row, i) => renderRow(row, i > 0))
+                : null}
 
               {scoreBlocks.map((block: ScoreBlock, i) => {
                 const palette = pillPalette(block.interpretation, colors.subtext, colors.border);
@@ -482,6 +571,18 @@ const styles = StyleSheet.create({
   },
   rowStack: {
     paddingVertical: Spacing.sm + 2,
+  },
+  // COS-481 Phase 2: subheader between EHR rows and patient-added rows in
+  // the layered Vaccines card. 12pt, weight 600 subtext color per spec —
+  // low visual weight so it clarifies provenance without competing with the
+  // group's own icon-chip header.
+  subheader: {
+    marginTop: 8,
+    marginBottom: 4,
+    letterSpacing: 0.4,
+  },
+  subheaderSecondary: {
+    marginTop: 12,
   },
   rowLabel: {},
   rowValue: {},

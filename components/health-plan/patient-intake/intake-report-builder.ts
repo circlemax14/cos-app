@@ -27,6 +27,27 @@ import type {
  */
 export const VACCINES_INTAKE_ENABLED = true as const;
 
+/**
+ * Kill switch for EHR-hydrated immunizations in the Vaccines card
+ * (COS-481, Phase 2 hydration layer).
+ *
+ * When `true`, IntakeReportScreen calls `useImmunizations()` and passes the
+ * resulting Rows to `buildReport(..., { vaccines: ehrRows })`. The Vaccines
+ * card then splits into two sub-blocks: "From your health records" (EHR)
+ * followed by "You added this" (patient-added intake add_list). When
+ * `false`, the query is disabled (no BE round-trip) and the card renders
+ * exactly as it did after COS-480 Phase 1 (patient-added only, single
+ * un-labeled row block).
+ *
+ * Default FALSE for dark-launch per COS-481 task spec — flip to `true` after
+ * Ken eyeballs the layered UI on device. Same OTA-revert lever contract as
+ * every other module-const kill switch in the app (chunks 47+, chunk 120
+ * tests/unit/kill-switches-contract.test.mjs). Do NOT promote to
+ * `process.env.X === 'true'` — that pattern silently resolves to false in
+ * stages that never set the var and defeats the entire point of the switch.
+ */
+export const IMMUNIZATIONS_EHR_ENABLED = false as const;
+
 export interface Row {
   key: string;
   label: string;
@@ -66,6 +87,15 @@ export interface Group {
   icon: string;
   color: string;
   rows: Row[];
+  /**
+   * COS-481 Phase 2: optional EHR-hydrated rows shown ABOVE `rows` on the
+   * report card, under a "From your health records" sub-header. Only
+   * populated when the caller passes `ehrRowsByGroup` to `buildReport` AND
+   * a matching group id has non-empty rows. Kept optional (`?: undefined`
+   * default) so every Phase-1 consumer stays source-compatible — a Group
+   * with no `ehrRows` renders exactly like the pre-Phase-2 shape.
+   */
+  ehrRows?: Row[];
   scoreBlocks?: ScoreBlock[];
 }
 
@@ -403,9 +433,19 @@ const CLINICAL_LABEL: Record<string, string> = {
   lsns6_friend: 'Friend contact (LSNS-6)',
 };
 
+/**
+ * COS-481 Phase 2: caller-supplied EHR-hydrated rows keyed by group id.
+ * Currently only `vaccines` is populated by IntakeReportScreen (from the
+ * `useImmunizations()` hook), but the map is typed as `Partial<Record<...>>`
+ * so future groups (medications, allergies) can layer without another
+ * signature change.
+ */
+export type EhrRowsByGroup = Partial<Record<GroupId, Row[]>>;
+
 export function buildReport(
   intake: PatientIntakeRecord,
   questions: IntakeQuestion[],
+  ehrRowsByGroup?: EhrRowsByGroup,
 ): Group[] {
   const questionByKey = new Map<string, IntakeQuestion>();
   for (const q of questions) questionByKey.set(q.key, q);
@@ -443,12 +483,18 @@ export function buildReport(
       if (lsns) scoreBlocks = [lsns];
     }
 
+    const ehrRows = ehrRowsByGroup?.[spec.id];
+    const hasEhrRows = (ehrRows?.length ?? 0) > 0;
+
     // Drop the group if every row is blank AND no clinical score block
-    // is available — otherwise a first-time patient sees six half-empty
-    // cards. `rows.length` is always >0 for a group with configured keys,
-    // so we have to check row-level `missing` flags.
+    // is available AND no EHR rows are present. Otherwise a first-time
+    // patient sees six half-empty cards. `rows.length` is always >0 for
+    // a group with configured keys, so we have to check row-level
+    // `missing` flags. COS-481 Phase 2: EHR-only vaccines (patient has
+    // FHIR immunizations but never answered the vaccines intake question)
+    // must retain the card so those records are still visible.
     const anyRowFilled = rows.some((r) => !r.missing);
-    if (!anyRowFilled && (scoreBlocks?.length ?? 0) === 0) continue;
+    if (!anyRowFilled && (scoreBlocks?.length ?? 0) === 0 && !hasEhrRows) continue;
 
     groups.push({
       id: spec.id,
@@ -456,6 +502,7 @@ export function buildReport(
       icon: spec.icon,
       color: spec.color,
       rows,
+      ...(hasEhrRows ? { ehrRows } : {}),
       ...(scoreBlocks ? { scoreBlocks } : {}),
     });
   }

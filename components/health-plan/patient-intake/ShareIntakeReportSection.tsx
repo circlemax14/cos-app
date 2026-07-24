@@ -28,9 +28,14 @@ import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
+import { useImmunizations } from '@/hooks/use-immunizations';
+import { immunizationToRow } from '@/services/api/patient-immunizations';
 import {
   buildReport,
+  IMMUNIZATIONS_EHR_ENABLED,
+  type EhrRowsByGroup,
   type Group,
+  type Row,
   type ScoreBlock,
 } from './intake-report-builder';
 
@@ -104,12 +109,9 @@ function renderScoresHtml(blocks: ScoreBlock[]): string {
 </div>`;
 }
 
-function renderGroupHtml(g: Group): string {
-  return `
-<section>
-  <h2 style="color:${g.color};">${escape(g.title)}</h2>
-  <table style="width:100%; border-collapse:collapse;">
-    ${g.rows
+function renderRowsHtml(rows: Row[]): string {
+  return `<table style="width:100%; border-collapse:collapse;">
+    ${rows
       .map(
         (r) =>
           `<tr><td style="padding:4px 0; color:#64748b; width:45%; vertical-align:top;">${escape(
@@ -119,7 +121,42 @@ function renderGroupHtml(g: Group): string {
           )}</td></tr>`,
       )
       .join('')}
-  </table>
+  </table>`;
+}
+
+function renderGroupHtml(g: Group): string {
+  const ehrRows = g.ehrRows ?? [];
+  const hasSelfContent = g.rows.some((r) => !r.missing);
+  const hasEhr = ehrRows.length > 0;
+  const showBoth = hasEhr && hasSelfContent;
+  // Match the on-screen empty-state rule: when we have EHR content but the
+  // patient never answered the intake question, suppress the "Not shared"
+  // filler rows so the PDF doesn't render a bogus empty section under
+  // real records. When there's no EHR content at all, keep the pre-Phase-2
+  // behavior — render every row (missing or not) so the "Not shared" state
+  // is preserved for the doctor.
+  const selfRowsToRender = hasEhr && !hasSelfContent ? [] : g.rows;
+  return `
+<section>
+  <h2 style="color:${g.color};">${escape(g.title)}</h2>
+  ${
+    hasEhr
+      ? `${
+          showBoth
+            ? '<h3 style="color:#64748b; font-size:10pt; letter-spacing:0.4px; text-transform:uppercase;">From your health records</h3>'
+            : ''
+        }${renderRowsHtml(ehrRows)}`
+      : ''
+  }
+  ${
+    selfRowsToRender.length > 0
+      ? `${
+          showBoth
+            ? '<h3 style="color:#64748b; font-size:10pt; letter-spacing:0.4px; text-transform:uppercase; margin-top:12px;">You added this</h3>'
+            : ''
+        }${renderRowsHtml(selfRowsToRender)}`
+      : ''
+  }
   ${g.scoreBlocks?.length ? renderScoresHtml(g.scoreBlocks) : ''}
 </section>`;
 }
@@ -148,6 +185,13 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
   const intake = data?.intake ?? null;
   const questions = data?.questions ?? [];
 
+  // COS-481 Phase 2: same EHR-hydration pipeline the on-screen report uses,
+  // so the shared PDF stays in lockstep with what the patient sees on device.
+  // The hook internally gates on IMMUNIZATIONS_EHR_ENABLED — when the kill
+  // switch is off, `.data` stays undefined and the guard below silently
+  // falls back to the Phase-1 single-block card in the PDF too.
+  const immunizations = useImmunizations();
+
   // Nothing to share until the intake record exists.
   if (!intake) return null;
 
@@ -163,7 +207,12 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
     : '';
 
   const buildHtml = (): string => {
-    const groups = buildReport(intake, questions);
+    const ehrList = immunizations.data;
+    const ehrRowsByGroup: EhrRowsByGroup | undefined =
+      IMMUNIZATIONS_EHR_ENABLED && ehrList && ehrList.length > 0
+        ? { vaccines: ehrList.map(immunizationToRow) }
+        : undefined;
+    const groups = buildReport(intake, questions, ehrRowsByGroup);
     return `
 <!doctype html>
 <html>
