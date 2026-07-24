@@ -85,6 +85,26 @@ export const NOTIFICATION_MEDS_ROUTE_BPS_ENABLED = true;
 export const NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED = true;
 
 /**
+ * COS-482 Phase 1 (2026-07-24) — kill-switch for the ASSESSMENT_RETAKE_REQUESTED
+ * push (fired by cos-backend when a care manager or super-admin asks the
+ * patient to redo an assessment via the retake-request feature). Follows
+ * the chunk-64/70 pattern:
+ *
+ *   - true (default): the push lands on `/Home`, where the inbox card at
+ *     the top of the Home surface renders the pending request. The card
+ *     silent-drops when there are no pending items, so a stale-cache tap
+ *     that races the row's completion never lands on empty chrome.
+ *   - false: fall back to Home (null → Home) — same destination in the
+ *     shipped version but documented as the pre-flag state so an OTA
+ *     revert is unambiguous.
+ *
+ * Kept as a static const so the flip does not require a runtime SSM
+ * round-trip — one-line OTA revert is the incident lever, same as the
+ * two flags above.
+ */
+export const NOTIFICATION_RETAKE_ROUTE_ENABLED = true;
+
+/**
  * Eligibility hints for the caller. Pure/optional — every field defaults
  * to conservative (legacy-preserving) behavior so back-compat with older
  * callers (and the unit-test contract) holds.
@@ -164,6 +184,18 @@ export function routeForNotificationData(
         return '/Home/biopsychosocial-plan';
       }
       return '/Home/health-plan';
+
+    // ── New in COS-482 Phase 1 ──────────────────────────────────────
+    // A care manager (or super-admin from the unassigned pool) asked
+    // the patient to redo an assessment. The push tap lands on Home,
+    // where RetakeRequestInboxCard surfaces the pending row at the
+    // top of the scroll. Returning null (→ Home) instead of a specific
+    // sub-route is intentional: the card is the destination, not a
+    // dedicated screen — matches the "durable inbox on Home" contract
+    // Ken approved for Phase 1.
+    case 'ASSESSMENT_RETAKE_REQUESTED':
+      if (!NOTIFICATION_RETAKE_ROUTE_ENABLED) return null;
+      return null;
 
     // ── Existing mappings (unchanged behavior) ──────────────────────
     case 'APPOINTMENT_REMINDER':

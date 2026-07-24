@@ -108,6 +108,13 @@ export function useNotifications() {
       if (data?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
         queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
       }
+      // COS-482 Phase 1: a CM issued a retake request while the app was
+      // foregrounded — invalidate the patient's retake-requests list so
+      // the inbox card on Home shows the new row without waiting for the
+      // 30s staleTime tick.
+      if (data?.type === 'ASSESSMENT_RETAKE_REQUESTED') {
+        queryClient.invalidateQueries({ queryKey: ['retake-requests', 'me'] });
+      }
     });
 
     // Listen for user tapping on a notification (WARM start — app was
@@ -162,6 +169,13 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
     // data instead of whatever was last polled before the removed interval.
     if ((data as { type?: string } | undefined)?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
       queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
+    }
+    // COS-482 Phase 1: on a retake-request push tap, invalidate the inbox
+    // list so the card at the top of Home renders the fresh row (or
+    // silent-drops if the CM revoked it in the interim) before the tap
+    // navigates.
+    if ((data as { type?: string } | undefined)?.type === 'ASSESSMENT_RETAKE_REQUESTED') {
+      queryClient.invalidateQueries({ queryKey: ['retake-requests', 'me'] });
     }
 
     // CHUNK 64: pass BPS eligibility so a MEDICATION_REFILL_REMINDER

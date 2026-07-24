@@ -358,6 +358,21 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+       * COS-482 Phase 1 — "Not now" sheet for a retake request. Full-screen
+       * pushed route (not a Modal / bottom-sheet library) so the iOS 26.5
+       * SIGABRT-on-Modal class documented in components/unified-plan/v2/net.ts
+       * cannot fire. Same hidden Tabs.Screen pattern as plan-type-chooser
+       * above.
+       */}
+      <Tabs.Screen
+        name="retake-snooze-sheet"
+        options={{
+          title: 'Not now',
+          href: null,
+          headerShown: false,
+        }}
+      />
       {/* COS-430 — Wellbeing map (read-only Venn of the NovoPsych model). */}
       <Tabs.Screen
         name="wellbeing-map"

@@ -34,6 +34,10 @@ import {
 } from '@/services/non-ehr-processor';
 import { QuickActionButtons } from '@/components/home/quick-action-buttons';
 import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
+// COS-482 Phase 1: patient-facing inbox card for CM-issued retake requests.
+// Renders `null` when there are no pending items, so the mount is a no-op
+// on the flag-off / empty state — no chrome, no layout shift.
+import RetakeRequestInboxCard from '@/components/health-plan/retake-request/RetakeRequestInboxCard';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2894,6 +2898,13 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
+        {/*
+         * COS-482 Phase 1 — retake-request inbox card, above the title so a
+         * pending CM-issued retake ask is the first thing the patient sees
+         * on Home. Silent-drops when there is nothing pending (component
+         * returns null), so no layout shift on the empty state.
+         */}
+        <RetakeRequestInboxCard />
         {/* Title row — heading + inline view-mode toggle, mirroring the
             classic layout the stakeholder asked us to keep. SCRUM-234
             moved the toggle back inline (it had been hoisted to a slot
