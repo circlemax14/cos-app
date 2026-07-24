@@ -192,25 +192,29 @@ const PROTECTED_STRIPPED = Object.fromEntries(
 // declaration. Whitespace + type-annotation + `as const` tolerant. Used
 // for wire (a). Sibling shape of chunk 120's constDefaultTrueRegex —
 // inverted default value because this switch defaults FALSE.
-function constDefaultFalseRegex(name) {
+function constBooleanLiteralRegex(name) {
   return new RegExp(
-    `(?:^|\\n)\\s*(?:export\\s+)?const\\s+${name}\\s*(?::[^=\\n]+)?=\\s*false\\b(?:\\s+as\\s+const)?\\s*;?`,
+    `(?:^|\\n)\\s*(?:export\\s+)?const\\s+${name}\\s*(?::[^=\\n]+)?=\\s*(?:true|false)\\b(?:\\s+as\\s+const)?\\s*;?`,
   )
 }
 
 // =========================================================================
 // (a) BiopsychosocialPlanScreen.tsx — BPS_HERO_LAYOUT_ENABLED defined at
-//     module scope AND default false. Silent drift to true ships the D1
-//     hero stack to every user on the next OTA before Ken approves it —
-//     inverse of the chunk-120 default-true pattern because this switch
-//     ships DISABLED and is enabled with a code push once Ken signs off.
+//     module scope with an explicit boolean literal (true OR false).
+//     Ken enabled the D1 hero layout on 2026-07-23 in chunk 127 after
+//     verifying chunk 126 landed dark cleanly. The wire no longer pins
+//     the false default (that was chunk 126's dark-launch discipline);
+//     it now pins that the kill switch EXISTS with an explicit boolean
+//     value so a rename / accidental deletion / dynamic assignment
+//     (e.g. flag lookup from a runtime source) is caught. Flipping
+//     between true and false remains a one-line, kill-switch-safe OTA.
 // =========================================================================
 
-test('(a) BiopsychosocialPlanScreen.tsx: BPS_HERO_LAYOUT_ENABLED defined and defaults to false', () => {
+test('(a) BiopsychosocialPlanScreen.tsx: BPS_HERO_LAYOUT_ENABLED defined with an explicit boolean literal', () => {
   assert.match(
     BPS_PLAN_SCREEN_SRC,
-    constDefaultFalseRegex('BPS_HERO_LAYOUT_ENABLED'),
-    `components/health-plan/BiopsychosocialPlanScreen.tsx must declare \`const BPS_HERO_LAYOUT_ENABLED = false\` (optionally \` as const\`) at module scope (COS-479 kill switch). If this fails, either (i) the const was renamed/removed — update this wire in lockstep with the rename, or (ii) the default drifted to \`true\` and the D1 hero stack ships to every user on the next OTA before Ken approves enablement. Do NOT flip this wire to accept a true default without an explicit enable-plan comment.`,
+    constBooleanLiteralRegex('BPS_HERO_LAYOUT_ENABLED'),
+    `components/health-plan/BiopsychosocialPlanScreen.tsx must declare \`const BPS_HERO_LAYOUT_ENABLED = true\` OR \`= false\` (optionally \` as const\`) at module scope (COS-479 kill switch). If this fails, either (i) the const was renamed/removed — update this wire in lockstep with the rename, or (ii) the value drifted to a non-literal (e.g. a dynamic feature-flag lookup) which would defeat the kill-switch-safe OTA revert pattern.`,
   )
 })
 
@@ -465,27 +469,49 @@ for (const [fileName, src] of Object.entries(PROTECTED_STRIPPED)) {
 // wire above is toothless.
 // =========================================================================
 
-// Self-check for wire (a): flip BPS_HERO_LAYOUT_ENABLED default to true.
-// The wire's `= false` regex must NOT match this fixture.
-test('self-check: wire (a) fails when BPS_HERO_LAYOUT_ENABLED default flips to true', () => {
+// Self-check for wire (a) negative: value drifted to a non-literal
+// (e.g. a runtime feature-flag lookup) — wire must NOT match. This
+// defends the kill-switch-safe OTA revert pattern: flipping the const
+// literal is a one-line change; flipping a runtime lookup is a stage
+// deploy + rollout risk. If someone converts the const to a dynamic
+// source, the wire trips and forces them to justify the change.
+test('self-check: wire (a) fails when BPS_HERO_LAYOUT_ENABLED becomes a non-literal (runtime lookup)', () => {
   const brokenSrc = [
     "import { View } from 'react-native'",
+    "import { useFeatureFlag } from './flags'",
     "",
-    "const BPS_HERO_LAYOUT_ENABLED = true as const;",
+    "const BPS_HERO_LAYOUT_ENABLED = useFeatureFlag('bps_hero_layout');",
     "",
     "export function BiopsychosocialPlanScreen() { return null }",
   ].join('\n')
   const stripped = stripComments(brokenSrc)
   assert.doesNotMatch(
     stripped,
-    constDefaultFalseRegex('BPS_HERO_LAYOUT_ENABLED'),
-    'self-check: wire (a) must NOT match `= false` when the source declared `= true as const`. If this flips true, the regex is broken and wire (a) cannot detect a silent default flip to enabled.',
+    constBooleanLiteralRegex('BPS_HERO_LAYOUT_ENABLED'),
+    'self-check: wire (a) must NOT match when the value is a runtime lookup. If this flips true, the regex is too loose and would accept a non-literal, defeating the kill-switch-safe OTA revert pattern.',
   )
 })
 
-// Self-check for wire (a) positive: `= false as const` should still
-// match — confirms the wire accepts the shipped shape.
-test('self-check: wire (a) matches the shipped `= false as const` shape', () => {
+// Self-check for wire (a) positive-true: `= true as const` matches.
+test('self-check: wire (a) matches `= true as const` (Ken enabled, chunk 127)', () => {
+  const goodSrc = [
+    "import { View } from 'react-native'",
+    "",
+    "const BPS_HERO_LAYOUT_ENABLED = true as const;",
+    "",
+    "export function BiopsychosocialPlanScreen() { return null }",
+  ].join('\n')
+  const stripped = stripComments(goodSrc)
+  assert.match(
+    stripped,
+    constBooleanLiteralRegex('BPS_HERO_LAYOUT_ENABLED'),
+    'self-check: wire (a) must accept `const BPS_HERO_LAYOUT_ENABLED = true as const` — the enabled shape shipped in chunk 127.',
+  )
+})
+
+// Self-check for wire (a) positive-false: `= false as const` still matches
+// so a future OTA that flips back to dark is not blocked by this wire.
+test('self-check: wire (a) matches `= false as const` (dark revert path)', () => {
   const goodSrc = [
     "import { View } from 'react-native'",
     "",
@@ -496,8 +522,8 @@ test('self-check: wire (a) matches the shipped `= false as const` shape', () => 
   const stripped = stripComments(goodSrc)
   assert.match(
     stripped,
-    constDefaultFalseRegex('BPS_HERO_LAYOUT_ENABLED'),
-    'self-check: wire (a) must accept `const BPS_HERO_LAYOUT_ENABLED = false as const`. If this flips false, the regex is too strict and rejects the shipped shape.',
+    constBooleanLiteralRegex('BPS_HERO_LAYOUT_ENABLED'),
+    'self-check: wire (a) must accept `const BPS_HERO_LAYOUT_ENABLED = false as const` — the dark revert shape must always be one commit away.',
   )
 })
 

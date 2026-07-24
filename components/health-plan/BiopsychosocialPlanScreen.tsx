@@ -441,7 +441,7 @@ const BPS_PLAN_FOCUS_SIGNAL_ENABLED = true;
  * SelfAssessmentTrends / MedicationsSection render bit-identically to
  * how they render today.
  */
-const BPS_HERO_LAYOUT_ENABLED = false as const;
+const BPS_HERO_LAYOUT_ENABLED = true as const;
 
 /** Local YYYY-MM-DD for today. Matches auth-prefetch.ts:37 so the
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
