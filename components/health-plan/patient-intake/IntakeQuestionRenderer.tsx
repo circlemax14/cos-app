@@ -146,6 +146,8 @@ function renderLeaf(
               : []
           }
           onChange={onChange}
+          labelPlaceholder={q.addListLabelPlaceholder}
+          notePlaceholder={q.addListNotePlaceholder}
         />
       );
     default:

@@ -20,6 +20,7 @@ import {
   pss4Score,
   lsns6AbbrevScore,
   formatAnswer,
+  VACCINES_INTAKE_ENABLED,
 } from '../intake-report-builder';
 import type {
   IntakeAnswerValue,
@@ -503,4 +504,100 @@ test('formatAnswer: missing value ⇒ empty string (so buildReport can flag miss
   assert.equal(formatAnswer(q, undefined), '');
   assert.equal(formatAnswer(q, null), '');
   assert.equal(formatAnswer(q, ''), '');
+});
+
+// ── 8. Vaccines (COS-480 Phase 1) ───────────────────────────────────────────
+
+test('VACCINES_INTAKE_ENABLED default is true (Phase 1 rollout)', () => {
+  assert.equal(VACCINES_INTAKE_ENABLED, true);
+});
+
+test('formatAnswer: vaccines with parseable date ⇒ "Name (MMM YYYY)", comma-joined', () => {
+  const q = mkQuestion('vaccines', 'body', 'Vaccines', { type: 'add_list' });
+  assert.equal(
+    formatAnswer(q, [
+      { label: 'Flu', note: '2024-03-15' },
+      { label: 'COVID booster', note: 'October 2023' },
+    ]),
+    'Flu (Mar 2024), COVID booster (Oct 2023)',
+  );
+});
+
+test('formatAnswer: vaccines with bare 4-digit year ⇒ passes year through untouched', () => {
+  const q = mkQuestion('vaccines', 'body', 'Vaccines', { type: 'add_list' });
+  assert.equal(
+    formatAnswer(q, [{ label: 'Tdap', note: '2023' }]),
+    'Tdap (2023)',
+  );
+});
+
+test('formatAnswer: vaccines with no date ⇒ "Name" only', () => {
+  const q = mkQuestion('vaccines', 'body', 'Vaccines', { type: 'add_list' });
+  assert.equal(
+    formatAnswer(q, [{ label: 'MMR' }, { label: 'Shingles' }]),
+    'MMR, Shingles',
+  );
+});
+
+test('formatAnswer: vaccines with unparseable date ⇒ keeps raw text so nothing is lost', () => {
+  const q = mkQuestion('vaccines', 'body', 'Vaccines', { type: 'add_list' });
+  assert.equal(
+    formatAnswer(q, [{ label: 'HPV', note: 'sometime in college' }]),
+    'HPV (sometime in college)',
+  );
+});
+
+test('formatAnswer: vaccines skips rows with blank name (defensive)', () => {
+  const q = mkQuestion('vaccines', 'body', 'Vaccines', { type: 'add_list' });
+  assert.equal(
+    formatAnswer(q, [{ label: '', note: '2024' }, { label: 'Flu', note: '2024' }]),
+    'Flu (2024)',
+  );
+});
+
+test('buildReport: vaccines group appears when answered, in order between conditions-meds and lifestyle', () => {
+  const bank = [
+    ...fullQuestionBank(),
+    mkQuestion('vaccines', 'body', 'Vaccines you have had', { type: 'add_list' }),
+  ];
+  const intake = mkIntake({
+    sex_at_birth: 'female',
+    conditions: [{ label: 'Diabetes' }],
+    vaccines: [{ label: 'Flu', note: '2024' }],
+    tobacco_use: 'never',
+    mental_health_dx: 'None',
+    living_situation: 'Alone',
+    employment: 'Retired',
+  });
+  const groups = buildReport(intake, bank);
+  const ids = groups.map((g) => g.id);
+  const cIdx = ids.indexOf('conditions-meds');
+  const vIdx = ids.indexOf('vaccines');
+  const lIdx = ids.indexOf('lifestyle');
+  assert.ok(vIdx !== -1, 'vaccines group should render when answered');
+  assert.ok(cIdx < vIdx && vIdx < lIdx, 'order must be conditions-meds < vaccines < lifestyle');
+
+  const vGroup = groups.find((g) => g.id === 'vaccines')!;
+  assert.equal(vGroup.title, 'Vaccines');
+  assert.equal(vGroup.icon, 'vaccines');
+  assert.equal(vGroup.color, '#0F766E');
+  assert.equal(vGroup.rows.length, 1);
+  assert.equal(vGroup.rows[0].key, 'vaccines');
+  assert.equal(vGroup.rows[0].label, 'Your vaccine list');
+  assert.equal(vGroup.rows[0].value, 'Flu (2024)');
+  assert.equal(vGroup.rows[0].missing, false);
+});
+
+test('buildReport: vaccines group is silent-dropped when patient did not answer', () => {
+  const bank = [
+    ...fullQuestionBank(),
+    mkQuestion('vaccines', 'body', 'Vaccines you have had', { type: 'add_list' }),
+  ];
+  const intake = mkIntake({ sex_at_birth: 'female' });
+  const groups = buildReport(intake, bank);
+  assert.equal(
+    groups.some((g) => g.id === 'vaccines'),
+    false,
+    'vaccines group should be dropped when no answer given (Family history pattern)',
+  );
 });

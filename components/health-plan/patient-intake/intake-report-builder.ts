@@ -13,6 +13,20 @@ import type {
   PatientIntakeRecord,
 } from '@/types/patient-intake';
 
+/**
+ * Kill switch for the Vaccines group (COS-480, Phase 1 patient-reported).
+ *
+ * Belt-and-braces gate: when `false`, the report builder skips the Vaccines
+ * GroupSpec entirely so no `vaccines` group ever renders even if the BE keeps
+ * serving the `vaccines` IntakeQuestion. The wizard side is gated
+ * independently on the BE (question filtered out of GET /v1/patients/me/intake
+ * response) — this const lets FE cut the report card without a BE deploy.
+ *
+ * Default TRUE per locked design decision (silent-drop empty state means the
+ * card just doesn't appear for patients who haven't answered).
+ */
+export const VACCINES_INTAKE_ENABLED = true as const;
+
 export interface Row {
   key: string;
   label: string;
@@ -40,6 +54,7 @@ export interface ScoreBlock {
 export type GroupId =
   | 'demographics'
   | 'conditions-meds'
+  | 'vaccines'
   | 'lifestyle'
   | 'mental-health'
   | 'social-support'
@@ -85,6 +100,21 @@ const GROUP_SPECS: readonly GroupSpec[] = [
       'family_history',
     ],
   },
+  // Vaccines sits between conditions-meds (green) and lifestyle (blue).
+  // Teal #0F766E is distinct from the existing six group colors
+  // (0891B2, 199C4F, 0EA5E9, 7B3FE4, C97600, 334155). Gated by
+  // VACCINES_INTAKE_ENABLED so FE can cut the card without a BE deploy.
+  ...(VACCINES_INTAKE_ENABLED
+    ? [
+        {
+          id: 'vaccines' as const,
+          title: 'Vaccines',
+          icon: 'vaccines',
+          color: '#0F766E',
+          keys: ['vaccines'],
+        },
+      ]
+    : []),
   {
     id: 'lifestyle',
     title: 'Lifestyle',
@@ -136,11 +166,66 @@ function isBlank(v: IntakeAnswerValue | undefined): boolean {
   return false;
 }
 
+// Vaccine dates arrive from the wizard as free-text in the add_list `note`
+// field. Users may type "2023", "March 2023", "3/15/23", etc. When the string
+// parses as a real date we render it as "MMM YYYY" (e.g. "Mar 2023") so the
+// doctor-facing report is uniform; otherwise we keep the raw text so we never
+// lose what the patient actually said.
+const MMM = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function formatVaccineDateNote(note: string): string {
+  const trimmed = note.trim();
+  if (!trimmed) return '';
+  // Bare 4-digit year — Date.parse('2023') mis-parses on some engines.
+  if (/^\d{4}$/.test(trimmed)) return trimmed;
+  const t = Date.parse(trimmed);
+  if (Number.isNaN(t)) return trimmed;
+  const d = new Date(t);
+  return `${MMM[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function formatVaccinesAnswer(v: IntakeAnswerValue | undefined): string {
+  if (!Array.isArray(v)) return '';
+  return v
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (typeof item === 'object' && item !== null && 'label' in item) {
+        const rec = item as { label: string; note?: string };
+        const name = rec.label.trim();
+        if (!name) return '';
+        const dateText = rec.note ? formatVaccineDateNote(rec.note) : '';
+        return dateText ? `${name} (${dateText})` : name;
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
 export function formatAnswer(
   q: IntakeQuestion,
   v: IntakeAnswerValue | undefined,
 ): string {
   if (isBlank(v)) return '';
+  // Vaccines is add_list-shaped but renders with a comma-joined "Name (MMM YYYY)"
+  // per row instead of the generic " · " / "(note)" pattern — the note field is
+  // a date, not a free-form annotation.
+  if (q.key === 'vaccines' && q.type === 'add_list') {
+    return formatVaccinesAnswer(v);
+  }
   switch (q.type) {
     case 'text':
     case 'number':
@@ -291,6 +376,7 @@ const CLINICAL_LABEL: Record<string, string> = {
   allergies: 'Allergies',
   surgeries: 'Past surgeries',
   family_history: 'Family history',
+  vaccines: 'Your vaccine list',
   tobacco_use: 'Tobacco use',
   alcohol_use: 'Alcohol use',
   sleep_hours: 'Sleep',
