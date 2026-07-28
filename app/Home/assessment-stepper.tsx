@@ -29,6 +29,11 @@ import {
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { isGroupedInstrument } from '@/lib/instrument-grouping'
 import { GroupedInstrumentStepper } from '@/components/health-plan/GroupedInstrumentStepper'
+import {
+  hasAcknowledgedSpiritualConsent,
+  acknowledgeSpiritualConsent,
+} from '@/lib/spiritual-consent'
+import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsentModal'
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
@@ -104,6 +109,24 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
 
   const [celebrating, setCelebrating] = React.useState(false)
 
+  // Wave 4 (2026-07-28) — spiritual-consent gate. State machine:
+  //   'checking' — initial: AsyncStorage read in flight
+  //   'needs-consent' — spiritual instrument + never acknowledged → show modal
+  //   'consented' — either not-spiritual, or already-acknowledged, or user
+  //                  just tapped Take on the modal → render the stepper
+  // The 'checking' state is short (single AsyncStorage read); the stepper
+  // shows a spinner during it.
+  type ConsentGateState = 'checking' | 'needs-consent' | 'consented'
+  const [consentState, setConsentState] = React.useState<ConsentGateState>('checking')
+
+  // Reset consent-state whenever instrumentId changes so navigating to a
+  // NEW spiritual instrument re-checks (a user could have acknowledged
+  // consent, backed out via Not Now, then tapped a different spiritual
+  // check-in — we still want to gate that first-time-per-install ask).
+  React.useEffect(() => {
+    setConsentState('checking')
+  }, [instrumentId])
+
   const submit = useMutation({
     mutationFn: () => submitAssessment(instrumentId, answers),
     onSuccess: () => {
@@ -137,6 +160,30 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     submit.reset()
   }, [instrumentId])
 
+  // Wave 4 — spiritual-consent gate check. Runs when the instrument is
+  // loaded so we can read its `domain`. Hoisted above the early returns
+  // to satisfy rules-of-hooks (called on every render, but no-ops until
+  // both preconditions are true). The state itself is reset to 'checking'
+  // whenever instrumentId changes (see effect above at line ~126).
+  const instrumentDomain = instrument?.domain
+  React.useEffect(() => {
+    if (consentState !== 'checking') return
+    if (!instrumentDomain) return  // instrument not loaded yet, wait
+    let cancelled = false
+    void (async () => {
+      // Non-spiritual instruments bypass the gate entirely — protects
+      // the 20+ non-spiritual check-ins from any consent-modal overhead.
+      if (instrumentDomain !== 'spiritual') {
+        if (!cancelled) setConsentState('consented')
+        return
+      }
+      const already = await hasAcknowledgedSpiritualConsent()
+      if (cancelled) return
+      setConsentState(already ? 'consented' : 'needs-consent')
+    })()
+    return () => { cancelled = true }
+  }, [consentState, instrumentDomain])
+
   if (instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)) {
     return (
       <AppWrapper>
@@ -165,6 +212,46 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
             </Text>
           </Pressable>
         </View>
+      </AppWrapper>
+    )
+  }
+
+  // While the AsyncStorage read is in flight, hold the render tree at a
+  // spinner rather than flashing the stepper then immediately covering it
+  // with the modal. Cheap because the read is ~1 frame.
+  if (consentState === 'checking') {
+    return (
+      <AppWrapper>
+        <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint as string} />
+        </View>
+      </AppWrapper>
+    )
+  }
+
+  // Needs-consent path — render the modal above a neutral background;
+  // both consent CTAs are synchronous (AsyncStorage write is fire-and-
+  // forget) so the Modal unmounts same-tick as the tap, matching Ken's
+  // chunk 40/41 fireAndForget pattern for iOS 26 safety.
+  if (consentState === 'needs-consent') {
+    return (
+      <AppWrapper>
+        <View style={[styles.centerWrap, { backgroundColor: colors.background }]} />
+        <SpiritualConsentModal
+          visible
+          instrumentLabel={getWarmerInstrumentLabel(instrument.instrumentId, instrument.name)}
+          colors={colors}
+          isDark={settings.isDarkTheme}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          onAcknowledge={() => {
+            void acknowledgeSpiritualConsent()
+            setConsentState('consented')
+          }}
+          onDecline={() => {
+            router.replace('/Home/assessments-catalog' as never)
+          }}
+        />
       </AppWrapper>
     )
   }
