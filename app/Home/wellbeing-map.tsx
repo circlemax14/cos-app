@@ -20,7 +20,7 @@
  */
 import React from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import Svg, { Circle, G, Text as SvgText } from 'react-native-svg'
+import Svg, { Circle, ClipPath, Defs, G, Rect, Text as SvgText } from 'react-native-svg'
 import { Stack, router } from 'expo-router'
 
 import { AppWrapper } from '@/components/app-wrapper'
@@ -34,6 +34,7 @@ import {
   type BpsOverlap,
   type BpsSubdomain,
 } from '@/lib/bps-subdomains'
+import type { PlanCoverageEntry, PlanCoverageFillLevel } from '@/services/api/biopsychosocial-plan'
 import { WellbeingSubdomainSheet } from '@/components/health-plan/WellbeingSubdomainSheet'
 
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
@@ -137,7 +138,18 @@ interface SubdomainCoverage {
   domain: BpsDomain
   crossDomain: boolean
   overlap?: BpsOverlap
+  /** Number of measurable goals in the plan tagged with this subdomain. Same
+   * value the goal-only reducer used to expose as `count`. */
   count: number
+  /** Wave 2 — number of unique non-expired instruments the user has
+   * completed touching this subdomain. `0` when the BE hasn't returned a
+   * `coverage` payload yet (older BE) — the map falls back to goal-only
+   * behavior in that case. */
+  assessmentCount: number
+  /** Wave 2 — tri-state fill derived by the BE (goal wins over assessment).
+   * When the BE didn't return coverage, we derive from `count > 0 ? 'full'
+   * : 'none'` so the rendering stays identical to pre-wave-2. */
+  fillLevel: PlanCoverageFillLevel
 }
 
 // Chip-list groups — order matches the Ken Venn narrative
@@ -175,7 +187,10 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const planQuery = useBiopsychosocialPlan()
 
-  const coverage = React.useMemo(() => computeCoverage(planQuery.data?.plan ?? null), [planQuery.data?.plan])
+  const coverage = React.useMemo(
+    () => computeCoverage(planQuery.data?.plan ?? null, planQuery.data?.coverage),
+    [planQuery.data?.plan, planQuery.data?.coverage],
+  )
 
   // Titles of the goals targeting each subdomain — powers the "Your goals for this"
   // list in the drilldown sheet. Legacy keys resolved via knownSubdomains.
@@ -231,6 +246,15 @@ export default function WellbeingMapRoute(): React.JSX.Element {
     )
   }, [])
 
+  // Wave 2 — "Take a check-in" CTA from the drilldown sheet. v1 routes to
+  // the catalog; a follow-up will pre-filter the list by the tapped
+  // subdomain (via ?subdomain=<key>) once AssessmentCatalogContent grows
+  // the filter surface.
+  const handleTakeAssessment = React.useCallback((_sub: BpsSubdomain) => {
+    closeSheet()
+    router.push('/Home/assessments-catalog' as never)
+  }, [closeSheet])
+
   const grouped = React.useMemo(() => {
     const g: Record<GroupKey, SubdomainCoverage[]> = {
       bio_pure: [], bio_psy: [], psy_pure: [], psy_soc: [], bio_soc: [], soc_pure: [],
@@ -243,6 +267,10 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   }, [coverage])
 
   const domainStats = React.useMemo(() => {
+    // Wave 2 — a subdomain counts as "covered" for the header cards when
+    // it has EITHER an assessment or a goal (fillLevel !== 'none'). Gaps
+    // are strictly the untouched subdomains, keeping "Your next move"
+    // suggestions focused on genuinely-empty areas.
     const stats: Record<BpsDomain, { total: number; covered: number; gaps: SubdomainCoverage[] }> = {
       biological: { total: 0, covered: 0, gaps: [] },
       psychological: { total: 0, covered: 0, gaps: [] },
@@ -250,7 +278,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
     }
     for (const c of coverage) {
       stats[c.domain].total += 1
-      if (c.count > 0) stats[c.domain].covered += 1
+      if (c.fillLevel !== 'none') stats[c.domain].covered += 1
       else stats[c.domain].gaps.push(c)
     }
     return stats
@@ -392,33 +420,84 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               ♥
             </SvgText>
 
+            {/* Wave 2 — clip paths for half-fill dots. One clip per position so
+                react-native-svg can address each subdomain's half independently. */}
+            <Defs>
+              {coverage.map((c) => {
+                if (c.fillLevel !== 'half') return null
+                const pos = SUBDOMAIN_POS[c.key]
+                if (!pos) return null
+                // Left half of the dot is the "assessment" side. Rect is
+                // deliberately larger than the circle so the clip mask
+                // doesn't fight sub-pixel rendering at the dot's edge.
+                return (
+                  <ClipPath key={`clip-half-${c.key}`} id={`clip-half-${c.key}`}>
+                    <Rect x={pos.dx - 12} y={pos.dy - 12} width={12} height={24} />
+                  </ClipPath>
+                )
+              })}
+            </Defs>
+
             {/* Subdomain markers + labels — whole group is tappable, opens the drilldown sheet */}
             {coverage.map((c) => {
               const pos = SUBDOMAIN_POS[c.key]
               if (!pos) return null
-              const covered = c.count > 0
+              const isFull = c.fillLevel === 'full'
+              const isHalf = c.fillLevel === 'half'
+              const isCovered = isFull || isHalf
               const domainColor = DOMAIN_COLOR[c.domain]
-              const labelFill = covered ? (isDark ? '#F2F2F7' : '#1C1C1E') : (isDark ? '#8E8E93' : '#8E8E93')
+              const labelFill = isCovered ? (isDark ? '#F2F2F7' : '#1C1C1E') : (isDark ? '#8E8E93' : '#8E8E93')
               const shortLabel = SVG_LABEL_OVERRIDES[c.key] ?? c.label
+              const emptyFill = isDark ? '#1C1C1E' : '#FFFFFF'
+              // Radius: full=4, half=3.5, none=3 — gives 'half' a visual footprint
+              // distinct from both extremes without shouting.
+              const r = isFull ? 4 : isHalf ? 3.5 : 3
+              const dashed = c.crossDomain ? '2,2' : undefined
+              // Label weight/style: three tiers so the tri-state reads at a glance.
+              const labelWeight = isFull ? '700' : isHalf ? '600' : '500'
+              const labelItalic = !isFull  // both half and none stay italic
               return (
                 <G key={c.key} onPress={() => openSheet(c.key)}>
                   {/* Invisible larger hit target for the dot so it's finger-friendly */}
                   <Circle cx={pos.dx} cy={pos.dy} r={12} fill="transparent" />
-                  <Circle
-                    cx={pos.dx}
-                    cy={pos.dy}
-                    r={covered ? 4 : 3}
-                    fill={covered ? domainColor : (isDark ? '#1C1C1E' : '#FFFFFF')}
-                    stroke={domainColor}
-                    strokeWidth={c.crossDomain ? 1.2 : 0.9}
-                    strokeDasharray={c.crossDomain ? '2,2' : undefined}
-                  />
+                  {isHalf ? (
+                    <>
+                      {/* Background empty circle */}
+                      <Circle
+                        cx={pos.dx}
+                        cy={pos.dy}
+                        r={r}
+                        fill={emptyFill}
+                        stroke={domainColor}
+                        strokeWidth={c.crossDomain ? 1.2 : 0.9}
+                        strokeDasharray={dashed}
+                      />
+                      {/* Filled left half (clipped) */}
+                      <Circle
+                        cx={pos.dx}
+                        cy={pos.dy}
+                        r={r}
+                        fill={domainColor}
+                        clipPath={`url(#clip-half-${c.key})`}
+                      />
+                    </>
+                  ) : (
+                    <Circle
+                      cx={pos.dx}
+                      cy={pos.dy}
+                      r={r}
+                      fill={isFull ? domainColor : emptyFill}
+                      stroke={domainColor}
+                      strokeWidth={c.crossDomain ? 1.2 : 0.9}
+                      strokeDasharray={dashed}
+                    />
+                  )}
                   <SvgText
                     x={pos.lx}
                     y={pos.ly}
                     fontSize={7.5}
-                    fontWeight={covered ? '700' : '500'}
-                    fontStyle={covered ? 'normal' : 'italic'}
+                    fontWeight={labelWeight}
+                    fontStyle={labelItalic ? 'italic' : 'normal'}
                     fill={labelFill}
                     textAnchor={pos.anchor}
                   >
@@ -503,8 +582,9 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               lineHeight: 15,
             }}
           >
-            Solid = at least one goal targets this subdomain. Dashed = no goal
-            yet. Overlap groups show cross-cutting items shared between two
+            Solid = a goal targets this subdomain. Half-filled = you&#39;ve
+            completed a check-in here but no goal yet. Dashed = untouched
+            gap. Overlap groups show cross-cutting items shared between two
             circles of the Venn above.
           </Text>
 
@@ -549,6 +629,8 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         subdomain={activeSubdomain}
         currentGoalCount={activeCoverage?.count ?? 0}
         currentGoalTitles={sheetKey ? (goalTitlesByKey[sheetKey] ?? []) : []}
+        assessmentCount={activeCoverage?.assessmentCount ?? 0}
+        fillLevel={activeCoverage?.fillLevel ?? 'none'}
         colors={colors}
         isDark={isDark}
         getScaledFontSize={getScaledFontSize}
@@ -556,17 +638,62 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         onClose={closeSheet}
         onAddGoal={handleAddGoal}
         onAiSuggest={handleAiSuggest}
+        onTakeAssessment={handleTakeAssessment}
       />
     </AppWrapper>
   )
 }
 
 /**
- * Count how many goals hit each subdomain across all three sections. Legacy
- * subdomain keys are silently translated by knownSubdomains → existing goals
- * with pre-COS-445 keys keep counting under their new canonical subdomain.
+ * Wave 2 — produce the 26-row coverage snapshot the map + chips + sheet all
+ * read from. Two modes:
+ *
+ *   1. BE payload present (post-2026-07-28 backend) — use `coverage[key]`
+ *      directly. goalCount/assessmentCount/fillLevel all come from the
+ *      server so the mobile and any future clinician view agree byte-for-
+ *      byte on what a subdomain looks like.
+ *   2. BE payload absent (older BE, cache miss, network degradation)
+ *      — fall back to the pre-wave-2 client-side goal reducer. fillLevel
+ *      degrades to `count > 0 ? 'full' : 'none'` and assessmentCount is
+ *      always 0, matching today's rendering exactly.
+ *
+ * Legacy subdomain keys are silently translated by knownSubdomains → existing
+ * goals with pre-COS-445 keys keep counting under their new canonical
+ * subdomain (goal-only path only — BE has already canonicalized on the wire
+ * path via its own `canonicalSubdomainKey`).
  */
-function computeCoverage(plan: import('@/services/api/biopsychosocial-plan').BiopsychosocialPlanRecord | null): SubdomainCoverage[] {
+function computeCoverage(
+  plan: import('@/services/api/biopsychosocial-plan').BiopsychosocialPlanRecord | null,
+  beCoverage: readonly PlanCoverageEntry[] | undefined,
+): SubdomainCoverage[] {
+  if (beCoverage && beCoverage.length > 0) {
+    const beByKey: Record<string, PlanCoverageEntry> = Object.create(null)
+    for (const row of beCoverage) beByKey[row.key] = row
+    return BPS_SUBDOMAINS.map((s) => {
+      const row = beByKey[s.key]
+      const goalCount = row?.goalCount ?? 0
+      const assessmentCount = row?.assessmentCount ?? 0
+      // Prefer the server's fillLevel — matches the tie-break rule the BE
+      // enforces in wellbeing-coverage.service.ts. Derive as a safety net
+      // if a row is somehow missing fillLevel.
+      const fillLevel: PlanCoverageFillLevel =
+        row?.fillLevel ??
+        (goalCount > 0 ? 'full' : assessmentCount > 0 ? 'half' : 'none')
+      return {
+        key: s.key,
+        label: s.label,
+        domain: s.domain,
+        crossDomain: !!s.crossDomain,
+        overlap: s.overlap,
+        count: goalCount,
+        assessmentCount,
+        fillLevel,
+      }
+    })
+  }
+
+  // Fallback path — old BE, no coverage array. Reproduce the pre-wave-2
+  // goal-only reducer exactly so the map still works.
   const counts: Record<string, number> = Object.create(null)
   if (plan) {
     const allGoals = [
@@ -580,14 +707,19 @@ function computeCoverage(plan: import('@/services/api/biopsychosocial-plan').Bio
       }
     }
   }
-  return BPS_SUBDOMAINS.map((s) => ({
-    key: s.key,
-    label: s.label,
-    domain: s.domain,
-    crossDomain: !!s.crossDomain,
-    overlap: s.overlap,
-    count: counts[s.key] ?? 0,
-  }))
+  return BPS_SUBDOMAINS.map((s) => {
+    const count = counts[s.key] ?? 0
+    return {
+      key: s.key,
+      label: s.label,
+      domain: s.domain,
+      crossDomain: !!s.crossDomain,
+      overlap: s.overlap,
+      count,
+      assessmentCount: 0,
+      fillLevel: count > 0 ? 'full' : 'none',
+    }
+  })
 }
 
 function renderChip(
@@ -599,33 +731,47 @@ function renderChip(
 ) {
   const color = DOMAIN_COLOR[c.domain]
   const bg = DOMAIN_BG[c.domain]
-  const covered = c.count > 0
+  const isFull = c.fillLevel === 'full'
+  const isHalf = c.fillLevel === 'half'
+
+  // Trailing badge — full: "· N goals", half: "· 1 assessment", none: nothing.
+  let trailing = ''
+  if (isFull) trailing = ` · ${c.count}`
+  else if (isHalf) trailing = ` · ${c.assessmentCount} assessment${c.assessmentCount === 1 ? '' : 's'}`
+
+  // Accessibility copy that names the state, not just the count.
+  const stateWord = isFull
+    ? `${c.count} goal${c.count === 1 ? '' : 's'}`
+    : isHalf
+      ? `${c.assessmentCount} assessment${c.assessmentCount === 1 ? '' : 's'}, no goal yet`
+      : 'no goals or assessments yet'
+
   return (
     <TouchableOpacity
       key={c.key}
       onPress={() => onPress(c.key)}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`${c.label}, ${covered ? `${c.count} goals` : 'no goals yet'}. Tap to learn more.`}
+      accessibilityLabel={`${c.label}, ${stateWord}. Tap to learn more.`}
       style={[
         styles.chip,
         {
-          backgroundColor: covered ? bg : 'transparent',
+          backgroundColor: isFull ? bg : 'transparent',
           borderColor: color,
-          borderStyle: covered ? 'solid' : 'dashed',
+          borderStyle: isFull ? 'solid' : 'dashed',
         },
       ]}
     >
       <Text
         style={{
-          color: covered ? color : (isDark ? '#8E8E93' : '#8E8E93'),
+          color: isFull ? color : isHalf ? color : (isDark ? '#8E8E93' : '#8E8E93'),
           fontSize: getScaledFontSize(11),
-          fontWeight: covered ? '700' : '500',
-          fontStyle: covered ? 'normal' : 'italic',
+          fontWeight: isFull ? '700' : isHalf ? '600' : '500',
+          fontStyle: isFull ? 'normal' : 'italic',
         }}
       >
         {c.label}
-        {covered ? ` · ${c.count}` : ''}
+        {trailing}
       </Text>
     </TouchableOpacity>
   )

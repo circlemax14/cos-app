@@ -26,6 +26,7 @@ import {
   saveAssessmentDraft as saveDraft,
   clearAssessmentDraft as clearDraft,
 } from '@/lib/assessment-draft-storage'
+import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
@@ -230,7 +231,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
             <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
           </Pressable>
           <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, marginLeft: 12 }]} numberOfLines={1}>
-            {instrument.name}
+            {getWarmerInstrumentLabel(instrument.instrumentId, instrument.name)}
           </Text>
         </View>
 

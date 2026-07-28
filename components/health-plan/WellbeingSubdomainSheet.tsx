@@ -37,6 +37,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
 import { getSubdomainContent } from '@/lib/bps-subdomain-content'
 import type { BpsDomain, BpsSubdomain } from '@/lib/bps-subdomains'
+import type { PlanCoverageFillLevel } from '@/services/api/biopsychosocial-plan'
 
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
@@ -64,6 +65,21 @@ export interface WellbeingSubdomainSheetProps {
   subdomain: BpsSubdomain | null
   currentGoalCount: number
   currentGoalTitles: string[]
+  /**
+   * Wave 2 — number of unique non-expired instruments the user has
+   * completed touching this subdomain. Powers the second pill and the
+   * "Take a check-in" CTA gating. Default 0 keeps pre-wave-2 callers
+   * working: no pill rendered, and CTA falls back to the pre-wave-2
+   * behavior (no CTA on covered subdomains, since fillLevel defaults
+   * to a derivation of currentGoalCount).
+   */
+  assessmentCount?: number
+  /**
+   * Wave 2 — tri-state coverage level. When absent, derived from
+   * `currentGoalCount > 0 ? 'full' : 'none'` so the component stays
+   * backward-compatible with pre-wave-2 callers.
+   */
+  fillLevel?: PlanCoverageFillLevel
   colors: typeof Colors['light']
   isDark: boolean
   getScaledFontSize: (n: number) => number
@@ -71,6 +87,12 @@ export interface WellbeingSubdomainSheetProps {
   onClose: () => void
   onAddGoal: (subdomain: BpsSubdomain) => void
   onAiSuggest: (subdomain: BpsSubdomain) => void
+  /**
+   * Wave 2 — new callback for the "Take a check-in" CTA rendered when
+   * `fillLevel !== 'full'`. Optional so pre-wave-2 callers keep
+   * working (CTA hidden when absent).
+   */
+  onTakeAssessment?: (subdomain: BpsSubdomain) => void
 }
 
 export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): React.JSX.Element | null {
@@ -79,6 +101,8 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
     subdomain,
     currentGoalCount,
     currentGoalTitles,
+    assessmentCount = 0,
+    fillLevel,
     colors,
     isDark,
     getScaledFontSize,
@@ -86,6 +110,7 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
     onClose,
     onAddGoal,
     onAiSuggest,
+    onTakeAssessment,
   } = props
 
   const [expanded, setExpanded] = React.useState(false)
@@ -102,7 +127,12 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
   const bg = DOMAIN_BG[subdomain.domain]
   const domainName = DOMAIN_LABEL[subdomain.domain]
   const overlapNote = subdomain.overlap ? OVERLAP_LABEL[subdomain.overlap] : null
-  const covered = currentGoalCount > 0
+  // Wave 2 — derive tri-state fill; when the parent didn't pass fillLevel,
+  // fall back to the pre-wave-2 boolean derivation.
+  const effectiveFill: PlanCoverageFillLevel =
+    fillLevel ?? (currentGoalCount > 0 ? 'full' : 'none')
+  const covered = effectiveFill === 'full'
+  const halfCovered = effectiveFill === 'half'
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -141,11 +171,13 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
             </TouchableOpacity>
           </View>
 
-          {/* Coverage state pill */}
-          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          {/* Coverage state pills — Wave 2 renders up to two side-by-side:
+              (a) goals pill (always) and (b) assessments pill (only when
+              assessmentCount > 0). Neutral tokens on the second pill so it
+              reads as informational, not as a competing coverage signal. */}
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             <View
               style={{
-                alignSelf: 'flex-start',
                 paddingHorizontal: 10,
                 paddingVertical: 4,
                 borderRadius: 999,
@@ -161,11 +193,40 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
                   fontSize: getScaledFontSize(11),
                   fontWeight: covered ? '700' : '500',
                   fontStyle: covered ? 'normal' : 'italic',
+                  flexShrink: 1,
                 }}
               >
-                {covered ? `Covered · ${currentGoalCount} goal${currentGoalCount === 1 ? '' : 's'}` : 'No goals yet — this is a gap'}
+                {covered
+                  ? `Covered · ${currentGoalCount} goal${currentGoalCount === 1 ? '' : 's'}`
+                  : halfCovered
+                    ? 'No goals yet — add one to fully cover'
+                    : 'No goals yet — this is a gap'}
               </Text>
             </View>
+
+            {assessmentCount > 0 ? (
+              <View
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: '600',
+                    flexShrink: 1,
+                  }}
+                >
+                  {`${assessmentCount} check-in${assessmentCount === 1 ? '' : 's'} completed`}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <ScrollView style={styles.scrollArea} contentContainerStyle={{ paddingBottom: 12 }}>
@@ -306,6 +367,39 @@ export function WellbeingSubdomainSheet(props: WellbeingSubdomainSheetProps): Re
 
           {/* Actions */}
           <View style={styles.actions}>
+            {/* Wave 2 — Take-a-check-in CTA is rendered above the Add-a-goal
+                primary whenever the subdomain isn't already fully covered
+                (gap OR half-covered). Styled as a secondary/outline button
+                so Add-a-goal remains the primary action. */}
+            {onTakeAssessment && effectiveFill !== 'full' ? (
+              <TouchableOpacity
+                onPress={() => onTakeAssessment(subdomain)}
+                style={[
+                  styles.actionPrimary,
+                  { backgroundColor: 'transparent', borderWidth: 1, borderColor: color },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  halfCovered
+                    ? `Take another check-in on ${subdomain.label}`
+                    : `Take a check-in on ${subdomain.label}`
+                }
+              >
+                <MaterialIcons name="assignment" size={18} color={color} />
+                <Text
+                  style={{
+                    color,
+                    fontSize: getScaledFontSize(14),
+                    fontWeight: '700',
+                  }}
+                >
+                  {halfCovered
+                    ? 'Take another check-in'
+                    : `Take a check-in about ${subdomain.label}`}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity
               onPress={() => onAddGoal(subdomain)}
               style={[styles.actionPrimary, { backgroundColor: color }]}

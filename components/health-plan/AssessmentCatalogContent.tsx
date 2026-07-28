@@ -23,6 +23,7 @@ import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
 import { resolveBuildGate } from '@/lib/build-plan-gate'
 import { useAssessmentStrategyV2Flag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
+import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
@@ -42,23 +43,38 @@ const ORDER: readonly string[] = [
   'falls-12',
   'nutrition-5',
   'cognition-8',
+  // Wave 2 additions — placed after the core screeners so the AI
+  // ordering still leads with mood/anxiety/wellbeing. The catalog
+  // renders whatever the BE returns first; ORDER is just the backstop
+  // for ids the AI didn't include.
+  'pss-4',
+  'du-resilience-13',
+  'fica',
+  'hope',
+  'ohio-leisure-interest',
 ]
 
 const ICON_BY_ID: Record<string, { name: keyof typeof MaterialIcons.glyphMap; color: string }> = {
-  'wellbeing-5':         { name: 'sentiment-satisfied', color: '#10B981' },
-  'phq-2':               { name: 'psychology',          color: '#6366F1' },
-  'phq-9':               { name: 'psychology',          color: '#6366F1' },
-  'gad-7':               { name: 'spa',                 color: '#8B5CF6' },
-  'sleep-4':             { name: 'bedtime',             color: '#0EA5E9' },
-  'pain-4':              { name: 'healing',             color: '#EF4444' },
-  'loneliness-3':        { name: 'groups',              color: '#F59E0B' },
-  'alcohol-3':           { name: 'local-bar',           color: '#A855F7' },
-  'physical-function-4': { name: 'directions-run',      color: '#22C55E' },
-  'adl':                 { name: 'accessible',          color: '#0891B2' },
-  'iadl':                { name: 'home',                color: '#0D9488' },
-  'falls-12':            { name: 'warning-amber',       color: '#F97316' },
-  'nutrition-5':         { name: 'restaurant',          color: '#84CC16' },
-  'cognition-8':         { name: 'memory',              color: '#DB2777' },
+  'wellbeing-5':           { name: 'sentiment-satisfied', color: '#10B981' },
+  'phq-2':                 { name: 'psychology',          color: '#6366F1' },
+  'phq-9':                 { name: 'psychology',          color: '#6366F1' },
+  'gad-7':                 { name: 'spa',                 color: '#8B5CF6' },
+  'sleep-4':               { name: 'bedtime',             color: '#0EA5E9' },
+  'pain-4':                { name: 'healing',             color: '#EF4444' },
+  'loneliness-3':          { name: 'groups',              color: '#F59E0B' },
+  'alcohol-3':             { name: 'local-bar',           color: '#A855F7' },
+  'physical-function-4':   { name: 'directions-run',      color: '#22C55E' },
+  'adl':                   { name: 'accessible',          color: '#0891B2' },
+  'iadl':                  { name: 'home',                color: '#0D9488' },
+  'falls-12':              { name: 'warning-amber',       color: '#F97316' },
+  'nutrition-5':           { name: 'restaurant',          color: '#84CC16' },
+  'cognition-8':           { name: 'memory',              color: '#DB2777' },
+  // Wave 2 additions.
+  'pss-4':                 { name: 'waves',               color: '#0EA5E9' },
+  'du-resilience-13':      { name: 'shield',              color: '#0284C7' },
+  'fica':                  { name: 'self-improvement',    color: '#B45309' },
+  'hope':                  { name: 'menu-book',           color: '#B45309' },
+  'ohio-leisure-interest': { name: 'palette',             color: '#C026D3' },
 }
 
 function iconFor(id: string, tint: string): { name: keyof typeof MaterialIcons.glyphMap; color: string } {
@@ -456,7 +472,11 @@ function CatalogCard({
       }}
       disabled={isComingSoon}
       accessibilityRole="button"
-      accessibilityLabel={isComingSoon ? `${item.name}. Coming soon.` : `Open ${item.name}`}
+      accessibilityLabel={
+        isComingSoon
+          ? `${getWarmerInstrumentLabel(item.instrumentId, item.name)}. Coming soon.`
+          : `Open ${getWarmerInstrumentLabel(item.instrumentId, item.name)}`
+      }
       accessibilityState={{ disabled: isComingSoon }}
       style={({ pressed }) => [
         styles.card,
@@ -495,7 +515,7 @@ function CatalogCard({
           minHeight: fontSize(18) * 2,
         }}
       >
-        {item.name}
+        {getWarmerInstrumentLabel(item.instrumentId, item.name)}
       </Text>
       {isComingSoon ? (
         <View style={[styles.statusBadge, { borderColor: '#9CA3AF', backgroundColor: '#9CA3AF22' }]}>
@@ -546,7 +566,7 @@ function CatalogCard({
               <MaterialIcons name={icon.name} size={fontSize(28)} color={icon.color} />
             </View>
             <Text style={{ color: colors.text, fontSize: fontSize(16), fontWeight: fontWeight(700) as any, textAlign: 'center', marginTop: 12 }}>
-              {item.name}
+              {getWarmerInstrumentLabel(item.instrumentId, item.name)}
             </Text>
             <Text style={{ color: colors.subtext, fontSize: fontSize(11), letterSpacing: 1, textAlign: 'center', marginTop: 6, textTransform: 'uppercase' }}>
               Why this check-in
