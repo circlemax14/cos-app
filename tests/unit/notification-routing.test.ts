@@ -4,6 +4,7 @@ import {
   routeForNotificationData,
   NOTIFICATION_MEDS_ROUTE_BPS_ENABLED,
   NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED,
+  NOTIFICATION_RETAKE_ROUTE_ENABLED,
 } from '../../lib/notification-routing.ts';
 
 // COS-361 (Bug #9): notification tap → route map. The DEFAULT (Home,
@@ -24,6 +25,40 @@ test('NOTIFICATION_MEDS_ROUTE_BPS_ENABLED default is ON (chunk 64 shipped)', () 
 
 test('NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED default is ON (chunk 70 shipped)', () => {
   assert.equal(NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED, true);
+});
+
+test('NOTIFICATION_RETAKE_ROUTE_ENABLED default is ON (COS-482 Phase 1)', () => {
+  assert.equal(NOTIFICATION_RETAKE_ROUTE_ENABLED, true);
+});
+
+// ─── ASSESSMENT_RETAKE_REQUESTED (COS-482 Phase 1) ────────────────────
+
+test('ASSESSMENT_RETAKE_REQUESTED → Home (null) so the inbox card renders at top', () => {
+  // Explicit null (not undefined / not throw): the card at the top of Home
+  // is the destination. Returning null lands the tap on Home per the
+  // shared `route ?? "/Home"` fallback in hooks/use-notifications.ts.
+  assert.equal(
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', requestId: 'r1', instrumentKey: 'phq-9' }),
+    null,
+  );
+});
+
+test('ASSESSMENT_RETAKE_REQUESTED: bpsEnabled has no effect (card is agency-agnostic)', () => {
+  assert.equal(
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED' }, { bpsEnabled: true }),
+    null,
+  );
+  assert.equal(
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED' }, { bpsEnabled: false }),
+    null,
+  );
+});
+
+test('ASSESSMENT_RETAKE_REQUESTED: malformed data still routes safely to Home', () => {
+  assert.equal(
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', requestId: null as unknown as string }),
+    null,
+  );
 });
 
 // ─── HEALTH_PLAN_REMINDER (COS-361) ───────────────────────────────────
