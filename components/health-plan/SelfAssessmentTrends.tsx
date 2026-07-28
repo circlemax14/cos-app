@@ -10,6 +10,11 @@ import {
   type BandSnapshot,
   type InstrumentId,
 } from '@/services/api/assessments'
+// Wave 2 (2026-07-28) — canonical warmer labels moved to
+// lib/instrument-labels.ts so the same map serves the stepper, catalog,
+// and trends. The old inline map lived here from SCRUM-268; that copy
+// was migrated verbatim into the shared helper.
+import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 
 /**
  * SCRUM-268 Phase 3: compact "Self-Assessments" section on the Health
@@ -24,27 +29,6 @@ import {
 
 interface SelfAssessmentTrendsProps {
   onOpenInstrument?: (instrumentId: InstrumentId) => void
-}
-
-const FRIENDLY_NAME: Partial<Record<string, string>> = {
-  'phq-2': 'Mood (PHQ-2)',
-  'phq-9': 'Depression (PHQ-9)',
-  'gad-7': 'Anxiety (GAD-7)',
-  'pss-4': 'Stress (PSS-4)',
-  'pain-4': 'Pain (PROMIS-4)',
-  'sleep-4': 'Sleep',
-  'wellbeing-5': 'Wellbeing',
-  'alcohol-3': 'Alcohol use',
-  'loneliness-3': 'Loneliness',
-  'physical-function-4': 'Physical function',
-  'falls-12': 'Falls risk',
-  'nutrition-5': 'Nutrition',
-  'cognition-8': 'Cognitive change',
-  'adl': 'Daily living (ADL)',
-  'iadl': 'Instrumental ADL',
-  'mini-cog': 'Mini-Cog',
-  'moca': 'MoCA',
-  'full-intake': 'Full intake',
 }
 
 function bandColor(band: BandSnapshot | undefined, fallback: string): string {
@@ -117,7 +101,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
       decelerationRate="fast"
     >
       {records.map((record) => {
-        const label = FRIENDLY_NAME[String(record.instrumentId)] ?? String(record.instrumentId)
+        const label = getWarmerInstrumentLabel(String(record.instrumentId), String(record.instrumentId))
         const bandTextColor = bandColor(record.band, colors.tint as string)
         const isOverdue = record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()
         return (

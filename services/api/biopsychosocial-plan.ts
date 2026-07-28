@@ -65,6 +65,31 @@ export interface BiopsychosocialPlanRecord {
 
 export type PlanStaleness = 'fresh' | 'stale'
 
+/**
+ * Wave 2 — per-subdomain coverage row served alongside the plan. Additive
+ * field on the plan endpoint response; absent when the BE predates the
+ * wave-2 rollout, in which case the wellbeing-map falls back to its
+ * client-side goal-only reducer (see `computeCoverage` in
+ * `app/Home/wellbeing-map.tsx`). Always returned in the SAME order as the
+ * backend's `NOVOPSYCH_SUBDOMAIN_KEYS`, one row per canonical subdomain.
+ */
+export type PlanCoverageFillLevel = 'none' | 'half' | 'full'
+
+export interface PlanCoverageEntry {
+  /** One of the 26 canonical NovoPsych subdomain keys. */
+  key: string
+  /** Number of unique non-expired instruments the user has completed touching this subdomain. */
+  assessmentCount: number
+  /** Number of measurable goals in the current plan tagged with this subdomain. */
+  goalCount: number
+  /**
+   * Derived by the backend so the client never handles tie-breaking:
+   * `'full'` when goalCount > 0 (goal wins), else `'half'` when
+   * assessmentCount > 0, else `'none'`.
+   */
+  fillLevel: PlanCoverageFillLevel
+}
+
 export interface BiopsychosocialPlanResponse {
   plan: BiopsychosocialPlanRecord | null
   staleness: PlanStaleness
@@ -77,6 +102,13 @@ export interface BiopsychosocialPlanResponse {
   generating: boolean
   /** ISO timestamp the in-flight job started. Only meaningful when `generating` is true. */
   jobStartedAt?: string
+  /**
+   * Wave 2 (2026-07-28) — additive per-subdomain coverage array. Absent
+   * on BE deploys that predate this change; the wellbeing-map treats
+   * `undefined` as "fall back to the client-side goal reducer" so the
+   * feature degrades to today's behavior rather than throwing.
+   */
+  coverage?: PlanCoverageEntry[]
 }
 
 function isFeatureDisabled(err: unknown): boolean {
@@ -100,13 +132,20 @@ export async function fetchBiopsychosocialPlan(): Promise<BiopsychosocialPlanRes
         staleness?: PlanStaleness
         generating?: boolean
         jobStartedAt?: string
+        coverage?: PlanCoverageEntry[]
       }
     }>('/v1/health-plan/biopsychosocial')
+    // Coalesce null → undefined so a BE that ever emits explicit null
+    // still reaches the "fall back to client reducer" branch instead of
+    // type-lying into caller code that expects an array.
+    const rawCoverage = res.data.data.coverage
+    const coverage = Array.isArray(rawCoverage) ? rawCoverage : undefined
     return {
       plan: res.data.data.plan ?? null,
       staleness: res.data.data.staleness ?? 'fresh',
       generating: res.data.data.generating ?? false,
       jobStartedAt: res.data.data.jobStartedAt,
+      coverage,
     }
   } catch (err) {
     if (isFeatureDisabled(err)) {
