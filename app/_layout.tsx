@@ -13,6 +13,11 @@ import { View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
 import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
+// SCRUM-628 P6 — entitlements-changed WSS sync + long-poll fallback. Renders
+// nothing; wires the WSS lifecycle to auth + AppState. Flag-gated inside the
+// hook on EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED — default OFF so this ships
+// dark and inert until Ken flips the env var + cuts a new bundle.
+import { useEntitlementsSync } from '@/hooks/use-entitlements-sync';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -80,6 +85,10 @@ function StackWithAppLock() {
   // 5 minutes. Backs up the 15-min BackgroundFetch task with an
   // active-use safety net so the DB is always fresh.
   useGlobalCalendarSync();
+  // SCRUM-628 P6: entitlements-changed WSS sync + long-poll fallback.
+  // Runs iff EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED='true' AND a session
+  // exists. Pure passthrough otherwise.
+  useEntitlementsSync();
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
