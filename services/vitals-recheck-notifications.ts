@@ -24,6 +24,7 @@
  * ping would be clinically wrong.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { SchedulableTriggerInputTypes } from 'expo-notifications';
 import type { MetricType } from '../lib/vitals-red-flag-rules';
@@ -36,10 +37,6 @@ const TAG = 'csh-vitals-recheck-v1';
 // hr / hrv / spo2) once each per reconciliation.
 const MAX_TOTAL_SCHEDULES = 6;
 
-// Small buffer so a "recheck should have fired already" reminder still
-// pings a few seconds from now instead of being dropped by iOS.
-const SCHED_BUFFER_MS = 60 * 1000;
-
 // COS-363 / SCRUM-506 (Bug #4): scheduling a local notification while iOS
 // notification authorization is still `notDetermined` makes the OS
 // implicitly present the permission prompt. That surfaced once already as a
@@ -48,6 +45,14 @@ const SCHED_BUFFER_MS = 60 * 1000;
 // REQUEST stays in onboarding / explicit opt-in. Kill-switch: set to false
 // to restore always-schedule behaviour.
 const SCHEDULE_ONLY_WHEN_GRANTED = true;
+
+// Per-day dedupe key format. Once we've scheduled (or fired) a recheck for
+// a given metric on a given YYYY-MM-DD, we do not schedule another for that
+// metric until the day rolls over — this is what stops the "60s from now"
+// spam loop that reported on 2026-07-16 (each app open re-created a
+// near-immediate ping for the same stale flag).
+const dedupeKey = (m: MetricType, day: string) => `csh-vitals-recheck:${m}:${day}`;
+const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 export interface ActiveFlag {
   metricType: MetricType;
@@ -63,50 +68,56 @@ async function isGranted(): Promise<boolean> {
   }
 }
 
-async function cancelOurTag(): Promise<void> {
-  let scheduled: Notifications.NotificationRequest[] = [];
-  try {
-    scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  } catch {
-    return;
-  }
-  for (const req of scheduled) {
-    const tag = (req.content.data as { tag?: string } | null)?.tag ?? '';
-    if (tag !== TAG) continue;
-    try {
-      await Notifications.cancelScheduledNotificationAsync(req.identifier);
-    } catch {
-      // ignore — best-effort cancel
-    }
-  }
-}
-
 /**
- * Cancel every existing vitals-recheck schedule and re-schedule one
- * recheck reminder per active flag (capped at MAX_TOTAL_SCHEDULES).
+ * Schedule one recheck reminder per active flag whose reading is still
+ * inside its recheck window AND whose per-day dedupe key is unset.
  *
- * Idempotent — safe to call on every trends update. Returns silently when
- * notifications are not granted, when the flag list is empty, or when
- * scheduling throws (best-effort throughout: a scheduling failure must
- * never take down the caller).
+ * Design (post-2026-07-16 spam-loop fix):
+ *  - NO cancel-by-tag. The prior cancel-then-reschedule dance turned into
+ *    spam: every observer run cancelled the pending schedule and, for
+ *    flags with an old `observedAt`, immediately created a fresh
+ *    `now + 60s` schedule (because `idealFireAt` was in the past). On a
+ *    stale amber flag, opening the app twice = two "recheck your …"
+ *    pings within a minute of each other.
+ *  - Freshness gate: if `observedAt + hoursFor(metric)` is already in the
+ *    past, the recheck moment has passed. We do NOT ping the user for a
+ *    reading we already missed the window on.
+ *  - Per-day dedupe: once we've persisted a `csh-vitals-recheck:<metric>:<day>`
+ *    key, we never re-schedule that metric until the calendar day rolls.
+ *
+ * Idempotent, safe to call on every trends update. Returns silently on
+ * missing notifications permission, empty input, storage failure, or a
+ * scheduling throw (best-effort throughout).
  */
 export async function reconcileVitalsRecheckNotifications(active: ActiveFlag[]): Promise<void> {
   if (SCHEDULE_ONLY_WHEN_GRANTED && !(await isGranted())) return;
 
-  try {
-    await cancelOurTag();
-  } catch {
-    // continue — cancel is best-effort
-  }
-
   const now = Date.now();
+  const today = dayKey(now);
 
   for (const flag of active.slice(0, MAX_TOTAL_SCHEDULES)) {
     const observedMs = Date.parse(flag.observedAt);
     if (Number.isNaN(observedMs)) continue;
 
     const idealFireAt = observedMs + hoursFor(flag.metricType) * 3600_000;
-    const fireAt = idealFireAt < now ? now + SCHED_BUFFER_MS : idealFireAt;
+    // Freshness gate — if the recheck window is already past, skip. Better
+    // to under-nag than to spam a "60s from now" ping every time the app
+    // opens.
+    if (idealFireAt <= now) continue;
+
+    // Per-day dedupe — if we've already scheduled this metric today, skip.
+    // The key persists after the schedule fires, so re-opens don't
+    // re-schedule the same day.
+    const key = dedupeKey(flag.metricType, today);
+    let already: string | null = null;
+    try {
+      already = await AsyncStorage.getItem(key);
+    } catch {
+      // Best-effort dedupe: a storage read failure means we may schedule
+      // twice today. Still bounded by MAX_TOTAL_SCHEDULES and by the
+      // freshness gate — not a spam loop.
+    }
+    if (already) continue;
 
     try {
       await Notifications.scheduleNotificationAsync({
@@ -121,9 +132,17 @@ export async function reconcileVitalsRecheckNotifications(active: ActiveFlag[]):
         },
         trigger: {
           type: SchedulableTriggerInputTypes.DATE,
-          date: new Date(fireAt),
+          date: new Date(idealFireAt),
         },
       });
+      // Mark the day AFTER a successful schedule — a failed schedule
+      // should be retried on the next reconcile, not silently dropped.
+      try {
+        await AsyncStorage.setItem(key, '1');
+      } catch {
+        // Best-effort persistence — worst case we schedule again on the
+        // next reconcile, still bounded by freshness + MAX_TOTAL_SCHEDULES.
+      }
     } catch (err) {
       if (__DEV__) {
         // No PHI in log strings — metricType is a taxonomy label, not a value.

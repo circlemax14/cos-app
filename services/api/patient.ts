@@ -103,7 +103,9 @@ export async function fetchPatientInfo(): Promise<Patient | null> {
 }
 
 export async function fetchMedications(): Promise<Medication[]> {
-  try {
+  // Errors intentionally propagate so React Query's isError fires for the
+  // MedicationsByConditionSection consumer. Do NOT re-add a try/catch that
+  // returns [] — it masks 5xx/network failures as empty success.
   const res = await apiClient.get<{
     success: boolean;
     data: {
@@ -132,9 +134,6 @@ export async function fetchMedications(): Promise<Medication[]> {
       purpose: m.reasonCode?.[0]?.text ?? '',
     };
   });
-  } catch {
-    return [];
-  }
 }
 
 /**

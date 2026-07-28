@@ -1,5 +1,5 @@
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View , ActivityIndicator } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Card } from 'react-native-paper'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { useQuery } from '@tanstack/react-query'
@@ -131,13 +131,9 @@ export function ProgressTab({
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Refresh AI summary"
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: summaryQuery.isFetching ? 0.5 : 1 }}
             >
-              {summaryQuery.isFetching ? (
-                <ActivityIndicator size="small" color={colors.tint as string} />
-              ) : (
-                <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={colors.subtext} />
-              )}
+              <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={colors.subtext} />
             </Pressable>
           </View>
           {summaryQuery.isLoading && !summaryQuery.data ? (

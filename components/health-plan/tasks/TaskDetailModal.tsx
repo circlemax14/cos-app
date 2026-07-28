@@ -4,8 +4,9 @@
  * Bottom-sheet Modal showing a single task's details. Header (title + close),
  * body (description + Simple/Measurable + category badges). For measurable
  * tasks, embeds MeasurementLogInput + MeasurementHistoryList. Footer with
- * Delete (confirm Alert → useDeletePlanTask) and Edit (fires onEdit(task)
- * so the parent screen can swap in TaskEditorModal with initialTask).
+ * Delete (inline two-step confirm → fireAndForgetDelete; iOS 26.5 safe per
+ * v2/net + chunk 9.5) and Edit (fires onEdit(task) so the parent screen can
+ * swap in TaskEditorModal with initialTask).
  *
  * Simple-task completion toggle is intentionally omitted this pass — Ken PDF
  * v7.2 § 18 leaves 'mark done today' to a follow-up; the spec's fallback
@@ -14,7 +15,6 @@
 
 import React from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -26,9 +26,10 @@ import {
   View,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Radii, Spacing } from '@/constants/design-system';
-import { useDeletePlanTask } from '@/hooks/use-plan-tasks';
+import { fireAndForgetDelete } from '@/components/unified-plan/v2/net';
 import type { PlanTask } from '@/services/api/types';
 
 import { MeasurementLogInput } from './MeasurementLogInput';
@@ -51,9 +52,33 @@ export interface TaskDetailModalProps {
   onDeleted?: (task: PlanTask) => void;
 }
 
+/**
+ * CHUNK 53 (2026-07-22): bodyless variant props. Identical to
+ * TaskDetailModalProps minus `visible`. Used by the consolidated BPS Modal
+ * so the interior can be re-hosted without stacking multiple
+ * <Modal transparent> nodes on iOS 26.5.
+ */
+export type TaskDetailBodyProps = Omit<TaskDetailModalProps, 'visible'>;
+
 export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element | null {
+  const { visible, ...bodyProps } = props;
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={bodyProps.onClose}>
+      <TaskDetailBody {...bodyProps} />
+    </Modal>
+  );
+}
+
+/**
+ * CHUNK 53 (2026-07-22): interior-only. Contains the overlay, backdrop tap,
+ * KeyboardAvoidingView, sheet, log/history and Delete/Edit footer — every
+ * primitive TaskDetailModal had minus the outer <Modal>. Behavior identical:
+ * two-step inline delete, arm-time debounce, auto-revert timer, no
+ * Alert.alert, fire-and-forget delete via v2/net.
+ */
+export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | null {
   const {
-    visible,
     onClose,
     task,
     accentColor,
@@ -68,43 +93,70 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
   // list without waiting on the plan-refetch round-trip. MeasurementLogInput
   // fires onLogged(updated) with the full PlanTask returned by the endpoint.
   const [localTask, setLocalTask] = React.useState<PlanTask | null>(task);
+  // Two-step inline confirm state — first Delete tap flips this true so the
+  // footer morphs to Cancel + "Really delete?" (no Alert.alert; presenting a
+  // native alert over a React Modal is the iOS 26.5 SIGABRT class per
+  // chunk 9.5).
+  const [confirming, setConfirming] = React.useState(false);
+  // CHUNK 38 fix (adversarial-verify major #1): arm-time debounce. A
+  // finger already in motion toward Edit could otherwise land on the
+  // freshly-swapped "Really delete?" button within 50-100ms and delete
+  // without the user perceiving the confirm state. Reject the confirm
+  // tap if it arrives within 400ms of arming.
+  const armedAtRef = React.useRef<number>(0);
   React.useEffect(() => {
     setLocalTask(task);
+    setConfirming(false);
   }, [task]);
+  // CHUNK 53: Body is only mounted while visible, so mount = fresh open →
+  // confirming already starts false (useState default). Wrapper mode also
+  // gets equivalent behavior via the `if (!visible) return null` guard in
+  // TaskDetailModal above. The prior `[visible]` effect became dead code
+  // once Body carries no visible prop.
+  // Auto-revert the confirming state after a short window so a user who
+  // taps Delete, gets interrupted, and returns minutes later has to re-read
+  // the confirm before the second tap fires.
+  React.useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
 
-  const deleteMut = useDeletePlanTask();
+  const qc = useQueryClient();
 
-  if (!visible || !localTask) return null;
+  if (!localTask) return null;
 
   const isMeasurable = localTask.completionStyle === 'measurable';
   const measurements = Array.isArray(localTask.measurements) ? localTask.measurements : [];
   const subtextColor = colors.subtext ?? '#6B7280';
 
-  const confirmDelete = (): void => {
-    Alert.alert(
-      'Delete task?',
-      `"${localTask.title}" will be permanently removed.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMut.mutateAsync(localTask.id);
-              onDeleted?.(localTask);
-              onClose();
-            } catch {
-              Alert.alert('Delete failed', 'Please try again in a moment.');
-            }
-          },
-        },
-      ],
+  // Inline two-step delete. First tap arms the confirming state; second tap
+  // (a) drops the row from the parent's list optimistically, (b) closes the
+  // Modal on the same synchronous tick so unmount starts before any fetch
+  // is scheduled, (c) fires the DELETE with no await via v2/net's
+  // fireAndForgetDelete (raw fetch, swallow errors, reconcile on next
+  // plan refetch), (d) invalidates the plan query so the next foreground
+  // reconciles server state. NO Alert.alert, NO await, NO Modal over Modal.
+  const handleDeletePress = (): void => {
+    if (!confirming) {
+      setConfirming(true);
+      armedAtRef.current = Date.now();
+      return;
+    }
+    // Reject taps arriving within the arm window — protects against
+    // an in-flight finger from the first tap landing on the confirm.
+    if (Date.now() - armedAtRef.current < 400) return;
+    const removed = localTask;
+    if (!removed) return;
+    onDeleted?.(removed);
+    onClose();
+    void fireAndForgetDelete(
+      `/v1/patients/me/health-plan/tasks/${encodeURIComponent(removed.id)}`,
     );
+    qc.invalidateQueries({ queryKey: ['ai-health-plan'] });
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <KeyboardAvoidingView
@@ -209,55 +261,102 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
           </ScrollView>
 
           <View style={[styles.actions, { borderTopColor: colors.border ?? 'rgba(0,0,0,0.08)' }]}>
-            <TouchableOpacity
-              onPress={confirmDelete}
-              disabled={deleteMut.isPending}
-              accessibilityRole="button"
-              accessibilityLabel="Delete this task"
-              style={[
-                styles.btn,
-                styles.btnGhost,
-                { borderColor: colors.border, opacity: deleteMut.isPending ? 0.6 : 1 },
-              ]}
-            >
-              <Text
-                style={{
-                  color: colors.error ?? '#DC2626',
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(700) as '700',
-                }}
-              >
-                Delete
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                // Close this modal first; parent re-opens the edit modal on
-                // next tick to avoid stacked-Modal glitches on iOS (see
-                // BiopsychosocialPlanScreen modal orchestration).
-                const editing = localTask;
-                onClose();
-                onEdit(editing);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Edit this task"
-              style={[styles.btn, styles.btnPrimary, { backgroundColor: accentColor }]}
-            >
-              <Text
-                style={{
-                  color: '#FFFFFF',
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(700) as '700',
-                }}
-              >
-                Edit
-              </Text>
-            </TouchableOpacity>
+            {confirming ? (
+              <>
+                {/*
+                  CHUNK 38 fix (adversarial-verify major #2): "Really
+                  delete?" occupies the LEFT slot — same position the
+                  Delete button was in before the tap. This means the
+                  user's second tap consciously falls where their first
+                  tap did (they see the label change but hit the same
+                  slot). Cancel takes the RIGHT slot where Edit used to
+                  live — muscle memory going right hits the safe action.
+                */}
+                <Pressable
+                  onPress={handleDeletePress}
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirm delete this task"
+                  accessibilityHint="This permanently removes the task"
+                  style={[
+                    styles.btn,
+                    styles.btnPrimary,
+                    { backgroundColor: colors.error ?? '#DC2626' },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(700) as '700',
+                    }}
+                  >
+                    Really delete?
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setConfirming(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel delete"
+                  style={[styles.btn, styles.btnGhost, { borderColor: colors.border }]}
+                >
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(700) as '700',
+                    }}
+                  >
+                    Cancel
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  onPress={handleDeletePress}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete this task"
+                  style={[styles.btn, styles.btnGhost, { borderColor: colors.border }]}
+                >
+                  <Text
+                    style={{
+                      color: colors.error ?? '#DC2626',
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(700) as '700',
+                    }}
+                  >
+                    Delete
+                  </Text>
+                </Pressable>
+                <TouchableOpacity
+                  onPress={() => {
+                    // Close this modal first; parent re-opens the edit modal on
+                    // next tick to avoid stacked-Modal glitches on iOS (see
+                    // BiopsychosocialPlanScreen modal orchestration).
+                    const editing = localTask;
+                    onClose();
+                    onEdit(editing);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit this task"
+                  style={[styles.btn, styles.btnPrimary, { backgroundColor: accentColor }]}
+                >
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: getScaledFontSize(14),
+                      fontWeight: getScaledFontWeight(700) as '700',
+                    }}
+                  >
+                    Edit
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
         </KeyboardAvoidingView>
       </View>
-    </Modal>
   );
 }
 

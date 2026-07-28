@@ -23,6 +23,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Radii, Spacing } from '@/constants/design-system';
 import { BioGoalCard } from './BioGoalCard';
 import { TaskListSection } from './tasks/TaskListSection';
+import { categoryLabel, groupGoalsByCategory } from '@/lib/care-plan';
 import type {
   Intervention,
   InterventionKind,
@@ -34,6 +35,22 @@ import type {
 import type { PlanTask } from '@/services/api/types';
 
 export type BiopsychosocialSectionKey = 'biological' | 'psychological' | 'social';
+
+/**
+ * CHUNK 49 kill-switch — port of the legacy 8-category goal grouping
+ * (Ken's Care Plan taxonomy: medical / cognitive / adl / medication /
+ * mentalHealth / integrative / social / spiritual, shipped in
+ * PlanScreenRedesigned behind CARE_PLAN_ENABLED) into the BPS surface as
+ * a SUB-grouping inside each SectionCard's Goals block. Users get the
+ * both-view: BPS framework at the section header, Ken's clinical
+ * taxonomy inside. Grouping is presentational only — reuses the pure
+ * `groupGoalsByCategory` helper from `lib/care-plan.ts` (already used
+ * by legacy V2), so goals missing a `.category` fall into the "Your
+ * Goals" bucket at the tail (back-compat with pre-COS-377 plans, older
+ * Bedrock outputs, and manually-added goals with no category tag).
+ * One-line OTA flip if the sub-grouping regresses in the wild.
+ */
+const BPS_8_CATEGORY_GROUPING_ENABLED = true;
 
 type ColorMap = Record<string, string>;
 
@@ -80,6 +97,23 @@ const INTERVENTION_KIND_ICON: Record<InterventionKind, keyof typeof MaterialIcon
   resource: 'menu-book',
 };
 
+/*
+ * CHUNK 60 (2026-07-22): teal family for the FOCUS pill. Slightly more
+ * saturated than the BpsPlanFocusBanner surface (which is ~8% teal) so
+ * the pill reads clearly as a badge without competing with the banner
+ * as the primary tap affordance. Kept as local literals so the pill
+ * stays readable in isolation and doesn't introduce a new design-system
+ * token.
+ */
+// Chunk 60 adversarial-verify major #2 fix: solid teal pill with white
+// ink so the FOCUS badge reads on both light and dark section cards.
+// The earlier 15% teal tint on teal-800 ink failed contrast (~1.5:1)
+// against colors.card in dark mode. Solid teal-500 background reads
+// crisply on any card surface regardless of theme.
+const FOCUS_PILL_BG = '#0D9488'; // teal-500 — solid
+const FOCUS_PILL_BORDER = '#0D9488'; // matches bg — border is decorative
+const FOCUS_PILL_INK = '#FFFFFF'; // white — WCAG AA on teal-500
+
 function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
 }
@@ -114,6 +148,22 @@ export interface SectionCardProps {
   tasks?: PlanTask[];
   onAddTask?: () => void;
   onTaskPress?: (task: PlanTask) => void;
+  /**
+   * CHUNK 60 (2026-07-22): when true, render a small teal "FOCUS" pill
+   * as a dedicated sibling row directly beneath the header. The pill is
+   * visual-only (banner owns the tap affordance). Parent computes this
+   * from the wellbeing focus signal — see BpsPlanFocusBanner + the
+   * BPS_PLAN_FOCUS_SIGNAL_ENABLED kill-switch in BiopsychosocialPlanScreen.
+   *
+   * When false / omitted the pill is not rendered at all — no wrapper,
+   * no reserved height — so a section that isn't the focus target has
+   * ZERO visual delta from pre-chunk-60. Only ever true on exactly one
+   * of the three SectionCards per render (mapping is injective and
+   * focus is a single BpsDomain). Flipping the parent kill-switch to
+   * false makes this always-false at the call site, compiling the pill
+   * out across all cards in one line.
+   */
+  isFocus?: boolean;
 }
 
 export function SectionCard({
@@ -127,6 +177,7 @@ export function SectionCard({
   tasks: tasksProp,
   onAddTask,
   onTaskPress,
+  isFocus,
 }: SectionCardProps) {
   const style = SECTION_STYLE[sectionKey];
   const statusStyle = STATUS_STYLE[section.status] ?? STATUS_STYLE['just-started'];
@@ -150,6 +201,22 @@ export function SectionCard({
       items: items.filter((i) => i.kind === kind),
     })).filter((g) => g.items.length > 0);
   }, [section.interventions]);
+
+  /*
+   * CHUNK 49: sub-group goals by Ken's 8 Care Plan categories inside
+   * the section's Goals block (see BPS_8_CATEGORY_GROUPING_ENABLED at
+   * module top). `groupGoalsByCategory` is the same pure helper legacy
+   * V2 uses, so goals with no `.category` fall into the "Your Goals"
+   * tail bucket — a plan whose goals are ALL uncategorized renders as
+   * a single group with the legacy heading, which visually collapses
+   * back to the pre-chunk-49 flat list. Computed unconditionally so
+   * the hook order stays stable across a flag flip; result is only
+   * consumed inside the flag branch.
+   */
+  const goalGroups = React.useMemo(
+    () => groupGoalsByCategory(Array.isArray(section.goals) ? section.goals : []),
+    [section.goals],
+  );
 
   const text = colors.text;
   const subtext = colors.subtext;
@@ -183,6 +250,19 @@ export function SectionCard({
             marginLeft: Spacing.sm + 2,
           }}
           numberOfLines={2}
+          /*
+           * CHUNK 90 (2026-07-23): compose the FOCUS pill's meaning into
+           * the header label + tag as `header` so VoiceOver reads a
+           * single natural line — e.g. "Biological Wellness, Focus area,
+           * prioritized this week, heading" — instead of two separate
+           * reads (title, then a bare "FOCUS" glyph). The pill itself is
+           * hidden from the a11y tree below to avoid a double-read.
+           * Visual-only when !isFocus (label falls back to raw title),
+           * so sections that aren't the focus target render identically
+           * to pre-chunk-90. Props-only, no layout change.
+           */
+          accessibilityRole="header"
+          accessibilityLabel={isFocus ? `${title}, Focus area, prioritized this week` : title}
         >
           {title}
         </Text>
@@ -204,6 +284,54 @@ export function SectionCard({
           </Text>
         </View>
       </View>
+
+      {/*
+        CHUNK 60 (2026-07-22): FOCUS pill — visual anchor that shows the
+        user why they landed here after tapping the BpsPlanFocusBanner.
+        Rendered as a SIBLING row beneath headerRow (not inside it) so
+        the header doesn't crush at large dynamic type on iPhone
+        SE-class widths. Returns null when !isFocus (genuinely
+        null-when-absent — no wrapper, no reserved height). Pill borrows
+        the statusPill visual language for cross-card consistency, but
+        uses a teal family (banner primary CTA color) so it reads as a
+        "matches the focus above" hint rather than a status change.
+        Hard-coded uppercase literal ("FOCUS") avoids iOS 26
+        textTransform type-metric edge cases proven fragile elsewhere.
+      */}
+      {isFocus ? (
+        <View
+          style={[styles.focusPill, { backgroundColor: FOCUS_PILL_BG, borderColor: FOCUS_PILL_BORDER }]}
+          /*
+           * CHUNK 90 (2026-07-23): the pill's meaning is now composed
+           * into the header Text's accessibilityLabel above (VoiceOver
+           * reads "…, Focus area, prioritized this week, heading" in
+           * one pass). Hide the pill from the a11y tree here so it
+           * isn't re-announced as a second focus stop. Fallback label
+           * kept intentionally-consistent with the header composition
+           * ("Focus area, prioritized this week") so if a future
+           * change re-exposes the pill (removes the hide props), VO
+           * copy stays coherent instead of reverting to the older
+           * "for this week" phrasing.
+           */
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          accessibilityLabel="Focus area, prioritized this week"
+        >
+          <MaterialIcons name="center-focus-strong" size={12} color={FOCUS_PILL_INK} />
+          <Text
+            style={{
+              color: FOCUS_PILL_INK,
+              fontSize: getScaledFontSize(10),
+              fontWeight: getScaledFontWeight(700) as any,
+              letterSpacing: 0.6,
+              marginLeft: 4,
+            }}
+          >
+            FOCUS
+          </Text>
+        </View>
+      ) : null}
 
       {/* Trend summary + arrow */}
       {!!section.trendSummary && (
@@ -301,17 +429,78 @@ export function SectionCard({
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         >
-          {goals.map((g) => (
-            <BioGoalCard
-              key={g.id}
-              goal={g}
-              accentColor={style.color}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-              onEdit={onEditGoal}
-            />
-          ))}
+          {BPS_8_CATEGORY_GROUPING_ENABLED && goalGroups.length > 1 ? (
+            /*
+             * CHUNK 49: BPS × 8-category both-view. Only branch here
+             * when there are 2+ groups — a single group (all goals
+             * uncategorized, or all in one category) would just render
+             * an extra sub-header for no informational gain, so we
+             * fall through to the flat list. Sub-headers use the
+             * existing kindHeaderRow visual language (small uppercase
+             * label + section-accent color) so they read as PART OF
+             * the SectionCard, not floating cards.
+             */
+            goalGroups.map((group) => (
+              <View key={group.key} style={{ marginBottom: Spacing.sm }}>
+                <View
+                  style={[
+                    styles.categoryHeaderRow,
+                    { backgroundColor: alpha(style.color, '14'), borderColor: alpha(style.color, '2A') },
+                  ]}
+                >
+                  <MaterialIcons name="folder-open" size={getScaledFontSize(13)} color={style.color} />
+                  <Text
+                    style={{
+                      color: style.color,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(800) as any,
+                      marginLeft: 5,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.4,
+                      flex: 1,
+                    }}
+                    numberOfLines={2}
+                  >
+                    {group.key === 'general' ? group.label : categoryLabel(group.key)}
+                  </Text>
+                  <Text
+                    style={{
+                      color: style.color,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(700) as any,
+                      opacity: 0.75,
+                    }}
+                    accessibilityLabel={`${group.goals.length} goal${group.goals.length === 1 ? '' : 's'}`}
+                  >
+                    {group.goals.length}
+                  </Text>
+                </View>
+                {group.goals.map((g) => (
+                  <BioGoalCard
+                    key={g.id}
+                    goal={g}
+                    accentColor={style.color}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                    onEdit={onEditGoal}
+                  />
+                ))}
+              </View>
+            ))
+          ) : (
+            goals.map((g) => (
+              <BioGoalCard
+                key={g.id}
+                goal={g}
+                accentColor={style.color}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onEdit={onEditGoal}
+              />
+            ))
+          )}
         </CollapsibleGroup>
       )}
 
@@ -496,6 +685,22 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginLeft: Spacing.sm,
   },
+  // CHUNK 60: FOCUS pill sits as a sibling row directly beneath the
+  // header. alignSelf:'flex-start' keeps it snug to the left edge so it
+  // reads as attached to the section title above; borderRadius:Radii.full
+  // + borderWidth:1 mirrors the statusPill visual language so the pill
+  // family reads as one system across the card.
+  focusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+    marginBottom: 4,
+  },
   trendRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -538,6 +743,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  // CHUNK 49: sub-header row for the 8-category goal grouping inside the
+  // section's Goals block. Tinted background (section-accent 14 alpha) +
+  // hairline border so the header sits within the SectionCard's visual
+  // rhythm — not a floating chip and not another card.
+  categoryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radii.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 8,
   },
   interventionRow: {
     flexDirection: 'row',

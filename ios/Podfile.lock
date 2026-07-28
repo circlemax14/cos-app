@@ -126,12 +126,16 @@ PODS:
     - ReactCommon
   - ExpoNotifications (55.0.21):
     - ExpoModulesCore
+  - ExpoPrint (55.0.16):
+    - ExpoModulesCore
   - ExpoRouter (55.0.13):
     - ExpoModulesCore
     - RNScreens
-  - ExpoScreenCapture (55.0.14):
+  - ExpoScreenCapture (55.0.15):
     - ExpoModulesCore
   - ExpoSecureStore (55.0.13):
+    - ExpoModulesCore
+  - ExpoSharing (55.0.21):
     - ExpoModulesCore
   - ExpoSplashScreen (55.0.19):
     - ExpoModulesCore
@@ -3351,9 +3355,11 @@ DEPENDENCIES:
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-core`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
+  - ExpoPrint (from `../node_modules/expo-print/ios`)
   - ExpoRouter (from `../node_modules/expo-router/ios`)
   - ExpoScreenCapture (from `../node_modules/expo-screen-capture/ios`)
   - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
+  - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
   - ExpoSQLite (from `../node_modules/expo-sqlite/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
@@ -3537,12 +3543,16 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-core"
   ExpoNotifications:
     :path: "../node_modules/expo-notifications/ios"
+  ExpoPrint:
+    :path: "../node_modules/expo-print/ios"
   ExpoRouter:
     :path: "../node_modules/expo-router/ios"
   ExpoScreenCapture:
     :path: "../node_modules/expo-screen-capture/ios"
   ExpoSecureStore:
     :path: "../node_modules/expo-secure-store/ios"
+  ExpoSharing:
+    :path: "../node_modules/expo-sharing/ios"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
   ExpoSQLite:
@@ -3781,9 +3791,11 @@ SPEC CHECKSUMS:
   ExpoModulesCore: 04321837f21b6b23d9e1654747c7f58b58e0b98d
   ExpoModulesJSI: 8589717ca75637de3b00f8dbf8cc734ee227f9bd
   ExpoNotifications: 8f7d570f885f369a4a53dc722f92fbde1f69251a
+  ExpoPrint: c204fc42719351aaee723d356a821161b2737078
   ExpoRouter: 73e97e4468c4435576be4c4b72ff4b5276854a1a
-  ExpoScreenCapture: 74e1f8d6aea183f712a1fbffdfb2b46c66fed0e9
+  ExpoScreenCapture: 62324c1360c4896b4876710d79ef294815b6da65
   ExpoSecureStore: 03372541cb9b7f67601fa2ed0a8c2abbc9037e04
+  ExpoSharing: 568bba073a8c3a05ffa8c41e9704443a53de0b38
   ExpoSplashScreen: a137dbb4409ae5bf56de4dc6e6990fc9fa8c716b
   ExpoSQLite: 9989421186383e2229b8736ff58cea4ee8e21d8b
   ExpoSymbols: 9dfd60e35b2fafb284adefaefe1c6d757e331708
@@ -3797,8 +3809,8 @@ SPEC CHECKSUMS:
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6
   FBLazyVector: 06b1c8278e6e1b31ef68e9e14c296b7872e79e48
   fmt: 530618a01105dae0fa3a2f27c81ae11fa8f67eac
-  glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
-  hermes-engine: 9aa8b26c1dcd2bef964d8c8ed43b21ea3db70aef
+  glog: 0456694f3aaf09460b660ea327cfc11defbeea4c
+  hermes-engine: f37e1d6f1eb198649a60b3f17b6f685a6ac12470
   libavif: 5f8e715bea24debec477006f21ef9e95432e254d
   libdav1d: 23581a4d8ec811ff171ed5e2e05cd27bad64c39f
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8

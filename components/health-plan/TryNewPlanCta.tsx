@@ -25,7 +25,7 @@
  * and the confirm modal are unchanged.
  */
 import React from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
@@ -162,11 +162,7 @@ export function TryNewPlanCta(): React.JSX.Element | null {
               <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), marginTop: 10 }}>{errorMsg}</Text>
             ) : null}
 
-            {isGenerating ? (
-              <View style={styles.generatingRow}>
-                <ActivityIndicator color={tint} />
-              </View>
-            ) : (
+            {isGenerating ? null : (
               <View style={styles.actions}>
                 <Pressable
                   onPress={onCloseConfirm}

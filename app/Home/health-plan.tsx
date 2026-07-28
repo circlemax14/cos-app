@@ -58,6 +58,8 @@ import {
 import { PlanScreenRedesigned } from '@/components/health-plan/PlanScreenRedesigned';
 import { PlanScreenRedesignedV2 } from '@/components/health-plan/PlanScreenRedesignedV2';
 import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
+import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
+import { TryUnifiedViewLink } from '@/components/unified-plan/ClassicViewLink';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
@@ -369,7 +371,11 @@ export default function HealthPlanScreen() {
   // by a ref so a remount with the param still set doesn't re-trigger.
   // The param is optional and additive: a tap without it behaves exactly
   // as before (back-compatible).
-  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const { focus } = useLocalSearchParams<{ focus?: string; classic?: string }>();
+  // COS-469 / Phase 4 — `classic` param is the stable bypass hook when the
+  // default-flip is on and the user came in via ClassicViewLink. Read into
+  // the search-params types here but take no action today; documented so
+  // any future auto-forward-to-unified redirect has an escape.
   const focusHandledRef = React.useRef(false);
   React.useEffect(() => {
     if (focus !== 'medications') return;
@@ -763,6 +769,11 @@ export default function HealthPlanScreen() {
 
   return (
     <AppWrapper>
+      {/* CHUNK 61 (Ken 2026-07-22): TryUnifiedPlanBanner removed here too.
+          Ken parked unified-plan v2 and asked the CTA to come down; both
+          surfaces (this legacy screen + biopsychosocial-plan) no longer
+          push v2. Import left in place for a fast revert if the decision
+          reverses. */}
       {/* Tab bar */}
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {
@@ -905,16 +916,22 @@ export default function HealthPlanScreen() {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}
-            onPress={() => onGenerate(true)}
-            disabled={generating || !canGeneratePlan}> {/* SCRUM-526: also gate when check-ins are incomplete */}
-            {generating ? (
-              <ActivityIndicator color={colors.tint} size="small" />
-            ) : (
-              <MaterialIcons name="refresh" size={18} color={colors.subtext} />
-            )}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {/* COS-469 / Phase 4 — "Try unified view" mirror-image affordance.
+                Self-gated on the default flag being ON, so pre-flip users see
+                no dead affordance. */}
+            <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
+            <TouchableOpacity
+              style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}
+              onPress={() => onGenerate(true)}
+              disabled={generating || !canGeneratePlan}> {/* SCRUM-526: also gate when check-ins are incomplete */}
+              {generating ? (
+                <ActivityIndicator color={colors.tint} size="small" />
+              ) : (
+                <MaterialIcons name="refresh" size={18} color={colors.subtext} />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Plan-type card — prominent so users can see and switch their

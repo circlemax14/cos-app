@@ -7,6 +7,31 @@ import { apiClient } from '@/lib/api-client';
 import { routeForNotificationData } from '@/lib/notification-routing';
 import { queryClient } from '@/providers/QueryProvider';
 
+/**
+ * CHUNK 64 (2026-07-22): read the biopsychosocial-plan eligibility off
+ * the already-populated feature-flags query cache at tap-time so
+ * navigateForNotification can pass it into routeForNotificationData
+ * without upgrading to a hook. Mirrors the exact predicate from
+ * hooks/use-assessment-strategy-v2-flag.ts (`useBiopsychosocialPlanFlag`)
+ * so the client can't route a user to a surface their flags don't
+ * render — both `assessment_strategy_v2_enabled` AND
+ * `biopsychosocial_plan_enabled` must be true. Returns false when the
+ * cache is empty (cold-start before /v1/feature-flags settles) or the
+ * user is unauthenticated — preserving legacy routing in every
+ * ambiguous state.
+ */
+function isBpsEligibleCached(): boolean {
+  try {
+    const flags = queryClient.getQueryData<Record<string, boolean> | undefined>([
+      'feature-flags',
+    ]);
+    return flags?.assessment_strategy_v2_enabled === true &&
+      flags?.biopsychosocial_plan_enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId ?? '30bc49bd-ee12-4a06-86b3-ee4f23690114';
 
 // Configure notification handler for foreground notifications
@@ -83,6 +108,13 @@ export function useNotifications() {
       if (data?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
         queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
       }
+      // COS-482 Phase 1: a CM issued a retake request while the app was
+      // foregrounded — invalidate the patient's retake-requests list so
+      // the inbox card on Home shows the new row without waiting for the
+      // 30s staleTime tick.
+      if (data?.type === 'ASSESSMENT_RETAKE_REQUESTED') {
+        queryClient.invalidateQueries({ queryKey: ['retake-requests', 'me'] });
+      }
     });
 
     // Listen for user tapping on a notification (WARM start — app was
@@ -138,8 +170,19 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
     if ((data as { type?: string } | undefined)?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
       queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
     }
+    // COS-482 Phase 1: on a retake-request push tap, invalidate the inbox
+    // list so the card at the top of Home renders the fresh row (or
+    // silent-drops if the CM revoked it in the interim) before the tap
+    // navigates.
+    if ((data as { type?: string } | undefined)?.type === 'ASSESSMENT_RETAKE_REQUESTED') {
+      queryClient.invalidateQueries({ queryKey: ['retake-requests', 'me'] });
+    }
 
-    const route = routeForNotificationData(data);
+    // CHUNK 64: pass BPS eligibility so a MEDICATION_REFILL_REMINDER
+    // tap lands bio-eligible patients on `/Home/biopsychosocial-plan
+    // ?focus=medications` (activating the chunk-55 scroll/announce
+    // handler). Ineligible / cache-empty → legacy /Home/health-plan.
+    const route = routeForNotificationData(data, { bpsEnabled: isBpsEligibleCached() });
     // null → Home default (back-compat for unknown/new/data-ready types).
     router.push((route ?? '/Home') as never);
   } catch {

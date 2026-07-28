@@ -38,6 +38,30 @@ import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsent
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
 /**
+ * CHUNK 67 (2026-07-23): resolve the stepper's exit destination based on
+ * an optional `returnTo` query param passed by the caller. All four exit
+ * sites (celebration timer, Close, Back-when-first-step, not-found) share
+ * this helper so they land the user on the same place regardless of which
+ * exit fired. Preserves the historic catalog default so unaware callers
+ * (patient-intake, direct deep links, older banners) keep working
+ * unchanged. New destinations are added by extending the switch — do NOT
+ * accept an arbitrary pathname to prevent open-redirect-style deep-link
+ * abuse in URL sharing paths.
+ */
+function resolveReturnHref(returnTo: string | undefined): string {
+  switch (returnTo) {
+    case 'domain-checkins-bio':
+      return '/Home/wellbeing-domain-checkins?domain=bio'
+    case 'domain-checkins-mind':
+      return '/Home/wellbeing-domain-checkins?domain=mind'
+    case 'domain-checkins-social':
+      return '/Home/wellbeing-domain-checkins?domain=social'
+    default:
+      return '/Home/assessments-catalog'
+  }
+}
+
+/**
  * Per-question stepper for a single instrument (SCRUM-225).
  *
  * Route: `/Home/assessment-stepper?instrumentId=<id>`
@@ -52,8 +76,17 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
-  const params = useLocalSearchParams<{ instrumentId?: string }>()
+  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string }>()
   const instrumentId = typeof params.instrumentId === 'string' ? params.instrumentId : ''
+  // CHUNK 67 (2026-07-23): stepper honors an optional `returnTo` param so
+  // the four exit paths (celebration timer, Close button, Back-when-first,
+  // instrument-not-found) all land on the caller's chosen screen instead
+  // of the hard-coded catalog. Ken's dogfood on chunk 66: after finishing
+  // a check-in he was dumped on the catalog instead of the picker he came
+  // from, forcing an app-kill to escape. Fresh query param on each
+  // navigation — no reset-effect needed.
+  const returnTo = typeof params.returnTo === 'string' ? params.returnTo : undefined
+  const returnHref = React.useMemo(() => resolveReturnHref(returnTo), [returnTo])
 
   const instrumentsQuery = useQuery({
     queryKey: ['instruments'],
@@ -136,8 +169,22 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
       // SCRUM-254: refresh the per-plan-type assigned-set progress so
       // the Health Plan screen's "Y of X complete" updates immediately.
       queryClient.invalidateQueries({ queryKey: ['health-plan-assignments'] })
+      // CHUNK 67 (2026-07-23): close the cache-key gap between the
+      // stepper (['assessments']) and BpsWellbeingScoreCard + the new
+      // wellbeing-domain-checkins picker (['assessments-trends']). Both
+      // hit the same endpoint but keep separate cache entries; without
+      // this invalidate, the picker still shows "Not taken" for a
+      // just-completed instrument until the 60s staleTime elapses —
+      // exactly Ken's 2026-07-23 "had to force-close the app" symptom.
+      queryClient.invalidateQueries({ queryKey: ['assessments-trends'] })
+      // Insurance for the eventual "Refresh my plan" tap in the picker:
+      // a bio-plan invalidation here is a no-op today (regen hasn't
+      // fired yet) but keeps the surface honest if a future flow lands
+      // on BPS between check-ins.
+      queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] })
       // Show the celebration overlay (SCRUM-230) for ~1.5s, then return
-      // to the catalog. The overlay handles its own dismiss timer.
+      // to the caller-provided destination (chunk 67) or the catalog
+      // default. The overlay handles its own dismiss timer.
       setCelebrating(true)
     },
   })
@@ -146,10 +193,10 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   React.useEffect(() => {
     if (!celebrating) return
     const t = setTimeout(() => {
-      router.replace('/Home/assessments-catalog' as never)
+      router.replace(returnHref as never)
     }, 1500)
     return () => clearTimeout(t)
-  }, [celebrating])
+  }, [celebrating, returnHref])
 
   // SCRUM-527: the stepper is a single reused screen instance — navigating to a
   // different instrumentId doesn't remount it, so clear the completion overlay +
@@ -203,7 +250,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
             Check-in not found
           </Text>
           <Pressable
-            onPress={() => router.replace('/Home/assessments-catalog' as never)}
+            onPress={() => router.replace(returnHref as never)}
             style={[styles.primaryBtn, { backgroundColor: colors.tint as string }]}
             accessibilityRole="button"
           >
@@ -322,7 +369,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
 
   const goBack = () => {
     if (isFirst) {
-      router.replace('/Home/assessments-catalog' as never)
+      router.replace(returnHref as never)
     } else {
       setStepIdx((i) => Math.max(i - 1, 0))
     }
@@ -333,7 +380,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 32 }}>
         <View style={styles.header}>
           <Pressable
-            onPress={() => router.replace('/Home/assessments-catalog' as never)}
+            onPress={() => router.replace(returnHref as never)}
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="Close check-in"

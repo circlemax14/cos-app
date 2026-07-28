@@ -20,7 +20,8 @@
 
 import React from 'react';
 import {
-  ActivityIndicator,
+  AccessibilityInfo,
+  Alert,
   type LayoutChangeEvent,
   Modal,
   Pressable,
@@ -75,6 +76,85 @@ function parseTimes(raw: string): string[] {
     .filter((t) => t.length > 0);
 }
 
+/**
+ * CHUNK 99 — Signed days until the ISO date (positive = future, negative = past,
+ * null = missing/invalid). Distinct from `daysUntil` above, which clamps at 0
+ * for the visual "days left" line. This variant preserves the sign so the
+ * composed a11y label can distinguish "Refill in 3 days" from "Refill overdue
+ * by 2 days". Rounded whole days.
+ */
+function signedDaysUntil(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const target = new Date(iso).getTime();
+  if (Number.isNaN(target)) return null;
+  return Math.round((target - Date.now()) / 86_400_000);
+}
+
+/**
+ * CHUNK 99 — VoiceOver / TalkBack composed label for a single medication card.
+ *
+ * VoiceOver previously heard each Text node as a separate utterance
+ * ("Lisinopril", "10 mg", "Once daily", "Refill in 3 days") — four swipes to
+ * assemble one med. This function composes a single coherent sentence:
+ *
+ *   "{name}, {dose}. {schedule}. {refill status}."
+ *
+ * Rules honored:
+ *   - Missing fields fall back to natural phrases ("Schedule not specified",
+ *     "Refill status unknown") — never "undefined".
+ *   - Sentence-ending periods separate clauses so VoiceOver pauses naturally.
+ *   - Refill clause distinguishes needs-refill / overdue / days-left / unknown.
+ *
+ * Pure function; no rendering side effects. Safe to compute on every render.
+ */
+function composeMedA11yLabel(med: Medication): string {
+  // Name + dose. If dose is missing, name stands alone (no dangling comma).
+  const name = (med.name ?? '').trim() || 'Medication';
+  const dose = (med.dose ?? '').trim();
+  const namePart = dose.length > 0 ? `${name}, ${dose}` : name;
+
+  // Schedule from frequency + times. Either may be missing.
+  const freq = (med.frequency ?? '').trim();
+  const times = med.times.length > 0 ? med.times.join(', ') : '';
+  let schedulePart: string;
+  if (freq && times) {
+    schedulePart = `${freq} at ${times}`;
+  } else if (freq) {
+    schedulePart = freq;
+  } else if (times) {
+    schedulePart = `Take at ${times}`;
+  } else {
+    schedulePart = 'Schedule not specified';
+  }
+
+  // Refill status. Priority:
+  //   1. needsRefill + past runOutDate → "Refill overdue by N days"
+  //   2. needsRefill + future runOutDate → "Refill in N days"
+  //   3. needsRefill only → "Refill needed"
+  //   4. Not needsRefill but future runOutDate → "Refill in N days"
+  //   5. Neither → "Refill status unknown"
+  const signedDays = signedDaysUntil(med.supply?.runOutDate ?? null);
+  const needsRefill = med.supply?.needsRefill === true;
+  let refillPart: string;
+  if (needsRefill && signedDays != null && signedDays < 0) {
+    const overdue = Math.abs(signedDays);
+    refillPart = `Refill overdue by ${overdue} day${overdue === 1 ? '' : 's'}`;
+  } else if (needsRefill && signedDays != null && signedDays >= 0) {
+    refillPart = `Refill in ${signedDays} day${signedDays === 1 ? '' : 's'}`;
+  } else if (needsRefill) {
+    refillPart = 'Refill needed';
+  } else if (signedDays != null && signedDays >= 0) {
+    refillPart = `Refill in ${signedDays} day${signedDays === 1 ? '' : 's'}`;
+  } else if (signedDays != null && signedDays < 0) {
+    const overdue = Math.abs(signedDays);
+    refillPart = `Refill overdue by ${overdue} day${overdue === 1 ? '' : 's'}`;
+  } else {
+    refillPart = 'Refill status unknown';
+  }
+
+  return `${namePart}. ${schedulePart}. ${refillPart}.`;
+}
+
 type EditorMode =
   | { kind: 'add' }
   | { kind: 'edit'; med: Medication };
@@ -108,14 +188,91 @@ export function MedicationsSection({
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
 
+  // CHUNK 52.2 — session-local "recently hidden" restore banner.
+  //
+  // Background: the Medication type has no `removed` field, and the server
+  // drops hidden meds from the response entirely on refetch. So a hidden med
+  // never re-mounts as a MedicationCard — the per-card Restore Pressable that
+  // used to live inside MedicationCard was unreachable in the typical flow.
+  // Chunk 52.1's "removed the source==='ehr' gate" was a no-op for this
+  // reason; Ken flagged that the restore path was un-findable during
+  // dogfood. Chunk 52.2 deleted that unreachable Pressable entirely (see
+  // the comment inside MedicationCard where it used to live) and replaced
+  // the whole affordance with this session-local banner.
+  //
+  // Fix without a backend change: keep a session-local list of what the user
+  // hid in this session and render a banner at the top of the section with a
+  // Restore link. On tap, fire unremove + drop from the local list. Server
+  // accepts the id regardless of source. If the mutation errors, keep the
+  // entry so the user can retry.
+  //
+  // Persistence: session-only — clears on cold app relaunch. That's
+  // acceptable given the alternative is nothing. A real backend `removed`
+  // flag + a per-user "hidden meds" section is the durable fix (queued as
+  // BE follow-up; do NOT ship pre-BE OTA to legacy without this banner or
+  // patient-reported meds lose their only restore path).
+  const [recentlyHidden, setRecentlyHidden] = React.useState<
+    Array<{ id: string; name: string }>
+  >([]);
+
+  // CHUNK 52.1 (Concern 5): announce save failures to VoiceOver / TalkBack so
+  // users of assistive tech notice the inline error View. Uses a rising-edge
+  // detector on `updateMutation.isError` (false → true transition) — announces
+  // once per new failure event without depending on error-instance identity
+  // (a cached sentinel Error would defeat identity dedup) or on the mutation's
+  // `failureCount` (react-query v5 resets that to 0 on every mutate() so a
+  // strict-greater guard would suppress the 2nd + subsequent identical
+  // failures). Between failures the query lib flips isError back to false
+  // during pending, so wasError re-arms cleanly for the next fail.
+  const wasError = React.useRef(false);
+  React.useEffect(() => {
+    const isErr = updateMutation.isError;
+    if (isErr && !wasError.current) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't save that change. Please try again.",
+      );
+    }
+    wasError.current = isErr;
+  }, [updateMutation.isError]);
+
+  // CHUNK 52.1 (Concern 7 + adversarial-verify majors #4 + nit #3): track how
+  // many destructive Hide confirm Alerts are currently visible so the
+  // openAddSignal effect below can skip mounting the editor Modal on top of a
+  // live Alert (Alert-over-Modal is the iOS 26.5 forbidden pairing). A COUNTER
+  // (not a boolean) so nested / rapid multi-tap stacking on Android — where
+  // Alert.alert doesn't dedupe — doesn't accidentally flip the guard to false
+  // while an underlying Alert is still visible. Increment on Alert.alert start,
+  // decrement (floor 0) on each branch resolution + iOS/Android backdrop
+  // dismiss. Ref, not state — no re-render needed to gate the effect.
+  const confirmAlertInFlight = React.useRef(0);
+  const beginConfirmAlert = React.useCallback(() => {
+    confirmAlertInFlight.current += 1;
+  }, []);
+  const endConfirmAlert = React.useCallback(() => {
+    if (confirmAlertInFlight.current > 0) {
+      confirmAlertInFlight.current -= 1;
+    }
+  }, []);
+
   // Open the add flow when the parent bumps openAddSignal (skip the initial 0).
+  // CHUNK 52.1 (Concern 7 + adversarial-verify majors #2 + #4): guard against
+  // stacking a 2nd RN Modal on top of an in-flight one. Firing setEditor while
+  // supplyEditor is open would mount MedicationEditorModal on top of the
+  // open SupplyEditorModal → two <Modal transparent> visible simultaneously,
+  // which is the iOS 26.5 multi-Modal crash class. Same defense against the
+  // Alert-over-Modal pairing: if a Hide confirm Alert is in flight, defer.
+  // Skip (don't queue): the parent's signal is a nudge, not an authoritative
+  // command; user can always tap "+ Add" manually. Idempotent-open case
+  // (editor already {kind:'add'}) also skips — nothing to do.
   const lastOpenSignal = React.useRef(0);
   React.useEffect(() => {
     if (openAddSignal > 0 && openAddSignal !== lastOpenSignal.current) {
       lastOpenSignal.current = openAddSignal;
-      setEditor({ kind: 'add' });
+      if (supplyEditor === null && editor === null && confirmAlertInFlight.current === 0) {
+        setEditor({ kind: 'add' });
+      }
     }
-  }, [openAddSignal]);
+  }, [openAddSignal, supplyEditor, editor]);
 
   // Flag gate — render NOTHING until the server explicitly enables the
   // feature. Off-by-default for back-compat and while the query is loading.
@@ -126,10 +283,43 @@ export function MedicationsSection({
   const medications = query.data.medications;
 
   const onRemove = (med: Medication) => {
-    updateMutation.mutate({ remove: [med.id] });
+    // CHUNK 52.2 fix (adversarial verify major #2): only push to
+    // recentlyHidden AFTER the remove mutation succeeds. If we push
+    // synchronously and the mutation errors, the banner asserts the med is
+    // hidden while its card is still in the list — user sees the same med
+    // as both a live card and a "recently hidden" entry, with no way to
+    // reconcile without unremove-ing something the server never removed.
+    // De-dupe on id so a same-med re-hide after a rollback doesn't push a
+    // second banner entry.
+    updateMutation.mutate(
+      { remove: [med.id] },
+      {
+        onSuccess: () => {
+          setRecentlyHidden((prev) =>
+            prev.some((e) => e.id === med.id)
+              ? prev
+              : [...prev, { id: med.id, name: med.name }],
+          );
+        },
+      },
+    );
   };
-  const onUnremove = (id: string) => {
-    updateMutation.mutate({ unremove: [id] });
+  // CHUNK 52.2 fix (adversarial verify major #1): drop the banner entry
+  // ONLY on unremove success. On error we keep the entry so the user can
+  // retry — otherwise a network blip during Restore leaves the med
+  // server-hidden with no in-UI recovery path (per-card Restore is
+  // unreachable since the server drops hidden meds from the response, see
+  // recentlyHidden useState comment). react-query v5 accepts per-invocation
+  // mutation options via the second arg to mutate().
+  const restoreFromBanner = (id: string) => {
+    updateMutation.mutate(
+      { unremove: [id] },
+      {
+        onSuccess: () => {
+          setRecentlyHidden((prev) => prev.filter((e) => e.id !== id));
+        },
+      },
+    );
   };
   const onToggleTracked = (med: Medication) => {
     updateMutation.mutate({ setTracked: [{ id: med.id, tracked: !med.tracked }] });
@@ -151,7 +341,17 @@ export function MedicationsSection({
           MEDICATIONS
         </Text>
         <Pressable
-          onPress={() => setEditor({ kind: 'add' })}
+          onPress={() => {
+            // CHUNK 52.3 (adversarial verify minor): guard against opening
+            // MedicationEditorModal on top of a live Hide confirm Alert
+            // (Alert-over-Modal is the iOS 26 forbidden pairing). Matches
+            // the openAddSignal effect's guard. Also skips if the
+            // MedicationEditor or SupplyEditor is already open (rapid
+            // multi-tap safety).
+            if (confirmAlertInFlight.current > 0) return;
+            if (editor !== null || supplyEditor !== null) return;
+            setEditor({ kind: 'add' });
+          }}
           accessibilityRole="button"
           accessibilityLabel="Add a medication"
           style={[styles.addBtn, { backgroundColor: (colors.tint as string) + '18' }]}
@@ -190,13 +390,106 @@ export function MedicationsSection({
         </Text>
       </View>
 
-      {/* Inline error (mutation failures) — non-blocking */}
+      {/* Inline error (mutation failures) — non-blocking.
+          CHUNK 52.1 (Concern 5): mark as alert + live region so screen readers
+          pick up the failure. iOS honors accessibilityRole="alert"; Android
+          honors accessibilityLiveRegion="polite". The useEffect above also
+          fires AccessibilityInfo.announceForAccessibility as a belt-and-
+          suspenders announcement, gated by a wasError rising-edge ref (see
+          the effect's comment for why we don't key on failureCount or error
+          identity). */}
       {updateMutation.isError ? (
-        <View style={[styles.errorBox, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}>
+        <View
+          style={[styles.errorBox, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
           <MaterialIcons name="error-outline" size={getScaledFontSize(16)} color="#991B1B" />
           <Text style={{ color: '#991B1B', flex: 1, fontSize: getScaledFontSize(12), marginLeft: 6 }}>
             Couldn&apos;t save that change. Please try again.
           </Text>
+        </View>
+      ) : null}
+
+      {/* CHUNK 52.2 + 52.3 (Ken 2026-07-22 dogfood): session-local
+          recently-hidden banner. One row per med the user hid in this
+          session, with a prominent Restore pill. See recentlyHidden
+          useState comment for why this exists (the server drops hidden
+          meds so a per-card Restore affordance is unreachable). Ken
+          couldn't find the previous banner (subtle grey card blended
+          with sibling meds); redesigned with warm amber background, a
+          "Recently hidden" header row, and a real teal-pill Restore
+          button so the affordance reads as "action available here". */}
+      {recentlyHidden.length > 0 ? (
+        <View
+          style={[
+            styles.recentlyHiddenCard,
+            { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' },
+          ]}
+        >
+          <View style={styles.recentlyHiddenHead}>
+            <MaterialIcons name="history" size={getScaledFontSize(16)} color="#92400E" />
+            <Text
+              style={{
+                marginLeft: 6,
+                color: '#92400E',
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 0.5,
+              }}
+            >
+              RECENTLY HIDDEN — TAP RESTORE →
+            </Text>
+          </View>
+          {recentlyHidden.map((entry) => (
+            <View key={entry.id} style={styles.recentlyHiddenRow}>
+              <MaterialIcons
+                name="visibility-off"
+                size={getScaledFontSize(16)}
+                color="#92400E"
+              />
+              <Text
+                style={{
+                  flex: 1,
+                  marginLeft: 8,
+                  color: '#78350F',
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {entry.name}
+              </Text>
+              <Pressable
+                onPress={() => restoreFromBanner(entry.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Restore ${entry.name}`}
+                accessibilityState={{ disabled: updateMutation.isPending }}
+                disabled={updateMutation.isPending}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.restorePill,
+                  {
+                    backgroundColor: '#0D9488',
+                    opacity: updateMutation.isPending ? 0.5 : pressed ? 0.8 : 1,
+                  },
+                ]}
+              >
+                <MaterialIcons name="undo" size={getScaledFontSize(14)} color="#FFFFFF" />
+                <Text
+                  style={{
+                    marginLeft: 4,
+                    color: '#FFFFFF',
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(700) as any,
+                  }}
+                >
+                  Restore
+                </Text>
+              </Pressable>
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -217,15 +510,36 @@ export function MedicationsSection({
             busy={updateMutation.isPending}
             onEdit={() => setEditor({ kind: 'edit', med })}
             onRemove={() => onRemove(med)}
-            onUnremove={() => onUnremove(med.id)}
             onToggleTracked={() => onToggleTracked(med)}
             onUpdateSupply={() => setSupplyEditor({ med })}
             onSnooze={() => onSnooze(med)}
+            onConfirmAlertOpen={beginConfirmAlert}
+            onConfirmAlertResolve={endConfirmAlert}
           />
         ))
       )}
 
-      {/* Add / Edit modal */}
+      {/* Add / Edit modal.
+          CHUNK 52.3 revert (Ken 2026-07-22 dogfood): chunk 52.1's
+          conditional mount pattern (`{editor !== null ? ... : null}`)
+          broke the "+ Add" flow on Ken's iPhone 14,3 / iOS 26.5 build 62.
+          Fresh-mounting an RN <Modal animationType="fade" transparent>
+          with visible=true in the same commit is a known-brittle
+          pattern — RN docs + community canonical usage universally
+          prefer always-mount + toggle visible so the false→true
+          transition drives the animation. Reverted to unconditional
+          mount with visible={mode !== null} internally. This restores
+          2 <Modal transparent> nodes at rest inside MedicationsSection
+          (this + SupplyEditorModal below), matching pre-52.1 behavior
+          and matching what /Home/health-plan legacy has shipped since
+          the meds feature launched.
+          Total <Modal transparent> at rest on BPS after 52.3:
+            1 (chunk-53 consolidated BPS-owned) + 2 (MedicationsSection)
+            = 3, same as the pre-chunk-53 BPS state Ken tested clean
+            during chunks 47-52 dogfood. No new coexistence pattern
+            introduced. If a future crash surfaces, the chunk-52.1
+            conditional mount can be reintroduced with a
+            requestAnimationFrame-deferred visible toggle. */}
       <MedicationEditorModal
         mode={editor}
         colors={colors}
@@ -278,7 +592,12 @@ export function MedicationsSection({
         }}
       />
 
-      {/* Supply / refill modal */}
+      {/* Supply / refill modal.
+          CHUNK 52.1 (Concern 7): conditionally mounted, same rationale as
+          the editor modal above. */}
+      {/* CHUNK 52.3 revert: same rationale as MedicationEditorModal above.
+          Unconditional mount so RN's Modal fade animation gets the
+          false→true visible transition it needs to present on iOS 26.5. */}
       <SupplyEditorModal
         mode={supplyEditor}
         colors={colors}
@@ -323,19 +642,26 @@ function MedicationCard({
   busy,
   onEdit,
   onRemove,
-  onUnremove,
   onToggleTracked,
   onUpdateSupply,
   onSnooze,
+  onConfirmAlertOpen,
+  onConfirmAlertResolve,
 }: ThemeProps & {
   med: Medication;
   busy: boolean;
   onEdit: () => void;
   onRemove: () => void;
-  onUnremove: () => void;
   onToggleTracked: () => void;
   onUpdateSupply: () => void;
   onSnooze: () => void;
+  /** Signal the parent that a destructive-confirm Alert is presenting.
+   *  Parent uses this to gate its openAddSignal effect so it doesn't
+   *  mount MedicationEditorModal on top of a live Alert (iOS 26.5
+   *  Alert-over-Modal forbidden pairing). Both handlers must be called
+   *  in pairs — open on Alert.alert start, resolve on either branch. */
+  onConfirmAlertOpen: () => void;
+  onConfirmAlertResolve: () => void;
 }): React.JSX.Element {
   const isEhr = med.source === 'ehr';
   const badgeColor = isEhr ? (colors.primary as string) : (colors.tint as string);
@@ -346,28 +672,100 @@ function MedicationCard({
   const isInjectable = normalizeForm(med.form) === 'injectable';
   const formTag = formTagLabel(med.form);
 
+  // CHUNK 52.1 (Concern 1): confirm before firing the destructive Hide
+  // mutation. INVARIANT: MedicationsSection must be rendered as INLINE content
+  // on the plan surface, NEVER inside a <Modal>. If that ever changes, this
+  // Alert becomes the iOS 26 Alert-over-Modal forbidden pairing — swap to a
+  // custom in-tree confirm before re-parenting. Verified: BPS
+  // (BiopsychosocialPlanScreen) and legacy (/Home/health-plan) both mount
+  // this section inline.
+  const confirmRemove = () => {
+    // CHUNK 52.1 adversarial-verify major #4 fix: signal alert-in-flight to
+    // the parent so it can skip openAddSignal-triggered Modal mounts while
+    // the Alert is visible (Alert-over-Modal is the iOS 26.5 forbidden
+    // pairing). Every branch (Cancel + Hide) resolves the ref before firing
+    // its user-facing action, so the ref is guaranteed cleared once the
+    // Alert dismisses regardless of user choice.
+    onConfirmAlertOpen();
+    Alert.alert(
+      'Hide medication?',
+      `${med.name} will be hidden from your medication list. You can restore it later.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: onConfirmAlertResolve },
+        { text: 'Hide', style: 'destructive', onPress: () => { onConfirmAlertResolve(); onRemove(); } },
+      ],
+      { onDismiss: onConfirmAlertResolve },
+    );
+  };
+
+  // CHUNK 99 v2 — Composed VoiceOver / TalkBack label for the whole card. See
+  // composeMedA11yLabel above for the sentence shape and fallback rules.
+  //
+  // v1 put accessible={true} + this label on the OUTER card View, which on
+  // iOS/Android collapses the card into a single AT leaf and subsumes the
+  // Edit / Hide / Track switch / Update supply / Snooze controls — a swipe
+  // through the card could not reach any of them. v2 moves the accessibility
+  // grouping to a NEW inner View that wraps ONLY the passive descriptive
+  // block (name / dose+frequency / times / badges). Each interactive control
+  // (Edit Pressable, Hide Pressable, Track adherence Switch, Update supply
+  // Pressable, Snooze Pressable) stays OUTSIDE that inner grouping as a
+  // sibling inside the outer card, so each remains individually swipe-
+  // focusable with its own accessibilityLabel. The refill banner / supply
+  // summary Text / Track-adherence label Text remain marked
+  // accessibilityElementsHidden + importantForAccessibility
+  // "no-hide-descendants" — the composed label already narrates refill and
+  // supply state, so those visual lines stay silent to AT.
+  const composedA11yLabel = composeMedA11yLabel(med);
+
   return (
-    <View style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+    <View
+      style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}
+    >
       <View style={styles.cardTopRow}>
         <View style={[styles.medIcon, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
           <MaterialIcons name="medication" size={getScaledFontSize(20)} color="#8B5CF6" />
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
+        {/* CHUNK 99 v2: NEW inner accessibility grouping. This View is the
+            single a11y leaf for the card's passive descriptive text (name,
+            dose+frequency, times, and badges). The Edit / Hide Pressables
+            below are siblings of this View — NOT descendants — so VoiceOver /
+            TalkBack still focuses them individually after this leaf. */}
+        <View
+          style={{ flex: 1, minWidth: 0 }}
+          accessible={true}
+          accessibilityLabel={composedA11yLabel}
+        >
           <Text
             style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
             numberOfLines={1}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
           >
             {med.name}
           </Text>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }} numberOfLines={1}>
+          <Text
+            style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
+            numberOfLines={1}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
             {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose set'}
           </Text>
           {med.times.length > 0 ? (
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }} numberOfLines={1}>
+            <Text
+              style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}
+              numberOfLines={1}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
               {med.times.join(', ')}
             </Text>
           ) : null}
-          <View style={styles.badgeRow}>
+          <View
+            style={styles.badgeRow}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
             <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
               <MaterialIcons
                 name={isEhr ? 'verified' : 'edit'}
@@ -417,21 +815,33 @@ function MedicationCard({
         >
           <MaterialIcons name="edit" size={getScaledFontSize(18)} color={colors.subtext} />
         </Pressable>
+        {/* CHUNK 52.1 (Concerns 1 + 3): destructive Hide is now confirm-
+            gated via Alert.alert and spatially separated from Edit with
+            iconBtnDestructive (marginLeft: 12) + asymmetric hitSlop (smaller
+            on the left) so a stray finger between Edit and Hide falls on
+            Edit — the non-destructive side. */}
         <Pressable
-          onPress={onRemove}
+          onPress={confirmRemove}
           disabled={busy}
-          hitSlop={8}
+          hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel={`Hide ${med.name}`}
-          style={styles.iconBtn}
+          accessibilityHint="Opens a confirmation dialog before hiding"
+          style={styles.iconBtnDestructive}
         >
           <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
         </Pressable>
       </View>
 
-      {/* Refill banner */}
+      {/* Refill banner.
+          CHUNK 99: hidden from AT — refill status is already in the card's
+          composed accessibilityLabel. Visual banner unchanged. */}
       {needsRefill ? (
-        <View style={[styles.refillBanner, { backgroundColor: '#F59E0B18', borderColor: '#F59E0B' }]}>
+        <View
+          style={[styles.refillBanner, { backgroundColor: '#F59E0B18', borderColor: '#F59E0B' }]}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
           <MaterialIcons name="warning-amber" size={getScaledFontSize(16)} color="#B45309" />
           <Text style={{ flex: 1, marginLeft: 8, color: '#92400E', fontSize: getScaledFontSize(12), lineHeight: getScaledFontSize(18) }}>
             {daysLeft != null
@@ -441,9 +851,15 @@ function MedicationCard({
         </View>
       ) : null}
 
-      {/* Supply summary line */}
+      {/* Supply summary line.
+          CHUNK 99: hidden from AT — supply detail is subsumed by the
+          composed card label. Visual line unchanged. */}
       {med.supply && (med.supply.remainingQuantity != null || med.supply.dosesPerDay != null) ? (
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}>
+        <Text
+          style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
           {med.supply.remainingQuantity != null ? `${med.supply.remainingQuantity} left` : 'Supply unknown'}
           {/* COS-372: injectables read as "· weekly"; consumables keep "· N/day".
               When the flag is off this is byte-for-byte today's "/day" line. */}
@@ -461,7 +877,18 @@ function MedicationCard({
       {/* Action row: track toggle + supply / refill actions */}
       <View style={styles.cardActions}>
         <View style={styles.trackToggle}>
-          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), marginRight: 8 }}>Track adherence</Text>
+          {/* CHUNK 99: "Track adherence" is the visual label for the Switch
+              beside it. The Switch itself has accessibilityLabel="Track
+              adherence for {name}", so this Text is redundant to AT and is
+              hidden to keep the card's composed label the sole utterance
+              until the user swipes forward to interactive controls. */}
+          <Text
+            style={{ color: colors.text, fontSize: getScaledFontSize(13), marginRight: 8 }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            Track adherence
+          </Text>
           <Switch
             value={med.tracked}
             onValueChange={onToggleTracked}
@@ -502,24 +929,13 @@ function MedicationCard({
         ) : null}
       </View>
 
-      {/* Un-hide affordance only matters right after a remove; the list
-          re-fetches and drops removed meds, so this stays simple — an EHR
-          med that was removed can be re-added via the same backend by
-          un-removing if the server still returns it. Kept lightweight. */}
-      {med.source === 'ehr' ? (
-        <Pressable
-          onPress={onUnremove}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityLabel={`Restore ${med.name} if you hid it`}
-          style={{ marginTop: 6, alignSelf: 'flex-start' }}
-          hitSlop={6}
-        >
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), textDecorationLine: 'underline' }}>
-            Hid this by mistake? Restore
-          </Text>
-        </Pressable>
-      ) : null}
+      {/* CHUNK 52.2: the per-card "Hid this by mistake? Restore" Pressable
+          was removed. It was unreachable — the server drops hidden meds
+          from the response, so no MedicationCard mounts for a hidden med
+          in the first place. Chunk 52.1 removed the source==='ehr' gate
+          in a well-meaning-but-no-op fix; this chunk replaces the whole
+          affordance with the session-local recently-hidden banner rendered
+          by MedicationsSection above the med list. */}
     </View>
   );
 }
@@ -599,7 +1015,14 @@ function MedicationEditorModal({
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
-        <View style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}>
+        {/* CHUNK 52.1 (Concern 6): accessibilityViewIsModal contains
+            VoiceOver focus inside this sheet on iOS so it can't leak into
+            the plan surface behind. iOS-only prop; Android ignores it (native
+            RN Modal already contains focus via Dialog). */}
+        <View
+          style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}
+          accessibilityViewIsModal
+        >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, marginBottom: 12 }}>
             {isEdit ? 'Edit medication' : 'Add medication'}
           </Text>
@@ -747,14 +1170,19 @@ function MedicationEditorModal({
                 { backgroundColor: nameValid ? (colors.tint as string) : colors.subtext + '60', opacity: saving ? 0.6 : 1 },
               ]}
               accessibilityRole="button"
+              accessibilityLabel={isEdit ? 'Save medication' : 'Add medication'}
+              // CHUNK 52.1 (Concern 4): expose pending + disabled state to
+              // VoiceOver / TalkBack. Chunk 46.1 dropped ActivityIndicator, so
+              // AT had no way to detect the saving/disabled state visually
+              // encoded by opacity/disabled.
+              accessibilityState={{ busy: saving, disabled: !nameValid || saving }}
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
-                  {isEdit ? 'Save' : 'Add'}
-                </Text>
-              )}
+              {/* CHUNK 46.1: dropped ActivityIndicator (chunk-17 crash
+                  class). Parent Pressable already has opacity: 0.6 while
+                  saving + disabled state — sufficient pending affordance. */}
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                {isEdit ? 'Save' : 'Add'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -826,7 +1254,12 @@ function SupplyEditorModal({
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
-        <View style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}>
+        {/* CHUNK 52.1 (Concern 6): contain VoiceOver focus inside this sheet
+            on iOS — same rationale as the editor modal. */}
+        <View
+          style={[styles.modalSheet, { backgroundColor: (colors.card as string) + 'F8', borderColor: colors.border }]}
+          accessibilityViewIsModal
+        >
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any, marginBottom: 4 }}>
             Update supply
           </Text>
@@ -919,12 +1352,15 @@ function SupplyEditorModal({
                 { backgroundColor: valid ? (colors.tint as string) : colors.subtext + '60', opacity: saving ? 0.6 : 1 },
               ]}
               accessibilityRole="button"
+              accessibilityLabel="Save supply"
+              // CHUNK 52.1 (Concern 4): expose pending + disabled state to
+              // VoiceOver / TalkBack.
+              accessibilityState={{ busy: saving, disabled: !valid || saving }}
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Save</Text>
-              )}
+              {/* CHUNK 46.1: dropped ActivityIndicator (chunk-17 crash
+                  class). Parent Pressable already dims + disables while
+                  saving — sufficient pending affordance. */}
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>Save</Text>
             </Pressable>
           </View>
         </View>
@@ -984,6 +1420,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
+  // CHUNK 52.2 + 52.3 (Ken 2026-07-22 dogfood): recently-hidden banner
+  // styles. Warm amber palette + prominent teal Restore pill so Ken can
+  // FIND the restore path — the previous grey card blended with the
+  // sibling med cards and wasn't legibly distinct.
+  recentlyHiddenCard: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  recentlyHiddenHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  recentlyHiddenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  restorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
   emptyRow: {
     marginHorizontal: 20,
     marginBottom: 10,
@@ -1018,6 +1482,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   iconBtn: { padding: 6, marginLeft: 2 },
+  // CHUNK 52.1 (Concern 3): Hide sits 12pt to the right of Edit so a mis-tap
+  // between the two lands on Edit (non-destructive). Paired with asymmetric
+  // hitSlop on the Hide Pressable (smaller left extent).
+  iconBtnDestructive: { padding: 6, marginLeft: 12 },
   refillBanner: {
     flexDirection: 'row',
     alignItems: 'center',

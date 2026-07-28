@@ -21,7 +21,7 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Card } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '@/constants/theme';
@@ -151,7 +151,7 @@ export function SelfReportedMetricsCard(): React.JSX.Element | null {
   if (query.isLoading) {
     return (
       <Card style={[styles.card, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.tint} style={{ margin: 20 }} />
+        <View style={{ height: 60, margin: 20, backgroundColor: 'rgba(148,163,184,0.25)', borderRadius: 8 }} />
       </Card>
     );
   }
