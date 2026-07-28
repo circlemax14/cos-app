@@ -27,6 +27,8 @@ import {
   clearAssessmentDraft as clearDraft,
 } from '@/lib/assessment-draft-storage'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
+import { isGroupedInstrument } from '@/lib/instrument-grouping'
+import { GroupedInstrumentStepper } from '@/components/health-plan/GroupedInstrumentStepper'
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
@@ -167,6 +169,35 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     )
   }
 
+  // Wave 3 — celebration path first so both grouped and per-item modes
+  // share it, then grouped-checklist path for instruments whose items are
+  // all `kind: 'multi'` and category-tagged (Ohio DDC Leisure Interest).
+  // Falls back to the per-item stepper below for every other instrument.
+  if (celebrating) {
+    return (
+      <AppWrapper>
+        <CompletionCelebration colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
+      </AppWrapper>
+    )
+  }
+  if (isGroupedInstrument(instrument.items)) {
+    return (
+      <AppWrapper>
+        <GroupedInstrumentStepper
+          instrument={instrument}
+          answers={answers}
+          setAnswers={setAnswers}
+          onSubmit={() => submit.mutate()}
+          onCancel={() => router.replace('/Home/assessments-catalog' as never)}
+          isSubmitting={submit.isPending}
+          colors={colors}
+          fontSize={getScaledFontSize}
+          fontWeight={getScaledFontWeight}
+        />
+      </AppWrapper>
+    )
+  }
+
   const items = instrument.items
   const total = items.length
   const item = items[stepIdx]
@@ -208,14 +239,6 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     } else {
       setStepIdx((i) => Math.max(i - 1, 0))
     }
-  }
-
-  if (celebrating) {
-    return (
-      <AppWrapper>
-        <CompletionCelebration colors={colors} fontSize={getScaledFontSize} fontWeight={getScaledFontWeight} />
-      </AppWrapper>
-    )
   }
 
   return (
