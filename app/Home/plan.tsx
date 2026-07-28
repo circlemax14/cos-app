@@ -1,10 +1,10 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -12,79 +12,46 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthSummary } from '@/hooks/use-health-summary';
-import { useVitalsRedFlagNotifications } from '../../hooks/use-vitals-red-flag-notifications';
-import { VitalsRedFlagSection } from '@/components/health-summary/VitalsRedFlagSection';
 import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-
-interface SectionCardProps {
-  icon: string;
-  iconColor: string;
-  title: string;
-  content: unknown;
-  colors: any;
-  getScaledFontSize: (size: number) => number;
-  getScaledFontWeight: (weight: number) => string;
-}
-
-function formatContent(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    // Handle objects like { "Oxygen Saturation": "...", "Weight": "..." }
-    return Object.entries(value as Record<string, unknown>)
-      .map(([key, val]) => `${key}: ${typeof val === 'string' ? val : JSON.stringify(val)}`)
-      .join('\n\n');
-  }
-  return String(value);
-}
-
-function SectionCard({ icon, iconColor, title, content, colors, getScaledFontSize, getScaledFontWeight }: SectionCardProps) {
-  const displayContent = formatContent(content);
-  if (!displayContent) return null;
-
-  return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.iconCircle, { backgroundColor: iconColor + '15' }]}>
-          <MaterialIcons name={icon as any} size={getScaledFontSize(22)} color={iconColor} />
-        </View>
-        <Text
-          style={{
-            color: colors.text,
-            fontSize: getScaledFontSize(17),
-            fontWeight: getScaledFontWeight(600) as any,
-            flex: 1,
-          }}
-          accessibilityRole="header"
-        >
-          {title}
-        </Text>
-      </View>
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(15),
-          lineHeight: getScaledFontSize(22),
-        }}
-      >
-        {displayContent}
-      </Text>
-    </View>
-  );
-}
+import { usePatientIntake } from '@/hooks/use-patient-intake';
+import BpsHistorySection from '@/components/health-summary/BpsHistorySection';
+import CurrentConditionsSection from '@/components/health-summary/CurrentConditionsSection';
+import MedicationsByConditionSection from '@/components/health-summary/MedicationsByConditionSection';
+import LabsByConditionSection from '@/components/health-summary/LabsByConditionSection';
+import VitalsRedFlagSection from '@/components/health-summary/VitalsRedFlagSection';
+import TreatmentsSupportsSection from '@/components/health-summary/TreatmentsSupportsSection';
+import RecommendationsSection from '@/components/health-summary/RecommendationsSection';
+import ShareSummarySection from '@/components/health-summary/ShareSummarySection';
+import UpdatedAtFooter from '@/components/health-summary/UpdatedAtFooter';
+import { useVitalsRedFlagNotifications } from '@/hooks/use-vitals-red-flag-notifications';
 
 export default function HealthSummaryScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const { data, isLoading, isError, refetch, isRefetching } = useHealthSummary();
+  const { isLoading, isError, refetch } = useHealthSummary();
 
-  // HS-3b: mount the vitals red-flag observer. Rules-of-hooks: the hook is
-  // called unconditionally; its internal `disabled` short-circuit (via
-  // useHealthKitTrends → Apple Health preference, COS-397 / SCRUM-535) is the
-  // runtime gate that mirrors the section's iosDisabled short-circuit.
+  // HS-3b overlay: mount the vitals red-flag observer. Rules-of-hooks — called
+  // unconditionally, before any early returns. The hook itself no-ops when the
+  // patient is on Android or has Apple Health OFF (via useHealthKitTrends'
+  // `disabled` gate, COS-397 / SCRUM-535), so this line is safe on every
+  // device. Zero visual impact on v5's UI — the observer only computes
+  // verdicts from HK trends and, on fresh amber/red transitions, fires a
+  // local push + POSTs the verdict label to
+  // /v1/patients/me/vitals-red-flag-event. No new render subtree, and it
+  // mirrors the VitalsRedFlagSection's own iosDisabled short-circuit.
   useVitalsRedFlagNotifications();
+
+  // Gate the 9-section view behind a completed intake — Ken's directive:
+  // "whenever anyone opens health summary, they need to go through intake
+  // first; after that the current view will be visible". Pre-intake users
+  // see ONLY the intake CTA with an explainer. Intake query stays silent
+  // (returns null on load/error) so we don't flash the gate before the
+  // status is known — if the intake query itself is loading we treat as
+  // gated so we don't briefly show the full summary and then snap back.
+  const intakeQuery = usePatientIntake();
+  const intakeComplete = intakeQuery.data?.intake?.status === 'complete';
+  const intakeGateOpen = intakeComplete === true;
 
   if (isLoading) {
     return (
@@ -107,17 +74,17 @@ export default function HealthSummaryScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* HS-1 / SCRUM-590 — intake CTA is reachable even when the summary
-              fetch errors, so first-time patients (who have no summary yet)
-              can still start their intake from this tab. */}
+          {/* Intake CTA is reachable even when the summary fetch errors,
+              so first-time patients (who have no summary yet) can still
+              start their intake from this tab. */}
           <IntakeCtaCard />
           <View style={styles.centered}>
-            <Text style={{ fontSize: 48, marginBottom: 16 }}>🩺</Text>
+            <Text style={{ fontSize: getScaledFontSize(48), marginBottom: 16 }}>🩺</Text>
             <Text
               style={{
                 color: colors.text,
                 fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(600) as any,
+                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
                 marginBottom: 8,
                 textAlign: 'center',
               }}
@@ -144,7 +111,7 @@ export default function HealthSummaryScreen() {
                 style={{
                   color: '#fff',
                   fontSize: getScaledFontSize(16),
-                  fontWeight: getScaledFontWeight(600) as any,
+                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
                 }}
               >
                 Retry
@@ -162,25 +129,15 @@ export default function HealthSummaryScreen() {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={() => refetch()}
-            tintColor={colors.tint}
-          />
-        }
       >
-        {/* HS-1 / SCRUM-590 — patient intake CTA. Self-gates on load/error/status. */}
-        <IntakeCtaCard />
-
-        {/* Header */}
+        {/* Header — anchors the tab. */}
         <View style={styles.headerSection}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>🩺</Text>
+          <Text style={{ fontSize: getScaledFontSize(40), marginBottom: 12 }}>🩺</Text>
           <Text
             style={{
               color: colors.text,
               fontSize: getScaledFontSize(22),
-              fontWeight: getScaledFontWeight(700) as any,
+              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
               textAlign: 'center',
               marginBottom: 4,
             }}
@@ -188,108 +145,52 @@ export default function HealthSummaryScreen() {
           >
             Health Summary
           </Text>
-          {data?.generatedAt && (
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(13),
-                textAlign: 'center',
-              }}
-            >
-              Last updated: {new Date(data.generatedAt).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-              })}
-            </Text>
-          )}
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              textAlign: 'center',
+              marginTop: 2,
+            }}
+          >
+            Tap any section to expand
+          </Text>
         </View>
 
-        {/* Overview */}
-        <SectionCard
-          icon="summarize"
-          iconColor="#0D9488"
-          title="Overview"
-          content={data?.overview ?? ''}
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
+        {/* Intake sits below the header — self-gates on status. */}
+        <IntakeCtaCard />
 
-        {/* Conditions */}
-        <SectionCard
-          icon="medical-information"
-          iconColor="#D97706"
-          title="Conditions"
-          content={data?.conditions ?? ''}
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
-
-        {/* Medications */}
-        <SectionCard
-          icon="medication"
-          iconColor="#2563EB"
-          title="Medications"
-          content={data?.medications ?? ''}
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
-
-        {/* Recent Labs */}
-        <SectionCard
-          icon="science"
-          iconColor="#7C3AED"
-          title="Recent Labs"
-          content={data?.recentLabs ?? ''}
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
-
-        {/* HS-3b — vitals red-flag section. Self-gates on iOS + Apple Health
-            preference + trend availability; renders null otherwise. Placed
-            after Recent Labs and before Recommendations per user request
-            2026-07-16. */}
-        <VitalsRedFlagSection />
-
-        {/* Recommendations */}
-        <SectionCard
-          icon="tips-and-updates"
-          iconColor="#059669"
-          title="Recommendations"
-          content={data?.recommendations ?? ''}
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
-
-        {!data?.overview && !data?.conditions && !data?.medications && !data?.recentLabs && !data?.recommendations && (
-          <View style={styles.emptyState}>
-            <Text style={{ fontSize: 48, marginBottom: 16 }}>📋</Text>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(600) as any,
-                textAlign: 'center',
-                marginBottom: 6,
-              }}
-            >
-              No health summary available yet
-            </Text>
+        {intakeGateOpen ? (
+          <>
+            <BpsHistorySection />
+            <CurrentConditionsSection />
+            <MedicationsByConditionSection />
+            <LabsByConditionSection />
+            <VitalsRedFlagSection />
+            <TreatmentsSupportsSection />
+            <RecommendationsSection />
+            <ShareSummarySection />
+            <UpdatedAtFooter />
+          </>
+        ) : (
+          <View
+            style={{
+              alignItems: 'center',
+              paddingVertical: 32,
+              paddingHorizontal: 24,
+            }}
+          >
             <Text
               style={{
                 color: colors.subtext,
                 fontSize: getScaledFontSize(14),
                 textAlign: 'center',
+                lineHeight: 22,
               }}
             >
-              Your health summary will appear here once your health data has been processed.
+              Your personalized health summary — biopsychosocial history,
+              current conditions, medications, labs, vitals, treatments, and
+              recommendations — will appear here once you complete your intake.
             </Text>
           </View>
         )}
@@ -326,29 +227,5 @@ const styles = StyleSheet.create({
   headerSection: {
     alignItems: 'center',
     marginBottom: 20,
-  },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
   },
 });

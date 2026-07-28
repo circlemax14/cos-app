@@ -48,6 +48,15 @@ export interface IntakeQuestion {
   max?: number;
   // Max character length for `text` type inputs.
   maxLength?: number;
+  // `add_list`-only: contextual placeholder copy for the per-row label + optional
+  // note inputs the wizard's AddListQuestion already renders. When absent the
+  // wizard falls through to its generic defaults ("Add an item…" / "Optional
+  // note"). BE source of truth: cos-backend/src/config/intake-questions.ts
+  // (`IntakeQuestion.addListLabelPlaceholder` / `addListNotePlaceholder`) —
+  // introduced with the Vaccines section (COS-480) so patients see
+  // "Vaccine name" / "Date (optional)" without inventing a new question type.
+  addListLabelPlaceholder?: string;
+  addListNotePlaceholder?: string;
   // Machine-only prefill signal (NOT user copy) — BE union of supported sources.
   ehrPrefillHint?:
     | 'conditions'

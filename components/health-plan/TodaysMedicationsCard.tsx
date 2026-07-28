@@ -36,7 +36,7 @@ import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-nativ
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 
-import { Spacing } from '@/constants/design-system';
+import { Radii, Spacing } from '@/constants/design-system';
 import { usePlanMedications } from '@/hooks/use-plan-medications';
 import type { Medication } from '@/services/api/plan-medications';
 
@@ -280,7 +280,14 @@ export function TodaysMedicationsCard(props: TodaysMedicationsCardProps): React.
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 14,
+    // CHUNK 57 alignment: borderRadius 14 → Radii.xl (16). Matches every
+    // sibling BPS card (BpsWelcomeBanner / BpsTodayHeroCard /
+    // BpsAiSummaryBanner / BpsNotificationCategoriesCard / SectionCard /
+    // mapCard) so all card corners share one radius across the surface.
+    // Component is BPS-only (grep for TodaysMedicationsCard — only
+    // mounted in BiopsychosocialPlanScreen), so this has no back-compat
+    // impact on legacy.
+    borderRadius: Radii.xl,
     borderWidth: 1,
     padding: Spacing.md,
     marginBottom: Spacing.md,

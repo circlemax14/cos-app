@@ -38,13 +38,20 @@ export interface RuleVerdict {
   caveat?: string;
 }
 
+// HRV trend needs at least this many samples across the window before we'll
+// call it a real trend. Below this we return `info` so the UI can show
+// "not enough data yet" and the observer hook can skip the POST.
+export const HRV_MIN_SAMPLES = 14;
+
 /**
  * Version stamp for the threshold set. Wire this into every persisted verdict
  * (`RedFlagRecord.rulesVersion` on the backend) so downstream readers can tell
  * which rule generation produced a given event. MUST match the BE constant
  * literally — a mismatch means one side redeployed without the other.
+ * The `hrv-min-N` suffix is interpolated from `HRV_MIN_SAMPLES` so the
+ * version tag can never disagree with the threshold it names.
  */
-export const RULES_VERSION = 'v1-2026-07-16-hrv-min-14';
+export const RULES_VERSION = `v1-2026-07-16-hrv-min-${HRV_MIN_SAMPLES}` as const;
 
 /**
  * `info` and `green` never POST to the backend and never fire a local recheck
@@ -63,11 +70,6 @@ const SEVERITY_RANK: Readonly<Record<Severity, number>> = {
 // non-fasting and surface that caveat everywhere the verdict flows (tile
 // subtitle, notification copy, summary prompt block).
 const GLUCOSE_CAVEAT = 'non-fasting ranges applied';
-
-// HRV trend needs at least this many samples across the window before we'll
-// call it a real trend. Below this we return `info` so the UI can show
-// "not enough data yet" and the observer hook can skip the POST.
-const HRV_MIN_SAMPLES = 14;
 const HRV_AMBER_DROP_PCT = 0.2; // 20% drop over the window → amber
 
 /**

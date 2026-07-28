@@ -57,7 +57,7 @@ export default function IntakeCompleteView() {
           You can retake your intake any time from Care Plan.
         </Text>
         <Pressable
-          onPress={() => router.replace('/Home/health-plan' as never)}
+          onPress={() => router.replace('/Home/plan' as never)}
           style={({ pressed }) => [
             styles.cta,
             {
@@ -66,7 +66,7 @@ export default function IntakeCompleteView() {
             },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Back to Care Plan"
+          accessibilityLabel="Back to Health Summary"
         >
           <Text
             style={{
@@ -75,7 +75,7 @@ export default function IntakeCompleteView() {
               fontWeight: getScaledFontWeight(600) as any,
             }}
           >
-            Back to Care Plan
+            Back to Health Summary
           </Text>
         </Pressable>
       </View>

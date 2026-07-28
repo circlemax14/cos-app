@@ -21,7 +21,7 @@
 import React from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import Svg, { Circle, ClipPath, Defs, G, Rect, Text as SvgText } from 'react-native-svg'
-import { Stack, router } from 'expo-router'
+import { Stack, router, useLocalSearchParams } from 'expo-router'
 
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
@@ -36,6 +36,11 @@ import {
 } from '@/lib/bps-subdomains'
 import type { PlanCoverageEntry, PlanCoverageFillLevel } from '@/services/api/biopsychosocial-plan'
 import { WellbeingSubdomainSheet } from '@/components/health-plan/WellbeingSubdomainSheet'
+import {
+  UNIFIED_SECTION_ORDER,
+  unifiedSectionToWellbeingMapDomain,
+  type UnifiedSectionKey,
+} from '@/components/unified-plan/section-labels'
 
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
@@ -55,7 +60,7 @@ const DOMAIN_BG: Record<BpsDomain, string> = {
 const DOMAIN_LABEL: Record<BpsDomain, string> = {
   biological: 'Biological',
   psychological: 'Psychological',
-  social: 'Social & Spiritual',
+  social: 'Social & Faith',
 }
 
 // Larger viewBox to fit 26 subdomain labels + 3 circles + wellbeing center.
@@ -187,6 +192,54 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const planQuery = useBiopsychosocialPlan()
 
+  // Chunk 28 (2026-07-21): domain-preselect deep-link from PlanScreenV2's
+  // "View in wellbeing map" footer. Coerce params.section (string |
+  // string[] | undefined per expo-router), validate against the canonical
+  // UnifiedSectionKey list (rejects unknown / malicious values with a
+  // silent no-op — never trust the raw URL param), and translate to the
+  // wellbeing-map's internal BpsDomain via the single source of truth in
+  // section-labels.ts (socialSpiritual → 'social' rename hop lives there
+  // ONLY). All hooks below live at the TOP of the component, above any
+  // future early return — chunk-22 Rules-of-Hooks discipline.
+  const params = useLocalSearchParams<{ section?: string | string[] }>()
+  const rawSection = Array.isArray(params.section) ? params.section[0] : params.section
+  const translatedDomain: BpsDomain | null =
+    rawSection && (UNIFIED_SECTION_ORDER as readonly string[]).includes(rawSection)
+      ? unifiedSectionToWellbeingMapDomain(rawSection as UnifiedSectionKey)
+      : null
+  const scrollRef = React.useRef<ScrollView>(null)
+  // MUST be useState (not useRef) so the scroll effect below re-fires
+  // AFTER the coverage row's onLayout captures y. Ordering of the two
+  // hook types is load-bearing — the one-shot sentinel below stays a ref.
+  const [coverageRowY, setCoverageRowY] = React.useState<number | null>(null)
+  const didScrollForParamRef = React.useRef(false)
+  const spotlightTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [spotlightDomain, setSpotlightDomain] = React.useState<BpsDomain | null>(null)
+
+  React.useEffect(() => {
+    if (translatedDomain == null) return
+    if (coverageRowY == null) return
+    if (didScrollForParamRef.current) return
+    // Set sentinel FIRST — guarantees one-shot semantics even if
+    // translatedDomain and coverageRowY change in the same tick.
+    didScrollForParamRef.current = true
+    scrollRef.current?.scrollTo({ y: Math.max(0, coverageRowY - 8), animated: true })
+    setSpotlightDomain(translatedDomain)
+    // Clear-then-schedule — byte-identical to CareManagerToast's timer
+    // discipline. Guards against a rapid re-navigation that arrives
+    // mid-spotlight.
+    if (spotlightTimerRef.current) clearTimeout(spotlightTimerRef.current)
+    spotlightTimerRef.current = setTimeout(() => setSpotlightDomain(null), 2500)
+  }, [translatedDomain, coverageRowY])
+
+  // Dedicated cleanup effect — mirrors CareManagerToast's unmount
+  // discipline so a route pop mid-spotlight cannot leak the timer.
+  React.useEffect(() => {
+    return () => {
+      if (spotlightTimerRef.current) clearTimeout(spotlightTimerRef.current)
+    }
+  }, [])
+
   const coverage = React.useMemo(
     () => computeCoverage(planQuery.data?.plan ?? null, planQuery.data?.coverage),
     [planQuery.data?.plan, planQuery.data?.coverage],
@@ -291,6 +344,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
     <AppWrapper>
       <Stack.Screen options={{ title: 'Wellbeing map', headerBackTitle: 'Care Plan' }} />
       <ScrollView
+        ref={scrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={{ paddingBottom: 32 }}
       >
@@ -326,15 +380,29 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         </View>
 
         {/* Coverage summary — three tinted cards, one per domain */}
-        <View style={styles.coverageRow}>
+        <View
+          style={styles.coverageRow}
+          onLayout={(e) => setCoverageRowY(e.nativeEvent.layout.y)}
+        >
           {(['biological', 'psychological', 'social'] as BpsDomain[]).map((d) => {
             const s = domainStats[d]
+            // Chunk 28: 2px "spotlight" ring on the preselected domain
+            // card for 2.5s after a deep-link-triggered scroll. Plain
+            // conditional width (1 ↔ 2) — NO Animated.timing, NO
+            // LayoutAnimation (iOS 26.5 crash-class avoidance). borderColor
+            // is unchanged (DOMAIN_COLOR[d] is the tint in both states);
+            // only the width delta communicates focus.
+            const isSpotlit = spotlightDomain === d
             return (
               <View
                 key={d}
                 style={[
                   styles.coverageCard,
-                  { backgroundColor: DOMAIN_BG[d], borderColor: DOMAIN_COLOR[d] },
+                  {
+                    backgroundColor: DOMAIN_BG[d],
+                    borderColor: DOMAIN_COLOR[d],
+                    borderWidth: isSpotlit ? 2 : 1,
+                  },
                 ]}
               >
                 <Text

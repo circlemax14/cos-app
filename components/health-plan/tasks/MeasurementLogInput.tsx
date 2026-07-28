@@ -7,18 +7,22 @@
  * two-field payload {systolic, diastolic}; every other preset + custom
  * metric ships a single-field {value} payload.
  *
- * On success, clears inputs and calls onLogged(updatedTask) with the full
- * PlanTask returned by the endpoint so the parent detail modal can update
- * its measurement history immediately instead of waiting on the
- * ['ai-health-plan'] invalidation round-trip.
+ * CHUNK 43 (2026-07-21): fire-and-forget the POST via useLogTaskMeasurement
+ * (see hooks/use-plan-tasks.ts). Composes the measurement locally and
+ * hands the parent a synthetic PlanTask with it appended, so
+ * MeasurementHistoryList re-renders same-tick without waiting for the
+ * plan refetch. Awaiting the axios response inside a tap handler is the
+ * iOS 26.5 SIGABRT primitive documented in components/unified-plan/v2/net.ts.
+ * The optimistic append is also mirrored in the hook's onMutate so the
+ * ai-health-plan cache stays consistent with the parent's localTask.
  */
 
 import React from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { Spacing } from '@/constants/design-system';
 import { useLogTaskMeasurement } from '@/hooks/use-plan-tasks';
-import type { PlanTask } from '@/services/api/types';
+import type { PlanTask, TaskMeasurement } from '@/services/api/types';
 
 type ColorMap = Record<string, string>;
 
@@ -73,7 +77,7 @@ export function MeasurementLogInput({
     if (error) setError(null);
   }, [error]);
 
-  const onLog = React.useCallback(async () => {
+  const onLog = React.useCallback(() => {
     if (!canLog) return;
     let value: Record<string, number | string>;
     if (isBp) {
@@ -92,16 +96,27 @@ export function MeasurementLogInput({
       }
       value = { value: v };
     }
-    try {
-      const saved = await logMut.mutateAsync({ id: task.id, body: { value, source: 'manual' } });
-      setPrimary('');
-      setSecondary('');
-      setError(null);
-      onLogged?.(saved);
-    } catch {
-      Alert.alert('Log failed', 'Please try again in a moment.');
-    }
-  }, [canLog, isBp, primary, secondary, task.id, logMut, onLogged]);
+    // CHUNK 43: fire-and-forget. Do NOT await the mutation — awaiting
+    // axios inside a tap handler is the iOS 26.5 SIGABRT class. Compose
+    // the measurement locally (same shape the hook's onMutate composes
+    // for the ai-health-plan cache) so MeasurementHistoryList in the
+    // parent detail modal re-renders same-frame. Server-authoritative
+    // row replaces it after the 8s invalidate.
+    const composed: TaskMeasurement = {
+      timestamp: new Date().toISOString(),
+      value,
+      source: 'manual',
+    };
+    logMut.mutate({ id: task.id, body: { value, source: 'manual' } });
+    const updatedTask: PlanTask = {
+      ...task,
+      measurements: [...(task.measurements ?? []), composed],
+    };
+    setPrimary('');
+    setSecondary('');
+    setError(null);
+    onLogged?.(updatedTask);
+  }, [canLog, isBp, primary, secondary, task, logMut, onLogged]);
 
   const labelName = metric?.name ?? 'Value';
   const unit = metric?.unit ? ` (${metric.unit})` : '';
@@ -153,19 +168,20 @@ export function MeasurementLogInput({
             },
           ]}
         >
-          {logMut.isPending ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text
-              style={{
-                color: '#FFFFFF',
-                fontSize: getScaledFontSize(13),
-                fontWeight: getScaledFontWeight(700) as '700',
-              }}
-            >
-              Log
-            </Text>
-          )}
+          {/* Chunk 46: dropped ActivityIndicator (iOS 26.5 crash class).
+              Chunk 43 already made the log fire-and-forget, composed a
+              synthetic PlanTask, and reset inputs same-tick, so this
+              branch was dead-code on the happy path. Parent
+              TouchableOpacity's 0.7 opacity dim + disabled state remain. */}
+          <Text
+            style={{
+              color: '#FFFFFF',
+              fontSize: getScaledFontSize(13),
+              fontWeight: getScaledFontWeight(700) as '700',
+            }}
+          >
+            Log
+          </Text>
         </TouchableOpacity>
       </View>
       {error ? (

@@ -87,6 +87,22 @@ export function prefetchAfterAuth(opts: PrefetchOptions = {}): void {
       queryFn: fetchPatientInfo,
       staleTime: 5 * 60_000,
     }),
+    // Chunk 64 (2026-07-22): warm the feature-flags cache so
+    // isBpsEligibleCached() in hooks/use-notifications.ts can read a
+    // real answer at cold-start push-tap time. Without this warm, the
+    // med-refill push tap on a killed-app cold start fires before
+    // /v1/feature-flags returns, isBpsEligibleCached() sees an empty
+    // cache and returns false, and BPS-eligible users route to legacy
+    // — defeating chunk 64's purpose for the cold-start path. 5-min
+    // staleTime matches useFeatureFlags's own STALE_MS.
+    queryClient.prefetchQuery({
+      queryKey: ['feature-flags'],
+      queryFn: async () => {
+        const res = await apiClient.get('/v1/feature-flags');
+        return res.data.data.flags;
+      },
+      staleTime: 5 * 60_000,
+    }),
     queryClient.prefetchQuery({
       queryKey: ['medications-summary'],
       queryFn: () => fetchMedicationsSummary(),

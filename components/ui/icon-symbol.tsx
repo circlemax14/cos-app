@@ -56,6 +56,7 @@ const MAPPING = {
   'checklist': 'checklist',
   'list.bullet.clipboard': 'assignment',
   'cross.case.fill': 'medical-services',
+  'waveform.path.ecg': 'monitor-heart',
 } as IconMapping;
 
 /**

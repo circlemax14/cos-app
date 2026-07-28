@@ -24,7 +24,7 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Colors } from '@/constants/theme';
@@ -209,13 +209,12 @@ export function MedicationsReviewModal({
               accessibilityLabel="These look right — confirm my medications"
               style={[styles.btn, styles.btnPrimary, { backgroundColor: tint, opacity: isConfirming ? 0.6 : 1 }]}
             >
-              {isConfirming ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
-                  These look right
-                </Text>
-              )}
+              {/* Chunk 46: dropped ActivityIndicator (iOS 26.5 crash class).
+                  Parent Pressable's 0.6 opacity dim + disabled state remain
+                  as the pending-state signal on slow networks. */}
+              <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                These look right
+              </Text>
             </Pressable>
 
             <Pressable

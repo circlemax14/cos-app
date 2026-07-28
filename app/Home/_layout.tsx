@@ -4,15 +4,30 @@ import { View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { AiClipboardIcon } from '@/components/ui/ai-clipboard-icon';
 import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
+import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
   const { data: permissions } = useFeaturePermissions();
   const { panHandlers } = useInactivityTimeout();
+  /*
+   * COS-469 / Phase 4 — when the default-flip flag is ON, the visible
+   * Care Plan tab points at `unified-plan` and `health-plan` becomes
+   * an internal-only deep link (still reachable via ClassicViewLink).
+   * Defaults to `false` on load, so pre-flip users see zero change.
+   */
+  const unifiedDefault = useUnifiedPlanDefaultEnabled();
+  const carePlanTabOptions = {
+    title: 'Health Plan',
+    tabBarIcon: ({ color }: { color: string }) => (
+      <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
+    ),
+  };
 
   // Default to true (visible) while permissions are loading
   const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
@@ -53,21 +68,56 @@ export default function TabLayout() {
           }}
         />
       )}
+      {/*
+        COS-469 / Phase 4 — Care Plan tab default swap.
+        `unifiedDefault` OFF: legacy `health-plan` remains the visible
+        default (baseline). `unifiedDefault` ON: `health-plan` becomes
+        an internal-only deep link (`href: null`) reachable via the
+        ClassicViewLink icon in the unified-plan header. Same
+        Tabs.Screen entries — no navigator remount, no new file.
+      */}
       <Tabs.Screen
         name="health-plan"
-        options={{
-          title: 'Health Plan',
-          tabBarIcon: ({ color }) => (
-            <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
-          ),
-        }}
+        options={
+          unifiedDefault
+            ? { title: 'Classic care plan', href: null, headerShown: false }
+            : carePlanTabOptions
+        }
+      />
+      {/*
+        Chunk 29 (2026-07-21) — unified-plan Tabs.Screen moved from the
+        end of the file (line ~362 previously) to sit RIGHT AFTER
+        health-plan so both share the same Care Plan slot in the tab bar.
+        When unifiedDefault flips, the visible tab now stays in slot 3
+        instead of jumping to the end of the tab bar (past all the
+        href:null hidden screens). This was the 2026-07-18 Phase 4
+        rollback's "tab visual regression on Vishal's build 62" —
+        expo-router renders tabs in file-order after filtering
+        href:null; the old position pushed unified-plan visually to
+        the far right when the flag flipped on.
+
+        COS-467 — Unified BPS plan view (Phase 2/4). When unifiedDefault
+        is OFF (baseline), this screen is a hidden deep-link peer to
+        the Care Plan tab, reached only via the TryUnifiedPlanBanner
+        CTA on health-plan and biopsychosocial-plan. When ON, it takes
+        over the Care Plan tab slot (health-plan becomes hidden and
+        deep-linkable via ClassicViewLink). Owns its own header, so
+        headerShown is false in the hidden variant.
+      */}
+      <Tabs.Screen
+        name="unified-plan"
+        options={
+          unifiedDefault
+            ? carePlanTabOptions
+            : { title: 'Unified plan', href: null, headerShown: false }
+        }
       />
       <Tabs.Screen
         name="plan"
         options={{
           title: 'Health Summary',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+            <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
           ),
         }}
       />
@@ -331,15 +381,52 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        CHUNK 50 — BPS Progress screen, reached via the "View Progress"
+        link in the BPS header. Explicitly registered as href: null so
+        expo-router does NOT auto-surface it as a bottom tab. Ken
+        2026-07-22 dogfood: unregistered files still get inferred as tabs;
+        we saw the Progress route appearing in the bottom nav next to
+        Home/Calendar/etc. This makes it internal-only.
+      */}
+      <Tabs.Screen
+        name="bps-progress"
+        options={{
+          title: 'Progress',
+          href: null,
+          headerShown: false,
+        }}
+      />
       {/* HS-1 / SCRUM-590 — patient intake wizard as a stack-pushed route (not a Modal), same pattern as plan-type-chooser and biopsychosocial-plan (iOS 26.5 modal-crash background). */}
       <Tabs.Screen
         name="patient-intake"
         options={{ title: 'Health check-in', href: null, headerShown: false }}
       />
+      {/* COS-452 — read-only intake report reachable from IntakeCtaCard. */}
+      <Tabs.Screen
+        name="patient-intake-report"
+        options={{ title: 'Your intake', href: null, headerShown: false }}
+      />
       <Tabs.Screen
         name="assessment-stepper"
         options={{
           title: 'Check-in',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        CHUNK 67 (2026-07-23) — domain-scoped check-in picker.
+        Reachable ONLY via the BpsWellbeingScoreCard empty-pill CTA
+        (see WELLBEING_DOMAIN_PICKER_ENABLED in that file). Same hidden
+        Tabs.Screen pattern used above so expo-router doesn't
+        auto-surface it as a bottom tab. iOS 26.5 safe primitives only
+        (see file header for the full discipline list).
+      */}
+      <Tabs.Screen
+        name="wellbeing-domain-checkins"
+        options={{
+          title: 'Check-ins',
           href: null,
           headerShown: false,
         }}

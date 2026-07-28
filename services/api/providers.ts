@@ -519,17 +519,31 @@ export async function fetchDevices(): Promise<DeviceItem[]> {
 
 /**
  * Fetch lab reports with resolved Observation values, optionally filtered by performer.
+ *
+ * Lenient variant used by legacy callers — swallows errors and returns [] so a
+ * transient HealthLake failure doesn't blank the Providers tab. New code paths
+ * (e.g. useLabs on the Plan/Health Summary surface) should call
+ * `fetchProviderLabReportsStrict` instead so react-query can surface the error
+ * state and drive retries — same pattern as patient.ts.
  */
 export async function fetchProviderLabReports(providerId?: string): Promise<LabReport[]> {
   try {
-    const res = await apiClient.get<{ success: boolean; data: LabReport[] }>('/v1/patients/me/lab-reports');
-    const reports = res.data.data ?? [];
-    if (!providerId) return reports;
-    const providerRef = `Practitioner/${providerId}`;
-    return reports.filter((r) => !r.performerRef || r.performerRef === providerRef || r.performerRef.includes(providerId));
+    return await fetchProviderLabReportsStrict(providerId);
   } catch {
     return [];
   }
+}
+
+/**
+ * Strict variant: propagates errors to the caller so react-query can render
+ * an error state and retry, instead of showing a misleading empty labs list.
+ */
+export async function fetchProviderLabReportsStrict(providerId?: string): Promise<LabReport[]> {
+  const res = await apiClient.get<{ success: boolean; data: LabReport[] }>('/v1/patients/me/lab-reports');
+  const reports = res.data.data ?? [];
+  if (!providerId) return reports;
+  const providerRef = `Practitioner/${providerId}`;
+  return reports.filter((r) => !r.performerRef || r.performerRef === providerRef || r.performerRef.includes(providerId));
 }
 
 /**

@@ -32,7 +32,6 @@
  */
 import React from 'react';
 import {
-  ActivityIndicator,
   Platform,
   Pressable,
   RefreshControl,
@@ -358,11 +357,7 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
               { backgroundColor: alpha(tint, '14'), borderColor: alpha(tint, '40'), opacity: generating || !canGeneratePlan ? 0.5 : 1 },
             ]}
           >
-            {generating ? (
-              <ActivityIndicator color={tint} size="small" />
-            ) : (
-              <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={tint} />
-            )}
+            <MaterialIcons name="refresh" size={getScaledFontSize(18)} color={tint} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -382,18 +377,14 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
             { backgroundColor: tint, opacity: generating || !canGeneratePlan ? 0.5 : 1 },
           ]}
         >
-          {generating ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <MaterialIcons name="auto-awesome" size={getScaledFontSize(20)} color="#fff" />
-              <Text
-                style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }}
-              >
-                Build my plan
-              </Text>
-            </>
-          )}
+          <>
+            <MaterialIcons name="auto-awesome" size={getScaledFontSize(20)} color="#fff" />
+            <Text
+              style={{ color: '#fff', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any }}
+            >
+              Build my plan
+            </Text>
+          </>
         </TouchableOpacity>
       ) : null}
 
@@ -737,18 +728,14 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
               { backgroundColor: tint, opacity: generating || !canGeneratePlan ? 0.5 : 1 },
             ]}
           >
-            {generating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color="#fff" />
-                <Text
-                  style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any, marginLeft: 6 }}
-                >
-                  Build my plan
-                </Text>
-              </>
-            )}
+            <>
+              <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color="#fff" />
+              <Text
+                style={{ color: '#fff', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any, marginLeft: 6 }}
+              >
+                Build my plan
+              </Text>
+            </>
           </TouchableOpacity>
         </View>
       )}

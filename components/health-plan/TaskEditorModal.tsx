@@ -10,8 +10,13 @@
  *   - Optional target
  *   - Cadence + time
  *
- * Backed by the useCreatePlanTask / useUpdatePlanTask hooks. On success,
- * closes the modal and calls onSaved so the parent can react.
+ * Backed by the useCreatePlanTask / useUpdatePlanTask hooks. On tap,
+ * fires the write and closes the modal same-tick (CHUNK 42, 2026-07-21):
+ * awaiting an axios response inside a tap handler is the iOS 26.5
+ * SIGABRT primitive documented in components/unified-plan/v2/net.ts.
+ * Reconcile happens via ai-health-plan query invalidation, not via a
+ * response payload. The `onSaved` prop is retained on the interface for
+ * back-compat but is no longer invoked.
  *
  * OTA-safe (pure JS, no native fingerprint change).
  */
@@ -19,7 +24,6 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -59,6 +63,14 @@ export interface TaskEditorModalProps {
   defaultCategory?: string;
   /** Pre-fill semantic type. Defaults to 'reminder' for new tasks. */
   defaultType?: TaskType;
+  /**
+   * @deprecated CHUNK 42 (2026-07-21): no longer invoked. Save is now
+   * fire-and-forget and the modal closes same-tick — reconcile happens
+   * via ai-health-plan query invalidation inside useCreatePlanTask /
+   * useUpdatePlanTask. Kept in the prop shape to avoid a breaking
+   * change for any external caller; safe to drop in a future cleanup
+   * once callers stop passing it.
+   */
   onSaved?: (task: PlanTask) => void;
 
   colors: ColorMap;
@@ -86,8 +98,39 @@ const CADENCE_OPTIONS: { key: TaskRecurrence; label: string }[] = [
   { key: 'once', label: 'Once' },
 ];
 
+/**
+ * CHUNK 53 (2026-07-22): props for the bodyless TaskEditorBody variant.
+ * Identical to TaskEditorModalProps except `visible` is dropped — the Body
+ * is only mounted when its parent Modal is visible. Used by the
+ * consolidated BPS Modal in BiopsychosocialPlanScreen so multiple <Modal
+ * transparent> nodes no longer coexist in the tree at once.
+ */
+export type TaskEditorBodyProps = Omit<TaskEditorModalProps, 'visible'>;
+
 export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element | null {
-  const { visible, onClose, initialTask, defaultCategory, defaultType, onSaved, colors, getScaledFontSize, getScaledFontWeight } = props;
+  const { visible, ...bodyProps } = props;
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={bodyProps.onClose}>
+      <TaskEditorBody {...bodyProps} />
+    </Modal>
+  );
+}
+
+/**
+ * CHUNK 53 (2026-07-22): bodyless variant — the entire interior of
+ * TaskEditorModal minus the outer <Modal> wrapper. Extracted so the
+ * consolidated BPS editor Modal in BiopsychosocialPlanScreen can host any
+ * one of task-editor / task-detail / bio-goal without stacking multiple
+ * <Modal transparent> presentations. Behavior IDENTICAL to the wrapped
+ * default export — same state reset semantics, same fire-and-forget save,
+ * same iOS 26.5 discipline.
+ */
+export function TaskEditorBody(props: TaskEditorBodyProps): React.JSX.Element | null {
+  // CHUNK 42: onSaved intentionally NOT destructured — no longer invoked
+  // (see prop @deprecated note). Reconcile via query invalidation inside
+  // useCreatePlanTask / useUpdatePlanTask.
+  const { onClose, initialTask, defaultCategory, defaultType, colors, getScaledFontSize, getScaledFontWeight } = props;
   const editing = !!initialTask;
 
   const [title, setTitle] = React.useState('');
@@ -102,9 +145,14 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
   const [recurrence, setRecurrence] = React.useState<TaskRecurrence>('daily');
   const [manualStyleOverride, setManualStyleOverride] = React.useState(false);
 
-  // Reset when opened / initialTask changes
+  // Reset when opened / initialTask changes.
+  // CHUNK 53: no more `visible` gate — Body is only mounted while its
+  // parent Modal is visible. The `initialTask` / `defaultType` deps keep
+  // the same reset semantics as before when the parent swaps sessions
+  // without unmounting (the consolidated Modal in BPS keys on session
+  // identity so full remount is the common path; this effect still
+  // covers the wrapper-mode callers that toggle initialTask in place).
   React.useEffect(() => {
-    if (!visible) return;
     if (initialTask) {
       setTitle(initialTask.title ?? '');
       setDescription(initialTask.description ?? '');
@@ -130,7 +178,7 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
       setRecurrence('daily');
       setManualStyleOverride(false);
     }
-  }, [visible, initialTask, defaultType]);
+  }, [initialTask, defaultType]);
 
   // Smart-default detection: when NOT editing and user hasn't manually
   // touched the type toggle, auto-set completionStyle + preset metric
@@ -148,7 +196,25 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
 
   const createMut = useCreatePlanTask();
   const updateMut = useUpdatePlanTask();
-  const saving = createMut.isPending || updateMut.isPending;
+  // CHUNK 42 fix (adversarial-verify major): session-scoped saved flag.
+  // Original chunk 42 computed `saving = createMut.isPending || updateMut
+  // .isPending` — but the hook-level 8s pending-window latch (chunk 40/41
+  // pattern) keeps those flags true for 8s AFTER save, and TaskEditorModal
+  // is unconditionally mounted by the parent (only `visible` toggles).
+  // Result: isPending BLEEDS across modal open/close cycles. User saves
+  // a Bio task, ~3s later opens Psy add-task, Save button is stuck
+  // disabled with a spinner for another ~5s with no explanation.
+  //
+  // Fix: track savedThisSession as local state that resets on visible
+  // false→true. Multi-tap protection within the SAME session survives
+  // (rare — modal closes same-tick on Save anyway) but the flag never
+  // leaks to the next session.
+  // CHUNK 53: reset once on mount — the Body's lifetime IS the session,
+  // so mount = fresh session. Wrapper callers get equivalent behavior
+  // because the Modal wrapper also mounts/unmounts on visible toggle
+  // (visible-false renders null via the guard above).
+  const [savedThisSession, setSavedThisSession] = React.useState(false);
+  const saving = savedThisSession;
 
   const chosenPreset: TaskMetric | undefined = React.useMemo(() => {
     if (!metricKey) return undefined;
@@ -164,7 +230,7 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
   const canSave = title.trim().length > 0 && !saving &&
     (completionStyle === 'simple' || !!chosenPreset);
 
-  const handleSave = React.useCallback(async () => {
+  const handleSave = React.useCallback(() => {
     if (!canSave) return;
     const body = {
       type,
@@ -177,25 +243,30 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
       completionStyle,
       ...(chosenPreset ? { metric: chosenPreset } : {}),
     };
-    try {
-      const saved = editing
-        ? await updateMut.mutateAsync({ id: initialTask!.id, body })
-        : await createMut.mutateAsync(body);
-      onSaved?.(saved);
-      onClose();
-    } catch (err) {
-      Alert.alert('Save failed', 'Please try again in a moment.');
+    // CHUNK 42 (2026-07-21): fire-and-forget then close same tick.
+    // - No await: the awaited-inside-tap-handler axios shape is the
+    //   iOS 26.5 SIGABRT primitive (see components/unified-plan/v2/net.ts).
+    // - No Alert.alert: Alert-over-Modal is a second crash surface on the
+    //   same device class.
+    // - No onSaved callback: reconcile via ai-health-plan query
+    //   invalidation inside useCreatePlanTask / useUpdatePlanTask.
+    // BE createPlanTask assigns id server-side (see
+    // services/api/plan-tasks.ts + SCRUM-587), so a same-frame double-tap
+    // creates at most one extra DDB row — no crash risk.
+    setSavedThisSession(true);
+    if (editing) {
+      updateMut.mutate({ id: initialTask!.id, body });
+    } else {
+      createMut.mutate(body);
     }
-  }, [canSave, type, title, description, scheduledTime, recurrence, initialTask, defaultCategory, completionStyle, chosenPreset, editing, updateMut, createMut, onSaved, onClose]);
-
-  if (!visible) return null;
+    onClose();
+  }, [canSave, type, title, description, scheduledTime, recurrence, initialTask, defaultCategory, completionStyle, chosenPreset, editing, updateMut, createMut, onClose]);
 
   const tint = (colors.tint as string) ?? '#0D9488';
   const detectedActive = !editing && !manualStyleOverride && title.trim().length > 0 && completionStyle === 'measurable';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
+    <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: colors.card ?? colors.background }]}>
           <View style={styles.header}>
@@ -403,7 +474,6 @@ export function TaskEditorModal(props: TaskEditorModalProps): React.JSX.Element 
           </View>
         </View>
       </View>
-    </Modal>
   );
 }
 

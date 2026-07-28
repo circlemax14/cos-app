@@ -1,5 +1,6 @@
 import React from 'react'
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Pressable,
   ScrollView,
@@ -16,11 +17,38 @@ import { usePlanType, meetsTier } from '@/hooks/use-plan-type'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent'
 
+// CHUNK 69: `?focus=bio|psy|soc` deep-link (from BpsWellbeingScoreCard tap,
+// chunks 65/66) scrolls the catalog to the matching domain section on
+// mount. Mirrors chunk-55 poll discipline: 10 attempts × 200ms, mark
+// handled after successful scroll, VoiceOver announce on completion.
+// Silently no-ops for any other `focus` value (incl. 'other', '') and
+// when the assessment-strategy-v2 flag is OFF (no per-domain sections
+// rendered — flat grid only).
+type CatalogFocusToken = 'bio' | 'psy' | 'soc'
+type CatalogDomainKey = 'biological' | 'psychological' | 'social' | 'other'
+const FOCUS_TO_DOMAIN: Record<CatalogFocusToken, CatalogDomainKey> = {
+  bio: 'biological',
+  psy: 'psychological',
+  soc: 'social',
+}
+const FOCUS_ANNOUNCE: Record<CatalogFocusToken, string> = {
+  bio: 'Navigated to your biological check-ins.',
+  psy: 'Navigated to your psychological check-ins.',
+  soc: 'Navigated to your social and spiritual check-ins.',
+}
+function normalizeFocus(v: unknown): CatalogFocusToken | null {
+  return v === 'bio' || v === 'psy' || v === 'soc' ? v : null
+}
+
 export default function AssessmentsCatalogScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
-  const params = useLocalSearchParams<{ source?: string }>()
+  const params = useLocalSearchParams<{ source?: string; focus?: string }>()
   const fromPlanUpgrade = params.source === 'plan-upgrade'
+  // Normalize the deep-link param up-front so effect deps depend on a
+  // stable primitive (null | 'bio' | 'psy' | 'soc') instead of the raw
+  // string, which would re-fire the effect on unrelated param churn.
+  const deepLinkFocus = normalizeFocus(params.focus)
 
   const { planType, isLoading: planLoading } = usePlanType()
   const canAccess = meetsTier(planType, 'advanced')
@@ -32,6 +60,80 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
   // link from assessment-stepper, etc.) and the flag/tier state is the
   // single source of truth regardless of how the user got here.
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag()
+
+  // CHUNK 69: parent-owned refs the deep-link effect reads from. Y values
+  // captured via onLayout wrappers below. Value-keyed guard (not boolean)
+  // — repeat identical focus value no-ops; a fresh value on route re-entry
+  // re-fires. Same discipline as BiopsychosocialPlanScreen chunk-55/60.
+  const scrollRef = React.useRef<ScrollView | null>(null)
+  // Y of the AssessmentCatalogContent root wrapper within the ScrollView
+  // (needed because domainGroup onLayout fires against its parent, which
+  // is the catalog content root — not the ScrollView directly). Sum of
+  // this + per-group y = ScrollView-content y-offset. Mirrors the chunk-57
+  // blocker comment on BiopsychosocialPlanScreen line 1584-1590.
+  const contentBaseYRef = React.useRef<number | null>(null)
+  const sectionYByKey = React.useRef<Map<CatalogDomainKey, number>>(
+    new Map<CatalogDomainKey, number>(),
+  )
+  const focusHandledRef = React.useRef<string | null>(null)
+  const onSectionLayout = React.useCallback((key: CatalogDomainKey, y: number) => {
+    sectionYByKey.current.set(key, y)
+  }, [])
+
+  // CHUNK 69 deep-link effect. Polls every 200ms up to ~2s for the target
+  // domain wrapper to lay out, then scrolls and marks handled. Give-up
+  // still marks handled so we never loop across re-renders of the same
+  // unresolved value (e.g. flag OFF branch → no domain sections render,
+  // or user's `visible` set has zero instruments in the target bucket so
+  // that section is filtered out at line 107 of AssessmentCatalogContent).
+  //
+  // Bail branches:
+  //  - deepLinkFocus null/invalid: nothing to do
+  //  - already handled this exact value: idempotent
+  //  - planLoading / !canAccess: ScrollView isn't mounted (early returns
+  //    below), so polls would burn against nothing. Effect re-runs on
+  //    those state transitions and starts fresh polling once mounted.
+  React.useEffect(() => {
+    if (!deepLinkFocus) return
+    if (focusHandledRef.current === deepLinkFocus) return
+    if (planLoading || !canAccess) return
+    const domainKey = FOCUS_TO_DOMAIN[deepLinkFocus]
+    const POLL_MS = 200
+    const MAX_ATTEMPTS = 10
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tryScroll = () => {
+      const base = contentBaseYRef.current
+      const rel = sectionYByKey.current.get(domainKey)
+      if (base != null && rel != null && scrollRef.current) {
+        const y = Math.max(0, base + rel - 12)
+        scrollRef.current.scrollTo({ y, animated: true })
+        focusHandledRef.current = deepLinkFocus
+        // announceForAccessibilityWithOptions(queue:true) available since
+        // RN 0.68; cos-app is on 0.83.10. Queued so it fires AFTER any
+        // in-flight VoiceOver read (header, plan-upgrade intro) instead
+        // of preempting it.
+        AccessibilityInfo.announceForAccessibilityWithOptions(
+          FOCUS_ANNOUNCE[deepLinkFocus],
+          { queue: true },
+        )
+        return
+      }
+      if (++attempts >= MAX_ATTEMPTS) {
+        // Give up. Common legitimate causes: v2 flag OFF (no domain
+        // sections render), or target bucket empty (filtered at
+        // groupInstrumentsByDomain line 107). Mark handled so we don't
+        // retry forever on the same value.
+        focusHandledRef.current = deepLinkFocus
+        return
+      }
+      timer = setTimeout(tryScroll, POLL_MS)
+    }
+    timer = setTimeout(tryScroll, POLL_MS)
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [deepLinkFocus, planLoading, canAccess])
 
   if (planLoading) {
     return (
@@ -70,7 +172,11 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
 
   return (
     <AppWrapper>
-      <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView
+        ref={scrollRef}
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={{ paddingBottom: 32 }}
+      >
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
             <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
@@ -80,15 +186,38 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
           </Text>
         </View>
 
-        <AssessmentCatalogContent
-          intro={
-            fromPlanUpgrade
-              ? 'Pick the check-ins to start with. Your AI plan personalizes itself as you go.'
-              : 'Take or revisit check-ins to keep your plan up to date.'
-          }
-          biopsychosocialPlanEnabled={biopsychosocialPlanEnabled}
-          hasPlanType={planType !== undefined}
-        />
+        {/*
+          CHUNK 69: onLayout wrapper captures the AssessmentCatalogContent
+          root's y-offset within the ScrollView so per-domain offsets
+          (relative to this wrapper's child, filled via onSectionLayout)
+          can be summed to a correct ScrollView-content y. Mirrors the
+          chunk-57 blocker fix on BiopsychosocialPlanScreen: onLayout
+          fires relative to its IMMEDIATE parent, so the wrapper must
+          be a direct child of the ScrollView.
+        */}
+        <View
+          onLayout={(e) => {
+            contentBaseYRef.current = e.nativeEvent.layout.y
+          }}
+        >
+          <AssessmentCatalogContent
+            intro={
+              fromPlanUpgrade
+                ? 'Pick the check-ins to start with. Your AI plan personalizes itself as you go.'
+                : 'Take or revisit check-ins to keep your plan up to date.'
+            }
+            biopsychosocialPlanEnabled={biopsychosocialPlanEnabled}
+            hasPlanType={planType !== undefined}
+            onSectionLayout={onSectionLayout}
+            // CHUNK 69 (hide-completed filter): map the deep-link token
+            // to the domain-bucket key so AssessmentCatalogContent can
+            // hide already-completed instruments inside that one group
+            // (safe-fallback: reverts to full list if the group would
+            // end up empty). Absent/invalid ?focus= → undefined → no
+            // filtering, byte-for-byte today's behavior.
+            focusedDomain={deepLinkFocus ? FOCUS_TO_DOMAIN[deepLinkFocus] : undefined}
+          />
+        </View>
       </ScrollView>
     </AppWrapper>
   )

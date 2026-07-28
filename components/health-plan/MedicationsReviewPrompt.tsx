@@ -28,7 +28,7 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -247,15 +247,11 @@ export function MedicationsReviewPrompt({
           accessibilityLabel="Confirm my medications"
           style={[styles.btn, { borderColor: colors.tint as string, borderWidth: 1, opacity: updateMutation.isPending ? 0.6 : 1 }]}
         >
-          {updateMutation.isPending ? (
-            <ActivityIndicator color={colors.tint as string} size="small" />
-          ) : (
-            <Text
-              style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}
-            >
-              Confirm my medications
-            </Text>
-          )}
+          <Text
+            style={{ color: colors.tint as string, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any }}
+          >
+            Confirm my medications
+          </Text>
         </Pressable>
 
         <Pressable

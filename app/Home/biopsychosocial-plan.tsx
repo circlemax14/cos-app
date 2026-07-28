@@ -21,11 +21,18 @@
  * empty bio screen.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
-import { BiopsychosocialPlanScreen } from '@/components/health-plan/BiopsychosocialPlanScreen';
+import {
+  BiopsychosocialPlanScreen,
+  BPS_MODAL_CONSOLIDATION_ENABLED,
+} from '@/components/health-plan/BiopsychosocialPlanScreen';
 import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal';
+import { TryUnifiedPlanBanner } from '@/components/unified-plan/TryUnifiedPlanBanner';
+// CHUNK 75 (Ken 2026-07-23): TryUnifiedViewLink import removed — unified-plan
+// surface is parked post-BPS-pivot, so the header affordance pointed nowhere
+// useful. Legacy /Home/health-plan header still imports ClassicViewLink for
+// the reverse CTA and is intentionally untouched.
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { usePlanType } from '@/hooks/use-plan-type';
@@ -47,6 +54,30 @@ function firstNameFromPatient(
 export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  /*
+   * COS-469 / Phase 4 — `?classic=1` is the stable bypass-hook when the
+   * default-flip is on and the user came in via ClassicViewLink. Read
+   * defensively but take no action today; this param exists so any
+   * future auto-forward-to-unified redirect has a documented escape.
+   *
+   * CHUNK 55 (2026-07-22): also read `?focus=` and forward its value
+   * unmodified to BiopsychosocialPlanScreen as `deepLinkFocus`. The
+   * child owns the scroll/timer/refs so the meds-focus behavior lives
+   * in a single place (not split across the route and screen).
+   * Non-'medications' values are no-ops downstream — the child
+   * short-circuits before its timer registers. Route-parent reads
+   * only, no local effect: everything happens inside the screen.
+   *
+   * CHUNK 64 (2026-07-22): MEDICATION_REFILL_REMINDER push now routes
+   * bio-eligible patients HERE (lib/notification-routing.ts +
+   * hooks/use-notifications.ts pass `bpsEnabled` from the cached
+   * feature-flags query). Ineligible patients still land on legacy
+   * `/Home/health-plan?focus=medications`. Kill-switch:
+   * `NOTIFICATION_MEDS_ROUTE_BPS_ENABLED` — flip to false to OTA-revert.
+   */
+  const { focus } = useLocalSearchParams<{ classic?: string; focus?: string }>();
+  const deepLinkFocus = typeof focus === 'string' ? focus : null;
 
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
   const planQuery = useBiopsychosocialPlan();
@@ -90,7 +121,29 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
     );
   }, []);
 
-  const saveBioGoalEdit = useCallback(async () => {
+  /*
+   * CHUNK 41 (2026-07-21): fire-and-forget Save.
+   *
+   * Prior shape was `await mutateAsync(...)` then `closeBioGoalEditor()`
+   * in a try/catch with an Alert.alert on failure. Awaiting the axios
+   * response while the BioGoalEditorModal was STILL mounted was the exact
+   * chunk-9.5 SIGABRT shape on iOS 26.5 (turbomodule queue) — same class
+   * as the regen crash chunk 40 fixed.
+   *
+   * New shape: fire `.mutate` (no await, no return-value read), close the
+   * Modal on the very next line (same tick as the tap). Modal unmounts
+   * before any HTTP response could arrive. The `useUpdateBioGoal` hook's
+   * pending-window latch (8s) keeps `isPending` true so `onSuccess`
+   * invalidate fires AFTER the server has landed the write; on the bio
+   * route that pending flag is presentational dead code because the
+   * Modal is already gone.
+   *
+   * No Alert.alert on failure: server-side reconcile happens on next
+   * refetch (staleTime 5min or pull-to-refresh). The tradeoff is
+   * accepted — pull-to-refresh is the recovery path, same discipline as
+   * chunks 32 / 34 / 40.
+   */
+  const saveBioGoalEdit = useCallback(() => {
     if (!bioEditGoal) return;
     const patch: GoalPatch = {};
     if (bioEditTitle !== bioEditGoal.title) patch.title = bioEditTitle;
@@ -104,12 +157,8 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
     ) {
       patch.subdomains = bioEditSubdomains;
     }
-    try {
-      await updateBioGoalMutation.mutateAsync({ goalId: bioEditGoal.id, patch });
-      closeBioGoalEditor();
-    } catch {
-      Alert.alert('Error', 'Failed to save goal. Please try again.');
-    }
+    updateBioGoalMutation.mutate({ goalId: bioEditGoal.id, patch });
+    closeBioGoalEditor();
   }, [
     bioEditGoal,
     bioEditTitle,
@@ -132,39 +181,83 @@ export default function BiopsychosocialPlanRoute(): React.JSX.Element | null {
 
   useEffect(() => {
     if (hasBioPlanDataReady && !hasBioPlan) {
-      router.replace('/Home/health-plan' as never);
+      // Chunk 64 adversarial-verify fix: preserve the ?focus= param when
+      // redirecting to the legacy Care Plan. Without this a med-refill push
+      // tap on a BPS-eligible user WITHOUT a bio plan record (edge:
+      // record deleted server-side, or notification-routing.ts's
+      // isBpsEligibleCached read the flag as on) would route to
+      // /Home/biopsychosocial-plan?focus=medications, this redirect
+      // would fire, and the user would land on /Home/health-plan with
+      // NO pre-scroll — strictly worse than pre-chunk-64. Legacy meds
+      // deep-link handler on /Home/health-plan accepts ?focus=medications.
+      const target =
+        deepLinkFocus === 'medications'
+          ? '/Home/health-plan?focus=medications'
+          : '/Home/health-plan';
+      router.replace(target as never);
     }
-  }, [hasBioPlanDataReady, hasBioPlan]);
+  }, [hasBioPlanDataReady, hasBioPlan, deepLinkFocus]);
 
   if (!hasBioPlan) return null;
 
   return (
     <>
+      {/* CHUNK 61 (Ken 2026-07-22): TryUnifiedPlanBanner removed from BPS.
+          Ken parked unified-plan v2 on 2026-07-22 and confirmed the CTA
+          banner should come down. Kept the import for a fast revert if
+          a future decision brings v2 back, and left the legacy
+          /Home/health-plan mount untouched in the same chunk since Ken
+          may still want the reverse CTA on the classic surface — remove
+          separately if desired.
+
+          CHUNK 75 (Ken 2026-07-23): follow-up — the TryUnifiedViewLink
+          icon that lived in this screen's headerRight also routed into
+          the parked unified-plan surface, so we drop the prop entirely.
+          BiopsychosocialPlanScreen treats `headerRight` as optional and
+          collapses the slot when absent. Legacy /Home/health-plan header
+          untouched (still has the reverse CTA for now). */}
       <BiopsychosocialPlanScreen
         currentPlanType={currentPlanType}
         onChangePlanType={openPlanTypeChooser}
         onEditGoal={openBioGoalEditor}
         patientName={patientName}
+        deepLinkFocus={deepLinkFocus}
       />
-      <BioGoalEditorModal
-        visible={bioEditGoal !== null}
-        colors={colors as unknown as Record<string, string>}
-        getScaledFontSize={getScaledFontSize}
-        getScaledFontWeight={getScaledFontWeight}
-        title={bioEditTitle}
-        description={bioEditDesc}
-        target={bioEditTarget}
-        timeframe={bioEditTimeframe}
-        subdomains={bioEditSubdomains}
-        onChangeTitle={setBioEditTitle}
-        onChangeDescription={setBioEditDesc}
-        onChangeTarget={setBioEditTarget}
-        onChangeTimeframe={setBioEditTimeframe}
-        onToggleSubdomain={toggleBioSubdomain}
-        onClose={closeBioGoalEditor}
-        onSave={saveBioGoalEdit}
-        saving={updateBioGoalMutation.isPending}
-      />
+      {/*
+        CHUNK 53 (2026-07-22): under BPS_MODAL_CONSOLIDATION_ENABLED, the
+        bio-goal editor lives INSIDE the consolidated Modal owned by
+        BiopsychosocialPlanScreen — the child intercepts `onEditGoal` locally
+        and never fires the prop, so `bioEditGoal` state below never gets
+        set. The five draft-state cells + `updateBioGoalMutation` above are
+        harmless dead code in that path (kept in-tree so the kill-switch
+        revert is a one-flag flip with no state migration).
+
+        Under flag=false, this Modal is the primary editor path exactly as
+        before — CHUNK 41 `saving` is presentational dead code (fire-and-
+        forget close same-tick) but the wire is retained for contract
+        stability with health-plan.tsx which also imports BioGoalEditorModal.
+      */}
+      {!BPS_MODAL_CONSOLIDATION_ENABLED && (
+        <BioGoalEditorModal
+          visible={bioEditGoal !== null}
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          title={bioEditTitle}
+          description={bioEditDesc}
+          target={bioEditTarget}
+          timeframe={bioEditTimeframe}
+          subdomains={bioEditSubdomains}
+          onChangeTitle={setBioEditTitle}
+          onChangeDescription={setBioEditDesc}
+          onChangeTarget={setBioEditTarget}
+          onChangeTimeframe={setBioEditTimeframe}
+          onToggleSubdomain={toggleBioSubdomain}
+          onClose={closeBioGoalEditor}
+          onSave={saveBioGoalEdit}
+          saving={updateBioGoalMutation.isPending}
+        />
+      )}
     </>
   );
 }
