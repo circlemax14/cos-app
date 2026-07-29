@@ -79,9 +79,11 @@ const BANDS = {
     mediumMax: 2,
   },
   'nutrition-5': {
-    direction: 'lower-is-better',
-    lowMax: 2,
-    mediumMax: 3,
+    // 2026-07-29: mirrors lib/assessment-bands.ts direction fix
+    // (MNA-SF: higher raw score = less malnutrition risk = better).
+    direction: 'higher-is-better',
+    lowMax: 3,
+    mediumMax: 7,
   },
   // MIND
   'phq-2': {

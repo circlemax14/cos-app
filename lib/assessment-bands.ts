@@ -206,13 +206,30 @@ export const ASSESSMENT_BANDS: Record<string, AssessmentBandDef> = {
   },
   'nutrition-5': {
     humanLabel: 'Nutrition',
-    direction: 'lower-is-better',
-    unitSuffix: 'risk',
-    // Custom 5-item DETERMINE-lite variant: 0-10 range assumed by the
-    // Ken-facing scoring rules. Low 0-2 good, 3-5 moderate risk, 6+ high.
-    lowMax: 2,
-    mediumMax: 5,
-    source: 'DETERMINE-lite tertile split (agency-authored)',
+    // 2026-07-29 direction fix: the BE seed for nutrition-5 is MNA-SF
+    // style — each of the 5 items scores 0-2 with the WORST answer
+    // scoring 0 ("much less" intake, ">3kg unintentional loss", "bed-
+    // bound", significant stress, significant memory/mood concerns).
+    // Total range 0-10, and the BE riskBands mark 0-3 as high-severity
+    // "malnutrition-risk" / 8-10 as low-severity "normal". Higher raw =
+    // less malnutrition risk = better patient state. The previous entry
+    // flipped this and used lowMax=2/mediumMax=5 with `risk` suffix +
+    // lower-is-better direction, which meant a patient scoring 10/10
+    // ("normal" per BE) landed in the FE's 'high' band and, under
+    // wellbeing-score.ts LOWER_BETTER_SUBSCORE, contributed 20/100 to
+    // BIO — silently inverting the composite for well-nourished
+    // patients. Corrected here to match the BE contract exactly.
+    direction: 'higher-is-better',
+    unitSuffix: 'nutrition',
+    // Bands per MNA-SF norms mirrored 1:1 from the BE seed
+    // (cos-backend/src/data/system-instruments.ts riskBands for
+    // instrumentId 'nutrition-5'):
+    //   0-3   malnutrition-risk (high severity — 'low' band here)
+    //   4-7   at-risk           (moderate      — 'medium' band here)
+    //   8-10  normal            (low severity  — 'high' band here)
+    lowMax: 3,
+    mediumMax: 7,
+    source: 'MNA-SF-style 5-item: 0-10, 0-3 malnutrition-risk, 4-7 at-risk, 8-10 normal (BE seed system-instruments.ts)',
   },
   'cognition-8': {
     humanLabel: 'Cognitive change',
