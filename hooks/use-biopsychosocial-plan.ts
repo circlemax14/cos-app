@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchBiopsychosocialPlan,
@@ -10,7 +11,103 @@ import {
 // export stays live in `services/api/ai-health-plan.ts` so revert is a
 // one-line re-import + 3-line mutationFn restore.
 import type { GoalPatch } from '@/services/api/ai-health-plan'
-import { fireAndForgetPost, fireAndForgetPut } from '@/components/unified-plan/v2/net'
+import {
+  fireAndForgetDelete,
+  fireAndForgetPost,
+  fireAndForgetPut,
+} from '@/components/unified-plan/v2/net'
+// SCRUM-651: pure helpers live in `lib/bio-regeneration.ts` so a node:test
+// unit test can load them without a React harness. Re-exported below so
+// external callers can keep importing them from this module unchanged.
+import {
+  DEFAULT_CLIENT_BANNER_SWAP_SECONDS,
+  DEFAULT_STUCK_JOB_THRESHOLD_SECONDS,
+  computeElapsedSec,
+  formatRegenerationElapsed,
+  resolveRegenerationThresholds,
+} from '@/lib/bio-regeneration'
+
+export {
+  DEFAULT_CLIENT_BANNER_SWAP_SECONDS,
+  DEFAULT_STUCK_JOB_THRESHOLD_SECONDS,
+  formatRegenerationElapsed,
+} from '@/lib/bio-regeneration'
+
+/**
+ * SCRUM-651: fine-grained "elapsed since jobStartedAt" ticker.
+ *
+ * Rationale — the pre-651 code used a static `REGENERATE_PENDING_WINDOW_MS`
+ * latch (setTimeout inside the mutationFn) to keep the CTA visibly pending
+ * for a fixed 30s window. That worked for the p50 Bedrock roundtrip but
+ * broke down for slow paths: past 5 minutes we need to swap the active
+ * "generating for a while" copy for a passive "we'll notify you" banner,
+ * and past 45 minutes we need a stuck-job affordance. Neither transition
+ * is possible from a one-shot setTimeout — the component has no live
+ * signal after the latch expires.
+ *
+ * This selector reads jobStartedAt from wherever the caller passes it
+ * (typically `planQuery.data?.jobStartedAt`), computes elapsed seconds
+ * against a state cell that ticks once/sec, and derives the two boolean
+ * transitions the UI actually branches on. When `jobStartedAt` is
+ * undefined (no job in flight) we skip the interval entirely so the hook
+ * costs nothing at idle — matches the "no wasted work" discipline chunks
+ * 77 / 86 established for the regen surface.
+ *
+ * iOS 26.5 envelope: setInterval with a plain state setter is the same
+ * primitive shape shipped in chunks 77 + 86 (both currently in prod
+ * unmodified). No Animated/ActivityIndicator/native timer bridge.
+ *
+ * Background clocks: when the app is backgrounded, JS timers are throttled
+ * or paused by iOS/Android. On foreground the effect's cleanup runs and
+ * the next tick recomputes elapsed against `Date.now()` — so we always
+ * catch up to reality within one tick, no drift beyond 1s.
+ */
+export interface BioRegenerationStatus {
+  /** Seconds since `jobStartedAt`. 0 when no job is in flight or timestamp is invalid. */
+  elapsedSec: number
+  /** True once elapsed > effective clientBannerSwapSeconds (server override or 300s default). */
+  isPast5MinBanner: boolean
+  /** True once elapsed > effective stuckJobThresholdSeconds (server override or 2700s default). */
+  isPastStuckThreshold: boolean
+  /** The effective thresholds resolved for this tick — exposed so tests + callers can assert. */
+  bannerSwapSeconds: number
+  stuckThresholdSeconds: number
+}
+
+export function useBioRegenerationStatus(
+  jobStartedAtIso: string | undefined,
+  overrides?: { clientBannerSwapSeconds?: number; stuckJobThresholdSeconds?: number },
+): BioRegenerationStatus {
+  const { bannerSwapSeconds, stuckThresholdSeconds } = resolveRegenerationThresholds(overrides)
+
+  // Anchor is the tick counter, not `Date.now()` — we want a stable render
+  // identity that only changes on the 1s tick, otherwise every parent
+  // re-render would recompute elapsed against a slightly different `now`
+  // and re-render children needlessly.
+  const [nowMs, setNowMs] = React.useState<number>(() => Date.now())
+
+  React.useEffect(() => {
+    if (!jobStartedAtIso) return
+    // Refresh immediately on mount / jobStartedAt change so the first paint
+    // isn't stuck on a stale nowMs from a previous idle period.
+    setNowMs(Date.now())
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [jobStartedAtIso])
+
+  const elapsedSec = computeElapsedSec(jobStartedAtIso, nowMs)
+  return {
+    elapsedSec,
+    // The threshold comparisons stay in-hook (not in the pure helper)
+    // because they're trivial and inlining them here keeps the return
+    // shape colocated with the tick anchor — one look at this function
+    // shows the whole live-tick contract.
+    isPast5MinBanner: !!jobStartedAtIso && elapsedSec > bannerSwapSeconds,
+    isPastStuckThreshold: !!jobStartedAtIso && elapsedSec > stuckThresholdSeconds,
+    bannerSwapSeconds,
+    stuckThresholdSeconds,
+  }
+}
 
 /**
  * Phase 3 (COS-360 / SCRUM-518): wraps `GET /v1/health-plan/biopsychosocial`.
@@ -54,19 +151,23 @@ export function useBiopsychosocialPlan() {
  * `mutation.isPending` remains available synchronously on tap for the CTA's
  * disabled state — closes the extra-tap re-enable window.
  */
-// CHUNK 40 fix (adversarial-verify blocker): minimum pending window.
-// fireAndForgetPost only awaits getAccessToken (a memory read) then
-// returns — so a naive `mutationFn: fireAndForgetPost(...)` resolves in
-// ~1ms and mutation.isPending flips back to false before Bedrock has even
-// received the POST. That re-enables the "Refresh my plan" CTA within a
-// frame and lets the user multi-tap-fire multiple regen jobs, and
-// onSuccess's invalidateQueries races back to the pre-regen snapshot.
-// Fix: wrap the fire-and-forget in a promise that resolves after
-// PENDING_WINDOW_MS. This keeps mutation.isPending true for a bounded
-// window matching Bedrock's p95 (~8-15s) with tail headroom, so the CTA
-// stays visibly regenerating and onSuccess (invalidate) fires AFTER the
-// server has had time to record generating:true.
-const REGENERATE_PENDING_WINDOW_MS = 30_000
+// SCRUM-651: the pre-651 static REGENERATE_PENDING_WINDOW_MS (30s) latch
+// is now the SHORT bridge window only — just enough for the
+// fire-and-forget POST to land server-side and the next
+// ['biopsychosocial-plan'] fetch to observe `generating: true` +
+// `jobStartedAt`. Once that lands, the LIVE-ticking
+// `useBioRegenerationStatus(jobStartedAt)` selector takes over as the
+// source of truth for the extended pending UX (>5min copy swap,
+// >45min stuck-job affordance). Keeping this bridge preserves the
+// chunk-40 fix (mutation.isPending flip only happens after the server
+// state has landed, no multi-tap race) while unlocking the >5min /
+// >45min transitions the static latch structurally couldn't reach.
+//
+// 5s bridge = comfortably longer than the fire-and-forget POST +
+// network jitter but short enough that the shared mutation-key
+// observer (chunks 67 / 77) hands off cleanly to server-truth once
+// the GET refetch resolves.
+const REGENERATE_BRIDGE_WINDOW_MS = 5_000
 
 /**
  * CHUNK 67 (2026-07-23): mutation key so that OTHER components can
@@ -80,6 +181,14 @@ const REGENERATE_PENDING_WINDOW_MS = 30_000
  */
 export const REGENERATE_BIO_PLAN_MUTATION_KEY = ['regen-biopsychosocial-plan'] as const
 
+/**
+ * SCRUM-651: mutation key for the cancel-in-flight action. Separate from the
+ * regen key so `useIsMutating({ mutationKey })` can distinguish "a cancel is
+ * pending" from "a regen is pending" — the CTA needs to disable during cancel
+ * even though `generating` may still be true server-side for a beat.
+ */
+export const CANCEL_BIO_PLAN_MUTATION_KEY = ['cancel-biopsychosocial-plan'] as const
+
 export function useRegenerateBiopsychosocialPlan() {
   const qc = useQueryClient()
   return useMutation({
@@ -87,11 +196,49 @@ export function useRegenerateBiopsychosocialPlan() {
     mutationFn: () => {
       // Fire the actual request immediately — no await (chunk 9.5 rule).
       void fireAndForgetPost('/v1/health-plan/biopsychosocial/regenerate', {})
-      // Return a promise that keeps mutation.isPending latched for the
-      // pending window. See comment above.
+      // Bridge only. See REGENERATE_BRIDGE_WINDOW_MS comment above — this
+      // no longer covers the whole pending UX (the live-ticking selector
+      // does), only the fire-and-forget → server-state-observed handoff.
       return new Promise<void>((resolve) =>
-        setTimeout(resolve, REGENERATE_PENDING_WINDOW_MS),
+        setTimeout(resolve, REGENERATE_BRIDGE_WINDOW_MS),
       )
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] }),
+  })
+}
+
+/**
+ * SCRUM-651: cancel the in-flight regenerate job. Fire-and-forget via
+ * `fireAndForgetDelete` for the same chunk-9.5 turbomodule reason
+ * `useRegenerateBiopsychosocialPlan` uses `fireAndForgetPost` — the tap
+ * that triggers this button sits inside the BPS surface (Modal + Text +
+ * Pressable primitives) that we've been hardening for iOS 26.5.
+ *
+ * Server-truth reconciles via:
+ *   1. The mirror push `BIOPSYCHOSOCIAL_PLAN_REGENERATE_CANCELLED` (or
+ *      `_FAILED`) that use-notifications.ts already invalidates on, OR
+ *   2. The onSuccess invalidate below, which fires after a short bridge
+ *      window (so the DELETE has landed before the GET refetches).
+ *
+ * If `jobId` is missing (should never happen — the Cancel button is only
+ * rendered when we have one), the mutationFn no-ops so a stale render can't
+ * fire a DELETE against `/jobs/undefined`.
+ */
+const CANCEL_BRIDGE_WINDOW_MS = 3_000
+
+export function useCancelBiopsychosocialRegeneration() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationKey: [...CANCEL_BIO_PLAN_MUTATION_KEY],
+    mutationFn: ({ jobId }: { jobId: string | undefined }) => {
+      if (!jobId) {
+        // No-op — see JSDoc. Resolve on the bridge tick so isPending still
+        // flips false at the same cadence as the real cancel path.
+        return new Promise<void>((resolve) => setTimeout(resolve, CANCEL_BRIDGE_WINDOW_MS))
+      }
+      const safeId = encodeURIComponent(jobId)
+      void fireAndForgetDelete(`/v1/health-plan/biopsychosocial/regenerate/jobs/${safeId}`)
+      return new Promise<void>((resolve) => setTimeout(resolve, CANCEL_BRIDGE_WINDOW_MS))
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['biopsychosocial-plan'] }),
   })

@@ -41,8 +41,12 @@ import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import {
+  CANCEL_BIO_PLAN_MUTATION_KEY,
   REGENERATE_BIO_PLAN_MUTATION_KEY,
+  formatRegenerationElapsed,
+  useBioRegenerationStatus,
   useBiopsychosocialPlan,
+  useCancelBiopsychosocialRegeneration,
   useRegenerateBiopsychosocialPlan,
 } from '@/hooks/use-biopsychosocial-plan';
 import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
@@ -534,26 +538,19 @@ function categoryForNewTaskInSection(
 }
 
 /**
- * COS-415: relative "time ago" label for an in-flight regenerate job's
- * `jobStartedAt`. COS-421: with `refetchInterval` polling removed, this is
- * now a one-time snapshot computed whenever `planQuery.data` was last
- * fetched (mount, pull-to-refresh, or a push-triggered invalidation) — it
- * no longer ticks up live while the screen sits idle. Caps at "generating
- * for a while..." past 3 minutes rather than counting up indefinitely — by
- * that point the exact elapsed time isn't useful to the user, just the
- * fact that it's still going.
+ * SCRUM-651: the formatter for "started Xs / Xm ago / generating for a
+ * while..." was hoisted to `formatRegenerationElapsed` in
+ * `use-biopsychosocial-plan.ts` so the live-ticking selector
+ * `useBioRegenerationStatus` and this screen share the same copy contract.
+ * Kept as a pure function of `elapsedSec` (not `jobStartedAt`) so the
+ * ticker is the sole owner of `Date.now()` — no lingering static snapshot
+ * that would drift out of sync with the >5min / >45min transitions.
+ *
+ * The pre-651 `formatRelativeStartedAt(iso)` snapshot function was
+ * intentionally removed rather than aliased: the whole point of SCRUM-651
+ * is that the label WAS a snapshot, and now it isn't. Aliasing would
+ * invite a caller to reintroduce the snapshot pattern.
  */
-function formatRelativeStartedAt(iso: string): string {
-  const started = new Date(iso).getTime();
-  if (Number.isNaN(started)) return 'just now';
-  const elapsedMs = Date.now() - started;
-  const elapsedSec = Math.floor(elapsedMs / 1000);
-  if (elapsedSec < 5) return 'just now';
-  if (elapsedSec < 60) return `${elapsedSec}s ago`;
-  const elapsedMin = Math.floor(elapsedSec / 60);
-  if (elapsedMin < 3) return `${elapsedMin}m ago`;
-  return 'generating for a while...';
-}
 
 /**
  * COS-411: small rounded "Plan: <name> · Change" pill, styled after the
@@ -722,6 +719,22 @@ export function BiopsychosocialPlanScreen({
 
   const planQuery = useBiopsychosocialPlan();
   const regenerateMutation = useRegenerateBiopsychosocialPlan();
+  // SCRUM-651: cancel-in-flight mutation. Separate mutation key so the
+  // useIsMutating observers below can distinguish "regen pending" from
+  // "cancel pending" — the CTA needs to reflect BOTH so a user can't tap
+  // Retry while a cancel is still landing server-side.
+  const cancelMutation = useCancelBiopsychosocialRegeneration();
+
+  // SCRUM-651: live-ticking selector driven by `jobStartedAt`. Replaces
+  // the pre-651 static `REGENERATE_PENDING_WINDOW_MS` latch. The 1-per-sec
+  // tick only runs while jobStartedAt is defined (see hook impl), so the
+  // idle case pays zero cost. Server-supplied envelope thresholds override
+  // the client defaults when the BE ships them (backward-compat: absent →
+  // defaults, per SCRUM-651 spec).
+  const regenStatus = useBioRegenerationStatus(planQuery.data?.jobStartedAt, {
+    clientBannerSwapSeconds: planQuery.data?.clientBannerSwapSeconds,
+    stuckJobThresholdSeconds: planQuery.data?.stuckJobThresholdSeconds,
+  });
 
   // CHUNK 77 (2026-07-23): cross-instance observer on the shared regen
   // mutation key so a subtle top banner can render whenever ANY caller
@@ -737,6 +750,13 @@ export function BiopsychosocialPlanScreen({
     mutationKey: [...REGENERATE_BIO_PLAN_MUTATION_KEY],
   });
   const isRegenPending = regenPendingCount > 0;
+  // SCRUM-651: mirror observer for the cancel mutation so any concurrent
+  // Cancel tap (from this screen or any future entry point) also disables
+  // the CTA cross-instance. Cheap — same subscription shape as regen.
+  const cancelPendingCount = useIsMutating({
+    mutationKey: [...CANCEL_BIO_PLAN_MUTATION_KEY],
+  });
+  const isCancelPending = cancelPendingCount > 0;
 
   // CHUNK 86 v2 (2026-07-23): explicit VoiceOver/TalkBack announcements for
   // regen start AND end. The chunk-86 v1 wrapper landed accessibilityRole=
@@ -920,14 +940,12 @@ export function BiopsychosocialPlanScreen({
     }
   }, [planQuery]);
 
-  // CHUNK 40 (2026-07-21): fire-and-forget under the hood via the hook's
-  // rewritten mutationFn (see use-biopsychosocial-plan.ts). Alert.alert
-  // onError removed — Alert opens a native modal whose turbomodule
-  // interactions were exactly the crash surface we're trying to leave.
-  // Errors are reconciled on the next ['biopsychosocial-plan'] fetch.
-  const onRegenerate = React.useCallback(() => {
-    regenerateMutation.mutate();
-  }, [regenerateMutation]);
+  // SCRUM-651: `onRegenerate` + `onCancel` handlers are declared LOWER in
+  // this function (right after the `regenerateDisabled` /
+  // `isGeneratingFromAnySource` / `inFlightJobId` derivations they close
+  // over). Pre-651 `onRegenerate` sat here because it depended on nothing
+  // that wasn't in scope yet; the idempotency-guard closure added by 651
+  // (`if (regenerateDisabled) return`) forced the move.
 
   // ── CHUNK 55: meds review + scroll-to + deep-link plumbing ─────────────
   // Legacy parity port from app/Home/health-plan.tsx:354-388 + 1142-1146.
@@ -1205,11 +1223,84 @@ export function BiopsychosocialPlanScreen({
    * window still no-ops server-side (409 REGENERATION_IN_FLIGHT), but now
    * the UI never invites the tap.
    */
-  const regenerateDisabled = regenerateMutation.isPending || isRegenerating;
-  const isGeneratingFromAnySource = regenerateMutation.isPending || isRegenerating;
+  // SCRUM-651: CTA is disabled while ANY of these are true:
+  //   - this device's own regen mutation is pending (bridge window)
+  //   - server says a job is in flight (`generating: true`)
+  //   - a cancel is pending (either the DELETE hasn't landed or the
+  //     mirror push hasn't invalidated yet)
+  // The `cancelMutation.isPending` extra guard closes the tap-race where a
+  // user could tap Cancel then immediately tap Retry before the DELETE
+  // landed, leaving a stray REGENERATE_IN_FLIGHT 409 on the server.
+  const regenerateDisabled =
+    regenerateMutation.isPending || isRegenerating || cancelMutation.isPending || isCancelPending;
+  const isGeneratingFromAnySource =
+    regenerateMutation.isPending || isRegenerating;
   // Static banner ("started X ago") only when it's specifically another
   // device's job — this device's own tap already shows the button loader.
   const showOtherDeviceGenerating = isRegenerating && !regenerateMutation.isPending;
+
+  // SCRUM-651: past the client-side (or server-supplied) banner-swap
+  // threshold — the "generating for a while" active copy hands off to
+  // the passive "we'll notify you" banner. Only meaningful when there's
+  // actually a job in flight; short-circuit on the guard so a stale
+  // jobStartedAt (post-cancel, pre-invalidate) can't trigger the swap.
+  const isPast5MinBannerSwap = isGeneratingFromAnySource && regenStatus.isPast5MinBanner;
+
+  // SCRUM-651: Cancel button visibility — mirrors `isGeneratingFromAnySource`
+  // per spec ("only shown when isPending || isRegenerating"). Additionally
+  // suppress while a cancel is already pending so the button doesn't flicker
+  // out from under the user mid-tap.
+  const showCancelButton = isGeneratingFromAnySource && !cancelMutation.isPending && !isCancelPending;
+
+  // SCRUM-651: the jobId to hand to the cancel DELETE. Only defined when
+  // the server actually reports one — a stale `generating: true` without
+  // a `jobStartedAt` (should never happen but the type allows it) means
+  // we have no jobId either, and the cancel mutationFn no-ops in that case.
+  // The BE contract for SCRUM-651 says the plan envelope carries jobId
+  // alongside jobStartedAt; if BE ships the field name differently we'll
+  // adapt here rather than requiring another OTA to the mutation layer.
+  //
+  // Interim: derive jobId from the same source-of-truth used by
+  // `showOtherDeviceGenerating`. If the envelope doesn't carry an
+  // explicit `jobId`, the mutationFn's `undefined` path still resolves
+  // (see hook impl) — the DELETE simply doesn't fire and the user's tap
+  // is treated as a request to hide the banner locally on the next
+  // invalidate (which the mirror-push branch in use-notifications.ts
+  // will trigger regardless).
+  const inFlightJobId: string | undefined = (
+    planQuery.data as { jobId?: string } | undefined
+  )?.jobId;
+
+  // ── SCRUM-651: tap handlers ────────────────────────────────────────────
+  // Moved down from the pre-651 slot (~line 948 in git blame) so they can
+  // close over `regenerateDisabled` / `isGeneratingFromAnySource` /
+  // `inFlightJobId` (all defined immediately above) without a
+  // used-before-declaration TS error. CHUNK 40 (2026-07-21) rationale
+  // still holds: fire-and-forget under the hood via the hook's rewritten
+  // mutationFn; Alert.alert onError removed because Alert opens a native
+  // modal whose turbomodule interactions were exactly the crash surface
+  // we're leaving. Errors are reconciled on the next
+  // ['biopsychosocial-plan'] fetch (either the notifications mirror
+  // branch or the ~3-5s hook bridge invalidate).
+  const onRegenerate = React.useCallback(() => {
+    // SCRUM-651: idempotency guard. The server 409s REGENERATION_IN_FLIGHT
+    // when a job is already running for this patient, and the UI has to
+    // NOT invite that tap (the disabled state via `regenerateDisabled`
+    // covers the sighted-user path; this belt-and-suspenders check covers
+    // the a11y "double-tap through disabled" edge and any programmatic
+    // callers that might reach this handler off the render tree). Silently
+    // dropping is the correct behavior — the user's intent ("kick off a
+    // regen") is already satisfied by the in-flight job.
+    if (regenerateDisabled) return;
+    regenerateMutation.mutate();
+  }, [regenerateMutation, regenerateDisabled]);
+
+  const onCancel = React.useCallback(() => {
+    if (!isGeneratingFromAnySource) return;
+    if (cancelMutation.isPending) return;
+    cancelMutation.mutate({ jobId: inFlightJobId });
+  }, [cancelMutation, inFlightJobId, isGeneratingFromAnySource]);
+
 
   // ── No tier selected yet (COS-411) ──────────────────────────────────────
   // Distinct from the generic "no plan yet" empty state below: without a
@@ -2006,9 +2097,17 @@ export function BiopsychosocialPlanScreen({
           </View>
         ))}
 
-        {/* Another device's regeneration in flight — static message, no
-            live polling (COS-421). Snapshot only; updates on next fetch
-            (pull-to-refresh, push invalidation, or remount). */}
+        {/* Another device's regeneration in flight.
+            SCRUM-651 (2026-07-30): TWO banner variants now share this slot,
+            selected by `isPast5MinBannerSwap`.
+              - ≤5min elapsed: the pre-651 active "generation in progress
+                (started Xs ago) — pull down to refresh" copy. Ticks live
+                via `regenStatus.elapsedSec` (was a static snapshot pre-651
+                per COS-421).
+              - >5min elapsed: passive "Still working on your plan — we'll
+                notify you when it's ready." No live counter — the copy
+                itself acknowledges the extended timeline, so counting
+                would just add noise. */}
         {showOtherDeviceGenerating && (
           <View
             style={[
@@ -2016,27 +2115,52 @@ export function BiopsychosocialPlanScreen({
               { backgroundColor: (colors.tint ?? '#0D9488') + '14', borderColor: (colors.tint ?? '#0D9488') + '33' },
             ]}
             accessibilityRole="text"
-            accessibilityLabel="A generation is already in progress on another device. Pull down to refresh once it's done."
+            accessibilityLabel={
+              isPast5MinBannerSwap
+                ? "Still working on your plan. We'll notify you when it's ready."
+                : "A generation is already in progress on another device. Pull down to refresh once it's done."
+            }
           >
             <MaterialIcons name="info-outline" size={16} color={colors.tint} />
             <Text style={[styles.generatingBannerText, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
-              A generation is already in progress
-              {planQuery.data?.jobStartedAt
-                ? ` (started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
-                : ''}
-              . Pull down to refresh once it&apos;s done.
+              {isPast5MinBannerSwap ? (
+                <>Still working on your plan — we&apos;ll notify you when it&apos;s ready.</>
+              ) : (
+                <>
+                  A generation is already in progress
+                  {planQuery.data?.jobStartedAt
+                    ? ` (started ${formatRegenerationElapsed(regenStatus.elapsedSec)})`
+                    : ''}
+                  . Pull down to refresh once it&apos;s done.
+                </>
+              )}
             </Text>
           </View>
         )}
 
-        {/* Refresh my plan — COS-430 copy, COS-436 persistent generating state. */}
+        {/* Refresh my plan — COS-430 copy, COS-436 persistent generating state.
+            SCRUM-651 (2026-07-30): while a job is in flight OR a cancel is
+            landing, this row hosts BOTH the primary CTA and a secondary
+            Cancel button. Post-cancel, the CTA reverts to "Refresh my plan"
+            copy — the same button re-purposed as Retry — with the same
+            REGENERATION_IN_FLIGHT idempotency guard the pre-651 CTA already
+            had (server 409s a duplicate POST while a job is running; the
+            `regenerateDisabled` state prevents inviting the tap, and
+            `onRegenerate`'s early-return prevents a programmatic caller
+            from reaching mutate() through a stale disabled state). */}
         <TouchableOpacity
           style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
           onPress={onRegenerate}
           disabled={regenerateDisabled}
           accessibilityRole="button"
-          accessibilityLabel={isGeneratingFromAnySource ? 'Generating your plan' : 'Refresh my plan'}
-          accessibilityState={{ disabled: regenerateDisabled, busy: isGeneratingFromAnySource }}
+          accessibilityLabel={
+            cancelMutation.isPending
+              ? 'Cancelling regeneration'
+              : isGeneratingFromAnySource
+              ? 'Generating your plan'
+              : 'Refresh my plan'
+          }
+          accessibilityState={{ disabled: regenerateDisabled, busy: isGeneratingFromAnySource || cancelMutation.isPending }}
         >
           {/*
             CHUNK 40 (2026-07-21): Text-label swap replaces <ActivityIndicator>
@@ -2045,8 +2169,16 @@ export function BiopsychosocialPlanScreen({
             iOS 26.5 it participates in the turbomodule surface we're
             hardening against. Static Text is safe; the button opacity +
             disabled state still communicate the pending state.
+
+            SCRUM-651 (2026-07-30): ActivityIndicator envelope preserved
+            (chunk 40 turbomodule hardening) — the "Cancelling…" state
+            is a static Text label, same as "Regenerating…".
           */}
-          {isGeneratingFromAnySource ? (
+          {cancelMutation.isPending ? (
+            <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
+              Cancelling…
+            </Text>
+          ) : isGeneratingFromAnySource ? (
             <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
               Regenerating…
             </Text>
@@ -2057,6 +2189,37 @@ export function BiopsychosocialPlanScreen({
             </>
           )}
         </TouchableOpacity>
+
+        {/* SCRUM-651: Cancel button. Only rendered while a job is in
+            flight (per spec: "isPending || isRegenerating") and while a
+            cancel isn't already landing. Secondary style (outlined) so
+            the primary "Refresh my plan" / "Regenerating…" row stays
+            visually dominant. iOS 26.5 envelope: static Pressable + Text
+            + MaterialIcons only — no ActivityIndicator, no Alert. */}
+        {showCancelButton && (
+          <Pressable
+            onPress={onCancel}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel plan generation"
+            style={({ pressed }) => [
+              styles.cancelBtn,
+              {
+                borderColor: (colors.tint ?? '#0D9488') + '55',
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <MaterialIcons name="close" size={16} color={colors.tint} />
+            <Text
+              style={[
+                styles.cancelBtnText,
+                { color: colors.tint, fontSize: getScaledFontSize(14) },
+              ]}
+            >
+              Cancel
+            </Text>
+          </Pressable>
+        )}
             </>
           );
           if (BPS_HERO_LAYOUT_ENABLED) {
@@ -2260,6 +2423,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regenerateBtnText: { color: '#fff', fontWeight: '700' },
+  // SCRUM-651: outlined secondary Cancel button — same footprint as
+  // regenerateBtn (paddingVertical 14, radius Radii.md) but transparent
+  // background + tint-colored border/label so the primary CTA stays
+  // visually dominant. Sits directly under the primary row (marginTop
+  // Spacing.xs) so tap targets don't crowd.
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radii.md,
+    paddingVertical: 14,
+    marginTop: Spacing.xs,
+    gap: 8,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  cancelBtnText: { fontWeight: '700' },
   generatingBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
