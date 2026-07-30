@@ -78,6 +78,15 @@ import { fetchTasksForDate } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
 import type { PlanTask, TaskOccurrence } from '@/services/api/types';
+// ADR-0005 P0/P2 — bottom-anchored "Classic view" escape hatch. The
+// component self-gates on `isTabSwapBpsEnabled()` (returns null when the
+// build-time env is unset), so mounting it inside this ScrollView is a
+// no-op on every legacy surface. The reason it lives inside BPS rather
+// than in the tab-swap parent (`app/Home/health-plan.tsx`) is so it
+// scrolls with the rest of the plan content — bottom-of-content, not
+// a floating overlay — and so it appears on both entry points into BPS
+// (the tab-swap render AND the peer `/Home/biopsychosocial-plan` route).
+import { ClassicViewLink } from '@/components/plan/ClassicViewLink';
 
 /**
  * CHUNK 47 kill-switch — port of the SCRUM-252 Today hero card into the
@@ -2238,6 +2247,18 @@ export function BiopsychosocialPlanScreen({
           }
           return detailsBody;
         })()}
+        {/*
+          ADR-0005 P0/P2 — bottom-anchored "Classic view" link. Self-gates
+          on isTabSwapBpsEnabled() so it renders NULL on the legacy render
+          path (flag OFF) and NULL on any other BPS entry when the flag is
+          not set. Lives at the tail of the last ScrollView child so it
+          scrolls with the plan content instead of floating over it — the
+          shape Ken approved in Q1. Placed here (in the child component)
+          rather than in the tab-swap parent so it appears on BOTH BPS
+          entry points (tab-swap render + the peer
+          /Home/biopsychosocial-plan route) without a duplicate mount.
+        */}
+        <ClassicViewLink />
       </ScrollView>
       {/*
         COS-433: goal-editor Modal + its state + its updateGoalMutation
