@@ -18,6 +18,13 @@ import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 // hook on EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED — default OFF so this ships
 // dark and inert until Ken flips the env var + cuts a new bundle.
 import { useEntitlementsSync } from '@/hooks/use-entitlements-sync';
+// ADR-0004 P1 — health-data-changed WSS sync + long-poll fallback. Mirrors
+// the entitlements-sync contract for lab/vaccine/summary/plan invalidation.
+// Renders nothing; flag-gated inside the hook on
+// EXPO_PUBLIC_LABS_REALTIME_ENABLED — default OFF, ships dark until Ken
+// flips the env var + cuts a new bundle. Runs alongside useEntitlementsSync
+// with an independent WebSocket lifecycle (see hook header for rationale).
+import { useHealthDataSync } from '@/hooks/use-health-data-sync';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -89,6 +96,12 @@ function StackWithAppLock() {
   // Runs iff EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise.
   useEntitlementsSync();
+  // ADR-0004 P1: health-data-changed WSS sync + long-poll fallback.
+  // Runs iff EXPO_PUBLIC_LABS_REALTIME_ENABLED='true' AND a session
+  // exists. Pure passthrough otherwise. Independent WebSocket lifecycle
+  // from useEntitlementsSync so each hook flag-gates + backs off on its
+  // own — a bad labs push can't stall entitlements sync and vice-versa.
+  useHealthDataSync();
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
