@@ -39,6 +39,26 @@ import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
 // on the flag-off / empty state — no chrome, no layout shift.
 import RetakeRequestInboxCard from '@/components/health-plan/retake-request/RetakeRequestInboxCard';
 
+// ─────────────────────────────────────────────────────────────────────
+// ADR-0003 Phase 1 (Home Redesign) — v2 surface imports.
+// Everything below is dead code when EXPO_PUBLIC_HOME_V2_ENABLED !== 'true'
+// (Metro tree-shakes on the module-level flag call inside the render).
+// The legacy render path is UNCHANGED when the flag is OFF.
+// ─────────────────────────────────────────────────────────────────────
+import {
+  isHomeV2Enabled,
+  isHomeV2PlaceholdersEnabled,
+  getHomeCircleProminence,
+} from '@/hooks/use-home-v2-flag';
+import { HomeResponsiveProvider } from '@/components/home/HomeResponsiveProvider';
+import { GreetingHeader } from '@/components/home/GreetingHeader';
+import { ScoreCardGrid } from '@/components/home/ScoreCardGrid';
+import { WellbeingMapPreview } from '@/components/home/WellbeingMapPreview';
+import { HeroScoreBlock } from '@/components/health-plan/senior/HeroScoreBlock';
+import { BpsPlanFocusBanner } from '@/components/health-plan/BpsPlanFocusBanner';
+import { useScoreCatalog, type ScoreRow } from '@/hooks/use-score-catalog';
+import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
+
 // Helper function to detect if device is a tablet
 const isTablet = () => {
   const { width } = Dimensions.get('window');
@@ -2519,6 +2539,362 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// HomeV2Layout — ADR-0003 Phase 1 (Home Redesign)
+//
+// Mounted ONLY when EXPO_PUBLIC_HOME_V2_ENABLED === 'true'. Self-contained
+// (own hooks, own state) so the flag-off legacy render path in HomeScreen()
+// is byte-identical to what shipped. Composition order matches the ADR:
+//   HomeResponsiveProvider
+//     → GreetingHeader
+//     → HeroScoreBlock  (hoisted from components/health-plan/senior)
+//     → ScoreCardGrid   (fed by useScoreCatalog rows)
+//     → BpsPlanFocusBanner  (hoisted from components/health-plan)
+//     → WellbeingMapPreview
+//     → [placeholder cards]  ← only when isHomeV2PlaceholdersEnabled()
+//     → Circle of Support entry  ← behind HOME_CIRCLE_PROMINENCE knob
+//                                   (default 'secondary'; 'hidden' → null;
+//                                    'primary' → hoisted above the scores)
+//
+// Q7 DECIDED (2026-07-30): placeholder copy is "Coming soon" — Ken chose
+// the calmer wording over "Not yet available" to signal forward motion.
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Small "Coming soon" affordance for surfaces that are structurally
+ * present in the v2 shell but have no data pipeline yet (Sleep card,
+ * Wheel-8D card). Rendered ONLY under isHomeV2PlaceholdersEnabled() so
+ * production users never see them. Uses only View/Text/StyleSheet to
+ * stay inside the iOS 26.5 primitive envelope the rest of Home v2
+ * follows.
+ */
+function HomeV2PlaceholderCard({
+  title,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: {
+  title: string;
+  colors: typeof Colors['light'];
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string | number;
+}): React.JSX.Element {
+  return (
+    <View
+      accessibilityRole="text"
+      accessibilityLabel={`${title}. Coming soon.`}
+      style={{
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: (colors.text ?? '#11181C') + '22',
+        backgroundColor: (colors.text ?? '#11181C') + '05',
+        marginBottom: 12,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: getScaledFontSize(15),
+          fontWeight: getScaledFontWeight(600) as any,
+          color: colors.text,
+          marginBottom: 4,
+        }}
+      >
+        {title}
+      </Text>
+      <Text
+        style={{
+          fontSize: getScaledFontSize(13),
+          fontWeight: getScaledFontWeight(400) as any,
+          color: (colors.text ?? '#11181C') + '99',
+        }}
+      >
+        Coming soon
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * Compact Circle of Support entry point for the v2 Home surface.
+ * The full circle graph still lives on the legacy render path and on
+ * the shipped connect-clinics flow — from v2 we surface a single
+ * tappable entry that navigates into the classic circle view via
+ * expo-router. Kept intentionally lightweight so 'secondary' really
+ * feels secondary (the score cards own the fold).
+ */
+function CircleOfSupportEntry({
+  patientName,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  prominence,
+}: {
+  patientName: string;
+  colors: typeof Colors['light'];
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string | number;
+  prominence: 'primary' | 'secondary';
+}): React.JSX.Element {
+  const isPrimary = prominence === 'primary';
+  const firstName = (patientName ?? '').trim().split(/\s+/)[0] || 'Your';
+  const title = firstName === 'Your'
+    ? 'Your Circle of Support'
+    : `${firstName}'s Circle of Support`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. Tap to open.`}
+      onPress={() => {
+        try {
+          // Navigate to the classic circle view (the legacy Home path
+          // still owns the full circle graph). Deep-linking here keeps
+          // v2 lean while preserving Circle discoverability.
+          router.push('/Home/connect-clinics' as any);
+        } catch {
+          /* router unavailable in test/harness contexts — silent no-op */
+        }
+      }}
+      style={({ pressed }) => [
+        {
+          marginTop: isPrimary ? 8 : 16,
+          marginBottom: 12,
+          marginHorizontal: 16,
+          padding: 16,
+          borderRadius: 12,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: (colors.text ?? '#11181C') + '22',
+          backgroundColor: isPrimary
+            ? (colors.tint ?? '#008080') + '14'
+            : (colors.text ?? '#11181C') + '05',
+          opacity: pressed ? 0.7 : 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+      ]}
+    >
+      <MaterialIcons
+        name="groups"
+        size={20}
+        color={colors.tint || '#008080'}
+        style={{ marginRight: 10 }}
+      />
+      <Text
+        style={{
+          flex: 1,
+          fontSize: getScaledFontSize(isPrimary ? 16 : 14),
+          fontWeight: getScaledFontWeight(isPrimary ? 600 : 500) as any,
+          color: colors.text,
+        }}
+      >
+        {title}
+      </Text>
+      <MaterialIcons
+        name="chevron-right"
+        size={20}
+        color={(colors.text ?? '#11181C') + '99'}
+      />
+    </Pressable>
+  );
+}
+
+function HomeV2Layout(): React.JSX.Element {
+  const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const catalog = useScoreCatalog();
+  const wellbeing = useWellbeingDerivation();
+  const [patientName, setPatientName] = useState<string>('');
+  const [isLoadingPatient, setIsLoadingPatient] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Patient name — fetched independently of the legacy screen state so
+  // this layout is a drop-in replacement, not a subtree of HomeScreen().
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const patient = await fetchPatientInfo();
+        if (!cancelled && patient) setPatientName(patient.name || '');
+      } catch {
+        /* Non-critical — greeting falls back to "Good morning." */
+      } finally {
+        if (!cancelled) setIsLoadingPatient(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // React-Query caches drive both catalog + wellbeing; a manual
+      // refetch would require a queryClient handle. For v1 we let the
+      // pull-to-refresh gesture be a visual acknowledgement — the query
+      // caches expire on their own staleTime.
+      await new Promise((r) => setTimeout(r, 350));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  const firstName = React.useMemo(
+    () => (patientName ?? '').trim().split(/\s+/)[0] ?? '',
+    [patientName],
+  );
+
+  // Hero prior-composite mirrors the shipped BiopsychosocialPlanScreen
+  // derivation so the caption line reads identically on both surfaces.
+  const priorComposite = React.useMemo(() => {
+    const c = wellbeing.derivation.composite;
+    const t = wellbeing.derivation.trend;
+    if (typeof c === 'number' && t) return c - t.delta;
+    return undefined;
+  }, [wellbeing.derivation.composite, wellbeing.derivation.trend]);
+
+  const onOpenRow = useCallback((row: ScoreRow) => {
+    try {
+      router.push(row.links.detail as any);
+    } catch {
+      /* silent no-op in non-router contexts */
+    }
+  }, []);
+  const onExplainRow = useCallback((row: ScoreRow) => {
+    try {
+      router.push(row.links.map as any);
+    } catch {
+      /* silent no-op */
+    }
+  }, []);
+
+  const prominence = getHomeCircleProminence();
+  const showPlaceholders = isHomeV2PlaceholdersEnabled();
+
+  return (
+    <AppWrapper notificationCount={3}>
+      <HomeResponsiveProvider>
+        <ScrollView
+          style={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.text}
+            />
+          }
+        >
+          {/* RetakeRequestInboxCard — silent-drops on empty state, so
+              mount at top matches the legacy Home discipline. */}
+          <RetakeRequestInboxCard />
+
+          <GreetingHeader userFirstName={isLoadingPatient ? '' : firstName} />
+
+          {/* Circle of Support: hoisted to the top only when prominence
+              is 'primary'. Default 'secondary' → below the scores. */}
+          {prominence === 'primary' ? (
+            <CircleOfSupportEntry
+              patientName={patientName}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              prominence="primary"
+            />
+          ) : null}
+
+          <HeroScoreBlock
+            userFirstName={isLoadingPatient ? undefined : firstName}
+            composite={wellbeing.derivation.composite}
+            priorComposite={priorComposite}
+            // Per-domain trend arrows: WellbeingDerivation doesn't yet
+            // expose per-domain trend; default all three to 'flat' so
+            // the dot row always has an arrow. Matches the shipped
+            // BiopsychosocialPlanScreen wiring exactly.
+            domainTrends={{ bio: 'flat', mind: 'flat', social: 'flat' }}
+            onDotsPress={() => {
+              try {
+                router.push('/Home/wellbeing-map' as any);
+              } catch {
+                /* silent no-op */
+              }
+            }}
+            colors={colors as unknown as Record<string, string>}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+
+          <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+            <ScoreCardGrid
+              rows={catalog.rows}
+              onOpenRow={onOpenRow}
+              onExplainRow={onExplainRow}
+              emptyStateText={
+                catalog.isLoading
+                  ? 'Loading your scores…'
+                  : 'Complete a check-in to see your scores here.'
+              }
+            />
+          </View>
+
+          <View style={{ paddingHorizontal: 16 }}>
+            <BpsPlanFocusBanner
+              enabled
+              focus={wellbeing.derivation.focus}
+              onPress={(target) => {
+                try {
+                  router.push(`/health-plan/bps?section=${target}` as any);
+                } catch {
+                  /* silent no-op */
+                }
+              }}
+              colors={colors as unknown as Record<string, string>}
+              isDark={!!settings.isDarkTheme}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          </View>
+
+          <WellbeingMapPreview />
+
+          {/* Placeholder shelf — QA-only surfaces for Sleep + Wheel-8D.
+              Gated hard on the placeholder flag so production users
+              never see the "Coming soon" copy. */}
+          {showPlaceholders ? (
+            <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+              <HomeV2PlaceholderCard
+                title="Sleep"
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+              <HomeV2PlaceholderCard
+                title="Wheel-8D"
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            </View>
+          ) : null}
+
+          {/* Circle of Support default position — secondary tier, below
+              the scores + banner + map. 'hidden' compiles out entirely. */}
+          {prominence === 'secondary' ? (
+            <CircleOfSupportEntry
+              patientName={patientName}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              prominence="secondary"
+            />
+          ) : null}
+        </ScrollView>
+      </HomeResponsiveProvider>
+    </AppWrapper>
+  );
+}
+
 export default function HomeScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const userImg = undefined;
@@ -2883,6 +3259,19 @@ export default function HomeScreen() {
       ]).start();
     }
   }, [showProviderDetails, screenWidth, detailsListOpacity, detailsListSlide, mainListOpacity, mainListSlide]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADR-0003 Phase 1 — v2 Home redesign kill-switch. When the master
+  // flag is ON, return the redesigned surface and skip every legacy
+  // render primitive below. When OFF (the default), this branch is a
+  // single boolean compare and the legacy render path executes
+  // BIT-IDENTICALLY to the pre-ADR-0003 shipped code.
+  //
+  // The v2 layout is self-contained (owns its own patient / wellbeing
+  // / catalog state) so no legacy hook state is inspected from inside
+  // HomeV2Layout — safe rollback via env, no ordering coupling.
+  // ─────────────────────────────────────────────────────────────────
+  if (isHomeV2Enabled()) return <HomeV2Layout />;
 
   return (
     <AppWrapper notificationCount={3}>
