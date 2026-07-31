@@ -68,6 +68,11 @@ import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 // SCRUM-655: BpsWellbeingScoreCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand.
 import { BpsHeroTileRow } from './BpsHeroTileRow';
+// SCRUM-659 (2026-07-31): reuse the home-screen wellbeing-map preview
+// so both surfaces share ONE map entry-point look. Aliased to avoid
+// name collision with WellbeingMapGlimpse (which serves the older
+// HeroScoreBlock hero variant).
+import { WellbeingMapPreview as PlanWellbeingMapPreview } from '@/components/home/WellbeingMapPreview';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -1567,15 +1572,15 @@ export function BiopsychosocialPlanScreen({
             >
               {patientName ? `${greetingForNow()}, ${patientName}` : greetingForNow()}
             </Text>
-            {!!generatedDate && (
-              <View style={styles.metaRow}>
-                <MaterialIcons name="auto-awesome" size={12} color={colors.subtext} />
-                <Text style={[styles.metaText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-                  Updated {generatedDate}
-                  {planQuery.data?.staleness === 'stale' ? ' · may be out of date' : ''}
-                </Text>
-              </View>
-            )}
+            {/*
+              SCRUM-659 (2026-07-31): "Updated {date}" meta row moved
+              OFF a dedicated line and INTO the tier row below (right-
+              aligned). Consolidates the top-of-page chrome into two
+              rows total: greeting → [tier pill · view-progress · meds
+              · updated date]. Previous shape wasted a full row on the
+              date-only meta. Sparkle icon dropped — the "Updated" word
+              is self-labeling.
+            */}
             {/* CHUNK 50: PlanTierPill + optional ViewProgressLink share a
                 row that wraps to a second row on narrow widths (iPhone SE
                 class) when both pills + the headerRight banner would
@@ -1610,6 +1615,34 @@ export function BiopsychosocialPlanScreen({
                 getScaledFontWeight={getScaledFontWeight}
                 onPress={() => router.push('/Home/medications' as never)}
               />
+              {/*
+                SCRUM-659 (2026-07-31): "Updated ..." meta inlined into
+                the tier row, right-aligned. The tierRow style uses
+                flexWrap + flexDirection: row (chunk 50), so on narrow
+                widths this text wraps to a second row below the pills —
+                acceptable degrade, same behaviour as ViewProgressLink.
+                marginLeft: 'auto' pushes it to the right edge on wide
+                widths. Sparkle icon dropped — the word "Updated" is
+                self-labeling and the icon fought with the pill icons
+                visually.
+              */}
+              {!!generatedDate && (
+                <Text
+                  style={[
+                    styles.metaText,
+                    {
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(12),
+                      marginLeft: 'auto',
+                      alignSelf: 'center',
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  Updated {generatedDate}
+                  {planQuery.data?.staleness === 'stale' ? ' · out of date' : ''}
+                </Text>
+              )}
             </View>
           </View>
           {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
@@ -1723,6 +1756,19 @@ export function BiopsychosocialPlanScreen({
           isEmpty={wellbeing.isEmpty}
           tasks={todayTasks}
         />
+
+        {/*
+          SCRUM-659 (2026-07-31): Wellbeing Map banner directly after
+          the hero tile row, mirroring the home-screen wellbeing row
+          layout (SCRUM-653/654). Full-width card wrapping the same
+          WellbeingMapPreview component the home screen uses, so the
+          two surfaces share ONE visual identity for the map entry
+          point. Tap navigates to /Home/wellbeing-map — same target as
+          the home-screen wellbeing map tile.
+        */}
+        <View style={styles.wellbeingMapBanner}>
+          <PlanWellbeingMapPreview />
+        </View>
 
         {/*
           COS-449 (Chunk 1b): one-time welcome banner explaining the BPS
@@ -2498,6 +2544,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: Spacing.sm,
     gap: 8,
+  },
+  // SCRUM-659 (2026-07-31): banner-style card wrapping WellbeingMapPreview
+  // directly under the hero tile row. Same white-card + hairline-border
+  // treatment the home-screen wellbeing row uses for the map tile — one
+  // consistent visual identity for the map entry across Home + Plan.
+  // alignItems centers the WellbeingMapPreview's fixed-width Venn (118pt)
+  // inside the full-width card.
+  wellbeingMapBanner: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: Spacing.md,
+    alignItems: 'center',
   },
   regenBannerText: { flex: 1, lineHeight: 18, fontWeight: '600' },
   // CHUNK 86 (2026-07-23): collapsed state for the always-mounted regen
