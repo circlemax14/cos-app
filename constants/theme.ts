@@ -65,4 +65,5 @@ export const Fonts = Platform.select({
 });
 
 // Re-export design system tokens for new feature components
-export { getColors, LightColors, DarkColors } from './design-system';
+export { getColors, LightColors, DarkColors, ScoreBands, Breakpoints } from './design-system';
+export type { ScoreBandName } from './design-system';
