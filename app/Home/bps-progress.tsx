@@ -34,12 +34,15 @@
  * becomes UI-orphan; deep-linking still redirects defensively.
  */
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Stack, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
+import { Colors } from '@/constants/theme';
+import { useAccessibility } from '@/stores/accessibility-store';
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { fetchTasksForDate } from '@/services/api/ai-health-plan';
@@ -53,6 +56,8 @@ function todayIso(): string {
 }
 
 export default function BpsProgressRoute(): React.JSX.Element | null {
+  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
   const planQuery = useBiopsychosocialPlan();
 
@@ -107,6 +112,42 @@ export default function BpsProgressRoute(): React.JSX.Element | null {
   return (
     <AppWrapper>
       <Stack.Screen options={{ title: 'Progress', headerBackTitle: 'Care Plan' }} />
+      {/*
+        SCRUM-656 (2026-07-31): explicit back-button header.
+        The parent app/Home/_layout.tsx registers this route under a
+        Tabs navigator with `headerShown: false` + `href: null` — no
+        Stack, no header, no automatic back affordance. The
+        `<Stack.Screen>` above is a defensive no-op for this navigator
+        shape and is retained only for the theoretical case that the
+        route is later re-parented under a Stack.
+        User (2026-07-31): "when i click on view progress pill, i am
+        taken to progress screen but i don't see any option to come
+        back to plan screen again." Same shape as app/Home/about.tsx +
+        assessments-catalog.tsx + badges.tsx use — Pressable +
+        arrow-back MaterialIcon + title Text, pushed router.back().
+      */}
+      <View style={[styles.backHeader, { borderBottomColor: colors.border }]}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Back to care plan"
+        >
+          <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
+        </Pressable>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: getScaledFontSize(20),
+            fontWeight: getScaledFontWeight(700) as 'bold',
+            flex: 1,
+          }}
+          numberOfLines={1}
+        >
+          Progress
+        </Text>
+      </View>
       {showPlaceholder ? (
         <View
           style={styles.placeholder}
@@ -126,6 +167,18 @@ export default function BpsProgressRoute(): React.JSX.Element | null {
 }
 
 const styles = StyleSheet.create({
+  backHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  backBtn: {
+    padding: 8,
+    marginRight: 4,
+  },
   placeholder: {
     // CHUNK 50 fix: bumped from 320 to 600 to better match ProgressTab's
     // full render footprint (adherence card + streak row + self-reported
