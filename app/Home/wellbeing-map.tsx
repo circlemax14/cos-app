@@ -360,7 +360,16 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         */}
         <View style={styles.backHeader}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              // SCRUM-657 (2026-07-31): router.back() pops the history
+              // stack, but the Plan-tab entry point is a TAB SWITCH
+              // (not a push), so back() falls through to whatever route
+              // was pushed BEFORE the tab switch — usually Home. Use an
+              // explicit router.replace to the Plan (BPS) route so the
+              // destination is deterministic. Mirrors
+              // wellbeing-domain-checkins.tsx's back-to-plan pattern.
+              router.replace('/Home/biopsychosocial-plan' as never);
+            }}
             style={styles.backBtn}
             hitSlop={10}
             accessibilityRole="button"
