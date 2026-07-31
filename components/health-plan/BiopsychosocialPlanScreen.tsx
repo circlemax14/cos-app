@@ -489,20 +489,12 @@ const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'social', title: 'Social & Faith' },
 ];
 
-function greetingForNow(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-
-function formatGeneratedDate(iso: string | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+// SCRUM-663 cleanup (2026-07-31): greetingForNow + formatGeneratedDate
+// deleted — the greeting was swapped for the shared GreetingHeader
+// component (SCRUM-661) and the "Updated {date}" caption was removed
+// (SCRUM-660). If either affordance comes back, restore locally or
+// import from components/home/GreetingHeader (greeting) / write a
+// two-liner for the date formatter.
 
 /**
  * Ground truth from cos-backend's `care-plan-categories.ts`: PlanTask.category
