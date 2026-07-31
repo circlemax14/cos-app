@@ -68,9 +68,12 @@ import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 // SCRUM-655: BpsWellbeingScoreCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand.
 import { BpsHeroTileRow } from './BpsHeroTileRow';
-// SCRUM-660 (2026-07-31): PlanWellbeingMapPreview import removed —
-// the wellbeing-map banner was rebuilt inline as a horizontal card
-// (see below), no longer wrapping the home-screen tile component.
+// SCRUM-661 (2026-07-31): match home-screen greeting exactly by reusing
+// the same GreetingHeader + useCurrentHour hook that app/Home/index.tsx
+// already mounts (SCRUM-653/654). Home + Plan now share ONE greeting
+// treatment.
+import { GreetingHeader } from '@/components/home/GreetingHeader';
+import { useCurrentHour } from '@/hooks/use-current-hour';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -1291,6 +1294,11 @@ export function BiopsychosocialPlanScreen({
   // "Updated {date}" caption was removed per user request. Keeping the
   // formatter import + this comment so a future revert can re-add the
   // caption with one line.
+  // SCRUM-661 (2026-07-31): reactive current-hour for the shared
+  // GreetingHeader below. Sampled once per minute + primitive-diff
+  // bail (only triggers a re-render when the hour bucket flips) —
+  // same wiring as app/Home/index.tsx uses.
+  const currentHour = useCurrentHour();
   // COS-415: `generating` is additive on the GET response — undefined on
   // BE deploys that predate this change, which the `=== true` check treats
   // as false. COS-421: this is now a point-in-time snapshot from the last
@@ -1567,19 +1575,30 @@ export function BiopsychosocialPlanScreen({
           )}
         </View>
 
-        {/* Header — patient greeting + last-generated date */}
+        {/* Header — patient greeting + tier pills */}
         <View style={[styles.headerBlock, { flexDirection: 'row', alignItems: 'flex-start' }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(26),
-                fontWeight: getScaledFontWeight(800) as any,
-                letterSpacing: -0.4,
-              }}
-            >
-              {patientName ? `${greetingForNow()}, ${patientName}` : greetingForNow()}
-            </Text>
+            {/*
+              SCRUM-661 (2026-07-31): swap the inline BPS-specific greeting
+              Text (26pt / 800 / letterSpacing -0.4) for the SAME
+              GreetingHeader home uses. Same font, same weight, same
+              padding. useCurrentHour makes it real-time (updates at
+              hour boundary — morning → afternoon → evening) matching
+              home's SCRUM-653 behaviour. Wrap with a negative
+              paddingHorizontal offset because GreetingHeader bakes 20pt
+              horizontal padding into its own View, and this parent
+              already lives inside the ScrollView contentContainerStyle's
+              Spacing.md (16) padding — total would land the greeting
+              36pt from the edge. -6 outer margin lands it back at 30pt,
+              a hair further in than the tier row (16pt) which reads
+              cleanly as the page anchor.
+            */}
+            <View style={{ marginHorizontal: -6, marginTop: -12, marginBottom: 8 }}>
+              <GreetingHeader
+                userFirstName={patientName ?? undefined}
+                nowHour={currentHour}
+              />
+            </View>
             {/*
               SCRUM-659 (2026-07-31): "Updated {date}" meta row moved
               OFF a dedicated line and INTO the tier row below (right-
@@ -1749,22 +1768,22 @@ export function BiopsychosocialPlanScreen({
         />
 
         {/*
-          SCRUM-660 (2026-07-31): Wellbeing Map banner rebuilt as a
-          proper horizontal-layout card — icon-chip on the left, title
-          + subtitle in the middle, chevron on the right. Replaces the
-          full-tile WellbeingMapPreview-inside-a-card layout from
-          SCRUM-659, which centered the fixed-width (118pt) Venn inside
-          a wide card and looked visually thin. This new layout is
-          adopted from the shipped COS-442 card (removed below) — same
-          content proportions Ken tuned for the map entry point on the
-          BPS surface, now sitting directly under the hero tile row per
-          user's placement request.
+          SCRUM-661 (2026-07-31): Wellbeing Map banner — user asked for
+          the circular Venn back (SCRUM-660 iteration used just a
+          MaterialIcons hub-chip, which lost the visual identity the
+          circular map carries). New layout: compact 3-circle Venn on
+          the left (Body / Mind / Life circles, 44pt each, 90pt wide
+          overall), title + subtitle in the middle, chevron on the
+          right. Palette mirrors the home-screen WellbeingMapPreview
+          Venn (BIO green, MIND purple, LIFE orange) so both surfaces
+          read as one system. iOS 26.5 primitive envelope only:
+          View / Text / Pressable / StyleSheet / MaterialIcons.
         */}
         <Pressable
           onPress={() => router.push('/Home/wellbeing-map' as never)}
           accessibilityRole="button"
-          accessibilityLabel="Open your Wellbeing map"
-          accessibilityHint="Shows how your goals cluster across all 8 wellbeing areas"
+          accessibilityLabel="Open your Wellbeing map. Explore all 8 areas: Body, Mind, Life, Sleep, Movement, Nutrition, Connection, Purpose."
+          accessibilityHint="Shows how your goals cluster across the 8 wellbeing areas"
           style={({ pressed }) => [
             styles.mapCard,
             {
@@ -1774,13 +1793,31 @@ export function BiopsychosocialPlanScreen({
             },
           ]}
         >
+          {/* Compact Venn — same shape as WellbeingMapPreview but scaled
+              down to fit as a card affordance instead of a full tile. */}
           <View
-            style={[
-              styles.mapIconChip,
-              { backgroundColor: (colors.tint as string) + '22' },
-            ]}
+            style={styles.mapVennWrap}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           >
-            <MaterialIcons name="hub" size={getScaledFontSize(22)} color={colors.tint} />
+            <View
+              style={[
+                styles.mapVennCircle,
+                { left: 0, top: 0, backgroundColor: 'rgba(25,156,79,0.28)', borderColor: '#199C4F' },
+              ]}
+            />
+            <View
+              style={[
+                styles.mapVennCircle,
+                { left: 42, top: 0, backgroundColor: 'rgba(123,63,228,0.28)', borderColor: '#7B3FE4' },
+              ]}
+            />
+            <View
+              style={[
+                styles.mapVennCircle,
+                { left: 21, top: 30, backgroundColor: 'rgba(201,118,0,0.28)', borderColor: '#C97600' },
+              ]}
+            />
           </View>
           <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
             <Text
@@ -2468,6 +2505,23 @@ const styles = StyleSheet.create({
     borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // SCRUM-661: compact 3-circle Venn slot on the wellbeing map card.
+  // 90pt wide × 74pt tall — the three 44pt circles with the shipped
+  // BIO / MIND / LIFE offsets scaled down to fit as a card affordance.
+  // Palette mirrors WellbeingMapPreview so both surfaces read as one
+  // system.
+  mapVennWrap: {
+    width: 90,
+    height: 74,
+    position: 'relative',
+  },
+  mapVennCircle: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
   },
   emptyIcon: {
     width: 64,

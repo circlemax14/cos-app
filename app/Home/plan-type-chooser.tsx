@@ -252,6 +252,37 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
     <AppWrapper>
       <Stack.Screen options={{ title: 'Plan type', headerBackTitle: 'Care Plan' }} />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/*
+          SCRUM-661 (2026-07-31): explicit back-button row. Same pattern
+          as SCRUM-656/657 fix on /Home/bps-progress + /Home/wellbeing-map
+          — the route sits inside the Tabs navigator with headerShown:
+          false so the <Stack.Screen> above is a no-op and users had no
+          back affordance. router.replace to biopsychosocial-plan (not
+          router.back) because the Plan-tab entry point is a tab switch
+          (not a push) and back would fall through to Home.
+          Migrating guard: disabled while a plan-switch mutation is in
+          flight so the user can't nav away mid-request.
+        */}
+        <View style={styles.backHeader}>
+          <Pressable
+            onPress={() => {
+              if (migrating) return
+              router.replace('/Home/biopsychosocial-plan' as never)
+            }}
+            style={styles.backBtn}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back to care plan"
+            accessibilityState={{ disabled: migrating }}
+            disabled={migrating}
+          >
+            <MaterialIcons
+              name="arrow-back"
+              size={getScaledFontSize(24)}
+              color={migrating ? colors.subtext : colors.text}
+            />
+          </Pressable>
+        </View>
         <Text
           style={[
             styles.title,
@@ -740,6 +771,16 @@ function FeatureRow({
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
+  backHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: -8,
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  backBtn: {
+    padding: 8,
+  },
   title: { marginBottom: 4 },
   subtitle: { marginBottom: 18 },
   errorBox: {
