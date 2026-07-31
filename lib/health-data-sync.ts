@@ -17,15 +17,45 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-// STRICT truthiness — must be the literal string 'true' after
-// lowercase+trim. `String(undefined)` → 'undefined' (not 'true'), and
-// any other value ('1', 'yes', 'on', ' true ') is treated as OFF. Keeps
-// the flag semantics identical to EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED
-// so ops can toggle both with the same mental model.
-export const isLabsRealtimeEnabled = (): boolean =>
-  String(process.env.EXPO_PUBLIC_LABS_REALTIME_ENABLED ?? '')
-    .toLowerCase()
-    .trim() === 'true';
+// SCRUM-651 — module-level cache populated by
+// `components/FeatureFlagBridge.tsx` from the backend registry
+// (`GET /v1/feature-flags`, key `LABS_REALTIME_ENABLED`). `null`
+// means "bridge has not yet reported" — in that window we fall back
+// to the build-time env var below so the cold-start ~200ms doesn't
+// silently disable a warm bundle that was explicitly baked ON.
+//
+// Kept module-level (not React state) because `isLabsRealtimeEnabled`
+// is called imperatively from inside `useEffect` in
+// `hooks/use-health-data-sync.ts` — not at the top of a render — so
+// it can't consume `useFeatureFlags` directly. The bridge component
+// bridges the hook world to this pure predicate world.
+let cachedLabsRealtime: boolean | null = null;
+
+/**
+ * Push a fresh value from the FeatureFlagBridge into the module-level
+ * cache. Once called with any boolean, `isLabsRealtimeEnabled()` stops
+ * consulting the env fallback and returns exactly what the backend
+ * reports.
+ */
+export function setLabsRealtimeCache(v: boolean): void {
+  cachedLabsRealtime = v;
+}
+
+// STRICT truthiness for the env fallback — must be the literal string
+// 'true' after lowercase+trim. `String(undefined)` → 'undefined' (not
+// 'true'), and any other value ('1', 'yes', 'on', ' true ') is treated
+// as OFF. Keeps the flag semantics identical to
+// EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED so ops can toggle both with
+// the same mental model. Consulted only until the bridge lands the
+// first backend value.
+export const isLabsRealtimeEnabled = (): boolean => {
+  if (cachedLabsRealtime !== null) return cachedLabsRealtime;
+  return (
+    String(process.env.EXPO_PUBLIC_LABS_REALTIME_ENABLED ?? '')
+      .toLowerCase()
+      .trim() === 'true'
+  );
+};
 
 // Query keys invalidated on HEALTH_DATA_CHANGED. Kept as a module-level
 // constant so the long-poll fallback, the AppState-active refetch, and
