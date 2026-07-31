@@ -32,6 +32,11 @@ import { AccessibilityProvider } from '@/stores/accessibility-store';
 import { SecurityProvider } from '@/stores/security-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
+// SCRUM-651 — bridges the shared `useFeatureFlags` query to module-
+// level caches consumed by non-hook code paths (today: labs-realtime).
+// Renders nothing; MUST live inside <QueryProvider> so the hook has
+// a QueryClient in context.
+import { FeatureFlagBridge } from '@/components/FeatureFlagBridge';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
@@ -218,6 +223,7 @@ function RootLayout() {
 
   return (
     <QueryProvider>
+      <FeatureFlagBridge />
       <AccessibilityProvider>
         <SecurityProvider>
         <ProviderSelectionProvider>
