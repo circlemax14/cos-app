@@ -38,6 +38,12 @@ import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
 // Renders `null` when there are no pending items, so the mount is a no-op
 // on the flag-off / empty state — no chrome, no layout shift.
 import RetakeRequestInboxCard from '@/components/health-plan/retake-request/RetakeRequestInboxCard';
+// SCRUM-638 — Bevel-inspired Daily Readiness score. Reads HealthKit
+// on-device, computes vs a rolling 14-day personal baseline. Gated
+// behind `readiness_score_enabled` flag; default OFF.
+import { ReadinessScoreCard } from '@/components/home/ReadinessScoreCard';
+import { useReadinessScoreFlag } from '@/hooks/use-readiness-score-flag';
+import { useReadinessDerivation } from '@/hooks/use-readiness-derivation';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2526,6 +2532,12 @@ export default function HomeScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [viewMode, setViewMode] = React.useState<'circle' | 'list' | 'circle-providers'>('circle');
 
+  // SCRUM-638 — Daily Readiness score. Flag-gated dark by default;
+  // useReadinessDerivation short-circuits when flag OFF or HealthKit
+  // is unavailable, so this is a cheap no-op on the flag-off path.
+  const readinessEnabled = useReadinessScoreFlag();
+  const readiness = useReadinessDerivation(readinessEnabled);
+
   // Load Fasten Health providers for circle view
   const [, setFastenProviders] = useState<FastenProvider[]>([]);
   const [, setIsLoadingProviders] = useState(false);
@@ -2905,6 +2917,16 @@ export default function HomeScreen() {
          * returns null), so no layout shift on the empty state.
          */}
         <RetakeRequestInboxCard />
+        {/* SCRUM-638 — Daily Readiness score card, above the title so
+            it's the first thing a patient sees on wake-up (matches
+            Bevel's "one honest daily read" placement). Renders NOTHING
+            when flag OFF (readinessEnabled === false) — flag-off path
+            is byte-identical to pre-638 layout. Also renders NOTHING
+            when HealthKit is unavailable (Android / non-iOS build) so
+            the tile doesn't leave a dead slot on unsupported platforms. */}
+        {readinessEnabled && !readiness.isUnavailable && (
+          <ReadinessScoreCard score={readiness.score} />
+        )}
         {/* Title row — heading + inline view-mode toggle, mirroring the
             classic layout the stakeholder asked us to keep. SCRUM-234
             moved the toggle back inline (it had been hoisted to a slot
