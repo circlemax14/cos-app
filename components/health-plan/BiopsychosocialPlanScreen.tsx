@@ -55,13 +55,18 @@ import { TodaysMedicationsCard } from './TodaysMedicationsCard';
 import { MedicationsSection } from './MedicationsSection';
 import { MedicationsReviewPrompt } from './MedicationsReviewPrompt';
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
-import { BpsTodayHeroCard } from './BpsTodayHeroCard';
+// SCRUM-655: BpsTodayHeroCard no longer mounted directly by this screen —
+// BpsHeroTileRow imports and mounts it on tile-expand. Import removed here
+// so the linter doesn't flag it as unused; add back if a future change
+// mounts it standalone again.
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
-import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
+// SCRUM-655: BpsWellbeingScoreCard no longer mounted directly by this screen —
+// BpsHeroTileRow imports and mounts it on tile-expand.
+import { BpsHeroTileRow } from './BpsHeroTileRow';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -131,7 +136,13 @@ const BPS_PROGRESS_LINK_ENABLED = true;
  * rendering. Recovery cost: ~30-60s via
  * `npm run eas:update:production` (JS module constant, OTA not SSM).
  */
-const BPS_NOTIFICATION_CATEGORIES_ENABLED = true;
+// SCRUM-655 (2026-07-31): flipped false per user request. Reminders /
+// notification-category management already lives in the left slider
+// menu; the read-only "here's what you'll be notified about" glimpse
+// on the BPS surface was duplicating the settings surface without
+// adding action. Kept as a module const (not deleted) so a future
+// decision can OTA-revert with a one-line flip.
+const BPS_NOTIFICATION_CATEGORIES_ENABLED = false;
 
 /**
  * CHUNK 52 kill-switch — ports the legacy full Medications editor
@@ -1605,62 +1616,37 @@ export function BiopsychosocialPlanScreen({
           Kill-switch: `BPS_WELLBEING_SCORE_ENABLED` at module top —
           one-line OTA flip. See notes there for scope rationale.
         */}
-        {BPS_WELLBEING_SCORE_ENABLED && (
-          <BpsWellbeingScoreCard
-            colors={colors as unknown as Record<string, string>}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            onPressDetails={scrollToSelfAssessments}
-            // CHUNK 60: hand the parent-hoisted derivation to the card
-            // so it skips its internal deriveWellbeing() pass. Single-
-            // pass guarantee — BpsPlanFocusBanner and each SectionCard's
-            // isFocus gate below consume the same value.
-            derivation={wellbeing.derivation}
-            isLoading={wellbeing.isLoading}
-            isEmpty={wellbeing.isEmpty}
-          />
-        )}
-
         {/*
-          CHUNK 47 (SCRUM-252 port): Today hero card — big focal
-          percent-complete number + progress bar + done/to-go/skipped
-          triplet. Sits ABOVE BpsWelcomeBanner so it owns the "how am I
-          doing today" glance-signal that BPS was missing. Returns null
-          when today has zero task occurrences (matches legacy hero's
-          `tasks.length > 0` guard, so patients without a plan-driven
-          schedule see NO change). Kill-switch: `BPS_TODAY_HERO_ENABLED`
-          at module top — one-line OTA flip.
+          SCRUM-655 (2026-07-31): The two hero cards (Wellbeing composite
+          + Today %) are now presented as compact side-by-side tiles;
+          tapping a tile expands the full shipped card below with a
+          native-driver opacity fade. Preserves BOTH shipped cards
+          verbatim as the expanded content — no data-shape churn, no
+          drill-down affordance regression. Rendered unconditionally
+          because the kill-switches (BPS_WELLBEING_SCORE_ENABLED,
+          BPS_TODAY_HERO_ENABLED) were both `true` and are now
+          module-level dead code the tile-row implicitly always shows.
+          If we ever need to hide the row entirely, gate the whole
+          <BpsHeroTileRow /> block here on a fresh kill-switch.
+
+          Loading placeholder for today's tasks: the tile-row's Today
+          face gracefully renders `— / no tasks today` on empty AND
+          during load — the expanded card itself null-renders when
+          totalToday === 0, matching the legacy hero's guard. No
+          separate skeleton shell needed here because the tiles are
+          fixed-height (128pt) — cache-miss + late resolve doesn't
+          jitter the surface.
         */}
-        {BPS_TODAY_HERO_ENABLED && (
-          // CHUNK 47 fix (adversarial-verify major): reserve fixed-height
-          // space while today-tasks fetch is in flight. Without this,
-          // a cache miss (deep-link, staleTime expiry, dev build without
-          // auth-prefetch) rendered hero=null on first paint then mounted
-          // ~150pt of content when the fetch resolved — pushing everything
-          // else down. Static View placeholder (chunk-17/39 pattern) fills
-          // the slot until data arrives; card renders or stays null based
-          // on totalToday. If totalToday === 0 after fetch, placeholder
-          // collapses to 0 — one intended shift, not a jitter.
-          todayTasksQuery.isLoading && !todayTasksQuery.data ? (
-            <View
-              style={{
-                height: 150,
-                marginBottom: Spacing.md,
-                borderRadius: Radii.xl,
-                backgroundColor: 'rgba(148,163,184,0.15)',
-              }}
-              accessible
-              accessibilityLabel="Loading today's progress"
-            />
-          ) : (
-            <BpsTodayHeroCard
-              tasks={todayTasks}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-            />
-          )
-        )}
+        <BpsHeroTileRow
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          onPressWellbeingDetails={scrollToSelfAssessments}
+          derivation={wellbeing.derivation}
+          isLoading={wellbeing.isLoading}
+          isEmpty={wellbeing.isEmpty}
+          tasks={todayTasks}
+        />
 
         {/*
           COS-449 (Chunk 1b): one-time welcome banner explaining the BPS
