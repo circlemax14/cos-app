@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { CustomChat, IMessage, User } from '@/components/ui/custom-chat';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -24,6 +25,32 @@ export default function HealthChatScreen() {
 
     const { data: historyMessages, isLoading: isHistoryLoading, isError: isHistoryError, refetch } = useChatHistory('ai');
     const sendAiMessage = useSendAiMessage();
+
+    /*
+     * SCRUM-639 — prefill auto-send. When callers push into this screen
+     * with `?prefill=<encoded>&context=<ctx>`, the first render after
+     * history loads sends that message once on the user's behalf so
+     * the AI can answer without the user having to re-type. Guarded on
+     * a ref so hot-reload / re-focus doesn't re-fire.
+     *
+     * Common producers: ReadinessScoreCard "Why?" button (context=
+     * 'readiness-explain'), future daily-nudge deep-links.
+     */
+    const params = useLocalSearchParams<{ prefill?: string; context?: string }>();
+    const prefill = typeof params.prefill === 'string' ? params.prefill : undefined;
+    const prefillContext = typeof params.context === 'string' ? params.context : 'general';
+    const prefillSentRef = useRef(false);
+
+    useEffect(() => {
+        if (!prefill) return;
+        if (prefillSentRef.current) return;
+        // Wait for history to finish loading so the auto-sent message doesn't
+        // duplicate a prior identical send in a rare race (user navigated
+        // away mid-response, back with same URL).
+        if (isHistoryLoading) return;
+        prefillSentRef.current = true;
+        sendAiMessage.mutate({ message: prefill, context: prefillContext });
+    }, [prefill, prefillContext, isHistoryLoading, sendAiMessage]);
 
     // Map API chat history to IMessage format for display
     const messages: IMessage[] = React.useMemo(() => {
