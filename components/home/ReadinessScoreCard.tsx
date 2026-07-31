@@ -38,9 +38,14 @@ const BAND_TOKENS: Record<ReadinessBand, { fg: string; bg: string; label: string
 export interface ReadinessScoreCardProps {
   score: ReadinessScore
   onPress?: () => void
+  /** SCRUM-639 — "Why?" affordance. Renders a small trailing chip on
+   *  the score row when a composite is available. Tap fires this
+   *  callback (parent decides whether to open the AI chat with a
+   *  prefilled explain prompt). Omit to hide the affordance. */
+  onExplain?: () => void
 }
 
-function ReadinessScoreCardBase({ score, onPress }: ReadinessScoreCardProps): React.JSX.Element {
+function ReadinessScoreCardBase({ score, onPress, onExplain }: ReadinessScoreCardProps): React.JSX.Element {
   const { composite, band, state, baselineDays, drivers } = score
   const tokens = band ? BAND_TOKENS[band] : undefined
 
@@ -93,6 +98,22 @@ function ReadinessScoreCardBase({ score, onPress }: ReadinessScoreCardProps): Re
           <View style={styles.scoreRow}>
             <Text style={styles.scoreNumber} maxFontSizeMultiplier={1.3}>{composite}</Text>
             <Text style={styles.scoreScale} maxFontSizeMultiplier={1.3}>/100</Text>
+            {onExplain ? (
+              <Pressable
+                onPress={(e) => {
+                  // Stop the outer card's onPress from also firing when
+                  // the user taps the Why? chip.
+                  e.stopPropagation()
+                  onExplain()
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Explain why my readiness score is what it is today"
+                hitSlop={8}
+                style={({ pressed }) => [styles.whyChip, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.whyChipLabel} maxFontSizeMultiplier={1.3}>Why?</Text>
+              </Pressable>
+            ) : null}
           </View>
           {tokens ? (
             <View
@@ -178,6 +199,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#687076',
     marginLeft: 2,
+  },
+  whyChip: {
+    marginLeft: 'auto',
+    marginBottom: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(11, 105, 99, 0.10)',
+  },
+  whyChipLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0B6963',
   },
   chip: {
     marginTop: 6,

@@ -44,6 +44,9 @@ import RetakeRequestInboxCard from '@/components/health-plan/retake-request/Reta
 import { ReadinessScoreCard } from '@/components/home/ReadinessScoreCard';
 import { useReadinessScoreFlag } from '@/hooks/use-readiness-score-flag';
 import { useReadinessDerivation } from '@/hooks/use-readiness-derivation';
+// SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
+// the score + drivers into an AI prompt with the specific inputs.
+import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2538,6 +2541,18 @@ export default function HomeScreen() {
   const readinessEnabled = useReadinessScoreFlag();
   const readiness = useReadinessDerivation(readinessEnabled);
 
+  // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
+  // built from today's driver metrics. Chat route auto-sends the
+  // prefill once on mount (see app/Home/health-chat.tsx).
+  const onExplainReadiness = useCallback(() => {
+    const prompt = buildReadinessExplainPrompt(readiness.score);
+    if (!prompt) return;
+    router.push({
+      pathname: '/Home/health-chat',
+      params: { prefill: prompt, context: 'readiness-explain' },
+    } as never);
+  }, [readiness.score]);
+
   // Load Fasten Health providers for circle view
   const [, setFastenProviders] = useState<FastenProvider[]>([]);
   const [, setIsLoadingProviders] = useState(false);
@@ -2925,7 +2940,7 @@ export default function HomeScreen() {
             when HealthKit is unavailable (Android / non-iOS build) so
             the tile doesn't leave a dead slot on unsupported platforms. */}
         {readinessEnabled && !readiness.isUnavailable && (
-          <ReadinessScoreCard score={readiness.score} />
+          <ReadinessScoreCard score={readiness.score} onExplain={onExplainReadiness} />
         )}
         {/* Title row — heading + inline view-mode toggle, mirroring the
             classic layout the stakeholder asked us to keep. SCRUM-234
