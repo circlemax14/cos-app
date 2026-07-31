@@ -98,7 +98,9 @@ import type { PlanTask, TaskOccurrence } from '@/services/api/types';
 // scrolls with the rest of the plan content — bottom-of-content, not
 // a floating overlay — and so it appears on both entry points into BPS
 // (the tab-swap render AND the peer `/Home/biopsychosocial-plan` route).
-import { ClassicViewLink } from '@/components/plan/ClassicViewLink';
+// SCRUM-662 (2026-07-31): ClassicViewLink import removed — the
+// bottom-anchored "Classic view" affordance was removed from the
+// surface per user request.
 
 /**
  * CHUNK 47 kill-switch — port of the SCRUM-252 Today hero card into the
@@ -2229,88 +2231,21 @@ export function BiopsychosocialPlanScreen({
           </View>
         )}
 
-        {/* Refresh my plan — COS-430 copy, COS-436 persistent generating state.
-            SCRUM-651 (2026-07-30): while a job is in flight OR a cancel is
-            landing, this row hosts BOTH the primary CTA and a secondary
-            Cancel button. Post-cancel, the CTA reverts to "Refresh my plan"
-            copy — the same button re-purposed as Retry — with the same
-            REGENERATION_IN_FLIGHT idempotency guard the pre-651 CTA already
-            had (server 409s a duplicate POST while a job is running; the
-            `regenerateDisabled` state prevents inviting the tap, and
-            `onRegenerate`'s early-return prevents a programmatic caller
-            from reaching mutate() through a stale disabled state). */}
-        <TouchableOpacity
-          style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
-          onPress={onRegenerate}
-          disabled={regenerateDisabled}
-          accessibilityRole="button"
-          accessibilityLabel={
-            cancelMutation.isPending
-              ? 'Cancelling regeneration'
-              : isGeneratingFromAnySource
-              ? 'Generating your plan'
-              : 'Refresh my plan'
-          }
-          accessibilityState={{ disabled: regenerateDisabled, busy: isGeneratingFromAnySource || cancelMutation.isPending }}
-        >
-          {/*
-            CHUNK 40 (2026-07-21): Text-label swap replaces <ActivityIndicator>
-            (v2 chunk-34 RegenerateButton parity). ActivityIndicator is a
-            continuously animating native primitive — even post-mount, on
-            iOS 26.5 it participates in the turbomodule surface we're
-            hardening against. Static Text is safe; the button opacity +
-            disabled state still communicate the pending state.
-
-            SCRUM-651 (2026-07-30): ActivityIndicator envelope preserved
-            (chunk 40 turbomodule hardening) — the "Cancelling…" state
-            is a static Text label, same as "Regenerating…".
-          */}
-          {cancelMutation.isPending ? (
-            <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
-              Cancelling…
-            </Text>
-          ) : isGeneratingFromAnySource ? (
-            <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
-              Regenerating…
-            </Text>
-          ) : (
-            <>
-              <MaterialIcons name="refresh" size={16} color="#fff" />
-              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Refresh my plan</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        {/* SCRUM-651: Cancel button. Only rendered while a job is in
-            flight (per spec: "isPending || isRegenerating") and while a
-            cancel isn't already landing. Secondary style (outlined) so
-            the primary "Refresh my plan" / "Regenerating…" row stays
-            visually dominant. iOS 26.5 envelope: static Pressable + Text
-            + MaterialIcons only — no ActivityIndicator, no Alert. */}
-        {showCancelButton && (
-          <Pressable
-            onPress={onCancel}
-            accessibilityRole="button"
-            accessibilityLabel="Cancel plan generation"
-            style={({ pressed }) => [
-              styles.cancelBtn,
-              {
-                borderColor: (colors.tint ?? '#0D9488') + '55',
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-          >
-            <MaterialIcons name="close" size={16} color={colors.tint} />
-            <Text
-              style={[
-                styles.cancelBtnText,
-                { color: colors.tint, fontSize: getScaledFontSize(14) },
-              ]}
-            >
-              Cancel
-            </Text>
-          </Pressable>
-        )}
+        {/*
+          SCRUM-662 (2026-07-31): "Refresh my plan" primary CTA + the
+          companion "Cancel" secondary button both removed from the
+          surface per user request ("regenerate plan and classic view
+          is not required"). Server-side regenerate hooks
+          (regenerateMutation, cancelMutation, onRegenerate, onCancel,
+          regenerateDisabled, isGeneratingFromAnySource, showCancelButton)
+          and the top-of-page "Refreshing your plan..." banner all
+          remain wired but are now callee-less — they auto-fire from
+          other surfaces (push notifications, cross-instance polls) and
+          the surface still reflects state via the banner if regen
+          starts from elsewhere. If a manual "Refresh" affordance is
+          needed later, restore this Pressable — no state migration
+          required.
+        */}
             </>
           );
           if (BPS_HERO_LAYOUT_ENABLED) {
@@ -2340,7 +2275,14 @@ export function BiopsychosocialPlanScreen({
           entry points (tab-swap render + the peer
           /Home/biopsychosocial-plan route) without a duplicate mount.
         */}
-        <ClassicViewLink />
+        {/*
+          SCRUM-662 (2026-07-31): ClassicViewLink removed per user
+          request ("classic view is not required"). Users still have
+          the tab-swap flag override at the SSM level if a rollback is
+          ever needed; the in-page link was creating a UX exit hatch
+          that we don't want to advertise now that BPS is the intended
+          Plan surface.
+        */}
       </ScrollView>
       {/*
         COS-433: goal-editor Modal + its state + its updateGoalMutation
