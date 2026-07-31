@@ -83,6 +83,10 @@ export const SECTION_BY_CATEGORY: Record<CarePlanCategoryKey, BiopsychosocialDom
   cognitive: 'biological',
   adl: 'biological',
   medication: 'biological',
+  // SCRUM-536 follow-up: nutrition folds into biological wellness alongside
+  // medical/adl/medication. Consistent with the FICA-esque framing where
+  // dietary practice is a biological determinant, not a psychosocial one.
+  nutrition: 'biological',
   mentalHealth: 'psychological',
   integrative: 'psychological',
   social: 'social',
