@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CARE_PLAN_ENABLED,
+  CARE_PLAN_CATEGORIES,
   CARE_PLAN_CATEGORY_KEYS,
+  NUTRITION_PLAN_ENABLED,
   categoryLabel,
   groupGoalsByCategory,
   formatGoalMeasure,
@@ -23,11 +25,43 @@ test('CARE_PLAN_ENABLED is enabled (COS-377 rollout — backend care_plan_enable
   assert.equal(CARE_PLAN_ENABLED, true);
 });
 
-test('category keys are the 8 in Ken’s order', () => {
-  assert.deepEqual([...CARE_PLAN_CATEGORY_KEYS], [
-    'medical', 'cognitive', 'adl', 'medication',
-    'mentalHealth', 'integrative', 'social', 'spiritual',
-  ]);
+// ── Nutrition category (COS-399 / SCRUM-536) ─────────────────────────────────
+// Ken added Nutrition at position #2. It is gated behind NUTRITION_PLAN_ENABLED
+// (default OFF). The exported CARE_PLAN_CATEGORIES is flag-aware: flag-off = the
+// original 8 (byte-for-byte today); flag-on = 9 with nutrition at index 1.
+
+const EIGHT_KEYS_OFF = [
+  'medical', 'cognitive', 'adl', 'medication',
+  'mentalHealth', 'integrative', 'social', 'spiritual',
+] as const;
+
+const NINE_KEYS_ON = [
+  'medical', 'nutrition', 'cognitive', 'adl', 'medication',
+  'mentalHealth', 'integrative', 'social', 'spiritual',
+] as const;
+
+test('NUTRITION_PLAN_ENABLED defaults OFF (kill-switch, matches backend SSM rollout)', () => {
+  assert.equal(NUTRITION_PLAN_ENABLED, false);
+});
+
+test('category keys are flag-aware: OFF ⇒ the original 8 in Ken’s order; ON ⇒ 9 with nutrition at index 1', () => {
+  const keys = [...CARE_PLAN_CATEGORY_KEYS];
+  if (NUTRITION_PLAN_ENABLED) {
+    // Flag ON: nutrition appears at position #2 (index 1).
+    assert.deepEqual(keys, [...NINE_KEYS_ON]);
+    assert.equal(keys.length, 9);
+    assert.equal(keys[1], 'nutrition');
+    assert.equal(CARE_PLAN_CATEGORIES[1].label, 'Nutrition');
+  } else {
+    // Flag OFF (default): byte-for-byte today's 8 — no nutrition anywhere.
+    assert.deepEqual(keys, [...EIGHT_KEYS_OFF]);
+    assert.equal(keys.length, 8);
+    assert.ok(!keys.includes('nutrition'));
+  }
+});
+
+test('categoryLabel resolves Nutrition even when the flag is off (defensive label lookup)', () => {
+  assert.equal(categoryLabel('nutrition'), 'Nutrition');
 });
 
 test('categoryLabel returns a human label; unknown ⇒ "Other"', () => {
