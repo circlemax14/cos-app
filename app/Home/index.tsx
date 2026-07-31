@@ -52,8 +52,11 @@ import {
 } from '@/hooks/use-home-v2-flag';
 import { HomeResponsiveProvider } from '@/components/home/HomeResponsiveProvider';
 import { GreetingHeader } from '@/components/home/GreetingHeader';
+import { HomeQuickActionPills } from '@/components/home/HomeQuickActionPills';
 import { ScoreCardGrid } from '@/components/home/ScoreCardGrid';
 import { WellbeingMapPreview } from '@/components/home/WellbeingMapPreview';
+import { WellbeingScoreTile } from '@/components/home/WellbeingScoreTile';
+import { useCurrentHour } from '@/hooks/use-current-hour';
 import { HeroScoreBlock } from '@/components/health-plan/senior/HeroScoreBlock';
 import { BpsPlanFocusBanner } from '@/components/health-plan/BpsPlanFocusBanner';
 import { useScoreCatalog, type ScoreRow } from '@/hooks/use-score-catalog';
@@ -2991,10 +2994,13 @@ export default function HomeScreen() {
   const scoreCatalog = useScoreCatalog();
   const scoreRows: ScoreRow[] = scoreCatalog.rows;
   const greetingFirstName = getFirstName(patientName);
-  // `nowHour` is captured at render time — GreetingHeader also computes
-  // a fallback internally, but supplying it here keeps snapshot tests
-  // deterministic through the same code path they exercise in isolation.
-  const nowHour = new Date().getHours();
+  // `nowHour` is now reactive via useCurrentHour() — SCRUM-653 fix.
+  // The prior static `new Date().getHours()` capture never updated across
+  // hour boundaries while the user lingered on the screen (a common
+  // pattern first-thing-in-the-morning), so the greeting would drift.
+  // useCurrentHour polls every 60s and only re-renders when the hour
+  // actually changes (React bails on identical primitives).
+  const nowHour = useCurrentHour();
 
   useEffect(() => {
     const loadProviders = async () => {
@@ -3323,37 +3329,37 @@ export default function HomeScreen() {
          */}
         <RetakeRequestInboxCard />
         {/*
-         * SCRUM-652 Injection A — GreetingHeader.
-         * Dark-launched between the inbox card and the classic title
-         * row. Renders nothing when `HOME_V2_INJECTIONS_ENABLED` is
-         * OFF, so the legacy layout is byte-identical on the flag-off
-         * path. When ON, adds a soft time-of-day greeting above the
-         * "…'s Circle of Support" heading without displacing it.
+         * SCRUM-653 title row — one of two variants selected by
+         * HOME_V2_INJECTIONS_ENABLED:
+         *   ON  → GreetingHeader ("Good morning, Kenneth") with the
+         *         view-mode toggle inline on the right, matching the
+         *         classic layout's toggle position.
+         *   OFF → Classic "{First}'s Circle of Support" title with the
+         *         same inline toggle — byte-identical to the legacy
+         *         layout so the flag-off path is a no-op regression.
          */}
-        {injectionsEnabled && (
-          <GreetingHeader userFirstName={greetingFirstName} nowHour={nowHour} />
-        )}
-        {/* Title row — heading + inline view-mode toggle, mirroring the
-            classic layout the stakeholder asked us to keep. SCRUM-234
-            moved the toggle back inline (it had been hoisted to a slot
-            just above the circle in SCRUM-233). The toggle stays small
-            so the title still reads as the dominant element. */}
         <View style={[styles.titleRow, { paddingHorizontal: 16, paddingTop: 8 }]}>
-          <Text
-            numberOfLines={2}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={[
-              styles.sectionTitle,
-              {
-                fontSize: getScaledFontSize(24),
-                fontWeight: getScaledFontWeight(600) as any,
-                color: colors.text,
-                flex: 1,
-              }
-            ]}>
-            {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
-          </Text>
+          {injectionsEnabled ? (
+            <View style={{ flex: 1 }}>
+              <GreetingHeader userFirstName={greetingFirstName} nowHour={nowHour} />
+            </View>
+          ) : (
+            <Text
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              style={[
+                styles.sectionTitle,
+                {
+                  fontSize: getScaledFontSize(24),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  color: colors.text,
+                  flex: 1,
+                }
+              ]}>
+              {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
+            </Text>
+          )}
           <TouchableOpacity
             onPress={toggleViewMode}
             style={[
@@ -3381,14 +3387,23 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick actions row — between title and circle, matches the
-            web layout. SCRUM-279 (2026-06-08 build 34): Ken asked to
-            reduce the gap to circle by 50% more on iPad. Dropped
-            marginBottom 12 → 6. iPhone already tight enough so it
-            applies universally (no responsive override needed). */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
-          <QuickActionButtons />
-        </View>
+        {/*
+         * SCRUM-653 quick actions row — one of two variants:
+         *   ON  → HomeQuickActionPills (3 sleek transparent chips for
+         *         PCP / Pharmacy / Urgent Care, preserving the shipped
+         *         dial + open-app behaviour).
+         *   OFF → classic filled-card QuickActionButtons (byte-identical
+         *         legacy path). The wrapping View intentionally omits
+         *         paddingHorizontal on the ON branch — the pills row
+         *         supplies its own marginHorizontal:16 internally.
+         */}
+        {injectionsEnabled ? (
+          <HomeQuickActionPills />
+        ) : (
+          <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
+            <QuickActionButtons />
+          </View>
+        )}
 
         {/* SCRUM-279 (build 45): iPad-only — kill all extra vertical
             padding around the circle. Ken still saw space on build 44.
@@ -3508,28 +3523,40 @@ export default function HomeScreen() {
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
 
         {/*
-         * SCRUM-652 Injection C — ScoreCardGrid.
-         * Sits between the Circle-of-Support and the Today's
-         * Appointments section. Wrapped in HomeResponsiveProvider
-         * because ScoreCardGrid subscribes to `useHomeLayout` for its
-         * responsive column count; wrapping the injection point (and
-         * only the injection point) keeps the extra context off the
-         * legacy tree on flag-off AND scoped to a single subtree when
-         * the flag is on, matching ADR-0003's "rotation storm only
-         * inside the v2 subtree" isolation.
+         * SCRUM-653 Wellbeing Row — two equal tiles side-by-side, sitting
+         * between the Circle of Support and Today's Appointments.
+         *   Left  : WellbeingScoreTile (composite score + band chip)
+         *   Right : WellbeingMapPreview (3-circle Venn + "Explore all 8 areas")
+         * Both tiles handle their own empty/loading states so the row is
+         * stable across data availability. Only rendered when
+         * HOME_V2_INJECTIONS_ENABLED is ON — flag-off path is bytes-free.
          *
-         * We also guard on `scoreRows.length > 0` because ScoreCardGrid
-         * renders an empty-state Text when rows are empty — during
-         * initial load / signed-out state we'd rather show nothing
-         * than a "Complete a check-in…" prompt above the circle,
-         * which is jarring on the very first cold-mount frame.
+         * The prior SCRUM-652 injection (ScoreCardGrid wrapped in
+         * HomeResponsiveProvider) is replaced by this compact 2-tile
+         * layout per the user's redesign spec — the 4-card grid was
+         * dominating the surface.
          */}
-        {injectionsEnabled && scoreRows.length > 0 && (
-          <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 8 }}>
-            <HomeResponsiveProvider>
-              <ScoreCardGrid rows={scoreRows} />
-            </HomeResponsiveProvider>
+        {injectionsEnabled && (
+          <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>
+            <View style={{ flex: 1 }}>
+              <WellbeingScoreTile />
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, minHeight: 148, alignItems: 'center', justifyContent: 'center' }}>
+              <WellbeingMapPreview />
+            </View>
           </View>
+        )}
+        {/*
+         * ScoreCardGrid stays imported (backward-compat with the dead
+         * HOME_V2_ENABLED path in HomeV2Layout above) but no longer
+         * injects into the legacy tree. Ref for the linter:
+         *   scoreRows length = {scoreRows.length}, catalog rows shape unchanged.
+         * If HomeV2Layout is later deleted we can drop the imports.
+         */}
+        {false && scoreRows.length > 0 && (
+          <HomeResponsiveProvider>
+            <ScoreCardGrid rows={scoreRows} />
+          </HomeResponsiveProvider>
         )}
 
         {/* SCRUM-279 (2026-06-03): Today's Appointments — pulls from
@@ -3743,19 +3770,17 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         {/*
-         * SCRUM-652 Injection D — WellbeingMapPreview.
-         * Placed between the Health Trends hero and the Upcoming
-         * Appointments section so the wellbeing story flows: trend
-         * (Health Trends) → holistic map (Wellbeing) → schedule
-         * (Upcoming). Silent-drops when the flag is OFF, so on the
-         * flag-off path this render is a single boolean compare.
-         * WellbeingMapPreview is React.memo'd internally, so parent
-         * re-renders (e.g. calendar cache ticks) don't repaint its
-         * absolute-positioned Venn.
+         * SCRUM-653: standalone WellbeingMapPreview injection removed —
+         * moved into the 2-tile Wellbeing Row above the appointments
+         * section. Nothing renders here on the new design path.
          */}
-        {injectionsEnabled && <WellbeingMapPreview />}
 
-        {upcomingAppointments.length > 0 && (
+        {/*
+         * SCRUM-653: Upcoming Appointments hidden when new design is on
+         * (user's redesign spec ended at "6. then health trends"). Legacy
+         * path unaffected.
+         */}
+        {!injectionsEnabled && upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
