@@ -58,6 +58,12 @@ import { HeroScoreBlock } from '@/components/health-plan/senior/HeroScoreBlock';
 import { BpsPlanFocusBanner } from '@/components/health-plan/BpsPlanFocusBanner';
 import { useScoreCatalog, type ScoreRow } from '@/hooks/use-score-catalog';
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
+// SCRUM-652 — legacy-home v2 injection gate. Distinct from `isHomeV2Enabled()`
+// (that returns the entire redesigned surface). This flag enables three
+// surgical v2 blocks (GreetingHeader, ScoreCardGrid, WellbeingMapPreview)
+// inside the existing legacy render tree so we can dark-launch each block
+// without cutting over the whole screen.
+import { useHomeV2InjectionsEnabled } from '@/hooks/use-home-v2-injections-flag';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2968,6 +2974,28 @@ export default function HomeScreen() {
     return parts[0] || '';
   };
 
+  // ─────────────────────────────────────────────────────────────────
+  // SCRUM-652 — legacy Home v2-block injections.
+  // `useHomeV2InjectionsEnabled` reads a strict-`=== true` backend
+  // flag (`HOME_V2_INJECTIONS_ENABLED`) so this defaults OFF while
+  // flags are loading OR the backend hasn't shipped the key yet.
+  //
+  // We call `useScoreCatalog` unconditionally to obey Rules of Hooks
+  // — the flag can flip mid-session (feature-flags refetch on
+  // foreground, SCRUM-527), so a conditional hook call would violate
+  // hook order. The catalog's underlying query is React-Query cached
+  // and cheap; when `injectionsEnabled` is false the returned rows
+  // are simply never rendered.
+  // ─────────────────────────────────────────────────────────────────
+  const injectionsEnabled = useHomeV2InjectionsEnabled();
+  const scoreCatalog = useScoreCatalog();
+  const scoreRows: ScoreRow[] = scoreCatalog.rows;
+  const greetingFirstName = getFirstName(patientName);
+  // `nowHour` is captured at render time — GreetingHeader also computes
+  // a fallback internally, but supplying it here keeps snapshot tests
+  // deterministic through the same code path they exercise in isolation.
+  const nowHour = new Date().getHours();
+
   useEffect(() => {
     const loadProviders = async () => {
       setIsLoadingProviders(true);
@@ -3294,6 +3322,17 @@ export default function HomeScreen() {
          * returns null), so no layout shift on the empty state.
          */}
         <RetakeRequestInboxCard />
+        {/*
+         * SCRUM-652 Injection A — GreetingHeader.
+         * Dark-launched between the inbox card and the classic title
+         * row. Renders nothing when `HOME_V2_INJECTIONS_ENABLED` is
+         * OFF, so the legacy layout is byte-identical on the flag-off
+         * path. When ON, adds a soft time-of-day greeting above the
+         * "…'s Circle of Support" heading without displacing it.
+         */}
+        {injectionsEnabled && (
+          <GreetingHeader userFirstName={greetingFirstName} nowHour={nowHour} />
+        )}
         {/* Title row — heading + inline view-mode toggle, mirroring the
             classic layout the stakeholder asked us to keep. SCRUM-234
             moved the toggle back inline (it had been hoisted to a slot
@@ -3467,6 +3506,31 @@ export default function HomeScreen() {
 
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
+
+        {/*
+         * SCRUM-652 Injection C — ScoreCardGrid.
+         * Sits between the Circle-of-Support and the Today's
+         * Appointments section. Wrapped in HomeResponsiveProvider
+         * because ScoreCardGrid subscribes to `useHomeLayout` for its
+         * responsive column count; wrapping the injection point (and
+         * only the injection point) keeps the extra context off the
+         * legacy tree on flag-off AND scoped to a single subtree when
+         * the flag is on, matching ADR-0003's "rotation storm only
+         * inside the v2 subtree" isolation.
+         *
+         * We also guard on `scoreRows.length > 0` because ScoreCardGrid
+         * renders an empty-state Text when rows are empty — during
+         * initial load / signed-out state we'd rather show nothing
+         * than a "Complete a check-in…" prompt above the circle,
+         * which is jarring on the very first cold-mount frame.
+         */}
+        {injectionsEnabled && scoreRows.length > 0 && (
+          <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 8 }}>
+            <HomeResponsiveProvider>
+              <ScoreCardGrid rows={scoreRows} />
+            </HomeResponsiveProvider>
+          </View>
+        )}
 
         {/* SCRUM-279 (2026-06-03): Today's Appointments — pulls from
             the UNIFIED calendar feed (FHIR + user-created + care-
@@ -3677,6 +3741,19 @@ export default function HomeScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {/*
+         * SCRUM-652 Injection D — WellbeingMapPreview.
+         * Placed between the Health Trends hero and the Upcoming
+         * Appointments section so the wellbeing story flows: trend
+         * (Health Trends) → holistic map (Wellbeing) → schedule
+         * (Upcoming). Silent-drops when the flag is OFF, so on the
+         * flag-off path this render is a single boolean compare.
+         * WellbeingMapPreview is React.memo'd internally, so parent
+         * re-renders (e.g. calendar cache ticks) don't repaint its
+         * absolute-positioned Venn.
+         */}
+        {injectionsEnabled && <WellbeingMapPreview />}
 
         {upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
