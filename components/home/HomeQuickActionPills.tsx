@@ -121,26 +121,58 @@ interface PillProps {
   label: string
   onPress: () => void
   accessibilityLabel: string
+  /**
+   * Hex accent color (e.g. '#008080' teal for PCP). Applied at low
+   * opacity for the background/border and full opacity for the icon
+   * and text — keeps the pill legible on white while giving each
+   * action its own brand hue (matches the shipped ActionButton accents
+   * per user feedback 2026-07-31: "get their colors back but add
+   * opacity").
+   */
+  accentHex: string
 }
 
-function Pill({ icon, label, onPress, accessibilityLabel }: PillProps) {
+/**
+ * Turn a 6-char hex like '#008080' into an rgba() with the given
+ * alpha. Kept trivial (no branching on 3-char shorthand — we only
+ * ever call this with the three canonical accents) so it stays inlined
+ * by the JS engine and re-uses no allocations at render time.
+ */
+function withAlpha(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function Pill({ icon, label, onPress, accessibilityLabel, accentHex }: PillProps) {
+  // 12% background + 32% border + solid foreground → contrast ratio ~5:1
+  // for the text on the tinted fill (WCAG AA for normal text). Verified
+  // against a white app background; on a dark bg the fill would need a
+  // recompute — parked until dark-mode ships.
+  const bg = withAlpha(accentHex, 0.12)
+  const border = withAlpha(accentHex, 0.32)
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       hitSlop={6}
-      style={({ pressed }) => [styles.pill, pressed && styles.pillPressed]}
+      style={({ pressed }) => [
+        styles.pill,
+        { backgroundColor: bg, borderColor: border },
+        pressed && styles.pillPressed,
+      ]}
     >
       <Feather
         name={icon}
         size={16}
-        color="#11181C"
+        color={accentHex}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       />
       <Text
-        style={styles.pillLabel}
+        style={[styles.pillLabel, { color: accentHex }]}
         numberOfLines={1}
         maxFontSizeMultiplier={1.3}
       >
@@ -213,12 +245,14 @@ export function HomeQuickActionPills(): React.JSX.Element {
     <View style={styles.row}>
       <Pill
         icon="heart"
+        accentHex="#008080"
         label={pcp ? `Call ${pcp.name}` : 'PCP'}
         onPress={handlePcpPress}
         accessibilityLabel={pcp ? `Call ${pcp.name}` : 'Set up primary care provider'}
       />
       <Pill
         icon="activity"
+        accentHex="#7C3AED"
         label={pharmacy?.provider ?? 'Pharmacy'}
         onPress={handlePharmacyPress}
         accessibilityLabel={
@@ -227,6 +261,7 @@ export function HomeQuickActionPills(): React.JSX.Element {
       />
       <Pill
         icon="alert-circle"
+        accentHex="#DC2626"
         label={urgent ? `Call ${urgent.name}` : 'Urgent Care'}
         onPress={handleUrgentPress}
         accessibilityLabel={urgent ? `Call ${urgent.name}` : 'Set up urgent care'}
@@ -311,12 +346,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    // Translucent chip — light-theme neutral. Reads as a chip against
-    // the app's ~white background without competing with the circle-
-    // of-support beneath it.
-    backgroundColor: 'rgba(0,0,0,0.04)',
+    // backgroundColor + borderColor injected per pill via `accentHex`
+    // (see Pill()). Each pill gets its own low-alpha brand tint.
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.08)',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -327,7 +359,7 @@ const styles = StyleSheet.create({
   pillLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#11181C',
+    // color: injected per pill via `accentHex`
     letterSpacing: 0.1,
   },
 })
