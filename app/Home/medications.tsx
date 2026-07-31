@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,12 +10,16 @@ import {
 } from 'react-native';
 import { Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { fetchMedicationsSummary } from '@/services/api/patient';
 import type { MedicationSummary } from '@/services/api/types';
 import { inferMedicationStatus } from '@/utils/treatment-status';
+import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
+import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
+import { TodaysMedicationsCard } from '@/components/health-plan/TodaysMedicationsCard';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
@@ -70,6 +75,25 @@ export default function MedicationsScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.text} />}
       >
+        {/*
+          SCRUM-658 (2026-07-31): back button + inline header. Same
+          shape as SCRUM-656 fix on /Home/bps-progress + /Home/wellbeing-map
+          — Pressable + arrow-back MaterialIcon + router.replace to the
+          Plan (BPS) route so the destination is deterministic even
+          when the user got here via tab-switch (which doesn't push
+          onto the router history).
+        */}
+        <View style={styles.backHeaderRow}>
+          <Pressable
+            onPress={() => router.replace('/Home/biopsychosocial-plan' as never)}
+            style={styles.backBtn}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back to care plan"
+          >
+            <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
+          </Pressable>
+        </View>
         <View style={styles.header}>
           <Text
             style={[
@@ -88,6 +112,26 @@ export default function MedicationsScreen() {
             {loading ? 'Loading…' : `${active.length} active · ${past.length} past`}
           </Text>
         </View>
+
+        {/*
+          SCRUM-658 (2026-07-31): plan-driven meds moved from BPS surface
+          to this route:
+            1. TodaysMedicationsCard — today's dose preview
+            2. MedicationsReviewPrompt — soft "review your meds" prompt
+            3. MedicationsSection — full editor with add/edit/delete
+          All three components self-guard on the server flagEnabled +
+          load state; on plans without meds they null-render and this
+          screen falls through to the read-only fetchMedicationsSummary
+          view below unchanged.
+        */}
+        <TodaysMedicationsCard
+          colors={colors as unknown as Record<string, string>}
+          isDark={settings.isDarkTheme}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
+        <MedicationsReviewPrompt onReviewNow={() => undefined} />
+        <MedicationsSection openAddSignal={0} />
 
         {error && (
           <View style={styles.errorCard}>
@@ -289,6 +333,16 @@ function MedRow({ med, colors, getScaledFontSize, getScaledFontWeight }: MedRowP
 }
 
 const styles = StyleSheet.create({
+  backHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 4,
+    marginLeft: -8,
+  },
+  backBtn: {
+    padding: 8,
+  },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
   header: { marginBottom: 14 },

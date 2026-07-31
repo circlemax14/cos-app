@@ -51,9 +51,10 @@ import {
 } from '@/hooks/use-biopsychosocial-plan';
 import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
-import { TodaysMedicationsCard } from './TodaysMedicationsCard';
-import { MedicationsSection } from './MedicationsSection';
-import { MedicationsReviewPrompt } from './MedicationsReviewPrompt';
+// SCRUM-658 (2026-07-31): TodaysMedicationsCard / MedicationsSection /
+// MedicationsReviewPrompt moved off this surface to /Home/medications.
+// Imports removed to silence unused-var warnings; the standalone route
+// re-imports them from their canonical paths.
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 // SCRUM-655: BpsTodayHeroCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand. Import removed here
@@ -677,6 +678,60 @@ function ViewProgressLink({
   );
 }
 
+/**
+ * SCRUM-658 — sibling of ViewProgressLink for the medications route.
+ * Renders as a pill in the tier row and pushes to `/Home/medications`
+ * (which now hosts the full MedicationsSection editor that used to
+ * live inline on this BPS surface). Preserves the sleek-pill shape
+ * Ken landed on so the header row still reads as a single control
+ * strip.
+ */
+function MedicationsLink({
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  onPress,
+}: {
+  colors: Record<string, string>;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => number | string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel="Medications"
+      accessibilityHint="Opens your medications list and editor"
+      style={({ pressed }) => [
+        styles.tierPill,
+        {
+          backgroundColor: (colors.tint ?? '#0D9488') + '14',
+          borderColor: (colors.tint ?? '#0D9488') + '33',
+          marginLeft: 8,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <MaterialIcons
+        name="medication"
+        size={getScaledFontSize(14)}
+        color={colors.tint}
+        style={{ marginRight: 4 }}
+      />
+      <Text
+        style={{
+          color: colors.tint,
+          fontSize: getScaledFontSize(12),
+          fontWeight: getScaledFontWeight(700) as any,
+        }}
+      >
+        Medications
+      </Text>
+    </Pressable>
+  );
+}
+
 export function BiopsychosocialPlanScreen({
   currentPlanType,
   onChangePlanType,
@@ -1182,7 +1237,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg }}
           refreshControl={
             // CHUNK 39 fix (adversarial-verify minor): every other BPS
@@ -1203,7 +1258,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
         >
@@ -1332,7 +1387,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
         >
@@ -1365,7 +1420,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
         >
@@ -1397,7 +1452,14 @@ export function BiopsychosocialPlanScreen({
     <AppWrapper>
       <ScrollView
         ref={scrollRef}
-        style={[styles.container, { backgroundColor: colors.background }]}
+        // SCRUM-658 (2026-07-31): transparent scroll background per
+        // user request ("i want to set plan screen background as
+        // transparent because its cutting bubbles"). AppWrapper's
+        // parent SafeAreaView provides the underlying color; letting
+        // this ScrollView be transparent stops the meds-editor pill
+        // shadows + score-band chips from being visually clipped by
+        // an opaque bg-color rectangle behind them at layout edges.
+        style={[styles.container, { backgroundColor: 'transparent' }]}
         contentContainerStyle={{ padding: Spacing.md, paddingBottom: Spacing.xl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
       >
@@ -1534,6 +1596,20 @@ export function BiopsychosocialPlanScreen({
                   onPress={() => router.push('/Home/bps-progress' as never)}
                 />
               )}
+              {/*
+                SCRUM-658 (2026-07-31): sibling pill routing to the
+                medications screen. The three shipped meds affordances
+                (TodaysMedicationsCard preview, MedicationsReviewPrompt,
+                MedicationsSection editor) all moved off this surface
+                onto /Home/medications per user request; this pill is
+                the entry point.
+              */}
+              <MedicationsLink
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onPress={() => router.push('/Home/medications' as never)}
+              />
             </View>
           </View>
           {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
@@ -1832,50 +1908,17 @@ export function BiopsychosocialPlanScreen({
         )}
 
         {/*
-          COS-448: Today's Medications card sits AT THE TOP of the plan
-          (above the wellbeing map link) so patients — especially older
-          adults — see meds at a glance without scrolling into Bio. Data
-          from usePlanMedications (COS-357). Renders null when the meds
-          feature flag is off or the endpoint hasn't answered yet, so
-          older-app / flag-off users see NO change (back-compat).
+          SCRUM-658 (2026-07-31): TodaysMedicationsCard + MedicationsReviewPrompt
+          moved off this BPS surface to the standalone /Home/medications
+          route, reached via the new MedicationsLink pill in the header
+          row above. User: "what is use of today's medication in plan
+          screen? move it if its not required." The full meds editor
+          (MedicationsSection) below is likewise removed and now lives
+          on /Home/medications. Preserves ALL functionality (view /
+          review-prompt / edit / add) — just relocates the surface so
+          the Plan screen owns wellbeing + today, and the meds screen
+          owns the full meds story.
         */}
-        <TodaysMedicationsCard
-          colors={colors}
-          isDark={settings.isDarkTheme}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
-
-        {/*
-          CHUNK 55: soft, recurring "Review your medications" prompt —
-          sibling above the full MedicationsSection editor below. Self-
-          guards on server flagEnabled + medsReviewNeeded + local
-          snooze + first-cycle modal (see MedicationsReviewPrompt.tsx
-          for the full four-state gate), so it null-renders during
-          load / off / snoozed / not-needed with zero layout shift.
-          Tapping "Review now" fires onReviewMedications: scrollTo the
-          MedicationsSection y-offset captured in the onLayout wrapper
-          below, then bump openMedsAddSignal so the section opens its
-          add editor on the next commit. Two-layer kill:
-          BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED (client OTA flip) and
-          the server flagEnabled bit (BE flip covers both BPS + legacy).
-        */}
-        {BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED && (
-          // CHUNK 57 alignment: MedicationsReviewPrompt bakes
-          // `marginHorizontal: 20` into its own StyleSheet (shared with
-          // legacy /Home/health-plan). Inside our ScrollView contentContainer
-          // padding of Spacing.md=16, that lands the card 36pt from the
-          // screen edge — 20pt farther in than sibling BPS cards, which
-          // sit at 16pt. Wrapping in a `marginHorizontal: -Spacing.screenPadding`
-          // View cancels the built-in 20pt exactly, so the card renders at
-          // the same 16pt edge as BpsWelcomeBanner / TodaysMedicationsCard /
-          // SectionCard. Legacy /Home/health-plan.tsx is left untouched
-          // (its own container has different padding, so its author-intended
-          // 20pt inset there still holds).
-          <View style={styles.legacyCardWrap}>
-            <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
-          </View>
-        )}
 
         {/*
           CHUNK 52 + CHUNK 55 (2026-07-22): full legacy Medications
@@ -1901,35 +1944,18 @@ export function BiopsychosocialPlanScreen({
           app/Home/health-plan.tsx:1142-1146 shape byte-for-byte,
           which passes onLayout directly to the section).
         */}
-        {BPS_MEDICATIONS_EDITOR_ENABLED && (
-          // CHUNK 57 alignment: MedicationsSection's internal cards and
-          // header sit at `paddingHorizontal: 20` / `marginHorizontal: 20`
-          // — 36pt from screen edge inside our 16pt-padded ScrollView.
-          // The same negative-mH wrapper cancels the 20pt exactly, aligning
-          // its cards with the 16pt-edge BPS card baseline. Shared with
-          // legacy — leaf styles untouched.
-          <View
-            // CHUNK 71: same wrapper doubles as the a11y focus target for
-            // the ?focus=medications deep-link. findNodeHandle(ref) +
-            // AccessibilityInfo.setAccessibilityFocus lands the VoiceOver
-            // rotor here (iOS). Ref lives alongside medsSectionYRef so
-            // both are populated by the same mount cycle.
-            ref={medsSectionRef}
-            style={styles.legacyCardWrap}
-            // CHUNK 57 blocker fix: chunk-55 scroll-to-meds requires
-            // layout.y measured relative to the ScrollView content, but
-            // MedicationsSection's own onLayout fires relative to its
-            // IMMEDIATE parent — which is now this wrapper View. Attaching
-            // onLayout to the wrapper (whose parent is the ScrollView) gives
-            // the correct ScrollView-content y-offset; dropped the
-            // section-level onLayout prop.
-            onLayout={(e) => {
-              medsSectionYRef.current = e.nativeEvent.layout.y;
-            }}
-          >
-            <MedicationsSection openAddSignal={openMedsAddSignal} />
-          </View>
-        )}
+        {/*
+          SCRUM-658 (2026-07-31): MedicationsSection editor removed from
+          this BPS surface — moved to /Home/medications reached via the
+          new MedicationsLink pill. The medsSectionRef, medsSectionYRef,
+          and openMedsAddSignal wiring in this component is now dead
+          weight for the deep-link scrollTo behaviour, but is left in
+          place because it also feeds the notifications-routing +
+          MEDICATION_REFILL_REMINDER push handling that other surfaces
+          consume. Removing the wiring would be a wider refactor —
+          parked for a follow-up SCRUM once the standalone meds screen
+          soaks.
+        */}
 
         {/*
           COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
