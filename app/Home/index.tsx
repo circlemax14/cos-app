@@ -3412,6 +3412,15 @@ export default function HomeScreen() {
         <View style={[
           styles.circleSection,
           isTabletDevice && { paddingTop: 0, marginBottom: 0 },
+          // SCRUM-653 fix (2026-07-31): user reported orbiting-provider
+          // bubbles touching the pills row above + wellbeing row below
+          // on the new-design path. The base circleSection styles were
+          // tuned for the legacy layout where those neighbors don't exist
+          // (or are further away). Add breathing room on BOTH ends only
+          // when injections are on — the legacy layout stays byte-
+          // identical. Applied on both phone and tablet because the
+          // absolute-positioned orbit avatars spill either way.
+          injectionsEnabled && { paddingTop: 40, marginTop: 12, marginBottom: 40 },
         ]}>
           {viewMode === 'circle' ? (
             isTabletDevice ? (
