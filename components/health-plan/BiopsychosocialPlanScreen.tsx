@@ -68,11 +68,9 @@ import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 // SCRUM-655: BpsWellbeingScoreCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand.
 import { BpsHeroTileRow } from './BpsHeroTileRow';
-// SCRUM-659 (2026-07-31): reuse the home-screen wellbeing-map preview
-// so both surfaces share ONE map entry-point look. Aliased to avoid
-// name collision with WellbeingMapGlimpse (which serves the older
-// HeroScoreBlock hero variant).
-import { WellbeingMapPreview as PlanWellbeingMapPreview } from '@/components/home/WellbeingMapPreview';
+// SCRUM-660 (2026-07-31): PlanWellbeingMapPreview import removed —
+// the wellbeing-map banner was rebuilt inline as a horizontal card
+// (see below), no longer wrapping the home-screen tile component.
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -616,6 +614,13 @@ function PlanTierPill({
         },
       ]}
     >
+      {/*
+        SCRUM-660 (2026-07-31): pill now shows the plan name only —
+        user asked to drop the "Plan: " prefix and "· Change" trailer.
+        The swap-horiz icon on the right still hints tappability; the
+        pill remains a Pressable so tap-to-change UX is preserved. A11y
+        label still says "Tap to change" for VO users.
+      */}
       <Text
         style={{
           color: colors.tint,
@@ -623,7 +628,7 @@ function PlanTierPill({
           fontWeight: getScaledFontWeight(700) as any,
         }}
       >
-        Plan: {label} · Change
+        {label}
       </Text>
       <MaterialIcons name="swap-horiz" size={getScaledFontSize(14)} color={colors.tint} style={{ marginLeft: 4 }} />
     </Pressable>
@@ -1282,7 +1287,10 @@ export function BiopsychosocialPlanScreen({
   }
 
   const plan = planQuery.data?.plan ?? null;
-  const generatedDate = formatGeneratedDate(plan?.generatedAt);
+  // SCRUM-660: generatedDate no longer surfaced on this screen — the
+  // "Updated {date}" caption was removed per user request. Keeping the
+  // formatter import + this comment so a future revert can re-add the
+  // caption with one line.
   // COS-415: `generating` is additive on the GET response — undefined on
   // BE deploys that predate this change, which the `=== true` check treats
   // as false. COS-421: this is now a point-in-time snapshot from the last
@@ -1616,33 +1624,16 @@ export function BiopsychosocialPlanScreen({
                 onPress={() => router.push('/Home/medications' as never)}
               />
               {/*
-                SCRUM-659 (2026-07-31): "Updated ..." meta inlined into
-                the tier row, right-aligned. The tierRow style uses
-                flexWrap + flexDirection: row (chunk 50), so on narrow
-                widths this text wraps to a second row below the pills —
-                acceptable degrade, same behaviour as ViewProgressLink.
-                marginLeft: 'auto' pushes it to the right edge on wide
-                widths. Sparkle icon dropped — the word "Updated" is
-                self-labeling and the icon fought with the pill icons
-                visually.
+                SCRUM-660 (2026-07-31): "Updated {date}" removed
+                entirely from this surface — user tried two placements
+                (its own row / inlined in tier row) and both felt
+                cluttered. The date is still available via the plan
+                metadata query for callers that need it, but the top-
+                of-page chrome now stops at the tier pills. If a "last
+                updated" affordance is needed later, wire it into the
+                Refresh button label or a tooltip on the tier pill
+                rather than a dedicated caption.
               */}
-              {!!generatedDate && (
-                <Text
-                  style={[
-                    styles.metaText,
-                    {
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(12),
-                      marginLeft: 'auto',
-                      alignSelf: 'center',
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  Updated {generatedDate}
-                  {planQuery.data?.staleness === 'stale' ? ' · out of date' : ''}
-                </Text>
-              )}
             </View>
           </View>
           {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
@@ -1758,17 +1749,62 @@ export function BiopsychosocialPlanScreen({
         />
 
         {/*
-          SCRUM-659 (2026-07-31): Wellbeing Map banner directly after
-          the hero tile row, mirroring the home-screen wellbeing row
-          layout (SCRUM-653/654). Full-width card wrapping the same
-          WellbeingMapPreview component the home screen uses, so the
-          two surfaces share ONE visual identity for the map entry
-          point. Tap navigates to /Home/wellbeing-map — same target as
-          the home-screen wellbeing map tile.
+          SCRUM-660 (2026-07-31): Wellbeing Map banner rebuilt as a
+          proper horizontal-layout card — icon-chip on the left, title
+          + subtitle in the middle, chevron on the right. Replaces the
+          full-tile WellbeingMapPreview-inside-a-card layout from
+          SCRUM-659, which centered the fixed-width (118pt) Venn inside
+          a wide card and looked visually thin. This new layout is
+          adopted from the shipped COS-442 card (removed below) — same
+          content proportions Ken tuned for the map entry point on the
+          BPS surface, now sitting directly under the hero tile row per
+          user's placement request.
         */}
-        <View style={styles.wellbeingMapBanner}>
-          <PlanWellbeingMapPreview />
-        </View>
+        <Pressable
+          onPress={() => router.push('/Home/wellbeing-map' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Open your Wellbeing map"
+          accessibilityHint="Shows how your goals cluster across all 8 wellbeing areas"
+          style={({ pressed }) => [
+            styles.mapCard,
+            {
+              backgroundColor: (colors.tint as string) + '14',
+              borderColor: (colors.tint as string) + '33',
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.mapIconChip,
+              { backgroundColor: (colors.tint as string) + '22' },
+            ]}
+          >
+            <MaterialIcons name="hub" size={getScaledFontSize(22)} color={colors.tint} />
+          </View>
+          <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(700) as any,
+              }}
+            >
+              Your Wellbeing map
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: 2,
+                lineHeight: 17,
+              }}
+            >
+              Explore all 8 areas — see which are strong and which need attention.
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.tint} />
+        </Pressable>
 
         {/*
           COS-449 (Chunk 1b): one-time welcome banner explaining the BPS
@@ -2004,62 +2040,13 @@ export function BiopsychosocialPlanScreen({
         */}
 
         {/*
-          COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
-          map" text link inside the header block — Kenneth 2026-07-10:
-          "I was not aware we can click it and what does it do and how it
-          will be helpful to patients." Promoted to a proper card with
-          icon + title + explanatory subtitle so users can tell what it is
-          before tapping. Mirrors ViewBioInsightsLink's layout on the
-          legacy plan (COS-438) for visual consistency across the
-          bio-related entry points. Route is read-only — safe to open
-          mid-generate.
+          SCRUM-660 (2026-07-31): duplicate COS-442 "Your Wellbeing map"
+          card removed from this position. The wellbeing-map entry point
+          now lives ONLY in the banner directly under the hero tile row
+          above (moved there per user's placement request). Kept as a
+          removed-code comment so a future decision to relocate can
+          re-mount the same card shape without archeology.
         */}
-        <Pressable
-          onPress={() => router.push('/Home/wellbeing-map' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Open your Wellbeing map"
-          accessibilityHint="Shows how your goals cluster across the NovoPsych model"
-          style={({ pressed }) => [
-            styles.mapCard,
-            {
-              backgroundColor: (colors.tint as string) + '14',
-              borderColor: (colors.tint as string) + '33',
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.mapIconChip,
-              { backgroundColor: (colors.tint as string) + '22' },
-            ]}
-          >
-            <MaterialIcons name="hub" size={getScaledFontSize(22)} color={colors.tint} />
-          </View>
-          <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(15),
-                fontWeight: getScaledFontWeight(700) as any,
-              }}
-            >
-              Your Wellbeing map
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(12),
-                marginTop: 2,
-                lineHeight: 17,
-              }}
-            >
-              See how your goals cluster across body, mind, and social
-              wellbeing — and which areas may need attention.
-            </Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.tint} />
-        </Pressable>
 
         {/*
           COS-430: monthly re-assessment nudge. Dark behind
@@ -2545,22 +2532,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     gap: 8,
   },
-  // SCRUM-659 (2026-07-31): banner-style card wrapping WellbeingMapPreview
-  // directly under the hero tile row. Same white-card + hairline-border
-  // treatment the home-screen wellbeing row uses for the map tile — one
-  // consistent visual identity for the map entry across Home + Plan.
-  // alignItems centers the WellbeingMapPreview's fixed-width Venn (118pt)
-  // inside the full-width card.
-  wellbeingMapBanner: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: Spacing.md,
-    alignItems: 'center',
-  },
+  // SCRUM-660 (2026-07-31): wellbeingMapBanner style removed — the
+  // new horizontal banner uses styles.mapCard (defined further down)
+  // which already carries the icon-chip + row treatment we want.
   regenBannerText: { flex: 1, lineHeight: 18, fontWeight: '600' },
   // CHUNK 86 (2026-07-23): collapsed state for the always-mounted regen
   // banner wrapper. Zeroes height, padding, margin, and border so idle
