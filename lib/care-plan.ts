@@ -17,12 +17,36 @@ import type { BiopsychosocialDomain } from '@/services/api/types';
 
 export const CARE_PLAN_ENABLED = true;
 
+/**
+ * KILL-SWITCH: NUTRITION_PLAN_ENABLED (COS-399 / SCRUM-536). Default OFF.
+ * Ken added a 9th category, Nutrition, at position #2 (Medical → Nutrition →
+ * Cognitive → …). The backend adds the `nutrition` category behind a matching
+ * SSM flag (built separately on COS-398) — key `nutrition`, label `Nutrition`,
+ * position 2 — and only emits nutrition goals once that flag is on. This client
+ * flag must match the backend rollout: flip to `true` + OTA to surface Nutrition
+ * at #2. While OFF, `nutrition` is excluded from the category list/order so the
+ * plan renders byte-for-byte today's 8 categories. Flip back to false + OTA to
+ * instantly revert.
+ */
+// 2026-08-02 (session A): flipped ON by user directive ("enable everything and OTA").
+// Backend nutrition SSM flag must also be ON for goals to actually flow.
+// Rollback = flip back to false + OTA (30-sec revert).
+export const NUTRITION_PLAN_ENABLED = true;
+
 export type CarePlanCategoryKey =
-  | 'medical' | 'cognitive' | 'adl' | 'medication'
+  | 'medical' | 'nutrition' | 'cognitive' | 'adl' | 'medication'
   | 'mentalHealth' | 'integrative' | 'social' | 'spiritual';
 
-export const CARE_PLAN_CATEGORIES: { key: CarePlanCategoryKey; label: string }[] = [
+/**
+ * Full category registry in Ken's order, including `nutrition` at #2. This is
+ * the master list; consumers should use `CARE_PLAN_CATEGORIES` (the flag-aware
+ * exported list below), NOT this constant directly — when NUTRITION_PLAN_ENABLED
+ * is OFF, `nutrition` is filtered out so the plan is byte-for-byte today's 8.
+ * Order + keys + labels MUST match cos-backend/src/services/care-plan-categories.ts.
+ */
+const ALL_CARE_PLAN_CATEGORIES: { key: CarePlanCategoryKey; label: string }[] = [
   { key: 'medical',      label: 'Medical, Nursing & Physical Therapy' },
+  { key: 'nutrition',    label: 'Nutrition' },
   { key: 'cognitive',    label: 'Cognitive' },
   { key: 'adl',          label: 'Daily Living (ADL/IADL)' },
   { key: 'medication',   label: 'Medication' },
@@ -31,6 +55,17 @@ export const CARE_PLAN_CATEGORIES: { key: CarePlanCategoryKey; label: string }[]
   { key: 'social',       label: 'Social' },
   { key: 'spiritual',    label: 'Spiritual' },
 ];
+
+/**
+ * Flag-aware category registry. When NUTRITION_PLAN_ENABLED is OFF (default),
+ * `nutrition` is excluded, leaving the original 8 categories in the original
+ * order — byte-for-byte identical to today's plan. When ON, Nutrition appears
+ * at index 1 (position #2).
+ */
+export const CARE_PLAN_CATEGORIES: { key: CarePlanCategoryKey; label: string }[] =
+  NUTRITION_PLAN_ENABLED
+    ? ALL_CARE_PLAN_CATEGORIES
+    : ALL_CARE_PLAN_CATEGORIES.filter((c) => c.key !== 'nutrition');
 
 export const CARE_PLAN_CATEGORY_KEYS: readonly CarePlanCategoryKey[] =
   CARE_PLAN_CATEGORIES.map((c) => c.key);
@@ -51,6 +86,10 @@ export const SECTION_BY_CATEGORY: Record<CarePlanCategoryKey, BiopsychosocialDom
   cognitive: 'biological',
   adl: 'biological',
   medication: 'biological',
+  // SCRUM-536 follow-up: nutrition folds into biological wellness alongside
+  // medical/adl/medication. Consistent with the FICA-esque framing where
+  // dietary practice is a biological determinant, not a psychosocial one.
+  nutrition: 'biological',
   mentalHealth: 'psychological',
   integrative: 'psychological',
   social: 'social',
@@ -70,7 +109,9 @@ export function getSection(category: CarePlanCategoryKey): 'biological' | 'psych
 }
 
 export function categoryLabel(key: string): string {
-  return CARE_PLAN_CATEGORIES.find((c) => c.key === key)?.label ?? 'Other';
+  // Resolve against the full registry so a nutrition goal still gets its label
+  // even if the flag is off — defensive; present-only grouping won't surface it.
+  return ALL_CARE_PLAN_CATEGORIES.find((c) => c.key === key)?.label ?? 'Other';
 }
 
 export interface GoalGroup<G> {

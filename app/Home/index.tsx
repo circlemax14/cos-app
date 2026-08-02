@@ -38,6 +38,15 @@ import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
 // Renders `null` when there are no pending items, so the mount is a no-op
 // on the flag-off / empty state — no chrome, no layout shift.
 import RetakeRequestInboxCard from '@/components/health-plan/retake-request/RetakeRequestInboxCard';
+// SCRUM-638 — Bevel-inspired Daily Readiness score. Reads HealthKit
+// on-device, computes vs a rolling 14-day personal baseline. Gated
+// behind `readiness_score_enabled` flag; default OFF.
+import { ReadinessScoreCard } from '@/components/home/ReadinessScoreCard';
+import { useReadinessScoreFlag } from '@/hooks/use-readiness-score-flag';
+import { useReadinessDerivation } from '@/hooks/use-readiness-derivation';
+// SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
+// the score + drivers into an AI prompt with the specific inputs.
+import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
 
 // ─────────────────────────────────────────────────────────────────────
 // ADR-0003 Phase 1 (Home Redesign) — v2 surface imports.
@@ -2911,6 +2920,24 @@ export default function HomeScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [viewMode, setViewMode] = React.useState<'circle' | 'list' | 'circle-providers'>('circle');
 
+  // SCRUM-638 — Daily Readiness score. Flag-gated dark by default;
+  // useReadinessDerivation short-circuits when flag OFF or HealthKit
+  // is unavailable, so this is a cheap no-op on the flag-off path.
+  const readinessEnabled = useReadinessScoreFlag();
+  const readiness = useReadinessDerivation(readinessEnabled);
+
+  // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
+  // built from today's driver metrics. Chat route auto-sends the
+  // prefill once on mount (see app/Home/health-chat.tsx).
+  const onExplainReadiness = useCallback(() => {
+    const prompt = buildReadinessExplainPrompt(readiness.score);
+    if (!prompt) return;
+    router.push({
+      pathname: '/Home/health-chat',
+      params: { prefill: prompt, context: 'readiness-explain' },
+    } as never);
+  }, [readiness.score]);
+
   // Load Fasten Health providers for circle view
   const [, setFastenProviders] = useState<FastenProvider[]>([]);
   const [, setIsLoadingProviders] = useState(false);
@@ -3328,6 +3355,16 @@ export default function HomeScreen() {
          * returns null), so no layout shift on the empty state.
          */}
         <RetakeRequestInboxCard />
+        {/* SCRUM-638 — Daily Readiness score card, above the title so
+            it's the first thing a patient sees on wake-up (matches
+            Bevel's "one honest daily read" placement). Renders NOTHING
+            when flag OFF (readinessEnabled === false) — flag-off path
+            is byte-identical to pre-638 layout. Also renders NOTHING
+            when HealthKit is unavailable (Android / non-iOS build) so
+            the tile doesn't leave a dead slot on unsupported platforms. */}
+        {readinessEnabled && !readiness.isUnavailable && (
+          <ReadinessScoreCard score={readiness.score} onExplain={onExplainReadiness} />
+        )}
         {/*
          * SCRUM-653 title row — one of two variants selected by
          * HOME_V2_INJECTIONS_ENABLED:

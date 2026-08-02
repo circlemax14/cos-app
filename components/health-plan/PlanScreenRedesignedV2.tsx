@@ -101,6 +101,11 @@ const CATEGORY_STYLE: Record<
   cognitive: { name: 'psychology', color: '#8B5CF6' },
   adl: { name: 'self-improvement', color: '#0EA5E9' },
   medication: { name: 'medication', color: '#7C3AED' },
+  // SCRUM-536 follow-up: nutrition category added at position #2 (after
+  // medical) per the SECTION_BY_CATEGORY tie-in in lib/care-plan.ts.
+  // Green fork/knife icon evokes food + reads as biological wellness
+  // adjacent to medical (blue) without competing with it.
+  nutrition: { name: 'restaurant', color: '#16A34A' },
   mentalHealth: { name: 'favorite', color: '#EC4899' },
   integrative: { name: 'spa', color: '#10B981' },
   social: { name: 'groups', color: '#F59E0B' },
