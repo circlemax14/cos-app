@@ -2940,7 +2940,12 @@ export default function HomeScreen() {
             when HealthKit is unavailable (Android / non-iOS build) so
             the tile doesn't leave a dead slot on unsupported platforms. */}
         {readinessEnabled && !readiness.isUnavailable && (
-          <ReadinessScoreCard score={readiness.score} onExplain={onExplainReadiness} />
+          <ReadinessScoreCard
+            score={readiness.score}
+            uiState={readiness.uiState}
+            onExplain={onExplainReadiness}
+            onConnectHealth={() => router.push('/Home/apple-health' as never)}
+          />
         )}
         {/* Title row — heading + inline view-mode toggle, mirroring the
             classic layout the stakeholder asked us to keep. SCRUM-234
