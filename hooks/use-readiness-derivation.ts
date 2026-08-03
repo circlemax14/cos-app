@@ -49,6 +49,42 @@ function localDayIso(d: Date): string {
 }
 
 /**
+ * Diagnostic snapshot captured on each fetch. DIAG-only field so the
+ * Home Readiness tile can surface actual runtime state on long-press
+ * while we finish root-causing why some devices see "no samples today"
+ * even with granted HealthKit + real data in Apple Health.
+ * TODO: remove once the issue is closed.
+ */
+export interface ReadinessDebugSnapshot {
+  fetchedAt: string
+  isIos: boolean
+  isHealthKitAvailable: boolean
+  vitals: {
+    hrv: { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number }
+    sleep: { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number }
+    restingHr: { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number }
+    respRate: { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number }
+  }
+  byDateSize: number
+  byDateKeysFirst5: string[]
+  todayIsoLocal: string
+  todayIsoUtc: string
+  todayFound: boolean
+  todayHasAnyMetric: boolean
+}
+
+function snapshotVital(t: LongitudinalTrend | null): { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number } {
+  if (!t) return { returned: 'null', nPoints: 0 }
+  const first = t.dataPoints[0]
+  return {
+    returned: 'trend',
+    nPoints: t.dataPoints.length,
+    firstDate: first?.date,
+    firstValue: first?.value,
+  }
+}
+
+/**
  * Fetch four HealthKit trends in parallel + collapse into a per-day
  * summary array. Missing metrics silently drop out; the scoring module
  * handles undefined fields.
@@ -56,9 +92,32 @@ function localDayIso(d: Date): string {
 async function fetchReadinessInputs(): Promise<{
   today: DailyReadinessMetrics | undefined
   baseline: DailyReadinessMetrics[]
+  debug: ReadinessDebugSnapshot
 }> {
-  if (Platform.OS !== 'ios' || !isHealthKitAvailable()) {
-    return { today: undefined, baseline: [] }
+  const isIos = Platform.OS === 'ios'
+  const hkAvailable = isHealthKitAvailable()
+  if (!isIos || !hkAvailable) {
+    return {
+      today: undefined,
+      baseline: [],
+      debug: {
+        fetchedAt: new Date().toISOString(),
+        isIos,
+        isHealthKitAvailable: hkAvailable,
+        vitals: {
+          hrv: { returned: 'null', nPoints: 0 },
+          sleep: { returned: 'null', nPoints: 0 },
+          restingHr: { returned: 'null', nPoints: 0 },
+          respRate: { returned: 'null', nPoints: 0 },
+        },
+        byDateSize: 0,
+        byDateKeysFirst5: [],
+        todayIsoLocal: localDayIso(new Date()),
+        todayIsoUtc: new Date().toISOString().slice(0, 10),
+        todayFound: false,
+        todayHasAnyMetric: false,
+      },
+    }
   }
 
   const [hrv, sleep, hr, resp] = await Promise.all([
@@ -110,7 +169,28 @@ async function fetchReadinessInputs(): Promise<{
     .map((d) => byDate.get(d))
     .filter((d): d is DailyReadinessMetrics => d !== undefined)
 
-  return { today, baseline }
+  const debug: ReadinessDebugSnapshot = {
+    fetchedAt: new Date().toISOString(),
+    isIos,
+    isHealthKitAvailable: hkAvailable,
+    vitals: {
+      hrv: snapshotVital(hrv),
+      sleep: snapshotVital(sleep),
+      restingHr: snapshotVital(hr),
+      respRate: snapshotVital(resp),
+    },
+    byDateSize: byDate.size,
+    byDateKeysFirst5: sortedDates.slice(-5).reverse(),
+    todayIsoLocal: todayIso,
+    todayIsoUtc: new Date().toISOString().slice(0, 10),
+    todayFound: today !== undefined,
+    todayHasAnyMetric: today !== undefined && (
+      today.hrvMs !== undefined || today.sleepHours !== undefined ||
+      today.restingHrBpm !== undefined || today.respRateBpm !== undefined
+    ),
+  }
+
+  return { today, baseline, debug }
 }
 
 /**
@@ -154,6 +234,10 @@ export interface UseReadinessDerivationResult {
    *  over inferring UI branches from `score.state` — see the type
    *  docstring for why. */
   uiState: ReadinessTileUiState
+  /** DIAGNOSTIC snapshot of the last successful fetch — surfaced by the
+   *  Home Readiness tile on long-press so we can capture runtime state
+   *  from real devices. undefined until first fetch resolves. */
+  debug: ReadinessDebugSnapshot | undefined
   /** Manual refetch. */
   refetch: () => Promise<unknown>
 }
@@ -242,6 +326,7 @@ export function useReadinessDerivation(enabled: boolean): UseReadinessDerivation
     isLoading: query.isLoading || preference.isLoading,
     isUnavailable,
     uiState,
+    debug: query.data?.debug,
     refetch: query.refetch,
   }
 }
