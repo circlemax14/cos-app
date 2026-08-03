@@ -24,7 +24,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Platform } from 'react-native'
 
-import { isHealthKitAvailable, getHealthKitVitalTrend } from '@/services/health'
+import { isHealthKitAvailable, getHealthKitVitalTrend, initializeHealthKit } from '@/services/health'
 import type { LongitudinalTrend } from '@/services/api/types'
 import {
   computeReadinessScore,
@@ -118,6 +118,31 @@ async function fetchReadinessInputs(): Promise<{
         todayHasAnyMetric: false,
       },
     }
+  }
+
+  // Ensure the app is authorized to READ HRV/Sleep/RHR/RespRate before we
+  // try to fetch them. HealthKit deliberately hides read-permission-denial
+  // (reads return empty arrays, not errors), so the ONLY way to guarantee
+  // authorization is to have called `initHealthKit` with a permission array
+  // that includes those 4 types this session.
+  //
+  // Root cause of the "no samples today" bug for users who granted the
+  // Apple Health toggle BEFORE SCRUM-638 added HRV/Sleep/RHR/RespRate to
+  // the request set: the app never asked for read access to those types,
+  // so iOS silently returns [] for every subsequent query — regardless of
+  // what the iOS Settings → Privacy & Security → Health → CSH toggles show.
+  //
+  // `initializeHealthKit` is idempotent and iOS will NOT re-prompt for
+  // types the user has already answered (grant or deny), so calling this
+  // eagerly per fetch is safe — the auth sheet appears exactly once per
+  // never-asked-before type, and never again.
+  //
+  // Await so the reads below are guaranteed to run after the handshake.
+  // Best-effort: if init throws, we still try the reads (partial auth OK).
+  try {
+    await initializeHealthKit()
+  } catch {
+    // Fall through to reads — a subset may already be authorized.
   }
 
   const [hrv, sleep, hr, resp] = await Promise.all([
