@@ -56,16 +56,25 @@ async function fetchReadinessInputs(): Promise<{
     getHealthKitVitalTrend('respiratory-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
   ])
 
-  // Build a Map<dateISO, DailyReadinessMetrics>; last-writer-wins per
+  // Build a Map<YYYY-MM-DD, DailyReadinessMetrics>; last-writer-wins per
   // metric (which is fine because getHealthKitVitalTrend returns
   // one dataPoint per day).
+  //
+  // getHealthKitVitalTrend intentionally keeps `dp.date` as a within-day
+  // sample timestamp (full ISO) so the chart x-axis anchors on a real
+  // sample time. We MUST normalize to YYYY-MM-DD here — otherwise the
+  // `byDate.get(todayIso)` lookup below (which slices to YYYY-MM-DD)
+  // never matches, `today` is always undefined, and every user sees
+  // "Waiting for today's HRV, sleep, and heart-rate readings" forever.
   const byDate = new Map<string, DailyReadinessMetrics>()
   const push = (t: LongitudinalTrend | null, key: keyof Omit<DailyReadinessMetrics, 'date'>): void => {
     if (!t) return
     for (const dp of t.dataPoints) {
-      const existing = byDate.get(dp.date) ?? { date: dp.date }
+      const dayKey = (dp.date ?? '').slice(0, 10)
+      if (!dayKey) continue
+      const existing = byDate.get(dayKey) ?? { date: dayKey }
       ;(existing as DailyReadinessMetrics)[key] = dp.value
-      byDate.set(dp.date, existing)
+      byDate.set(dayKey, existing)
     }
   }
   push(hrv, 'hrvMs')
