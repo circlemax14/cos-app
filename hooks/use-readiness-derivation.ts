@@ -37,6 +37,18 @@ import { shouldFetchAppleHealthTrends } from '@/lib/apple-health-gate'
 const READINESS_LOOKBACK_DAYS = 15 // 14 baseline + 1 today
 
 /**
+ * Formats a Date as `YYYY-MM-DD` in the device's LOCAL timezone.
+ * Kept local (not hoisted to lib/) because this is the only current
+ * caller; hoist when a second caller shows up.
+ */
+function localDayIso(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
  * Fetch four HealthKit trends in parallel + collapse into a per-day
  * summary array. Missing metrics silently drop out; the scoring module
  * handles undefined fields.
@@ -82,7 +94,15 @@ async function fetchReadinessInputs(): Promise<{
   push(hr, 'restingHrBpm')
   push(resp, 'respRateBpm')
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // MUST be device-LOCAL calendar day, not UTC. HealthKit `startDate`
+  // ISO strings come back with the device's local tz offset (e.g.
+  // "2026-08-03T08:15:00.000-0700"), so `dp.date.slice(0, 10)` above
+  // yields the LOCAL day. `new Date().toISOString()` returns UTC, which
+  // in negative-UTC timezones (Americas) is a DIFFERENT calendar day
+  // after ~5pm local — making `today` undefined and rendering
+  // "Waiting for today's HRV, sleep, and heart-rate readings" for
+  // every evening user. See SCRUM-664 / OTA 7701237b post-mortem.
+  const todayIso = localDayIso(new Date())
   const sortedDates = Array.from(byDate.keys()).sort() // ISO strings sort chronologically
   const today = byDate.get(todayIso)
   const baseline = sortedDates
