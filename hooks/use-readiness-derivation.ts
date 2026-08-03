@@ -24,7 +24,10 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Platform } from 'react-native'
 
-import { isHealthKitAvailable, getHealthKitVitalTrend } from '@/services/health'
+import { isHealthKitAvailable, getHealthKitVitalTrend, initializeHealthKit } from '@/services/health'
+import { NativeModules } from 'react-native'
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const AppleHealthKit = require('react-native-health').default ?? require('react-native-health')
 import type { LongitudinalTrend } from '@/services/api/types'
 import {
   computeReadinessScore,
@@ -65,6 +68,13 @@ export interface ReadinessDebugSnapshot {
     restingHr: { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number }
     respRate: { returned: 'null' | 'trend'; nPoints: number; firstDate?: string; firstValue?: number }
   }
+  probes: {
+    hrv: VitalProbe
+    restingHr: VitalProbe
+    respRate: VitalProbe
+  }
+  initHealthKitResult: 'ok' | 'fail' | 'skipped'
+  initHealthKitError: string | null
   byDateSize: number
   byDateKeysFirst5: string[]
   todayIsoLocal: string
@@ -82,6 +92,78 @@ function snapshotVital(t: LongitudinalTrend | null): { returned: 'null' | 'trend
     firstDate: first?.date,
     firstValue: first?.value,
   }
+}
+
+/**
+ * DIAGNOSTIC — mirrors getHealthKitVitalTrend but captures WHY the
+ * result was null (fetcher not found, callback error, empty raw, etc.).
+ * Only used to populate ReadinessDebugSnapshot. Not for production
+ * consumption. Remove alongside snapshot.
+ */
+interface VitalProbe {
+  fetcherFound: boolean
+  fetcherName: string
+  callbackFired: boolean
+  errString: string | null
+  rawCount: number
+  firstRawDate: string | null
+  firstRawValue: number | string | null
+  reason: 'ok' | 'no-fetcher' | 'err' | 'empty-raw' | 'no-callback'
+}
+
+function probeVital(
+  metric: 'HeartRateVariability' | 'RestingHeartRate' | 'RespiratoryRate',
+  fetcherName: 'getHeartRateVariabilitySamples' | 'getRestingHeartRateSamples' | 'getRespiratoryRateSamples',
+  daysBack: number,
+): Promise<VitalProbe> {
+  return new Promise((resolve) => {
+    const nativeModule = (NativeModules as Record<string, unknown>).AppleHealthKit as Record<string, unknown> | undefined
+      || (NativeModules as Record<string, unknown>).RNAppleHealthKit as Record<string, unknown> | undefined
+    const wrapper = AppleHealthKit as Record<string, unknown>
+    const fetcher =
+      (typeof wrapper[fetcherName] === 'function' && wrapper[fetcherName]) ||
+      (nativeModule && typeof nativeModule[fetcherName] === 'function' && nativeModule[fetcherName]) ||
+      null
+    if (!fetcher) {
+      resolve({
+        fetcherFound: false, fetcherName, callbackFired: false,
+        errString: null, rawCount: 0, firstRawDate: null, firstRawValue: null,
+        reason: 'no-fetcher',
+      })
+      return
+    }
+    const end = new Date()
+    const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000)
+    const options = { startDate: start.toISOString(), endDate: end.toISOString(), ascending: true, includeManuallyAdded: true }
+    let called = false
+    // Safety: if the callback never fires within 4s, report that.
+    const timeout = setTimeout(() => {
+      if (!called) {
+        resolve({
+          fetcherFound: true, fetcherName, callbackFired: false,
+          errString: 'timeout-4s', rawCount: 0, firstRawDate: null, firstRawValue: null,
+          reason: 'no-callback',
+        })
+      }
+    }, 4000)
+    ;(fetcher as (o: unknown, cb: (err: unknown, results: unknown) => void) => void)(options, (err, results) => {
+      if (called) return
+      called = true
+      clearTimeout(timeout)
+      const rawArr = Array.isArray(results) ? (results as Record<string, unknown>[]) : []
+      const first = rawArr[0]
+      const errString = err ? String((err as { message?: string })?.message ?? err) : null
+      resolve({
+        fetcherFound: true, fetcherName, callbackFired: true,
+        errString,
+        rawCount: rawArr.length,
+        firstRawDate: first ? (first.startDate as string | undefined ?? null) : null,
+        firstRawValue: first ? ((first.value as number | undefined ?? null)) : null,
+        reason: err ? 'err' : rawArr.length === 0 ? 'empty-raw' : 'ok',
+      })
+    })
+    void metric // silence unused warning; kept for future per-metric branching
+  })
 }
 
 /**
@@ -110,6 +192,13 @@ async function fetchReadinessInputs(): Promise<{
           restingHr: { returned: 'null', nPoints: 0 },
           respRate: { returned: 'null', nPoints: 0 },
         },
+        probes: {
+          hrv: { fetcherFound: false, fetcherName: 'getHeartRateVariabilitySamples', callbackFired: false, errString: null, rawCount: 0, firstRawDate: null, firstRawValue: null, reason: 'no-fetcher' },
+          restingHr: { fetcherFound: false, fetcherName: 'getRestingHeartRateSamples', callbackFired: false, errString: null, rawCount: 0, firstRawDate: null, firstRawValue: null, reason: 'no-fetcher' },
+          respRate: { fetcherFound: false, fetcherName: 'getRespiratoryRateSamples', callbackFired: false, errString: null, rawCount: 0, firstRawDate: null, firstRawValue: null, reason: 'no-fetcher' },
+        },
+        initHealthKitResult: 'skipped',
+        initHealthKitError: null,
         byDateSize: 0,
         byDateKeysFirst5: [],
         todayIsoLocal: localDayIso(new Date()),
@@ -119,6 +208,27 @@ async function fetchReadinessInputs(): Promise<{
       },
     }
   }
+
+  // DIAGNOSTIC — proactively kick off initializeHealthKit so we can
+  // report whether the permission handshake even succeeded. Idempotent
+  // per iOS (won't re-prompt for already-decided types). If the app
+  // was never authorized, this will silently fail-closed and the
+  // subsequent probes will show reason='empty-raw'.
+  let initResult: 'ok' | 'fail' = 'ok'
+  let initError: string | null = null
+  try {
+    const ok = await initializeHealthKit()
+    initResult = ok ? 'ok' : 'fail'
+  } catch (e) {
+    initResult = 'fail'
+    initError = String((e as { message?: string })?.message ?? e)
+  }
+
+  const [probeHrv, probeRhr, probeResp] = await Promise.all([
+    probeVital('HeartRateVariability', 'getHeartRateVariabilitySamples', READINESS_LOOKBACK_DAYS),
+    probeVital('RestingHeartRate', 'getRestingHeartRateSamples', READINESS_LOOKBACK_DAYS),
+    probeVital('RespiratoryRate', 'getRespiratoryRateSamples', READINESS_LOOKBACK_DAYS),
+  ])
 
   const [hrv, sleep, hr, resp] = await Promise.all([
     getHealthKitVitalTrend('heart-rate-variability', READINESS_LOOKBACK_DAYS).catch(() => null),
@@ -179,6 +289,13 @@ async function fetchReadinessInputs(): Promise<{
       restingHr: snapshotVital(hr),
       respRate: snapshotVital(resp),
     },
+    probes: {
+      hrv: probeHrv,
+      restingHr: probeRhr,
+      respRate: probeResp,
+    },
+    initHealthKitResult: initResult,
+    initHealthKitError: initError,
     byDateSize: byDate.size,
     byDateKeysFirst5: sortedDates.slice(-5).reverse(),
     todayIsoLocal: todayIso,
