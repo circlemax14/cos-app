@@ -2945,6 +2945,22 @@ export default function HomeScreen() {
             uiState={readiness.uiState}
             onExplain={onExplainReadiness}
             onConnectHealth={() => router.push('/Home/apple-health' as never)}
+            onLongPress={() => {
+              // DIAG (remove once "no samples" bug closed): dump raw
+              // runtime state into an Alert so the user can screenshot
+              // + share. Refetch first so the snapshot is fresh (rather
+              // than 30-min-stale from React Query cache).
+              readiness.refetch().finally(() => {
+                const snapshot = readiness.debug
+                Alert.alert(
+                  'Readiness Debug',
+                  snapshot
+                    ? JSON.stringify(snapshot, null, 2)
+                    : 'No snapshot yet (query still resolving). Long-press again in 3-5 s.',
+                  [{ text: 'OK' }],
+                )
+              })
+            }}
           />
         )}
         {/* Title row — heading + inline view-mode toggle, mirroring the

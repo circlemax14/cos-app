@@ -54,6 +54,11 @@ export interface ReadinessScoreCardProps {
    *  disconnected empty state. Parent should route to
    *  `/Home/apple-health`. Only invoked when `uiState === 'disconnected'`. */
   onConnectHealth?: () => void
+  /** DIAGNOSTIC — long-press the card to surface runtime state (dp.date
+   *  format, byDate keys, today lookup). Parent shows an Alert with the
+   *  JSON so the user can screenshot + share. Remove once root cause
+   *  identified. */
+  onLongPress?: () => void
 }
 
 function ReadinessScoreCardBase({
@@ -62,6 +67,7 @@ function ReadinessScoreCardBase({
   onExplain,
   uiState,
   onConnectHealth,
+  onLongPress,
 }: ReadinessScoreCardProps): React.JSX.Element {
   const { composite, band, state, baselineDays, drivers } = score
   const tokens = band ? BAND_TOKENS[band] : undefined
@@ -87,6 +93,7 @@ function ReadinessScoreCardBase({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={
         state === 'ready' && typeof composite === 'number'
