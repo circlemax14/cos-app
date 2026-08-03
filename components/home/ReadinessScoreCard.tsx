@@ -24,6 +24,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 
 import type { ReadinessBand, ReadinessScore } from '@/lib/readiness-score'
+import type { ReadinessTileUiState } from '@/hooks/use-readiness-derivation'
 
 /** WCAG-AA fg/bg pairs per band (mirrors the ScoreBands system used on
  *  the home page's wellbeing row — inlined here to avoid a
@@ -43,9 +44,25 @@ export interface ReadinessScoreCardProps {
    *  callback (parent decides whether to open the AI chat with a
    *  prefilled explain prompt). Omit to hide the affordance. */
   onExplain?: () => void
+  /** Discriminated tile state from useReadinessDerivation. When
+   *  omitted, the card falls back to inferring UI branches from
+   *  `score.state` (legacy behaviour — collapses loading /
+   *  disconnected / no-samples into one "Connect Apple Health"
+   *  message). Prefer passing this. */
+  uiState?: ReadinessTileUiState
+  /** Called when the user taps the "Connect Apple Health" CTA on the
+   *  disconnected empty state. Parent should route to
+   *  `/Home/apple-health`. Only invoked when `uiState === 'disconnected'`. */
+  onConnectHealth?: () => void
 }
 
-function ReadinessScoreCardBase({ score, onPress, onExplain }: ReadinessScoreCardProps): React.JSX.Element {
+function ReadinessScoreCardBase({
+  score,
+  onPress,
+  onExplain,
+  uiState,
+  onConnectHealth,
+}: ReadinessScoreCardProps): React.JSX.Element {
   const { composite, band, state, baselineDays, drivers } = score
   const tokens = band ? BAND_TOKENS[band] : undefined
 
@@ -141,7 +158,51 @@ function ReadinessScoreCardBase({ score, onPress, onExplain }: ReadinessScoreCar
             Warming up · {baselineDays}/14 days
           </Text>
         </>
+      ) : uiState === 'loading' ? (
+        // Preference/query still hydrating — static dashes, no
+        // accusation that HealthKit is disconnected. Fixes the
+        // first-mount race where already-connected users saw
+        // "Connect Apple Health" for the first ~1-2s of Home.
+        <>
+          <Text style={styles.emptyBig} maxFontSizeMultiplier={1.3}>—</Text>
+          <Text style={styles.emptyHint} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+            Loading today&apos;s readings…
+          </Text>
+        </>
+      ) : uiState === 'no-samples' ? (
+        // Connected + query resolved but no HRV/Sleep/RHR/RespRate for
+        // today. Common on iPhone-only users, or before the first
+        // Apple Watch sync of the morning. Do NOT tell the user to
+        // reconnect — they already did.
+        <>
+          <Text style={styles.emptyBig} maxFontSizeMultiplier={1.3}>—</Text>
+          <Text style={styles.emptyHint} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+            Waiting for today&apos;s HRV, sleep, and heart-rate readings
+          </Text>
+        </>
+      ) : uiState === 'disconnected' && onConnectHealth ? (
+        // User hasn't opted in to Apple Health yet — tappable CTA
+        // that routes to /Home/apple-health so the empty state is
+        // actually recoverable (previously it was a dead-end string).
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation()
+            onConnectHealth()
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Connect Apple Health to see today's readiness"
+          hitSlop={4}
+          style={({ pressed }) => [styles.connectCta, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={styles.emptyBig} maxFontSizeMultiplier={1.3}>—</Text>
+          <Text style={styles.emptyHintLink} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+            Connect Apple Health to see today&apos;s readiness
+          </Text>
+        </Pressable>
       ) : (
+        // Fallback (uiState omitted, or 'disconnected' without an
+        // onConnectHealth handler wired) — legacy copy so older
+        // callers stay byte-identical.
         <>
           <Text style={styles.emptyBig} maxFontSizeMultiplier={1.3}>—</Text>
           <Text style={styles.emptyHint} numberOfLines={2} maxFontSizeMultiplier={1.3}>
@@ -244,5 +305,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#687076',
+  },
+  emptyHintLink: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0B6963',
+    textDecorationLine: 'underline',
+  },
+  connectCta: {
+    // Wraps the tappable disconnected empty state so the whole
+    // dash + subtitle block is a single hit target.
+    alignSelf: 'stretch',
   },
 })
