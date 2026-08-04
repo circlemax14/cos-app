@@ -38,7 +38,7 @@ import type {
 } from '@/services/api/health-age'
 
 const DISCLAIMER =
-  'Health Age is a wellness estimate derived from your recent labs and vitals compared to population norms. It is not a diagnosis, not a medical device output, and is not intended to detect, treat, cure, or prevent disease. Talk with your care team before acting on it.'
+  'Health Age is a wellness estimate derived from your recent labs and vitals compared to population norms. It is not a diagnosis, not a medical device output, and is not intended to detect, treat, cure, or prevent disease.'
 
 const BAND_TOKENS: Record<HealthAgeBand, { fg: string; bg: string; label: string }> = {
   younger:    { fg: '#0F6B36', bg: '#E6F4EC', label: 'YOUNGER' },
@@ -152,7 +152,7 @@ export default function HealthAgeScreen(): React.JSX.Element {
           <Pressable
             onPress={() => router.push('/Home/chat' as never)}
             accessibilityRole="button"
-            accessibilityLabel="Talk to your care team"
+            accessibilityLabel="Message your care team"
             style={({ pressed }) => [
               styles.ctaCard,
               { backgroundColor: colors.card as string, opacity: pressed ? 0.7 : 1 },
@@ -168,7 +168,7 @@ export default function HealthAgeScreen(): React.JSX.Element {
                 flex: 1,
               }}
             >
-              Talk to your care team
+              Message your care team
             </Text>
             <MaterialIcons name="chevron-right" size={22} color={colors.subtext as string} />
           </Pressable>
