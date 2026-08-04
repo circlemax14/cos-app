@@ -44,6 +44,13 @@ import RetakeRequestInboxCard from '@/components/health-plan/retake-request/Reta
 import { ReadinessScoreCard } from '@/components/home/ReadinessScoreCard';
 import { useReadinessScoreFlag } from '@/hooks/use-readiness-score-flag';
 import { useReadinessDerivation } from '@/hooks/use-readiness-derivation';
+// SCRUM-642 — Health Age tile (dark-launched behind `health_age_enabled`).
+// Card renders NOTHING when flag OFF OR when overall=null with <3 fresh
+// components. Terminology fixed to "Health Age" (Legal). Do NOT swap to
+// "Biological Age" without a cleared answer to the Legal ask in DESIGN.
+import { HealthAgeCard } from '@/components/health-age/HealthAgeCard';
+import { useHealthAgeFlag } from '@/hooks/use-health-age-flag';
+import { useHealthAge } from '@/hooks/use-health-age';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
 import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
@@ -2541,6 +2548,14 @@ export default function HomeScreen() {
   const readinessEnabled = useReadinessScoreFlag();
   const readiness = useReadinessDerivation(readinessEnabled);
 
+  // SCRUM-642 — Health Age snapshot. `useHealthAge` short-circuits
+  // internally when the flag is OFF (query is disabled), so this is
+  // a cheap no-op on the flag-off path. Card visibility gates on
+  // `healthAgeEnabled` — the fetched result decides ready vs
+  // insufficient-data collapse inside <HealthAgeCard/>.
+  const healthAgeEnabled = useHealthAgeFlag();
+  const healthAgeQuery = useHealthAge(healthAgeEnabled);
+
   // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
   // built from today's driver metrics. Chat route auto-sends the
   // prefill once on mount (see app/Home/health-chat.tsx).
@@ -2966,6 +2981,19 @@ export default function HomeScreen() {
                 Alert.alert('Readiness Debug', `Refetch failed: ${String(e)}`, [{ text: 'OK' }])
               })
             }}
+          />
+        )}
+        {/* SCRUM-642 — Health Age tile. Flag-gated dark by default. Card
+            returns null internally when overall=null AND <3 fresh
+            components (insufficient-data collapse), so the flag-on path
+            is still layout-neutral for patients with no biomarker data.
+            Order: WellbeingScoreTile row above → ReadinessScoreCard →
+            HealthAgeCard, per DESIGN.fe_screen.mount_location. */}
+        {healthAgeEnabled && (
+          <HealthAgeCard
+            result={healthAgeQuery.data}
+            isLoading={healthAgeQuery.isLoading}
+            onPress={() => router.push('/Home/health-age' as never)}
           />
         )}
         {/* Title row — heading + inline view-mode toggle, mirroring the
