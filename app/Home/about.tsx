@@ -2,7 +2,6 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import * as Updates from 'expo-updates';
-import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
@@ -37,7 +36,7 @@ export default function AboutScreen() {
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [copyingToken, setCopyingToken] = useState(false);
+  const [sharingToken, setSharingToken] = useState(false);
 
   const appVersion = Constants.expoConfig?.version ?? 'unknown';
   const buildNumber =
@@ -145,29 +144,53 @@ export default function AboutScreen() {
     }
   };
 
-  // Copies the current Cognito access token to the clipboard so support
-  // / the user can paste it into a debugging tool (e.g. to inspect
+  // Shares the current Cognito access token via the OS share sheet so
+  // support / the user can send it to a debugging tool (e.g. to inspect
   // backend-driven feature flag responses). The token is the user's own
   // credential — nothing they don't already implicitly possess by being
-  // signed in — but the copy nudges toward casual sharing, so the alert
-  // labels it "debug" and warns against posting publicly.
-  const handleCopyToken = async () => {
-    if (copyingToken) return;
-    setCopyingToken(true);
+  // signed in — but the share nudges toward casual sharing, so the label
+  // + subtext warn "debug" and against posting publicly.
+  //
+  // Uses RN's built-in `Share` (already linked in binary; same primitive
+  // powering handleShare above). Deliberately does NOT use expo-clipboard
+  // — that native module isn't in the binary shipped as of build 62 and
+  // adding it as an OTA-only import crashes on module load.
+  const handleShareToken = async () => {
+    if (sharingToken) return;
+    setSharingToken(true);
     try {
       const token = await getAccessToken();
       if (!token) {
         Alert.alert('No token', 'Sign out and back in to get a token.');
         return;
       }
-      await Clipboard.setStringAsync(token);
-      Alert.alert('Copied', 'Access token copied to clipboard. Paste it where requested.');
+      // iOS: write to cache + share the file url so AirDrop-to-Mac lands
+      // as a proper .txt (same rationale as handleShare above). Android:
+      // plain-text message.
+      let result: Awaited<ReturnType<typeof Share.share>>;
+      if (Platform.OS === 'ios') {
+        const filename = `csh-token-${Date.now()}.txt`;
+        const path = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(path, token, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        result = await Share.share(
+          { url: path, message: token, title: 'CSH access token (debug)' },
+          { subject: 'CSH Access Token', dialogTitle: 'Share access token' },
+        );
+      } else {
+        result = await Share.share(
+          { message: token, title: 'CSH access token (debug)' },
+          { subject: 'CSH Access Token', dialogTitle: 'Share access token' },
+        );
+      }
+      if (result.action === Share.dismissedAction) return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       Sentry.captureException(err);
-      Alert.alert('Copy failed', `Could not copy the access token.\n\n${msg}`);
+      Alert.alert('Share failed', `Could not open the share sheet.\n\n${msg}`);
     } finally {
-      setCopyingToken(false);
+      setSharingToken(false);
     }
   };
 
@@ -302,23 +325,23 @@ export default function AboutScreen() {
         </Pressable>
 
         <Pressable
-          onPress={handleCopyToken}
-          disabled={copyingToken}
+          onPress={handleShareToken}
+          disabled={sharingToken}
           style={({ pressed }) => [
             styles.secondaryBtn,
             {
               borderColor: colors.border,
-              opacity: pressed || copyingToken ? 0.7 : 1,
+              opacity: pressed || sharingToken ? 0.7 : 1,
             },
           ]}
         >
-          {copyingToken ? (
+          {sharingToken ? (
             <ActivityIndicator color={colors.text} />
           ) : (
             <>
-              <MaterialIcons name="content-copy" size={getScaledFontSize(18)} color={colors.text} />
+              <MaterialIcons name="ios-share" size={getScaledFontSize(18)} color={colors.text} />
               <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as '600' }}>
-                Copy access token (debug)
+                Share access token (debug)
               </Text>
             </>
           )}
