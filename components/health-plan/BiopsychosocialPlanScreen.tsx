@@ -68,6 +68,10 @@ import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 // SCRUM-655: BpsWellbeingScoreCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand.
 import { BpsHeroTileRow } from './BpsHeroTileRow';
+// SCRUM-640 (2026-08-04): Habit correlation strip mounted below the
+// hero tile row. Renders null when the backend flag is OFF (default)
+// or when the user has fewer than min_sample_size=10 days of entries.
+import { HabitCorrelationStrip } from './HabitCorrelationStrip';
 // SCRUM-661 (2026-07-31): match home-screen greeting exactly by reusing
 // the same GreetingHeader + useCurrentHour hook that app/Home/index.tsx
 // already mounts (SCRUM-653/654). Home + Plan now share ONE greeting
@@ -1760,6 +1764,22 @@ export function BiopsychosocialPlanScreen({
           isEmpty={wellbeing.isEmpty}
           tasks={todayTasks}
         />
+
+        {/*
+          SCRUM-640 (2026-08-04): Habit correlation strip. Dark-launched:
+          renders null when `habit_journal_enabled` is OFF (default) OR
+          when the user has fewer than min_sample_size=10 days of
+          entries for any habit. Once populated, shows the top 3
+          habits by |r| against the daily wellbeing composite, with a
+          "directional pattern, not a clinical finding" disclaimer.
+          Visual polish deferred to Ken; data-testid stable at
+          'habit-correlation-strip'. Sits between the hero tile row
+          (which owns the wellbeing score band + today hero on
+          tile-expand) and the wellbeing-map banner below, so it
+          reads as a natural extension of the wellbeing overview
+          rather than a competing card.
+        */}
+        <HabitCorrelationStrip />
 
         {/*
           SCRUM-661 (2026-07-31): Wellbeing Map banner — user asked for

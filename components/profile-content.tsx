@@ -4,6 +4,7 @@ import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
@@ -76,6 +77,11 @@ export function ProfileContent({
   // never flashes to a restricted user.
   const { data: permissions } = useFeaturePermissions();
   const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
+
+  // SCRUM-640: dark-launched habit-journal entry. Default OFF; visible
+  // only when backend flag `habit_journal_enabled` (or the per-user
+  // beta override) resolves to true.
+  const habitJournalEnabled = useHabitJournalFlag();
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
@@ -262,6 +268,24 @@ export function ProfileContent({
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            {/*
+              SCRUM-640 — Daily habits entry (dark-launched). Only shown
+              when `habit_journal_enabled` resolves true — either via the
+              fleet-wide SSM key or per-user via SCRUM-663 beta override
+              (`habit_journal_enabled_beta`). While flag is OFF, this row
+              is not mounted so there is no discovery path to the screen.
+            */}
+            {habitJournalEnabled && (
+              <DrawerRow
+                iconName="check-circle-outline"
+                label="Daily habits"
+                onPress={() => router.push('/Home/habit-journal' as never)}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
             {/*
               Apple Health (COS-389 / SCRUM-530): deliberate, easy-to-find
               opt-in control. The HealthKit permission prompt used to fire
