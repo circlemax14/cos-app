@@ -20,9 +20,10 @@
  * NO NEW BE CALLS: this is entirely on-device. Zero API surface change.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Platform } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 import { isHealthKitAvailable, getHealthKitVitalTrend, initializeHealthKit } from '@/services/health'
 import { NativeModules } from 'react-native'
@@ -32,12 +33,63 @@ import type { LongitudinalTrend } from '@/services/api/types'
 import {
   computeReadinessScore,
   type DailyReadinessMetrics,
+  type ReadinessBand,
+  type ReadinessDriver,
   type ReadinessScore,
 } from '@/lib/readiness-score'
 import { useAppleHealthPreference } from '@/hooks/use-apple-health-preference'
 import { shouldFetchAppleHealthTrends } from '@/lib/apple-health-gate'
+import {
+  postReadinessSnapshot,
+  type ReadinessDriverBreakdown,
+  type ReadinessDriverState,
+  type ReadinessSnapshotBand,
+} from '@/services/api/readiness-snapshot'
 
 const READINESS_LOOKBACK_DAYS = 15 // 14 baseline + 1 today
+
+// ─── SCRUM-654 snapshot ingest constants ─────────────────────────────
+// Client-side belt-and-suspenders throttle mirroring the BE 5-min
+// conditional-put gate. Keyed by userSub so multi-account devices are
+// tracked independently.
+const READINESS_POST_MIN_INTERVAL_MS = 5 * 60 * 1000
+const READINESS_LAST_POST_STORAGE_PREFIX = 'readiness:lastPostAt:'
+
+/**
+ * Local ReadinessBand ('optimal'|'developing'|'foundational'|'initial')
+ * → BE zod enum ('optimal'|'balanced'|'strained'|'depleted'). Intent
+ * preserved: optimal is optimal; the two middle buckets soften; the
+ * lowest maps to depleted. Kept as a pure map so the mapping is trivial
+ * to eyeball in review.
+ */
+function bandToSnapshotBand(band: ReadinessBand): ReadinessSnapshotBand {
+  switch (band) {
+    case 'optimal': return 'optimal'
+    case 'developing': return 'balanced'
+    case 'foundational': return 'strained'
+    case 'initial': return 'depleted'
+  }
+}
+
+/**
+ * ReadinessDriver.direction ('above'|'below'|'at') → BE categorical
+ * enum ('above_baseline'|'below_baseline'|'at_baseline'). Categorical
+ * position ONLY — the loader interprets meaning per-metric.
+ */
+function directionToDriverState(direction: ReadinessDriver['direction']): ReadinessDriverState {
+  if (direction === 'above') return 'above_baseline'
+  if (direction === 'below') return 'below_baseline'
+  return 'at_baseline'
+}
+
+function driversToBreakdown(drivers: readonly ReadinessDriver[]): ReadinessDriverBreakdown {
+  const breakdown: ReadinessDriverBreakdown = {}
+  for (const d of drivers) {
+    // The pure module (lib/readiness-score.ts) uses these exact keys.
+    breakdown[d.metric] = directionToDriverState(d.direction)
+  }
+  return breakdown
+}
 
 /**
  * Formats a Date as `YYYY-MM-DD` in the device's LOCAL timezone.
@@ -446,6 +498,147 @@ export function useReadinessDerivation(enabled: boolean): UseReadinessDerivation
     query.data,
     score.state,
     score.composite,
+  ])
+
+  // ─── SCRUM-654 fire-and-forget ingest ───────────────────────────
+  //
+  // On every successful compute where the tile reaches `ready`, POST
+  // a categorical snapshot to /v1/patients/me/readiness/snapshot so
+  // the BE evaluator can consume the timeseries (loadReadinessSignals,
+  // and downstream rules readiness_trending_down / no_readiness_data_2_days
+  // / recovery_flat_7_days).
+  //
+  // Contract (design.fe_post_trigger):
+  //   - Only fires when uiState === 'ready' AND score.composite is a
+  //     number AND score.band is a string AND enabled AND query.isSuccess.
+  //     SKIPs for {unavailable, disconnected, loading, no-samples,
+  //     pre-baseline} — matches the BE endpoint's "computed snapshot"
+  //     semantic; avoids polluting the server timeseries.
+  //   - Dedupe key: `${todayIsoLocal}:${composite}:${band}` — StrictMode
+  //     double-mount + unrelated re-renders no-op. Fresh compute (band
+  //     flip, score change, new day) advances the key and allows one POST.
+  //   - Client throttle: AsyncStorage `readiness:lastPostAt:*` with a
+  //     5-min window — belt-and-suspenders with the BE's 300s
+  //     conditional-put gate. On 429 from server, honors retryAfterSeconds.
+  //   - Fire-and-forget: NO surfacing of errors to the user. Retries
+  //     happen naturally when the query refetches (staleTime 30m) and
+  //     the dedupe key advances.
+  //   - Route is always mounted server-side; when the SSM flag is OFF
+  //     the server responds 200 { accepted: 0, reason: 'flag_off' } —
+  //     the client honors that silently.
+  //   - Body is CATEGORICAL ONLY: score + band + baselineDays +
+  //     asOfLocalDay + computedAt + driverBreakdown (enum-valued map).
+  //     NEVER raw HRV ms / sleep hours / RHR bpm / resp rate. The BE
+  //     zod schema is .strict() and rejects unknown keys with 400.
+  //   - Uses query.data.debug.todayIsoLocal as asOfLocalDay so the
+  //     server sees the same local calendar day the client scored
+  //     against (SCRUM-664 local/UTC trap avoidance).
+  const lastPostedKeyRef = useRef<string | null>(null)
+  const composite = score.composite
+  const bandForPost = score.band
+  const baselineDaysForPost = score.baselineDays
+  const todayIsoLocal = query.data?.debug.todayIsoLocal
+  const driversForPost = score.drivers
+
+  useEffect(() => {
+    // Gate: full success + ready state + valid categorical values.
+    if (!enabled) return
+    if (isUnavailable) return
+    if (!query.isSuccess) return
+    if (uiState !== 'ready') return
+    if (typeof composite !== 'number') return
+    if (typeof bandForPost !== 'string') return
+    if (!todayIsoLocal) return
+
+    // Dedupe per (day, composite, band) — StrictMode + re-renders no-op.
+    const dedupeKey = `${todayIsoLocal}:${composite}:${bandForPost}`
+    if (lastPostedKeyRef.current === dedupeKey) return
+
+    let cancelled = false
+
+    const fire = async (): Promise<void> => {
+      // Client-side 5-min throttle. Keyed generically because AsyncStorage
+      // is per-device — a single user per install is the overwhelming
+      // norm on cos-app. The BE remains the authoritative gate; this
+      // just avoids the round-trip cost when we already know it's
+      // pointless.
+      const throttleKey = `${READINESS_LAST_POST_STORAGE_PREFIX}me`
+      try {
+        const lastRaw = await AsyncStorage.getItem(throttleKey)
+        if (lastRaw) {
+          const last = Number(lastRaw)
+          if (Number.isFinite(last) && Date.now() - last < READINESS_POST_MIN_INTERVAL_MS) {
+            // Still inside throttle window — set dedupe ref anyway so
+            // we don't re-check on every render.
+            lastPostedKeyRef.current = dedupeKey
+            return
+          }
+        }
+      } catch {
+        // AsyncStorage read failure — proceed. BE will still gate.
+      }
+
+      // Mark ref BEFORE the fetch to prevent re-entry from a fast
+      // re-render before the promise resolves.
+      lastPostedKeyRef.current = dedupeKey
+
+      try {
+        const body = {
+          score: Math.round(composite),
+          band: bandToSnapshotBand(bandForPost),
+          baselineDays: baselineDaysForPost,
+          asOfLocalDay: todayIsoLocal,
+          computedAt: new Date().toISOString(),
+          driverBreakdown: driversToBreakdown(driversForPost),
+          source: 'healthkit' as const,
+        }
+        const res = await postReadinessSnapshot(body)
+        if (cancelled) return
+
+        // On a real write, record the wall time for the client throttle.
+        // On flag_off / throttled we still don't want to hammer the BE:
+        // record the timestamp anyway so we back off for 5 min.
+        const now = Date.now()
+        try {
+          if (res.accepted === 1) {
+            await AsyncStorage.setItem(throttleKey, String(now))
+          } else if (res.reason === 'flag_off' || res.throttled) {
+            // Honor server retryAfterSeconds if provided; otherwise use
+            // the standard 5-min window.
+            const wait = typeof res.retryAfterSeconds === 'number' && res.retryAfterSeconds > 0
+              ? res.retryAfterSeconds * 1000
+              : READINESS_POST_MIN_INTERVAL_MS
+            // Store a "last post" that pushes the next attempt out by
+            // `wait` — encode as (now - fullWindow + wait) so the
+            // 5-min gate below reads it as `Date.now() - last < wait`.
+            const encoded = now - READINESS_POST_MIN_INTERVAL_MS + wait
+            await AsyncStorage.setItem(throttleKey, String(encoded))
+          }
+        } catch {
+          // AsyncStorage write failure — non-fatal, next tick will retry.
+        }
+      } catch {
+        // Fire-and-forget: swallow. The dedupe key already advanced, so
+        // we won't spin; on the next fresh compute (new score / band /
+        // day) the key changes and we retry. Zero UI surface.
+      }
+    }
+
+    void fire()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    enabled,
+    isUnavailable,
+    query.isSuccess,
+    uiState,
+    composite,
+    bandForPost,
+    baselineDaysForPost,
+    todayIsoLocal,
+    driversForPost,
   ])
 
   return {
