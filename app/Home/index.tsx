@@ -2948,10 +2948,13 @@ export default function HomeScreen() {
             onLongPress={() => {
               // DIAG (remove once "no samples" bug closed): dump raw
               // runtime state into an Alert so the user can screenshot
-              // + share. Refetch first so the snapshot is fresh (rather
-              // than 30-min-stale from React Query cache).
-              readiness.refetch().finally(() => {
-                const snapshot = readiness.debug
+              // + share. Read the debug from the refetch's returned
+              // data — NOT the closure's `readiness.debug`, which was
+              // captured at last Home render and is stale by the time
+              // this Promise resolves.
+              readiness.refetch().then((result) => {
+                const fresh = (result as { data?: { debug?: unknown } } | undefined)?.data?.debug
+                const snapshot = fresh ?? readiness.debug
                 Alert.alert(
                   'Readiness Debug',
                   snapshot
@@ -2959,6 +2962,8 @@ export default function HomeScreen() {
                     : 'No snapshot yet (query still resolving). Long-press again in 3-5 s.',
                   [{ text: 'OK' }],
                 )
+              }).catch((e) => {
+                Alert.alert('Readiness Debug', `Refetch failed: ${String(e)}`, [{ text: 'OK' }])
               })
             }}
           />
