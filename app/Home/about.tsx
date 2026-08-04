@@ -2,11 +2,13 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import * as Updates from 'expo-updates';
+import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import * as Sentry from '@sentry/react-native';
+import { getAccessToken } from '@/lib/auth-tokens';
 import {
   ActivityIndicator,
   Alert,
@@ -35,6 +37,7 @@ export default function AboutScreen() {
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [copyingToken, setCopyingToken] = useState(false);
 
   const appVersion = Constants.expoConfig?.version ?? 'unknown';
   const buildNumber =
@@ -139,6 +142,32 @@ export default function AboutScreen() {
       Alert.alert('Share failed', `Could not open the share sheet.\n\n${msg}`);
     } finally {
       setSharing(false);
+    }
+  };
+
+  // Copies the current Cognito access token to the clipboard so support
+  // / the user can paste it into a debugging tool (e.g. to inspect
+  // backend-driven feature flag responses). The token is the user's own
+  // credential — nothing they don't already implicitly possess by being
+  // signed in — but the copy nudges toward casual sharing, so the alert
+  // labels it "debug" and warns against posting publicly.
+  const handleCopyToken = async () => {
+    if (copyingToken) return;
+    setCopyingToken(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        Alert.alert('No token', 'Sign out and back in to get a token.');
+        return;
+      }
+      await Clipboard.setStringAsync(token);
+      Alert.alert('Copied', 'Access token copied to clipboard. Paste it where requested.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Sentry.captureException(err);
+      Alert.alert('Copy failed', `Could not copy the access token.\n\n${msg}`);
+    } finally {
+      setCopyingToken(false);
     }
   };
 
@@ -271,6 +300,41 @@ export default function AboutScreen() {
             </>
           )}
         </Pressable>
+
+        <Pressable
+          onPress={handleCopyToken}
+          disabled={copyingToken}
+          style={({ pressed }) => [
+            styles.secondaryBtn,
+            {
+              borderColor: colors.border,
+              opacity: pressed || copyingToken ? 0.7 : 1,
+            },
+          ]}
+        >
+          {copyingToken ? (
+            <ActivityIndicator color={colors.text} />
+          ) : (
+            <>
+              <MaterialIcons name="content-copy" size={getScaledFontSize(18)} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as '600' }}>
+                Copy access token (debug)
+              </Text>
+            </>
+          )}
+        </Pressable>
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(12),
+            fontWeight: getScaledFontWeight(400) as '400',
+            marginTop: 8,
+            textAlign: 'center',
+            paddingHorizontal: 8,
+          }}
+        >
+          For technical support / feature-flag debugging. Do not share publicly.
+        </Text>
 
         <View style={{ height: 40 }} />
       </ScrollView>
