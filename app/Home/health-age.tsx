@@ -10,7 +10,6 @@
  *   2. Contributing biomarkers accordion — per-component PHI values
  *      (visible ONLY inside this drilldown, never on the Home tile)
  *   3. Methodology accordion — Legal-approved disclaimer copy
- *   4. "Talk to your care team" CTA (routes to chat)
  *
  * Terminology (Legal): "Health Age" only. Never "Biological Age".
  * Do NOT rename copy without a Legal-cleared answer to the
@@ -148,30 +147,6 @@ export default function HealthAgeScreen(): React.JSX.Element {
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
           />
-
-          <Pressable
-            onPress={() => router.push('/Home/chat' as never)}
-            accessibilityRole="button"
-            accessibilityLabel="Message your care team"
-            style={({ pressed }) => [
-              styles.ctaCard,
-              { backgroundColor: colors.card as string, opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <MaterialIcons name="chat-bubble-outline" size={20} color={colors.tint as string} />
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(600) as any,
-                marginLeft: 10,
-                flex: 1,
-              }}
-            >
-              Message your care team
-            </Text>
-            <MaterialIcons name="chevron-right" size={22} color={colors.subtext as string} />
-          </Pressable>
 
           <Text
             style={{

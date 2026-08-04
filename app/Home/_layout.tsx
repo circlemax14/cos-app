@@ -147,6 +147,21 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      {/*
+        SCRUM-642 (2026-08-04) — Health Age drilldown MUST NOT appear in
+        the bottom tab bar. It's reachable only via the Home tile
+        (HealthAgeCard onPress → router.push('/Home/health-age')).
+        Without href:null, expo-router auto-mounts app/Home/health-age.tsx
+        as a visible tab.
+      */}
+      <Tabs.Screen
+        name="health-age"
+        options={{
+          title: 'Health Age',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="today-schedule"
         options={{
