@@ -51,6 +51,11 @@ import { useReadinessDerivation } from '@/hooks/use-readiness-derivation';
 import { HealthAgeCard } from '@/components/health-age/HealthAgeCard';
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag';
 import { useHealthAge } from '@/hooks/use-health-age';
+// SCRUM-644 — Daily Read card (dark-launched behind `daily_read_enabled`).
+// Self-gated: DailyReadCard returns null when flag OFF (defense in depth).
+// Copy is HONEST placeholder pending Ken clinical + design review.
+import { DailyReadCard } from '@/components/home/DailyReadCard';
+import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
 import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
@@ -2556,6 +2561,13 @@ export default function HomeScreen() {
   const healthAgeEnabled = useHealthAgeFlag();
   const healthAgeQuery = useHealthAge(healthAgeEnabled);
 
+  // SCRUM-644 — Daily Read card. Card is self-gated on the flag AND
+  // manages its own React Query fetch via useDailyRead(), so this
+  // parent flag read is only needed to elide the wrapper entirely
+  // (byte-identical to today when OFF). No compute on the flag-off
+  // path; the shared /v1/feature-flags cache is already in memory.
+  const dailyReadEnabled = useDailyReadFlag();
+
   // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
   // built from today's driver metrics. Chat route auto-sends the
   // prefill once on mount (see app/Home/health-chat.tsx).
@@ -2996,6 +3008,16 @@ export default function HomeScreen() {
             onPress={() => router.push('/Home/health-age' as never)}
           />
         )}
+        {/* SCRUM-644 — Daily Read card. Dark-launched behind
+            `daily_read_enabled`. Sits 3rd in the daily-insights cluster
+            (Readiness → Health Age → Daily Read) — NOT pixel #1 by
+            design so ReadinessScoreCard paints first from on-device
+            HealthKit and gives cover while this card's /v1/patients/me
+            /daily-read fetch resolves (avoids the "app looks broken"
+            failure mode on cold start). Card is ALSO self-gated on the
+            flag (defense in depth) and copy is HONEST placeholder
+            pending Ken clinical + design sign-off. */}
+        {dailyReadEnabled && <DailyReadCard />}
         {/* Title row — heading + inline view-mode toggle, mirroring the
             classic layout the stakeholder asked us to keep. SCRUM-234
             moved the toggle back inline (it had been hoisted to a slot
