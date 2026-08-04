@@ -313,6 +313,20 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        SCRUM-641 — Proactive Nudges opt-in screen. Registered as a
+        hidden tab (href:null) so expo-router knows the route; entry
+        point is a row in reminder-settings.tsx, gated on
+        useProactiveNudgesFlag() so it stays dark while backend flag OFF.
+      */}
+      <Tabs.Screen
+        name="nudges"
+        options={{
+          title: 'Proactive nudges',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="calendar-settings"
         options={{
