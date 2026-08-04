@@ -58,6 +58,7 @@ import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
+import { HabitCorrelationStrip } from './HabitCorrelationStrip';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -1520,6 +1521,20 @@ export function BiopsychosocialPlanScreen({
             isEmpty={wellbeing.isEmpty}
           />
         )}
+
+        {/*
+          SCRUM-640 — Habit correlation strip. Dark-launched: renders
+          null when `habit_journal_enabled` is OFF (default) OR when
+          the user has fewer than min_sample_size=10 days of entries
+          for any habit. Once populated, shows the top 3 habits by |r|
+          against the daily wellbeing composite, with a "directional
+          pattern, not a clinical finding" disclaimer. Visual polish
+          deferred to Ken; data-testid stable at 'habit-correlation-strip'.
+          Mounted below the score card and above the today-hero row
+          so the strip reads as a natural extension of the wellbeing
+          overview rather than a competing card.
+        */}
+        <HabitCorrelationStrip />
 
         {/*
           CHUNK 47 (SCRUM-252 port): Today hero card — big focal
