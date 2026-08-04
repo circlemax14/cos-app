@@ -78,6 +78,10 @@ import { HabitCorrelationStrip } from './HabitCorrelationStrip';
 // treatment.
 import { GreetingHeader } from '@/components/home/GreetingHeader';
 import { useCurrentHour } from '@/hooks/use-current-hour';
+// SCRUM-648 (2026-08-04): Biological tile — Blood Glucose (TIR).
+// Renders null when the backend flag is OFF (default) or when the
+// patient has no glucose samples yet. Tap routes to /Home/glucose.
+import { GlucoseTirTile } from './GlucoseTirTile';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -1780,6 +1784,20 @@ export function BiopsychosocialPlanScreen({
           rather than a competing card.
         */}
         <HabitCorrelationStrip />
+
+        {/*
+          SCRUM-648 — Biological tile: Blood Glucose (TIR). Dark-launched:
+          the tile self-gates on `cgm_glucose_enabled` AND on data
+          presence (renders null if flag OFF, if the query hasn't
+          returned yet, or if sampleCount=0). Tap routes to
+          /Home/glucose (also flag-gated). Mounted immediately after
+          the HabitCorrelationStrip so the two dark-launched Biological
+          add-ons sit together as a natural sub-band beneath the
+          wellbeing score card, mirroring SCRUM-640's precedent.
+          Backend routes are always mounted (inner-branch flag); the
+          FE flag is the ONLY visibility gate on this surface.
+        */}
+        <GlucoseTirTile />
 
         {/*
           SCRUM-661 (2026-07-31): Wellbeing Map banner — user asked for

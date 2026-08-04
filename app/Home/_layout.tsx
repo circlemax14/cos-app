@@ -341,6 +341,21 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        SCRUM-648 — Blood Glucose (TIR) detail screen. Registered as a
+        hidden tab (href:null) so expo-router knows the route; entry
+        point is the GlucoseTirTile in the Biological section of the
+        BiopsychosocialPlanScreen, gated on useCgmGlucoseFlag() so it
+        stays dark while backend flag OFF.
+      */}
+      <Tabs.Screen
+        name="glucose"
+        options={{
+          title: 'Blood Glucose (TIR)',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="calendar-settings"
         options={{
