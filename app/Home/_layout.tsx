@@ -327,6 +327,20 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        SCRUM-640 — Habit Journal screen. Registered as a hidden tab
+        (href:null) so expo-router knows the route; entry point is a
+        row in profile-content.tsx ("Daily habits"), gated on
+        useHabitJournalFlag() so it stays dark while backend flag OFF.
+      */}
+      <Tabs.Screen
+        name="habit-journal"
+        options={{
+          title: 'Daily habits',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="calendar-settings"
         options={{
