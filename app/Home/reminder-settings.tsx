@@ -23,6 +23,7 @@ import {
   useNotificationCategories,
   useUpdateNotificationCategories,
 } from '@/hooks/use-notification-categories'
+import { useProactiveNudgesFlag } from '@/hooks/use-proactive-nudges-flag'
 
 // Top-30 IANA timezones surfaced in the picker. Anything outside this
 // list falls back to the device-detected default — the picker can't
@@ -183,6 +184,12 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
   const showCategories =
     NOTIFICATION_CATEGORIES_ENABLED && categoriesQuery.data?.flagEnabled === true
 
+  // SCRUM-641 — Proactive Nudges entry point. Only rendered when the
+  // backend flag is ON (default-OFF while loading — see hook). Row nav's
+  // to /Home/nudges. Not linked from Home/index.tsx to avoid discovery
+  // before Ken tunes templates.
+  const showProactiveNudgesRow = useProactiveNudgesFlag()
+
   // On first launch (and any time the user has no stored TZ), auto-write
   // the device-detected TZ so the new sweeper has something to work with
   // without forcing the user to discover the settings screen.
@@ -321,6 +328,42 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
                   </Card>
                 )
               })}
+            </>
+          ) : null}
+
+          {/* SCRUM-641: Proactive Nudges entry point. Flag-gated —
+              default-OFF while loading, so the row is invisible during dark
+              launch. Navigates to a dedicated /Home/nudges screen owning
+              opt-in, quiet-hours, caps, and per-rule mute. Not surfaced on
+              Home/index.tsx yet. */}
+          {showProactiveNudgesRow ? (
+            <>
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(700) as any, marginTop: 22, marginBottom: 10, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                Proactive check-ins
+              </Text>
+              <Pressable
+                onPress={() => router.push('/Home/nudges')}
+                accessibilityRole="button"
+                accessibilityLabel="Open Proactive nudges settings"
+                style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+              >
+                <Card style={[styles.row, { backgroundColor: colors.card }]}>
+                  <Card.Content style={styles.rowContent}>
+                    <View style={[styles.iconWrap, { backgroundColor: (colors.tint as string) + '22' }]}>
+                      <MaterialIcons name="tips-and-updates" size={20} color={colors.tint as string} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 14 }}>
+                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
+                        Proactive nudges
+                      </Text>
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                        AI check-ins based on your trends
+                      </Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={22} color={colors.subtext} />
+                  </Card.Content>
+                </Card>
+              </Pressable>
             </>
           ) : null}
 
