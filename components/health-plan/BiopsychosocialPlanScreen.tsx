@@ -59,6 +59,7 @@ import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
 import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
 import { HabitCorrelationStrip } from './HabitCorrelationStrip';
+import { GlucoseTirTile } from './GlucoseTirTile';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
@@ -1535,6 +1536,20 @@ export function BiopsychosocialPlanScreen({
           overview rather than a competing card.
         */}
         <HabitCorrelationStrip />
+
+        {/*
+          SCRUM-648 — Biological tile: Blood Glucose (TIR). Dark-launched:
+          the tile self-gates on `cgm_glucose_enabled` AND on data
+          presence (renders null if flag OFF, if the query hasn't
+          returned yet, or if sampleCount=0). Tap routes to
+          /Home/glucose (also flag-gated). Mounted immediately after
+          the HabitCorrelationStrip so the two dark-launched Biological
+          add-ons sit together as a natural sub-band beneath the
+          wellbeing score card, mirroring SCRUM-640's precedent.
+          Backend routes are always mounted (inner-branch flag); the
+          FE flag is the ONLY visibility gate on this surface.
+        */}
+        <GlucoseTirTile />
 
         {/*
           CHUNK 47 (SCRUM-252 port): Today hero card — big focal
