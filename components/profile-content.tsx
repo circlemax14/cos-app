@@ -271,24 +271,21 @@ export function ProfileContent({
               getScaledFontWeight={getScaledFontWeight}
             />
             {/*
-              SCRUM-640 → SCRUM-659 Story 5 (2026-08-05) — Habits entry.
-              When habits_in_plan_enabled is ON, this row still exists
-              as a shortcut but routes to the new /Home/habits CRUD
-              screen (the primary discovery path is now the Plan
-              banner). When habits_in_plan_enabled is OFF but the older
-              habit_journal_enabled is still ON, the row points to the
-              legacy /Home/habit-journal daily check-in screen. When
-              both flags are OFF, the row is not mounted.
+              SCRUM-659 Story 5 revised (Vishal 2026-08-05): when
+              habits_in_plan_enabled is ON, hide this drawer row
+              entirely. The Plan-screen HabitsBanner is the ONLY
+              entry point; the drawer entry is redundant. When
+              habits_in_plan_enabled is OFF but the legacy
+              habit_journal_enabled is still ON, keep the old
+              "Daily habits" shortcut into /Home/habit-journal so
+              nothing regresses for accounts on the legacy path.
+              Both flags OFF → row is not mounted.
             */}
-            {(habitsInPlanFlagEnabled || habitJournalEnabled) && (
+            {!habitsInPlanFlagEnabled && habitJournalEnabled && (
               <DrawerRow
                 iconName="check-circle-outline"
-                label={habitsInPlanFlagEnabled ? 'Habits' : 'Daily habits'}
-                onPress={() =>
-                  router.push(
-                    (habitsInPlanFlagEnabled ? '/Home/habits' : '/Home/habit-journal') as never,
-                  )
-                }
+                label="Daily habits"
+                onPress={() => router.push('/Home/habit-journal' as never)}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
