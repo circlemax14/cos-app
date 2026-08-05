@@ -113,28 +113,12 @@ export default function DailyReadScreen(): React.JSX.Element {
               getScaledFontWeight={getScaledFontWeight}
             />
 
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(11),
-                fontWeight: getScaledFontWeight(600) as any,
-                letterSpacing: 0.8,
-                marginTop: 24,
-                marginBottom: 12,
-              }}
-            >
-              SIGNALS USED TODAY
-            </Text>
-
-            {data.pillars.map((p) => (
-              <PillarRow
-                key={p.key}
-                pillar={p}
-                colors={colors}
-                getScaledFontSize={getScaledFontSize}
-                getScaledFontWeight={getScaledFontWeight}
-              />
-            ))}
+            <PillarSections
+              pillars={data.pillars}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
           </>
         )}
 
@@ -266,6 +250,93 @@ function Hero({
   )
 }
 
+/**
+ * Splits pillars into ready-first + collapsed "add more data" expander
+ * for the rest. Design decision (2026-08-05, Vishal): don't lead with
+ * empty rows; keep discovery for connecting more signals a single tap
+ * away instead of paying for real estate up-front.
+ */
+function PillarSections({
+  pillars,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: CommonProps & { pillars: DailyReadPillar[] }): React.JSX.Element {
+  const [expanded, setExpanded] = React.useState(false)
+  const ready = pillars.filter((p) => p.state === 'ready')
+  const other = pillars.filter((p) => p.state !== 'ready')
+
+  return (
+    <>
+      {ready.length > 0 && (
+        <>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(11),
+              fontWeight: (getScaledFontWeight ? getScaledFontWeight(600) : '600') as any,
+              letterSpacing: 0.8,
+              marginTop: 24,
+              marginBottom: 12,
+            }}
+          >
+            SIGNALS USED TODAY
+          </Text>
+          {ready.map((p) => (
+            <PillarRow
+              key={p.key}
+              pillar={p}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          ))}
+        </>
+      )}
+
+      {other.length > 0 && (
+        <>
+          <Pressable
+            onPress={() => setExpanded((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={`Add more data. ${other.length} signal${other.length === 1 ? '' : 's'} available.`}
+            accessibilityState={{ expanded }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.expanderRow, pressed && styles.pressed]}
+          >
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(11),
+                fontWeight: (getScaledFontWeight ? getScaledFontWeight(600) : '600') as any,
+                letterSpacing: 0.8,
+              }}
+            >
+              ADD MORE DATA ({other.length})
+            </Text>
+            <MaterialIcons
+              name={expanded ? 'expand-less' : 'expand-more'}
+              size={20}
+              color={colors.subtext as string}
+              style={{ marginLeft: 6 }}
+            />
+          </Pressable>
+          {expanded &&
+            other.map((p) => (
+              <PillarRow
+                key={p.key}
+                pillar={p}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            ))}
+        </>
+      )}
+    </>
+  )
+}
+
 function PillarRow({
   pillar,
   colors,
@@ -388,4 +459,11 @@ const styles = StyleSheet.create({
   pillarHeader: { flexDirection: 'row', alignItems: 'center' },
   bandChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginLeft: 8 },
   centerBlock: { marginTop: 40, alignItems: 'center', paddingHorizontal: 24 },
+  expanderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 12,
+    paddingVertical: 4,
+  },
 })

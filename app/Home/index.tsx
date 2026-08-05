@@ -56,6 +56,8 @@ import { useHealthAge } from '@/hooks/use-health-age';
 // Copy is HONEST placeholder pending Ken clinical + design review.
 import { DailyReadCard } from '@/components/home/DailyReadCard';
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
+// 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
+import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
 import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
@@ -3382,67 +3384,15 @@ export default function HomeScreen() {
          * returns null), so no layout shift on the empty state.
          */}
         <RetakeRequestInboxCard />
-        {/* SCRUM-638 — Daily Readiness score card, above the title so
-            it's the first thing a patient sees on wake-up (matches
-            Bevel's "one honest daily read" placement). Renders NOTHING
-            when flag OFF (readinessEnabled === false) — flag-off path
-            is byte-identical to pre-638 layout. Also renders NOTHING
-            when HealthKit is unavailable (Android / non-iOS build) so
-            the tile doesn't leave a dead slot on unsupported platforms. */}
-        {readinessEnabled && !readiness.isUnavailable && (
-          <ReadinessScoreCard
-            score={readiness.score}
-            uiState={readiness.uiState}
-            onExplain={onExplainReadiness}
-            onConnectHealth={() => router.push('/Home/apple-health' as never)}
-            onLongPress={() => {
-              // DIAG (remove once "no samples" bug closed): dump raw
-              // runtime state into an Alert so the user can screenshot
-              // + share. Read the debug from the refetch's returned
-              // data — NOT the closure's `readiness.debug`, which was
-              // captured at last Home render and is stale by the time
-              // this Promise resolves.
-              readiness.refetch().then((result) => {
-                const fresh = (result as { data?: { debug?: unknown } } | undefined)?.data?.debug
-                const snapshot = fresh ?? readiness.debug
-                Alert.alert(
-                  'Readiness Debug',
-                  snapshot
-                    ? JSON.stringify(snapshot, null, 2)
-                    : 'No snapshot yet (query still resolving). Long-press again in 3-5 s.',
-                  [{ text: 'OK' }],
-                )
-              }).catch((e) => {
-                Alert.alert('Readiness Debug', `Refetch failed: ${String(e)}`, [{ text: 'OK' }])
-              })
-            }}
-          />
-        )}
-        {/* SCRUM-642 — Health Age tile. Flag-gated dark by default. Card
-            returns null internally when overall=null AND <3 fresh
-            components (insufficient-data collapse), so the flag-on path
-            is still layout-neutral for patients with no biomarker data.
-            Order: WellbeingScoreTile row above → ReadinessScoreCard →
-            HealthAgeCard, per DESIGN.fe_screen.mount_location. */}
-        {healthAgeEnabled && (
-          <HealthAgeCard
-            result={healthAgeQuery.data}
-            isLoading={healthAgeQuery.isLoading}
-            onPress={() => router.push('/Home/health-age' as never)}
-          />
-        )}
-        {/* SCRUM-644 — Daily Read card. Dark-launched behind
-            `daily_read_enabled`. Sits 3rd in the daily-insights cluster
-            (Readiness → Health Age → Daily Read) — NOT pixel #1 by
-            design so ReadinessScoreCard paints first from on-device
-            HealthKit and gives cover while this card's /v1/patients/me
-            /daily-read fetch resolves (avoids the "app looks broken"
-            failure mode on cold start). Card is ALSO self-gated on the
-            flag (defense in depth) and copy is HONEST placeholder
-            pending Ken clinical + design sign-off. */}
-        {dailyReadEnabled && (
-          <DailyReadCard onPress={() => router.push('/Home/daily-read' as never)} />
-        )}
+        {/* 2026-08-05 — Compact 3-tile row: Readiness · Health Age · Daily Read.
+            Replaces the three stacked full-width cards that previously
+            lived here (SCRUM-638 ReadinessScoreCard + SCRUM-642
+            HealthAgeCard + SCRUM-644 DailyReadCard). Each tile inside
+            HeroInsightsRow self-fetches, self-flags-gates, and taps
+            through to the same detail screens as before. Empty states
+            render as a "—" placeholder + short hint so the row stays a
+            fixed slot instead of collapsing/reflowing on data changes. */}
+        <HeroInsightsRow />
         {/*
          * SCRUM-653 title row — one of two variants selected by
          * HOME_V2_INJECTIONS_ENABLED:
