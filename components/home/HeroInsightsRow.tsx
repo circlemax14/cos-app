@@ -43,6 +43,7 @@ import { useHealthAge } from '@/hooks/use-health-age'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
 import { useDailyRead } from '@/hooks/use-daily-read'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
+import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 
 // ─── Band-color tokens (WCAG-AA) ─────────────────────────────────────
 const READINESS_BANDS: Record<string, { fg: string; bg: string; label: string }> = {
@@ -68,6 +69,12 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   const readinessEnabled = useReadinessScoreFlag()
   const healthAgeEnabled = useHealthAgeFlag()
   const dailyReadEnabled = useDailyReadFlag()
+
+  // 2026-08-05 — warm the server-side wellbeing-score cache so the
+  // Daily Read wellbeing pillar has data to read. Only when Daily Read
+  // is enabled for this user; the tile itself uses a separate client
+  // aggregation and doesn't need this warmer.
+  useWellbeingScoreWarmer(dailyReadEnabled)
 
   const anyEnabled = readinessEnabled || healthAgeEnabled || dailyReadEnabled
   if (!anyEnabled) return null
