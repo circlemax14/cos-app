@@ -24,7 +24,9 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useReadinessScoreFlag } from '@/hooks/use-readiness-score-flag'
 import { useReadinessDerivation } from '@/hooks/use-readiness-derivation'
+import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
 import type { ReadinessBand, ReadinessDriver } from '@/lib/readiness-score'
+import type { LongitudinalTrend } from '@/services/api/types'
 
 const BAND_TOKENS: Record<ReadinessBand, { fg: string; bg: string; label: string }> = {
   optimal:      { fg: '#0F6B36', bg: '#E6F4EC', label: 'OPTIMAL' },
@@ -59,9 +61,21 @@ const METRIC_UNIT: Record<ReadinessDriver['metric'], string> = {
   flights: 'flights',
 }
 
+/**
+ * Metric codes emitted by the FE HealthKit adapter (`services/health.ts`)
+ * that correspond to the 10 Readiness metrics. Filters the trend list
+ * to just the ones this screen cares about.
+ */
+const READINESS_HEALTHKIT_CODES: readonly string[] = [
+  'hk-hrv', 'hk-sleep', 'hk-resting-heart-rate', 'hk-respiratory-rate',
+  'hk-steps', 'hk-active-energy', 'hk-exercise-time', 'hk-walking-heart-rate',
+  'hk-oxygen-saturation', 'hk-flights',
+]
+
 export default function ReadinessScreen(): React.JSX.Element {
   const flag = useReadinessScoreFlag()
   const readiness = useReadinessDerivation(flag)
+  const { data: hkTrends } = useHealthKitTrends()
   const { getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors.light
 
@@ -70,6 +84,14 @@ export default function ReadinessScreen(): React.JSX.Element {
   const bandTokens = band ? BAND_TOKENS[band] : null
   const drivers = readiness.score?.drivers ?? []
   const state = readiness.uiState
+
+  // Filter Apple Health trends to the metrics Readiness looks at.
+  // Sorted so the ones that CONTRIBUTED today come first, then the
+  // ones the user has data for but weren't used, then the rest.
+  const readinessTrends: LongitudinalTrend[] = React.useMemo(() => {
+    const trends = (hkTrends ?? []).filter((t) => READINESS_HEALTHKIT_CODES.includes(t.metricCode))
+    return trends
+  }, [hkTrends])
 
   return (
     <AppWrapper>
@@ -211,6 +233,81 @@ export default function ReadinessScreen(): React.JSX.Element {
           </Section>
         )}
 
+        {/* Vishal 2026-08-05 — raw Apple Health data cards mirror the
+            Health Trends surface so users see today's actual values
+            alongside the Readiness composite. Only rendered when we
+            have any HealthKit trends for the 10 Readiness metrics. */}
+        {readinessTrends.length > 0 && (
+          <Section title="Your Apple Health data" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
+            {readinessTrends.map((t) => {
+              const sorted = [...t.dataPoints].sort((a, b) => a.date.localeCompare(b.date))
+              const latest = sorted[sorted.length - 1]
+              const unit = latest?.unit ?? ''
+              const dir = t.trendDirection
+              const dirIcon: 'trending-up' | 'trending-down' | 'trending-flat' | 'help-outline' =
+                dir === 'improving' ? 'trending-down' :
+                dir === 'worsening' ? 'trending-up' :
+                dir === 'stable' ? 'trending-flat' :
+                'help-outline'
+              const upIsGood = ['hk-steps', 'hk-active-energy', 'hk-exercise-time', 'hk-hrv', 'hk-sleep', 'hk-flights'].includes(t.metricCode)
+              let dirColor = '#6B7280'
+              if (dir === 'improving') dirColor = '#16A34A'
+              else if (dir === 'worsening') dirColor = '#DC2626'
+              if (upIsGood && (dir === 'improving' || dir === 'worsening')) {
+                const earliest = sorted[0]?.value ?? 0
+                const last = latest?.value ?? 0
+                dirColor = last > earliest ? '#16A34A' : last < earliest ? '#DC2626' : '#6B7280'
+              }
+              return (
+                <View key={t.id} style={styles.hkCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        color: colors.subtext as string,
+                        fontSize: getScaledFontSize(11),
+                        fontWeight: getScaledFontWeight(600) as any,
+                        letterSpacing: 0.3,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {t.metricName.toUpperCase()}
+                    </Text>
+                    <View style={styles.hkValueRow}>
+                      <Text
+                        style={{
+                          color: colors.text as string,
+                          fontSize: getScaledFontSize(22),
+                          fontWeight: getScaledFontWeight(700) as any,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {latest ? formatValue(latest.value) : '—'}
+                      </Text>
+                      {latest && unit ? (
+                        <Text
+                          style={{
+                            color: colors.subtext as string,
+                            fontSize: getScaledFontSize(12),
+                            marginLeft: 4,
+                          }}
+                        >
+                          {unit}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  <View style={styles.hkTrendChip}>
+                    <MaterialIcons name={dirIcon} size={16} color={dirColor} />
+                    <Text style={[styles.hkTrendText, { color: dirColor }]} numberOfLines={1}>
+                      {dir === 'insufficient_data' ? 'New' : dir.charAt(0).toUpperCase() + dir.slice(1)}
+                    </Text>
+                  </View>
+                </View>
+              )
+            })}
+          </Section>
+        )}
+
         {/* Why it matters */}
         <Section title="Why it matters" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
           <Text style={[styles.pText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
@@ -241,6 +338,13 @@ export default function ReadinessScreen(): React.JSX.Element {
       </ScrollView>
     </AppWrapper>
   )
+}
+
+function formatValue(v: number): string {
+  if (!Number.isFinite(v)) return '—'
+  if (Math.abs(v) >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 0 })
+  if (Math.abs(v) >= 10) return v.toFixed(0)
+  return v.toFixed(1)
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────
@@ -416,5 +520,34 @@ const styles = StyleSheet.create({
     color: '#687076',
     lineHeight: 16,
     marginTop: 24,
+  },
+  // Vishal 2026-08-05 — raw Apple Health value card, styled to match
+  // the driver rows so the two sections read as a family.
+  hkCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  hkValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 2,
+  },
+  hkTrendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+  },
+  hkTrendText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
 })
