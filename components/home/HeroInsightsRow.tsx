@@ -348,10 +348,14 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: 8,
+    // Vishal 2026-08-05: match Health Trends banner + appointments
+    // section horizontal edge (16pt) so all Home cards align.
+    marginHorizontal: 16,
     marginBottom: 12,
   },
   singleColumn: {
     // No flexDirection:row so the single tile stretches to fill container width.
+    marginHorizontal: 16,
     marginBottom: 12,
   },
   tile: {

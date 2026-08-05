@@ -4293,7 +4293,10 @@ const styles = StyleSheet.create({
   },
   appointmentsSection: {
     width: '100%',
-    paddingHorizontal: 24,
+    // Vishal 2026-08-05: was 24 — pulled to 16 so the section's
+    // banner + deck align to the same horizontal edge as the Health
+    // Trends banner (marginHorizontal: 16) and the HeroInsightsRow.
+    paddingHorizontal: 16,
     // SCRUM-279 (2026-06-08): Ken asked to reduce the gap between
     // Today's Appointments and Health Trends by 50%. Dropped
     // paddingBottom 20 → 8 + paddingTop 16 → 10.
