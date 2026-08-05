@@ -103,6 +103,10 @@ function WellbeingMapPreviewBase(): React.JSX.Element {
         />
       </View>
 
+      {/* Body wrapper mirrors ScoreTile.body — flex:1 centers the
+          Venn between the header and the footer so both tiles' main
+          content lands on the same vertical line. */}
+      <View style={styles.body}>
       <View
         style={styles.vennWrap}
         accessibilityElementsHidden
@@ -167,6 +171,7 @@ function WellbeingMapPreviewBase(): React.JSX.Element {
           </View>
         </View>
       </View>
+      </View>
 
       <View style={styles.footerRow}>
         <Text style={styles.footerLabel} numberOfLines={1}>
@@ -195,20 +200,29 @@ WellbeingMapPreview.displayName = 'WellbeingMapPreview'
 export default WellbeingMapPreview
 
 const styles = StyleSheet.create({
+  // Vishal 2026-08-05 — own outer chrome to match WellbeingScoreTile so
+  // the two side-by-side tiles align on title / body / footer baselines.
+  // Do NOT re-add outer padding from Home — the Home wrapper is now bare.
   strip: {
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: 'center',
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 148,
+    // Sections stack top-to-bottom: header, flex-1 body, footer.
+    // justifyContent isn't set here so the body's own flex:1 handles
+    // the vertical distribution (mirror of ScoreTile).
   },
   stripPressed: {
     opacity: 0.6,
   },
   headerRow: {
-    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
     marginBottom: 6,
   },
   headerLabel: {
@@ -216,6 +230,15 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#11181C',
     letterSpacing: 0,
+    flexShrink: 1,
+  },
+  // Flex-1 body wrapper that centers the Venn — mirrors ScoreTile.body
+  // so both tiles put their main content on the same vertical line.
+  body: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 6,
   },
   vennWrap: {
     height: VENN_H,

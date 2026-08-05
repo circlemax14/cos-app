@@ -3611,11 +3611,17 @@ export default function HomeScreen() {
          * dominating the surface.
          */}
         {injectionsEnabled && (
+          // Vishal 2026-08-05 — both tiles now own their outer chrome
+          // (same white background + border + 16pt radius + 148pt min
+          // height) so titles / main content / footer text align across
+          // the row. Home only supplies the flex gap. Do NOT re-wrap
+          // either tile in a padded View here — that reintroduces the
+          // asymmetric geometry.
           <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>
             <View style={{ flex: 1 }}>
               <WellbeingScoreTile />
             </View>
-            <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, minHeight: 148, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ flex: 1 }}>
               <WellbeingMapPreview />
             </View>
           </View>
