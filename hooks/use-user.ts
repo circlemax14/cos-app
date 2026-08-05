@@ -9,6 +9,20 @@ export interface UserProfile {
   termsAccepted: boolean;
   fastenConnected: boolean;
   dataReady: boolean;
+  /**
+   * SCRUM-660 (2026-08-05) — modern per-user entitlements from the
+   * SCRUM-600 resolver. Optional because the resolver ships DARK
+   * (PLAN_TIER_ENABLED=false); when the flag is off, the backend
+   * returns ['*'] (wildcard). Consumers should call `useCan(featureKey)`
+   * which fails-open (treats missing entitlements OR '*' as granted)
+   * so we don't break existing UX while SCRUM-600 rolls out.
+   *
+   * Shape: flat array of dotted feature.sub-permission strings, e.g.
+   *   ['home.readiness_score', 'plan.view', 'labs.export']
+   * Server field: /v1/auth/me → data.entitlements. Kept as `entitlements`
+   * on the FE type to mirror the wire shape.
+   */
+  entitlements?: string[];
 }
 
 export function useUser() {
@@ -31,4 +45,24 @@ export function useUser() {
 export function useHasService(service: string): boolean {
   const { data } = useUser();
   return data?.allowedServices?.includes(service) ?? false;
+}
+
+/**
+ * SCRUM-660 (2026-08-05) — check a SCRUM-600 entitlement. Fails OPEN
+ * (returns true) when the entitlements array is missing or empty so
+ * we don't hide UX for accounts on the pre-entitlements code path.
+ * Wildcard '*' grants everything (matches the resolver's SUPER_ADMIN
+ * + PLAN_TIER_ENABLED kill-switch semantics).
+ *
+ * Wire tile / route / button visibility to this once SCRUM-600 flips
+ * on. Today most consumers should still use
+ * `useIsFeatureEnabled(featureKey)` (SCRUM-148 legacy) since it's the
+ * currently active permission source.
+ */
+export function useCan(dottedKey: string): boolean {
+  const { data } = useUser();
+  const ents = data?.entitlements;
+  if (!ents || ents.length === 0) return true;
+  if (ents.includes('*')) return true;
+  return ents.includes(dottedKey);
 }

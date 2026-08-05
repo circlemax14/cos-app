@@ -41,6 +41,7 @@ import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
 import { useDailyRead } from '@/hooks/use-daily-read'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
+import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
 
 type Variant = 'compact' | 'large'
 
@@ -65,9 +66,25 @@ const DAILY_READ_TONES: Record<string, { fg: string; bg: string; label: string }
 
 // ─── Row shell ───────────────────────────────────────────────────────
 function HeroInsightsRowBase(): React.JSX.Element | null {
-  const readinessEnabled = useReadinessScoreFlag()
-  const healthAgeEnabled = useHealthAgeFlag()
-  const dailyReadEnabled = useDailyReadFlag()
+  // SCRUM-660 (2026-08-05) — two-layer gate per tile:
+  //   1. Global feature flag (readiness_score_enabled, ...) — dark-launch
+  //      kill switch. Ops flips this OFF to disable the tile fleet-wide.
+  //   2. Per-user feature permission (READINESS_SCORE, ...) — care-manager
+  //      opts individual patients out even when the global flag is on.
+  //   A tile is enabled ONLY when both layers say yes; either layer OFF
+  //   hides the tile. This preserves ops kill-switch semantics while
+  //   giving care managers per-patient control today AND leaves a clean
+  //   swap path for SCRUM-659 plan-derived entitlements later.
+  const readinessFlag = useReadinessScoreFlag()
+  const healthAgeFlag = useHealthAgeFlag()
+  const dailyReadFlag = useDailyReadFlag()
+  const readinessPerm = useIsFeatureEnabled('READINESS_SCORE')
+  const healthAgePerm = useIsFeatureEnabled('HEALTH_AGE')
+  const dailyReadPerm = useIsFeatureEnabled('DAILY_READ')
+
+  const readinessEnabled = readinessFlag && readinessPerm
+  const healthAgeEnabled = healthAgeFlag && healthAgePerm
+  const dailyReadEnabled = dailyReadFlag && dailyReadPerm
 
   // 2026-08-05 — warm the server-side wellbeing-score cache so the
   // Daily Read wellbeing pillar has data to read.
