@@ -162,6 +162,20 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        SCRUM-644 followup (2026-08-05) — Daily Read drilldown, same
+        pattern as Health Age above. Reached from the Home tile via
+        DailyReadCard onPress → router.push('/Home/daily-read'). Must
+        be href:null to keep it out of the bottom tab bar.
+      */}
+      <Tabs.Screen
+        name="daily-read"
+        options={{
+          title: 'Daily Read',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="today-schedule"
         options={{

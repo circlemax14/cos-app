@@ -3440,7 +3440,9 @@ export default function HomeScreen() {
             failure mode on cold start). Card is ALSO self-gated on the
             flag (defense in depth) and copy is HONEST placeholder
             pending Ken clinical + design sign-off. */}
-        {dailyReadEnabled && <DailyReadCard />}
+        {dailyReadEnabled && (
+          <DailyReadCard onPress={() => router.push('/Home/daily-read' as never)} />
+        )}
         {/*
          * SCRUM-653 title row — one of two variants selected by
          * HOME_V2_INJECTIONS_ENABLED:
