@@ -139,6 +139,15 @@ export default function ReadinessScreen(): React.JSX.Element {
                   Still learning your baseline — score gets more accurate as more days accrue.
                 </Text>
               )}
+              {readiness.debug?.usedRecentFallback && (
+                <Text style={styles.heroCaveat}>
+                  Score based on your most recent sync
+                  {readiness.debug?.todayIsoUsed
+                    ? ` (${formatFallbackAge(readiness.debug.todayIsoLocal, readiness.debug.todayIsoUsed)})`
+                    : ''}
+                  . Wear your Apple Watch or open the Health app to refresh.
+                </Text>
+              )}
             </>
           ) : (
             <>
@@ -394,6 +403,18 @@ function formatValue(v: number): string {
   if (Math.abs(v) >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 0 })
   if (Math.abs(v) >= 10) return v.toFixed(0)
   return v.toFixed(1)
+}
+
+// Vishal 2026-08-05 — friendly age label for the 48h fallback caveat.
+// Both inputs are LOCAL-day ISO strings (YYYY-MM-DD).
+function formatFallbackAge(todayIso: string, usedIso: string): string {
+  if (!todayIso || !usedIso || todayIso === usedIso) return 'today'
+  const todayMs = new Date(`${todayIso}T00:00:00`).getTime()
+  const usedMs = new Date(`${usedIso}T00:00:00`).getTime()
+  const days = Math.round((todayMs - usedMs) / (1000 * 60 * 60 * 24))
+  if (days === 1) return 'yesterday'
+  if (days > 1) return `${days} days ago`
+  return usedIso
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────

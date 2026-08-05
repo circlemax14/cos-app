@@ -152,6 +152,14 @@ export interface ReadinessDebugSnapshot {
   todayIsoUtc: string
   todayFound: boolean
   todayHasAnyMetric: boolean
+  // Vishal 2026-08-05 — 48h "recent" fallback fields. When today's
+  // exact bucket is empty (Watch hasn't synced yet this morning), we
+  // fall back to the most-recent bucket within 48h so a score renders.
+  // `todayIsoUsed` is the ISO date actually scored as "today"; equal
+  // to `todayIsoLocal` when no fallback used. `usedRecentFallback` is
+  // the boolean that FE surfaces as a caveat on the Readiness hero.
+  todayIsoUsed?: string
+  usedRecentFallback?: boolean
 }
 
 /**
@@ -351,9 +359,38 @@ async function fetchReadinessInputs(): Promise<{
   // every evening user. See SCRUM-664 / OTA 7701237b post-mortem.
   const todayIso = localDayIso(new Date())
   const sortedDates = Array.from(byDate.keys()).sort() // ISO strings sort chronologically
-  const today = byDate.get(todayIso)
+
+  // Vishal 2026-08-05 — 48h "recent" fallback for today. If today's
+  // exact bucket is empty (Watch hasn't synced this morning yet), use
+  // the most-recent bucket within the last 48h instead. Keeps the
+  // score renderable through the common "woke up, Watch charging"
+  // gap. Falls through gracefully when even that's stale (>48h → no
+  // score, existing empty-state path). The staleness gets surfaced in
+  // debug.todayIsoFallback so the FE can annotate "score based on your
+  // most recent sync (yesterday)" without recomputing.
+  const RECENT_FALLBACK_HOURS = 48
+  const todayExact = byDate.get(todayIso)
+  let today = todayExact
+  let todayIsoUsed = todayIso
+  let usedFallback = false
+  if (!todayExact) {
+    // Walk backwards through sortedDates until we find one within 48h of now.
+    const nowMs = new Date().getTime()
+    for (let i = sortedDates.length - 1; i >= 0; i--) {
+      const candidate = sortedDates[i]
+      if (candidate >= todayIso) continue // skip today (already checked) + any future date
+      const candidateMs = new Date(`${candidate}T12:00:00`).getTime() // local noon of that day
+      const ageHours = (nowMs - candidateMs) / (1000 * 60 * 60)
+      if (ageHours > 0 && ageHours <= RECENT_FALLBACK_HOURS) {
+        today = byDate.get(candidate)
+        todayIsoUsed = candidate
+        usedFallback = true
+        break
+      }
+    }
+  }
   const baseline = sortedDates
-    .filter((d) => d !== todayIso)
+    .filter((d) => d !== todayIsoUsed)
     .map((d) => byDate.get(d))
     .filter((d): d is DailyReadinessMetrics => d !== undefined)
 
@@ -380,6 +417,11 @@ async function fetchReadinessInputs(): Promise<{
     todayIsoLocal: todayIso,
     todayIsoUtc: new Date().toISOString().slice(0, 10),
     todayFound: today !== undefined,
+    // Vishal 2026-08-05 — 48h recent fallback in use? If yes, screens
+    // can annotate the hero with "Score based on your most recent
+    // sync (<date>)" instead of the strict "today" message.
+    todayIsoUsed,
+    usedRecentFallback: usedFallback,
     // 2026-08-05 (Vishal) — expanded to the full adaptive metric universe.
     todayHasAnyMetric: today !== undefined && (
       today.hrvMs !== undefined || today.sleepHours !== undefined ||
