@@ -47,6 +47,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
+import { HabitsBanner } from '@/components/health-plan/HabitsBanner';
 import { TryNewPlanCta } from '@/components/health-plan/TryNewPlanCta';
 import { ViewBioInsightsLink } from '@/components/health-plan/ViewBioInsightsLink';
 import { SubdomainChipRow } from '@/components/health-plan/SubdomainChip';
@@ -298,6 +299,15 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
     >
       {/* Soft, recurring "review your medications" prompt — self-gates internally. */}
       <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
+
+      {/* SCRUM-659 Story 4 (2026-08-05) — Habits banner. Self-gates on
+          useHabitsInPlanFlag; renders null when flag OFF. Placed at the
+          TOP of the plan surface (above the "Personalize" banner + the
+          category cards) so it's the most discoverable entry point to
+          the /Home/habits CRUD screen. Mirrors the mount on
+          app/Home/unified-plan.tsx so the banner shows regardless of
+          which plan screen the Care Plan tab currently routes to. */}
+      <HabitsBanner />
 
       {needsAssessment ? (
         <Pressable
