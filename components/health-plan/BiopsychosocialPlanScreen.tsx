@@ -2035,16 +2035,15 @@ export function BiopsychosocialPlanScreen({
 
         {/* SCRUM-659 Story 4 (2026-08-05) — Habits banner directly below
             the AI summary, styled to match the WellbeingMap card
-            treatment (tint background + border, iconic left affordance,
-            title/subtitle, chevron). Self-gates on useHabitsInPlanFlag
-            so flag OFF is byte-identical to today's surface. */}
-        <View style={{ paddingHorizontal: Spacing.md }}>
-          <HabitsBanner
-            colors={colors as unknown as Record<string, string>}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
-        </View>
+            treatment. Mounted WITHOUT an extra padding wrapper so it
+            inherits the parent ScrollView's horizontal padding — this
+            makes it byte-width-matched to the WellbeingMap card + the
+            BPS section cards below it. */}
+        <HabitsBanner
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
         {/*
           CHUNK 51: read-only "Here's what you'll be notified about"
