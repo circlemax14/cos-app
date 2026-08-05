@@ -176,6 +176,19 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        SCRUM-659 Story 4 (2026-08-05) — Habits CRUD screen, reached
+        from the HabitsBanner on the unified-plan surface. Same
+        href:null discipline as the other drilldowns.
+      */}
+      <Tabs.Screen
+        name="habits"
+        options={{
+          title: 'Habits',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="today-schedule"
         options={{

@@ -5,6 +5,7 @@ import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
+import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
@@ -82,6 +83,7 @@ export function ProfileContent({
   // only when backend flag `habit_journal_enabled` (or the per-user
   // beta override) resolves to true.
   const habitJournalEnabled = useHabitJournalFlag();
+  const habitsInPlanFlagEnabled = useHabitsInPlanFlag();
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
@@ -269,17 +271,24 @@ export function ProfileContent({
               getScaledFontWeight={getScaledFontWeight}
             />
             {/*
-              SCRUM-640 — Daily habits entry (dark-launched). Only shown
-              when `habit_journal_enabled` resolves true — either via the
-              fleet-wide SSM key or per-user via SCRUM-663 beta override
-              (`habit_journal_enabled_beta`). While flag is OFF, this row
-              is not mounted so there is no discovery path to the screen.
+              SCRUM-640 → SCRUM-659 Story 5 (2026-08-05) — Habits entry.
+              When habits_in_plan_enabled is ON, this row still exists
+              as a shortcut but routes to the new /Home/habits CRUD
+              screen (the primary discovery path is now the Plan
+              banner). When habits_in_plan_enabled is OFF but the older
+              habit_journal_enabled is still ON, the row points to the
+              legacy /Home/habit-journal daily check-in screen. When
+              both flags are OFF, the row is not mounted.
             */}
-            {habitJournalEnabled && (
+            {(habitsInPlanFlagEnabled || habitJournalEnabled) && (
               <DrawerRow
                 iconName="check-circle-outline"
-                label="Daily habits"
-                onPress={() => router.push('/Home/habit-journal' as never)}
+                label={habitsInPlanFlagEnabled ? 'Habits' : 'Daily habits'}
+                onPress={() =>
+                  router.push(
+                    (habitsInPlanFlagEnabled ? '/Home/habits' : '/Home/habit-journal') as never,
+                  )
+                }
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}

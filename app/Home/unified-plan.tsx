@@ -35,6 +35,7 @@ import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { UnifiedSectionCard } from '@/components/unified-plan/UnifiedSectionCard';
 import { ClassicViewLink } from '@/components/unified-plan/ClassicViewLink';
+import { HabitsBanner } from '@/components/health-plan/HabitsBanner';
 import {
   UNIFIED_SECTION_META,
   UNIFIED_SECTION_ORDER,
@@ -386,6 +387,13 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
               </Text>
             </Pressable>
           )}
+        </View>
+
+        {/* SCRUM-659 Story 4 — Habits banner ABOVE the BPS section cards.
+            Self-gated on useHabitsInPlanFlag; renders null when flag OFF
+            so the pre-Story-4 layout is byte-identical. Tap → /Home/habits. */}
+        <View style={{ paddingHorizontal: Spacing.md, marginTop: Spacing.sm }}>
+          <HabitsBanner />
         </View>
 
         {/* Section cards */}
