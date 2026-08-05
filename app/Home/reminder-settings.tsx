@@ -133,6 +133,21 @@ const CATEGORY_SPECS: Record<NotificationCategory, CategorySpec> = {
     subtitle: 'Alerts for non-medication plan tasks (exercise, check-ins)',
     iconName: 'check-circle-outline',
   },
+  // SCRUM-641 (2026-08-04) — Proactive Nudges category toggle.
+  nudges: {
+    key: 'nudges',
+    title: 'Proactive nudges',
+    subtitle: 'AI-informed prompts when a signal drops (readiness, mood, streak breaks)',
+    iconName: 'psychology',
+  },
+  // SCRUM-659 (2026-08-05) — Habit reminders. Cadence-driven dispatch
+  // via a scheduled sweeper (SCRUM-666 follow-up wires the actual cron).
+  habits: {
+    key: 'habits',
+    title: 'Habit reminders',
+    subtitle: 'Daily nudges for the habits on your plan (walk, hydrate, mindfulness, etc.)',
+    iconName: 'repeat',
+  },
 }
 
 /**

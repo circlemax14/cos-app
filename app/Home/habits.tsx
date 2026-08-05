@@ -151,7 +151,15 @@ export default function HabitsScreen(): React.JSX.Element {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              // SCRUM-659 (Vishal 2026-08-05): always route back to the
+              // Care Plan screen — the only place from which the banner
+              // launches this screen. router.back() would fall through
+              // to the Home tab's root (index.tsx) because this route
+              // is registered href:null in the tab layout, so we
+              // explicitly replace with the plan route.
+              router.replace('/Home/health-plan' as never)
+            }}
             accessibilityRole="button"
             accessibilityLabel="Go back"
             hitSlop={12}
