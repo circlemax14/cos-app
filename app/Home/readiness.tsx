@@ -233,6 +233,55 @@ export default function ReadinessScreen(): React.JSX.Element {
           </Section>
         )}
 
+        {/* Vishal 2026-08-05 followup — diagnostic when score is undefined.
+            Explains WHY the score didn't compute (below 7-day baseline,
+            fewer than 2 metrics eligible, today not synced, etc.). */}
+        {typeof composite !== 'number' && (
+          <Section title="Why no score today" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
+            <View style={styles.hkCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text as string, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                  Baseline history: {readiness.score?.baselineDays ?? 0} days
+                </Text>
+                <Text style={{ color: colors.subtext as string, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                  {(readiness.score?.baselineDays ?? 0) >= 7
+                    ? '≥7 days ✓ — baseline is enough'
+                    : 'Need ≥7 days for any score.'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.hkCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text as string, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                  Today's HealthKit sync
+                </Text>
+                <Text style={{ color: colors.subtext as string, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                  {readiness.debug?.todayFound
+                    ? readiness.debug?.todayHasAnyMetric
+                      ? 'Today\'s bucket has data ✓'
+                      : `Bucket exists (${readiness.debug?.todayIsoLocal}) but no metric values landed today.`
+                    : `No data yet for today (${readiness.debug?.todayIsoLocal}). Wear your Apple Watch or wait for the next sync.`}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.hkCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text as string, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                  Eligible metrics today: {drivers.length} / 10
+                </Text>
+                <Text style={{ color: colors.subtext as string, fontSize: getScaledFontSize(12), marginTop: 2 }}>
+                  {drivers.length >= 2
+                    ? '≥2 metrics ✓ — score should render. Try pull-to-refresh.'
+                    : `Need ≥2 metrics with BOTH today's value AND baseline of ≥7 days (with variation, so z-score can compute). Currently ${drivers.length} eligible.`}
+                </Text>
+              </View>
+            </View>
+            <Text style={{ color: colors.subtext as string, fontSize: getScaledFontSize(11), marginTop: 6, lineHeight: 16 }}>
+              A metric is dropped if its baseline has zero variation (all readings identical — rare for real data) or if today's value hasn't synced yet. Long-press the Readiness tile on Home for the full debug snapshot.
+            </Text>
+          </Section>
+        )}
+
         {/* Vishal 2026-08-05 — raw Apple Health data cards mirror the
             Health Trends surface so users see today's actual values
             alongside the Readiness composite. Only rendered when we
