@@ -123,7 +123,10 @@ function ReadinessTile({ variant }: { variant: Variant }): React.JSX.Element {
     <Tile
       variant={variant}
       label="Readiness"
-      onPress={() => router.push('/Home/apple-health' as never)}
+      // Vishal 2026-08-05: tap → /Home/readiness info screen (was
+      // /Home/apple-health which felt jarring — jumping to a raw
+      // permissions surface from an insight card).
+      onPress={() => router.push('/Home/readiness' as never)}
       accessibilityLabel={
         hasScore
           ? `Readiness ${composite}${bandTokens ? ', ' + bandTokens.label : ''}`

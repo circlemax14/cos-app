@@ -189,6 +189,20 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        SCRUM-638 followup (Vishal 2026-08-05) — Readiness info/detail
+        screen. Reached from the Readiness hero tile (compact) or the
+        full-width ReadinessScoreCard (large variant). Same href:null
+        discipline as the other drilldowns.
+      */}
+      <Tabs.Screen
+        name="readiness"
+        options={{
+          title: 'Readiness',
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="today-schedule"
         options={{
