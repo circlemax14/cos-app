@@ -56,6 +56,7 @@ import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './Se
 // Imports removed to silence unused-var warnings; the standalone route
 // re-imports them from their canonical paths.
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
+import { HabitsBanner } from './HabitsBanner';
 // SCRUM-655: BpsTodayHeroCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand. Import removed here
 // so the linter doesn't flag it as unused; add back if a future change
@@ -1768,6 +1769,16 @@ export function BiopsychosocialPlanScreen({
           isEmpty={wellbeing.isEmpty}
           tasks={todayTasks}
         />
+
+        {/* SCRUM-659 Story 4 (2026-08-05) — Habits banner above the BPS
+            section cards on the biopsychosocial plan surface. Self-gates
+            on useHabitsInPlanFlag so flag OFF is byte-identical. Third
+            mount site (also on unified-plan.tsx + PlanScreenRedesignedV2.tsx)
+            so the banner shows regardless of which plan renderer the
+            Care Plan tab currently dispatches to. */}
+        <View style={{ paddingHorizontal: Spacing.md, marginTop: Spacing.sm }}>
+          <HabitsBanner />
+        </View>
 
         {/*
           SCRUM-640 (2026-08-04): Habit correlation strip. Dark-launched:
