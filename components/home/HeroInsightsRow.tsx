@@ -1,35 +1,32 @@
 /**
  * components/home/HeroInsightsRow.tsx — 2026-08-05 design update
  *
- * Compact row of three daily-insights tiles at the top of Home:
+ * Row of daily-insights tiles at the top of Home:
  *   Readiness  ·  Health Age  ·  Daily Read
  *
- * Replaces the three full-width cards that lived stacked at the top of
- * Home. Each tile mirrors the WellbeingScoreTile pattern (big number +
- * band chip + tiny label + chevron) so the visual language across all
- * hero tiles on Home is uniform.
+ * PERMISSION-ADAPTIVE LAYOUT (Vishal, 2026-08-05):
+ *   - 0 enabled → returns null (row hidden entirely)
+ *   - 1 enabled → renders as a single FULL-WIDTH CARD (variant='large')
+ *   - 2 enabled → row of 2 tiles side-by-side (flex:1 splits width)
+ *   - 3 enabled → row of 3 tiles side-by-side (current)
+ *
+ *   Enablement today = the tile's feature flag
+ *   (readiness_score_enabled / health_age_enabled / daily_read_enabled),
+ *   read via the existing hooks. Wiring these to per-user Care Plan
+ *   entitlements is tracked separately (SCRUM-659 line + a follow-up).
+ *   Swapping the source is a single line per tile.
  *
  * DATA:
- *   Each tile self-fetches via its existing hook — ReadinessScoreTile
- *   uses useReadinessDerivation, HealthAgeTile uses useHealthAge,
- *   DailyReadTile uses useDailyRead. No new endpoints; this is a pure
- *   layout / visual redesign.
+ *   Each tile self-fetches via its existing hook. No new endpoints;
+ *   this is a pure layout / visual redesign.
  *
  * TAP:
- *   Readiness → /Home/apple-health (existing "connect" surface — no
- *               dedicated readiness detail yet).
+ *   Readiness → /Home/apple-health (existing "connect" surface).
  *   Health Age → /Home/health-age.
  *   Daily Read → /Home/daily-read.
  *
- * FLAG GATING:
- *   Each tile is individually flag-gated; when its flag is off the tile
- *   renders nothing and the row lays out the remaining tiles evenly
- *   (flex:1 per tile). The parent Home is responsible for hiding the
- *   whole row if every tile inside would be off.
- *
  * iOS 26.5-hardened envelope: pure View / Text / Pressable /
- * MaterialIcons / StyleSheet. No Animated / LayoutAnimation /
- * ActivityIndicator.
+ * MaterialIcons / StyleSheet.
  */
 
 import React from 'react'
@@ -44,6 +41,8 @@ import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
 import { useDailyRead } from '@/hooks/use-daily-read'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
+
+type Variant = 'compact' | 'large'
 
 // ─── Band-color tokens (WCAG-AA) ─────────────────────────────────────
 const READINESS_BANDS: Record<string, { fg: string; bg: string; label: string }> = {
@@ -71,19 +70,21 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   const dailyReadEnabled = useDailyReadFlag()
 
   // 2026-08-05 — warm the server-side wellbeing-score cache so the
-  // Daily Read wellbeing pillar has data to read. Only when Daily Read
-  // is enabled for this user; the tile itself uses a separate client
-  // aggregation and doesn't need this warmer.
+  // Daily Read wellbeing pillar has data to read.
   useWellbeingScoreWarmer(dailyReadEnabled)
 
-  const anyEnabled = readinessEnabled || healthAgeEnabled || dailyReadEnabled
-  if (!anyEnabled) return null
+  const enabledCount =
+    (readinessEnabled ? 1 : 0) + (healthAgeEnabled ? 1 : 0) + (dailyReadEnabled ? 1 : 0)
+
+  if (enabledCount === 0) return null
+
+  const variant: Variant = enabledCount === 1 ? 'large' : 'compact'
 
   return (
-    <View style={styles.row}>
-      {readinessEnabled && <ReadinessTile />}
-      {healthAgeEnabled && <HealthAgeTile />}
-      {dailyReadEnabled && <DailyReadTile />}
+    <View style={variant === 'large' ? styles.singleColumn : styles.row}>
+      {readinessEnabled && <ReadinessTile variant={variant} />}
+      {healthAgeEnabled && <HealthAgeTile variant={variant} />}
+      {dailyReadEnabled && <DailyReadTile variant={variant} />}
     </View>
   )
 }
@@ -92,8 +93,8 @@ export const HeroInsightsRow = React.memo(HeroInsightsRowBase)
 HeroInsightsRow.displayName = 'HeroInsightsRow'
 export default HeroInsightsRow
 
-// ─── Readiness compact tile ──────────────────────────────────────────
-function ReadinessTile(): React.JSX.Element {
+// ─── Readiness tile ──────────────────────────────────────────────────
+function ReadinessTile({ variant }: { variant: Variant }): React.JSX.Element {
   const flag = useReadinessScoreFlag()
   const readiness = useReadinessDerivation(flag)
   const composite = readiness.score?.composite
@@ -103,6 +104,7 @@ function ReadinessTile(): React.JSX.Element {
 
   return (
     <Tile
+      variant={variant}
       label="Readiness"
       onPress={() => router.push('/Home/apple-health' as never)}
       accessibilityLabel={
@@ -112,17 +114,24 @@ function ReadinessTile(): React.JSX.Element {
       }
       body={
         hasScore ? (
-          <Ready number={composite as number} chip={bandTokens} />
+          <Ready number={composite as number} chip={bandTokens} variant={variant} />
         ) : (
-          <Empty hint="Waiting for HRV / sleep" />
+          <Empty
+            hint={
+              variant === 'large'
+                ? 'Connect Apple Health so we can compute HRV, sleep, and heart-rate readings for your daily readiness score.'
+                : 'Waiting for HRV / sleep'
+            }
+            variant={variant}
+          />
         )
       }
     />
   )
 }
 
-// ─── Health Age compact tile ─────────────────────────────────────────
-function HealthAgeTile(): React.JSX.Element {
+// ─── Health Age tile ─────────────────────────────────────────────────
+function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
   const flag = useHealthAgeFlag()
   const { data } = useHealthAge(flag)
   const overall = data?.overall ?? null
@@ -131,6 +140,7 @@ function HealthAgeTile(): React.JSX.Element {
 
   return (
     <Tile
+      variant={variant}
       label="Health Age"
       onPress={() => router.push('/Home/health-age' as never)}
       accessibilityLabel={
@@ -140,20 +150,26 @@ function HealthAgeTile(): React.JSX.Element {
       }
       body={
         hasScore ? (
-          <Ready number={Math.round(overall as number)} chip={bandTokens} />
+          <Ready number={Math.round(overall as number)} chip={bandTokens} variant={variant} />
         ) : (
-          <Empty hint="Connect labs" />
+          <Empty
+            hint={
+              variant === 'large'
+                ? 'Connect your labs through Fasten so we can estimate your health age from recent biomarkers.'
+                : 'Connect labs'
+            }
+            variant={variant}
+          />
         )
       }
     />
   )
 }
 
-// ─── Daily Read compact tile ─────────────────────────────────────────
-function DailyReadTile(): React.JSX.Element {
+// ─── Daily Read tile ─────────────────────────────────────────────────
+function DailyReadTile({ variant }: { variant: Variant }): React.JSX.Element {
   const flag = useDailyReadFlag()
   const { data, isError } = useDailyRead(flag)
-  // Ready count = pillars whose state === 'ready'
   const readyCount = (data?.pillars ?? []).filter((p) => p.state === 'ready').length
   const totalCount = (data?.pillars ?? []).length
   const tone = data?.headline.tone ?? null
@@ -162,6 +178,7 @@ function DailyReadTile(): React.JSX.Element {
 
   return (
     <Tile
+      variant={variant}
       label="Daily Read"
       onPress={() => router.push('/Home/daily-read' as never)}
       accessibilityLabel={
@@ -171,9 +188,22 @@ function DailyReadTile(): React.JSX.Element {
       }
       body={
         isEmpty ? (
-          <Empty hint="Connect a signal" />
+          <Empty
+            hint={
+              variant === 'large'
+                ? 'Once at least one of your signals has data, the daily read will summarize it for you.'
+                : 'Connect a signal'
+            }
+            variant={variant}
+          />
         ) : (
-          <DailyReadBody toneTokens={toneTokens} readyCount={readyCount} totalCount={totalCount} />
+          <DailyReadBody
+            toneTokens={toneTokens}
+            readyCount={readyCount}
+            totalCount={totalCount}
+            headlineText={data?.headline.text}
+            variant={variant}
+          />
         )
       }
     />
@@ -182,12 +212,15 @@ function DailyReadTile(): React.JSX.Element {
 
 // ─── Shared tile shell ───────────────────────────────────────────────
 interface TileProps {
+  variant: Variant
   label: string
   onPress: () => void
   accessibilityLabel: string
   body: React.ReactNode
 }
-function Tile({ label, onPress, accessibilityLabel, body }: TileProps): React.JSX.Element {
+function Tile({ variant, label, onPress, accessibilityLabel, body }: TileProps): React.JSX.Element {
+  const tileStyle = variant === 'large' ? styles.tileLarge : styles.tile
+  const headerLabelStyle = variant === 'large' ? styles.headerLabelLarge : styles.headerLabel
   return (
     <Pressable
       onPress={onPress}
@@ -195,15 +228,15 @@ function Tile({ label, onPress, accessibilityLabel, body }: TileProps): React.JS
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Opens details"
       hitSlop={4}
-      style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+      style={({ pressed }) => [tileStyle, pressed && styles.tilePressed]}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.headerLabel} numberOfLines={1}>
+        <Text style={headerLabelStyle} numberOfLines={1}>
           {label}
         </Text>
         <MaterialIcons
           name="chevron-right"
-          size={16}
+          size={variant === 'large' ? 20 : 16}
           color="#687076"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
@@ -215,10 +248,19 @@ function Tile({ label, onPress, accessibilityLabel, body }: TileProps): React.JS
 }
 
 // ─── Body sub-components ─────────────────────────────────────────────
-function Ready({ number, chip }: { number: number; chip: { fg: string; bg: string; label: string } | null }): React.JSX.Element {
+function Ready({
+  number,
+  chip,
+  variant,
+}: {
+  number: number
+  chip: { fg: string; bg: string; label: string } | null
+  variant: Variant
+}): React.JSX.Element {
+  const scoreStyle = variant === 'large' ? styles.scoreNumberLarge : styles.scoreNumber
   return (
     <View style={styles.body}>
-      <Text style={styles.scoreNumber} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+      <Text style={scoreStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {number}
       </Text>
       {chip && (
@@ -236,16 +278,30 @@ function DailyReadBody({
   toneTokens,
   readyCount,
   totalCount,
+  headlineText,
+  variant,
 }: {
   toneTokens: { fg: string; bg: string; label: string } | null
   readyCount: number
   totalCount: number
+  headlineText: string | undefined
+  variant: Variant
 }): React.JSX.Element {
+  const toneStyle = variant === 'large' ? styles.toneWordLarge : styles.toneWord
   return (
     <View style={styles.body}>
-      <Text style={styles.toneWord} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+      <Text style={toneStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {toneTokens?.label ?? 'READY'}
       </Text>
+      {variant === 'large' && headlineText ? (
+        <Text
+          style={styles.headlineText}
+          numberOfLines={2}
+          maxFontSizeMultiplier={1.3}
+        >
+          {headlineText}
+        </Text>
+      ) : null}
       <Text style={styles.subtle} numberOfLines={1} maxFontSizeMultiplier={1.2}>
         {readyCount} of {totalCount} signals
       </Text>
@@ -253,13 +309,14 @@ function DailyReadBody({
   )
 }
 
-function Empty({ hint }: { hint: string }): React.JSX.Element {
+function Empty({ hint, variant }: { hint: string; variant: Variant }): React.JSX.Element {
+  const bigStyle = variant === 'large' ? styles.emptyBigLarge : styles.emptyBig
   return (
     <View style={styles.body}>
-      <Text style={styles.emptyBig} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+      <Text style={bigStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         —
       </Text>
-      <Text style={styles.subtle} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+      <Text style={styles.subtle} numberOfLines={variant === 'large' ? 3 : 2} maxFontSizeMultiplier={1.2}>
         {hint}
       </Text>
     </View>
@@ -273,6 +330,10 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 12,
   },
+  singleColumn: {
+    // No flexDirection:row so the single tile stretches to fill container width.
+    marginBottom: 12,
+  },
   tile: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -282,6 +343,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
     minHeight: 118,
+  },
+  tileLarge: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 180,
   },
   tilePressed: { opacity: 0.7 },
   headerRow: {
@@ -297,6 +367,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     flexShrink: 1,
   },
+  headerLabelLarge: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#11181C',
+    letterSpacing: 0,
+    flexShrink: 1,
+  },
   body: {
     flex: 1,
     alignItems: 'center',
@@ -309,12 +386,33 @@ const styles = StyleSheet.create({
     color: '#11181C',
     lineHeight: 40,
   },
+  scoreNumberLarge: {
+    fontSize: 56,
+    fontWeight: '700',
+    color: '#11181C',
+    lineHeight: 64,
+  },
   toneWord: {
     fontSize: 18,
     fontWeight: '700',
     color: '#11181C',
     letterSpacing: 0.4,
     marginBottom: 4,
+  },
+  toneWordLarge: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#11181C',
+    letterSpacing: 0.4,
+    marginBottom: 6,
+  },
+  headlineText: {
+    fontSize: 14,
+    color: '#3D444C',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 6,
+    paddingHorizontal: 8,
   },
   chip: {
     marginTop: 6,
@@ -334,10 +432,17 @@ const styles = StyleSheet.create({
     color: '#C7CBD1',
     lineHeight: 40,
   },
+  emptyBigLarge: {
+    fontSize: 56,
+    fontWeight: '700',
+    color: '#C7CBD1',
+    lineHeight: 64,
+  },
   subtle: {
     fontSize: 11,
     color: '#687076',
     textAlign: 'center',
     marginTop: 4,
+    paddingHorizontal: 4,
   },
 })
