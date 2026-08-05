@@ -1770,16 +1770,6 @@ export function BiopsychosocialPlanScreen({
           tasks={todayTasks}
         />
 
-        {/* SCRUM-659 Story 4 (2026-08-05) — Habits banner above the BPS
-            section cards on the biopsychosocial plan surface. Self-gates
-            on useHabitsInPlanFlag so flag OFF is byte-identical. Third
-            mount site (also on unified-plan.tsx + PlanScreenRedesignedV2.tsx)
-            so the banner shows regardless of which plan renderer the
-            Care Plan tab currently dispatches to. */}
-        <View style={{ paddingHorizontal: Spacing.md, marginTop: Spacing.sm }}>
-          <HabitsBanner />
-        </View>
-
         {/*
           SCRUM-640 (2026-08-04): Habit correlation strip. Dark-launched:
           renders null when `habit_journal_enabled` is OFF (default) OR
@@ -2042,6 +2032,19 @@ export function BiopsychosocialPlanScreen({
             />
           )
         )}
+
+        {/* SCRUM-659 Story 4 (2026-08-05) — Habits banner directly below
+            the AI summary, styled to match the WellbeingMap card
+            treatment (tint background + border, iconic left affordance,
+            title/subtitle, chevron). Self-gates on useHabitsInPlanFlag
+            so flag OFF is byte-identical to today's surface. */}
+        <View style={{ paddingHorizontal: Spacing.md }}>
+          <HabitsBanner
+            colors={colors as unknown as Record<string, string>}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+        </View>
 
         {/*
           CHUNK 51: read-only "Here's what you'll be notified about"
