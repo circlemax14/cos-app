@@ -282,6 +282,7 @@ export default function IntakeWizardScreen() {
             value={currentValue}
             onChange={onChangeAnswer}
             invalid={invalidKey === current.key}
+            allAnswers={draft}
           />
           <View style={styles.actions}>
             <Pressable

@@ -118,11 +118,15 @@ const GROUP_SPECS: readonly GroupSpec[] = [
     title: 'Demographics',
     icon: 'person',
     color: '#0891B2',
-    keys: ['sex_at_birth', 'height_in', 'weight_lb'],
+    // SCRUM-659 followup (Ken 2026-07-31): add race_ethnicity + blood_type.
+    keys: ['sex_at_birth', 'race_ethnicity', 'blood_type', 'height_in', 'weight_lb'],
   },
   {
     id: 'conditions-meds',
-    title: 'Conditions & medications',
+    // Ken 2026-07-31 — was "Conditions & medications" → sharpen the
+    // medical-vs-mental-health split. Mental-health meds live in the
+    // Mental health group below.
+    title: 'Medical conditions & medications',
     icon: 'medical-services',
     color: '#199C4F',
     keys: [
@@ -167,7 +171,10 @@ const GROUP_SPECS: readonly GroupSpec[] = [
     color: '#7B3FE4',
     // Screener keys (phq2_*, gad2_*, pss4_*) are intentionally omitted —
     // they surface via scoreBlocks below, not as raw rows.
-    keys: ['mental_health_dx', 'mental_health_treatment', 'coping_strategies'],
+    // SCRUM-659 followup (Ken 2026-07-31): add mental_health_medications
+    // between dx and treatment so the psychotropic list reads as the
+    // canonical pair with the diagnoses it links to.
+    keys: ['mental_health_dx', 'mental_health_medications', 'mental_health_treatment', 'coping_strategies'],
   },
   {
     id: 'social-support',
@@ -265,6 +272,16 @@ export function formatAnswer(
       return String(v);
     case 'single':
     case 'scale': {
+      // SCRUM-659 followup — { choice, specify } shape for
+      // race_ethnicity when Multiple/Other is selected. Format as
+      // "Multiple ethnicity / Other: Filipino & Vietnamese".
+      if (typeof v === 'object' && v !== null && !Array.isArray(v) && 'choice' in v) {
+        const wrapped = v as { choice: string; specify?: string };
+        const opt = q.options?.find((o) => String(o.value) === String(wrapped.choice));
+        const chosenLabel = opt?.label ?? String(wrapped.choice);
+        const specify = typeof wrapped.specify === 'string' ? wrapped.specify.trim() : '';
+        return specify ? `${chosenLabel}: ${specify}` : chosenLabel;
+      }
       const opt = q.options?.find(o => o.value === v);
       return opt ? opt.label : String(v);
     }
@@ -281,8 +298,14 @@ export function formatAnswer(
         .map(item => {
           if (typeof item === 'string') return item;
           if (typeof item === 'object' && item !== null && 'label' in item) {
-            const rec = item as { label: string; note?: string };
-            return rec.note ? `${rec.label} (${rec.note})` : rec.label;
+            const rec = item as { label: string; note?: string; linkedIds?: string[] };
+            // SCRUM-659 followup — surface linkedIds inline so the
+            // report reads "Metformin (500mg) — treats: Type 2 diabetes".
+            const linkedText = rec.linkedIds && rec.linkedIds.length > 0
+              ? ` — treats: ${rec.linkedIds.join(', ')}`
+              : '';
+            const head = rec.note ? `${rec.label} (${rec.note})` : rec.label;
+            return `${head}${linkedText}`;
           }
           return '';
         })
@@ -403,8 +426,12 @@ const CLINICAL_LABEL: Record<string, string> = {
   height_in: 'Height',
   weight_lb: 'Weight',
   sex_at_birth: 'Sex at birth',
+  // SCRUM-659 followup (Ken 2026-07-31): demographic additions.
+  race_ethnicity: 'Race / ethnicity',
+  blood_type: 'Blood type',
   age_bracket: 'Age',
-  conditions: 'Conditions',
+  // Ken 2026-07-31 — sharpened medical vs mental-health split.
+  conditions: 'Medical conditions',
   medications: 'Medications',
   allergies: 'Allergies',
   surgeries: 'Past surgeries',
@@ -415,6 +442,7 @@ const CLINICAL_LABEL: Record<string, string> = {
   sleep_hours: 'Sleep',
   exercise_minutes_weekly: 'Exercise',
   mental_health_dx: 'Mental health diagnoses',
+  mental_health_medications: 'Psychotropic medications',
   treatment: 'Mental health care',
   coping_strategies: 'Coping strategies',
   living: 'Living situation',
