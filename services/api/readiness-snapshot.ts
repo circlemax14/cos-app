@@ -38,11 +38,20 @@ export type ReadinessSnapshotSource = 'healthkit'
 
 // ─── Request body ────────────────────────────────────────────────────
 
+// 2026-08-05 (Vishal) — expanded from a fixed 4 to the full adaptive
+// metric universe. All optional; only present metrics are sent to the
+// snapshot endpoint. BE is defensive to unknown keys (silently ignores).
 export interface ReadinessDriverBreakdown {
   hrv?: ReadinessDriverState
   sleep?: ReadinessDriverState
   restingHr?: ReadinessDriverState
   respRate?: ReadinessDriverState
+  steps?: ReadinessDriverState
+  activeEnergy?: ReadinessDriverState
+  exerciseMin?: ReadinessDriverState
+  walkingHr?: ReadinessDriverState
+  spo2?: ReadinessDriverState
+  flights?: ReadinessDriverState
 }
 
 export interface PostReadinessSnapshotRequest {

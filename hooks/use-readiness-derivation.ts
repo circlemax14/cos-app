@@ -289,11 +289,21 @@ async function fetchReadinessInputs(): Promise<{
   // beat after initHealthKit before reads see the new auth state.
   await new Promise((r) => setTimeout(r, 100))
 
-  const [hrv, sleep, hr, resp, hrvProbe15, hrvProbe90] = await Promise.all([
+  // 2026-08-05 (Vishal) — expanded metric universe. Any HealthKit type
+  // the user has granted access to and has data for contributes to
+  // the adaptive score in lib/readiness-score.ts. .catch(()=>null)
+  // per-metric so a missing permission on one doesn't fail the batch.
+  const [hrv, sleep, hr, resp, steps, kcal, exerciseMin, walkingHr, spo2, flights, hrvProbe15, hrvProbe90] = await Promise.all([
     getHealthKitVitalTrend('heart-rate-variability', READINESS_LOOKBACK_DAYS).catch(() => null),
     getHealthKitVitalTrend('sleep-hours', READINESS_LOOKBACK_DAYS).catch(() => null),
     getHealthKitVitalTrend('resting-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
     getHealthKitVitalTrend('respiratory-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('steps', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('active-energy', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('exercise-time', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('walking-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('oxygen-saturation', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('flights-climbed', READINESS_LOOKBACK_DAYS).catch(() => null),
     probeHrvRaw(READINESS_LOOKBACK_DAYS),
     probeHrvRaw90d(90),
   ])
@@ -323,6 +333,13 @@ async function fetchReadinessInputs(): Promise<{
   push(sleep, 'sleepHours')
   push(hr, 'restingHrBpm')
   push(resp, 'respRateBpm')
+  // 2026-08-05 (Vishal) — expanded metric universe fields.
+  push(steps, 'stepsCount')
+  push(kcal, 'activeEnergyKcal')
+  push(exerciseMin, 'exerciseMinutes')
+  push(walkingHr, 'walkingHrBpm')
+  push(spo2, 'spo2Pct')
+  push(flights, 'flightsClimbed')
 
   // MUST be device-LOCAL calendar day, not UTC. HealthKit `startDate`
   // ISO strings come back with the device's local tz offset (e.g.
@@ -363,9 +380,13 @@ async function fetchReadinessInputs(): Promise<{
     todayIsoLocal: todayIso,
     todayIsoUtc: new Date().toISOString().slice(0, 10),
     todayFound: today !== undefined,
+    // 2026-08-05 (Vishal) — expanded to the full adaptive metric universe.
     todayHasAnyMetric: today !== undefined && (
       today.hrvMs !== undefined || today.sleepHours !== undefined ||
-      today.restingHrBpm !== undefined || today.respRateBpm !== undefined
+      today.restingHrBpm !== undefined || today.respRateBpm !== undefined ||
+      today.stepsCount !== undefined || today.activeEnergyKcal !== undefined ||
+      today.exerciseMinutes !== undefined || today.walkingHrBpm !== undefined ||
+      today.spo2Pct !== undefined || today.flightsClimbed !== undefined
     ),
   }
 

@@ -80,11 +80,18 @@ function ReadinessScoreCardBase({
     if (drivers.length === 0) return undefined
     const sorted = [...drivers].sort((a, b) => Math.abs(b.subscore - 50) - Math.abs(a.subscore - 50))
     const first = sorted[0]
+    // 2026-08-05 (Vishal) — registry expanded from 4 → 10 metrics.
     const metricLabel: Record<typeof first.metric, string> = {
       hrv: 'HRV',
       sleep: 'Sleep',
       restingHr: 'Resting HR',
       respRate: 'Breathing',
+      steps: 'Steps',
+      activeEnergy: 'Active kcal',
+      exerciseMin: 'Exercise',
+      walkingHr: 'Walking HR',
+      spo2: 'Blood O₂',
+      flights: 'Flights',
     }
     const dir = first.subscore >= 50 ? 'strong' : 'low'
     return `${metricLabel[first.metric]} looking ${dir}`

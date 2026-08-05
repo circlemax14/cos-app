@@ -1,53 +1,42 @@
 /**
  * lib/readiness-score.ts — SCRUM-638 (Bevel-inspired Daily Readiness)
  *
- * Pure scoring module for the composite Readiness/Recovery score. Inputs
- * are HealthKit samples the app already ingests via react-native-health:
- * HeartRateVariability (SDNN, ms), SleepAnalysis (hours in-bed),
- * RestingHeartRate (bpm), RespiratoryRate (breaths/min). The score is
- * how today's values compare to the patient's OWN rolling 14-day
- * baseline — not to a population norm.
+ * Pure scoring module for the composite Readiness/Recovery score.
+ *
+ * 2026-08-05 (Vishal) — expanded from a fixed 4-metric weighted mean to
+ * an ADAPTIVE metric-registry design: any HealthKit type the patient
+ * has granted access to and has at least 7 baseline days for
+ * contributes to the score. Fewer metrics → still a valid score;
+ * more metrics → richer signal. Composite is the equal-weighted mean
+ * of contributing subscores (each 0-100).
+ *
+ * Backward compatible: the DailyReadinessMetrics fields for the
+ * original 4 (hrvMs / sleepHours / restingHrBpm / respRateBpm) still
+ * work exactly as before. New optional fields are additive.
  *
  * WHY PURE (extracted from any UI):
  *   1. Testability — every function here is deterministic, no React,
- *      no I/O. Snapshot the formula in isolation.
+ *      no I/O.
  *   2. Isolation from HealthKit read layer — the derivation hook is a
- *      thin adapter that feeds these arrays; if we ever move to a BE-
- *      computed score we swap the adapter and this module doesn't move.
- *   3. Regression-safe iteration — the moment we tune weights or add a
- *      metric (sleep-efficiency, HRV recovery slope), edits happen here
- *      and every consumer picks them up.
- *
- * SCOPE (v1):
- *   - Composite ∈ [0, 100]. Higher = more recovered.
- *   - Contributions: HRV (35%, higher-better), sleep hours (30%,
- *     ~7-9h optimal), resting HR (25%, lower-better), resp rate
- *     (10%, ~12-16 bpm optimal). Weights sum to 1.0.
- *   - Baseline: last 14 completed days (excluding today). Requires
- *     ≥7 days for ANY score; ≥14 days for a "confident" score.
- *   - Each metric normalized as z-score against baseline, clamped to
- *     [-2, +2] SD, then mapped 0→100 with 50 = baseline mean. Missing
- *     metric drops its weight (composite renormalizes over the
- *     available metrics).
- *   - Band mapping: >=80 optimal / >=60 developing / >=40 foundational
- *     / <40 initial (mirrors ScoreBands tokens the app already ships).
+ *      thin adapter that populates whatever fields it can.
+ *   3. Regression-safe iteration — adding a metric is one entry in
+ *      METRIC_REGISTRY; the scoring loop picks it up.
  *
  * WHAT THIS IS NOT:
- *   - Not a clinical score. Bevel's marketing framing (kept in the
- *     ticket) is "one honest daily read" — that's the intent here.
+ *   - Not a clinical score. Behavioral cue, not diagnostic.
  *   - Not a substitute for wellbeing-score.ts (BPS composite from
- *     self-assessments); they answer different questions.
+ *     self-assessments).
  */
 
 /**
  * A single day's HealthKit summary. All fields optional — missing =
- * we didn't get a reading (asleep with watch off charger, permission
- * revoked, empty device). Every field has its own scoring branch that
- * handles undefined gracefully.
+ * no reading (permission not granted, no device sync, etc.). Each
+ * field maps to one entry in METRIC_REGISTRY.
  */
 export interface DailyReadinessMetrics {
   /** Local date this summary belongs to, YYYY-MM-DD. */
   date: string
+  // ── Original 4 (retained for backward compatibility) ──────────────
   /** Heart-rate variability (SDNN), milliseconds. Higher = better. */
   hrvMs?: number
   /** Total sleep hours (in-bed → asleep). Optimal ~7-9h. */
@@ -56,18 +45,42 @@ export interface DailyReadinessMetrics {
   restingHrBpm?: number
   /** Respiratory rate at rest, breaths per minute. Optimal ~12-16. */
   respRateBpm?: number
+  // ── 2026-08-05 (Vishal) — expanded metric universe ────────────────
+  /** Step count for the day. Higher = better (with soft ceiling). */
+  stepsCount?: number
+  /** Active energy burned, kcal. Higher = better. */
+  activeEnergyKcal?: number
+  /** Exercise / Move minutes for the day. Higher = better. */
+  exerciseMinutes?: number
+  /** Walking heart rate average, bpm. Lower = better cardio fitness. */
+  walkingHrBpm?: number
+  /** Blood oxygen saturation, %. Optimal >=95. */
+  spo2Pct?: number
+  /** Flights of stairs climbed. Higher = better. */
+  flightsClimbed?: number
 }
 
-/**
- * Band names mirror the ScoreBands token set the app already ships
- * (constants/design-system). Kept as string literals here so this file
- * has zero runtime deps on the RN token module.
- */
 export type ReadinessBand = 'optimal' | 'developing' | 'foundational' | 'initial'
+
+/**
+ * Union of every supported metric id. Adding a new registry entry
+ * requires extending this + DailyReadinessMetrics + METRIC_REGISTRY.
+ */
+export type ReadinessMetricId =
+  | 'hrv'
+  | 'sleep'
+  | 'restingHr'
+  | 'respRate'
+  | 'steps'
+  | 'activeEnergy'
+  | 'exerciseMin'
+  | 'walkingHr'
+  | 'spo2'
+  | 'flights'
 
 export interface ReadinessDriver {
   /** Which input contributed. */
-  metric: 'hrv' | 'sleep' | 'restingHr' | 'respRate'
+  metric: ReadinessMetricId
   /** Metric's individual 0-100 subscore (rounded). */
   subscore: number
   /** Directional narrative — 'above'/'below'/'at' baseline. */
@@ -90,26 +103,62 @@ export interface ReadinessScore {
    *  `ready` = show score confidently (>= 14 days), `no-data` = show
    *  empty card (baseline empty + today empty). */
   state: 'pre-baseline' | 'warming-up' | 'ready' | 'no-data'
-  /** Per-metric contributions in the order HRV/sleep/HR/resp — filtered
-   *  to metrics that actually produced a subscore. */
+  /** Per-metric contributions in registry order — filtered to metrics
+   *  that actually produced a subscore. */
   drivers: ReadinessDriver[]
 }
 
 // ---------------------------------------------------------------
-// Weights + tuning constants
+// Metric registry (single source of truth for scoring)
 // ---------------------------------------------------------------
 
-const WEIGHTS = {
-  hrv: 0.35,
-  sleep: 0.3,
-  restingHr: 0.25,
-  respRate: 0.1,
-} as const
+type Direction = 'higher' | 'lower' | 'optimal'
+
+interface MetricSpec {
+  /** Which field on DailyReadinessMetrics carries the value. */
+  field: keyof DailyReadinessMetrics
+  /** Scoring direction. */
+  direction: Direction
+  /** For 'optimal': acceptable band + hard-fail band. */
+  optimalMin?: number
+  optimalMax?: number
+  hardMin?: number
+  hardMax?: number
+}
+
+/**
+ * Adaptive scoring: every registered metric contributes equally when
+ * present. Direction determines how baseline distance maps to
+ * subscore:
+ *   - higher  → +z is better (HRV, steps, kcal, exercise, SpO2, flights)
+ *   - lower   → -z is better (RHR, walking-HR)
+ *   - optimal → distance from an OPTIMAL band (sleep, resp rate)
+ */
+const METRIC_REGISTRY: Record<ReadinessMetricId, MetricSpec> = {
+  hrv:          { field: 'hrvMs',            direction: 'higher' },
+  sleep:        { field: 'sleepHours',       direction: 'optimal', optimalMin: 7, optimalMax: 9, hardMin: 3, hardMax: 12 },
+  restingHr:    { field: 'restingHrBpm',     direction: 'lower' },
+  respRate:     { field: 'respRateBpm',      direction: 'optimal', optimalMin: 12, optimalMax: 16, hardMin: 8, hardMax: 25 },
+  steps:        { field: 'stepsCount',       direction: 'higher' },
+  activeEnergy: { field: 'activeEnergyKcal', direction: 'higher' },
+  exerciseMin:  { field: 'exerciseMinutes',  direction: 'higher' },
+  walkingHr:    { field: 'walkingHrBpm',     direction: 'lower' },
+  spo2:         { field: 'spo2Pct',          direction: 'optimal', optimalMin: 95, optimalMax: 100, hardMin: 88, hardMax: 100 },
+  flights:      { field: 'flightsClimbed',   direction: 'higher' },
+}
+
+/** Registry order = display order for drivers[]. */
+const METRIC_ORDER: readonly ReadinessMetricId[] = [
+  'hrv', 'sleep', 'restingHr', 'respRate',
+  'steps', 'activeEnergy', 'exerciseMin', 'walkingHr', 'spo2', 'flights',
+]
 
 /** Minimum days of baseline before we show a score at all. */
 export const MIN_BASELINE_DAYS = 7
 /** Days at which the score is considered fully confident. */
 export const CONFIDENT_BASELINE_DAYS = 14
+/** Minimum metrics that must contribute for a valid score today. */
+export const MIN_METRICS_FOR_SCORE = 2
 /** Z-score clamp — beyond ±2 SD we cap the subscore at 0 or 100. */
 const Z_CLAMP = 2
 
@@ -144,15 +193,12 @@ function computeStats(values: readonly number[]): Stats | undefined {
 function zScoreToSubscore(z: number, higherIsBetter: boolean): number {
   const clamped = Math.max(-Z_CLAMP, Math.min(Z_CLAMP, z))
   const directional = higherIsBetter ? clamped : -clamped
-  // Map [-Z_CLAMP..+Z_CLAMP] → [0..100] with 0 at -Z_CLAMP, 100 at +Z_CLAMP.
   return Math.round(50 + (directional / Z_CLAMP) * 50)
 }
 
 /**
- * Sleep + resp-rate are U-shaped (too little AND too much is bad). We
- * translate to a positive-deviation z-score using an OPTIMAL target
- * instead of the baseline mean, so oversleeping on a rest day scores
- * closer to optimal than the baseline (which could be undersleep-heavy).
+ * U-shaped scorer (too little AND too much is bad) around an
+ * OPTIMAL band — used for sleep + resp rate + SpO2.
  */
 function optimalRangeSubscore(value: number, optimalMin: number, optimalMax: number, hardMin: number, hardMax: number): number {
   if (value >= optimalMin && value <= optimalMax) return 100
@@ -162,18 +208,8 @@ function optimalRangeSubscore(value: number, optimalMin: number, optimalMax: num
   return Math.round(100 - (distance / range) * 100)
 }
 
-const SLEEP_OPTIMAL_MIN = 7
-const SLEEP_OPTIMAL_MAX = 9
-const SLEEP_HARD_MIN = 3
-const SLEEP_HARD_MAX = 12
-
-const RESP_RATE_OPTIMAL_MIN = 12
-const RESP_RATE_OPTIMAL_MAX = 16
-const RESP_RATE_HARD_MIN = 8
-const RESP_RATE_HARD_MAX = 25
-
 function driverFor(
-  metric: ReadinessDriver['metric'],
+  metric: ReadinessMetricId,
   todayValue: number,
   baselineMean: number,
   subscore: number,
@@ -185,7 +221,7 @@ function driverFor(
 }
 
 // ---------------------------------------------------------------
-// Band mapping (mirrors ScoreBands token thresholds)
+// Band mapping
 // ---------------------------------------------------------------
 
 export function scoreToReadinessBand(score: number | undefined): ReadinessBand | undefined {
@@ -200,13 +236,21 @@ export function scoreToReadinessBand(score: number | undefined): ReadinessBand |
 // Public entry point
 // ---------------------------------------------------------------
 
+function readMetric(m: DailyReadinessMetrics | undefined, id: ReadinessMetricId): number | undefined {
+  if (!m) return undefined
+  const v = (m as unknown as Record<string, unknown>)[METRIC_REGISTRY[id].field as string]
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+function hasAnyMetric(m: DailyReadinessMetrics | undefined): boolean {
+  if (!m) return false
+  return METRIC_ORDER.some((id) => readMetric(m, id) !== undefined)
+}
+
 /**
- * Compute today's readiness score from today's HealthKit sample + a
- * rolling baseline window.
- *
- * @param today Today's metrics (may have any/all fields missing).
- * @param baseline Array of the last N daily summaries EXCLUDING today.
- *   Ideally 14 days; less is handled per the state machine.
+ * Compute today's readiness score. Adaptive — any metric with today's
+ * value AND enough baseline days contributes with equal weight.
+ * Minimum MIN_METRICS_FOR_SCORE metrics required for a valid composite.
  */
 export function computeReadinessScore(
   today: DailyReadinessMetrics | undefined,
@@ -214,7 +258,6 @@ export function computeReadinessScore(
 ): ReadinessScore {
   const baselineDays = baseline.length
 
-  // Not enough history to compute anything meaningful.
   if (baselineDays < MIN_BASELINE_DAYS) {
     return {
       composite: undefined,
@@ -225,15 +268,7 @@ export function computeReadinessScore(
     }
   }
 
-  // Baseline stats per metric (skip metrics with no readings across all baseline days).
-  const hrvStats = computeStats(baseline.map((d) => d.hrvMs).filter((v): v is number => v !== undefined))
-  const sleepStats = computeStats(baseline.map((d) => d.sleepHours).filter((v): v is number => v !== undefined))
-  const hrStats = computeStats(baseline.map((d) => d.restingHrBpm).filter((v): v is number => v !== undefined))
-  const respStats = computeStats(baseline.map((d) => d.respRateBpm).filter((v): v is number => v !== undefined))
-
   if (!today || !hasAnyMetric(today)) {
-    // Baseline exists but today's device didn't ingest — return null
-    // score. Callers show an empty-state card.
     return {
       composite: undefined,
       band: undefined,
@@ -244,58 +279,51 @@ export function computeReadinessScore(
   }
 
   const drivers: ReadinessDriver[] = []
-  let totalWeight = 0
-  let weightedSum = 0
+  let subscoreSum = 0
+  let subscoreCount = 0
 
-  if (typeof today.hrvMs === 'number' && hrvStats && hrvStats.stdDev > 0) {
-    const z = (today.hrvMs - hrvStats.mean) / hrvStats.stdDev
-    const subscore = zScoreToSubscore(z, /* higherIsBetter */ true)
-    drivers.push(driverFor('hrv', today.hrvMs, hrvStats.mean, subscore))
-    weightedSum += subscore * WEIGHTS.hrv
-    totalWeight += WEIGHTS.hrv
+  for (const id of METRIC_ORDER) {
+    const spec = METRIC_REGISTRY[id]
+    const todayVal = readMetric(today, id)
+    if (todayVal === undefined) continue
+
+    // Baseline stats for this metric (skip if no baseline readings).
+    const baselineValues = baseline
+      .map((d) => readMetric(d, id))
+      .filter((v): v is number => v !== undefined)
+    const stats = computeStats(baselineValues)
+
+    let subscore: number
+    let baselineMean: number
+
+    if (spec.direction === 'optimal') {
+      // Optimal-range scorer doesn't require any baseline history at
+      // all — it grades against a hard-coded acceptable band.
+      subscore = optimalRangeSubscore(
+        todayVal,
+        spec.optimalMin!,
+        spec.optimalMax!,
+        spec.hardMin!,
+        spec.hardMax!,
+      )
+      baselineMean = stats?.mean ?? spec.optimalMin!
+    } else {
+      // z-score scorers need stats with non-zero stdDev, otherwise
+      // the metric is dropped from this composite.
+      if (!stats || stats.stdDev === 0) continue
+      const z = (todayVal - stats.mean) / stats.stdDev
+      subscore = zScoreToSubscore(z, spec.direction === 'higher')
+      baselineMean = stats.mean
+    }
+
+    drivers.push(driverFor(id, todayVal, baselineMean, subscore))
+    subscoreSum += subscore
+    subscoreCount += 1
   }
 
-  if (typeof today.sleepHours === 'number') {
-    // Sleep uses the optimal-range scorer, not z-score, so it works
-    // even when the baseline is chronically undersleeping.
-    const subscore = optimalRangeSubscore(
-      today.sleepHours,
-      SLEEP_OPTIMAL_MIN,
-      SLEEP_OPTIMAL_MAX,
-      SLEEP_HARD_MIN,
-      SLEEP_HARD_MAX,
-    )
-    const baselineMean = sleepStats?.mean ?? SLEEP_OPTIMAL_MIN
-    drivers.push(driverFor('sleep', today.sleepHours, baselineMean, subscore))
-    weightedSum += subscore * WEIGHTS.sleep
-    totalWeight += WEIGHTS.sleep
-  }
-
-  if (typeof today.restingHrBpm === 'number' && hrStats && hrStats.stdDev > 0) {
-    const z = (today.restingHrBpm - hrStats.mean) / hrStats.stdDev
-    const subscore = zScoreToSubscore(z, /* higherIsBetter */ false)
-    drivers.push(driverFor('restingHr', today.restingHrBpm, hrStats.mean, subscore))
-    weightedSum += subscore * WEIGHTS.restingHr
-    totalWeight += WEIGHTS.restingHr
-  }
-
-  if (typeof today.respRateBpm === 'number') {
-    const subscore = optimalRangeSubscore(
-      today.respRateBpm,
-      RESP_RATE_OPTIMAL_MIN,
-      RESP_RATE_OPTIMAL_MAX,
-      RESP_RATE_HARD_MIN,
-      RESP_RATE_HARD_MAX,
-    )
-    const baselineMean = respStats?.mean ?? RESP_RATE_OPTIMAL_MIN
-    drivers.push(driverFor('respRate', today.respRateBpm, baselineMean, subscore))
-    weightedSum += subscore * WEIGHTS.respRate
-    totalWeight += WEIGHTS.respRate
-  }
-
-  if (totalWeight === 0) {
-    // Today's metrics all had no matching baseline — first-day ingestion
-    // for every metric. Show pre-baseline state.
+  if (subscoreCount < MIN_METRICS_FOR_SCORE) {
+    // Not enough metrics contributed today (or first-day ingestion
+    // for every attempted metric). Show pre-baseline state.
     return {
       composite: undefined,
       band: undefined,
@@ -305,7 +333,7 @@ export function computeReadinessScore(
     }
   }
 
-  const composite = Math.round(weightedSum / totalWeight)
+  const composite = Math.round(subscoreSum / subscoreCount)
   return {
     composite,
     band: scoreToReadinessBand(composite),
@@ -313,16 +341,6 @@ export function computeReadinessScore(
     state: baselineDays >= CONFIDENT_BASELINE_DAYS ? 'ready' : 'warming-up',
     drivers,
   }
-}
-
-function hasAnyMetric(m: DailyReadinessMetrics | undefined): boolean {
-  if (!m) return false
-  return (
-    typeof m.hrvMs === 'number' ||
-    typeof m.sleepHours === 'number' ||
-    typeof m.restingHrBpm === 'number' ||
-    typeof m.respRateBpm === 'number'
-  )
 }
 
 // ---------------------------------------------------------------
@@ -333,5 +351,6 @@ export const __test__ = {
   computeStats,
   zScoreToSubscore,
   optimalRangeSubscore,
-  WEIGHTS,
+  METRIC_REGISTRY,
+  METRIC_ORDER,
 }

@@ -15,11 +15,18 @@
 
 import type { ReadinessScore, ReadinessDriver } from './readiness-score'
 
+// 2026-08-05 (Vishal) — registry expanded from 4 → 10 metrics.
 const METRIC_LABEL: Record<ReadinessDriver['metric'], string> = {
   hrv: 'Heart rate variability',
   sleep: 'Sleep',
   restingHr: 'Resting heart rate',
   respRate: 'Respiratory rate',
+  steps: 'Steps',
+  activeEnergy: 'Active energy',
+  exerciseMin: 'Exercise minutes',
+  walkingHr: 'Walking heart rate',
+  spo2: 'Blood oxygen',
+  flights: 'Flights climbed',
 }
 
 const METRIC_UNIT: Record<ReadinessDriver['metric'], string> = {
@@ -27,6 +34,12 @@ const METRIC_UNIT: Record<ReadinessDriver['metric'], string> = {
   sleep: 'hours',
   restingHr: 'bpm',
   respRate: 'breaths/min',
+  steps: 'steps',
+  activeEnergy: 'kcal',
+  exerciseMin: 'min',
+  walkingHr: 'bpm',
+  spo2: '%',
+  flights: 'flights',
 }
 
 /**
