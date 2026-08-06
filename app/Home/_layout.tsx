@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Dimensions, View } from 'react-native';
+import { View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -22,12 +22,12 @@ export default function TabLayout() {
    * Defaults to `false` on load, so pre-flip users see zero change.
    */
   const unifiedDefault = useUnifiedPlanDefaultEnabled();
-  // Ken 2026-08-05 — phones get the 1-word short label (space is tight on
-  // 5 tabs @ ~65pt each); tablets keep the full 2-word label. Threshold
-  // matches isTablet() in stores/accessibility-store.tsx (>=768pt).
-  const isTablet = Dimensions.get('window').width >= 768;
+  // `title` is the ACCESSIBILITY label (VoiceOver reads it). The VISIBLE
+  // label — with phone/tablet adaptive short-form — is resolved by
+  // CustomScrollableTabBar via its TAB_LABELS map. Keep title as the
+  // full "Health Plan" here so VoiceOver stays clear.
   const carePlanTabOptions = {
-    title: isTablet ? 'Health Plan' : 'Plan',
+    title: 'Health Plan',
     tabBarIcon: ({ color }: { color: string }) => (
       <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
     ),
@@ -119,7 +119,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="plan"
         options={{
-          title: isTablet ? 'Health Summary' : 'Summary',
+          title: 'Health Summary',
           tabBarIcon: ({ color }) => (
             <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
           ),

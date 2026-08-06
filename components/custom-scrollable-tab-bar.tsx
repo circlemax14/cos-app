@@ -2,29 +2,36 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
-import { LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAccessibility } from '@/stores/accessibility-store';
 
 /**
- * Display label per tab route. Ken 2026-07-22: prefers "Care Plan" and
- * "Health Summary" spelled out rather than the terser single-word forms
- * ("Care" / "Summary"). Multi-word labels wrap naturally to 2 lines
- * under the icon on small phones (see numberOfLines below) so they
- * stack cleanly instead of ellipsizing or pushing neighbors sideways.
+ * Display label per tab route. Ken 2026-08-05: adaptive labels —
+ * phones (<768pt) get the terser 1-word form to fit 5 tabs on iPhone
+ * SE without wrapping; tablets (>=768pt) keep the fuller 2-word form
+ * ("Care Plan" / "Health Summary") since there's plenty of horizontal
+ * space. Threshold matches isTablet() in stores/accessibility-store.tsx.
+ *
+ * Prior default (all sizes 2-word) came from Ken 2026-07-22 —
+ * superseded by his 2026-08-05 request for smaller phone labels.
  */
-const TAB_LABELS: Record<string, string> = {
-  index: 'Home',
-  appointments: 'Calendar',
-  'health-plan': 'Care Plan',
-  'unified-plan': 'Care Plan',
-  plan: 'Health Summary',
-  reports: 'Reports',
-};
+function buildTabLabels(): Record<string, string> {
+  const isTablet = Dimensions.get('window').width >= 768;
+  return {
+    index: 'Home',
+    appointments: 'Calendar',
+    'health-plan': isTablet ? 'Care Plan' : 'Plan',
+    'unified-plan': isTablet ? 'Care Plan' : 'Plan',
+    plan: isTablet ? 'Health Summary' : 'Summary',
+    reports: 'Reports',
+  };
+}
 
 export function CustomScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { getScaledFontSize, settings } = useAccessibility();
+  const tabLabels = buildTabLabels();
   // CHUNK 73 — WCAG 1.4.4 (200% resize text) compliance.
   // When the user has NOT enabled the app-side accessibility toggle, honor
   // iOS Dynamic Type on the label (allowFontScaling=true) so low-vision
@@ -83,7 +90,7 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     // for any route not in the map. Kept separate from
     // accessibilityLabel — VoiceOver still reads the full route title.
     const displayLabel: string =
-      TAB_LABELS[route.name] ??
+      tabLabels[route.name] ??
       (typeof options.tabBarLabel === 'string'
         ? options.tabBarLabel
         : typeof options.title === 'string'
