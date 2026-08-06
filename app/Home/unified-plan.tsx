@@ -36,6 +36,7 @@ import { Radii, Spacing } from '@/constants/design-system';
 import { UnifiedSectionCard } from '@/components/unified-plan/UnifiedSectionCard';
 import { ClassicViewLink } from '@/components/unified-plan/ClassicViewLink';
 import { HabitsBanner } from '@/components/health-plan/HabitsBanner';
+import { MedicationsBanner } from '@/components/health-plan/MedicationsBanner';
 import {
   UNIFIED_SECTION_META,
   UNIFIED_SECTION_ORDER,
@@ -394,6 +395,9 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
             so the pre-Story-4 layout is byte-identical. Tap → /Home/habits. */}
         <View style={{ paddingHorizontal: Spacing.md, marginTop: Spacing.sm }}>
           <HabitsBanner />
+          {/* Ken 2026-08-05 — Medications banner directly below Habits;
+              replaces the tier-row MedicationsLink pill from BPS. */}
+          <MedicationsBanner />
         </View>
 
         {/* Section cards */}

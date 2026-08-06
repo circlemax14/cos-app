@@ -36,6 +36,11 @@ export default function MedicationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the header "+" button so MedicationsSection's add flow
+  // opens without the user having to scroll down to its own "+ Add"
+  // affordance. Nonce pattern matches the openAddSignal contract on
+  // MedicationsSection (see props doc at line ~175 of that file).
+  const [addNonce, setAddNonce] = useState(0);
 
   const load = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
@@ -76,42 +81,54 @@ export default function MedicationsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.text} />}
       >
         {/*
-          SCRUM-658 (2026-07-31): back button + inline header. Same
-          shape as SCRUM-656 fix on /Home/bps-progress + /Home/wellbeing-map
-          — Pressable + arrow-back MaterialIcon + router.replace to the
-          Plan (BPS) route so the destination is deterministic even
-          when the user got here via tab-switch (which doesn't push
-          onto the router history).
+          Ken 2026-08-05 — header row: back icon + "Medications" title
+          + "+" Add button, all vertically centered on ONE row. Prior
+          layout stacked back / title / subtitle in three separate rows
+          which read as three disconnected controls. The Add button
+          hands to MedicationsSection's add flow via `openAddSignal`
+          (bumped nonce) so the same modal editor handles both paths
+          (in-list "+ Add medication" AND this header "+"). Subtitle
+          moves to a second row so the title-row can stay a compact
+          navigation bar without stretching.
         */}
-        <View style={styles.backHeaderRow}>
+        <View style={styles.headerRow}>
           <Pressable
             onPress={() => router.replace('/Home/biopsychosocial-plan' as never)}
-            style={styles.backBtn}
+            style={styles.iconBtn}
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="Back to care plan"
           >
             <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
           </Pressable>
-        </View>
-        <View style={styles.header}>
           <Text
             style={[
               styles.title,
-              { color: colors.text, fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(700) as any },
+              { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any },
             ]}
           >
             Medications
           </Text>
-          <Text
-            style={[
-              styles.subtitle,
-              { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any },
-            ]}
+          <View style={{ flex: 1 }} />
+          <Pressable
+            onPress={() => setAddNonce((n) => n + 1)}
+            style={[styles.iconBtn, { backgroundColor: `${colors.tint}14` }]}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Add medication"
+            accessibilityHint="Opens the add medication form"
           >
-            {loading ? 'Loading…' : `${active.length} active · ${past.length} past`}
-          </Text>
+            <MaterialIcons name="add" size={getScaledFontSize(24)} color={colors.tint} />
+          </Pressable>
         </View>
+        <Text
+          style={[
+            styles.subtitle,
+            { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any },
+          ]}
+        >
+          {loading ? 'Loading…' : `${active.length} active · ${past.length} past`}
+        </Text>
 
         {/*
           SCRUM-658 (2026-07-31): plan-driven meds moved from BPS surface
@@ -131,7 +148,7 @@ export default function MedicationsScreen() {
           getScaledFontWeight={getScaledFontWeight}
         />
         <MedicationsReviewPrompt onReviewNow={() => undefined} />
-        <MedicationsSection openAddSignal={0} />
+        <MedicationsSection openAddSignal={addNonce} />
 
         {error && (
           <View style={styles.errorCard}>
@@ -333,21 +350,25 @@ function MedRow({ med, colors, getScaledFontSize, getScaledFontWeight }: MedRowP
 }
 
 const styles = StyleSheet.create({
-  backHeaderRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingTop: 8,
     paddingBottom: 4,
     marginLeft: -8,
+    gap: 4,
   },
-  backBtn: {
-    padding: 8,
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
-  header: { marginBottom: 14 },
   title: { letterSpacing: -0.4 },
-  subtitle: { marginTop: 4, letterSpacing: 0.2 },
+  subtitle: { marginTop: 2, marginBottom: 14, letterSpacing: 0.2 },
   centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 },
   emptyTitle: { textAlign: 'center', marginTop: 12 },
   emptyBody: { textAlign: 'center', maxWidth: 280, lineHeight: 18 },

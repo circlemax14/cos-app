@@ -48,6 +48,7 @@ import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import { HabitsBanner } from '@/components/health-plan/HabitsBanner';
+import { MedicationsBanner } from '@/components/health-plan/MedicationsBanner';
 import { TryNewPlanCta } from '@/components/health-plan/TryNewPlanCta';
 import { ViewBioInsightsLink } from '@/components/health-plan/ViewBioInsightsLink';
 import { SubdomainChipRow } from '@/components/health-plan/SubdomainChip';
@@ -308,6 +309,9 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
           app/Home/unified-plan.tsx so the banner shows regardless of
           which plan screen the Care Plan tab currently routes to. */}
       <HabitsBanner />
+      {/* Ken 2026-08-05 — Medications banner directly below Habits;
+          replaces the tier-row MedicationsLink pill from BPS. */}
+      <MedicationsBanner />
 
       {needsAssessment ? (
         <Pressable

@@ -57,6 +57,7 @@ import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './Se
 // re-imports them from their canonical paths.
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
 import { HabitsBanner } from './HabitsBanner';
+import { MedicationsBanner } from './MedicationsBanner';
 // SCRUM-655: BpsTodayHeroCard no longer mounted directly by this screen —
 // BpsHeroTileRow imports and mounts it on tile-expand. Import removed here
 // so the linter doesn't flag it as unused; add back if a future change
@@ -1632,19 +1633,13 @@ export function BiopsychosocialPlanScreen({
                 />
               )}
               {/*
-                SCRUM-658 (2026-07-31): sibling pill routing to the
-                medications screen. The three shipped meds affordances
-                (TodaysMedicationsCard preview, MedicationsReviewPrompt,
-                MedicationsSection editor) all moved off this surface
-                onto /Home/medications per user request; this pill is
-                the entry point.
+                Ken 2026-08-05 — MedicationsLink pill REMOVED from the
+                tier row. Replaced by a proper MedicationsBanner as a
+                sibling section entry below HabitsBanner (see mount
+                point ~L2050 in the same commit). Pill entry lost in a
+                dense control row; the banner reads as a proper
+                section header and matches the report's medical color.
               */}
-              <MedicationsLink
-                colors={colors}
-                getScaledFontSize={getScaledFontSize}
-                getScaledFontWeight={getScaledFontWeight}
-                onPress={() => router.push('/Home/medications' as never)}
-              />
               {/*
                 SCRUM-660 (2026-07-31): "Updated {date}" removed
                 entirely from this surface — user tried two placements
@@ -2040,6 +2035,20 @@ export function BiopsychosocialPlanScreen({
             makes it byte-width-matched to the WellbeingMap card + the
             BPS section cards below it. */}
         <HabitsBanner
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
+
+        {/*
+          Ken 2026-08-05 — Medications banner sits directly beneath
+          HabitsBanner as a sibling section entry. Replaces the small
+          MedicationsLink pill previously in the tier row (removed
+          from line ~1642 in the same commit). Same 48pt tinted icon
+          + title + subtitle shape as HabitsBanner so both banners
+          read as one system, colored green #199C4F to match the
+          "Medical conditions & medications" report group. */}
+        <MedicationsBanner
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
