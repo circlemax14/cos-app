@@ -13,7 +13,6 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
-import { TodaysMedicationsCard } from '@/components/health-plan/TodaysMedicationsCard';
 
 export default function MedicationsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -82,12 +81,10 @@ export default function MedicationsScreen() {
             <MaterialIcons name="add" size={getScaledFontSize(24)} color={colors.tint} />
           </Pressable>
         </View>
-        <TodaysMedicationsCard
-          colors={colors as unknown as Record<string, string>}
-          isDark={settings.isDarkTheme}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
+        {/* Ken 2026-08-06 — removed TodaysMedicationsCard. Its purpose
+            (surface upcoming doses at a glance) now lives folded into
+            the MedicationsBanner on the Plan/Home surfaces, so having
+            it here as well was redundant. */}
         <MedicationsReviewPrompt onReviewNow={() => undefined} />
         {/* Owns the full Active / Past render + tap-to-expand active rows.
             When PLAN_MEDICATIONS_ENABLED is off on the server the section
