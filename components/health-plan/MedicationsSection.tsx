@@ -355,7 +355,15 @@ export function MedicationsSection({
 
   return (
     <View onLayout={onLayout}>
-      {/* Section header */}
+      {/* Section header — Ken 2026-08-06: skipped when flush=true (medications
+          screen) because the screen already has its own "Medications" title +
+          "+" Add button in the top header row, and the section itself now
+          renders "ACTIVE MEDICATIONS" / "PAST MEDICATIONS" sub-headers below.
+          Rendering all three tiers is redundant + confusing. Legacy surfaces
+          (health-plan.tsx / PlanScreenRedesigned) still get this header — the
+          section is embedded inside a bigger plan screen there with no
+          dedicated "Medications" title above it. */}
+      {!flush ? (
       <View style={[styles.secHead, flushPadOverride]}>
         <Text
           style={[
@@ -394,6 +402,7 @@ export function MedicationsSection({
           </Text>
         </Pressable>
       </View>
+      ) : null}
 
       {/* Always-visible safety disclaimer */}
       <View
