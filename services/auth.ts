@@ -156,12 +156,55 @@ export async function signIn(
 }
 
 /**
- * Check if the user has a valid stored session.
- * Returns the user profile if session is valid, null otherwise.
+ * Why a session check did not come back authenticated. Callers MUST
+ * branch on this — see BUG #17 below.
+ *
+ *   'no_tokens'      — nothing in Keychain. Genuinely signed out.
+ *   'unauthenticated'— backend said 401/403. Session is dead; tokens cleared.
+ *   'indeterminate'  — network error / 5xx / timeout. We DO NOT KNOW whether
+ *                      the session is valid. Tokens are intact. Treat the
+ *                      user as still-signed-in and retry later.
  */
-export async function checkSession(): Promise<{ authenticated: boolean; user?: UserProfile }> {
+export type SessionCheckReason = 'no_tokens' | 'unauthenticated' | 'indeterminate';
+
+export interface SessionCheckResult {
+  authenticated: boolean;
+  user?: UserProfile;
+  /** Present whenever `authenticated` is false. */
+  reason?: SessionCheckReason;
+}
+
+/**
+ * Check if the user has a valid stored session.
+ *
+ * ─── BUG #17 FIX (Ken 2026-08-07) ───────────────────────────────────
+ * REPORTED: "I open the app every day or after a few hours and the sign-in
+ * screen opens directly — the app isn't checking with the backend whether my
+ * session is active. If I force-close and reopen, it finds my session and
+ * works."
+ *
+ * ROOT CAUSE: this function previously collapsed EVERY failure into a bare
+ * `{ authenticated: false }`. A transient network error — which
+ * lib/api-client.ts throws as a plain `Error` with `code: 'NETWORK_ERROR'`,
+ * NOT an AxiosError, so the 401/403 branch below correctly leaves tokens
+ * alone — still reported "not authenticated" to callers.
+ *
+ * app/index.tsx then called `requestSignIn('splash_revalidate_failed')`, and
+ * that reason is in BYPASS_LOCK_REASONS (lib/lock-gate.ts), so it routed
+ * straight to /(auth)/sign-in — bypassing the PIN screen entirely — while
+ * the user's Cognito tokens were still perfectly valid.
+ *
+ * Hence the asymmetry the user noticed: a cold start is local-first
+ * (hasStoredSession() is a local token-presence check and never touches the
+ * network), so force-quitting "fixed" it; a warm path that happened to hit a
+ * flaky moment did not.
+ *
+ * THE FIX: distinguish "the backend told us this session is dead" from "we
+ * could not reach the backend". Only the former may sign the user out.
+ */
+export async function checkSession(): Promise<SessionCheckResult> {
   const hasSession = await hasStoredSession();
-  if (!hasSession) return { authenticated: false };
+  if (!hasSession) return { authenticated: false, reason: 'no_tokens' };
 
   try {
     const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
@@ -175,8 +218,13 @@ export async function checkSession(): Promise<{ authenticated: boolean; user?: U
     if (status === 401 || status === 403) {
       await clearTokens();
       await clearCachedProfile();
+      return { authenticated: false, reason: 'unauthenticated' };
     }
-    return { authenticated: false };
+    // Everything else — NETWORK_ERROR (thrown as a plain Error by the
+    // api-client interceptor), 5xx, timeouts, DNS failures — is
+    // INDETERMINATE. The tokens are still in Keychain and may well be
+    // valid. Callers must NOT route to sign-in on this.
+    return { authenticated: false, reason: 'indeterminate' };
   }
 }
 

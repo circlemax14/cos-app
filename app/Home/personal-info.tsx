@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Icon, TextInput as PaperTextInput } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppWrapper } from '@/components/app-wrapper';
 import { fetchPatientInfo } from '@/services/api/patient';
 import { EntityIcon } from '@/components/icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -242,7 +242,24 @@ export default function PersonalInfoScreen() {
   ];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+    /* ─── BUG #19 FIX (Ken 2026-08-07) ─────────────────────────────────
+       REPORTED: "In personal info screen headers and bottom nav is missing."
+
+       CAUSE (two separate omissions):
+       1. The screen lived at app/(personal-info)/ — a ROOT-level Stack
+          group, a sibling of Home rather than a child of it. Anything
+          outside the Tabs navigator cannot render the tab bar, so the
+          bottom nav was structurally impossible there.
+       2. It rendered a bare SafeAreaView instead of <AppWrapper>, so it
+          also missed the global header (hamburger / logo / accessibility
+          button) that every other authenticated screen shows.
+
+       FIX: moved to app/Home/personal-info.tsx (inside Tabs, registered
+       href:null so it's reachable but not a visible tab) and swapped the
+       SafeAreaView for AppWrapper. AppWrapper already provides the safe-area
+       insets, so no wrapper is lost. The screen keeps its own back+title row
+       because AppWrapper's header has no per-screen title slot. */
+    <AppWrapper>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -465,7 +482,7 @@ export default function PersonalInfoScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
-    </SafeAreaView>
+    </AppWrapper>
   );
 }
 

@@ -114,7 +114,11 @@ function StackWithAppLock() {
       <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
       <Stack.Screen name="(security)" options={{ headerShown: false }} />
       <Stack.Screen name="Home" options={{ headerShown: false }} />
-      <Stack.Screen name="(personal-info)" options={{ headerShown: false }} />
+      {/* Ken 2026-08-07 (#19) — (personal-info) route group removed.
+          The screen moved INTO the Tabs navigator at
+          app/Home/personal-info.tsx so it renders with the bottom tab
+          bar and the AppWrapper header. A root-level Stack sibling of
+          Home structurally cannot show the tab bar. */}
       <Stack.Screen name="(care-manager-detail)" options={{ headerShown: false }} />
       <Stack.Screen name="(doctor-detail)" options={{ headerShown: false }} />
       <Stack.Screen

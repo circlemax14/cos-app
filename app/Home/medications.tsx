@@ -42,14 +42,20 @@ export default function MedicationsScreen() {
       >
         {/*
           Ken 2026-08-05 — header row: back icon + "Medications" title
-          + "+" Add button, all vertically centered on ONE row. Prior
-          layout stacked back / title / subtitle in three separate rows
-          which read as three disconnected controls. The Add button
-          hands to MedicationsSection's add flow via `openAddSignal`
-          (bumped nonce) so the same modal editor handles both paths
-          (in-list "+ Add medication" AND this header "+"). Subtitle
-          moves to a second row so the title-row can stay a compact
-          navigation bar without stretching.
+          + Add button, all vertically centered on ONE row.
+
+          Ken 2026-08-07 (#7) — the Add affordance was a BARE "+" icon
+          and Ken reported it was "very difficult to find". Replaced
+          with a LABELLED pill (plus glyph + the word "Add") so the
+          action is readable, not iconographic. Rationale beyond Ken's
+          note: our cohort skews older, and an unlabelled glyph in a
+          corner is exactly the affordance that testing consistently
+          shows older users miss. The pill also gets a filled tint
+          background + 44pt min height per iOS HIG touch targets.
+
+          Still hands to MedicationsSection's add flow via
+          `openAddSignal` (bumped nonce) so ONE modal editor serves
+          both this header button and the in-list add path.
         */}
         <View style={styles.headerRow}>
           <Pressable
@@ -72,13 +78,27 @@ export default function MedicationsScreen() {
           <View style={{ flex: 1 }} />
           <Pressable
             onPress={() => setAddNonce((n) => n + 1)}
-            style={[styles.iconBtn, { backgroundColor: `${colors.tint}14` }]}
-            hitSlop={10}
+            style={({ pressed }) => [
+              styles.addPill,
+              { backgroundColor: colors.tint as string, opacity: pressed ? 0.85 : 1 },
+            ]}
+            hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Add medication"
             accessibilityHint="Opens the add medication form"
           >
-            <MaterialIcons name="add" size={getScaledFontSize(24)} color={colors.tint} />
+            <MaterialIcons name="add" size={getScaledFontSize(18)} color="#FFFFFF" />
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(700) as any,
+                marginLeft: 4,
+              }}
+              maxFontSizeMultiplier={1.3}
+            >
+              Add
+            </Text>
           </Pressable>
         </View>
         {/* Ken 2026-08-06 — removed TodaysMedicationsCard. Its purpose
@@ -116,6 +136,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Ken 2026-08-07 (#7) — labelled Add pill replacing the bare "+".
+  // 44pt min height per iOS HIG; solid tint fill so it reads as the
+  // screen's primary action rather than a decorative glyph.
+  addPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    minHeight: 44,
   },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },

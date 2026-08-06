@@ -497,6 +497,19 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* Ken 2026-08-07 (#19) — Personal Information moved here from the
+          root-level (personal-info) Stack group so it renders WITH the
+          bottom tab bar (a root sibling of Home structurally cannot).
+          href:null keeps it out of the visible tab bar; it's reached
+          from the profile drawer. */}
+      <Tabs.Screen
+        name="personal-info"
+        options={{
+          title: 'Personal Information',
+          href: null,
+          headerShown: false,
+        }}
+      />
       {/*
         COS-438 — biopsychosocial plan as an EXTENSION of the legacy Care
         Plan, not a replacement. Reached from a link on the legacy Care

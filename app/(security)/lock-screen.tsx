@@ -212,17 +212,36 @@ export default function LockScreen() {
       try {
         const result = await checkSession();
         if (!result.authenticated || !result.user) {
-          await clearTokens();
-          setUnlocking(false);
-          Alert.alert(
-            'Session expired',
-            'For your security, your session has expired and we need you to sign in again with your password.',
-            [{ text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in' as never) }],
-          );
-          return;
+          // ─── BUG #17 FIX (Ken 2026-08-07) ─────────────────────────
+          // The `catch` below was DEAD CODE for network failures:
+          // checkSession() swallows them internally and returns rather
+          // than throwing, so a transient network error fell into this
+          // branch and ran clearTokens() — destroying a perfectly valid
+          // session and forcing a full password re-entry, all because
+          // the phone briefly had no signal at unlock time.
+          //
+          // Now checkSession() reports WHY. 'indeterminate' means we
+          // could not reach the backend; the correct behaviour is the
+          // one the (previously unreachable) catch intended: let the
+          // user in on cached data. Only a definitive 401/403 clears
+          // tokens.
+          if (result.reason === 'indeterminate') {
+            // Fall through to the normal unlock path below.
+          } else {
+            await clearTokens();
+            setUnlocking(false);
+            Alert.alert(
+              'Session expired',
+              'For your security, your session has expired and we need you to sign in again with your password.',
+              [{ text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in' as never) }],
+            );
+            return;
+          }
         }
       } catch {
-        // Network failure — let the user in (cached data only).
+        // Defensive: checkSession is not expected to throw (it maps
+        // failures to `reason`), but if it ever does, let the user in
+        // on cached data rather than destroying their session.
       }
       prefetchAfterAuth();
       await resumeAfterUnlock();
