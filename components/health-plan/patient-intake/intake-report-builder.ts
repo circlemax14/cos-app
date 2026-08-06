@@ -102,7 +102,12 @@ export interface Group {
   scoreBlocks?: ScoreBlock[];
 }
 
-interface GroupSpec {
+// Ken 2026-08-05 — sectioned retake picker exports the same group
+// taxonomy the report renders, so the picker labels the wizard walks
+// match exactly what the patient sees in their report. Publicly-
+// exported so RetakeSectionSheet + IntakeWizardScreen can key off it
+// without duplicating the id/title/keys triples.
+export interface GroupSpec {
   id: GroupId;
   title: string;
   icon: string;
@@ -112,7 +117,7 @@ interface GroupSpec {
 
 // Canonical group order. Colors align with the existing BPS palette so no
 // new brand tokens are introduced by the report.
-const GROUP_SPECS: readonly GroupSpec[] = [
+export const GROUP_SPECS: readonly GroupSpec[] = [
   {
     id: 'demographics',
     title: 'Demographics',

@@ -28,24 +28,42 @@ import type { IntakeAnswerValue, IntakeQuestion, IntakeSection } from '@/types/p
 import IntakeProgressHeader from './IntakeProgressHeader';
 import IntakeQuestionRenderer from './IntakeQuestionRenderer';
 import IntakeCompleteView from './IntakeCompleteView';
+import { GROUP_SPECS, type GroupId } from './intake-report-builder';
 
 type ColorPalette = (typeof Colors)['light'];
 
 export default function IntakeWizardScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const params = useLocalSearchParams<{ retake?: string; section?: string }>();
+  const params = useLocalSearchParams<{ retake?: string; section?: string; group?: string }>();
   const isRetakeRequest = params.retake === '1';
-  // Ken 2026-08-05 — sectioned retake. When `section` is set to one
-  // of the three sections, the wizard walks only that section's
-  // questions and, immediately after the retake mutation succeeds,
-  // patches the OTHER sections' answers back onto the fresh version
-  // (client-only preservation — no BE change). Undefined/invalid =
-  // full-intake retake (legacy single-tap behavior).
+  // Ken 2026-08-05 — sectioned retake. Two accepted param shapes:
+  //   ?section=body|mind|life   (legacy 3-way pick, still honored)
+  //   ?group=<GroupId>          (report-parity chunks, preferred)
+  // Only ONE is honored per request — `group` wins when both are
+  // present. When neither is set the wizard walks every question
+  // (legacy full-intake retake).
+  const requestedGroup: GroupId | undefined = React.useMemo(() => {
+    const raw = params.group;
+    if (!raw) return undefined;
+    return GROUP_SPECS.some((g) => g.id === raw) ? (raw as GroupId) : undefined;
+  }, [params.group]);
   const requestedSection: IntakeSection | undefined =
-    params.section === 'body' || params.section === 'mind' || params.section === 'life'
-      ? params.section
-      : undefined;
+    requestedGroup ? undefined
+      : params.section === 'body' || params.section === 'mind' || params.section === 'life'
+        ? params.section
+        : undefined;
+  // Question keys that belong to the requested chunk. Empty when the
+  // request is a full retake (no filter). For group-scoped retakes we
+  // pull directly from GROUP_SPECS so filter membership matches the
+  // report exactly.
+  const chunkKeys = React.useMemo<ReadonlySet<string> | null>(() => {
+    if (requestedGroup) {
+      const spec = GROUP_SPECS.find((g) => g.id === requestedGroup);
+      return spec ? new Set(spec.keys) : null;
+    }
+    return null;
+  }, [requestedGroup]);
   const intakeQuery = usePatientIntake();
   const startMut = useStartIntake();
   const patchMut = usePatchIntakeAnswers();
@@ -58,12 +76,14 @@ export default function IntakeWizardScreen() {
 
   const intake = intakeQuery.data?.intake ?? null;
   const allQuestions = intakeQuery.data?.questions ?? [];
-  // Filter to the picked section (if any). When `requestedSection` is
-  // undefined we present every question (legacy full retake).
-  const questions = useMemo(
-    () => requestedSection ? allQuestions.filter((q) => q.section === requestedSection) : allQuestions,
-    [allQuestions, requestedSection],
-  );
+  // Filter to the picked chunk. Precedence: group (report parity) →
+  // section (legacy) → full intake. When both are absent we present
+  // every question (legacy behavior).
+  const questions = useMemo(() => {
+    if (chunkKeys) return allQuestions.filter((q) => chunkKeys.has(q.key));
+    if (requestedSection) return allQuestions.filter((q) => q.section === requestedSection);
+    return allQuestions;
+  }, [allQuestions, chunkKeys, requestedSection]);
 
   // Keep a live ref to `draft` so async advance() reads the latest value
   // even if the user typed again between Next-tap and PATCH resolve.
@@ -83,7 +103,7 @@ export default function IntakeWizardScreen() {
   // the wizard component does NOT unmount between visits. A per-request
   // signature keyed on (retake, section) is the reliable way to detect
   // "this is a new retake request" and re-arm the mutation.
-  const requestSig = `${isRetakeRequest ? '1' : '0'}|${requestedSection ?? 'all'}`;
+  const requestSig = `${isRetakeRequest ? '1' : '0'}|g:${requestedGroup ?? '-'}|s:${requestedSection ?? '-'}`;
   const lastFiredRetakeSigRef = useRef<string | null>(null);
   // Sticky latch: once ?retake=1 is observed, we never regress even if
   // useLocalSearchParams commits a later render with retake=undefined
@@ -122,9 +142,20 @@ export default function IntakeWizardScreen() {
     if (!intakeQuery.isSuccess) return;
     if (intake?.status !== 'complete') return;
     // Capture the answers that must survive the retake — only meaningful
-    // when a specific section was picked. For a full retake this stays
-    // null (the retakeMut fresh intake keeps its empty answers).
-    if (requestedSection) {
+    // when a specific chunk was picked (group OR legacy section). For a
+    // full retake this stays null (the retakeMut fresh intake keeps its
+    // empty answers).
+    if (chunkKeys) {
+      // Group-scoped: preserve every answer whose key is NOT in the
+      // picked group's key list. Any stale key from a prior schema
+      // version is preserved too — the wizard just won't render it.
+      const priorAnswers = intake.answers ?? {};
+      const preserved: Record<string, IntakeAnswerValue> = {};
+      for (const [k, v] of Object.entries(priorAnswers)) {
+        if (!chunkKeys.has(k)) preserved[k] = v;
+      }
+      preservedAnswersRef.current = preserved;
+    } else if (requestedSection) {
       const priorAnswers = intake.answers ?? {};
       const priorSections = new Map(allQuestions.map((q) => [q.key, q.section] as const));
       const preserved: Record<string, IntakeAnswerValue> = {};
@@ -152,16 +183,17 @@ export default function IntakeWizardScreen() {
     intake?.status,
     intake?.answers,
     allQuestions,
+    chunkKeys,
     requestedSection,
     retakeMut,
     completeMut,
   ]);
 
-  // After a section-scoped retake succeeds and the fresh intake lands
-  // in cache, restore the preserved (non-picked-section) answers via
+  // After a chunk-scoped retake succeeds and the fresh intake lands
+  // in cache, restore the preserved (non-picked-chunk) answers via
   // a single patch. Sig-guarded so it fires exactly once per retake request.
   useEffect(() => {
-    if (!requestedSection) return;
+    if (!chunkKeys && !requestedSection) return;
     if (lastPreservedSigRef.current === requestSig) return;
     if (!retakeMut.isSuccess) return;
     if (!intake || intake.status !== 'in_progress') return;
@@ -172,7 +204,7 @@ export default function IntakeWizardScreen() {
     }
     lastPreservedSigRef.current = requestSig;
     patchMut.mutate(preserved);
-  }, [requestedSection, requestSig, retakeMut.isSuccess, intake, patchMut]);
+  }, [chunkKeys, requestedSection, requestSig, retakeMut.isSuccess, intake, patchMut]);
 
   // Auto-start intake if the server has none once the initial fetch resolves.
   // The hook swallows 409 INTAKE_IN_PROGRESS and invalidates so a duplicate

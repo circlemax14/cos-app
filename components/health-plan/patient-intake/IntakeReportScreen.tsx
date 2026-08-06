@@ -95,14 +95,16 @@ export default function IntakeReportScreen() {
 
   // Ken 2026-08-05 — sectioned retake. Instead of walking all 30+
   // questions on every "Update my answers" tap, the sheet lets the
-  // patient pick a section (Body / Mind / Life) or opt for all. The
-  // wizard filters questions client-side and preserves the untouched
-  // sections' answers across the fresh intake version. Retake=all
-  // preserves the pre-existing single-tap flow.
+  // patient pick a report group (Demographics / Medical conditions
+  // & medications / Vaccines / Lifestyle / Mental health / Social
+  // support / Work & finances) or "All sections". The wizard filters
+  // questions client-side and preserves the untouched groups' answers
+  // across the fresh intake version. Retake=all preserves the
+  // pre-existing single-tap flow.
   const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
-  const goRetake = (section?: 'body' | 'mind' | 'life') => {
+  const goRetake = (group?: import('./RetakeSectionSheet').RetakeGroupPick) => {
     setRetakeSheetOpen(false);
-    const suffix = section ? `&section=${section}` : '';
+    const suffix = group ? `&group=${group}` : '';
     router.push(`/Home/patient-intake?retake=1${suffix}` as never);
   };
   // router.back() no-ops from this hidden Tabs.Screen (href:null), so

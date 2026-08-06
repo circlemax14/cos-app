@@ -27,7 +27,7 @@ import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
-import RetakeSectionSheet, { type RetakeSectionPick } from './RetakeSectionSheet';
+import RetakeSectionSheet, { type RetakeGroupPick } from './RetakeSectionSheet';
 
 function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
@@ -63,14 +63,16 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
 
   const go = () => router.push('/Home/patient-intake' as never);
   // Ken 2026-08-05 — retake now opens the section picker sheet
-  // (Body / Mind / Life / All) so patients don't have to walk all
-  // 30+ questions when they only want to update one area. Sheet
-  // callback routes to the wizard with `?retake=1&section=X` (or
-  // omits section for the "All" path, matching legacy behavior).
+  // (Demographics / Medical conditions & medications / Vaccines /
+  // Lifestyle / Mental health / Social support / Work & finances /
+  // All sections) so patients don't have to walk all 30+ questions
+  // when they only want to update one area. Sheet callback routes
+  // to the wizard with `?retake=1&group=X` (or omits group for the
+  // "All" path, matching legacy behavior).
   const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
-  const handleRetakePick = (section: RetakeSectionPick) => {
+  const handleRetakePick = (group: RetakeGroupPick) => {
     setRetakeSheetOpen(false);
-    const suffix = section ? `&section=${section}` : '';
+    const suffix = group ? `&group=${group}` : '';
     router.push(`/Home/patient-intake?retake=1${suffix}` as never);
   };
   const goViewReport = () =>

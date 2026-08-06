@@ -1,10 +1,17 @@
 /**
  * RetakeSectionSheet — Ken 2026-08-05
  *
- * Bottom-sheet picker for sectioned retake. Listed 4 rows: Body / Mind /
- * Life / All. Client-only sectioned retake — the wizard filters
- * questions to the picked section and preserves untouched sections'
- * answers across the fresh intake version.
+ * Bottom-sheet picker for sectioned retake. Rows mirror the exact
+ * groups the intake REPORT renders (Demographics / Medical conditions
+ * & medications / Vaccines / Lifestyle / Mental health / Social
+ * support / Work & finances) plus an "All sections" catch-all at the
+ * bottom. Sourced from GROUP_SPECS in intake-report-builder.ts so
+ * picker labels + wizard chunks always stay in lockstep with what the
+ * patient sees in their report.
+ *
+ * Client-only sectioned retake — the wizard filters questions to the
+ * picked group's keys and preserves untouched groups' answers across
+ * the fresh intake version.
  *
  * Used by every "Retake / Update my answers" entry point:
  *   - IntakeCtaCard (Health Summary tab banner, completed state)
@@ -16,6 +23,7 @@ import React from 'react';
 import {
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -23,10 +31,9 @@ import {
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Radii, Spacing } from '@/constants/design-system';
+import { GROUP_SPECS, type GroupId } from './intake-report-builder';
 
-export type RetakeSection = 'body' | 'mind' | 'life';
-
-export type RetakeSectionPick = RetakeSection | undefined; // undefined = All
+export type RetakeGroupPick = GroupId | undefined; // undefined = All
 
 type PaletteLike = {
   text: string;
@@ -39,23 +46,25 @@ type PaletteLike = {
 interface Props {
   visible: boolean;
   onDismiss: () => void;
-  onPick: (section: RetakeSectionPick) => void;
+  onPick: (group: RetakeGroupPick) => void;
   colors: PaletteLike;
   scale: (n: number) => number;
   weight: (n: number) => string;
 }
 
-const ROWS: Array<{
-  key: 'body' | 'mind' | 'life' | 'all';
-  icon: React.ComponentProps<typeof MaterialIcons>['name'];
-  label: string;
-  detail: string;
-}> = [
-  { key: 'body', icon: 'favorite', label: 'Body', detail: 'Conditions, medications, vitals, lifestyle' },
-  { key: 'mind', icon: 'psychology', label: 'Mind', detail: 'Mood, stress, sleep, mental health' },
-  { key: 'life', icon: 'groups', label: 'Life', detail: 'Work, finances, social support' },
-  { key: 'all', icon: 'refresh', label: 'All sections', detail: 'Start over with every question' },
-];
+// One-line hint per group so the picker communicates what's inside
+// without the patient tapping through. Keyed by GroupId; kept in sync
+// with GROUP_SPECS.keys manually — group renames are rare and the
+// hints are user-facing copy, not derivable from the schema.
+const GROUP_DETAIL: Record<GroupId, string> = {
+  'demographics': 'Sex, race, blood type, height, weight',
+  'conditions-meds': 'Diagnoses, medications, allergies, surgeries, family history',
+  'vaccines': 'Immunization history',
+  'lifestyle': 'Tobacco, alcohol, sleep, exercise',
+  'mental-health': 'Diagnoses, medications, coping, screeners',
+  'social-support': 'Living situation, caregiver role, life events',
+  'work-finances': 'Employment and financial comfort',
+};
 
 export default function RetakeSectionSheet({
   visible,
@@ -103,16 +112,81 @@ export default function RetakeSectionSheet({
           >
             Answers in the other sections stay as they are.
           </Text>
-          {ROWS.map((r) => (
+          <ScrollView
+            style={{ maxHeight: 460 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {GROUP_SPECS.map((g) => (
+              <Pressable
+                key={g.id}
+                onPress={() => onPick(g.id)}
+                accessibilityRole="button"
+                accessibilityLabel={g.title}
+                accessibilityHint={GROUP_DETAIL[g.id]}
+                style={({ pressed }) => [
+                  styles.row,
+                  { backgroundColor: pressed ? colors.border : 'transparent' },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.rowIcon,
+                    { backgroundColor: `${g.color}22` },
+                  ]}
+                >
+                  <MaterialIcons
+                    name={g.icon as React.ComponentProps<typeof MaterialIcons>['name']}
+                    size={scale(20)}
+                    color={g.color}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: scale(15),
+                      fontWeight: weight(600) as TextStyle['fontWeight'],
+                    }}
+                  >
+                    {g.title}
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: scale(12),
+                      marginTop: 2,
+                    }}
+                    numberOfLines={2}
+                  >
+                    {GROUP_DETAIL[g.id]}
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name="chevron-right"
+                  size={scale(20)}
+                  color={colors.subtext}
+                />
+              </Pressable>
+            ))}
+            {/* "All sections" — falls back to the legacy full-clear
+             * retake. Kept at the bottom so patients scan the smaller
+             * chunks first and only reach for "all" if that's the
+             * genuine intent. */}
             <Pressable
-              key={r.key}
-              onPress={() => onPick(r.key === 'all' ? undefined : r.key)}
+              onPress={() => onPick(undefined)}
               accessibilityRole="button"
-              accessibilityLabel={r.label}
-              accessibilityHint={r.detail}
+              accessibilityLabel="All sections"
+              accessibilityHint="Start over with every question"
               style={({ pressed }) => [
                 styles.row,
-                { backgroundColor: pressed ? colors.border : 'transparent' },
+                {
+                  backgroundColor: pressed ? colors.border : 'transparent',
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                  marginTop: 6,
+                  paddingTop: 14,
+                  borderRadius: 0,
+                },
               ]}
             >
               <View
@@ -121,7 +195,7 @@ export default function RetakeSectionSheet({
                   { backgroundColor: `${colors.tint}22` },
                 ]}
               >
-                <MaterialIcons name={r.icon} size={scale(20)} color={colors.tint} />
+                <MaterialIcons name="refresh" size={scale(20)} color={colors.tint} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text
@@ -131,7 +205,7 @@ export default function RetakeSectionSheet({
                     fontWeight: weight(600) as TextStyle['fontWeight'],
                   }}
                 >
-                  {r.label}
+                  All sections
                 </Text>
                 <Text
                   style={{
@@ -140,7 +214,7 @@ export default function RetakeSectionSheet({
                     marginTop: 2,
                   }}
                 >
-                  {r.detail}
+                  Start over with every question
                 </Text>
               </View>
               <MaterialIcons
@@ -149,7 +223,7 @@ export default function RetakeSectionSheet({
                 color={colors.subtext}
               />
             </Pressable>
-          ))}
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
