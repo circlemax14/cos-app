@@ -485,6 +485,18 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* Ken 2026-08-06 — Wellbeing V2 composite detail screen. Reached
+          from WellbeingScoreTile on Home. Distinct from wellbeing-map
+          (which is BPS-subdomain coverage); this one focuses on the
+          composite trend + component breakdown. */}
+      <Tabs.Screen
+        name="wellbeing-score"
+        options={{
+          title: 'Wellbeing',
+          href: null,
+          headerShown: false,
+        }}
+      />
       {/*
         COS-438 — biopsychosocial plan as an EXTENSION of the legacy Care
         Plan, not a replacement. Reached from a link on the legacy Care

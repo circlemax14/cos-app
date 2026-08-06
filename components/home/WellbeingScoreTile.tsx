@@ -34,11 +34,16 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router } from 'expo-router'
 
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
+import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
 import { useScoreCatalog, scoreToBand } from '@/hooks/use-score-catalog'
 // Ken 2026-08-06 (Wellbeing V2 Phase 2) — trend arrow. Pulls the
 // composite trend directly from the shared derivation hook so this
 // tile and the BPS card render the identical arrow/delta.
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
+// Phase 2b — 7-day sparkline from the BE history endpoint (cos-backend
+// PR #367). Empty history array → sparkline hides (single-line render
+// falls through to just number + band chip + arrow).
+import { useWellbeingHistory } from '@/hooks/use-wellbeing-history'
 import {
   trendIconName,
   trendTone,
@@ -91,11 +96,29 @@ function WellbeingScoreTileBase(): React.JSX.Element {
   const { derivation } = useWellbeingDerivation()
   const trend = derivation?.trend
 
+  // Ken 2026-08-06 Phase 2b — pull the last 7 daily buckets from the
+  // BE history endpoint (fires only after the patient has scored on
+  // multiple UTC-days — new users get an empty array and the sparkline
+  // hides). Failure-tolerant: buckets: [] on any error → no sparkline.
+  const { data: historyData } = useWellbeingHistory(7)
+  // Map buckets → sparkline series (chronological, oldest-first,
+  // dropping null overalls). ScoreHistorySparkline handles the
+  // 7-bar padding + zero-length hide itself, so we hand it whatever
+  // finite scores we have and let the component render honestly.
+  const sparklineSeries = React.useMemo(() => {
+    const buckets = historyData?.buckets ?? []
+    return buckets
+      .filter((b): b is typeof b & { overall: number } => typeof b.overall === 'number')
+      .map((b) => b.overall)
+  }, [historyData])
+
   const onPress = React.useCallback(() => {
-    // No dedicated `/Home/wellbeing-score` route today (recon). Map is
-    // the natural composite drill-down and always lands somewhere
-    // interactive. Swap this string when a score screen ships.
-    router.push('/Home/wellbeing-map')
+    // Ken 2026-08-06 Phase 2b — dedicated composite detail screen
+    // (app/Home/wellbeing-score.tsx). Distinct from the older
+    // /Home/wellbeing-map (BPS-subdomain Venn) which the tile used
+    // to fall back to. The new screen shows trend + range toggle +
+    // "what's driving this" component breakdown per the V2 proposal.
+    router.push('/Home/wellbeing-score')
   }, [])
 
   return (
@@ -177,6 +200,22 @@ function WellbeingScoreTileBase(): React.JSX.Element {
           <View style={styles.chipRow}>
             <ScoreBandChip band={band} />
           </View>
+          {sparklineSeries.length >= 2 ? (
+            // Ken 2026-08-06 Phase 2b — 7-day sparkline. Needs at
+            // least 2 real points to be meaningful; a single point
+            // draws as 7 identical bars which reads as a fake
+            // "steady" trend. Under the hood the component pads to
+            // exactly 7 bars — passing 3 real points renders 4
+            // ghost + 3 real, which correctly shows "history is
+            // still accruing."
+            <View style={styles.sparklineRow}>
+              <ScoreHistorySparkline
+                series={sparklineSeries}
+                accessibilityLabel="Wellbeing score, last 7 days"
+                band={band}
+              />
+            </View>
+          ) : null}
         </View>
       )}
     </Pressable>
@@ -207,7 +246,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    minHeight: 148,
+    // Ken 2026-08-06 Phase 2b — bumped from 148 to accommodate the
+    // 7-day sparkline row (~40pt track + margins) without pushing
+    // the neighboring WellbeingMapPreview off its baseline. When
+    // sparklineSeries has <2 points the row hides + the tile
+    // shrinks back toward the old 148 via flex.
+    minHeight: 190,
   },
   tilePressed: {
     opacity: 0.7,
@@ -263,6 +307,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.1,
     fontVariant: ['tabular-nums'],
+  },
+  sparklineRow: {
+    marginTop: 10,
+    alignSelf: 'stretch',
+    paddingHorizontal: 4,
   },
   emptyBody: {
     flex: 1,
