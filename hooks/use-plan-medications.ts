@@ -21,26 +21,38 @@ import {
 } from '@/services/api/plan-medications';
 
 const PLAN_MEDICATIONS_KEY = ['plan-medications'] as const;
+const PLAN_MEDICATIONS_WITH_PAST_KEY = ['plan-medications', 'includePast'] as const;
 
-export function usePlanMedications() {
+/**
+ * Ken 2026-08-05 — `includePast` opt-in threads through to the BE's
+ * `?includePast=1` query param. When true, the response includes
+ * discontinued meds with `discontinuedAt` populated so the FE can
+ * split Active vs Past client-side. Cached under a separate query key
+ * so surfaces that DON'T want past meds (e.g. the plan banner) never
+ * accidentally consume a response inflated with discontinued rows.
+ */
+export function usePlanMedications(opts: { includePast?: boolean } = {}) {
+  const includePast = opts.includePast === true;
   return useQuery<PlanMedicationsResponse>({
-    queryKey: PLAN_MEDICATIONS_KEY,
-    queryFn: fetchPlanMedications,
+    queryKey: includePast ? PLAN_MEDICATIONS_WITH_PAST_KEY : PLAN_MEDICATIONS_KEY,
+    queryFn: () => fetchPlanMedications({ includePast }),
     staleTime: 60_000,
   });
 }
 
-export function useUpdatePlanMedications() {
+export function useUpdatePlanMedications(opts: { includePast?: boolean } = {}) {
+  const includePast = opts.includePast === true;
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: UpdatePlanMedicationsBody) => updatePlanMedications(body),
+    mutationFn: (body: UpdatePlanMedicationsBody) => updatePlanMedications(body, { includePast }),
     onSuccess: (medications, variables) => {
       // Seed the cache immediately, preserving the existing flag state, then
       // invalidate so the next read re-confirms with the server. The PUT only
       // returns the medication list, so we carry over the review fields from
       // the prior cache — and optimistically clear medsReviewNeeded when this
       // mutation confirmed the review, so the prompt disappears at once.
-      qc.setQueryData<PlanMedicationsResponse>(PLAN_MEDICATIONS_KEY, (prev) => {
+      const seedKey = includePast ? PLAN_MEDICATIONS_WITH_PAST_KEY : PLAN_MEDICATIONS_KEY;
+      qc.setQueryData<PlanMedicationsResponse>(seedKey, (prev) => {
         const confirmed = variables.confirmReview === true;
         return {
           flagEnabled: prev?.flagEnabled ?? true,
@@ -49,7 +61,12 @@ export function useUpdatePlanMedications() {
           medsReviewedAt: confirmed ? new Date().toISOString() : prev?.medsReviewedAt ?? null,
         };
       });
+      // Invalidate BOTH cache variants so the banner (default key) and the
+      // full-list surface (includePast key) both refetch after any mutation.
+      // Otherwise a discontinue action wouldn't update the banner count
+      // until the 60s staleTime elapses.
       qc.invalidateQueries({ queryKey: PLAN_MEDICATIONS_KEY });
+      qc.invalidateQueries({ queryKey: PLAN_MEDICATIONS_WITH_PAST_KEY });
     },
   });
 }
