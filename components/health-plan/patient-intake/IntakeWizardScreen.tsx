@@ -74,14 +74,36 @@ export default function IntakeWizardScreen() {
 
   // Retake takes precedence over auto-start: if the caller asked for a fresh
   // version AND the server still has a complete intake, kick off retake first
-  // and let the query invalidate. Guarded so we only fire the mutation once.
-  const hasRetakenRef = useRef(false);
+  // and let the query invalidate. Guarded per-request (see requestSig below)
+  // so a SECOND retake in the same wizard mount (e.g. section retake after a
+  // prior full retake) also fires — refs used to sticky-latch across the
+  // wizard's lifetime and swallowed subsequent retake requests.
+  //
+  // Ken 2026-08-05: patient-intake is a hidden persistent Tabs.Screen —
+  // the wizard component does NOT unmount between visits. A per-request
+  // signature keyed on (retake, section) is the reliable way to detect
+  // "this is a new retake request" and re-arm the mutation.
+  const requestSig = `${isRetakeRequest ? '1' : '0'}|${requestedSection ?? 'all'}`;
+  const lastFiredRetakeSigRef = useRef<string | null>(null);
   // Sticky latch: once ?retake=1 is observed, we never regress even if
   // useLocalSearchParams commits a later render with retake=undefined
   // (Expo Router param-lag under the persistent Tabs layout).
   const intendsToRetakeRef = useRef(isRetakeRequest);
   if (isRetakeRequest && !intendsToRetakeRef.current) {
     intendsToRetakeRef.current = true;
+  }
+  // When the request signature changes (e.g. user just tapped a new
+  // section from the summary sheet), clear the "already fired" and
+  // "already completed" latches so the wizard re-enters the retake
+  // flow cleanly instead of showing a stale IntakeCompleteView from
+  // a prior finish.
+  const seenSigRef = useRef(requestSig);
+  if (seenSigRef.current !== requestSig) {
+    seenSigRef.current = requestSig;
+    if (isRetakeRequest) {
+      // Reset the sticky latch for a genuinely new retake request.
+      intendsToRetakeRef.current = true;
+    }
   }
   // Ken 2026-08-05 — sectioned retake preservation. When the user is
   // retaking only ONE section, snapshot the pre-retake answers BEFORE
@@ -90,9 +112,13 @@ export default function IntakeWizardScreen() {
   // the untouched sections aren't blown away. Falls through to the
   // legacy full-clear behavior when requestedSection is undefined.
   const preservedAnswersRef = useRef<Record<string, IntakeAnswerValue> | null>(null);
+  const lastPreservedSigRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isRetakeRequest) return;
-    if (hasRetakenRef.current) return;
+    // Per-request guard: fire retakeMut once per signature. A fresh
+    // signature (new section pick, or first retake) re-fires; a
+    // re-render inside the same request no-ops.
+    if (lastFiredRetakeSigRef.current === requestSig) return;
     if (!intakeQuery.isSuccess) return;
     if (intake?.status !== 'complete') return;
     // Capture the answers that must survive the retake — only meaningful
@@ -110,28 +136,43 @@ export default function IntakeWizardScreen() {
         if (s && s !== requestedSection) preserved[k] = v;
       }
       preservedAnswersRef.current = preserved;
+    } else {
+      preservedAnswersRef.current = null;
     }
-    hasRetakenRef.current = true;
+    lastFiredRetakeSigRef.current = requestSig;
+    // Reset mutation state from any prior retake so isSuccess/isError
+    // flags represent THIS request, not the last one.
+    retakeMut.reset();
+    completeMut.reset();
     retakeMut.mutate();
-  }, [isRetakeRequest, intakeQuery.isSuccess, intake?.status, intake?.answers, allQuestions, requestedSection, retakeMut]);
+  }, [
+    isRetakeRequest,
+    requestSig,
+    intakeQuery.isSuccess,
+    intake?.status,
+    intake?.answers,
+    allQuestions,
+    requestedSection,
+    retakeMut,
+    completeMut,
+  ]);
 
   // After a section-scoped retake succeeds and the fresh intake lands
   // in cache, restore the preserved (non-picked-section) answers via
-  // a single patch. Ref-guarded so it fires exactly once per retake.
-  const hasPreservedRef = useRef(false);
+  // a single patch. Sig-guarded so it fires exactly once per retake request.
   useEffect(() => {
     if (!requestedSection) return;
-    if (hasPreservedRef.current) return;
+    if (lastPreservedSigRef.current === requestSig) return;
     if (!retakeMut.isSuccess) return;
     if (!intake || intake.status !== 'in_progress') return;
     const preserved = preservedAnswersRef.current;
     if (!preserved || Object.keys(preserved).length === 0) {
-      hasPreservedRef.current = true;
+      lastPreservedSigRef.current = requestSig;
       return;
     }
-    hasPreservedRef.current = true;
+    lastPreservedSigRef.current = requestSig;
     patchMut.mutate(preserved);
-  }, [requestedSection, retakeMut.isSuccess, intake, patchMut]);
+  }, [requestedSection, requestSig, retakeMut.isSuccess, intake, patchMut]);
 
   // Auto-start intake if the server has none once the initial fetch resolves.
   // The hook swallows 409 INTAKE_IN_PROGRESS and invalidates so a duplicate
@@ -143,7 +184,7 @@ export default function IntakeWizardScreen() {
     if (intake) return;
     // Wait for the retake mutation to settle before auto-starting; otherwise
     // we could race retake and start against the same slot.
-    if (isRetakeRequest && !hasRetakenRef.current) return;
+    if (isRetakeRequest && lastFiredRetakeSigRef.current !== requestSig) return;
     if (retakeMut.isPending) return;
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
@@ -265,7 +306,7 @@ export default function IntakeWizardScreen() {
     // The sticky ref covers the case where params.retake momentarily reads
     // as undefined during Expo Router's first commit after navigation.
     ((isRetakeRequest || intendsToRetakeRef.current) &&
-      intake?.status === 'complete' && !hasRetakenRef.current) ||
+      intake?.status === 'complete' && lastFiredRetakeSigRef.current !== requestSig) ||
     (retakeMut.isSuccess && intake?.status === 'complete' && intakeQuery.isFetching)
   ) {
     return renderLoader(colors);
@@ -283,12 +324,12 @@ export default function IntakeWizardScreen() {
   // Retake mutation failed — otherwise we'd fall through and render the
   // wizard against the still-complete intake, and every Next tap would
   // silently 409 because there's no in-progress version to PATCH. Reset
-  // the sticky ref so the retry actually re-fires the mutation.
+  // the per-request signature so the retry actually re-fires the mutation.
   if (retakeMut.isError && intendsToRetakeRef.current) {
     return renderError(
       colors,
       () => {
-        hasRetakenRef.current = false;
+        lastFiredRetakeSigRef.current = null;
         retakeMut.reset();
         retakeMut.mutate();
       },
@@ -296,9 +337,21 @@ export default function IntakeWizardScreen() {
       getScaledFontWeight,
     );
   }
+  // Ken 2026-08-05 — pendingRetakeArrival is TRUE when the URL says we
+  // should be retaking but the retake mutation hasn't fired yet for
+  // THIS request signature. We use it to suppress a brief flash of
+  // IntakeCompleteView from a PRIOR completion between navigation and
+  // the useEffect that fires the fresh retakeMut. Without this guard,
+  // tapping a section from the sheet after having previously completed
+  // an intake momentarily lands on the "back to Health Summary" view.
+  const pendingRetakeArrival =
+    (isRetakeRequest || intendsToRetakeRef.current) &&
+    lastFiredRetakeSigRef.current !== requestSig;
   // Only show the Complete view if we're not in the middle of a retake flow.
-  // completeMut.isSuccess wins outright — the user just tapped Finish.
-  if (completeMut.isSuccess) {
+  // completeMut.isSuccess wins outright — the user just tapped Finish —
+  // UNLESS a new retake request just arrived (sig differs), in which case
+  // we hold on the loader until the fresh retakeMut kicks in.
+  if (completeMut.isSuccess && !pendingRetakeArrival) {
     return <IntakeCompleteView />;
   }
   if (
@@ -306,7 +359,8 @@ export default function IntakeWizardScreen() {
     !isRetakeRequest &&
     !intendsToRetakeRef.current &&
     !retakeMut.isPending &&
-    !retakeMut.isSuccess
+    !retakeMut.isSuccess &&
+    !pendingRetakeArrival
   ) {
     return <IntakeCompleteView />;
   }
