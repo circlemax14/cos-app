@@ -35,6 +35,17 @@ import { router } from 'expo-router'
 
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
 import { useScoreCatalog, scoreToBand } from '@/hooks/use-score-catalog'
+// Ken 2026-08-06 (Wellbeing V2 Phase 2) — trend arrow. Pulls the
+// composite trend directly from the shared derivation hook so this
+// tile and the BPS card render the identical arrow/delta.
+import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
+import {
+  trendIconName,
+  trendTone,
+  trendLabel,
+  trendA11yLabel,
+  TREND_TONE_COLOR,
+} from '@/lib/wellbeing-trend'
 
 /**
  * Derive the display score with a triple fallback so the tile always
@@ -70,6 +81,16 @@ function WellbeingScoreTileBase(): React.JSX.Element {
   const { score, band } = pickDisplayScore(catalog)
   const isEmpty = typeof score !== 'number'
 
+  // Ken 2026-08-06 — trend arrow reads the shared derivation directly
+  // (useScoreCatalog derives the composite but doesn't expose the
+  // `trend` object at its top level). Same source as BpsWellbeingScoreCard,
+  // so both surfaces show the identical arrow + delta at all times.
+  // TrendResult is optional — undefined when the patient doesn't yet
+  // have ≥2 assessment snapshots to compute a delta, in which case we
+  // render the score alone (no arrow). Never renders a stale/wrong arrow.
+  const { derivation } = useWellbeingDerivation()
+  const trend = derivation?.trend
+
   const onPress = React.useCallback(() => {
     // No dedicated `/Home/wellbeing-score` route today (recon). Map is
     // the natural composite drill-down and always lands somewhere
@@ -84,7 +105,9 @@ function WellbeingScoreTileBase(): React.JSX.Element {
       accessibilityLabel={
         isEmpty
           ? 'Wellbeing score, not available yet. Complete a check-in.'
-          : `Wellbeing score, ${score} out of 100${band ? `, ${band}` : ''}.`
+          : `Wellbeing score, ${score} out of 100${band ? `, ${band}` : ''}${
+              trend ? `. ${trendA11yLabel(trend.arrow, trend.delta)}` : ''
+            }.`
       }
       accessibilityHint="Opens your wellbeing map"
       hitSlop={4}
@@ -122,6 +145,35 @@ function WellbeingScoreTileBase(): React.JSX.Element {
               /100
             </Text>
           </View>
+          {trend ? (
+            // Ken 2026-08-06 — trend row: colored arrow + signed delta
+            // (or "Steady" when within ±3pt). Kept as a sibling row of
+            // the number rather than inline with it so the number stays
+            // the tile's dominant read at 42pt; the arrow is a supporting
+            // detail at 13pt. Color-only cue is paired with a text label
+            // (delta / "Steady") per the age-range guidance — colorblind
+            // + AT users get the same information.
+            <View
+              style={styles.trendRow}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <MaterialIcons
+                name={trendIconName(trend.arrow)}
+                size={16}
+                color={TREND_TONE_COLOR[trendTone(trend.arrow)]}
+              />
+              <Text
+                style={[
+                  styles.trendLabel,
+                  { color: TREND_TONE_COLOR[trendTone(trend.arrow)] },
+                ]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {trendLabel(trend.arrow, trend.delta)}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.chipRow}>
             <ScoreBandChip band={band} />
           </View>
@@ -199,6 +251,18 @@ const styles = StyleSheet.create({
   chipRow: {
     marginTop: 8,
     alignItems: 'center',
+  },
+  trendRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  trendLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+    fontVariant: ['tabular-nums'],
   },
   emptyBody: {
     flex: 1,
