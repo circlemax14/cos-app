@@ -129,24 +129,29 @@ function MedicationsBannerBase({
       style={({ pressed }) => [
         styles.card,
         {
-          backgroundColor: `${tint}14`,
-          borderColor: `${tint}33`,
-          opacity: pressed ? 0.85 : 1,
+          // Ken 2026-08-06 — bumped from a 14% tint wash to a solid
+          // saturated green so the banner reads as a proper section
+          // header rather than a subtle chip. Header text goes white
+          // for AAA contrast on the tint; subtitle stays a lighter
+          // white for hierarchy. Icon well flips to white/tint.
+          backgroundColor: tint,
+          borderColor: tint,
+          opacity: pressed ? 0.9 : 1,
         },
       ]}
     >
       <View style={styles.headerRow}>
         <View
-          style={[styles.iconWrap, { backgroundColor: `${tint}22`, borderColor: `${tint}44` }]}
+          style={[styles.iconWrap, { backgroundColor: '#FFFFFF22', borderColor: '#FFFFFF66' }]}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
-          <MaterialIcons name="medication" size={24} color={tint} />
+          <MaterialIcons name="medication" size={24} color="#FFFFFF" />
         </View>
         <View style={styles.textCol}>
           <Text
             style={{
-              color: text,
+              color: '#FFFFFF',
               fontSize: sz(16),
               fontWeight: wt(700) as any,
             }}
@@ -156,7 +161,7 @@ function MedicationsBannerBase({
           </Text>
           <Text
             style={{
-              color: subtext,
+              color: '#FFFFFFDD',
               fontSize: sz(13),
               marginTop: 3,
               lineHeight: 18,
@@ -168,7 +173,7 @@ function MedicationsBannerBase({
               : `${count} on file. Tap to view, add, or discontinue.`}
           </Text>
         </View>
-        <MaterialIcons name="chevron-right" size={24} color={tint} />
+        <MaterialIcons name="chevron-right" size={24} color="#FFFFFF" />
       </View>
 
       {/* Ken 2026-08-06 — upcoming-dose preview folded in from the
@@ -176,14 +181,14 @@ function MedicationsBannerBase({
           one active med has a scheduled time[]; keeps the banner
           compact for patients with add-and-forget meds. */}
       {previewMeds.length > 0 ? (
-        <View style={[styles.previewSection, { borderTopColor: `${tint}33` }]}>
+        <View style={[styles.previewSection, { borderTopColor: '#FFFFFF44' }]}>
           {previewMeds.map((m) => (
             <View key={m.id} style={styles.previewRow}>
-              <View style={[styles.doseDot, { backgroundColor: `${tint}44`, borderColor: tint }]} />
+              <View style={[styles.doseDot, { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }]} />
               <Text
                 style={{
                   flex: 1,
-                  color: text,
+                  color: '#FFFFFF',
                   fontSize: sz(13),
                   fontWeight: wt(600) as any,
                 }}
@@ -193,7 +198,7 @@ function MedicationsBannerBase({
               </Text>
               <Text
                 style={{
-                  color: subtext,
+                  color: '#FFFFFFCC',
                   fontSize: sz(12),
                   marginLeft: 8,
                 }}
@@ -206,7 +211,7 @@ function MedicationsBannerBase({
           {extraCount > 0 ? (
             <Text
               style={{
-                color: tint,
+                color: '#FFFFFF',
                 fontSize: sz(12),
                 fontWeight: wt(600) as any,
                 marginTop: 6,

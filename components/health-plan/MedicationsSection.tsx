@@ -173,14 +173,31 @@ export interface MedicationsSectionProps {
    * confirming a med. Initial value (0) does nothing.
    */
   openAddSignal?: number;
+  /**
+   * Ken 2026-08-06 — when true, drop the internal 20pt horizontal
+   * margin on cards + section headers so the parent screen can supply
+   * horizontal padding at its own preferred value (16pt to match
+   * Health Trends banner on the medications screen). Defaults false to
+   * preserve the legacy layout on health-plan.tsx +
+   * PlanScreenRedesigned surfaces that rely on the internal margin.
+   */
+  flush?: boolean;
 }
 
 export function MedicationsSection({
   onLayout,
   openAddSignal = 0,
+  flush = false,
 }: MedicationsSectionProps = {}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // Ken 2026-08-06 — flush override zeroes the internal horizontal
+  // margins on cards + section headers when the parent supplies its
+  // own padding. Threaded into every style array below rather than
+  // via a wrapping conditional so the changes stay local + reviewable.
+  const flushOverride = flush ? { marginHorizontal: 0 } : null;
+  const flushPadOverride = flush ? { paddingHorizontal: 0 } : null;
 
   // Ken 2026-08-06 — opt into `?includePast=1` (BE PR #365) so
   // discontinued meds land in the response with `discontinuedAt`
@@ -339,7 +356,7 @@ export function MedicationsSection({
   return (
     <View onLayout={onLayout}>
       {/* Section header */}
-      <View style={styles.secHead}>
+      <View style={[styles.secHead, flushPadOverride]}>
         <Text
           style={[
             styles.secLabel,
@@ -380,7 +397,7 @@ export function MedicationsSection({
 
       {/* Always-visible safety disclaimer */}
       <View
-        style={[styles.disclaimer, { backgroundColor: (colors.subtext as string) + '12', borderColor: colors.border }]}
+        style={[styles.disclaimer, flushOverride, { backgroundColor: (colors.subtext as string) + '12', borderColor: colors.border }]}
         accessibilityRole="alert"
         accessibilityLabel={SAFETY_DISCLAIMER}
       >
@@ -408,7 +425,7 @@ export function MedicationsSection({
           identity). */}
       {updateMutation.isError ? (
         <View
-          style={[styles.errorBox, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}
+          style={[styles.errorBox, flushOverride, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
         >
@@ -432,6 +449,7 @@ export function MedicationsSection({
         <View
           style={[
             styles.recentlyHiddenCard,
+            flushOverride,
             { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' },
           ]}
         >
@@ -512,7 +530,7 @@ export function MedicationsSection({
         const past = medications.filter((m) => !!m.discontinuedAt);
         if (medications.length === 0) {
           return (
-            <View style={[styles.emptyRow, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
+            <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
               <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
                 No medications yet. Tap Add to track one you&apos;re taking.
               </Text>
@@ -538,7 +556,7 @@ export function MedicationsSection({
               </Text>
             </Text>
             {active.length === 0 ? (
-              <View style={[styles.emptyRow, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
+              <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
                 <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
                   No active medications. Tap Add to track one you&apos;re taking.
                 </Text>
@@ -560,6 +578,7 @@ export function MedicationsSection({
                   onConfirmAlertOpen={beginConfirmAlert}
                   onConfirmAlertResolve={endConfirmAlert}
                   collapsible
+                  flush={flush}
                 />
               ))
             )}
@@ -597,6 +616,7 @@ export function MedicationsSection({
                     onConfirmAlertOpen={beginConfirmAlert}
                     onConfirmAlertResolve={endConfirmAlert}
                     isPast
+                    flush={flush}
                   />
                 ))}
               </>
@@ -758,7 +778,11 @@ function MedicationCardDescriptive({
       </Text>
       <Text
         style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
-        numberOfLines={1}
+        // Ken 2026-08-06 — was 1 line: dose + frequency for pill/patch
+        // meds regularly runs "Take 1 capsule by mouth twice daily" which
+        // truncates on iPhone SE width. Allow up to 3 lines so the full
+        // sig always reads clean.
+        numberOfLines={3}
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
@@ -767,7 +791,7 @@ function MedicationCardDescriptive({
       {med.times.length > 0 ? (
         <Text
           style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}
-          numberOfLines={1}
+          numberOfLines={2}
           accessibilityElementsHidden={true}
           importantForAccessibility="no-hide-descendants"
         >
@@ -850,6 +874,7 @@ function MedicationCard({
   onConfirmAlertResolve,
   collapsible = false,
   isPast = false,
+  flush = false,
 }: ThemeProps & {
   med: Medication;
   busy: boolean;
@@ -875,6 +900,11 @@ function MedicationCard({
    *  controls), with a muted color treatment + "Discontinued
    *  {date}" caption. `collapsible` is ignored when isPast=true. */
   isPast?: boolean;
+  /** Ken 2026-08-06 — see MedicationsSection.flush. Zeroes the card's
+   *  internal 20pt horizontal margin so the parent screen supplies
+   *  its own horizontal padding (medications screen uses 16pt to
+   *  match Health Trends banner). */
+  flush?: boolean;
 }): React.JSX.Element {
   const [expanded, setExpanded] = React.useState(!collapsible);
   React.useEffect(() => {
@@ -951,6 +981,7 @@ function MedicationCard({
     <View
       style={[
         styles.card,
+        flush ? { marginHorizontal: 0 } : null,
         {
           backgroundColor: (colors.card as string) + 'D9',
           borderColor: colors.border,

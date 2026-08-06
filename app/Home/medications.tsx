@@ -89,8 +89,13 @@ export default function MedicationsScreen() {
         {/* Owns the full Active / Past render + tap-to-expand active rows.
             When PLAN_MEDICATIONS_ENABLED is off on the server the section
             returns null and this screen renders only the header + today's
-            card + review prompt — acceptable degraded state. */}
-        <MedicationsSection openAddSignal={addNonce} />
+            card + review prompt — acceptable degraded state.
+
+            Ken 2026-08-06 — flush={true} zeroes the section's internal
+            20pt horizontal margin so its cards align to the screen's
+            16pt ScrollView padding (which itself matches the Health
+            Trends banner margin on Home). */}
+        <MedicationsSection openAddSignal={addNonce} flush />
       </ScrollView>
     </AppWrapper>
   );
