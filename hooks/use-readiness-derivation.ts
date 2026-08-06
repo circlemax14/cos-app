@@ -21,7 +21,8 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing'
 import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
@@ -494,6 +495,11 @@ export interface UseReadinessDerivationResult {
 export function useReadinessDerivation(enabled: boolean): UseReadinessDerivationResult {
   const isIos = Platform.OS === 'ios'
   const isUnavailable = !isIos || !isHealthKitAvailable()
+  // Ken 2026-08-06 iter 3 — a successful readiness snapshot POST feeds
+  // the sleep sub-score of the wellbeing composite. Grab the query
+  // client here so the post effect below can invalidate wellbeing
+  // caches once the BE confirms acceptance.
+  const queryClient = useQueryClient()
 
   // Authoritative "user opted in to Apple Health" signal — mirrors the
   // pattern useHealthKitTrends uses (lib/apple-health-gate.ts, per
@@ -665,6 +671,12 @@ export function useReadinessDerivation(enabled: boolean): UseReadinessDerivation
         try {
           if (res.accepted === 1) {
             await AsyncStorage.setItem(throttleKey, String(now))
+            // Ken 2026-08-06 iter 3 — sleep sub-score changed on the
+            // server. Invalidate wellbeing caches so the tile picks up
+            // the new composite next render. BE also dropped its own
+            // wellbeing cache row on this POST (see
+            // routes/readiness-snapshot.routes.ts).
+            invalidateWellbeingCaches(queryClient)
           } else if (res.reason === 'flag_off' || res.throttled) {
             // Honor server retryAfterSeconds if provided; otherwise use
             // the standard 5-min window.

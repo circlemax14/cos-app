@@ -13,6 +13,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { detectMetricForTask, type MetricInputSpec } from '@/services/smart-task-detection';
 import { RecordMetricModal } from '@/components/home/record-metric-modal';
 import { useCalendar } from '@/hooks/use-calendar';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CalendarEvent } from '@/services/calendar';
 import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
@@ -40,6 +42,7 @@ const TASK_ICON_CONFIG: Record<TaskType, { name: keyof typeof MaterialIcons.glyp
 export default function TodayScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const queryClient = useQueryClient();
   const [patientName, setPatientName] = useState('');
   const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
@@ -189,7 +192,13 @@ export default function TodayScheduleScreen() {
           ? 'Your session expired. Please sign in again to mark tasks complete.'
           : (result.message ?? 'Could not save task completion.');
       Alert.alert("Couldn't complete task", reason);
+      return;
     }
+    // Ken 2026-08-06 iter 3 — adherence sub-score changed. Invalidate
+    // wellbeing caches so the Home tile arrow/sparkline refresh
+    // without a cold-launch. BE already dropped its own cache row
+    // on the POST /tasks/:id/complete handler.
+    invalidateWellbeingCaches(queryClient);
   };
 
   const handleTaskComplete = async (task: TaskOccurrence) => {
@@ -226,7 +235,11 @@ export default function TodayScheduleScreen() {
           ? 'Your session expired. Please sign in again to skip tasks.'
           : (result.message ?? 'Could not save task skip.');
       Alert.alert("Couldn't skip task", reason);
+      return;
     }
+    // Skips also count as expected-not-done in completionRate — same
+    // wellbeing invalidation as complete.
+    invalidateWellbeingCaches(queryClient);
   };
 
   // Pull to refresh — re-fetch medications + plan tasks.

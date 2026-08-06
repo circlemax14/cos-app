@@ -182,6 +182,14 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
       // fired yet) but keeps the surface honest if a future flow lands
       // on BPS between check-ins.
       queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] })
+      // Ken 2026-08-06 iter 3 — the assessments sub-score is 40% of the
+      // wellbeing composite. Invalidate both the current-day + history
+      // caches so the Home tile arrow/sparkline and the detail screen's
+      // component breakdown all refetch and reflect the new self-report
+      // immediately (BE already dropped its cache row on the PUT).
+      queryClient.invalidateQueries({ queryKey: ['wellbeing-score', 'current'] })
+      queryClient.invalidateQueries({ queryKey: ['wellbeing-history'] })
+      queryClient.invalidateQueries({ queryKey: ['wellbeing-score', 'warmer'] })
       // Show the celebration overlay (SCRUM-230) for ~1.5s, then return
       // to the caller-provided destination (chunk 67) or the catalog
       // default. The overlay handles its own dismiss timer.

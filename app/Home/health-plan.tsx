@@ -25,7 +25,8 @@ import {
   skipTask,
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, AiPlanGoal, TaskOccurrence, TaskType } from '@/services/api/types';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
@@ -191,6 +192,7 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
 export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const queryClient = useQueryClient();
   // COS-360 / SCRUM-577 — resolves 'agency-supported' → "Family Support"
   // when ASSESSMENT_STRATEGY_V2_ENABLED is on. Passed into planTypeLabel()
   // at each call site so the flag effect is consistent across the screen.
@@ -564,9 +566,14 @@ export default function HealthPlanScreen() {
               : t,
           ),
         );
+        return;
       }
+      // Ken 2026-08-06 iter 3 — adherence sub-score changed. Refresh
+      // the wellbeing tile + detail screen so the composite reflects
+      // the new completion without waiting for React Query staleTime.
+      invalidateWellbeingCaches(queryClient);
     },
-    [],
+    [queryClient],
   );
 
   const onSkip = useCallback(
@@ -587,9 +594,11 @@ export default function HealthPlanScreen() {
               : t,
           ),
         );
+        return;
       }
+      invalidateWellbeingCaches(queryClient);
     },
-    [],
+    [queryClient],
   );
 
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
