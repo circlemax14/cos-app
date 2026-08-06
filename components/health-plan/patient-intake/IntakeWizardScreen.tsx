@@ -23,7 +23,7 @@ import {
   useRetakeIntake,
 } from '@/hooks/use-patient-intake';
 import { IntakeAnswerError } from '@/services/api/patient-intake';
-import type { IntakeAnswerValue, IntakeQuestion } from '@/types/patient-intake';
+import type { IntakeAnswerValue, IntakeQuestion, IntakeSection } from '@/types/patient-intake';
 
 import IntakeProgressHeader from './IntakeProgressHeader';
 import IntakeQuestionRenderer from './IntakeQuestionRenderer';
@@ -34,8 +34,18 @@ type ColorPalette = (typeof Colors)['light'];
 export default function IntakeWizardScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const params = useLocalSearchParams<{ retake?: string }>();
+  const params = useLocalSearchParams<{ retake?: string; section?: string }>();
   const isRetakeRequest = params.retake === '1';
+  // Ken 2026-08-05 — sectioned retake. When `section` is set to one
+  // of the three sections, the wizard walks only that section's
+  // questions and, immediately after the retake mutation succeeds,
+  // patches the OTHER sections' answers back onto the fresh version
+  // (client-only preservation — no BE change). Undefined/invalid =
+  // full-intake retake (legacy single-tap behavior).
+  const requestedSection: IntakeSection | undefined =
+    params.section === 'body' || params.section === 'mind' || params.section === 'life'
+      ? params.section
+      : undefined;
   const intakeQuery = usePatientIntake();
   const startMut = useStartIntake();
   const patchMut = usePatchIntakeAnswers();
@@ -47,7 +57,13 @@ export default function IntakeWizardScreen() {
   const [invalidKey, setInvalidKey] = useState<string | null>(null);
 
   const intake = intakeQuery.data?.intake ?? null;
-  const questions = intakeQuery.data?.questions ?? [];
+  const allQuestions = intakeQuery.data?.questions ?? [];
+  // Filter to the picked section (if any). When `requestedSection` is
+  // undefined we present every question (legacy full retake).
+  const questions = useMemo(
+    () => requestedSection ? allQuestions.filter((q) => q.section === requestedSection) : allQuestions,
+    [allQuestions, requestedSection],
+  );
 
   // Keep a live ref to `draft` so async advance() reads the latest value
   // even if the user typed again between Next-tap and PATCH resolve.
@@ -67,14 +83,55 @@ export default function IntakeWizardScreen() {
   if (isRetakeRequest && !intendsToRetakeRef.current) {
     intendsToRetakeRef.current = true;
   }
+  // Ken 2026-08-05 — sectioned retake preservation. When the user is
+  // retaking only ONE section, snapshot the pre-retake answers BEFORE
+  // firing the retake mutation. After retake succeeds, immediately
+  // patch the OTHER two sections' answers onto the fresh intake — so
+  // the untouched sections aren't blown away. Falls through to the
+  // legacy full-clear behavior when requestedSection is undefined.
+  const preservedAnswersRef = useRef<Record<string, IntakeAnswerValue> | null>(null);
   useEffect(() => {
     if (!isRetakeRequest) return;
     if (hasRetakenRef.current) return;
     if (!intakeQuery.isSuccess) return;
     if (intake?.status !== 'complete') return;
+    // Capture the answers that must survive the retake — only meaningful
+    // when a specific section was picked. For a full retake this stays
+    // null (the retakeMut fresh intake keeps its empty answers).
+    if (requestedSection) {
+      const priorAnswers = intake.answers ?? {};
+      const priorSections = new Map(allQuestions.map((q) => [q.key, q.section] as const));
+      const preserved: Record<string, IntakeAnswerValue> = {};
+      for (const [k, v] of Object.entries(priorAnswers)) {
+        const s = priorSections.get(k);
+        // Preserve answers whose question belongs to a DIFFERENT section
+        // than the one being re-taken. Drop unknowns defensively — a
+        // stale key from a prior schema version has nowhere clean to land.
+        if (s && s !== requestedSection) preserved[k] = v;
+      }
+      preservedAnswersRef.current = preserved;
+    }
     hasRetakenRef.current = true;
     retakeMut.mutate();
-  }, [isRetakeRequest, intakeQuery.isSuccess, intake?.status, retakeMut]);
+  }, [isRetakeRequest, intakeQuery.isSuccess, intake?.status, intake?.answers, allQuestions, requestedSection, retakeMut]);
+
+  // After a section-scoped retake succeeds and the fresh intake lands
+  // in cache, restore the preserved (non-picked-section) answers via
+  // a single patch. Ref-guarded so it fires exactly once per retake.
+  const hasPreservedRef = useRef(false);
+  useEffect(() => {
+    if (!requestedSection) return;
+    if (hasPreservedRef.current) return;
+    if (!retakeMut.isSuccess) return;
+    if (!intake || intake.status !== 'in_progress') return;
+    const preserved = preservedAnswersRef.current;
+    if (!preserved || Object.keys(preserved).length === 0) {
+      hasPreservedRef.current = true;
+      return;
+    }
+    hasPreservedRef.current = true;
+    patchMut.mutate(preserved);
+  }, [requestedSection, retakeMut.isSuccess, intake, patchMut]);
 
   // Auto-start intake if the server has none once the initial fetch resolves.
   // The hook swallows 409 INTAKE_IN_PROGRESS and invalidates so a duplicate

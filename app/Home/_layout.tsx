@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { View } from 'react-native';
+import { Dimensions, View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -22,8 +22,12 @@ export default function TabLayout() {
    * Defaults to `false` on load, so pre-flip users see zero change.
    */
   const unifiedDefault = useUnifiedPlanDefaultEnabled();
+  // Ken 2026-08-05 — phones get the 1-word short label (space is tight on
+  // 5 tabs @ ~65pt each); tablets keep the full 2-word label. Threshold
+  // matches isTablet() in stores/accessibility-store.tsx (>=768pt).
+  const isTablet = Dimensions.get('window').width >= 768;
   const carePlanTabOptions = {
-    title: 'Health Plan',
+    title: isTablet ? 'Health Plan' : 'Plan',
     tabBarIcon: ({ color }: { color: string }) => (
       <BeatingHeartIcon size={getScaledFontSize(26)} color={color} />
     ),
@@ -115,7 +119,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="plan"
         options={{
-          title: 'Health Summary',
+          title: isTablet ? 'Health Summary' : 'Summary',
           tabBarIcon: ({ color }) => (
             <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
           ),

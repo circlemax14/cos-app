@@ -11,8 +11,9 @@
  * Reachable via the "View my intake" action on the IntakeCtaCard's
  * completed-state card.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -92,7 +93,18 @@ export default function IntakeReportScreen() {
     return { vaccines: list.map(immunizationToRow) };
   }, [immunizations.data]);
 
-  const goRetake = () => router.push('/Home/patient-intake?retake=1' as never);
+  // Ken 2026-08-05 — sectioned retake. Instead of walking all 30+
+  // questions on every "Update my answers" tap, the sheet lets the
+  // patient pick a section (Body / Mind / Life) or opt for all. The
+  // wizard filters questions client-side and preserves the untouched
+  // sections' answers across the fresh intake version. Retake=all
+  // preserves the pre-existing single-tap flow.
+  const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
+  const goRetake = (section?: 'body' | 'mind' | 'life') => {
+    setRetakeSheetOpen(false);
+    const suffix = section ? `&section=${section}` : '';
+    router.push(`/Home/patient-intake?retake=1${suffix}` as never);
+  };
   // router.back() no-ops from this hidden Tabs.Screen (href:null), so
   // route directly to the Health Summary tab that owns the intake CTA.
   const goBack = () => router.replace('/Home/plan' as never);
@@ -490,10 +502,10 @@ export default function IntakeReportScreen() {
         <ShareIntakeReportSection />
 
         <Pressable
-          onPress={goRetake}
+          onPress={() => setRetakeSheetOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel="Retake intake"
-          accessibilityHint="Opens the wizard to update your answers"
+          accessibilityLabel="Update my answers"
+          accessibilityHint="Opens a picker to update one section or all sections of your intake"
           style={({ pressed }) => [
             styles.retakeButton,
             { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
@@ -515,6 +527,15 @@ export default function IntakeReportScreen() {
             Update my answers
           </Text>
         </Pressable>
+
+        <RetakeSectionSheet
+          visible={retakeSheetOpen}
+          onDismiss={() => setRetakeSheetOpen(false)}
+          onPick={goRetake}
+          colors={colors}
+          scale={getScaledFontSize}
+          weight={getScaledFontWeight}
+        />
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -625,4 +646,150 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 24,
   },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: 34,
+  },
+  sheetGrip: {
+    alignSelf: 'center',
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: Spacing.md,
+  },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: Radii.md,
+    marginBottom: 6,
+  },
+  sheetRowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
 });
+
+// ─── RetakeSectionSheet ──────────────────────────────────────────────
+// Ken 2026-08-05 — bottom sheet listing the three intake sections plus
+// an "All sections" option. Client-only sectioned retake — the wizard
+// filters questions to the picked section and preserves untouched
+// sections' answers across the fresh intake version.
+
+type PaletteLike = { text: string; subtext: string; card: string; border: string; tint: string };
+
+function RetakeSectionSheet({
+  visible,
+  onDismiss,
+  onPick,
+  colors,
+  scale,
+  weight,
+}: {
+  visible: boolean;
+  onDismiss: () => void;
+  onPick: (section?: 'body' | 'mind' | 'life') => void;
+  colors: PaletteLike;
+  scale: (n: number) => number;
+  weight: (n: number) => string;
+}) {
+  const rows: Array<{
+    key: 'body' | 'mind' | 'life' | 'all';
+    icon: React.ComponentProps<typeof MaterialIcons>['name'];
+    label: string;
+    detail: string;
+  }> = [
+    { key: 'body', icon: 'favorite', label: 'Body', detail: 'Conditions, medications, vitals, lifestyle' },
+    { key: 'mind', icon: 'psychology', label: 'Mind', detail: 'Mood, stress, sleep, mental health' },
+    { key: 'life', icon: 'groups', label: 'Life', detail: 'Work, finances, social support' },
+    { key: 'all', icon: 'refresh', label: 'All sections', detail: 'Start over with every question' },
+  ];
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onDismiss}
+      presentationStyle="overFullScreen"
+    >
+      <Pressable style={styles.sheetOverlay} onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss">
+        <Pressable
+          style={[styles.sheetCard, { backgroundColor: colors.card }]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View style={[styles.sheetGrip, { backgroundColor: colors.border }]} />
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: scale(17),
+              fontWeight: weight(700) as TextStyle['fontWeight'],
+              marginBottom: 4,
+            }}
+          >
+            Update which section?
+          </Text>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: scale(13),
+              marginBottom: 12,
+            }}
+          >
+            Answers in the other sections stay as they are.
+          </Text>
+          {rows.map((r) => (
+            <Pressable
+              key={r.key}
+              onPress={() => onPick(r.key === 'all' ? undefined : r.key)}
+              accessibilityRole="button"
+              accessibilityLabel={r.label}
+              accessibilityHint={r.detail}
+              style={({ pressed }) => [
+                styles.sheetRow,
+                { backgroundColor: pressed ? colors.border : 'transparent' },
+              ]}
+            >
+              <View style={[styles.sheetRowIcon, { backgroundColor: `${colors.tint}22` }]}>
+                <MaterialIcons name={r.icon} size={scale(20)} color={colors.tint} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: scale(15),
+                    fontWeight: weight(600) as TextStyle['fontWeight'],
+                  }}
+                >
+                  {r.label}
+                </Text>
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: scale(12),
+                    marginTop: 2,
+                  }}
+                >
+                  {r.detail}
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={scale(20)} color={colors.subtext} />
+            </Pressable>
+          ))}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
