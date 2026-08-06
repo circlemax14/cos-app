@@ -25,9 +25,12 @@ import { apiClient } from '@/lib/api-client'
 export type WellbeingBand = 'optimal' | 'developing' | 'foundational' | 'initial'
 
 /**
- * Component names emitted by the V2 formula. See BE proposal:
- *   self-assessments 50% · sleep 25% · adherence 25%.
- * `wellness-wheel` + `wearables` are reserved names — weight 0 today.
+ * Component names emitted by the V2 formula. Ken 2026-08-06 iter 2:
+ *   self-assessments 40% · sleep 20% · adherence 20% · lab-results 10% · wearables 10%.
+ * `wellness-wheel` is a reserved name — weight 0 today.
+ * `lab-results` + `wearables` currently emit null-scored components
+ * until their data sources are wired; the FE renders them with a
+ * "coming soon" caption in the meantime.
  */
 export type WellbeingComponentName =
   | 'self-assessments'
@@ -35,6 +38,7 @@ export type WellbeingComponentName =
   | 'sleep'
   | 'wearables'
   | 'adherence'
+  | 'lab-results'
 
 export interface WellbeingComponentFreshness {
   newestAssessmentAt: string | null

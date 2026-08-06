@@ -64,16 +64,18 @@ const COMPONENT_LABEL: Record<WellbeingComponent['name'], string> = {
   'self-assessments': 'Assessments',
   'sleep': 'Sleep',
   'adherence': 'Task adherence',
-  'wellness-wheel': 'Wellness wheel',
+  'lab-results': 'Lab results',
   'wearables': 'Wearables',
+  'wellness-wheel': 'Wellness wheel',
 }
 
 const COMPONENT_HINT: Record<WellbeingComponent['name'], string> = {
   'self-assessments': 'Your self-reported check-ins',
   'sleep': 'Rolling 7-day mean from Apple Health',
   'adherence': '% of care-plan tasks completed this week',
+  'lab-results': 'Recent bloodwork and vitals — coming soon',
+  'wearables': 'Steps, heart rate, and activity — coming soon',
   'wellness-wheel': '',
-  'wearables': '',
 }
 
 export default function WellbeingScoreDetailScreen(): React.JSX.Element {
