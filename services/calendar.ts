@@ -31,6 +31,69 @@
 import * as Calendar from 'expo-calendar'
 import { Platform } from 'react-native'
 
+// ── Native access serialization (CRASH #22) ──────────────────────────────
+
+/**
+ * ─── CRASH #22 MITIGATION (Ken 2026-08-07) ──────────────────────────
+ *
+ * Production crash, build 62 / iOS 26.5.2 / iPhone14,3:
+ *
+ *   Exception Type: EXC_CRASH (SIGABRT), abort() called
+ *   Crashed thread 12: com.meta.react.turbomodulemanager.queue
+ *     objc_exception_rethrow → __cxa_rethrow → std::__terminate → abort
+ *   Last exception backtrace ends in -[NSInvocation invokeWithTarget:]
+ *   CONCURRENTLY, thread 15 (expo.modules.AsyncFunctionQueue) was inside:
+ *     -[EKEventStore calendarsForEntityType:]
+ *       → -[EKObject(Shared) meltedAndCachedSingleRelationObjectForKey:]
+ *       → -[EKPersistentObject meltedObjectInStore:]
+ *       → -[EKEventStore publicObjectWithPersistentObject:]
+ *       → -[EKObject initWithPersistentObject:] → pthread_mutex_unlock
+ *
+ * An Objective-C exception was raised during a native module invocation
+ * and rethrown with no handler, which terminates the process. A JS
+ * `try/catch` CANNOT prevent this — the exception escapes on the native
+ * queue before any promise rejects, which is why the existing per-call
+ * try/catch blocks in this file (see the file header, which already
+ * anticipated NSExceptions from expo-calendar on iOS 26.5) did not save us.
+ *
+ * WHY IT HAPPENS: `EKEventStore` is not safe for concurrent use. Apple's
+ * own docs are explicit that an event store must not be shared across
+ * threads while it is being mutated/enumerated. We were calling several
+ * expo-calendar functions AT THE SAME TIME — `hooks/use-calendar.ts`
+ * fans out `listEvents` + `listCalendars` + `listReminders` inside a
+ * single `Promise.all`, and each of those independently calls
+ * `getCalendarsAsync`. expo dispatches each onto its async queue, so two
+ * EventKit enumerations could interleave on the same underlying store.
+ *
+ * THE MITIGATION: funnel every native calendar call through a single
+ * promise chain so at most ONE is in flight at any moment. Callers keep
+ * their existing `Promise.all` shape and their existing signatures —
+ * the calls simply queue instead of racing. The cost is latency on a
+ * cold calendar screen (a few sequential native calls rather than
+ * parallel); the benefit is removing an entire class of hard crash.
+ *
+ * HONEST CAVEAT: the crash report does not include the NSException's
+ * `reason`, so this is a targeted mitigation derived from the thread
+ * state, not a confirmed root-cause fix. If crashes continue after this
+ * ships, the next step is a native-side @try/@catch in expo-calendar
+ * (requires a new binary, not an OTA) plus capturing the exception name.
+ */
+let calendarNativeChain: Promise<unknown> = Promise.resolve()
+
+function withCalendarLock<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const run = calendarNativeChain.then(fn, fn)
+  // Keep the chain alive regardless of outcome so one rejection cannot
+  // wedge every subsequent calendar call. We deliberately swallow here —
+  // the real result (including rejection) is returned to the caller via
+  // `run`, and each call site already has its own error handling.
+  calendarNativeChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  void label // retained for future instrumentation / breadcrumbs
+  return run
+}
+
 // ── Public types ──────────────────────────────────────────────────────────
 
 export interface CalendarSource {
@@ -118,7 +181,7 @@ export type UpdateEventInput = Partial<Omit<CreateEventInput, 'calendarId'>> & {
  */
 export async function getPermissionStatus(): Promise<PermissionState> {
   try {
-    const status = await Calendar.getCalendarPermissionsAsync()
+    const status = await withCalendarLock('getCalendarPermissions', () => Calendar.getCalendarPermissionsAsync())
     return {
       granted: status.status === 'granted',
       prompted: status.status !== 'undetermined',
@@ -142,7 +205,7 @@ export async function getPermissionStatus(): Promise<PermissionState> {
  */
 export async function requestPermission(): Promise<PermissionState> {
   try {
-    const status = await Calendar.requestCalendarPermissionsAsync()
+    const status = await withCalendarLock('requestCalendarPermissions', () => Calendar.requestCalendarPermissionsAsync())
     return {
       granted: status.status === 'granted',
       prompted: status.status !== 'undetermined',
@@ -164,7 +227,7 @@ export async function listCalendars(): Promise<CalendarSource[]> {
   const status = await getPermissionStatus()
   if (!status.granted) return []
   try {
-    const raw = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)
+    const raw = await withCalendarLock('getCalendars:event', () => Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT))
     return raw.map(mapCalendarToSource)
   } catch {
     return []
@@ -210,7 +273,7 @@ export async function readEvents(opts: ReadEventsOptions = {}): Promise<Calendar
 
   let calendars: Calendar.Calendar[]
   try {
-    calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)
+    calendars = await withCalendarLock('getCalendars:event', () => Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT))
   } catch {
     return []
   }
@@ -223,7 +286,7 @@ export async function readEvents(opts: ReadEventsOptions = {}): Promise<Calendar
 
   let raw: Calendar.Event[]
   try {
-    raw = await Calendar.getEventsAsync(calendarIds, windowStart, windowEnd)
+    raw = await withCalendarLock('getEvents', () => Calendar.getEventsAsync(calendarIds, windowStart, windowEnd))
   } catch {
     return []
   }
@@ -297,19 +360,21 @@ export async function createEvent(input: CreateEventInput): Promise<string | nul
   if (!status.granted || !status.canWrite) return null
 
   try {
-    const eventId = await Calendar.createEventAsync(input.calendarId, {
-      title: input.title,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      allDay: input.allDay ?? false,
-      location: input.location,
-      notes: input.notes,
-      alarms: (input.alarms ?? []).map((minutesBefore) => ({
-        relativeOffset: -Math.abs(minutesBefore),
-        method: Calendar.AlarmMethod.ALERT,
-      })),
-      timeZone: input.allDay ? undefined : intlTimeZone(),
-    })
+    const eventId = await withCalendarLock('createEvent', () =>
+      Calendar.createEventAsync(input.calendarId, {
+        title: input.title,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        allDay: input.allDay ?? false,
+        location: input.location,
+        notes: input.notes,
+        alarms: (input.alarms ?? []).map((minutesBefore) => ({
+          relativeOffset: -Math.abs(minutesBefore),
+          method: Calendar.AlarmMethod.ALERT,
+        })),
+        timeZone: input.allDay ? undefined : intlTimeZone(),
+      }),
+    )
     return eventId
   } catch {
     return null
@@ -333,7 +398,7 @@ export async function updateEvent(input: UpdateEventInput): Promise<boolean> {
         method: Calendar.AlarmMethod.ALERT,
       }))
     }
-    await Calendar.updateEventAsync(input.id, patch)
+    await withCalendarLock('updateEvent', () => Calendar.updateEventAsync(input.id, patch))
     return true
   } catch {
     return false
@@ -344,7 +409,7 @@ export async function deleteEvent(id: string): Promise<boolean> {
   const status = await getPermissionStatus()
   if (!status.granted || !status.canWrite) return false
   try {
-    await Calendar.deleteEventAsync(id)
+    await withCalendarLock('deleteEvent', () => Calendar.deleteEventAsync(id))
     return true
   } catch {
     return false
@@ -464,7 +529,7 @@ export function mergeEvents(deviceEvents: CalendarEvent[], appEvents: CalendarEv
 
 export async function getReminderPermissionStatus(): Promise<PermissionState> {
   try {
-    const status = await Calendar.getRemindersPermissionsAsync()
+    const status = await withCalendarLock('getRemindersPermissions', () => Calendar.getRemindersPermissionsAsync())
     return {
       granted: status.status === 'granted',
       prompted: status.status !== 'undetermined',
@@ -477,7 +542,7 @@ export async function getReminderPermissionStatus(): Promise<PermissionState> {
 
 export async function requestReminderPermission(): Promise<PermissionState> {
   try {
-    const status = await Calendar.requestRemindersPermissionsAsync()
+    const status = await withCalendarLock('requestRemindersPermissions', () => Calendar.requestRemindersPermissionsAsync())
     return {
       granted: status.status === 'granted',
       prompted: status.status !== 'undetermined',
@@ -502,7 +567,7 @@ export async function readReminders(opts: ReadEventsOptions = {}): Promise<Calen
 
   let calendars: Calendar.Calendar[]
   try {
-    calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.REMINDER)
+    calendars = await withCalendarLock('getCalendars:reminder', () => Calendar.getCalendarsAsync(Calendar.EntityTypes.REMINDER))
   } catch {
     return []
   }
@@ -526,17 +591,21 @@ export async function readReminders(opts: ReadEventsOptions = {}): Promise<Calen
   const calendarIds = calendars.map((c) => c.id)
   let raw: Calendar.Reminder[]
   try {
-    const incomplete = await Calendar.getRemindersAsync(
-      calendarIds,
-      Calendar.ReminderStatus.INCOMPLETE,
-      windowStart,
-      windowEnd,
+    const incomplete = await withCalendarLock('getReminders:incomplete', () =>
+      Calendar.getRemindersAsync(
+        calendarIds,
+        Calendar.ReminderStatus.INCOMPLETE,
+        windowStart,
+        windowEnd,
+      ),
     )
-    const completed = await Calendar.getRemindersAsync(
-      calendarIds,
-      Calendar.ReminderStatus.COMPLETED,
-      windowStart,
-      windowEnd,
+    const completed = await withCalendarLock('getReminders:completed', () =>
+      Calendar.getRemindersAsync(
+        calendarIds,
+        Calendar.ReminderStatus.COMPLETED,
+        windowStart,
+        windowEnd,
+      ),
     )
     raw = [...incomplete, ...completed]
   } catch {

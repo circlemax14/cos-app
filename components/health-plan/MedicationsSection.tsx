@@ -68,12 +68,79 @@ function daysUntil(iso: string | null): number | null {
   return Math.max(0, Math.round(diffMs / 86_400_000));
 }
 
+/**
+ * Normalize one user-typed time into the strict `HH:mm` the backend
+ * requires, or return null when it genuinely can't be understood.
+ *
+ * ─── BUG #12.4 FIX (Ken 2026-08-07) ─────────────────────────────────
+ * Ken: "Would not add all data and then did not show up on this page in
+ * daily plan."
+ *
+ * `parseTimes` used to do a raw comma-split with ZERO validation, while
+ * the backend enforces `^([01]\d|2[0-3]):[0-5]\d$` inside a `.strict()`
+ * body. So a perfectly reasonable entry — "8:00", "8am", "8 AM",
+ * "20:00 " — produced a 400 that rejected the ENTIRE PUT. The med was
+ * not added at all, and the UI only said "Couldn't save that change",
+ * giving no hint that the times field was the culprit.
+ *
+ * Accepted inputs → output:
+ *   "8:00"    → "08:00"      (zero-pad)
+ *   "8"       → "08:00"      (bare hour)
+ *   "8am"     → "08:00"
+ *   "8 PM"    → "20:00"
+ *   "12am"    → "00:00"      (midnight, not 12:00)
+ *   "12pm"    → "12:00"      (noon)
+ *   "20:00 "  → "20:00"      (trim)
+ * Rejected (returns null): "25:00", "8:99", "morning", "".
+ */
+export function normalizeTimeInput(raw: string): string | null {
+  const t = raw.trim().toLowerCase().replace(/\s+/g, '');
+  if (!t) return null;
+  const m = /^(\d{1,2})(?::(\d{2}))?(am|pm)?$/.exec(t);
+  if (!m) return null;
+  let hour = parseInt(m[1], 10);
+  const minute = m[2] === undefined ? 0 : parseInt(m[2], 10);
+  const meridiem = m[3];
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  if (minute < 0 || minute > 59) return null;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    if (meridiem === 'am') hour = hour === 12 ? 0 : hour;
+    else hour = hour === 12 ? 12 : hour + 12;
+  } else if (hour < 0 || hour > 23) {
+    return null;
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
+ * Parse a comma/newline-separated list of times into strict `HH:mm`
+ * entries. Unparseable entries are reported separately so the caller can
+ * tell the user exactly which token was wrong instead of failing the
+ * whole save with a generic message (BUG #12.4).
+ */
+export function parseTimesDetailed(raw: string): { times: string[]; invalid: string[] } {
+  const times: string[] = [];
+  const invalid: string[] = [];
+  for (const tok of raw.split(/[,\n]/)) {
+    const trimmed = tok.trim();
+    if (!trimmed) continue;
+    const norm = normalizeTimeInput(trimmed);
+    if (norm) {
+      // De-dupe — "8am, 08:00" is one dose, not two.
+      if (!times.includes(norm)) times.push(norm);
+    } else {
+      invalid.push(trimmed);
+    }
+  }
+  // Chronological so the daily plan renders doses in order.
+  times.sort();
+  return { times, invalid };
+}
+
 /** Parse a comma/space-separated list of "HH:MM" times into a clean array. */
 function parseTimes(raw: string): string[] {
-  return raw
-    .split(/[,\n]/)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
+  return parseTimesDetailed(raw).times;
 }
 
 /**
@@ -346,6 +413,34 @@ export function MedicationsSection({
       },
     );
   };
+
+  /**
+   * BUG #12.3 FIX (Ken 2026-08-07) — restore a medication from a
+   * Past-section card.
+   *
+   * Ken reported: "One active medication was placed in past medications.
+   * Tried to add back. Buggy." The "buggy" part was that there was NO
+   * per-card restore control at all — CHUNK 52.2 deleted it on the
+   * (then-correct) reasoning that the server never returned hidden meds,
+   * so no card could mount for one. Once `?includePast=1` started
+   * surfacing them, that reasoning expired but the control was never
+   * brought back. The only remaining path was the amber
+   * "recently hidden" banner, which is session-local and wiped on
+   * relaunch — so anything hidden on a previous day was unrecoverable.
+   *
+   * Same `unremove` mutation as the banner path; also clears any banner
+   * entry so the two affordances can't disagree about state.
+   */
+  const restoreMedication = (id: string) => {
+    updateMutation.mutate(
+      { unremove: [id] },
+      {
+        onSuccess: () => {
+          setRecentlyHidden((prev) => prev.filter((e) => e.id !== id));
+        },
+      },
+    );
+  };
   const onToggleTracked = (med: Medication) => {
     updateMutation.mutate({ setTracked: [{ id: med.id, tracked: !med.tracked }] });
   };
@@ -535,8 +630,18 @@ export function MedicationsSection({
         // Aug-2026 rollout still surface here — the BE assigns them a
         // fallback timestamp (`overlay.updatedAt`) so they render in Past
         // instead of vanishing.
-        const active = medications.filter((m) => !m.discontinuedAt);
-        const past = medications.filter((m) => !!m.discontinuedAt);
+        // BUG #12.1/#12.2/#12.3 (Ken 2026-08-07) — a medication belongs in
+        // PAST if ANY of three things is true:
+        //   • the patient explicitly discontinued it  (discontinuedAt)
+        //   • the EHR says the course ended            (endedInEhr)
+        //   • it was hidden under the legacy "hide"    (hidden)
+        // The third case used to be misreported as a discontinue with a
+        // fabricated date; it now carries its own flag so the UI can label
+        // it honestly and offer Restore.
+        const isPastMed = (m: Medication) =>
+          !!m.discontinuedAt || m.endedInEhr === true || m.hidden === true;
+        const active = medications.filter((m) => !isPastMed(m));
+        const past = medications.filter(isPastMed);
         if (medications.length === 0) {
           return (
             <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
@@ -584,6 +689,7 @@ export function MedicationsSection({
                   onToggleTracked={() => onToggleTracked(med)}
                   onUpdateSupply={() => setSupplyEditor({ med })}
                   onSnooze={() => onSnooze(med)}
+                  onRestore={() => restoreMedication(med.id)}
                   onConfirmAlertOpen={beginConfirmAlert}
                   onConfirmAlertResolve={endConfirmAlert}
                   collapsible
@@ -622,6 +728,7 @@ export function MedicationsSection({
                     onToggleTracked={() => onToggleTracked(med)}
                     onUpdateSupply={() => setSupplyEditor({ med })}
                     onSnooze={() => onSnooze(med)}
+                    onRestore={() => restoreMedication(med.id)}
                     onConfirmAlertOpen={beginConfirmAlert}
                     onConfirmAlertResolve={endConfirmAlert}
                     isPast
@@ -879,6 +986,7 @@ function MedicationCard({
   onToggleTracked,
   onUpdateSupply,
   onSnooze,
+  onRestore,
   onConfirmAlertOpen,
   onConfirmAlertResolve,
   collapsible = false,
@@ -892,6 +1000,9 @@ function MedicationCard({
   onToggleTracked: () => void;
   onUpdateSupply: () => void;
   onSnooze: () => void;
+  /** BUG #12.3 — un-hide / un-discontinue this med (fires `unremove`).
+   *  Only invoked from Past-section rows. */
+  onRestore: () => void;
   /** Signal the parent that a destructive-confirm Alert is presenting.
    *  Parent uses this to gate its openAddSignal effect so it doesn't
    *  mount MedicationEditorModal on top of a live Alert (iOS 26.5
@@ -931,15 +1042,34 @@ function MedicationCard({
   // COS-372: form-derived display (only surfaced when MED_FORMS_ENABLED).
   const isInjectable = normalizeForm(med.form) === 'injectable';
   const formTag = formTagLabel(med.form);
-  // Friendly discontinue date for past-section rows. Falls back silently
-  // if the timestamp is missing/unparseable — Past section still renders
-  // the card, just without the "Discontinued …" caption.
-  const discontinuedLabel = React.useMemo(() => {
-    if (!isPast || !med.discontinuedAt) return null;
+  /**
+   * Caption for past-section rows.
+   *
+   * BUG #12.2/#12.3 (Ken 2026-08-07): distinguish a real DISCONTINUE
+   * from a legacy HIDE. Ken saw meds he had merely hidden appear as
+   * "Discontinued <date>" — clinically misleading, and the date shown
+   * was the last time he touched anything (the BE fell back to
+   * overlay.updatedAt). The BE now only sets discontinuedAt on an
+   * explicit discontinue and flags legacy hides with `hidden`.
+   */
+  const pastCaption = React.useMemo(() => {
+    if (!isPast) return null;
+    // BUG #12.1 — the health system reported this course as finished. Say
+    // so explicitly; the patient did not do this, and conflating the two
+    // would misrepresent their own record back to them.
+    if (med.endedInEhr && !med.discontinuedAt) {
+      return 'Ended — reported by your health records';
+    }
+    if (med.hidden && !med.discontinuedAt) {
+      return 'Hidden from your list — tap Restore to bring it back';
+    }
+    if (!med.discontinuedAt) return null;
     const d = new Date(med.discontinuedAt);
     if (Number.isNaN(d.getTime())) return null;
     return `Discontinued ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  }, [isPast, med.discontinuedAt]);
+  }, [isPast, med.discontinuedAt, med.hidden, med.endedInEhr]);
+  // Kept for the descriptive block's existing prop name.
+  const discontinuedLabel = pastCaption;
 
   // CHUNK 52.1 (Concern 1): confirm before firing the destructive Hide
   // mutation. INVARIANT: MedicationsSection must be rendered as INLINE content
@@ -1065,6 +1195,49 @@ function MedicationCard({
             />
           </View>
         )}
+        {/* BUG #12.3 FIX (Ken 2026-08-07) — Past rows get a RESTORE control.
+            Ken: "One active medication was placed in past medications. Tried
+            to add back. Buggy."
+
+            Past rows previously rendered with showControls=false and NO
+            actions at all. The per-card Restore Pressable had been deleted
+            in CHUNK 52.2 on the reasoning that the server dropped hidden
+            meds from the response, so no card could ever mount for one —
+            true THEN, but no longer true once ?includePast=1 started
+            surfacing them. The only surviving unremove path was the
+            session-local amber "recently hidden" banner, which is populated
+            only by a remove performed in the CURRENT session and is wiped on
+            relaunch. A med hidden yesterday was therefore permanently
+            unreachable. This restores the direct path. */}
+        {isPast && med.endedInEhr !== true ? (
+          <Pressable
+            onPress={onRestore}
+            disabled={busy}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Restore ${med.name} to your active medications`}
+            style={({ pressed }) => [
+              styles.cardRestorePill,
+              {
+                backgroundColor: (colors.tint as string) + '1A',
+                borderColor: (colors.tint as string) + '55',
+                opacity: pressed || busy ? 0.6 : 1,
+              },
+            ]}
+          >
+            <MaterialIcons name="undo" size={getScaledFontSize(15)} color={colors.tint as string} />
+            <Text
+              style={{
+                color: colors.tint as string,
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                marginLeft: 4,
+              }}
+            >
+              Restore
+            </Text>
+          </Pressable>
+        ) : null}
         {showControls ? (
           <>
             <Pressable
@@ -1252,6 +1425,10 @@ function MedicationEditorModal({
   const [dose, setDose] = React.useState('');
   const [frequency, setFrequency] = React.useState('');
   const [timesRaw, setTimesRaw] = React.useState('');
+  // BUG #12.4 — inline validation message for the times field so a bad
+  // token is attributed to the right input instead of surfacing as a
+  // generic "Couldn't save that change" after a server 400.
+  const [timesError, setTimesError] = React.useState<string | null>(null);
   // COS-372: which form is selected. Only surfaced when MED_FORMS_ENABLED;
   // otherwise it stays at the default and is never sent.
   const [form, setForm] = React.useState<MedicationForm>('consumable');
@@ -1276,7 +1453,22 @@ function MedicationEditorModal({
 
   const submit = () => {
     if (!nameValid) return;
-    const times = parseTimes(timesRaw);
+    // BUG #12.4 (Ken 2026-08-07) — validate + normalize times BEFORE
+    // sending. The backend's schema is strict `HH:mm` inside a
+    // `.strict()` body, so one loose token ("8am", "8:00") used to 400
+    // the entire request and silently drop the whole medication. Now we
+    // normalize what we can and tell the user precisely what we can't,
+    // instead of failing the save with a generic error.
+    const { times, invalid } = parseTimesDetailed(timesRaw);
+    if (invalid.length > 0) {
+      setTimesError(
+        invalid.length === 1
+          ? `"${invalid[0]}" isn't a time we recognise. Try 8:00, 8am, or 20:00.`
+          : `These aren't times we recognise: ${invalid.map((v) => `"${v}"`).join(', ')}. Try 8:00, 8am, or 20:00.`,
+      );
+      return;
+    }
+    setTimesError(null);
     onSubmit({
       name: name.trim(),
       dose: dose.trim() || undefined,
@@ -1425,15 +1617,44 @@ function MedicationEditorModal({
             </>
           ) : (
             <>
-              <FieldLabel text="Times (comma-separated, HH:MM)" colors={colors} getScaledFontSize={getScaledFontSize} />
+              <FieldLabel text="Times (comma-separated)" colors={colors} getScaledFontSize={getScaledFontSize} />
               <TextInput
-                style={[styles.input, { color: colors.text, borderColor: colors.text + '30', fontSize: getScaledFontSize(16) }]}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.text,
+                    // BUG #12.4 — red border when the field is the reason
+                    // the save was blocked.
+                    borderColor: timesError ? '#DC2626' : colors.text + '30',
+                    fontSize: getScaledFontSize(16),
+                  },
+                ]}
                 value={timesRaw}
-                onChangeText={setTimesRaw}
-                placeholder="e.g. 08:00, 20:00"
+                onChangeText={(v) => { setTimesRaw(v); if (timesError) setTimesError(null); }}
+                placeholder="e.g. 8am, 8:00, 20:00"
                 placeholderTextColor={colors.text + '40'}
                 autoCapitalize="none"
               />
+              {timesError ? (
+                <Text
+                  style={{ color: '#DC2626', fontSize: getScaledFontSize(12), marginTop: 6 }}
+                  accessibilityLiveRegion="polite"
+                >
+                  {timesError}
+                </Text>
+              ) : (
+                /* BUG #12.5 (Ken 2026-08-07) — "did not show up on this
+                   page in daily plan". A medication with NO times never
+                   generates a daily task (medicationTasksForDate skips
+                   `times.length === 0`), and nothing told the patient
+                   that. Make the consequence explicit at the point of
+                   entry rather than leaving them to discover it. */
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 6 }}>
+                  {timesRaw.trim().length === 0
+                    ? 'Add a time to see this medication in your daily plan.'
+                    : 'These times drive your daily plan reminders.'}
+                </Text>
+              )}
             </>
           )}
 
@@ -1762,6 +1983,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   iconBtn: { padding: 6, marginLeft: 2 },
+  // BUG #12.3 (Ken 2026-08-07) — Restore affordance on Past-section CARDS.
+  // Distinct from `restorePill` above, which belongs to the session-local
+  // "recently hidden" banner and has no border/min-height.
+  cardRestorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginLeft: 8,
+    minHeight: 36,
+  },
   // CHUNK 52.1 (Concern 3): Hide sits 12pt to the right of Edit so a mis-tap
   // between the two lands on Edit (non-destructive). Paired with asymmetric
   // hitSlop on the Hide Pressable (smaller left extent).

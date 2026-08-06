@@ -98,6 +98,30 @@ export interface Medication {
    * Additive contract — safe to read without a version gate.
    */
   discontinuedAt?: string | null;
+  /**
+   * BUG #12.3 (Ken 2026-08-07) — this med was hidden under the LEGACY
+   * "Hide this medication" semantics (present in the overlay's
+   * `removed[]` with no explicit discontinue timestamp).
+   *
+   * These are NOT clinical discontinues. The UI labels them "Hidden"
+   * rather than "Discontinued" and always offers Restore, because
+   * before this field existed a legacy hide was unrecoverable — the
+   * per-card Restore control had been removed and the only remaining
+   * unremove path was a session-local banner wiped on relaunch.
+   */
+  hidden?: boolean;
+  /**
+   * BUG #12.1 (Ken 2026-08-07) — the patient's EHR says this course has
+   * ENDED (FHIR status completed / stopped / not-taken).
+   *
+   * These used to be filtered out of the FHIR read entirely, so the
+   * medication simply never appeared anywhere in the app — Ken's "Did
+   * not include all medications". They are now returned under
+   * `?includePast=1` and belong in "Past medications", captioned to make
+   * the provenance clear (the health system reported this; the patient
+   * did not discontinue it here).
+   */
+  endedInEhr?: boolean;
 }
 
 export interface PlanMedicationsResponse {
