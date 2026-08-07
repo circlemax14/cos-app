@@ -37,17 +37,19 @@ export class DailyReadFeatureDisabledError extends Error {
 
 // ─── Types (mirror BE DailyReadResponse) ─────────────────────────────
 
+/**
+ * Ken 2026-08-07: habits and glucose are OUT as fixed pillars. `readings`
+ * replaces them and is driven by whatever the patient actually records —
+ * blood pressure, glucose, weight, pulse — so nobody sees a permanently
+ * empty Glucose row, and someone logging BP finally sees it.
+ */
 export type DailyReadPillarKey =
-  // NOTE: `habitJournal` is the ROUTINES pillar. Ken's #13 rename is
-  // display-layer only — the transport key is unchanged on purpose.
-  | 'habitJournal'
-  | 'glucose'
   | 'healthAge'
   | 'wellbeing'
-  // #9 — task completion is the fourth scoring pillar. Reads the same 7-day
-  // getTaskAnalytics rollup the wellbeing composite uses, so the two surfaces
-  // cannot tell different adherence stories.
+  // Task completion reads the same 7-day getTaskAnalytics rollup the
+  // wellbeing composite uses, so the two surfaces cannot disagree.
   | 'taskCompletion'
+  | 'readings'
 
 export type DailyReadPillarState = 'ready' | 'insufficient_data' | 'flag_off'
 
