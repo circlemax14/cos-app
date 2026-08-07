@@ -126,6 +126,24 @@ export async function clearTokens(): Promise<void> {
 
 /** Returns true if an access token is stored (does not validate expiry). */
 export async function hasStoredSession(): Promise<boolean> {
-  const token = await getAccessToken();
-  return token !== null && token.length > 0;
+  // Ken 2026-08-07: "why does the sign-in screen come when I open the app
+  // every day or after a few hours?"
+  //
+  // This used to check the ACCESS token — which Cognito expires after 60
+  // MINUTES. The refresh token is the one that defines whether a session
+  // exists, and ours is valid for 30 DAYS. Deciding "is this person signed
+  // in?" from the 60-minute credential is wrong by construction: it answers
+  // "is my current access token fresh?", not "am I signed in?".
+  //
+  // The splash gate calls this BEFORE anything that could refresh, so a
+  // false here routes straight to sign-in without the 401-refresh
+  // interceptor ever getting a chance to run.
+  //
+  // A session exists if we can still MINT an access token. Accept either
+  // token being present so a client mid-refresh is never mis-read as
+  // signed out.
+  const [access, refresh] = await Promise.all([getAccessToken(), getRefreshToken()]);
+  return (
+    (refresh !== null && refresh.length > 0) || (access !== null && access.length > 0)
+  );
 }
