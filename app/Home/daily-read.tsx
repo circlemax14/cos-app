@@ -56,11 +56,13 @@ const STATE_LABELS: Record<DailyReadPillarState, string> = {
 const PILLAR_DEST: Record<DailyReadPillarKey, string | undefined> = {
   healthAge: '/Home/health-age',
   wellbeing: '/Home/wellbeing-score',
-  glucose: '/Home/glucose',
-  habitJournal: '/Home/habit-journal',
-  // #9 — task completion drills into the plan itself, where the tasks that
-  // drive the number actually live.
+  // Task completion drills into the plan, where the tasks that drive the
+  // number actually live.
   taskCompletion: '/Home/health-plan',
+  // Ken 2026-08-07: `readings` replaced the fixed habits + glucose rows. It
+  // drills into Progress, which is where every self-reported measurement the
+  // pillar summarises is charted.
+  readings: '/Home/bps-progress',
 }
 
 const DISCLAIMER =

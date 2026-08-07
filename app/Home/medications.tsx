@@ -76,24 +76,42 @@ export default function MedicationsScreen() {
             Medications
           </Text>
           <View style={{ flex: 1 }} />
+          {/* Ken 2026-08-07: "the button looks odd, make it sophisticated."
+              Four specific changes, none of them decoration:
+                - PRESSED STATE: was opacity 0.85, which on a solid fill reads
+                  as DISABLED rather than pressed. Now a darker shade of the
+                  same hue — the button gets firmer under the finger, not
+                  fainter.
+                - DEPTH: a soft shadow in the button's own colour instead of a
+                  flat rectangle sitting on the page.
+                - WEIGHT: 700 -> 600. At this size heavy bold reads as shouting;
+                  600 with a little letter-spacing reads as considered.
+                - RHYTHM: icon 17pt and 6pt from the label, so the glyph and the
+                  word look like one object rather than two things side by side. */}
           <Pressable
             onPress={() => setAddNonce((n) => n + 1)}
             style={({ pressed }) => [
               styles.addPill,
-              { backgroundColor: colors.tint as string, opacity: pressed ? 0.85 : 1 },
+              {
+                // No `tintPressed` in the theme, so darken deliberately here
+                // rather than inventing a token one screen would use.
+                backgroundColor: pressed ? PRESSED_TINT : (colors.tint as string),
+                shadowColor: colors.tint as string,
+              },
             ]}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Add medication"
             accessibilityHint="Opens the add medication form"
           >
-            <MaterialIcons name="add" size={getScaledFontSize(18)} color="#FFFFFF" />
+            <MaterialIcons name="add" size={getScaledFontSize(17)} color="#FFFFFF" />
             <Text
               style={{
                 color: '#FFFFFF',
                 fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(700) as any,
-                marginLeft: 4,
+                fontWeight: getScaledFontWeight(600) as any,
+                letterSpacing: 0.2,
+                marginLeft: 6,
               }}
               maxFontSizeMultiplier={1.3}
             >
@@ -121,6 +139,9 @@ export default function MedicationsScreen() {
   );
 }
 
+/** Pressed shade of the teal tint — a firmer button, not a faded one. */
+const PRESSED_TINT = '#0A5450';
+
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
@@ -144,10 +165,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 999,
     minHeight: 44,
+    // Soft tinted lift. Deliberately low-contrast — the goal is that the
+    // button sits ON the page rather than being pasted flat onto it, not
+    // that it announces itself. shadowColor is set inline from the theme
+    // tint so the shadow is a shade of the button, never a grey smudge.
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },

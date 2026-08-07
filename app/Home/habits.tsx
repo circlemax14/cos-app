@@ -207,9 +207,10 @@ export default function HabitsScreen(): React.JSX.Element {
               accessibilityRole="button"
               accessibilityLabel="Add a routine"
               hitSlop={8}
-              style={({ pressed }) => [styles.addBtn, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.addPill, pressed && styles.pressed]}
             >
-              <MaterialIcons name="add" size={22} color="#0B6963" />
+              <MaterialIcons name="add" size={18} color="#FFFFFF" />
+              <Text style={styles.addPillText}>Add</Text>
             </Pressable>
           )}
         </View>
@@ -467,7 +468,23 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   backBtn: { paddingRight: 8, paddingVertical: 4 },
-  addBtn: { padding: 6, borderRadius: 8, backgroundColor: '#E0F2F1' },
+  // Ken 2026-08-07: "in routines also we need to change plus icon to add
+  // button." Was a bare "+" glyph on a pale tint square — the same defect
+  // #7 fixed on Medications, where an unlabelled icon left patients unsure
+  // what it would do. Now a labelled solid pill, matched to the Medications
+  // screen's addPill so the two surfaces read as one system. 44pt min height
+  // per iOS HIG.
+  addPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    minHeight: 44,
+    backgroundColor: '#0B6963',
+  },
+  addPillText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, marginLeft: 5 },
   pressed: { opacity: 0.7 },
   centerBlock: { marginTop: 60, alignItems: 'center', paddingHorizontal: 24 },
   card: {
