@@ -21,13 +21,16 @@
  * only handles the input lifecycle and POSTs.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -53,6 +56,33 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
   const { visible, spec, taskTitle, sourceTaskId, onClose, onConfirmComplete } = props;
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // Ken 2026-08-07: "Couldn't register numbers because keypad blocked submit
+  // button." The numeric keypads this modal uses (number-pad / decimal-pad)
+  // have NO return or Done key on iOS, so once the keyboard is up there is no
+  // way to dismiss it from the keyboard itself. Tapping the backdrop was the
+  // only escape — and that used to CANCEL the modal, throwing away whatever
+  // had just been typed.
+  //
+  // So: while the keyboard is up, a backdrop tap dismisses the keyboard
+  // instead of cancelling. Once it is down, a backdrop tap cancels as before.
+  // A ref, not state, because this is only read inside a handler and the
+  // component must not re-render on every keyboard transition.
+  const keyboardUp = useRef(false);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = Keyboard.addListener(showEvt, () => {
+      keyboardUp.current = true;
+    });
+    const onHide = Keyboard.addListener(hideEvt, () => {
+      keyboardUp.current = false;
+    });
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, []);
 
   const [raw, setRaw] = useState('');
   // SCRUM-279 (build 49): Ken's ask "we need to record EVERY parameter"
@@ -131,6 +161,22 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
     onClose();
   };
 
+  /**
+   * Backdrop tap. With a numeric keypad there is no Done key, so "tap outside"
+   * is the instinctive way to put the keyboard away — but that used to cancel
+   * the modal and discard the number the patient had just typed.
+   *
+   * First tap closes the keyboard, second tap cancels. Nothing is lost by
+   * reaching for the obvious gesture.
+   */
+  const handleBackdropPress = () => {
+    if (keyboardUp.current) {
+      Keyboard.dismiss();
+      return;
+    }
+    handleCancel();
+  };
+
   if (!spec) return null;
 
   return (
@@ -142,12 +188,32 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
       statusBarTranslucent
       onRequestClose={handleCancel}
     >
-      <Pressable style={styles.backdrop} onPress={handleCancel}>
-        {/* Inner pressable blocks the backdrop dismiss when tapping the card. */}
-        <Pressable
-          onPress={() => {}}
-          style={[styles.card, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}
-        >
+      <KeyboardAvoidingView
+        style={styles.flex}
+        // 'padding' on iOS lifts the card clear of the keyboard; 'height' is
+        // the Android equivalent. Without this the card stays centred in the
+        // FULL screen and its lower half — including both action buttons —
+        // sits behind the keypad. That is the bug Ken hit.
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={styles.backdrop} onPress={handleBackdropPress}>
+          {/* Inner pressable blocks the backdrop dismiss when tapping the card. */}
+          <Pressable
+            onPress={() => {}}
+            style={[styles.card, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}
+          >
+            {/* Only the FIELDS scroll. The action row below is pinned outside
+                this ScrollView so it can never be scrolled away or covered —
+                the structural fix, rather than hoping the content fits. */}
+            <ScrollView
+              // Without this, the first tap on "Save & complete" is swallowed
+              // dismissing the keyboard and nothing happens — which reads as
+              // "the button is broken", i.e. Ken's complaint in a new costume.
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}
+            >
           <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
             Record {spec.label.toLowerCase()}
           </Text>
@@ -208,6 +274,8 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
             </>
           ) : null}
 
+            </ScrollView>
+
           <View style={styles.buttonRow}>
             <Pressable
               onPress={handleSkip}
@@ -239,8 +307,9 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
               )}
             </Pressable>
           </View>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -253,14 +322,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  flex: { flex: 1 },
   card: {
     width: '100%',
     maxWidth: 420,
     borderRadius: 18,
     borderWidth: 1,
     padding: 20,
-    gap: 4,
+    // Bounded so the inner ScrollView has a height to scroll within. Needed
+    // for the blood-pressure case (two inputs + two helper lines) on a small
+    // phone at large accessibility font sizes, where the fields alone can
+    // exceed the space left above the keyboard.
+    maxHeight: '85%',
   },
+  scrollContent: { gap: 4 },
   title: { letterSpacing: 0.2 },
   subtitle: { marginBottom: 12 },
   inputRow: {
