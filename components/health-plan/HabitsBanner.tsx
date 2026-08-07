@@ -1,5 +1,23 @@
 /**
- * SCRUM-659 Story 4 (2026-08-05) — Habits banner for the Plan screen.
+ * SCRUM-659 Story 4 (2026-08-05) — Routines banner for the Plan screen.
+ *
+ * ─── NAMING (Ken 2026-08-06) — READ THIS BEFORE RENAMING ANYTHING ───
+ * The DISPLAY name of this section is "Routines". The TRANSPORT name is
+ * still "habits" everywhere below the UI: the route
+ * `/v1/patients/me/plan/habits`, the stored field `plan.habits[]`, the
+ * flag `habits_in_plan_enabled`, the hooks (`usePlanHabits`), the query
+ * keys, and this file's own name. That mismatch is deliberate — there
+ * are live records and a live wire format, and renaming them buys the
+ * user nothing. Change user-visible strings only.
+ *
+ * WHY the display rename: this section had to be differentiated from
+ * plan Tasks. Routines are the *structure* of a patient's day — meals,
+ * activities of daily living (showering, toothbrushing), shopping,
+ * going to classes. They are NOT by definition good behaviours, so
+ * copy here must never praise them or frame them as "healthy habits".
+ * Tasks are the positive coping behaviours we want to turn INTO
+ * habits; that distinction is spelled out once on /Home/habits and
+ * must not be repeated here (the banner has two lines of subtitle).
  *
  * Placement: directly below the AI summary on the BPS surface (peer to
  * the WellbeingMap card) and above the "Personalize" prompt on the
@@ -18,8 +36,8 @@
  * States rendered:
  *   - flag OFF                       → null
  *   - flag ON  + loading             → null (no flash — waits for count)
- *   - flag ON  + no habits           → "Add habits to your plan" CTA
- *   - flag ON  + habits present      → "N habits" + subtitle
+ *   - flag ON  + no routines         → "Add routines to your plan" CTA
+ *   - flag ON  + routines present    → "N routines" + subtitle
  *
  * Props are optional so callers on non-BPS surfaces (unified-plan.tsx,
  * PlanScreenRedesignedV2) can mount without threading theme. Defaults
@@ -73,10 +91,10 @@ function HabitsBannerBase({ colors, getScaledFontSize, getScaledFontWeight }: Ha
       accessibilityRole="button"
       accessibilityLabel={
         isEmpty
-          ? 'Add habits to your plan'
-          : `Manage ${count} habit${count === 1 ? '' : 's'}`
+          ? 'Add routines to your plan'
+          : `Manage ${count} routine${count === 1 ? '' : 's'}`
       }
-      accessibilityHint="Opens your habits screen"
+      accessibilityHint="Opens your routines screen"
       hitSlop={4}
       style={({ pressed }) => [
         styles.card,
@@ -105,9 +123,11 @@ function HabitsBannerBase({ colors, getScaledFontSize, getScaledFontWeight }: Ha
             fontSize: sz(16),
             fontWeight: wt(700) as any,
           }}
-          numberOfLines={1}
+          // "Add routines to your plan" is two characters longer than the
+          // string it replaced and clipped at scaled type; allow a wrap.
+          numberOfLines={2}
         >
-          {isEmpty ? 'Add habits to your plan' : 'Your daily habits'}
+          {isEmpty ? 'Add routines to your plan' : 'Your daily routines'}
         </Text>
         <Text
           style={{
@@ -116,11 +136,16 @@ function HabitsBannerBase({ colors, getScaledFontSize, getScaledFontWeight }: Ha
             marginTop: 3,
             lineHeight: 18,
           }}
-          numberOfLines={2}
+          // Ken 2026-08-06: the Routines subtitle is longer than the old
+          // Habits one (it has to name concrete examples so patients
+          // recognise what belongs here). Two lines truncated it at the
+          // larger accessibility text sizes our patients actually use,
+          // so this is 3.
+          numberOfLines={3}
         >
           {isEmpty
-            ? 'Small daily practices that support your goals — tap to add a few.'
-            : `${count} habit${count === 1 ? '' : 's'} on your plan. Tap to add, edit, or remove.`}
+            ? 'The structure of your day — meals, washing, shopping, classes. Tap to add yours.'
+            : `${count} routine${count === 1 ? '' : 's'} on your plan. Tap to add, edit, or remove.`}
         </Text>
       </View>
 

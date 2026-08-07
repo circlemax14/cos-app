@@ -278,21 +278,54 @@ test('(e) BiopsychosocialPlanScreen renders BOTH banner variants (active pre-5mi
   )
 })
 
-test('(e) BiopsychosocialPlanScreen renders a Cancel Pressable gated on showCancelButton', () => {
+// SCRUM-662 (2026-07-31) removed BOTH manual regenerate affordances from
+// this surface — the "Refresh my plan" primary CTA and its companion
+// "Cancel" secondary button — per the user's "regenerate plan and classic
+// view is not required". What survived is the STATE MACHINE: cancelMutation,
+// onCancel, showCancelButton and the in-flight banner are all still wired,
+// because regeneration still starts from other surfaces (push notifications,
+// cross-instance polls) and this screen must still reflect and be able to
+// stop it if the affordance is restored.
+//
+// So this wire flipped polarity for the JSX and kept its grip on the wiring:
+//   - the derivations must STAY (restoring the button is a JSX-only edit,
+//     not a state migration — that is the whole point of leaving them),
+//   - the Cancel Pressable must STAY GONE (re-adding it silently reverts a
+//     product decision; do it deliberately and update this wire in the same
+//     commit),
+//   - the in-flight banner is now the ONLY user-visible signal that a
+//     generation is running, so it carries the weight the button used to.
+test('(e) SCRUM-662: Cancel wiring stays live, Cancel Pressable stays removed', () => {
+  // The derivation survives — including the SCRUM-651 tap-race guards.
   assert.match(
     SCREEN_SRC,
-    /const\s+showCancelButton\s*=\s*isGeneratingFromAnySource\s*&&\s*!cancelMutation\.isPending/,
-    'showCancelButton must be derived from isGeneratingFromAnySource AND !cancelMutation.isPending — otherwise the button flickers out mid-tap',
+    /const\s+showCancelButton\s*=\s*isGeneratingFromAnySource\s*&&\s*!cancelMutation\.isPending\s*&&\s*!isCancelPending/,
+    'showCancelButton must remain derived from isGeneratingFromAnySource AND !cancelMutation.isPending AND !isCancelPending. SCRUM-662 removed the button from the JSX but deliberately kept this derivation so restoring the affordance is a one-line JSX add with no state migration; !isCancelPending additionally closes the cross-instance tap-race where useIsMutating still reports the DELETE in flight.',
   )
+  // The handler survives and still targets the in-flight job.
   assert.match(
+    SCREEN_SRC,
+    /cancelMutation\.mutate\(\s*\{\s*jobId:\s*inFlightJobId\s*\}\s*\)/,
+    'The onCancel handler must still call cancelMutation.mutate({ jobId: inFlightJobId }). SCRUM-662 removed the button, not the cancel path — the DELETE is still reachable from push-notification / cross-surface flows, and dropping it would strand a stuck job with no client-side stop.',
+  )
+  // The Pressable itself must NOT come back without a deliberate contract
+  // update. Both the JSX gate and the verbatim a11y label are pinned so a
+  // partial reinstatement (button back, label renamed) also trips.
+  assert.doesNotMatch(
     SCREEN_SRC,
     /\{showCancelButton\s*&&/,
-    'BiopsychosocialPlanScreen must gate the Cancel button JSX on showCancelButton',
+    'BiopsychosocialPlanScreen must NOT render a `{showCancelButton && …}` JSX block — SCRUM-662 removed the Cancel button from this surface on purpose. If you are intentionally restoring it, flip this assertion back to assert.match in the SAME commit so the product decision is explicit in the diff.',
   )
-  assert.match(
+  assert.doesNotMatch(
     SCREEN_SRC,
     /accessibilityLabel="Cancel plan generation"/,
-    'The Cancel Pressable must expose accessibilityLabel="Cancel plan generation" — verbatim so screen-reader QA can match on the label',
+    'BiopsychosocialPlanScreen must NOT expose an accessibilityLabel="Cancel plan generation" control — the Cancel Pressable was removed by SCRUM-662. Its reappearance means the CTA row was reinstated without updating this contract.',
+  )
+  // The banner is what replaced the button as the visible in-flight signal.
+  assert.match(
+    SCREEN_SRC,
+    /\{showOtherDeviceGenerating\s*&&/,
+    'With the Cancel + Refresh buttons gone (SCRUM-662), the `{showOtherDeviceGenerating && …}` banner is the ONLY surface left that tells a user a generation is running. If this gate disappears too, an in-flight regeneration becomes completely invisible on the plan screen.',
   )
 })
 

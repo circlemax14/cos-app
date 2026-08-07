@@ -71,11 +71,16 @@ export default function PersonalInfoScreen() {
       await confirmPhotoUpload(photoUrl);
 
       // Get a fresh presigned download URL to display the image.
+      //
+      // #16: NO `|| photoUrl` fallback. `photoUrl` is the canonical, UNSIGNED
+      // S3 key on a private bucket — it can only ever 403, so falling back to
+      // it turns a transient signing failure into a permanently broken image
+      // that looks identical to "no photo set". Null is the honest answer;
+      // the store re-signs on foreground.
       const downloadUrl = await getPhotoDownloadUrl();
-      const displayUrl = downloadUrl || photoUrl;
-      setPhotoUri(displayUrl);
+      setPhotoUri(downloadUrl ?? null);
       // Publish to the global store so Home, drawer, etc. update too.
-      setStorePhotoUrl(displayUrl);
+      setStorePhotoUrl(downloadUrl ?? null);
     } catch {
       Alert.alert('Error', 'Failed to upload photo. Please try again.');
     } finally {
@@ -151,7 +156,8 @@ export default function PersonalInfoScreen() {
           // Load profile photo via presigned download URL
           if ((patient as any).photoUrl) {
             const downloadUrl = await getPhotoDownloadUrl();
-            setPhotoUri(downloadUrl || (patient as any).photoUrl);
+            // #16: signed URL only — see the note above.
+            setPhotoUri(downloadUrl ?? null);
           }
           // Fallback: if email is empty, try getting from auth /me endpoint
           if (!patient.email) {
@@ -193,7 +199,8 @@ export default function PersonalInfoScreen() {
         });
         if ((patient as any).photoUrl) {
           const downloadUrl = await getPhotoDownloadUrl();
-          setPhotoUri(downloadUrl || (patient as any).photoUrl);
+          // #16: signed URL only — see the note above.
+          setPhotoUri(downloadUrl ?? null);
         }
         // Fallback: if email is empty, try getting from auth /me endpoint
         if (!patient.email) {

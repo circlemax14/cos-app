@@ -15,6 +15,7 @@ import {
 } from './icon-map'
 import { specialtyToIcon } from '@/utils/specialty-to-icon'
 import { useSpecialtyIcons } from '@/hooks/use-specialty-icons'
+import { resolveResignedPhotoUrl } from '@/services/user-photo'
 import { Colors } from '@/constants/theme'
 
 /**
@@ -97,16 +98,85 @@ export function EntityIcon({
 
   // Track when remote sources fail to load so we fall back to the built-in
   // Lucide glyph instead of showing a half-rendered SVG (e.g., a pink box
-  // with stray text — see SCRUM-181 real-device repro). One-way state: once
-  // a source has failed for this instance, we don't retry it on re-render.
+  // with stray text — see SCRUM-181 real-device repro).
   const [imageFailed, setImageFailed] = React.useState(false)
   const [svgFailed, setSvgFailed] = React.useState(false)
 
+  /**
+   * ── BUG FIX: "profile photo showed for a while, then only initials" ──────
+   *
+   * WHY THIS EXISTS. `imageUrl` for the signed-in patient is a presigned S3
+   * GET URL that the backend signs with a ONE HOUR expiry
+   * (cos-backend/src/routes/upload.routes.ts → `expiresIn: 3600`). Once that
+   * signature expires S3 answers 403, RN fires `onError`, and this component
+   * used to latch `imageFailed = true` forever. The reset effect keyed on
+   * `imageUrl` could not save us, because the URL string never changed — the
+   * store held one URL for the whole process lifetime. Result: the avatar
+   * silently degraded to initials and stayed there until the app was killed,
+   * which is indistinguishable to the user from "my photo was deleted".
+   *
+   * The durable fix is in stores/user-photo-store.tsx (re-sign before
+   * expiry). This is the belt-and-braces half: on the FIRST load failure we
+   * ask for a freshly signed URL and try exactly once more. Only if that
+   * second attempt also fails do we fall back to initials.
+   *
+   * `resolveResignedPhotoUrl` is a no-op (immediate null) for any URL that
+   * isn't the signed-in user's photo, so doctor/agency/clinic avatars pay
+   * nothing for this and behave exactly as before: one error → initials.
+   *
+   * The retry budget is ONE. `retriedRef` is only cleared when `imageUrl`
+   * itself changes, so a permanently-dead object can't spin.
+   */
+  const [displayUrl, setDisplayUrl] = React.useState<string | null>(imageUrl ?? null)
+  const retriedRef = React.useRef(false)
+  const mountedRef = React.useRef(true)
+  React.useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
   // Reset failure state if the URL itself changes (e.g., user uploads a new
-  // photo, or the parent passes a new presigned URL after the previous one
-  // expired). Without this, a one-time failure would stick across URL swaps.
-  React.useEffect(() => { setImageFailed(false) }, [imageUrl])
+  // photo, or the store re-signs an expiring presigned URL). Without this, a
+  // one-time failure would stick across URL swaps.
+  React.useEffect(() => {
+    setDisplayUrl(imageUrl ?? null)
+    setImageFailed(false)
+    retriedRef.current = false
+  }, [imageUrl])
   React.useEffect(() => { setSvgFailed(false) }, [iconUrl])
+
+  const handleImageError = React.useCallback(() => {
+    const failedUrl = displayUrl
+    if (retriedRef.current) {
+      // Second failure for this URL — genuinely unavailable. Fall back.
+      setImageFailed(true)
+      return
+    }
+    retriedRef.current = true
+    void resolveResignedPhotoUrl(failedUrl)
+      .then((fresh) => {
+        if (!mountedRef.current) return
+        if (fresh) {
+          // New URL → <Image> remounts against it. If this one fails too the
+          // branch above latches the initials fallback.
+          setDisplayUrl(fresh)
+        } else {
+          setImageFailed(true)
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current) setImageFailed(true)
+      })
+  }, [displayUrl])
+
+  /**
+   * Distinguishes the two ways an avatar ends up showing initials:
+   *   • no photo was ever set  → plain label, nothing is wrong
+   *   • a photo exists but its URL failed twice → announce it, so a
+   *     screen-reader user isn't told "photo of X" for a blank disc and a
+   *     sighted user has a non-colour cue that something is off.
+   */
+  const photoUnavailable = !!imageUrl && imageFailed
 
   // Backend-served specialty icon map. Fetched once, cached 1h. We resolve the
   // specialty string to an icon key (e.g. "Registered Nurse" → "nursing") and
@@ -127,7 +197,7 @@ export function EntityIcon({
   const [specialtyImageFailed, setSpecialtyImageFailed] = React.useState(false)
   React.useEffect(() => { setSpecialtyImageFailed(false) }, [specialtyImageUrl])
 
-  if (imageUrl && !imageFailed) {
+  if (displayUrl && !imageFailed) {
     // ViewStyle and ImageStyle overlap on the props we care about (size,
     // borderRadius). Cast so callers can pass a single `style` prop without
     // juggling two style types — RN ignores any leftover ViewStyle-only keys.
@@ -137,12 +207,16 @@ export function EntityIcon({
     ]
     return (
       <Image
-        source={{ uri: imageUrl }}
+        // `key` forces a fresh native image request when we swap in a
+        // re-signed URL. Without it RN can reuse the failed request's state
+        // for the same <Image> instance and never retry the load.
+        key={displayUrl}
+        source={{ uri: displayUrl }}
         accessibilityLabel={altOrLabel}
         testID="entity-icon-root"
         {...({ 'data-entity-icon': `image:${type}` } as Record<string, string>)}
         style={imageStyle}
-        onError={() => setImageFailed(true)}
+        onError={handleImageError}
       />
     )
   }
@@ -259,9 +333,17 @@ export function EntityIcon({
   return (
     <View
       accessibilityRole="image"
-      accessibilityLabel={altOrLabel}
+      // Never colour-only signalling: the "photo unavailable" state is carried
+      // in words for assistive tech rather than a tinted ring. The visual
+      // treatment is intentionally identical to the no-photo case so we don't
+      // put an error badge on every patient's face during a network blip.
+      accessibilityLabel={
+        photoUnavailable ? `${altOrLabel}, photo unavailable` : altOrLabel
+      }
       testID="entity-icon-root"
-      {...({ 'data-entity-icon': `initials:${type}` } as Record<string, string>)}
+      {...({
+        'data-entity-icon': `${photoUnavailable ? 'initials-photo-failed' : 'initials'}:${type}`,
+      } as Record<string, string>)}
       style={[
         {
           width: px,

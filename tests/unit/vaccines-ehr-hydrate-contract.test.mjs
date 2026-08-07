@@ -17,13 +17,15 @@
 //
 // WIRES
 //   (a) intake-report-builder.ts declares
-//       `export const IMMUNIZATIONS_EHR_ENABLED = false as const;` at
-//       module scope. Default FALSE per COS-481 dark-launch spec. Drift to
-//       `true` flips the feature on for every user on the next OTA
-//       without Ken's approval. Drift to `process.env.X === 'true'`
-//       silently resolves to false in stages that never set the var and
-//       breaks the "one-line OTA revert" contract. Drop of `as const`
-//       widens the type to `boolean` and defeats future wires.
+//       `export const IMMUNIZATIONS_EHR_ENABLED = true as const;` at
+//       module scope. COS-481 Phase 2 shipped dark (`false`) and was
+//       FLIPPED ON 2026-07-28 alongside cos-backend SSM
+//       `immunizations_ehr_enabled=true`. Drift back to `false` silently
+//       disables EHR-hydrated vaccines for every user on the next OTA.
+//       Drift to `process.env.X === 'true'` silently resolves to false in
+//       stages that never set the var and breaks the "one-line OTA
+//       revert" contract. Drop of `as const` widens the type to `boolean`
+//       and defeats future wires.
 //
 //   (b) hooks/use-immunizations.ts exists and exports the `useImmunizations`
 //       hook. If the file is renamed or the hook is deleted, both
@@ -125,18 +127,30 @@ const SCREEN_SRC = stripComments(readFileSync(SCREEN_PATH, 'utf8'));
 const SHARE_SRC = stripComments(readFileSync(SHARE_PATH, 'utf8'));
 
 // ---------------------------------------------------------------------------
-// (a) IMMUNIZATIONS_EHR_ENABLED = false as const at module scope.
+// (a) IMMUNIZATIONS_EHR_ENABLED = true as const at module scope.
+//
+// FLIPPED 2026-07-28. COS-481 Phase 2 shipped dark (`false as const`); the
+// flip to `true` landed alongside cos-backend SSM
+// `immunizations_ehr_enabled=true` (release-vaccines-flip-hs3a-2026-07-28),
+// so EHR-hydrated vaccines now surface in the intake report for everyone.
+// The sibling wire in immunizations-ehr-hydrate-contract.test.mjs was
+// updated in that commit; THIS one was not, which is exactly the split the
+// two-wire pattern is supposed to surface — keep them in lockstep.
+//
+// The `as const` half of the contract is unchanged and still load-bearing:
+// the switch must stay a compile-time literal, so a promotion to
+// `process.env.X === 'true'` or a hook lookup still trips this wire.
 // ---------------------------------------------------------------------------
 
-function killSwitchAsConstFalseRegex() {
-  return /(?:^|\n)\s*export\s+const\s+IMMUNIZATIONS_EHR_ENABLED\s*(?::[^=\n]+)?=\s*false\s+as\s+const\b/;
+function killSwitchAsConstTrueRegex() {
+  return /(?:^|\n)\s*export\s+const\s+IMMUNIZATIONS_EHR_ENABLED\s*(?::[^=\n]+)?=\s*true\s+as\s+const\b/;
 }
 
-test('(a) intake-report-builder.ts declares IMMUNIZATIONS_EHR_ENABLED = false as const at module scope', () => {
+test('(a) intake-report-builder.ts declares IMMUNIZATIONS_EHR_ENABLED = true as const at module scope', () => {
   assert.match(
     BUILDER_SRC,
-    killSwitchAsConstFalseRegex(),
-    'intake-report-builder.ts must declare `export const IMMUNIZATIONS_EHR_ENABLED = false as const` at module scope (COS-481 Phase 2 dark-launch kill switch). Redundant with immunizations-ehr-hydrate-contract.test.mjs wire (a) on purpose — the kill switch is the OTA-revert lever for the entire Phase-2 feature; per the kill-switches-contract pattern it earns two independent trip wires. If ONLY this wire fires, the sibling wire has drifted; if BOTH fire, the constant itself moved and every render surface below is unreachable.',
+    killSwitchAsConstTrueRegex(),
+    'intake-report-builder.ts must declare `export const IMMUNIZATIONS_EHR_ENABLED = true as const` at module scope (COS-481 Phase 2, flipped ON 2026-07-28). Redundant with immunizations-ehr-hydrate-contract.test.mjs wire (a) on purpose — the kill switch is the OTA-revert lever for the entire Phase-2 feature; per the kill-switches-contract pattern it earns two independent trip wires. A drift back to `false` silently DISABLES EHR-hydrated vaccines for every user on the next OTA; dropping `as const` widens the type to `boolean` and defeats future wires; promoting the RHS to `process.env.X === "true"` resolves to false in stages that never set the var. If ONLY this wire fires, the sibling wire has drifted out of lockstep; if BOTH fire, the constant itself moved and every render surface below is unreachable. Rolling back to `false as const` is legitimate — but update BOTH wires in the SAME commit so the intent is explicit.',
   );
 });
 
@@ -300,14 +314,32 @@ test('(g-share) ShareIntakeReportSection.tsx also gates ehrRowsByGroup construct
 // to catch (chunk 98/103/107/109/113/116/119/120 discipline).
 // =========================================================================
 
-test('self-check: wire (a) fails when IMMUNIZATIONS_EHR_ENABLED default drifts to true', () => {
+test('self-check: wire (a) fails when IMMUNIZATIONS_EHR_ENABLED drifts back to false', () => {
+  // Post-2026-07-28 the drift direction of concern inverted: the feature is
+  // ON, so the regression to catch is a silent revert to the dark-launch
+  // default, which would strip EHR-hydrated vaccines from every report.
   const brokenSrc =
-    'export const IMMUNIZATIONS_EHR_ENABLED = true as const;\n';
+    'export const IMMUNIZATIONS_EHR_ENABLED = false as const;\n';
   const stripped = stripComments(brokenSrc);
   assert.doesNotMatch(
     stripped,
-    killSwitchAsConstFalseRegex(),
-    'self-check: wire (a) must NOT match `= false as const` when the source declared `= true as const`. If this flips true, the regex is broken and wire (a) cannot detect a silent default flip.',
+    killSwitchAsConstTrueRegex(),
+    'self-check: wire (a) must NOT match `= true as const` when the source declared `= false as const`. If this flips true, the regex is broken and wire (a) cannot detect a silent revert of the 2026-07-28 flip.',
+  );
+});
+
+test('self-check: wire (a) fails when IMMUNIZATIONS_EHR_ENABLED is promoted to a runtime env lookup', () => {
+  // The `as const` half of the contract: a build-time literal, never a
+  // stage-dependent expression. This shape resolves to false in every stage
+  // that does not set the var — the feature would vanish without any diff
+  // that reads as a rollback.
+  const brokenSrc =
+    "export const IMMUNIZATIONS_EHR_ENABLED = process.env.IMMUNIZATIONS_EHR_ENABLED === 'true';\n";
+  const stripped = stripComments(brokenSrc);
+  assert.doesNotMatch(
+    stripped,
+    killSwitchAsConstTrueRegex(),
+    'self-check: wire (a) must NOT match a `process.env.X === "true"` RHS. If this flips true, the wire cannot tell a compile-time literal from a runtime lookup and the one-line OTA-revert contract is unenforced.',
   );
 });
 

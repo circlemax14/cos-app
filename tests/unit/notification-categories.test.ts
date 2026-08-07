@@ -51,10 +51,28 @@ test('defaultCategoryPrefs: returns a fresh object each call (no shared mutation
   assert.equal(b.appointments, true);
 });
 
-test('NOTIFICATION_CATEGORY_KEYS: the five expected keys, in order', () => {
+// The key list is ORDERED because it drives the settings-screen rows and
+// every iteration over categories. Two keys were appended after the COS-373
+// original five:
+//   - `nudges` (SCRUM-641, Proactive Nudges)
+//   - `habits` (SCRUM-659, Habits-in-Plan reminders)
+// Both were APPENDED rather than inserted, deliberately: the five COS-373
+// keys keep their positions so the settings rows patients already know
+// don't reshuffle under them, and so this list stays index-comparable with
+// the backend's own ordered mirror. New categories go on the END.
+test('NOTIFICATION_CATEGORY_KEYS: the seven expected keys, in order', () => {
   assert.deepEqual(
     [...NOTIFICATION_CATEGORY_KEYS],
-    ['appointments', 'reminders', 'medicationReminders', 'medicationTask', 'otherTask'],
+    [
+      'appointments',
+      'reminders',
+      'medicationReminders',
+      'medicationTask',
+      'otherTask',
+      'nudges',
+      'habits',
+    ],
+    'NOTIFICATION_CATEGORY_KEYS must stay in lockstep with the backend preference keys AND keep the original COS-373 five in their original positions, with SCRUM-641 `nudges` and SCRUM-659 `habits` appended after them. A reorder silently reshuffles the reminder-settings rows; a missing key means that category can never be toggled off in the app even though the backend persists it.',
   );
 });
 

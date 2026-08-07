@@ -144,8 +144,10 @@ const CATEGORY_SPECS: Record<NotificationCategory, CategorySpec> = {
   // via a scheduled sweeper (SCRUM-666 follow-up wires the actual cron).
   habits: {
     key: 'habits',
-    title: 'Habit reminders',
-    subtitle: 'Daily nudges for the habits on your plan (walk, hydrate, mindfulness, etc.)',
+    title: 'Routine reminders',
+    // Re-voiced for #13: routines are the structure of the day, not the
+    // positive behaviours (those are tasks). The old examples were tasks.
+    subtitle: 'Reminders for the routines on your plan — meals, washing, appointments, classes.',
     iconName: 'repeat',
   },
 }

@@ -32,10 +32,34 @@
  *                        chips when present so beta testers can see
  *                        the wire is live
  *
+ * AUG-6 AMENDMENT — TREND SPARKLINE
+ *   The backend now emits a numeric 0-100 `score` per day and persists
+ *   one bucket per UTC day. When at least TWO buckets exist, the card
+ *   renders a 7-day ScoreHistorySparkline under the pillar chips plus a
+ *   plain-text "Trend, last N days" caption.
+ *
+ *   Deliberate constraints:
+ *     - ALL existing copy and every existing state are untouched. The
+ *       sparkline is additive; with <2 buckets the card is byte-identical
+ *       to what shipped.
+ *     - Reuses components/home/ScoreHistorySparkline (plain <View> bars,
+ *       deferred mount) — no SVG, no new deps, iOS 26.5 primitive
+ *       envelope intact.
+ *     - Never colour-only: the trend is always accompanied by the text
+ *       caption AND an explicit today-score line, so a patient who
+ *       cannot distinguish the bar colour still gets the information.
+ *
  * PHI:
  *   Never renders raw numeric vitals — the backend aggregator's
  *   headline/oneLiner strings are already categorical-only per the
- *   design brief. This card just displays them verbatim.
+ *   design brief. This card just displays them verbatim. The read score
+ *   is a derived 0-100 index (like the wellbeing score already shown on
+ *   Home), not a measurement.
+ *
+ * A11Y:
+ *   Every Text uses getScaledFontSize/getScaledFontWeight from the
+ *   accessibility store — our patients skew older and Dynamic Type is
+ *   not optional. The whole card remains a single 44pt+ tap target.
  */
 
 import React from 'react'
@@ -44,6 +68,13 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 
 import { useDailyRead } from '@/hooks/use-daily-read'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
+import {
+  toSparklineSeries,
+  useDailyReadHistory,
+} from '@/hooks/use-daily-read-history'
+import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
+import { useAccessibility } from '@/stores/accessibility-store'
+import type { ScoreBandName } from '@/constants/design-system'
 import type {
   DailyReadPillar,
   DailyReadPillarBand,
@@ -63,6 +94,31 @@ const PLACEHOLDER_EMPTY_CTA = 'Connect'
 const PLACEHOLDER_FOOTER =
   'Design in progress — copy and layout pending Ken clinical + design review.'
 
+/**
+ * Minimum buckets required before the sparkline appears. One point is
+ * not a trend — drawing seven identical left-padded bars from a single
+ * day would imply a week of stability the patient has not yet earned.
+ */
+const MIN_BUCKETS_FOR_SPARKLINE = 2
+const SPARKLINE_DAYS = 7
+
+/**
+ * Map the daily read score onto the shared ScoreBands palette so the
+ * sparkline reads consistently with the wellbeing/BPS cards next to it
+ * on Home. Thresholds match wellbeing-score.service's BAND_THRESHOLDS
+ * (85 / 65 / 40) — one taxonomy across every scored surface.
+ *
+ * Colour is NEVER the only signal: the caption and the score line
+ * alongside the sparkline carry the same information in text.
+ */
+function bandForScore(score: number | null | undefined): ScoreBandName {
+  if (typeof score !== 'number' || !Number.isFinite(score)) return 'developing'
+  if (score >= 85) return 'optimal'
+  if (score >= 65) return 'developing'
+  if (score >= 40) return 'foundational'
+  return 'initial'
+}
+
 /** Band token defaults. Final palette pending design sign-off; these
  *  match the HealthAgeCard neutral-forward palette so the skeleton
  *  reads as consistent with the surrounding daily-insights cluster. */
@@ -78,7 +134,33 @@ export interface DailyReadCardProps {
   testID?: string
 }
 
-function PillarChip({ pillar }: { pillar: DailyReadPillar }): React.JSX.Element {
+/**
+ * Read the backend's numeric daily read score off the response without
+ * depending on the shared `DailyReadResponse` type carrying it yet.
+ *
+ * WHY THE CAST: `services/api/daily-read.ts` is owned by another
+ * workstream this cycle, so its `DailyReadResponse` interface does not
+ * declare `score` even though the backend now always sends it (and its
+ * `normalizeResponse` passes unknown fields through untouched). Reading
+ * it through a narrow local type keeps this card working today and
+ * becomes a no-op the moment the shared type is updated — see the
+ * follow-up noted in the handoff.
+ */
+function readScore(data: unknown): number | null {
+  if (data == null || typeof data !== 'object') return null
+  const s = (data as { score?: unknown }).score
+  return typeof s === 'number' && Number.isFinite(s) ? s : null
+}
+
+function PillarChip({
+  pillar,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: {
+  pillar: DailyReadPillar
+  getScaledFontSize: (n: number) => number
+  getScaledFontWeight: (n: number) => string
+}): React.JSX.Element {
   const tokens = pillar.band ? BAND_TOKENS[pillar.band] : undefined
   const label = pillar.label || pillar.key
   return (
@@ -94,6 +176,10 @@ function PillarChip({ pillar }: { pillar: DailyReadPillar }): React.JSX.Element 
       <Text
         style={[
           styles.pillarChipLabel,
+          {
+            fontSize: getScaledFontSize(11),
+            fontWeight: getScaledFontWeight(700) as '700',
+          },
           tokens ? { color: tokens.fg } : styles.pillarChipLabelNeutral,
         ]}
         numberOfLines={1}
@@ -110,6 +196,12 @@ function DailyReadCardBase({
 }: DailyReadCardProps): React.JSX.Element | null {
   const flagEnabled = useDailyReadFlag()
   const { data, isLoading, isError } = useDailyRead(flagEnabled)
+  const { getScaledFontSize, getScaledFontWeight } = useAccessibility()
+  // History is fetched alongside the read, gated on the same flag. The
+  // fetcher never rejects, so this hook has no error state to handle —
+  // a failure is indistinguishable from "no history yet", which is the
+  // correct behaviour for a decoration.
+  const { data: history } = useDailyReadHistory(SPARKLINE_DAYS, flagEnabled)
 
   // Defensive backstop — parent should already gate, but never leak
   // the surface if the flag is OFF.
@@ -125,11 +217,28 @@ function DailyReadCardBase({
   const headlineText = data?.headline.text ?? PLACEHOLDER_HEADLINE
   const readyPillars = (data?.pillars ?? []).filter((p) => p.state === 'ready')
 
+  // ── Trend (Aug-6 amendment) ──────────────────────────────────────
+  // `toSparklineSeries` drops null-score days rather than zeroing them,
+  // so `series.length` is the count of days we can honestly plot — which
+  // is exactly the number the gate below should test.
+  const series = toSparklineSeries(history?.buckets)
+  const showSparkline =
+    !isLoadingInitial && !isEmpty && series.length >= MIN_BUCKETS_FOR_SPARKLINE
+  // Prefer today's live score; fall back to the newest plotted bucket so
+  // the caption still reads correctly on the (brief) window where the
+  // history row has been written but the live payload is being refetched.
+  const todayScore = readScore(data) ?? (series.length > 0 ? series[series.length - 1] : null)
+  const trendCaption = `Trend, last ${series.length} ${series.length === 1 ? 'day' : 'days'}`
+
   const a11yLabel = isLoadingInitial
     ? 'Daily read loading'
     : isEmpty
       ? `Daily read. ${PLACEHOLDER_EMPTY_BODY}`
-      : `Daily read. ${headlineText || PLACEHOLDER_HEADLINE}`
+      : `Daily read. ${headlineText || PLACEHOLDER_HEADLINE}${
+          showSparkline && todayScore !== null
+            ? `. Today's read score ${todayScore} out of 100. ${trendCaption}.`
+            : ''
+        }`
 
   return (
     <Pressable
@@ -141,7 +250,18 @@ function DailyReadCardBase({
       testID={testID}
     >
       <View style={styles.header}>
-        <Text style={styles.label} numberOfLines={1}>DAILY READ</Text>
+        <Text
+          style={[
+            styles.label,
+            {
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as '700',
+            },
+          ]}
+          numberOfLines={1}
+        >
+          DAILY READ
+        </Text>
         <MaterialIcons
           name="today"
           size={16}
@@ -153,21 +273,53 @@ function DailyReadCardBase({
 
       {isLoadingInitial ? (
         <>
-          <Text style={styles.headlineDim} maxFontSizeMultiplier={1.3}>—</Text>
-          <Text style={styles.hint} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+          <Text
+            style={[styles.headlineDim, { fontSize: getScaledFontSize(42) }]}
+            maxFontSizeMultiplier={1.3}
+          >
+            —
+          </Text>
+          <Text
+            style={[styles.hint, { fontSize: getScaledFontSize(12) }]}
+            numberOfLines={2}
+            maxFontSizeMultiplier={1.3}
+          >
             {PLACEHOLDER_LOADING_HINT}
           </Text>
         </>
       ) : isEmpty ? (
         <>
-          <Text style={styles.headline} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+          <Text
+            style={[
+              styles.headline,
+              {
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(700) as '700',
+              },
+            ]}
+            numberOfLines={2}
+            maxFontSizeMultiplier={1.3}
+          >
             {PLACEHOLDER_HEADLINE}
           </Text>
-          <Text style={styles.body} numberOfLines={3} maxFontSizeMultiplier={1.3}>
+          <Text
+            style={[styles.body, { fontSize: getScaledFontSize(13) }]}
+            numberOfLines={3}
+            maxFontSizeMultiplier={1.3}
+          >
             {PLACEHOLDER_EMPTY_BODY}
           </Text>
           <View style={styles.ctaRow}>
-            <Text style={styles.ctaLabel} numberOfLines={1}>
+            <Text
+              style={[
+                styles.ctaLabel,
+                {
+                  fontSize: getScaledFontSize(13),
+                  fontWeight: getScaledFontWeight(700) as '700',
+                },
+              ]}
+              numberOfLines={1}
+            >
               {PLACEHOLDER_EMPTY_CTA}
             </Text>
             <MaterialIcons name="chevron-right" size={16} color="#0B6963" />
@@ -175,23 +327,93 @@ function DailyReadCardBase({
         </>
       ) : (
         <>
-          <Text style={styles.headline} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+          <Text
+            style={[
+              styles.headline,
+              {
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(700) as '700',
+              },
+            ]}
+            numberOfLines={2}
+            maxFontSizeMultiplier={1.3}
+          >
             {headlineText || PLACEHOLDER_HEADLINE}
           </Text>
-          <Text style={styles.body} numberOfLines={3} maxFontSizeMultiplier={1.3}>
+          <Text
+            style={[styles.body, { fontSize: getScaledFontSize(13) }]}
+            numberOfLines={3}
+            maxFontSizeMultiplier={1.3}
+          >
             {PLACEHOLDER_BODY}
           </Text>
           {readyPillars.length > 0 ? (
             <View style={styles.pillarRow}>
               {readyPillars.map((p) => (
-                <PillarChip key={p.key} pillar={p} />
+                <PillarChip
+                  key={p.key}
+                  pillar={p}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                />
               ))}
+            </View>
+          ) : null}
+
+          {/*
+            Trend block — appears only with >= 2 plottable buckets. The
+            caption + score line always accompany the bars so the trend
+            is never communicated by colour or shape alone.
+          */}
+          {showSparkline ? (
+            <View style={styles.trendBlock}>
+              <View style={styles.trendHeaderRow}>
+                <Text
+                  style={[
+                    styles.trendCaption,
+                    {
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(600) as '600',
+                    },
+                  ]}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  {trendCaption}
+                </Text>
+                {todayScore !== null ? (
+                  <Text
+                    style={[
+                      styles.trendScore,
+                      {
+                        fontSize: getScaledFontSize(11),
+                        fontWeight: getScaledFontWeight(700) as '700',
+                      },
+                    ]}
+                    numberOfLines={1}
+                    maxFontSizeMultiplier={1.3}
+                  >
+                    {`Today ${todayScore}/100`}
+                  </Text>
+                ) : null}
+              </View>
+              <ScoreHistorySparkline
+                series={series}
+                band={bandForScore(todayScore)}
+                accessibilityLabel={`Daily read trend over the last ${series.length} ${
+                  series.length === 1 ? 'day' : 'days'
+                }`}
+              />
             </View>
           ) : null}
         </>
       )}
 
-      <Text style={styles.footer} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+      <Text
+        style={[styles.footer, { fontSize: getScaledFontSize(10) }]}
+        numberOfLines={2}
+        maxFontSizeMultiplier={1.3}
+      >
         {PLACEHOLDER_FOOTER}
       </Text>
     </Pressable>
@@ -296,5 +518,34 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#98A0A6',
     fontStyle: 'italic',
+  },
+  // ── Trend block (Aug-6 amendment) ────────────────────────────────
+  trendBlock: {
+    marginTop: 10,
+  },
+  trendHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    // Wraps rather than truncates at large Dynamic Type sizes — the
+    // score is the more important of the two, so it must never be the
+    // thing that gets clipped off the right edge.
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  trendCaption: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    color: '#687076',
+  },
+  trendScore: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: '#3E4448',
   },
 })

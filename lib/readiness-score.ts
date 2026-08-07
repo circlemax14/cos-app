@@ -153,6 +153,150 @@ const METRIC_ORDER: readonly ReadinessMetricId[] = [
   'steps', 'activeEnergy', 'exerciseMin', 'walkingHr', 'spo2', 'flights',
 ]
 
+// ---------------------------------------------------------------
+// Improvement guidance (Vishal 2026-08-06)
+// ---------------------------------------------------------------
+
+/** One metric's plain-English "why it matters" + "what to do today". */
+export interface MetricImprovement {
+  /** ONE sentence on why this metric matters. No clinical claims. */
+  why: string
+  /** ONE concrete, doable-today action. Never about medication. */
+  how: string
+}
+
+/**
+ * Patient-facing improvement guidance, one entry per registry metric.
+ *
+ * A score the patient can watch but not act on is a vanity metric. This
+ * is the actionable half — the Readiness detail screen surfaces the
+ * entries for the metrics currently dragging the composite down.
+ *
+ * WRITING RULES (deliberate, please preserve them on edit):
+ *   1. AUDIENCE IS ~70 YEARS OLD. Short sentences. Everyday words.
+ *      "How fast you breathe when you're resting", not "respiratory
+ *      rate at rest". Assume no fitness-tracker fluency.
+ *   2. NO CLINICAL CLAIMS. Never "lowers your risk of", "prevents",
+ *      "treats", "improves your heart health". These are wellness
+ *      observations about a behavioural cue, not medical advice —
+ *      the screen's own disclaimer says so and this copy must not
+ *      quietly contradict it.
+ *   3. NEVER PRESCRIPTIVE ABOUT MEDICATION. No "take", "skip",
+ *      "adjust", "ask about" any drug or supplement. Where a reading
+ *      warrants a human, we say "mention it to your care team" and
+ *      stop there.
+ *   4. ONE ACTION, DOABLE TODAY, NO EQUIPMENT. "Take one ten-minute
+ *      walk" beats "increase weekly aerobic volume". Nothing that
+ *      requires buying, booking, or being able-bodied in a specific
+ *      way — every action has a seated or low-effort reading.
+ *   5. NEVER SHAMING. The patient is already looking at a number that
+ *      went down. Copy is an invitation, not a correction.
+ *
+ * Exported (not module-private) so screens, tests, and any future
+ * nudge-copy generator all read from ONE source of truth. Adding a
+ * metric to METRIC_REGISTRY without adding it here is a type error —
+ * `Record<ReadinessMetricId, ...>` is exhaustive by construction.
+ */
+export const METRIC_IMPROVEMENT: Record<ReadinessMetricId, MetricImprovement> = {
+  hrv: {
+    why: 'This goes up when your body is rested and calm, and dips when it is working hard to recover.',
+    how: 'Sit somewhere quiet tonight and take ten slow breaths before you go to bed.',
+  },
+  sleep: {
+    why: 'Sleep is when your body does most of its repair work, so short nights show up here first.',
+    how: 'Try going to bed thirty minutes earlier tonight, and keep the room dark and cool.',
+  },
+  restingHr: {
+    why: 'Your heart beats a little faster than usual when your body is tired, stressed, or short on fluids.',
+    how: 'Give yourself an easy day — a gentle walk instead of a hard workout, and an extra glass of water.',
+  },
+  respRate: {
+    why: 'How fast you breathe while resting tends to creep up when your body is working harder than normal.',
+    how: 'Sit upright for five minutes and breathe slowly — in through your nose, out through your mouth.',
+  },
+  steps: {
+    why: 'Walking is the simplest way to keep your legs strong and your day moving.',
+    how: 'Add one short walk today — ten minutes around the block or up and down the hallway counts.',
+  },
+  activeEnergy: {
+    why: 'This is a rough measure of how much you moved beyond sitting still.',
+    how: 'Pick one thing you actually enjoy — gardening, dancing, a walk with a friend — and do it for fifteen minutes.',
+  },
+  exerciseMin: {
+    why: 'Regular movement tends to go hand in hand with better sleep and steadier days.',
+    how: 'Aim for ten more minutes of moving today than you managed yesterday. It does not have to be all at once.',
+  },
+  walkingHr: {
+    why: 'When walking feels easier, your heart rate while you walk usually settles down too.',
+    how: 'Walk at a pace where you could still hold a conversation, and stay at it a few minutes longer than usual.',
+  },
+  spo2: {
+    why: 'This reflects how well air is moving through your lungs while you rest.',
+    how: 'Sit up straight, open a window for fresh air, and take a few slow deep breaths. If it stays low for several days, mention it to your care team.',
+  },
+  flights: {
+    why: 'Climbing stairs is one of the few everyday things that keeps your legs and balance sharp.',
+    how: 'Take the stairs once today instead of the lift, and keep a hand on the rail.',
+  },
+}
+
+/**
+ * Subscore at or below which a metric is considered to be UNDER the
+ * patient's own baseline, i.e. worth showing improvement guidance for.
+ *
+ * WHY 50 AND WHY SUBSCORE (not `driver.direction`):
+ *   `ReadinessDriver.direction` describes which side of the baseline
+ *   mean the RAW value fell on — and for two of the ten metrics
+ *   (restingHr, walkingHr) below the mean is the GOOD direction. Ranking
+ *   by `direction === 'below'` would tell a patient with an excellent
+ *   resting heart rate to "take it easy", which is both wrong and
+ *   discouraging.
+ *
+ *   `subscore` is already direction-aware: `zScoreToSubscore` flips the
+ *   sign for 'lower-is-better' metrics and centres the scale so 50 IS
+ *   the baseline mean. So `subscore < 50` reads as "below YOUR baseline,
+ *   in the direction that actually matters for this metric" for every
+ *   entry in the registry. Optimal-range metrics (sleep, respRate, spo2)
+ *   score 100 inside their acceptable band and fall away from it, so the
+ *   same threshold means "meaningfully outside the comfortable range".
+ *
+ *   Exactly 50 is treated as AT baseline (not below) so a perfectly
+ *   average day never surfaces a "here's how to fix it" card.
+ */
+export const BELOW_BASELINE_SUBSCORE = 50
+
+/**
+ * Pick the metrics currently sitting below the patient's own baseline,
+ * worst-first, for the "How to improve your readiness" section.
+ *
+ * Returns at most `limit` drivers (default 3). Showing every weak metric
+ * turns guidance into a chore list; three is the most a patient will
+ * actually act on, and the worst three are where a change moves the
+ * composite most.
+ *
+ * Ties broken by registry order so the list is stable across renders —
+ * a section that reshuffles between two equally-weak metrics reads as a
+ * bug even when the data is identical.
+ *
+ * Returns `[]` when nothing is below baseline, which the caller renders
+ * as positive reinforcement rather than an empty section.
+ */
+export function metricsBelowBaseline(
+  drivers: readonly ReadinessDriver[],
+  limit: number = 3,
+): ReadinessDriver[] {
+  const orderIndex = (id: ReadinessMetricId): number => METRIC_ORDER.indexOf(id)
+  return drivers
+    .filter((d) => Number.isFinite(d.subscore) && d.subscore < BELOW_BASELINE_SUBSCORE)
+    .slice()
+    .sort((a, b) =>
+      a.subscore !== b.subscore
+        ? a.subscore - b.subscore
+        : orderIndex(a.metric) - orderIndex(b.metric),
+    )
+    .slice(0, Math.max(0, limit))
+}
+
 /** Minimum days of baseline before we show a score at all. */
 export const MIN_BASELINE_DAYS = 7
 /** Days at which the score is considered fully confident. */

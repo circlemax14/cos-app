@@ -1,5 +1,29 @@
 /**
- * SCRUM-659 Story 4 (2026-08-05) — Habits CRUD screen.
+ * SCRUM-659 Story 4 (2026-08-05) — Routines CRUD screen.
+ *
+ * ─── NAMING (Ken 2026-08-06) — READ THIS BEFORE RENAMING ANYTHING ───
+ * The DISPLAY name of this screen is "Routines". The TRANSPORT name
+ * stays "habits" all the way down: this file is app/Home/habits.tsx,
+ * the route is /Home/habits, the API is
+ * `/v1/patients/me/plan/habits`, the stored field is `plan.habits[]`,
+ * the flag is `habits_in_plan_enabled`, and the hooks/types are still
+ * usePlanHabits / PlanHabit / UpsertHabitInput. That is deliberate:
+ * there are live records and a live wire format, and renaming them is
+ * a breaking change with zero user-visible benefit. Only strings a
+ * patient can read were changed.
+ *
+ * WHY "Routines": this section had to be told apart from plan Tasks.
+ * Routines are the scaffolding of a day — meals, activities of daily
+ * living (showering, toothbrushing), shopping, going to classes. They
+ * are NOT by definition positive behaviours, so copy here must never
+ * congratulate the patient for having them or call them healthy.
+ * Tasks are the positive coping behaviours we want to turn into
+ * habits; that contrast is stated ONCE, in the caption under the
+ * header, and nowhere else.
+ *
+ * NOTE: this is NOT the SCRUM-640 habit journal (app/Home/habit-journal
+ * .tsx, the 6-habit daily check-in). That is a different feature and
+ * keeps the word "habit" in its UI.
  *
  * Reached from the HabitsBanner on the Plan screen via
  * router.push('/Home/habits'). Lists plan.habits, offers Add / Edit /
@@ -125,7 +149,7 @@ export default function HabitsScreen(): React.JSX.Element {
   const submitDelete = React.useCallback(
     (habitId: string, label: string) => {
       Alert.alert(
-        'Remove habit',
+        'Remove routine',
         `Remove "${label}" from your plan?`,
         [
           { text: 'Cancel', style: 'cancel' },
@@ -175,13 +199,13 @@ export default function HabitsScreen(): React.JSX.Element {
               flex: 1,
             }}
           >
-            Habits
+            Routines
           </Text>
           {flag && (
             <Pressable
               onPress={openAdd}
               accessibilityRole="button"
-              accessibilityLabel="Add a habit"
+              accessibilityLabel="Add a routine"
               hitSlop={8}
               style={({ pressed }) => [styles.addBtn, pressed && styles.pressed]}
             >
@@ -189,6 +213,28 @@ export default function HabitsScreen(): React.JSX.Element {
             </Pressable>
           )}
         </View>
+
+        {/*
+          Ken 2026-08-06 — the ONE place the Routines/Tasks distinction is
+          spelled out for the patient. Routines are structure and are not
+          necessarily good behaviours; the tasks on the plan are the coping
+          behaviours we want to grow into habits. Deliberately a caption,
+          not an explainer card — say it once, then get out of the way.
+        */}
+        {flag && (
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              lineHeight: getScaledFontSize(19),
+              marginBottom: 18,
+            }}
+          >
+            Routines are the structure of your day — meals, washing, shopping, classes. The
+            tasks on your plan are different: those are the behaviours you&apos;re building
+            into habits.
+          </Text>
+        )}
 
         {!flag ? (
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 24 }}>
@@ -201,7 +247,7 @@ export default function HabitsScreen(): React.JSX.Element {
         ) : isError ? (
           <View style={styles.centerBlock}>
             <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}>
-              We couldn&apos;t load your habits. Pull down to try again.
+              We couldn&apos;t load your routines. Pull down to try again.
             </Text>
           </View>
         ) : habits.length === 0 ? (
@@ -214,7 +260,7 @@ export default function HabitsScreen(): React.JSX.Element {
                 textAlign: 'center',
               }}
             >
-              No habits yet
+              No routines yet
             </Text>
             <Text
               style={{
@@ -224,7 +270,8 @@ export default function HabitsScreen(): React.JSX.Element {
                 marginTop: 8,
               }}
             >
-              Tap the + button to add a habit. Small daily practices that support your goals.
+              Tap the + button to add one — a meal, a shower, the school run, a class. Anything
+              that already gives your day its shape.
             </Text>
           </View>
         ) : (
@@ -300,14 +347,18 @@ export default function HabitsScreen(): React.JSX.Element {
                 fontWeight: getScaledFontWeight(700) as any,
               }}
             >
-              {isNew ? 'New habit' : 'Edit habit'}
+              {isNew ? 'New routine' : 'Edit routine'}
             </Text>
 
             <Text style={styles.label}>Label</Text>
             <TextInput
               style={[styles.input, { color: colors.text, borderColor: colors.subtext as string }]}
               value={editing.label}
-              placeholder="e.g. Walk 30 minutes"
+              // Ken 2026-08-06: the old placeholder ("Walk 30 minutes") was a
+              // coping behaviour — i.e. a Task, not a Routine. The example
+              // has to be something structural or patients will file their
+              // exercise goals in here.
+              placeholder="e.g. Eat breakfast"
               placeholderTextColor={colors.subtext as string}
               onChangeText={(v) => setEditing((e) => (e ? { ...e, label: v } : e))}
               maxLength={60}

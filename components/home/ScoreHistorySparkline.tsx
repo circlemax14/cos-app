@@ -71,13 +71,44 @@ function normalizeSeries(input: number[]): number[] {
   // to seven with 74s, which reads honestly as "one known point".
   const clean = input.filter((v) => typeof v === 'number' && Number.isFinite(v))
   if (clean.length === 0) return []
-  if (clean.length >= BARS) return clean.slice(clean.length - BARS)
+  // Longer than 7 → average into 7 buckets spanning the WHOLE window.
+  //
+  // This used to be `slice(-BARS)`, which silently drew only the newest 7
+  // points. That was invisible while every caller passed exactly 7 days, but
+  // the moment the wellbeing screen shipped a 30d/90d range toggle it became
+  // a chart lying about its own axis: the "90d" option rendered the last
+  // week. Averaging keeps every real reading represented and makes the range
+  // toggle actually change the picture.
+  if (clean.length > BARS) return downsampleToBars(clean)
+  if (clean.length === BARS) return clean
   // Left-pad with the first value so the sparkline reads as
   // "stable, then the recent points". Better than zero-pad (which
   // reads as "you had no wellbeing five days ago").
   const pad = BARS - clean.length
   const first = clean[0]
   return [...new Array(pad).fill(first), ...clean]
+}
+
+/**
+ * Average a >7-point series into exactly 7 contiguous buckets, oldest-first.
+ *
+ * Bucket boundaries are computed by proportion rather than a fixed chunk size
+ * so 30 and 90 points both spread across the full track — a fixed size would
+ * leave a ragged final bucket built from one or two points, which renders as
+ * a spike that isn't in the data.
+ *
+ * Every bucket is guaranteed non-empty because the caller only reaches here
+ * with length > BARS.
+ */
+function downsampleToBars(clean: number[]): number[] {
+  const out: number[] = []
+  for (let i = 0; i < BARS; i++) {
+    const start = Math.floor((i * clean.length) / BARS)
+    const end = Math.floor(((i + 1) * clean.length) / BARS)
+    const slice = clean.slice(start, Math.max(end, start + 1))
+    out.push(slice.reduce((sum, v) => sum + v, 0) / slice.length)
+  }
+  return out
 }
 
 function clamp01to100(v: number): number {

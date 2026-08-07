@@ -188,7 +188,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="habits"
         options={{
-          title: 'Habits',
+          // #13 — display name only. The route segment, the `habits` query
+          // key, and the /plan/habits transport all keep the old identifier.
+          title: 'Routines',
           href: null,
           headerShown: false,
         }}

@@ -36,15 +36,20 @@
 //         (would widen to `boolean` and allow future runtime toggling).
 //     (g) types/patient-intake.ts keeps the open-envelope shape
 //         PatientIntakeRecord.answers = Record<string, IntakeAnswerValue>
-//         AND the IntakeAddListItem row type. Deviation from the task's
-//         literal ask (`vaccines?:` on PatientIntakeRecord) — the FE
-//         DELIBERATELY did not add a `vaccines?` field because the
-//         envelope is already open-shape and adding a specific optional
-//         key to a Record<> is a semantic no-op. See DISCOVERY notes in
-//         the COS-480 report. The wire below asserts the ACTUAL shipped
-//         contract (open envelope + IntakeAddListItem row) so a future
-//         refactor that narrows `answers` — the failure mode this test
-//         actually needs to catch — trips the wire.
+//         AND the IntakeAddListItem row type, which as of the SCRUM-659
+//         followup (2026-08-05) is
+//         `{ label: string; note?: string; linkedIds?: string[] }` —
+//         `linkedIds` is Ken's medication→condition linkage. Deviation
+//         from the task's literal ask (`vaccines?:` on
+//         PatientIntakeRecord) — the FE DELIBERATELY did not add a
+//         `vaccines?` field because the envelope is already open-shape
+//         and adding a specific optional key to a Record<> is a semantic
+//         no-op. See DISCOVERY notes in the COS-480 report. The wire
+//         below asserts the ACTUAL shipped contract (open envelope +
+//         IntakeAddListItem row, label required / note + linkedIds
+//         optional) so a future refactor that narrows `answers` or
+//         reshapes the row — the failure modes this test actually needs
+//         to catch — trips the wire.
 //     (h) The vaccine formatter renders [{name/label:'Flu', date/note:
 //         '2025-10'}, {name/label:'COVID'}] as
 //         'Flu (Oct 2025), COVID'. Behavioral, via a runtime import of
@@ -291,9 +296,34 @@ test('(f-drift) VACCINES_INTAKE_ENABLED RHS is the literal boolean `true`', () =
 //     Record<> is a semantic no-op. What actually needs defending is
 //     that the envelope STAYS open (a narrow to a closed shape would
 //     break the vaccines key + every other free-form intake key).
+//
+//     ROW SHAPE, updated SCRUM-659 followup (2026-08-05). The row grew a
+//     third, OPTIONAL member:
+//         { label: string; note?: string; linkedIds?: string[] }
+//     `linkedIds` is Ken's medication→condition linkage: a medication row
+//     records the labels of the conditions it treats (and psychotropic
+//     meds → mental-health diagnoses), captured by AddListQuestion's link
+//     picker and rendered by intake-report-builder's add_list branch as
+//     " — treats: …".
+//
+//     The original protective intent is unchanged and still asserted:
+//       - `label` stays REQUIRED (no `?`). Every consumer reads
+//         `rec.label` unguarded; making it optional would compile and
+//         then render blank rows.
+//       - `note` stays OPTIONAL. The vaccines formatter branches on its
+//         absence to emit a bare name instead of stray parens; promoting
+//         it to required would force callers to invent a date.
+//       - `linkedIds` is OPTIONAL and an ARRAY of string. Rows predating
+//         the linkage (and every non-medication add_list) simply omit it,
+//         and both the picker and the report do `rec.linkedIds ?? []` /
+//         a length check — a required field would break every existing
+//         persisted answer, and a non-array would break the `.join(', ')`.
+//     TypeScript cannot catch drift here from the call sites because the
+//     rows arrive through the untyped `IntakeAnswerValue` union and are
+//     read via `item as { label: string; … }` casts.
 // ---------------------------------------------------------------------------
 
-test('(g) types/patient-intake.ts preserves the open-envelope answers shape and IntakeAddListItem row', () => {
+test('(g) types/patient-intake.ts preserves the open-envelope answers shape and IntakeAddListItem row (label required, note + linkedIds optional)', () => {
   assert.match(
     TYPES_SRC,
     /\banswers\s*:\s*Record<\s*string\s*,\s*IntakeAnswerValue\s*>/,
@@ -301,8 +331,8 @@ test('(g) types/patient-intake.ts preserves the open-envelope answers shape and 
   );
   assert.match(
     TYPES_SRC,
-    /\bexport\s+type\s+IntakeAddListItem\s*=\s*\{\s*label\s*:\s*string\s*;\s*note\?\s*:\s*string\s*\}/,
-    'types/patient-intake.ts must export `type IntakeAddListItem = { label: string; note?: string }`. This is the per-row shape the vaccines add_list envelope uses (name → label, date → note). If this shape drifts (e.g. `label` renamed, `note` promoted to required), the vaccine formatter breaks in a way TS cannot catch from the untyped `IntakeAnswerValue` union.',
+    /\bexport\s+type\s+IntakeAddListItem\s*=\s*\{\s*label\s*:\s*string\s*;\s*note\?\s*:\s*string\s*;\s*linkedIds\?\s*:\s*string\[\]\s*;?\s*\}/,
+    'types/patient-intake.ts must export `type IntakeAddListItem = { label: string; note?: string; linkedIds?: string[] }` (SCRUM-659 followup, 2026-08-05). This is the per-row shape every add_list answer uses — vaccines (name → label, date → note) plus the medication→condition linkage (`linkedIds` carries the labels of the conditions a medication treats). Drift shapes this wire exists to catch: `label` renamed or made optional (consumers read `rec.label` unguarded and would render blank rows); `note` promoted to required (the vaccines formatter relies on its absence to emit a bare name instead of stray parens); `linkedIds` promoted to required (breaks every already-persisted answer and every non-medication add_list, which legitimately omit it); `linkedIds` retyped to a non-array (the report does `rec.linkedIds.join(", ")` and the picker does `cur.linkedIds ?? []`). TS cannot catch any of these from the untyped `IntakeAnswerValue` union — the rows are read through `as` casts.',
   );
 });
 

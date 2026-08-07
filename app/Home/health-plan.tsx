@@ -180,7 +180,7 @@ const NOTIF_CATEGORY_LABELS: Record<(typeof NOTIFICATION_CATEGORY_KEYS)[number],
   medicationTask: 'Medication tasks',
   otherTask: 'Other tasks',
   nudges: 'Proactive nudges',   // SCRUM-641
-  habits: 'Habit reminders',    // SCRUM-659
+  habits: 'Routine reminders',  // SCRUM-659 (renamed #13)
 };
 
 const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: string; label: string }> = {

@@ -26,14 +26,18 @@ import { useFeatureFlags } from '@/hooks/use-feature-flags';
 /**
  * Cold-start env fallback. Only consulted when the flags query has
  * not yet resolved (`data === undefined`). STRICT `=== 'true'` — a
- * stray "1" / "yes" must NOT enable the tab-swap.
+ * stray "1" / "yes" / "TRUE" / " true " must NOT enable the tab-swap.
+ *
+ * Do NOT normalise (`.toLowerCase()` / `.trim()` / `Boolean()` / `==`).
+ * Each stage sets its env vars independently, so any coercion widens the
+ * set of accidental values that ship the feature enabled in a stage where
+ * product isn't ready. `undefined === 'true'` is already false, so the
+ * bare compare is total and never throws. Pinned by
+ * tests/unit/tab-swap-bps-flag.test.mjs wire (a), whose behavioural table
+ * (b) enumerates the exact inputs that must return false.
  */
 function envTrue(): boolean {
-  return (
-    String(process.env.EXPO_PUBLIC_TAB_SWAP_BPS_ENABLED ?? '')
-      .toLowerCase()
-      .trim() === 'true'
-  );
+  return process.env.EXPO_PUBLIC_TAB_SWAP_BPS_ENABLED === 'true';
 }
 
 /**

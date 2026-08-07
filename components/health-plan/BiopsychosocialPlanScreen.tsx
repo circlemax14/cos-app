@@ -85,6 +85,11 @@ import { useCurrentHour } from '@/hooks/use-current-hour';
 // patient has no glucose samples yet. Tap routes to /Home/glucose.
 import { GlucoseTirTile } from './GlucoseTirTile';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
+// "Share as PDF" for the care plan. Same expo-print + expo-sharing pipeline
+// (and the same RN Share text fallback) that ShareIntakeReportSection already
+// ships, so no new native surface and no new npm package — OTA-safe. Self-
+// guards on `plan == null`, so mounting it here is inert until a plan exists.
+import { SharePlanSection } from './SharePlanSection';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
 import WellbeingMapGlimpse from './senior/WellbeingMapGlimpse';
@@ -2028,12 +2033,23 @@ export function BiopsychosocialPlanScreen({
           )
         )}
 
-        {/* SCRUM-659 Story 4 (2026-08-05) — Habits banner directly below
+        {/* SCRUM-659 Story 4 (2026-08-05) — Routines banner directly below
             the AI summary, styled to match the WellbeingMap card
             treatment. Mounted WITHOUT an extra padding wrapper so it
             inherits the parent ScrollView's horizontal padding — this
             makes it byte-width-matched to the WellbeingMap card + the
-            BPS section cards below it. */}
+            BPS section cards below it.
+
+            NAMING (Ken 2026-08-06): the section READS as "Routines" —
+            structure like meals, washing, shopping, classes, which are
+            not necessarily good behaviours — to tell it apart from plan
+            Tasks, which ARE the positive behaviours we want to grow into
+            habits. Everything below the display layer (component name
+            HabitsBanner, route /Home/habits, `plan.habits[]`, flag
+            `habits_in_plan_enabled`) intentionally keeps the "habits"
+            wire name; do not "fix" the mismatch. All the copy lives in
+            HabitsBanner.tsx — there are no habit/routine strings on this
+            screen. */}
         <HabitsBanner
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
@@ -2298,6 +2314,16 @@ export function BiopsychosocialPlanScreen({
           needed later, restore this Pressable — no state migration
           required.
         */}
+
+        {/*
+          "Share as PDF" — bottom action, in the slot SCRUM-662 freed when
+          the Refresh / Classic-view buttons came off this surface. Mirrors
+          ShareIntakeReportSection's mechanism exactly (expo-print →
+          expo-sharing → RN Share text fallback); the HTML comes from the
+          pure `plan-pdf-builder.ts`. Renders null until a plan exists, so
+          the empty / skeleton branches above are unaffected.
+        */}
+        <SharePlanSection patientName={patientName} />
             </>
           );
           if (BPS_HERO_LAYOUT_ENABLED) {

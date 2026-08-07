@@ -38,10 +38,16 @@ export class DailyReadFeatureDisabledError extends Error {
 // ─── Types (mirror BE DailyReadResponse) ─────────────────────────────
 
 export type DailyReadPillarKey =
+  // NOTE: `habitJournal` is the ROUTINES pillar. Ken's #13 rename is
+  // display-layer only — the transport key is unchanged on purpose.
   | 'habitJournal'
   | 'glucose'
   | 'healthAge'
   | 'wellbeing'
+  // #9 — task completion is the fourth scoring pillar. Reads the same 7-day
+  // getTaskAnalytics rollup the wellbeing composite uses, so the two surfaces
+  // cannot tell different adherence stories.
+  | 'taskCompletion'
 
 export type DailyReadPillarState = 'ready' | 'insufficient_data' | 'flag_off'
 
@@ -56,6 +62,13 @@ export interface DailyReadPillar {
   band?: DailyReadPillarBand
   oneLiner?: string
   ctaHref?: string
+  /**
+   * #9 — the pillar's value on its own native axis, 0-100. Optional and
+   * nullable: a pillar that is `insufficient_data` has no number, and null
+   * must never be coerced to 0 (a patient with no readings is not a patient
+   * scoring zero). Absent on responses from a backend older than #9.
+   */
+  score?: number | null
 }
 
 export interface DailyReadHeadline {
@@ -74,6 +87,12 @@ export interface DailyReadResponse {
   headline: DailyReadHeadline
   /** True when every pillar landed non-ready — client renders onboarding CTA. */
   empty: boolean
+  /**
+   * #9 — weighted composite of the scoring pillars, 0-100, or null when every
+   * scoring pillar is missing. Null rather than 0, same rule as the wellbeing
+   * score. Absent on responses from a backend older than #9.
+   */
+  score?: number | null
 }
 
 // ─── Envelope helper ─────────────────────────────────────────────────
