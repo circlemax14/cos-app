@@ -230,6 +230,20 @@ function DailyReadCardBase({
   const todayScore = readScore(data) ?? (series.length > 0 ? series[series.length - 1] : null)
   const trendCaption = `Trend, last ${series.length} ${series.length === 1 ? 'day' : 'days'}`
 
+  // #9 first-day state. History is one row per UTC DAY, so a patient who has
+  // just started (or whose account existed before this shipped) has exactly one
+  // plottable point and no chart. Rendering nothing there is indistinguishable
+  // from the feature being broken — which is precisely how it was read on the
+  // day it launched. Say what is happening instead: show today's number, and
+  // that the line arrives tomorrow. Deliberately NOT a fake chart: one point
+  // left-padded into seven bars would draw a flat line that asserts six days of
+  // stability we have no data for.
+  const showFirstDayNote =
+    !isLoadingInitial &&
+    !isEmpty &&
+    series.length === 1 &&
+    todayScore !== null
+
   const a11yLabel = isLoadingInitial
     ? 'Daily read loading'
     : isEmpty
@@ -237,7 +251,9 @@ function DailyReadCardBase({
       : `Daily read. ${headlineText || PLACEHOLDER_HEADLINE}${
           showSparkline && todayScore !== null
             ? `. Today's read score ${todayScore} out of 100. ${trendCaption}.`
-            : ''
+            : showFirstDayNote
+              ? `. Today's read score ${todayScore} out of 100. Your trend line starts tomorrow.`
+              : ''
         }`
 
   return (
@@ -365,6 +381,44 @@ function DailyReadCardBase({
             caption + score line always accompany the bars so the trend
             is never communicated by colour or shape alone.
           */}
+          {/*
+            #9 first-day state — exactly one plottable bucket. Shows the real
+            number plus when the line appears, rather than a blank space that
+            reads as a broken feature. No bars: see showFirstDayNote.
+          */}
+          {showFirstDayNote ? (
+            <View style={styles.trendBlock}>
+              <View style={styles.trendHeaderRow}>
+                <Text
+                  style={[
+                    styles.trendCaption,
+                    {
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(600) as '600',
+                    },
+                  ]}
+                  numberOfLines={2}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  Your trend line starts tomorrow
+                </Text>
+                <Text
+                  style={[
+                    styles.trendScore,
+                    {
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(700) as '700',
+                    },
+                  ]}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  {`Today ${todayScore}/100`}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           {showSparkline ? (
             <View style={styles.trendBlock}>
               <View style={styles.trendHeaderRow}>

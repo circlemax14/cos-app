@@ -46,7 +46,9 @@ import {
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
   psychological: '#7B3FE4',
-  social: '#C97600',
+  // Phase 0 fix (#5): #C97600 measured 3.1:1 on white — under WCAG AA for the
+  // section header it colours. #A15E00 is 4.6:1 and reads as the same hue.
+  social: '#A15E00',
 }
 const DOMAIN_FILL: Record<BpsDomain, string> = {
   biological: 'rgba(25,156,79,0.14)',
@@ -125,7 +127,19 @@ const SUBDOMAIN_POS: Record<string, LabelPos> = {
   // ── Psy ∩ Soc overlap (bottom-right intersection) ─────────────────
   interpersonal_relationships: { dx: 235, dy: 205, lx: 290, ly: 208, anchor: 'start' },
   trauma:                 { dx: 250, dy: 230, lx: 295, ly: 233, anchor: 'start'  },
-  grief:                  { dx: 260, dy: 253, lx: 300, ly: 256, anchor: 'start'  },
+  // Phase 0 fix (#5): grief's hit circle overlapped socioeconomic_status
+  // (280, 265) at 23.3 units. Both circles are r=12, so centres must be >= 24
+  // apart or the later-rendered dot swallows the other's taps — Grief opened
+  // Socioeconomic Status.
+  //
+  // The audit proposed dy 258. That is wrong: it moves grief TOWARD
+  // socioeconomic (23.3 -> 21.2). Moving straight up fails too — grief is
+  // boxed between socioeconomic below and trauma (250, 230) above, and NO dy
+  // at dx 260 clears both. Solved in 2D instead: dx 259 is the nearest valid
+  // point, one unit from the original, giving 24.2 to socioeconomic and 24.7
+  // to trauma. Visually identical, and a test now proves all 26 dots are
+  // mutually clear rather than trusting a hand-checked pair.
+  grief:                  { dx: 259, dy: 253, lx: 300, ly: 256, anchor: 'start'  },
 
   // ── Social & Spiritual pure (bottom band around Soc circle) ───────
   social_support:         { dx: 155, dy: 285, lx: 155, ly: 275, anchor: 'middle' },
@@ -426,6 +440,17 @@ export default function WellbeingMapRoute(): React.JSX.Element {
             return (
               <View
                 key={d}
+                // Phase 0 fix (#5): these are summary stats, not controls — but
+                // the card treatment (fill + border) reads as tappable, and to
+                // VoiceOver they were two unlabelled stops ("3", then
+                // "Biological wellbeing") with no relationship between them.
+                // Grouping into one element with a sentence label fixes the AT
+                // reading; `accessibilityRole="text"` states plainly that there
+                // is nothing to activate. Whether they SHOULD become tappable
+                // (scroll to that group) is a design call for Ken, not Phase 0.
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={`${DOMAIN_LABEL[d]}: ${s.covered} of ${s.total} areas covered`}
                 style={[
                   styles.coverageCard,
                   {
@@ -544,7 +569,10 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               const isHalf = c.fillLevel === 'half'
               const isCovered = isFull || isHalf
               const domainColor = DOMAIN_COLOR[c.domain]
-              const labelFill = isCovered ? (isDark ? '#F2F2F7' : '#1C1C1E') : (isDark ? '#8E8E93' : '#8E8E93')
+              // Phase 0 fix (#5): light-mode gap labels were #8E8E93 = 2.99:1 on
+              // #f5f5f5, under the 4.5:1 WCAG AA floor. #5A5A5F is 5.4:1. Dark
+              // mode keeps #8E8E93, which is already compliant on a dark ground.
+              const labelFill = isCovered ? (isDark ? '#F2F2F7' : '#1C1C1E') : (isDark ? '#8E8E93' : '#5A5A5F')
               const shortLabel = SVG_LABEL_OVERRIDES[c.key] ?? c.label
               const emptyFill = isDark ? '#1C1C1E' : '#FFFFFF'
               // Radius: full=4, half=3.5, none=3 — gives 'half' a visual footprint
@@ -554,8 +582,28 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               // Label weight/style: three tiers so the tri-state reads at a glance.
               const labelWeight = isFull ? '700' : isHalf ? '600' : '500'
               const labelItalic = !isFull  // both half and none stay italic
+              // Phase 0 fix (#5): each dot was an unlabelled <G onPress>. VoiceOver
+              // announced nothing, so all 26 areas of the map were invisible to
+              // assistive tech even though every one is tappable. Same sentence
+              // shape as the coverage chips below, so the two surfaces read
+              // identically — a screen-reader user hearing "Grief, no goals or
+              // assessments yet" gets the same information either way.
+              const a11yState = isFull
+                ? `${c.count} goal${c.count === 1 ? '' : 's'}`
+                : isHalf
+                  ? `${c.assessmentCount} assessment${c.assessmentCount === 1 ? '' : 's'}, no goal yet`
+                  : 'no goals or assessments yet'
+              // Position in the Venn is decorative and, per the audit, wrong for
+              // 12 of 26 areas — so the label states the domain in words rather
+              // than leaving it to be inferred from where the dot sits.
+              const a11yLabel = `${c.label}, ${c.domain}, ${a11yState}. Tap to learn more.`
               return (
-                <G key={c.key} onPress={() => openSheet(c.key)}>
+                <G
+                  key={c.key}
+                  onPress={() => openSheet(c.key)}
+                  accessibilityRole="button"
+                  accessibilityLabel={a11yLabel}
+                >
                   {/* Invisible larger hit target for the dot so it's finger-friendly */}
                   <Circle cx={pos.dx} cy={pos.dy} r={12} fill="transparent" />
                   {isHalf ? (
@@ -681,9 +729,9 @@ export default function WellbeingMapRoute(): React.JSX.Element {
             }}
           >
             Solid = a goal targets this subdomain. Half-filled = you&#39;ve
-            completed a check-in here but no goal yet. Dashed = untouched
-            gap. Overlap groups show cross-cutting items shared between two
-            circles of the Venn above.
+            completed a check-in here but no goal yet. Hollow = untouched
+            gap. On the map above, a dashed outline means the area spans two
+            circles rather than sitting in one.
           </Text>
 
           {GROUPS.map((g) => {
@@ -862,7 +910,7 @@ function renderChip(
     >
       <Text
         style={{
-          color: isFull ? color : isHalf ? color : (isDark ? '#8E8E93' : '#8E8E93'),
+          color: isFull ? color : isHalf ? color : (isDark ? '#8E8E93' : '#5A5A5F'),
           fontSize: getScaledFontSize(11),
           fontWeight: isFull ? '700' : isHalf ? '600' : '500',
           fontStyle: isFull ? 'normal' : 'italic',

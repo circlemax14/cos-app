@@ -132,7 +132,11 @@ function WellbeingScoreTileBase(): React.JSX.Element {
               trend ? `. ${trendA11yLabel(trend.arrow, trend.delta)}` : ''
             }.`
       }
-      accessibilityHint="Opens your wellbeing map"
+      // Phase 0 fix (#5): said "wellbeing map", but onPress goes to
+      // /Home/wellbeing-score — the score detail screen, not the map. A hint
+      // that names the wrong destination is worse than no hint: it is the only
+      // preview a VoiceOver user gets before committing to the tap.
+      accessibilityHint="Opens your wellbeing score details"
       hitSlop={4}
       style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
     >
