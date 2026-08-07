@@ -1268,11 +1268,34 @@ function MedicationCard({
             </Pressable>
           </>
         ) : collapsible && !isPast ? (
-          <MaterialIcons
-            name={expanded ? 'expand-less' : 'expand-more'}
-            size={getScaledFontSize(22)}
-            color={colors.subtext}
-          />
+          // Ken 2026-08-07: "When I went to edit it took a few presses for the
+          // box to drop down."
+          //
+          // The chevron was a bare <MaterialIcons> — the one element on the
+          // row that LOOKS like the expand control was the one element that
+          // wasn't tappable. Only the descriptive text block to its left
+          // toggled the card, so a finger aimed at the chevron (or at the
+          // empty gutter beside it) did nothing, and it took repeated
+          // presses to accidentally land on the text.
+          //
+          // Now the chevron toggles too. Marked accessibilityElementsHidden
+          // because the text block already exposes ONE "expand medication
+          // card" action to VoiceOver — adding a second focusable control
+          // that does exactly the same thing would make AT users hear the
+          // card twice (the chunk-99-v2 grouping rule).
+          <Pressable
+            onPress={() => setExpanded((v) => !v)}
+            hitSlop={12}
+            style={styles.iconBtn}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <MaterialIcons
+              name={expanded ? 'expand-less' : 'expand-more'}
+              size={getScaledFontSize(22)}
+              color={colors.subtext}
+            />
+          </Pressable>
         ) : null}
       </View>
 
