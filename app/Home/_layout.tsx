@@ -22,6 +22,10 @@ export default function TabLayout() {
    * Defaults to `false` on load, so pre-flip users see zero change.
    */
   const unifiedDefault = useUnifiedPlanDefaultEnabled();
+  // `title` is the ACCESSIBILITY label (VoiceOver reads it). The VISIBLE
+  // label — with phone/tablet adaptive short-form — is resolved by
+  // CustomScrollableTabBar via its TAB_LABELS map. Keep title as the
+  // full "Health Plan" here so VoiceOver stays clear.
   const carePlanTabOptions = {
     title: 'Health Plan',
     tabBarIcon: ({ color }: { color: string }) => (
@@ -145,6 +149,64 @@ export default function TabLayout() {
         options={{
           title: 'Medications',
           href: null,
+        }}
+      />
+      {/*
+        SCRUM-642 (2026-08-04) — Health Age drilldown MUST NOT appear in
+        the bottom tab bar. It's reachable only via the Home tile
+        (HealthAgeCard onPress → router.push('/Home/health-age')).
+        Without href:null, expo-router auto-mounts app/Home/health-age.tsx
+        as a visible tab.
+      */}
+      <Tabs.Screen
+        name="health-age"
+        options={{
+          title: 'Health Age',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        SCRUM-644 followup (2026-08-05) — Daily Read drilldown, same
+        pattern as Health Age above. Reached from the Home tile via
+        DailyReadCard onPress → router.push('/Home/daily-read'). Must
+        be href:null to keep it out of the bottom tab bar.
+      */}
+      <Tabs.Screen
+        name="daily-read"
+        options={{
+          title: 'Daily Read',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        SCRUM-659 Story 4 (2026-08-05) — Habits CRUD screen, reached
+        from the HabitsBanner on the unified-plan surface. Same
+        href:null discipline as the other drilldowns.
+      */}
+      <Tabs.Screen
+        name="habits"
+        options={{
+          // #13 — display name only. The route segment, the `habits` query
+          // key, and the /plan/habits transport all keep the old identifier.
+          title: 'Routines',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        SCRUM-638 followup (Vishal 2026-08-05) — Readiness info/detail
+        screen. Reached from the Readiness hero tile (compact) or the
+        full-width ReadinessScoreCard (large variant). Same href:null
+        discipline as the other drilldowns.
+      */}
+      <Tabs.Screen
+        name="readiness"
+        options={{
+          title: 'Readiness',
+          href: null,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -421,6 +483,31 @@ export default function TabLayout() {
         name="wellbeing-map"
         options={{
           title: 'Wellbeing map',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/* Ken 2026-08-06 — Wellbeing V2 composite detail screen. Reached
+          from WellbeingScoreTile on Home. Distinct from wellbeing-map
+          (which is BPS-subdomain coverage); this one focuses on the
+          composite trend + component breakdown. */}
+      <Tabs.Screen
+        name="wellbeing-score"
+        options={{
+          title: 'Wellbeing',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/* Ken 2026-08-07 (#19) — Personal Information moved here from the
+          root-level (personal-info) Stack group so it renders WITH the
+          bottom tab bar (a root sibling of Home structurally cannot).
+          href:null keeps it out of the visible tab bar; it's reached
+          from the profile drawer. */}
+      <Tabs.Screen
+        name="personal-info"
+        options={{
+          title: 'Personal Information',
           href: null,
           headerShown: false,
         }}

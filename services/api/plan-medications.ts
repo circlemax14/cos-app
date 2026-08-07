@@ -88,6 +88,40 @@ export interface Medication {
    * backend) the client defaults to 'consumable', preserving today's behavior.
    */
   form?: MedicationForm;
+  /**
+   * Ken 2026-08-05 (BE PR #365) — soft-delete timestamp. Only populated
+   * when the caller opts in with `?includePast=1`. Null / absent = the
+   * med is actively taken. An ISO string = the med was discontinued at
+   * that time and belongs in the "Past medications" section.
+   *
+   * Older backends omit this field entirely; older frontends ignore it.
+   * Additive contract — safe to read without a version gate.
+   */
+  discontinuedAt?: string | null;
+  /**
+   * BUG #12.3 (Ken 2026-08-07) — this med was hidden under the LEGACY
+   * "Hide this medication" semantics (present in the overlay's
+   * `removed[]` with no explicit discontinue timestamp).
+   *
+   * These are NOT clinical discontinues. The UI labels them "Hidden"
+   * rather than "Discontinued" and always offers Restore, because
+   * before this field existed a legacy hide was unrecoverable — the
+   * per-card Restore control had been removed and the only remaining
+   * unremove path was a session-local banner wiped on relaunch.
+   */
+  hidden?: boolean;
+  /**
+   * BUG #12.1 (Ken 2026-08-07) — the patient's EHR says this course has
+   * ENDED (FHIR status completed / stopped / not-taken).
+   *
+   * These used to be filtered out of the FHIR read entirely, so the
+   * medication simply never appeared anywhere in the app — Ken's "Did
+   * not include all medications". They are now returned under
+   * `?includePast=1` and belong in "Past medications", captioned to make
+   * the provenance clear (the health system reported this; the patient
+   * did not discontinue it here).
+   */
+  endedInEhr?: boolean;
 }
 
 export interface PlanMedicationsResponse {
@@ -172,11 +206,23 @@ export interface UpdatePlanMedicationsBody {
  * this route) or returns an error, we resolve to a disabled, empty result so
  * the screen renders exactly as it did before — never throwing into the UI.
  */
-export async function fetchPlanMedications(): Promise<PlanMedicationsResponse> {
+export interface FetchPlanMedicationsOptions {
+  /**
+   * Ken 2026-08-05 — when true, the BE returns discontinued medications
+   * too (with `discontinuedAt` populated) so the FE can split Active
+   * vs Past client-side. Default false → legacy filtered response.
+   */
+  includePast?: boolean;
+}
+
+export async function fetchPlanMedications(
+  opts: FetchPlanMedicationsOptions = {},
+): Promise<PlanMedicationsResponse> {
   try {
-    const res = await apiClient.get<{ success: boolean; data: PlanMedicationsResponse }>(
-      '/v1/patients/me/plan-medications',
-    );
+    const url = opts.includePast
+      ? '/v1/patients/me/plan-medications?includePast=1'
+      : '/v1/patients/me/plan-medications';
+    const res = await apiClient.get<{ success: boolean; data: PlanMedicationsResponse }>(url);
     const data = res.data?.data;
     return {
       flagEnabled: data?.flagEnabled === true,
@@ -194,12 +240,21 @@ export async function fetchPlanMedications(): Promise<PlanMedicationsResponse> {
 /**
  * PUT a batch of medication mutations. Returns the recomputed list so the
  * caller can prime the React Query cache without a second round-trip.
+ *
+ * `opts.includePast` mirrors the GET behavior — the PUT response echoes
+ * the effective list, and when true it includes discontinued rows so
+ * the caller's cache-seed doesn't accidentally hide a med the patient
+ * just moved to Past.
  */
 export async function updatePlanMedications(
   body: UpdatePlanMedicationsBody,
+  opts: FetchPlanMedicationsOptions = {},
 ): Promise<Medication[]> {
+  const url = opts.includePast
+    ? '/v1/patients/me/plan-medications?includePast=1'
+    : '/v1/patients/me/plan-medications';
   const res = await apiClient.put<{ success: boolean; data: { medications: Medication[] } }>(
-    '/v1/patients/me/plan-medications',
+    url,
     body,
   );
   return res.data?.data?.medications ?? [];

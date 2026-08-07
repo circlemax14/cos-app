@@ -40,8 +40,11 @@ const NINE_KEYS_ON = [
   'mentalHealth', 'integrative', 'social', 'spiritual',
 ] as const;
 
-test('NUTRITION_PLAN_ENABLED defaults OFF (kill-switch, matches backend SSM rollout)', () => {
-  assert.equal(NUTRITION_PLAN_ENABLED, false);
+test('NUTRITION_PLAN_ENABLED is a boolean kill-switch (matches backend SSM rollout)', () => {
+  // 2026-08-02: flipped ON by user directive ("enable everything and OTA").
+  // Test remains a regression guard on the const's TYPE + presence — its
+  // VALUE is intentionally rolled forward/backward via OTAs.
+  assert.equal(typeof NUTRITION_PLAN_ENABLED, 'boolean');
 });
 
 test('category keys are flag-aware: OFF ⇒ the original 8 in Ken’s order; ON ⇒ 9 with nutrition at index 1', () => {

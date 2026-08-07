@@ -35,13 +35,15 @@
 //       hint copy assumes the label is legible; if chunk 73's OS Dynamic
 //       Type wire regresses, low-vision users lose the label scaling
 //       that pairs with the VoiceOver hint.
-//   (f) The TAB_LABELS map still exports the full "Care Plan" and
-//       "Health Summary" spellings (chunks 54 / 54.1). Chunk 101's
-//       accessibilityHint interpolates `displayLabel`, which is derived
-//       from TAB_LABELS[route.name]; if the map reverts to the terser
-//       "Care" / "Summary" forms, the spoken hint says "Switches to the
-//       Care section" instead of "Switches to the Care Plan section" and
-//       diverges from the sighted label.
+//   (f) Tab labels are ADAPTIVE per device width (Ken 2026-08-05, which
+//       superseded the static "always 2-word" map from chunks 54 / 54.1):
+//       phones (<768pt) get "Plan" / "Summary" so five tabs fit an
+//       iPhone SE without wrapping, tablets (>=768pt) get "Care Plan" /
+//       "Health Summary". Chunk 101's accessibilityHint interpolates
+//       `displayLabel`, which is read out of the per-render
+//       buildTabLabels() result — so the spoken hint tracks whichever
+//       spelling the sighted user sees. Collapsing the ternaries back to
+//       one spelling (either direction) silently drops a form factor.
 //
 // WHY SOURCE-DRIFT TRIP WIRES (chunk 84 v2 / chunk 98 v2 pattern):
 //   components/custom-scrollable-tab-bar.tsx is a React Native component
@@ -58,8 +60,8 @@
 //   If a trip wire below fails, DO NOT tweak the regex to make it pass.
 //   Read the diff on components/custom-scrollable-tab-bar.tsx, confirm the
 //   source change is deliberate (role really renamed, hint copy really
-//   changed, TAB_LABELS really re-spelled), and only then update the trip
-//   wire in lockstep.
+//   changed, the label spellings really re-derived), and only then update
+//   the trip wire in lockstep.
 //
 // npm test picks this up via the `tests/unit/*.test.mjs` glob already
 // present in package.json's `test` script. No config changes required.
@@ -287,38 +289,78 @@ test('(e) chunk 73 wire preserved: labelAllowFontScaling reference is still deri
 })
 
 // =========================================================================
-// (f) TAB_LABELS map still exports the full "Care Plan" / "Health Summary"
-//     entries (chunk 54 / 54.1).
+// (f) Tab labels are ADAPTIVE: 1-word on phones, 2-word on tablets.
 //
-// Chunk 101's accessibilityHint interpolates displayLabel, which is
-// derived from TAB_LABELS[route.name]. If TAB_LABELS reverts to the
-// terser "Care" / "Summary" forms Ken rejected in 2026-07-22, the
-// spoken hint says "Switches to the Care section" instead of "Switches
-// to the Care Plan section" and silently diverges from the sighted
-// label. We assert BOTH label strings appear as map values.
+// HISTORY. Chunks 54 / 54.1 pinned a static `TAB_LABELS` map whose values
+// were always the full "Care Plan" / "Health Summary" spellings — Ken
+// rejected the terse "Care" / "Summary" forms on 2026-07-22.
+//
+// WHAT CHANGED. Ken 2026-08-05 asked for smaller phone labels: five tabs
+// at the 2-word spelling wrap on an iPhone SE. The static map became the
+// `buildTabLabels()` factory, which reads the window width and returns the
+// 2-word forms only at tablet widths (>=768pt, matching isTablet() in
+// stores/accessibility-store.tsx) and 1-word forms below that. The
+// identifier `TAB_LABELS` no longer exists.
+//
+// WHY THE A11Y CONTRACT STILL HOLDS. Chunk 101's accessibilityHint
+// interpolates `displayLabel`, which is read out of whatever
+// buildTabLabels() returned for this device — so the spoken hint still
+// tracks the SIGHTED label 1:1 on both form factors, which is the
+// invariant chunks 54/101 actually cared about. (VoiceOver users also
+// still get the unabridged route title via accessibilityLabel, which
+// falls back to `options.title` — see wire (c) and the source comment at
+// the accessibilityLabel prop.)
+//
+// WHAT THIS WIRE PINS. That the adaptivity is real and both ends of it
+// survive: the width test, the tablet branch spellings ("Care Plan" /
+// "Health Summary"), the phone branch spellings ("Plan" / "Summary"), and
+// the consumer reading the built map by route name. Collapsing the
+// ternaries back to a single spelling — in EITHER direction — trips this.
 // =========================================================================
 
-test('(f) TAB_LABELS map still exports full "Care Plan" and "Health Summary" entries (chunks 54 / 54.1)', () => {
-  // We accept either single- or double-quoted string literals as map
-  // values — the current source uses single quotes but a Prettier
-  // re-config to double-quote strings must not break this wire.
+test('(f) tab labels are adaptive: "Plan"/"Summary" on phones, "Care Plan"/"Health Summary" on tablets (Ken 2026-08-05)', () => {
+  // The factory replaced the static map. A revert to a module-level const
+  // map would lose the per-device branch entirely.
   assert.match(
     TAB_BAR_TSX_SRC,
-    /['"]Care Plan['"]/,
-    'TAB_LABELS map must still include the full "Care Plan" label (chunk 54.1 / Ken 2026-07-22 preference) — reverting to "Care" desyncs the accessibilityHint from the sighted label',
+    /function\s+buildTabLabels\s*\(\s*\)\s*:\s*Record<\s*string\s*,\s*string\s*>/,
+    'custom-scrollable-tab-bar.tsx must define `function buildTabLabels(): Record<string, string>` — the factory that replaced the static TAB_LABELS map (Ken 2026-08-05). A module-level const map cannot branch on device width, so reinstating one silently drops the adaptive behaviour.',
+  )
+  // The tablet test itself. 768 matches isTablet() in the accessibility
+  // store; drifting it desyncs the tab bar from every other tablet branch.
+  assert.match(
+    TAB_BAR_TSX_SRC,
+    /const\s+isTablet\s*=\s*Dimensions\.get\(\s*['"]window['"]\s*\)\.width\s*>=\s*768/,
+    'buildTabLabels() must derive `isTablet` from `Dimensions.get("window").width >= 768`. The 768pt threshold is shared with isTablet() in stores/accessibility-store.tsx — if it drifts here, the tab bar disagrees with the rest of the app about what a tablet is, and phones near the boundary get labels that overflow the row.',
+  )
+  // Both branches of both adaptive routes, asserted explicitly. A one-sided
+  // check would pass if someone collapsed the ternary to the surviving arm.
+  assert.match(
+    TAB_BAR_TSX_SRC,
+    /'health-plan':\s*isTablet\s*\?\s*['"]Care Plan['"]\s*:\s*['"]Plan['"]/,
+    'The `health-plan` tab label must remain `isTablet ? \'Care Plan\' : \'Plan\'`. Collapsing to "Care Plan" everywhere re-breaks the iPhone SE wrap Ken flagged on 2026-08-05; collapsing to "Plan" everywhere throws away the tablet spelling he asked to keep — and either way the accessibilityHint follows the sighted label, so the regression is silent in QA.',
   )
   assert.match(
     TAB_BAR_TSX_SRC,
-    /['"]Health Summary['"]/,
-    'TAB_LABELS map must still include the full "Health Summary" label (chunk 54.1 / Ken 2026-07-22 preference) — reverting to "Summary" desyncs the accessibilityHint from the sighted label',
+    /'unified-plan':\s*isTablet\s*\?\s*['"]Care Plan['"]\s*:\s*['"]Plan['"]/,
+    'The `unified-plan` tab label must carry the SAME adaptive pair as `health-plan` (`isTablet ? \'Care Plan\' : \'Plan\'`). The two routes are the flag-off / flag-on variants of one slot (see isHealthPlan in renderTab) — if only one is updated, flipping TAB_SWAP_BPS_ENABLED silently changes the tab\'s wording.',
   )
-  // Belt-and-suspenders: the map identifier itself must still be present.
-  // A rename to a different name (e.g. TAB_DISPLAY_LABELS) would still
-  // work at runtime but would break future greps on TAB_LABELS.
   assert.match(
     TAB_BAR_TSX_SRC,
-    /\bTAB_LABELS\b/,
-    'TAB_LABELS identifier must still exist — chunks 54 / 101 both grep for it in follow-up wires',
+    /\bplan:\s*isTablet\s*\?\s*['"]Health Summary['"]\s*:\s*['"]Summary['"]/,
+    'The `plan` tab label must remain `isTablet ? \'Health Summary\' : \'Summary\'`. Same reasoning as the health-plan pair: both spellings are load-bearing, one per form factor.',
+  )
+  // The consumer. If displayLabel stops reading the built map, the labels
+  // above become dead code and every tab falls back to options.title.
+  assert.match(
+    TAB_BAR_TSX_SRC,
+    /const\s+tabLabels\s*=\s*buildTabLabels\(\)/,
+    'CustomScrollableTabBar must call `buildTabLabels()` once per render into `tabLabels` — the labels must be rebuilt on re-render so an orientation change or split-view resize re-evaluates the width test.',
+  )
+  assert.match(
+    TAB_BAR_TSX_SRC,
+    /tabLabels\[route\.name\]\s*\?\?/,
+    'displayLabel must be derived from `tabLabels[route.name] ?? …` (falling back to tabBarLabel / title / route.name for routes not in the map). Without this lookup the adaptive labels are dead code and every tab renders its raw route title instead.',
   )
 })
 

@@ -415,9 +415,32 @@ export interface AiHealthPlan {
    * category-first plan view omits the STATUS block when this is absent.
    */
   categoryStatuses?: PlanCategoryStatus[];
+  /**
+   * SCRUM-659 Story 2 (2026-08-05) — habits the plan prescribes. Optional;
+   * absent on legacy plans (renderer treats missing as `[]`).
+   */
+  habits?: PlanHabit[];
   sourceDataHash: string;
   generatedAt: string;
   provider: 'bedrock' | 'openai';
+}
+
+/**
+ * SCRUM-659 — a habit declared by a Care Plan. Runtime state (streaks,
+ * entries) lives in the standalone HABIT_STATE / HABIT_ENTRY rows keyed
+ * by habitId — this shape only describes what the plan prescribes.
+ */
+export interface PlanHabit {
+  habitId: string;
+  label: string;
+  cadence: 'daily' | 'weekly' | { everyNDays: number };
+  targetValue?: number;
+  unit?: string;
+  bpsDomain: 'bio' | 'psycho' | 'social' | 'spiritual';
+  rationale?: string;
+  categoryHint?: string;
+  /** 'ai' → generator-proposed; 'patient' → CRUDed via /v1/patients/me/plan/habits */
+  source?: 'ai' | 'patient';
 }
 
 /** Task + completion state for a specific date. */

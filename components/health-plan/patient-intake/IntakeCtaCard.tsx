@@ -12,7 +12,7 @@
  * Returns null while loading or on error so the host screen never shows a
  * placeholder for this row.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -27,6 +27,7 @@ import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
+import RetakeSectionSheet, { type RetakeGroupPick } from './RetakeSectionSheet';
 
 function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
@@ -61,8 +62,19 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
   const isComplete = intake?.status === 'complete';
 
   const go = () => router.push('/Home/patient-intake' as never);
-  const goRetake = () =>
-    router.push('/Home/patient-intake?retake=1' as never);
+  // Ken 2026-08-05 — retake now opens the section picker sheet
+  // (Demographics / Medical conditions & medications / Vaccines /
+  // Lifestyle / Mental health / Social support / Work & finances /
+  // All sections) so patients don't have to walk all 30+ questions
+  // when they only want to update one area. Sheet callback routes
+  // to the wizard with `?retake=1&group=X` (or omits group for the
+  // "All" path, matching legacy behavior).
+  const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
+  const handleRetakePick = (group: RetakeGroupPick) => {
+    setRetakeSheetOpen(false);
+    const suffix = group ? `&group=${group}` : '';
+    router.push(`/Home/patient-intake?retake=1${suffix}` as never);
+  };
   const goViewReport = () =>
     router.push('/Home/patient-intake-report' as never);
 
@@ -217,11 +229,11 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
             </Text>
           </Pressable>
           <Pressable
-            onPress={goRetake}
+            onPress={() => setRetakeSheetOpen(true)}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Retake health intake"
-            accessibilityHint="Opens the patient intake wizard to retake"
+            accessibilityHint="Opens a picker to update one section or all sections of your intake"
             style={({ pressed }) => [
               styles.actionButton,
               { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
@@ -244,6 +256,14 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
             </Text>
           </Pressable>
         </View>
+        <RetakeSectionSheet
+          visible={retakeSheetOpen}
+          onDismiss={() => setRetakeSheetOpen(false)}
+          onPick={handleRetakePick}
+          colors={colors}
+          scale={getScaledFontSize}
+          weight={getScaledFontWeight}
+        />
       </View>
     );
   }

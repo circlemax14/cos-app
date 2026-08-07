@@ -1,328 +1,155 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  RefreshControl,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { fetchMedicationsSummary } from '@/services/api/patient';
-import type { MedicationSummary } from '@/services/api/types';
-import { inferMedicationStatus } from '@/utils/treatment-status';
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
+import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 
 export default function MedicationsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const [meds, setMeds] = useState<MedicationSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (refresh = false) => {
-    if (refresh) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchMedicationsSummary({ includePast: true });
-      setMeds(data);
-    } catch {
-      setError('Unable to load your medications. Pull to retry.');
-      setMeds([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const { active, past } = useMemo(() => {
-    const a: MedicationSummary[] = [];
-    const p: MedicationSummary[] = [];
-    for (const m of meds) {
-      const code = inferMedicationStatus(m).code;
-      if (code === 'active' || code === 'on-hold') a.push(m);
-      else p.push(m);
-    }
-    return { active: a, past: p };
-  }, [meds]);
+  // Ken 2026-08-06 — screen simplified to a single Active/Past view
+  // owned by MedicationsSection (which now consumes the plan-medications
+  // ?includePast=1 endpoint from BE PR #365). The previous parallel
+  // fetchMedicationsSummary Active/Past rendering was showing users a
+  // duplicate flat list below the new one and burying the tap-to-expand
+  // behavior. Only one source of truth now: plan-medications overlay,
+  // which is what the patient can actually add / edit / discontinue
+  // from this screen. Historical FHIR-only past meds (never in the
+  // overlay) don't render — that's a nice-to-have for a follow-up.
+  //
+  // Bumped by the header "+" button so MedicationsSection's add flow
+  // opens without the user having to scroll down to its own "+ Add"
+  // affordance. Nonce pattern matches the openAddSignal contract on
+  // MedicationsSection (see props doc at line ~175 of that file).
+  const [addNonce, setAddNonce] = useState(0);
 
   return (
     <AppWrapper>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.text} />}
       >
-        <View style={styles.header}>
+        {/*
+          Ken 2026-08-05 — header row: back icon + "Medications" title
+          + Add button, all vertically centered on ONE row.
+
+          Ken 2026-08-07 (#7) — the Add affordance was a BARE "+" icon
+          and Ken reported it was "very difficult to find". Replaced
+          with a LABELLED pill (plus glyph + the word "Add") so the
+          action is readable, not iconographic. Rationale beyond Ken's
+          note: our cohort skews older, and an unlabelled glyph in a
+          corner is exactly the affordance that testing consistently
+          shows older users miss. The pill also gets a filled tint
+          background + 44pt min height per iOS HIG touch targets.
+
+          Still hands to MedicationsSection's add flow via
+          `openAddSignal` (bumped nonce) so ONE modal editor serves
+          both this header button and the in-list add path.
+        */}
+        <View style={styles.headerRow}>
+          <Pressable
+            onPress={() => router.replace('/Home/biopsychosocial-plan' as never)}
+            style={styles.iconBtn}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back to care plan"
+          >
+            <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
+          </Pressable>
           <Text
             style={[
               styles.title,
-              { color: colors.text, fontSize: getScaledFontSize(28), fontWeight: getScaledFontWeight(700) as any },
+              { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any },
             ]}
           >
             Medications
           </Text>
-          <Text
-            style={[
-              styles.subtitle,
-              { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any },
+          <View style={{ flex: 1 }} />
+          <Pressable
+            onPress={() => setAddNonce((n) => n + 1)}
+            style={({ pressed }) => [
+              styles.addPill,
+              { backgroundColor: colors.tint as string, opacity: pressed ? 0.85 : 1 },
             ]}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Add medication"
+            accessibilityHint="Opens the add medication form"
           >
-            {loading ? 'Loading…' : `${active.length} active · ${past.length} past`}
-          </Text>
+            <MaterialIcons name="add" size={getScaledFontSize(18)} color="#FFFFFF" />
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(700) as any,
+                marginLeft: 4,
+              }}
+              maxFontSizeMultiplier={1.3}
+            >
+              Add
+            </Text>
+          </Pressable>
         </View>
+        {/* Ken 2026-08-06 — removed TodaysMedicationsCard. Its purpose
+            (surface upcoming doses at a glance) now lives folded into
+            the MedicationsBanner on the Plan/Home surfaces, so having
+            it here as well was redundant. */}
+        <MedicationsReviewPrompt onReviewNow={() => undefined} />
+        {/* Owns the full Active / Past render + tap-to-expand active rows.
+            When PLAN_MEDICATIONS_ENABLED is off on the server the section
+            returns null and this screen renders only the header + today's
+            card + review prompt — acceptable degraded state.
 
-        {error && (
-          <View style={styles.errorCard}>
-            <MaterialIcons name="error-outline" size={getScaledFontSize(20)} color="#DC2626" />
-            <Text style={[styles.errorText, { fontSize: getScaledFontSize(13) }]}>{error}</Text>
-          </View>
-        )}
-
-        {loading && !refreshing ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={colors.tint} />
-          </View>
-        ) : meds.length === 0 ? (
-          <View style={styles.centered}>
-            <MaterialIcons name="medication" size={getScaledFontSize(48)} color={colors.subtext} />
-            <Text
-              style={[
-                styles.emptyTitle,
-                { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any },
-              ]}
-            >
-              No medications recorded yet
-            </Text>
-            <Text
-              style={[
-                styles.emptyBody,
-                { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any },
-              ]}
-            >
-              Connect a clinic from the Profile screen so we can pull your prescriptions here.
-            </Text>
-          </View>
-        ) : (
-          <>
-            <Section
-              title="Active"
-              count={active.length}
-              accent="#16A34A"
-              meds={active}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-              emptyText="No active prescriptions on file."
-            />
-            <Section
-              title="Past"
-              count={past.length}
-              accent="#6B7280"
-              meds={past}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-              emptyText="No past medications on file."
-            />
-          </>
-        )}
+            Ken 2026-08-06 — flush={true} zeroes the section's internal
+            20pt horizontal margin so its cards align to the screen's
+            16pt ScrollView padding (which itself matches the Health
+            Trends banner margin on Home). */}
+        <MedicationsSection openAddSignal={addNonce} flush />
       </ScrollView>
     </AppWrapper>
   );
 }
 
-interface SectionProps {
-  title: string;
-  count: number;
-  accent: string;
-  meds: MedicationSummary[];
-  colors: (typeof Colors)['light'];
-  getScaledFontSize: (n: number) => number;
-  getScaledFontWeight: (n: number) => string;
-  emptyText: string;
-}
-
-function Section({ title, count, accent, meds, colors, getScaledFontSize, getScaledFontWeight, emptyText }: SectionProps) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: accent }]} />
-        <Text
-          style={[
-            styles.sectionTitle,
-            { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as any },
-          ]}
-        >
-          {title}
-        </Text>
-        <Text
-          style={[
-            styles.sectionCount,
-            { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any },
-          ]}
-        >
-          · {count}
-        </Text>
-      </View>
-      {meds.length === 0 ? (
-        <Text
-          style={[
-            styles.sectionEmpty,
-            { color: colors.subtext, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any },
-          ]}
-        >
-          {emptyText}
-        </Text>
-      ) : (
-        meds.map((m) => (
-          <MedRow
-            key={m.id}
-            med={m}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
-        ))
-      )}
-    </View>
-  );
-}
-
-interface MedRowProps {
-  med: MedicationSummary;
-  colors: (typeof Colors)['light'];
-  getScaledFontSize: (n: number) => number;
-  getScaledFontWeight: (n: number) => string;
-}
-
-function MedRow({ med, colors, getScaledFontSize, getScaledFontWeight }: MedRowProps) {
-  const statusStyle = inferMedicationStatus(med);
-  const showSig = (med.dosage || med.frequency || med.rawDosageText) ?? '';
-  const isActiveLike = statusStyle.code === 'active' || statusStyle.code === 'on-hold';
-  return (
-    <Card style={styles.card}>
-      <Card.Content>
-        <View style={styles.cardTopRow}>
-          <Text
-            style={[
-              styles.medName,
-              { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any },
-            ]}
-            numberOfLines={2}
-          >
-            {med.name}
-          </Text>
-          <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-            <Text
-              style={[
-                styles.statusText,
-                { color: statusStyle.fg, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any },
-              ]}
-            >
-              {statusStyle.label}
-            </Text>
-          </View>
-        </View>
-        {(med.dosage || med.frequency) && (
-          <Text
-            style={[
-              styles.medSig,
-              { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any },
-            ]}
-            numberOfLines={2}
-          >
-            {[med.dosage, med.frequency].filter(Boolean).join(' · ')}
-          </Text>
-        )}
-        {!med.dosage && !med.frequency && med.rawDosageText && (
-          <Text
-            style={[
-              styles.medSig,
-              { color: colors.subtext, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any },
-            ]}
-            numberOfLines={3}
-          >
-            {med.rawDosageText}
-          </Text>
-        )}
-        {med.authoredOn && (
-          <Text
-            style={[
-              styles.medMeta,
-              { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(400) as any },
-            ]}
-          >
-            {isActiveLike ? 'Started' : 'Last filled'}{' '}{formatDate(med.authoredOn)}
-          </Text>
-        )}
-        {!showSig && !med.authoredOn && (
-          <Text
-            style={[
-              styles.medMeta,
-              { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(400) as any },
-            ]}
-          >
-            Dosage details not on file
-          </Text>
-        )}
-      </Card.Content>
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 8,
+    marginLeft: -8,
+    gap: 4,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Ken 2026-08-07 (#7) — labelled Add pill replacing the bare "+".
+  // 44pt min height per iOS HIG; solid tint fill so it reads as the
+  // screen's primary action rather than a decorative glyph.
+  addPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    minHeight: 44,
+  },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
-  header: { marginBottom: 14 },
   title: { letterSpacing: -0.4 },
-  subtitle: { marginTop: 4, letterSpacing: 0.2 },
-  centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 },
-  emptyTitle: { textAlign: 'center', marginTop: 12 },
-  emptyBody: { textAlign: 'center', maxWidth: 280, lineHeight: 18 },
-  errorCard: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#FEF2F2',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  errorText: { color: '#991B1B', flex: 1 },
-  section: { marginTop: 8 },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  sectionDot: { width: 8, height: 8, borderRadius: 4 },
-  sectionTitle: {},
-  sectionCount: {},
-  sectionEmpty: { paddingVertical: 12, paddingHorizontal: 4 },
-  card: { marginBottom: 8 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  medName: { flex: 1, lineHeight: 20 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  statusText: { letterSpacing: 0.4 },
-  medSig: { marginTop: 6 },
-  medMeta: { marginTop: 4 },
 });

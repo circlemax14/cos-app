@@ -112,6 +112,8 @@ const NOTIF_CATEGORY_LABELS: Record<NotificationCategory, string> = {
   medicationReminders: 'Medication reminders',
   medicationTask: 'Medication tasks',
   otherTask: 'Other tasks',
+  nudges: 'Proactive nudges',
+  habits: 'Routine reminders',
 };
 
 export interface BpsNotificationCategoriesCardProps {

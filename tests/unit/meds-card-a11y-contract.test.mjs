@@ -72,6 +72,17 @@ const BPS_SCREEN_PATH = join(
 const BPS_SCREEN_SRC_RAW = readFileSync(BPS_SCREEN_PATH, 'utf8')
 const BPS_SCREEN_SRC = stripComments(BPS_SCREEN_SRC_RAW)
 
+// SCRUM-658 / Ken 2026-08-05: the plan screen's medications a11y entry
+// point is now MedicationsBanner (see wire (g)), not an in-page
+// MedicationsSection wrapper View. Wire (g) reads the banner directly.
+const MEDS_BANNER_PATH = join(
+  REPO_ROOT,
+  'components',
+  'health-plan',
+  'MedicationsBanner.tsx',
+)
+const MEDS_BANNER_SRC = stripComments(readFileSync(MEDS_BANNER_PATH, 'utf8'))
+
 // -------------------------------------------------------------------------
 // Shared helper: given a JSX opening tag start pattern (a regex that lands
 // somewhere inside the tag's contents), return the substring from the
@@ -321,31 +332,80 @@ test('(f) composed label helper contains "Refill" and "Schedule" fallback phrase
 })
 
 // =========================================================================
-// (g) The chunk 55/71 medsSectionRef binding is still present.
+// (g) The plan screen's medications a11y entry point is MedicationsBanner.
 //
-// The ?focus=medications deep-link (COS-357 / chunk 55/71) hinges on
-// BiopsychosocialPlanScreen holding a React.useRef<View> named
-// `medsSectionRef` and attaching it via `ref={medsSectionRef}` to the
-// wrapper View that mounts <MedicationsSection>. That ref feeds
-// findNodeHandle → AccessibilityInfo.setAccessibilityFocus so VoiceOver
-// lands directly on the med section after a push tap.
+// HISTORY. Chunk 55/71 pinned `medsSectionRef = React.useRef<View>` plus a
+// `ref={medsSectionRef}` attachment on the plan screen's wrapper View
+// around <MedicationsSection>. The ?focus=medications deep link fed that
+// ref through findNodeHandle → AccessibilityInfo.setAccessibilityFocus so
+// VoiceOver landed on the in-page med section after a push tap.
 //
-// If someone renames the ref, drops the `ref={…}` attachment, or moves
-// the ref onto a sibling that no longer wraps MedicationsSection, the
-// deep-link a11y focus silently no-ops — the app still navigates but
-// VoiceOver stays on the tab bar or on the top of the plan surface.
+// WHAT CHANGED. SCRUM-658 (2026-07-31) moved MedicationsSection off the
+// plan screen to the standalone /Home/medications route. Ken 2026-08-05
+// then removed the terse "Medications" pill from the tier row and
+// replaced it with a full-width MedicationsBanner mounted below
+// HabitsBanner. Nothing meds-shaped renders inline on the plan screen
+// anymore, so there is no node left to focus — `ref={medsSectionRef}` is
+// gone and the deep link now hands off by navigation, not focus.
+//
+// WHAT THIS WIRE NOW PINS. The a11y contract moved with the surface: the
+// banner must read as ONE labelled, swipe-focusable control rather than a
+// pile of Text fragments plus a decorative icon. Concretely:
+//   (g.1) The plan screen mounts <MedicationsBanner …>, below <HabitsBanner>.
+//   (g.2) The banner's Pressable declares accessibilityRole="button".
+//   (g.3) Its accessibilityLabel is DYNAMIC — it interpolates the med
+//         count ("Manage medications — ${count} on file") rather than a
+//         static string, so AT users hear whether they have anything on
+//         file before opening the screen. Same reasoning as wire (a) in
+//         meds-restore-banner-contract: a hard-coded label is technically
+//         "labelled" but conveys nothing.
+//   (g.4) The decorative 48pt icon well is hidden from AT
+//         (accessibilityElementsHidden + importantForAccessibility=
+//         "no-hide-descendants") — the same chunk-99-v2 pattern the med
+//         cards use, so the banner reads as one utterance.
+//
+// Drift on any of these puts the meds surface back where chunk 99 v1 left
+// the med cards: visible, tappable by sighted users, opaque to AT.
 // =========================================================================
 
-test('(g) chunk 55/71 medsSectionRef binding is still present in BiopsychosocialPlanScreen.tsx', () => {
+test('(g) MedicationsBanner is the plan screen\'s labelled medications a11y entry point', () => {
+  // (g.1) Mounted, and mounted below the routines banner.
   assert.match(
     BPS_SCREEN_SRC,
-    /const\s+medsSectionRef\s*=\s*React\.useRef/,
-    'BiopsychosocialPlanScreen.tsx must retain the `const medsSectionRef = React.useRef<View | null>(null)` declaration. This ref is what feeds findNodeHandle + AccessibilityInfo.setAccessibilityFocus for the ?focus=medications deep link (chunk 55/71). Renaming or removing it silently no-ops the a11y focus jump.',
+    /<MedicationsBanner\b/,
+    'BiopsychosocialPlanScreen.tsx must mount <MedicationsBanner …> (Ken 2026-08-05). After SCRUM-658 this is the only medications affordance on the plan surface; without it AT users have no route to the meds editor from the plan screen at all.',
+  )
+  const habitsIdx = BPS_SCREEN_SRC.indexOf('<HabitsBanner')
+  const medsIdx = BPS_SCREEN_SRC.indexOf('<MedicationsBanner')
+  assert.ok(
+    habitsIdx >= 0 && medsIdx > habitsIdx,
+    `BiopsychosocialPlanScreen.tsx must mount <MedicationsBanner> BELOW <HabitsBanner> — the two banners are a matched pair of section entries and AT reading order follows mount order. Found HabitsBanner at index ${habitsIdx}, MedicationsBanner at index ${medsIdx}.`,
+  )
+
+  // (g.2) Announced as a button, not a static group.
+  assert.match(
+    MEDS_BANNER_SRC,
+    /accessibilityRole="button"/,
+    'MedicationsBanner.tsx must declare accessibilityRole="button" on its Pressable. Without it VoiceOver announces a static group, the rotor skips the card, and the banner becomes invisible to AT even though it is tappable for sighted users.',
+  )
+
+  // (g.3) Dynamic, count-bearing label.
+  assert.match(
+    MEDS_BANNER_SRC,
+    /`Manage medications [^`]*\$\{[^}]+\} on file`/,
+    'MedicationsBanner.tsx must keep a DYNAMIC accessibilityLabel of shape `Manage medications — ${count} on file` (template literal interpolating the medication count). A hard-coded "Medications" string still labels the control but strips the only state cue AT users get before navigating — the same failure mode chunk 99 v2 fixed on the med cards.',
+  )
+
+  // (g.4) Decorative icon well hidden so the card reads as one utterance.
+  assert.match(
+    MEDS_BANNER_SRC,
+    /accessibilityElementsHidden/,
+    'MedicationsBanner.tsx must mark the decorative 48pt icon well accessibilityElementsHidden. Otherwise VoiceOver walks into it and the banner reads as two elements instead of one composed announcement (chunk 99 v2 pattern).',
   )
   assert.match(
-    BPS_SCREEN_SRC,
-    /ref=\{medsSectionRef\}/,
-    'BiopsychosocialPlanScreen.tsx must retain a `ref={medsSectionRef}` attachment on the wrapper View that mounts <MedicationsSection>. If the attachment is dropped, findNodeHandle(medsSectionRef.current) returns null and the deep-link VoiceOver focus jump becomes a no-op.',
+    MEDS_BANNER_SRC,
+    /importantForAccessibility="no-hide-descendants"/,
+    'MedicationsBanner.tsx must pair accessibilityElementsHidden with importantForAccessibility="no-hide-descendants" — accessibilityElementsHidden is iOS-only, so without the Android half TalkBack still walks into the decorative icon well.',
   )
 })
 

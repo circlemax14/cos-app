@@ -109,6 +109,23 @@ export interface BiopsychosocialPlanResponse {
    * feature degrades to today's behavior rather than throwing.
    */
   coverage?: PlanCoverageEntry[]
+  /**
+   * SCRUM-651: server-provided expectation envelope for the pending regen job.
+   * All three fields are OPTIONAL for backward-compat during the FE/BE rollout —
+   * pre-rollout BE deploys omit them, in which case client-side defaults apply
+   * (`clientBannerSwapSeconds`=300, `stuckJobThresholdSeconds`=2700).
+   *
+   * - `estimatedSeconds` — server's best guess at total job duration (p50 for
+   *   the current path). Purely informational; not used to gate UI.
+   * - `stuckJobThresholdSeconds` — past this elapsed, the FE surfaces a stuck-
+   *   job affordance (default 2700s / 45min per SCRUM-651 spec).
+   * - `clientBannerSwapSeconds` — past this elapsed, the FE swaps the active
+   *   "generating for a while" copy for the passive "still working"/
+   *   "we'll notify you" banner (default 300s / 5min per SCRUM-651 spec).
+   */
+  estimatedSeconds?: number
+  stuckJobThresholdSeconds?: number
+  clientBannerSwapSeconds?: number
 }
 
 function isFeatureDisabled(err: unknown): boolean {
@@ -133,6 +150,11 @@ export async function fetchBiopsychosocialPlan(): Promise<BiopsychosocialPlanRes
         generating?: boolean
         jobStartedAt?: string
         coverage?: PlanCoverageEntry[]
+        // SCRUM-651: optional envelope — pass through as-is; the hook layer
+        // applies client-side defaults so component reads are non-optional.
+        estimatedSeconds?: number
+        stuckJobThresholdSeconds?: number
+        clientBannerSwapSeconds?: number
       }
     }>('/v1/health-plan/biopsychosocial')
     // Coalesce null → undefined so a BE that ever emits explicit null
@@ -146,6 +168,12 @@ export async function fetchBiopsychosocialPlan(): Promise<BiopsychosocialPlanRes
       generating: res.data.data.generating ?? false,
       jobStartedAt: res.data.data.jobStartedAt,
       coverage,
+      // SCRUM-651: pass through as-is. `undefined` preserves the "BE predates
+      // this envelope" signal so the hook layer can fall back to the shipped
+      // defaults instead of a truthy-check accidentally selecting 0.
+      estimatedSeconds: res.data.data.estimatedSeconds,
+      stuckJobThresholdSeconds: res.data.data.stuckJobThresholdSeconds,
+      clientBannerSwapSeconds: res.data.data.clientBannerSwapSeconds,
     }
   } catch (err) {
     if (isFeatureDisabled(err)) {
@@ -216,6 +244,40 @@ export async function regenerateBiopsychosocialPlan(): Promise<RegenerateBiopsyc
     if (response?.status === 409 && response.data?.code === 'REGENERATION_IN_FLIGHT' && response.data.data) {
       throw new RegenerationInFlightError(response.data.data.jobId, response.data.data.startedAt)
     }
+    throw err
+  }
+}
+
+/**
+ * SCRUM-651: DELETE /v1/health-plan/biopsychosocial/regenerate/jobs/{jobId}.
+ * Cancels the in-flight regenerate job identified by `jobId`. Server-side
+ * this flips the job record to CANCELLED and fires the mirror push
+ * (`BIOPSYCHOSOCIAL_PLAN_REGENERATE_CANCELLED`) which the FE mirror-branch
+ * in use-notifications.ts uses to invalidate `['biopsychosocial-plan']` so
+ * the cancelled state converges without a poll.
+ *
+ * Backward-compat: some in-tree call sites use `fireAndForgetDelete` (see
+ * `useCancelBiopsychosocialRegeneration` in `use-biopsychosocial-plan.ts`)
+ * to stay inside the chunk-9.5 turbomodule envelope. This awaited variant
+ * exists for tests + any future non-mutation caller that needs the raw
+ * response (e.g. a "cancel & retry" wizard).
+ *
+ * If `jobId` is missing or the server 404s (job already completed), we
+ * treat as a no-op success — the pull-to-refresh / notification-invalidate
+ * cycle will reconcile whichever terminal state actually landed. Other
+ * failures bubble.
+ */
+export async function cancelBiopsychosocialRegeneration(jobId: string): Promise<void> {
+  const safeId = encodeURIComponent(jobId)
+  try {
+    await apiClient.delete(`/v1/health-plan/biopsychosocial/regenerate/jobs/${safeId}`, {
+      timeout: 15_000,
+    })
+  } catch (err) {
+    const status = (err as AxiosError)?.response?.status
+    // 404 = job already terminal (completed / cancelled / failed). Not an error
+    // from the FE's POV — the caller wanted the job to stop and it has.
+    if (status === 404) return
     throw err
   }
 }

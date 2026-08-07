@@ -70,6 +70,22 @@ const BPS_SCREEN_PATH = join(
 const BPS_SCREEN_SRC_RAW = readFileSync(BPS_SCREEN_PATH, 'utf8')
 const BPS_SCREEN_SRC = stripComments(BPS_SCREEN_SRC_RAW)
 
+// SCRUM-658 / Ken 2026-08-05: the meds surface moved OFF the plan screen.
+// The restore banner still lives in MedicationsSection, but MedicationsSection
+// is now mounted on the standalone /Home/medications route, reached from the
+// plan screen through MedicationsBanner. Wire (e) below walks that whole
+// chain, so it needs both files.
+const MEDS_BANNER_PATH = join(
+  REPO_ROOT,
+  'components',
+  'health-plan',
+  'MedicationsBanner.tsx',
+)
+const MEDS_BANNER_SRC = stripComments(readFileSync(MEDS_BANNER_PATH, 'utf8'))
+
+const MEDS_ROUTE_PATH = join(REPO_ROOT, 'app', 'Home', 'medications.tsx')
+const MEDS_ROUTE_SRC = stripComments(readFileSync(MEDS_ROUTE_PATH, 'utf8'))
+
 // -------------------------------------------------------------------------
 // Helper: extract the opening tag of the nearest <Pressable ...> that
 // encloses the given anchor regex match. Walks backward from the anchor
@@ -283,28 +299,81 @@ test('(d) composeMedA11yLabel helper (chunk 99 v2 / chunk 106) still defined in 
 })
 
 // =========================================================================
-// (e) The chunk 55/71 medsSectionRef binding is still present.
+// (e) The restore banner stays REACHABLE from the plan surface —
+//     now via MedicationsBanner → /Home/medications → MedicationsSection.
 //
-// The ?focus=medications deep link (COS-357 / chunk 55/71) hinges on
-// BiopsychosocialPlanScreen holding a `medsSectionRef = React.useRef<View>`
-// and attaching it via `ref={medsSectionRef}` to the wrapper View that
-// mounts <MedicationsSection>. That ref feeds findNodeHandle →
-// AccessibilityInfo.setAccessibilityFocus so VoiceOver lands directly on
-// the med section (which now contains the restore banner ABOVE the med
-// list) after a push notification tap. If the ref is severed, the deep
-// link still navigates but VoiceOver misses the banner AND the med list.
+// HISTORY. Chunk 55/71 pinned a `medsSectionRef = React.useRef<View>` +
+// `ref={medsSectionRef}` on the plan screen: MedicationsSection was
+// mounted inline there, and the ?focus=medications deep link used
+// findNodeHandle + AccessibilityInfo.setAccessibilityFocus to land
+// VoiceOver on that in-page section.
+//
+// WHAT CHANGED. SCRUM-658 (2026-07-31) moved the whole meds surface —
+// MedicationsSection editor, review prompt, today's doses — OFF the plan
+// screen onto the standalone /Home/medications route. Ken 2026-08-05 then
+// replaced the small "Medications" pill in the plan screen's tier row
+// with a full-width MedicationsBanner mounted as a sibling section entry
+// directly below HabitsBanner. There is no in-page meds section left to
+// scroll to or focus, so `ref={medsSectionRef}` is gone.
+//
+// WHAT THIS WIRE NOW PINS. The chunk 52.2 restore banner is only useful
+// if a user can still GET to it. That reachability is now a three-link
+// chain, and each link is asserted below:
+//   (e.1) BiopsychosocialPlanScreen mounts <MedicationsBanner …>.
+//   (e.2) MedicationsBanner navigates to '/Home/medications'.
+//   (e.3) app/Home/medications.tsx mounts <MedicationsSection …>, the
+//         component that owns the restore banner (wires a–c above).
+//   (e.4) The banner is an AT-reachable control (accessibilityRole
+//         "button" + a hint), which is what replaced the old
+//         setAccessibilityFocus jump for VoiceOver users.
+//
+// Break any link and the restore banner becomes unreachable again —
+// the exact class of regression chunk 52.2 was landed to fix, just one
+// navigation hop further out.
 // =========================================================================
 
-test('(e) chunk 55/71 medsSectionRef binding is still present in BiopsychosocialPlanScreen.tsx', () => {
+test('(e) restore banner stays reachable: BPS MedicationsBanner → /Home/medications → MedicationsSection', () => {
+  // (e.1) The plan surface still carries a medications entry point.
   assert.match(
     BPS_SCREEN_SRC,
-    /const\s+medsSectionRef\s*=\s*React\.useRef/,
-    'BiopsychosocialPlanScreen.tsx must retain `const medsSectionRef = React.useRef<View | null>(null)`. This ref feeds findNodeHandle + AccessibilityInfo.setAccessibilityFocus for the ?focus=medications deep link (chunk 55/71). Renaming or removing it silently no-ops the a11y focus jump — the restore banner and med list stay unreached by VoiceOver on push tap.',
+    /<MedicationsBanner\b/,
+    'BiopsychosocialPlanScreen.tsx must mount <MedicationsBanner …> (Ken 2026-08-05). It is the ONLY medications entry point left on the plan surface after SCRUM-658 moved MedicationsSection to /Home/medications. Drop the mount and the restore banner — plus the entire meds editor — becomes unreachable from the plan screen.',
+  )
+  // Ordering is part of the shipped design: routines banner first, then
+  // medications, so the two read as one system of section entries.
+  const habitsIdx = BPS_SCREEN_SRC.indexOf('<HabitsBanner')
+  const medsIdx = BPS_SCREEN_SRC.indexOf('<MedicationsBanner')
+  assert.ok(
+    habitsIdx >= 0 && medsIdx > habitsIdx,
+    `BiopsychosocialPlanScreen.tsx must mount <MedicationsBanner> BELOW <HabitsBanner> (Ken 2026-08-05 placement: routines banner, then medications banner, as sibling section entries). Found HabitsBanner at index ${habitsIdx} and MedicationsBanner at index ${medsIdx}.`,
+  )
+
+  // (e.2) The banner routes to the standalone meds screen.
+  assert.match(
+    MEDS_BANNER_SRC,
+    /router\.push\(\s*['"]\/Home\/medications['"]/,
+    "MedicationsBanner.tsx must navigate to '/Home/medications' on press. If the route target drifts (or the onPress is dropped), the banner renders but goes nowhere and MedicationsSection's restore banner is orphaned.",
+  )
+
+  // (e.3) That route actually mounts the component owning the restore banner.
+  assert.match(
+    MEDS_ROUTE_SRC,
+    /<MedicationsSection\b/,
+    'app/Home/medications.tsx must mount <MedicationsSection …> — the component that renders the chunk 52.2 "Recently hidden — tap Restore →" banner asserted by wires (a)-(c) above. If this route stops mounting it, every wire in this file passes while the feature is dead in the app.',
+  )
+
+  // (e.4) The banner is reachable by VoiceOver as a control. This is the
+  // successor to the chunk-71 setAccessibilityFocus jump: instead of
+  // focusing an in-page section, AT users now tab to a labelled button.
+  assert.match(
+    MEDS_BANNER_SRC,
+    /accessibilityRole="button"/,
+    'MedicationsBanner.tsx must declare accessibilityRole="button" on its Pressable. Without the role VoiceOver announces the card as a static group, the rotor skips it, and the meds surface (restore banner included) loses its only AT-reachable entry point from the plan screen.',
   )
   assert.match(
-    BPS_SCREEN_SRC,
-    /ref=\{medsSectionRef\}/,
-    'BiopsychosocialPlanScreen.tsx must retain a `ref={medsSectionRef}` attachment on the wrapper View that mounts <MedicationsSection>. Without the attachment, findNodeHandle(medsSectionRef.current) returns null and the deep-link VoiceOver focus jump becomes a no-op.',
+    MEDS_BANNER_SRC,
+    /accessibilityHint="Opens your medications screen"/,
+    'MedicationsBanner.tsx must retain the verbatim accessibilityHint "Opens your medications screen" so VoiceOver users know the tap navigates away rather than expanding in place. Screen-reader QA matches on this string.',
   )
 })
 

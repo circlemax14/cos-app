@@ -35,7 +35,9 @@ export type NotificationCategory =
   | 'reminders'
   | 'medicationReminders'
   | 'medicationTask'
-  | 'otherTask';
+  | 'otherTask'
+  | 'nudges'   // SCRUM-641 — Proactive Nudges
+  | 'habits';  // SCRUM-659 — Habits-in-Plan reminders
 
 /** Stable ordered list of the category keys (drives UI rows + iteration). */
 export const NOTIFICATION_CATEGORY_KEYS: readonly NotificationCategory[] = [
@@ -44,6 +46,8 @@ export const NOTIFICATION_CATEGORY_KEYS: readonly NotificationCategory[] = [
   'medicationReminders',
   'medicationTask',
   'otherTask',
+  'nudges',
+  'habits',
 ] as const;
 
 /** A full set of category preferences (all five keys → on/off). */
@@ -73,5 +77,7 @@ export function defaultCategoryPrefs(): NotificationCategoryPrefs {
     medicationReminders: true,
     medicationTask: true,
     otherTask: false,
+    nudges: true,   // SCRUM-641 — matches backend defaultCategoryPrefs
+    habits: true,   // SCRUM-659 — matches backend defaultCategoryPrefs
   };
 }

@@ -104,8 +104,23 @@ export function useNotifications() {
       // COS-421: a biopsychosocial plan regeneration finished server-side —
       // invalidate the cached plan so the screen picks up the fresh data
       // without relying on the removed refetchInterval poll.
+      //
+      // SCRUM-651: mirror the same invalidate for FAILED + CANCELLED
+      // terminal states. Both terminate the async job server-side (flipping
+      // `generating: false`) but they DON'T land a new plan record, so the
+      // COS-421 READY branch structurally can't cover them. Without this
+      // mirror, a user who tapped Cancel — or a job that timed out — would
+      // sit on `generating: true` in the client cache indefinitely (until
+      // the 5-minute staleTime elapsed and the next mount/refresh forced a
+      // refetch), pinning the Cancel button + banner in the "in flight"
+      // state forever. Invalidating on the terminal push closes that gap
+      // in the same one-line shape as the READY branch.
       const data = notification.request.content.data as { type?: string } | undefined;
-      if (data?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
+      if (
+        data?.type === 'BIOPSYCHOSOCIAL_PLAN_READY' ||
+        data?.type === 'BIOPSYCHOSOCIAL_PLAN_REGENERATE_FAILED' ||
+        data?.type === 'BIOPSYCHOSOCIAL_PLAN_REGENERATE_CANCELLED'
+      ) {
         queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
       }
       // COS-482 Phase 1: a CM issued a retake request while the app was
@@ -164,10 +179,18 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
 
     const data = response.notification.request.content.data;
 
-    // COS-421: a biopsychosocial plan regeneration finished server-side —
-    // invalidate the cached plan so the destination screen renders fresh
-    // data instead of whatever was last polled before the removed interval.
-    if ((data as { type?: string } | undefined)?.type === 'BIOPSYCHOSOCIAL_PLAN_READY') {
+    // COS-421 + SCRUM-651: a biopsychosocial plan regeneration reached a
+    // terminal state server-side (ready / failed / cancelled) — invalidate
+    // the cached plan so the destination screen renders fresh data instead
+    // of whatever was last polled. FAILED / CANCELLED do not land a new
+    // plan record but they flip `generating: false`, which the FE needs
+    // to observe to un-stick the Cancel + banner state.
+    const notificationType = (data as { type?: string } | undefined)?.type;
+    if (
+      notificationType === 'BIOPSYCHOSOCIAL_PLAN_READY' ||
+      notificationType === 'BIOPSYCHOSOCIAL_PLAN_REGENERATE_FAILED' ||
+      notificationType === 'BIOPSYCHOSOCIAL_PLAN_REGENERATE_CANCELLED'
+    ) {
       queryClient.invalidateQueries({ queryKey: ['biopsychosocial-plan'] });
     }
     // COS-482 Phase 1: on a retake-request push tap, invalidate the inbox

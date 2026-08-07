@@ -4,7 +4,15 @@
 
 export type IntakeStatus = 'in_progress' | 'complete';
 
-export type IntakeAddListItem = { label: string; note?: string };
+// SCRUM-659 followup (2026-08-05): `linkedIds` threads each add_list
+// item to the labels of an earlier add_list question. Used for
+// medications → conditions and psychotropic meds → mental health dx.
+export type IntakeAddListItem = { label: string; note?: string; linkedIds?: string[] };
+
+// SCRUM-659 followup — single-choice answer with an optional "specify"
+// free text (rendered when the selected option has `specifyOnSelect`).
+// Legacy single-choice answers remain bare strings.
+export type IntakeSingleWithSpecify = { choice: string; specify?: string };
 
 export type IntakeAnswerValue =
   | string
@@ -12,6 +20,7 @@ export type IntakeAnswerValue =
   | boolean
   | Array<string | number>
   | IntakeAddListItem[]
+  | IntakeSingleWithSpecify
   | null;
 
 export type IntakeSection = 'body' | 'mind' | 'life';
@@ -30,6 +39,10 @@ export interface IntakeQuestionOption {
   // BE ships numbers for scale options and `age_bracket` style; strings elsewhere.
   value: string | number;
   label: string;
+  // SCRUM-659 followup — when this option is selected on a `single`
+  // question, the FE renders a companion free-text field whose answer
+  // is persisted as `{ choice, specify }` (see IntakeSingleWithSpecify).
+  specifyOnSelect?: boolean;
 }
 
 export interface IntakeQuestion {
@@ -57,6 +70,12 @@ export interface IntakeQuestion {
   // "Vaccine name" / "Date (optional)" without inventing a new question type.
   addListLabelPlaceholder?: string;
   addListNotePlaceholder?: string;
+  // SCRUM-659 followup — add_list rows can link to items of another
+  // add_list question by label. FE renders a compact multi-select on
+  // each row offering the source question's current item labels. When
+  // absent, no link picker is rendered (byte-identical add_list UX).
+  linkSourceKey?: string;
+  linkPickerLabel?: string;
   // Machine-only prefill signal (NOT user copy) — BE union of supported sources.
   ehrPrefillHint?:
     | 'conditions'

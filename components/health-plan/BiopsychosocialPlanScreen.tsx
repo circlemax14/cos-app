@@ -41,26 +41,55 @@ import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import {
+  CANCEL_BIO_PLAN_MUTATION_KEY,
   REGENERATE_BIO_PLAN_MUTATION_KEY,
+  formatRegenerationElapsed,
+  useBioRegenerationStatus,
   useBiopsychosocialPlan,
+  useCancelBiopsychosocialRegeneration,
   useRegenerateBiopsychosocialPlan,
 } from '@/hooks/use-biopsychosocial-plan';
 import { PlanSkeleton } from '@/components/plan-shared/PlanSkeleton';
 import { SectionCard, SECTION_STYLE, type BiopsychosocialSectionKey } from './SectionCard';
-import { TodaysMedicationsCard } from './TodaysMedicationsCard';
-import { MedicationsSection } from './MedicationsSection';
-import { MedicationsReviewPrompt } from './MedicationsReviewPrompt';
+// SCRUM-658 (2026-07-31): TodaysMedicationsCard / MedicationsSection /
+// MedicationsReviewPrompt moved off this surface to /Home/medications.
+// Imports removed to silence unused-var warnings; the standalone route
+// re-imports them from their canonical paths.
 import { BpsWelcomeBanner } from './BpsWelcomeBanner';
-import { BpsTodayHeroCard } from './BpsTodayHeroCard';
+import { HabitsBanner } from './HabitsBanner';
+import { MedicationsBanner } from './MedicationsBanner';
+// SCRUM-655: BpsTodayHeroCard no longer mounted directly by this screen —
+// BpsHeroTileRow imports and mounts it on tile-expand. Import removed here
+// so the linter doesn't flag it as unused; add back if a future change
+// mounts it standalone again.
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
 import { SelfAssessmentTrends } from './SelfAssessmentTrends';
-import { BpsWellbeingScoreCard } from './BpsWellbeingScoreCard';
+// SCRUM-655: BpsWellbeingScoreCard no longer mounted directly by this screen —
+// BpsHeroTileRow imports and mounts it on tile-expand.
+import { BpsHeroTileRow } from './BpsHeroTileRow';
+// SCRUM-640 (2026-08-04): Habit correlation strip mounted below the
+// hero tile row. Renders null when the backend flag is OFF (default)
+// or when the user has fewer than min_sample_size=10 days of entries.
 import { HabitCorrelationStrip } from './HabitCorrelationStrip';
+// SCRUM-661 (2026-07-31): match home-screen greeting exactly by reusing
+// the same GreetingHeader + useCurrentHour hook that app/Home/index.tsx
+// already mounts (SCRUM-653/654). Home + Plan now share ONE greeting
+// treatment.
+import { GreetingHeader } from '@/components/home/GreetingHeader';
+import { useCurrentHour } from '@/hooks/use-current-hour';
+// SCRUM-648 (2026-08-04): Biological tile — Blood Glucose (TIR).
+// Renders null when the backend flag is OFF (default) or when the
+// patient has no glucose samples yet. Tap routes to /Home/glucose.
 import { GlucoseTirTile } from './GlucoseTirTile';
 import { BpsPlanFocusBanner } from './BpsPlanFocusBanner';
+// "Share as PDF" for the care plan. Same expo-print + expo-sharing pipeline
+// (and the same RN Share text fallback) that ShareIntakeReportSection already
+// ships, so no new native surface and no new npm package — OTA-safe. Self-
+// guards on `plan == null`, so mounting it here is inert until a plan exists.
+import { SharePlanSection } from './SharePlanSection';
 import HeroScoreBlock from './senior/HeroScoreBlock';
 import OneThingTodayCard from './senior/OneThingTodayCard';
 import WellbeingMapGlimpse from './senior/WellbeingMapGlimpse';
@@ -76,6 +105,17 @@ import { fetchTasksForDate } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
 import type { PlanTask, TaskOccurrence } from '@/services/api/types';
+// ADR-0005 P0/P2 — bottom-anchored "Classic view" escape hatch. The
+// component self-gates on `isTabSwapBpsEnabled()` (returns null when the
+// build-time env is unset), so mounting it inside this ScrollView is a
+// no-op on every legacy surface. The reason it lives inside BPS rather
+// than in the tab-swap parent (`app/Home/health-plan.tsx`) is so it
+// scrolls with the rest of the plan content — bottom-of-content, not
+// a floating overlay — and so it appears on both entry points into BPS
+// (the tab-swap render AND the peer `/Home/biopsychosocial-plan` route).
+// SCRUM-662 (2026-07-31): ClassicViewLink import removed — the
+// bottom-anchored "Classic view" affordance was removed from the
+// surface per user request.
 
 /**
  * CHUNK 47 kill-switch — port of the SCRUM-252 Today hero card into the
@@ -120,7 +160,13 @@ const BPS_PROGRESS_LINK_ENABLED = true;
  * rendering. Recovery cost: ~30-60s via
  * `npm run eas:update:production` (JS module constant, OTA not SSM).
  */
-const BPS_NOTIFICATION_CATEGORIES_ENABLED = true;
+// SCRUM-655 (2026-07-31): flipped false per user request. Reminders /
+// notification-category management already lives in the left slider
+// menu; the read-only "here's what you'll be notified about" glimpse
+// on the BPS surface was duplicating the settings surface without
+// adding action. Kept as a module const (not deleted) so a future
+// decision can OTA-revert with a one-line flip.
+const BPS_NOTIFICATION_CATEGORIES_ENABLED = false;
 
 /**
  * CHUNK 52 kill-switch — ports the legacy full Medications editor
@@ -458,20 +504,12 @@ const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [
   { key: 'social', title: 'Social & Faith' },
 ];
 
-function greetingForNow(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-
-function formatGeneratedDate(iso: string | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+// SCRUM-663 cleanup (2026-07-31): greetingForNow + formatGeneratedDate
+// deleted — the greeting was swapped for the shared GreetingHeader
+// component (SCRUM-661) and the "Updated {date}" caption was removed
+// (SCRUM-660). If either affordance comes back, restore locally or
+// import from components/home/GreetingHeader (greeting) / write a
+// two-liner for the date formatter.
 
 /**
  * Ground truth from cos-backend's `care-plan-categories.ts`: PlanTask.category
@@ -536,26 +574,19 @@ function categoryForNewTaskInSection(
 }
 
 /**
- * COS-415: relative "time ago" label for an in-flight regenerate job's
- * `jobStartedAt`. COS-421: with `refetchInterval` polling removed, this is
- * now a one-time snapshot computed whenever `planQuery.data` was last
- * fetched (mount, pull-to-refresh, or a push-triggered invalidation) — it
- * no longer ticks up live while the screen sits idle. Caps at "generating
- * for a while..." past 3 minutes rather than counting up indefinitely — by
- * that point the exact elapsed time isn't useful to the user, just the
- * fact that it's still going.
+ * SCRUM-651: the formatter for "started Xs / Xm ago / generating for a
+ * while..." was hoisted to `formatRegenerationElapsed` in
+ * `use-biopsychosocial-plan.ts` so the live-ticking selector
+ * `useBioRegenerationStatus` and this screen share the same copy contract.
+ * Kept as a pure function of `elapsedSec` (not `jobStartedAt`) so the
+ * ticker is the sole owner of `Date.now()` — no lingering static snapshot
+ * that would drift out of sync with the >5min / >45min transitions.
+ *
+ * The pre-651 `formatRelativeStartedAt(iso)` snapshot function was
+ * intentionally removed rather than aliased: the whole point of SCRUM-651
+ * is that the label WAS a snapshot, and now it isn't. Aliasing would
+ * invite a caller to reintroduce the snapshot pattern.
  */
-function formatRelativeStartedAt(iso: string): string {
-  const started = new Date(iso).getTime();
-  if (Number.isNaN(started)) return 'just now';
-  const elapsedMs = Date.now() - started;
-  const elapsedSec = Math.floor(elapsedMs / 1000);
-  if (elapsedSec < 5) return 'just now';
-  if (elapsedSec < 60) return `${elapsedSec}s ago`;
-  const elapsedMin = Math.floor(elapsedSec / 60);
-  if (elapsedMin < 3) return `${elapsedMin}m ago`;
-  return 'generating for a while...';
-}
 
 /**
  * COS-411: small rounded "Plan: <name> · Change" pill, styled after the
@@ -595,6 +626,13 @@ function PlanTierPill({
         },
       ]}
     >
+      {/*
+        SCRUM-660 (2026-07-31): pill now shows the plan name only —
+        user asked to drop the "Plan: " prefix and "· Change" trailer.
+        The swap-horiz icon on the right still hints tappability; the
+        pill remains a Pressable so tap-to-change UX is preserved. A11y
+        label still says "Tap to change" for VO users.
+      */}
       <Text
         style={{
           color: colors.tint,
@@ -602,7 +640,7 @@ function PlanTierPill({
           fontWeight: getScaledFontWeight(700) as any,
         }}
       >
-        Plan: {label} · Change
+        {label}
       </Text>
       <MaterialIcons name="swap-horiz" size={getScaledFontSize(14)} color={colors.tint} style={{ marginLeft: 4 }} />
     </Pressable>
@@ -657,6 +695,60 @@ function ViewProgressLink({
         }}
       >
         View Progress
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * SCRUM-658 — sibling of ViewProgressLink for the medications route.
+ * Renders as a pill in the tier row and pushes to `/Home/medications`
+ * (which now hosts the full MedicationsSection editor that used to
+ * live inline on this BPS surface). Preserves the sleek-pill shape
+ * Ken landed on so the header row still reads as a single control
+ * strip.
+ */
+function MedicationsLink({
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  onPress,
+}: {
+  colors: Record<string, string>;
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => number | string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      accessibilityLabel="Medications"
+      accessibilityHint="Opens your medications list and editor"
+      style={({ pressed }) => [
+        styles.tierPill,
+        {
+          backgroundColor: (colors.tint ?? '#0D9488') + '14',
+          borderColor: (colors.tint ?? '#0D9488') + '33',
+          marginLeft: 8,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <MaterialIcons
+        name="medication"
+        size={getScaledFontSize(14)}
+        color={colors.tint}
+        style={{ marginRight: 4 }}
+      />
+      <Text
+        style={{
+          color: colors.tint,
+          fontSize: getScaledFontSize(12),
+          fontWeight: getScaledFontWeight(700) as any,
+        }}
+      >
+        Medications
       </Text>
     </Pressable>
   );
@@ -724,6 +816,22 @@ export function BiopsychosocialPlanScreen({
 
   const planQuery = useBiopsychosocialPlan();
   const regenerateMutation = useRegenerateBiopsychosocialPlan();
+  // SCRUM-651: cancel-in-flight mutation. Separate mutation key so the
+  // useIsMutating observers below can distinguish "regen pending" from
+  // "cancel pending" — the CTA needs to reflect BOTH so a user can't tap
+  // Retry while a cancel is still landing server-side.
+  const cancelMutation = useCancelBiopsychosocialRegeneration();
+
+  // SCRUM-651: live-ticking selector driven by `jobStartedAt`. Replaces
+  // the pre-651 static `REGENERATE_PENDING_WINDOW_MS` latch. The 1-per-sec
+  // tick only runs while jobStartedAt is defined (see hook impl), so the
+  // idle case pays zero cost. Server-supplied envelope thresholds override
+  // the client defaults when the BE ships them (backward-compat: absent →
+  // defaults, per SCRUM-651 spec).
+  const regenStatus = useBioRegenerationStatus(planQuery.data?.jobStartedAt, {
+    clientBannerSwapSeconds: planQuery.data?.clientBannerSwapSeconds,
+    stuckJobThresholdSeconds: planQuery.data?.stuckJobThresholdSeconds,
+  });
 
   // CHUNK 77 (2026-07-23): cross-instance observer on the shared regen
   // mutation key so a subtle top banner can render whenever ANY caller
@@ -739,6 +847,13 @@ export function BiopsychosocialPlanScreen({
     mutationKey: [...REGENERATE_BIO_PLAN_MUTATION_KEY],
   });
   const isRegenPending = regenPendingCount > 0;
+  // SCRUM-651: mirror observer for the cancel mutation so any concurrent
+  // Cancel tap (from this screen or any future entry point) also disables
+  // the CTA cross-instance. Cheap — same subscription shape as regen.
+  const cancelPendingCount = useIsMutating({
+    mutationKey: [...CANCEL_BIO_PLAN_MUTATION_KEY],
+  });
+  const isCancelPending = cancelPendingCount > 0;
 
   // CHUNK 86 v2 (2026-07-23): explicit VoiceOver/TalkBack announcements for
   // regen start AND end. The chunk-86 v1 wrapper landed accessibilityRole=
@@ -922,14 +1037,12 @@ export function BiopsychosocialPlanScreen({
     }
   }, [planQuery]);
 
-  // CHUNK 40 (2026-07-21): fire-and-forget under the hood via the hook's
-  // rewritten mutationFn (see use-biopsychosocial-plan.ts). Alert.alert
-  // onError removed — Alert opens a native modal whose turbomodule
-  // interactions were exactly the crash surface we're trying to leave.
-  // Errors are reconciled on the next ['biopsychosocial-plan'] fetch.
-  const onRegenerate = React.useCallback(() => {
-    regenerateMutation.mutate();
-  }, [regenerateMutation]);
+  // SCRUM-651: `onRegenerate` + `onCancel` handlers are declared LOWER in
+  // this function (right after the `regenerateDisabled` /
+  // `isGeneratingFromAnySource` / `inFlightJobId` derivations they close
+  // over). Pre-651 `onRegenerate` sat here because it depended on nothing
+  // that wasn't in scope yet; the idempotency-guard closure added by 651
+  // (`if (regenerateDisabled) return`) forced the move.
 
   // ── CHUNK 55: meds review + scroll-to + deep-link plumbing ─────────────
   // Legacy parity port from app/Home/health-plan.tsx:354-388 + 1142-1146.
@@ -1146,7 +1259,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg }}
           refreshControl={
             // CHUNK 39 fix (adversarial-verify minor): every other BPS
@@ -1167,7 +1280,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
         >
@@ -1186,7 +1299,15 @@ export function BiopsychosocialPlanScreen({
   }
 
   const plan = planQuery.data?.plan ?? null;
-  const generatedDate = formatGeneratedDate(plan?.generatedAt);
+  // SCRUM-660: generatedDate no longer surfaced on this screen — the
+  // "Updated {date}" caption was removed per user request. Keeping the
+  // formatter import + this comment so a future revert can re-add the
+  // caption with one line.
+  // SCRUM-661 (2026-07-31): reactive current-hour for the shared
+  // GreetingHeader below. Sampled once per minute + primitive-diff
+  // bail (only triggers a re-render when the hour bucket flips) —
+  // same wiring as app/Home/index.tsx uses.
+  const currentHour = useCurrentHour();
   // COS-415: `generating` is additive on the GET response — undefined on
   // BE deploys that predate this change, which the `=== true` check treats
   // as false. COS-421: this is now a point-in-time snapshot from the last
@@ -1207,11 +1328,84 @@ export function BiopsychosocialPlanScreen({
    * window still no-ops server-side (409 REGENERATION_IN_FLIGHT), but now
    * the UI never invites the tap.
    */
-  const regenerateDisabled = regenerateMutation.isPending || isRegenerating;
-  const isGeneratingFromAnySource = regenerateMutation.isPending || isRegenerating;
+  // SCRUM-651: CTA is disabled while ANY of these are true:
+  //   - this device's own regen mutation is pending (bridge window)
+  //   - server says a job is in flight (`generating: true`)
+  //   - a cancel is pending (either the DELETE hasn't landed or the
+  //     mirror push hasn't invalidated yet)
+  // The `cancelMutation.isPending` extra guard closes the tap-race where a
+  // user could tap Cancel then immediately tap Retry before the DELETE
+  // landed, leaving a stray REGENERATE_IN_FLIGHT 409 on the server.
+  const regenerateDisabled =
+    regenerateMutation.isPending || isRegenerating || cancelMutation.isPending || isCancelPending;
+  const isGeneratingFromAnySource =
+    regenerateMutation.isPending || isRegenerating;
   // Static banner ("started X ago") only when it's specifically another
   // device's job — this device's own tap already shows the button loader.
   const showOtherDeviceGenerating = isRegenerating && !regenerateMutation.isPending;
+
+  // SCRUM-651: past the client-side (or server-supplied) banner-swap
+  // threshold — the "generating for a while" active copy hands off to
+  // the passive "we'll notify you" banner. Only meaningful when there's
+  // actually a job in flight; short-circuit on the guard so a stale
+  // jobStartedAt (post-cancel, pre-invalidate) can't trigger the swap.
+  const isPast5MinBannerSwap = isGeneratingFromAnySource && regenStatus.isPast5MinBanner;
+
+  // SCRUM-651: Cancel button visibility — mirrors `isGeneratingFromAnySource`
+  // per spec ("only shown when isPending || isRegenerating"). Additionally
+  // suppress while a cancel is already pending so the button doesn't flicker
+  // out from under the user mid-tap.
+  const showCancelButton = isGeneratingFromAnySource && !cancelMutation.isPending && !isCancelPending;
+
+  // SCRUM-651: the jobId to hand to the cancel DELETE. Only defined when
+  // the server actually reports one — a stale `generating: true` without
+  // a `jobStartedAt` (should never happen but the type allows it) means
+  // we have no jobId either, and the cancel mutationFn no-ops in that case.
+  // The BE contract for SCRUM-651 says the plan envelope carries jobId
+  // alongside jobStartedAt; if BE ships the field name differently we'll
+  // adapt here rather than requiring another OTA to the mutation layer.
+  //
+  // Interim: derive jobId from the same source-of-truth used by
+  // `showOtherDeviceGenerating`. If the envelope doesn't carry an
+  // explicit `jobId`, the mutationFn's `undefined` path still resolves
+  // (see hook impl) — the DELETE simply doesn't fire and the user's tap
+  // is treated as a request to hide the banner locally on the next
+  // invalidate (which the mirror-push branch in use-notifications.ts
+  // will trigger regardless).
+  const inFlightJobId: string | undefined = (
+    planQuery.data as { jobId?: string } | undefined
+  )?.jobId;
+
+  // ── SCRUM-651: tap handlers ────────────────────────────────────────────
+  // Moved down from the pre-651 slot (~line 948 in git blame) so they can
+  // close over `regenerateDisabled` / `isGeneratingFromAnySource` /
+  // `inFlightJobId` (all defined immediately above) without a
+  // used-before-declaration TS error. CHUNK 40 (2026-07-21) rationale
+  // still holds: fire-and-forget under the hood via the hook's rewritten
+  // mutationFn; Alert.alert onError removed because Alert opens a native
+  // modal whose turbomodule interactions were exactly the crash surface
+  // we're leaving. Errors are reconciled on the next
+  // ['biopsychosocial-plan'] fetch (either the notifications mirror
+  // branch or the ~3-5s hook bridge invalidate).
+  const onRegenerate = React.useCallback(() => {
+    // SCRUM-651: idempotency guard. The server 409s REGENERATION_IN_FLIGHT
+    // when a job is already running for this patient, and the UI has to
+    // NOT invite that tap (the disabled state via `regenerateDisabled`
+    // covers the sighted-user path; this belt-and-suspenders check covers
+    // the a11y "double-tap through disabled" edge and any programmatic
+    // callers that might reach this handler off the render tree). Silently
+    // dropping is the correct behavior — the user's intent ("kick off a
+    // regen") is already satisfied by the in-flight job.
+    if (regenerateDisabled) return;
+    regenerateMutation.mutate();
+  }, [regenerateMutation, regenerateDisabled]);
+
+  const onCancel = React.useCallback(() => {
+    if (!isGeneratingFromAnySource) return;
+    if (cancelMutation.isPending) return;
+    cancelMutation.mutate({ jobId: inFlightJobId });
+  }, [cancelMutation, inFlightJobId, isGeneratingFromAnySource]);
+
 
   // ── No tier selected yet (COS-411) ──────────────────────────────────────
   // Distinct from the generic "no plan yet" empty state below: without a
@@ -1223,7 +1417,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
         >
@@ -1256,7 +1450,7 @@ export function BiopsychosocialPlanScreen({
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={[styles.container, { backgroundColor: 'transparent' }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
         >
@@ -1288,7 +1482,14 @@ export function BiopsychosocialPlanScreen({
     <AppWrapper>
       <ScrollView
         ref={scrollRef}
-        style={[styles.container, { backgroundColor: colors.background }]}
+        // SCRUM-658 (2026-07-31): transparent scroll background per
+        // user request ("i want to set plan screen background as
+        // transparent because its cutting bubbles"). AppWrapper's
+        // parent SafeAreaView provides the underlying color; letting
+        // this ScrollView be transparent stops the meds-editor pill
+        // shadows + score-band chips from being visually clipped by
+        // an opaque bg-color rectangle behind them at layout edges.
+        style={[styles.container, { backgroundColor: 'transparent' }]}
         contentContainerStyle={{ padding: Spacing.md, paddingBottom: Spacing.xl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
       >
@@ -1383,28 +1584,39 @@ export function BiopsychosocialPlanScreen({
           )}
         </View>
 
-        {/* Header — patient greeting + last-generated date */}
+        {/* Header — patient greeting + tier pills */}
         <View style={[styles.headerBlock, { flexDirection: 'row', alignItems: 'flex-start' }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(26),
-                fontWeight: getScaledFontWeight(800) as any,
-                letterSpacing: -0.4,
-              }}
-            >
-              {patientName ? `${greetingForNow()}, ${patientName}` : greetingForNow()}
-            </Text>
-            {!!generatedDate && (
-              <View style={styles.metaRow}>
-                <MaterialIcons name="auto-awesome" size={12} color={colors.subtext} />
-                <Text style={[styles.metaText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-                  Updated {generatedDate}
-                  {planQuery.data?.staleness === 'stale' ? ' · may be out of date' : ''}
-                </Text>
-              </View>
-            )}
+            {/*
+              SCRUM-661 (2026-07-31): swap the inline BPS-specific greeting
+              Text (26pt / 800 / letterSpacing -0.4) for the SAME
+              GreetingHeader home uses. Same font, same weight, same
+              padding. useCurrentHour makes it real-time (updates at
+              hour boundary — morning → afternoon → evening) matching
+              home's SCRUM-653 behaviour. Wrap with a negative
+              paddingHorizontal offset because GreetingHeader bakes 20pt
+              horizontal padding into its own View, and this parent
+              already lives inside the ScrollView contentContainerStyle's
+              Spacing.md (16) padding — total would land the greeting
+              36pt from the edge. -6 outer margin lands it back at 30pt,
+              a hair further in than the tier row (16pt) which reads
+              cleanly as the page anchor.
+            */}
+            <View style={{ marginHorizontal: -6, marginTop: -12, marginBottom: 8 }}>
+              <GreetingHeader
+                userFirstName={patientName ?? undefined}
+                nowHour={currentHour}
+              />
+            </View>
+            {/*
+              SCRUM-659 (2026-07-31): "Updated {date}" meta row moved
+              OFF a dedicated line and INTO the tier row below (right-
+              aligned). Consolidates the top-of-page chrome into two
+              rows total: greeting → [tier pill · view-progress · meds
+              · updated date]. Previous shape wasted a full row on the
+              date-only meta. Sparkle icon dropped — the "Updated" word
+              is self-labeling.
+            */}
             {/* CHUNK 50: PlanTierPill + optional ViewProgressLink share a
                 row that wraps to a second row on narrow widths (iPhone SE
                 class) when both pills + the headerRight banner would
@@ -1425,6 +1637,25 @@ export function BiopsychosocialPlanScreen({
                   onPress={() => router.push('/Home/bps-progress' as never)}
                 />
               )}
+              {/*
+                Ken 2026-08-05 — MedicationsLink pill REMOVED from the
+                tier row. Replaced by a proper MedicationsBanner as a
+                sibling section entry below HabitsBanner (see mount
+                point ~L2050 in the same commit). Pill entry lost in a
+                dense control row; the banner reads as a proper
+                section header and matches the report's medical color.
+              */}
+              {/*
+                SCRUM-660 (2026-07-31): "Updated {date}" removed
+                entirely from this surface — user tried two placements
+                (its own row / inlined in tier row) and both felt
+                cluttered. The date is still available via the plan
+                metadata query for callers that need it, but the top-
+                of-page chrome now stops at the tier pills. If a "last
+                updated" affordance is needed later, wire it into the
+                Refresh button label or a tooltip on the tier pill
+                rather than a dedicated caption.
+              */}
             </View>
           </View>
           {/* COS-469 / Phase 4 — optional Try-unified-view affordance. */}
@@ -1507,33 +1738,51 @@ export function BiopsychosocialPlanScreen({
           Kill-switch: `BPS_WELLBEING_SCORE_ENABLED` at module top —
           one-line OTA flip. See notes there for scope rationale.
         */}
-        {BPS_WELLBEING_SCORE_ENABLED && (
-          <BpsWellbeingScoreCard
-            colors={colors as unknown as Record<string, string>}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            onPressDetails={scrollToSelfAssessments}
-            // CHUNK 60: hand the parent-hoisted derivation to the card
-            // so it skips its internal deriveWellbeing() pass. Single-
-            // pass guarantee — BpsPlanFocusBanner and each SectionCard's
-            // isFocus gate below consume the same value.
-            derivation={wellbeing.derivation}
-            isLoading={wellbeing.isLoading}
-            isEmpty={wellbeing.isEmpty}
-          />
-        )}
+        {/*
+          SCRUM-655 (2026-07-31): The two hero cards (Wellbeing composite
+          + Today %) are now presented as compact side-by-side tiles;
+          tapping a tile expands the full shipped card below with a
+          native-driver opacity fade. Preserves BOTH shipped cards
+          verbatim as the expanded content — no data-shape churn, no
+          drill-down affordance regression. Rendered unconditionally
+          because the kill-switches (BPS_WELLBEING_SCORE_ENABLED,
+          BPS_TODAY_HERO_ENABLED) were both `true` and are now
+          module-level dead code the tile-row implicitly always shows.
+          If we ever need to hide the row entirely, gate the whole
+          <BpsHeroTileRow /> block here on a fresh kill-switch.
+
+          Loading placeholder for today's tasks: the tile-row's Today
+          face gracefully renders `— / no tasks today` on empty AND
+          during load — the expanded card itself null-renders when
+          totalToday === 0, matching the legacy hero's guard. No
+          separate skeleton shell needed here because the tiles are
+          fixed-height (128pt) — cache-miss + late resolve doesn't
+          jitter the surface.
+        */}
+        <BpsHeroTileRow
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          onPressWellbeingDetails={scrollToSelfAssessments}
+          derivation={wellbeing.derivation}
+          isLoading={wellbeing.isLoading}
+          isEmpty={wellbeing.isEmpty}
+          tasks={todayTasks}
+        />
 
         {/*
-          SCRUM-640 — Habit correlation strip. Dark-launched: renders
-          null when `habit_journal_enabled` is OFF (default) OR when
-          the user has fewer than min_sample_size=10 days of entries
-          for any habit. Once populated, shows the top 3 habits by |r|
-          against the daily wellbeing composite, with a "directional
-          pattern, not a clinical finding" disclaimer. Visual polish
-          deferred to Ken; data-testid stable at 'habit-correlation-strip'.
-          Mounted below the score card and above the today-hero row
-          so the strip reads as a natural extension of the wellbeing
-          overview rather than a competing card.
+          SCRUM-640 (2026-08-04): Habit correlation strip. Dark-launched:
+          renders null when `habit_journal_enabled` is OFF (default) OR
+          when the user has fewer than min_sample_size=10 days of
+          entries for any habit. Once populated, shows the top 3
+          habits by |r| against the daily wellbeing composite, with a
+          "directional pattern, not a clinical finding" disclaimer.
+          Visual polish deferred to Ken; data-testid stable at
+          'habit-correlation-strip'. Sits between the hero tile row
+          (which owns the wellbeing score band + today hero on
+          tile-expand) and the wellbeing-map banner below, so it
+          reads as a natural extension of the wellbeing overview
+          rather than a competing card.
         */}
         <HabitCorrelationStrip />
 
@@ -1552,45 +1801,80 @@ export function BiopsychosocialPlanScreen({
         <GlucoseTirTile />
 
         {/*
-          CHUNK 47 (SCRUM-252 port): Today hero card — big focal
-          percent-complete number + progress bar + done/to-go/skipped
-          triplet. Sits ABOVE BpsWelcomeBanner so it owns the "how am I
-          doing today" glance-signal that BPS was missing. Returns null
-          when today has zero task occurrences (matches legacy hero's
-          `tasks.length > 0` guard, so patients without a plan-driven
-          schedule see NO change). Kill-switch: `BPS_TODAY_HERO_ENABLED`
-          at module top — one-line OTA flip.
+          SCRUM-661 (2026-07-31): Wellbeing Map banner — user asked for
+          the circular Venn back (SCRUM-660 iteration used just a
+          MaterialIcons hub-chip, which lost the visual identity the
+          circular map carries). New layout: compact 3-circle Venn on
+          the left (Body / Mind / Life circles, 44pt each, 90pt wide
+          overall), title + subtitle in the middle, chevron on the
+          right. Palette mirrors the home-screen WellbeingMapPreview
+          Venn (BIO green, MIND purple, LIFE orange) so both surfaces
+          read as one system. iOS 26.5 primitive envelope only:
+          View / Text / Pressable / StyleSheet / MaterialIcons.
         */}
-        {BPS_TODAY_HERO_ENABLED && (
-          // CHUNK 47 fix (adversarial-verify major): reserve fixed-height
-          // space while today-tasks fetch is in flight. Without this,
-          // a cache miss (deep-link, staleTime expiry, dev build without
-          // auth-prefetch) rendered hero=null on first paint then mounted
-          // ~150pt of content when the fetch resolved — pushing everything
-          // else down. Static View placeholder (chunk-17/39 pattern) fills
-          // the slot until data arrives; card renders or stays null based
-          // on totalToday. If totalToday === 0 after fetch, placeholder
-          // collapses to 0 — one intended shift, not a jitter.
-          todayTasksQuery.isLoading && !todayTasksQuery.data ? (
+        <Pressable
+          onPress={() => router.push('/Home/wellbeing-map' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Open your Wellbeing map. Explore all 8 areas: Body, Mind, Life, Sleep, Movement, Nutrition, Connection, Purpose."
+          accessibilityHint="Shows how your goals cluster across the 8 wellbeing areas"
+          style={({ pressed }) => [
+            styles.mapCard,
+            {
+              backgroundColor: (colors.tint as string) + '14',
+              borderColor: (colors.tint as string) + '33',
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          {/* Compact Venn — same shape as WellbeingMapPreview but scaled
+              down to fit as a card affordance instead of a full tile. */}
+          <View
+            style={styles.mapVennWrap}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
             <View
+              style={[
+                styles.mapVennCircle,
+                { left: 0, top: 0, backgroundColor: 'rgba(25,156,79,0.28)', borderColor: '#199C4F' },
+              ]}
+            />
+            <View
+              style={[
+                styles.mapVennCircle,
+                { left: 42, top: 0, backgroundColor: 'rgba(123,63,228,0.28)', borderColor: '#7B3FE4' },
+              ]}
+            />
+            <View
+              style={[
+                styles.mapVennCircle,
+                { left: 21, top: 30, backgroundColor: 'rgba(201,118,0,0.28)', borderColor: '#C97600' },
+              ]}
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
+            <Text
               style={{
-                height: 150,
-                marginBottom: Spacing.md,
-                borderRadius: Radii.xl,
-                backgroundColor: 'rgba(148,163,184,0.15)',
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(700) as any,
               }}
-              accessible
-              accessibilityLabel="Loading today's progress"
-            />
-          ) : (
-            <BpsTodayHeroCard
-              tasks={todayTasks}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-            />
-          )
-        )}
+            >
+              Your Wellbeing map
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: 2,
+                lineHeight: 17,
+              }}
+            >
+              Explore all 8 areas — see which are strong and which need attention.
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.tint} />
+        </Pressable>
 
         {/*
           COS-449 (Chunk 1b): one-time welcome banner explaining the BPS
@@ -1749,6 +2033,43 @@ export function BiopsychosocialPlanScreen({
           )
         )}
 
+        {/* SCRUM-659 Story 4 (2026-08-05) — Routines banner directly below
+            the AI summary, styled to match the WellbeingMap card
+            treatment. Mounted WITHOUT an extra padding wrapper so it
+            inherits the parent ScrollView's horizontal padding — this
+            makes it byte-width-matched to the WellbeingMap card + the
+            BPS section cards below it.
+
+            NAMING (Ken 2026-08-06): the section READS as "Routines" —
+            structure like meals, washing, shopping, classes, which are
+            not necessarily good behaviours — to tell it apart from plan
+            Tasks, which ARE the positive behaviours we want to grow into
+            habits. Everything below the display layer (component name
+            HabitsBanner, route /Home/habits, `plan.habits[]`, flag
+            `habits_in_plan_enabled`) intentionally keeps the "habits"
+            wire name; do not "fix" the mismatch. All the copy lives in
+            HabitsBanner.tsx — there are no habit/routine strings on this
+            screen. */}
+        <HabitsBanner
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
+
+        {/*
+          Ken 2026-08-05 — Medications banner sits directly beneath
+          HabitsBanner as a sibling section entry. Replaces the small
+          MedicationsLink pill previously in the tier row (removed
+          from line ~1642 in the same commit). Same 48pt tinted icon
+          + title + subtitle shape as HabitsBanner so both banners
+          read as one system, colored green #199C4F to match the
+          "Medical conditions & medications" report group. */}
+        <MedicationsBanner
+          colors={colors as unknown as Record<string, string>}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
+
         {/*
           CHUNK 51: read-only "Here's what you'll be notified about"
           preview card — port of the COS-373 legacy glimpse
@@ -1776,50 +2097,17 @@ export function BiopsychosocialPlanScreen({
         )}
 
         {/*
-          COS-448: Today's Medications card sits AT THE TOP of the plan
-          (above the wellbeing map link) so patients — especially older
-          adults — see meds at a glance without scrolling into Bio. Data
-          from usePlanMedications (COS-357). Renders null when the meds
-          feature flag is off or the endpoint hasn't answered yet, so
-          older-app / flag-off users see NO change (back-compat).
+          SCRUM-658 (2026-07-31): TodaysMedicationsCard + MedicationsReviewPrompt
+          moved off this BPS surface to the standalone /Home/medications
+          route, reached via the new MedicationsLink pill in the header
+          row above. User: "what is use of today's medication in plan
+          screen? move it if its not required." The full meds editor
+          (MedicationsSection) below is likewise removed and now lives
+          on /Home/medications. Preserves ALL functionality (view /
+          review-prompt / edit / add) — just relocates the surface so
+          the Plan screen owns wellbeing + today, and the meds screen
+          owns the full meds story.
         */}
-        <TodaysMedicationsCard
-          colors={colors}
-          isDark={settings.isDarkTheme}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
-
-        {/*
-          CHUNK 55: soft, recurring "Review your medications" prompt —
-          sibling above the full MedicationsSection editor below. Self-
-          guards on server flagEnabled + medsReviewNeeded + local
-          snooze + first-cycle modal (see MedicationsReviewPrompt.tsx
-          for the full four-state gate), so it null-renders during
-          load / off / snoozed / not-needed with zero layout shift.
-          Tapping "Review now" fires onReviewMedications: scrollTo the
-          MedicationsSection y-offset captured in the onLayout wrapper
-          below, then bump openMedsAddSignal so the section opens its
-          add editor on the next commit. Two-layer kill:
-          BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED (client OTA flip) and
-          the server flagEnabled bit (BE flip covers both BPS + legacy).
-        */}
-        {BPS_MEDICATIONS_REVIEW_PROMPT_ENABLED && (
-          // CHUNK 57 alignment: MedicationsReviewPrompt bakes
-          // `marginHorizontal: 20` into its own StyleSheet (shared with
-          // legacy /Home/health-plan). Inside our ScrollView contentContainer
-          // padding of Spacing.md=16, that lands the card 36pt from the
-          // screen edge — 20pt farther in than sibling BPS cards, which
-          // sit at 16pt. Wrapping in a `marginHorizontal: -Spacing.screenPadding`
-          // View cancels the built-in 20pt exactly, so the card renders at
-          // the same 16pt edge as BpsWelcomeBanner / TodaysMedicationsCard /
-          // SectionCard. Legacy /Home/health-plan.tsx is left untouched
-          // (its own container has different padding, so its author-intended
-          // 20pt inset there still holds).
-          <View style={styles.legacyCardWrap}>
-            <MedicationsReviewPrompt onReviewNow={onReviewMedications} />
-          </View>
-        )}
 
         {/*
           CHUNK 52 + CHUNK 55 (2026-07-22): full legacy Medications
@@ -1845,93 +2133,27 @@ export function BiopsychosocialPlanScreen({
           app/Home/health-plan.tsx:1142-1146 shape byte-for-byte,
           which passes onLayout directly to the section).
         */}
-        {BPS_MEDICATIONS_EDITOR_ENABLED && (
-          // CHUNK 57 alignment: MedicationsSection's internal cards and
-          // header sit at `paddingHorizontal: 20` / `marginHorizontal: 20`
-          // — 36pt from screen edge inside our 16pt-padded ScrollView.
-          // The same negative-mH wrapper cancels the 20pt exactly, aligning
-          // its cards with the 16pt-edge BPS card baseline. Shared with
-          // legacy — leaf styles untouched.
-          <View
-            // CHUNK 71: same wrapper doubles as the a11y focus target for
-            // the ?focus=medications deep-link. findNodeHandle(ref) +
-            // AccessibilityInfo.setAccessibilityFocus lands the VoiceOver
-            // rotor here (iOS). Ref lives alongside medsSectionYRef so
-            // both are populated by the same mount cycle.
-            ref={medsSectionRef}
-            style={styles.legacyCardWrap}
-            // CHUNK 57 blocker fix: chunk-55 scroll-to-meds requires
-            // layout.y measured relative to the ScrollView content, but
-            // MedicationsSection's own onLayout fires relative to its
-            // IMMEDIATE parent — which is now this wrapper View. Attaching
-            // onLayout to the wrapper (whose parent is the ScrollView) gives
-            // the correct ScrollView-content y-offset; dropped the
-            // section-level onLayout prop.
-            onLayout={(e) => {
-              medsSectionYRef.current = e.nativeEvent.layout.y;
-            }}
-          >
-            <MedicationsSection openAddSignal={openMedsAddSignal} />
-          </View>
-        )}
+        {/*
+          SCRUM-658 (2026-07-31): MedicationsSection editor removed from
+          this BPS surface — moved to /Home/medications reached via the
+          new MedicationsLink pill. The medsSectionRef, medsSectionYRef,
+          and openMedsAddSignal wiring in this component is now dead
+          weight for the deep-link scrollTo behaviour, but is left in
+          place because it also feeds the notifications-routing +
+          MEDICATION_REFILL_REMINDER push handling that other surfaces
+          consume. Removing the wiring would be a wider refactor —
+          parked for a follow-up SCRUM once the standalone meds screen
+          soaks.
+        */}
 
         {/*
-          COS-442: Wellbeing map entry point. Was a tiny "See your Wellbeing
-          map" text link inside the header block — Kenneth 2026-07-10:
-          "I was not aware we can click it and what does it do and how it
-          will be helpful to patients." Promoted to a proper card with
-          icon + title + explanatory subtitle so users can tell what it is
-          before tapping. Mirrors ViewBioInsightsLink's layout on the
-          legacy plan (COS-438) for visual consistency across the
-          bio-related entry points. Route is read-only — safe to open
-          mid-generate.
+          SCRUM-660 (2026-07-31): duplicate COS-442 "Your Wellbeing map"
+          card removed from this position. The wellbeing-map entry point
+          now lives ONLY in the banner directly under the hero tile row
+          above (moved there per user's placement request). Kept as a
+          removed-code comment so a future decision to relocate can
+          re-mount the same card shape without archeology.
         */}
-        <Pressable
-          onPress={() => router.push('/Home/wellbeing-map' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Open your Wellbeing map"
-          accessibilityHint="Shows how your goals cluster across the NovoPsych model"
-          style={({ pressed }) => [
-            styles.mapCard,
-            {
-              backgroundColor: (colors.tint as string) + '14',
-              borderColor: (colors.tint as string) + '33',
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.mapIconChip,
-              { backgroundColor: (colors.tint as string) + '22' },
-            ]}
-          >
-            <MaterialIcons name="hub" size={getScaledFontSize(22)} color={colors.tint} />
-          </View>
-          <View style={{ flex: 1, marginLeft: Spacing.md - 4 }}>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(15),
-                fontWeight: getScaledFontWeight(700) as any,
-              }}
-            >
-              Your Wellbeing map
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(12),
-                marginTop: 2,
-                lineHeight: 17,
-              }}
-            >
-              See how your goals cluster across body, mind, and social
-              wellbeing — and which areas may need attention.
-            </Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.tint} />
-        </Pressable>
 
         {/*
           COS-430: monthly re-assessment nudge. Dark behind
@@ -2036,9 +2258,17 @@ export function BiopsychosocialPlanScreen({
           </View>
         ))}
 
-        {/* Another device's regeneration in flight — static message, no
-            live polling (COS-421). Snapshot only; updates on next fetch
-            (pull-to-refresh, push invalidation, or remount). */}
+        {/* Another device's regeneration in flight.
+            SCRUM-651 (2026-07-30): TWO banner variants now share this slot,
+            selected by `isPast5MinBannerSwap`.
+              - ≤5min elapsed: the pre-651 active "generation in progress
+                (started Xs ago) — pull down to refresh" copy. Ticks live
+                via `regenStatus.elapsedSec` (was a static snapshot pre-651
+                per COS-421).
+              - >5min elapsed: passive "Still working on your plan — we'll
+                notify you when it's ready." No live counter — the copy
+                itself acknowledges the extended timeline, so counting
+                would just add noise. */}
         {showOtherDeviceGenerating && (
           <View
             style={[
@@ -2046,47 +2276,54 @@ export function BiopsychosocialPlanScreen({
               { backgroundColor: (colors.tint ?? '#0D9488') + '14', borderColor: (colors.tint ?? '#0D9488') + '33' },
             ]}
             accessibilityRole="text"
-            accessibilityLabel="A generation is already in progress on another device. Pull down to refresh once it's done."
+            accessibilityLabel={
+              isPast5MinBannerSwap
+                ? "Still working on your plan. We'll notify you when it's ready."
+                : "A generation is already in progress on another device. Pull down to refresh once it's done."
+            }
           >
             <MaterialIcons name="info-outline" size={16} color={colors.tint} />
             <Text style={[styles.generatingBannerText, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
-              A generation is already in progress
-              {planQuery.data?.jobStartedAt
-                ? ` (started ${formatRelativeStartedAt(planQuery.data.jobStartedAt)})`
-                : ''}
-              . Pull down to refresh once it&apos;s done.
+              {isPast5MinBannerSwap ? (
+                <>Still working on your plan — we&apos;ll notify you when it&apos;s ready.</>
+              ) : (
+                <>
+                  A generation is already in progress
+                  {planQuery.data?.jobStartedAt
+                    ? ` (started ${formatRegenerationElapsed(regenStatus.elapsedSec)})`
+                    : ''}
+                  . Pull down to refresh once it&apos;s done.
+                </>
+              )}
             </Text>
           </View>
         )}
 
-        {/* Refresh my plan — COS-430 copy, COS-436 persistent generating state. */}
-        <TouchableOpacity
-          style={[styles.regenerateBtn, { backgroundColor: colors.tint, opacity: regenerateDisabled ? 0.7 : 1 }]}
-          onPress={onRegenerate}
-          disabled={regenerateDisabled}
-          accessibilityRole="button"
-          accessibilityLabel={isGeneratingFromAnySource ? 'Generating your plan' : 'Refresh my plan'}
-          accessibilityState={{ disabled: regenerateDisabled, busy: isGeneratingFromAnySource }}
-        >
-          {/*
-            CHUNK 40 (2026-07-21): Text-label swap replaces <ActivityIndicator>
-            (v2 chunk-34 RegenerateButton parity). ActivityIndicator is a
-            continuously animating native primitive — even post-mount, on
-            iOS 26.5 it participates in the turbomodule surface we're
-            hardening against. Static Text is safe; the button opacity +
-            disabled state still communicate the pending state.
-          */}
-          {isGeneratingFromAnySource ? (
-            <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>
-              Regenerating…
-            </Text>
-          ) : (
-            <>
-              <MaterialIcons name="refresh" size={16} color="#fff" />
-              <Text style={[styles.regenerateBtnText, { fontSize: getScaledFontSize(14) }]}>Refresh my plan</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/*
+          SCRUM-662 (2026-07-31): "Refresh my plan" primary CTA + the
+          companion "Cancel" secondary button both removed from the
+          surface per user request ("regenerate plan and classic view
+          is not required"). Server-side regenerate hooks
+          (regenerateMutation, cancelMutation, onRegenerate, onCancel,
+          regenerateDisabled, isGeneratingFromAnySource, showCancelButton)
+          and the top-of-page "Refreshing your plan..." banner all
+          remain wired but are now callee-less — they auto-fire from
+          other surfaces (push notifications, cross-instance polls) and
+          the surface still reflects state via the banner if regen
+          starts from elsewhere. If a manual "Refresh" affordance is
+          needed later, restore this Pressable — no state migration
+          required.
+        */}
+
+        {/*
+          "Share as PDF" — bottom action, in the slot SCRUM-662 freed when
+          the Refresh / Classic-view buttons came off this surface. Mirrors
+          ShareIntakeReportSection's mechanism exactly (expo-print →
+          expo-sharing → RN Share text fallback); the HTML comes from the
+          pure `plan-pdf-builder.ts`. Renders null until a plan exists, so
+          the empty / skeleton branches above are unaffected.
+        */}
+        <SharePlanSection patientName={patientName} />
             </>
           );
           if (BPS_HERO_LAYOUT_ENABLED) {
@@ -2105,6 +2342,25 @@ export function BiopsychosocialPlanScreen({
           }
           return detailsBody;
         })()}
+        {/*
+          ADR-0005 P0/P2 — bottom-anchored "Classic view" link. Self-gates
+          on isTabSwapBpsEnabled() so it renders NULL on the legacy render
+          path (flag OFF) and NULL on any other BPS entry when the flag is
+          not set. Lives at the tail of the last ScrollView child so it
+          scrolls with the plan content instead of floating over it — the
+          shape Ken approved in Q1. Placed here (in the child component)
+          rather than in the tab-swap parent so it appears on BOTH BPS
+          entry points (tab-swap render + the peer
+          /Home/biopsychosocial-plan route) without a duplicate mount.
+        */}
+        {/*
+          SCRUM-662 (2026-07-31): ClassicViewLink removed per user
+          request ("classic view is not required"). Users still have
+          the tab-swap flag override at the SSM level if a rollback is
+          ever needed; the in-page link was creating a UX exit hatch
+          that we don't want to advertise now that BPS is the intended
+          Plan surface.
+        */}
       </ScrollView>
       {/*
         COS-433: goal-editor Modal + its state + its updateGoalMutation
@@ -2270,6 +2526,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // SCRUM-661: compact 3-circle Venn slot on the wellbeing map card.
+  // 90pt wide × 74pt tall — the three 44pt circles with the shipped
+  // BIO / MIND / LIFE offsets scaled down to fit as a card affordance.
+  // Palette mirrors WellbeingMapPreview so both surfaces read as one
+  // system.
+  mapVennWrap: {
+    width: 90,
+    height: 74,
+    position: 'relative',
+  },
+  mapVennCircle: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+  },
   emptyIcon: {
     width: 64,
     height: 64,
@@ -2290,6 +2563,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regenerateBtnText: { color: '#fff', fontWeight: '700' },
+  // SCRUM-651: outlined secondary Cancel button — same footprint as
+  // regenerateBtn (paddingVertical 14, radius Radii.md) but transparent
+  // background + tint-colored border/label so the primary CTA stays
+  // visually dominant. Sits directly under the primary row (marginTop
+  // Spacing.xs) so tap targets don't crowd.
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radii.md,
+    paddingVertical: 14,
+    marginTop: Spacing.xs,
+    gap: 8,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  cancelBtnText: { fontWeight: '700' },
   generatingBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2316,6 +2606,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     gap: 8,
   },
+  // SCRUM-660 (2026-07-31): wellbeingMapBanner style removed — the
+  // new horizontal banner uses styles.mapCard (defined further down)
+  // which already carries the icon-chip + row treatment we want.
   regenBannerText: { flex: 1, lineHeight: 18, fontWeight: '600' },
   // CHUNK 86 (2026-07-23): collapsed state for the always-mounted regen
   // banner wrapper. Zeroes height, padding, margin, and border so idle

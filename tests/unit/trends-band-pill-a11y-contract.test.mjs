@@ -62,11 +62,17 @@ const TRENDS_TSX_PATH = join(
   'SelfAssessmentTrends.tsx',
 )
 const BANDS_TS_PATH = join(REPO_ROOT, 'lib', 'assessment-bands.ts')
+// Wave 2: the FRIENDLY_NAME map that used to live inline in
+// SelfAssessmentTrends.tsx was consolidated here. Wire (f) follows it.
+const INSTRUMENT_LABELS_TS_PATH = join(REPO_ROOT, 'lib', 'instrument-labels.ts')
 
 const TRENDS_TSX_SRC_RAW = readFileSync(TRENDS_TSX_PATH, 'utf8')
 const TRENDS_TSX_SRC = stripComments(TRENDS_TSX_SRC_RAW)
 const BANDS_TS_SRC_RAW = readFileSync(BANDS_TS_PATH, 'utf8')
 const BANDS_TS_SRC = stripComments(BANDS_TS_SRC_RAW)
+const INSTRUMENT_LABELS_TS_SRC = stripComments(
+  readFileSync(INSTRUMENT_LABELS_TS_PATH, 'utf8'),
+)
 
 // -------------------------------------------------------------------------
 // (a) Composed label template contains all 5 phrase categories:
@@ -299,14 +305,34 @@ test('(e) ASSESSMENT_BANDS module contains a direction check pattern (not hardco
 // (f) Human title fallback: if def.humanLabel is missing, the label
 //     falls back to id or a generic string — no naked "undefined" leak.
 //
+// WHAT CHANGED (Wave 2). The second link in this chain used to be an
+// inline `FRIENDLY_NAME` map in SelfAssessmentTrends.tsx, read as
+// `FRIENDLY_NAME[String(record.instrumentId)] ?? String(record.instrumentId)`.
+// That map was consolidated into lib/instrument-labels.ts as
+// `WARMER_INSTRUMENT_LABEL` behind the accessor
+// `getWarmerInstrumentLabel(instrumentId, fallback): string`, shared with
+// the assessment stepper header and the catalog cards.
+//
+// The protective intent is UNCHANGED and, if anything, better enforced:
+// the accessor's `: string` return type plus its internal `?? fallback`
+// make "resolves to undefined" a compile error at the helper rather than a
+// convention at each call site. But the call site still has to PASS a real
+// fallback — `getWarmerInstrumentLabel(id)` with a missing second arg, or
+// one that can itself be undefined, would put us right back where we
+// started. So the chain is now pinned in two places.
+//
 // The current fallback chain is:
 //   humanTitle = def?.humanLabel ?? label
-//   label      = FRIENDLY_NAME[String(record.instrumentId)] ?? String(record.instrumentId)
+//   label      = getWarmerInstrumentLabel(String(record.instrumentId),
+//                                         String(record.instrumentId))
 //
-// So an instrument with no humanLabel and no FRIENDLY_NAME entry still
-// reads its instrumentId as a string — never "undefined". We assert:
+// So an instrument with no humanLabel and no WARMER_INSTRUMENT_LABEL entry
+// still reads its instrumentId as a string — never "undefined". We assert:
 //   (f.1) def?.humanLabel ?? label (or equivalent ??-fallback) exists
-//   (f.2) FRIENDLY_NAME lookup itself has a ?? String(...) fallback
+//   (f.2) the label lookup goes through getWarmerInstrumentLabel WITH a
+//         String(...) fallback argument, imported from the shared module
+//   (f.2b) the helper itself returns `string` (not `string | undefined`)
+//          and terminates the chain with `?? fallback`
 //   (f.3) The word "undefined" never appears in a template literal
 //         within a JSX expression — a bare `${maybeUndefined}` inside
 //         a template would leak the string "undefined" to VoiceOver.
@@ -330,12 +356,30 @@ test('(f) human title fallback chain — no naked "undefined" leak', () => {
     'SelfAssessmentTrends.tsx must retain a `def?.humanLabel ?? label` (or equivalent) fallback for the row title — without it, instruments whose def has no humanLabel serialize to "undefined" in the composed a11y label.',
   )
 
-  // (f.2) FRIENDLY_NAME lookup has a fallback of its own so `label`
-  //       itself never resolves to undefined.
+  // (f.2) The label lookup delegates to the shared accessor AND supplies
+  //       a String(...) fallback as the second argument.
   assert.match(
     TRENDS_TSX_SRC,
-    /FRIENDLY_NAME\s*\[[^\]]+\]\s*\?\?\s*String\s*\(/,
-    'SelfAssessmentTrends.tsx must retain `FRIENDLY_NAME[...] ?? String(record.instrumentId)` — the second link in the humanTitle fallback chain. Without it, an unknown instrumentId with no FRIENDLY_NAME entry would resolve to undefined and leak "undefined" into the composed a11y label.',
+    /from\s*['"]@\/lib\/instrument-labels['"]/,
+    'SelfAssessmentTrends.tsx must import from `@/lib/instrument-labels` — Wave 2 moved the old inline FRIENDLY_NAME map there so the trends card, the stepper header and the catalog all speak one set of patient-facing names. A local map reappearing here means the surfaces have forked again.',
+  )
+  assert.match(
+    TRENDS_TSX_SRC,
+    /getWarmerInstrumentLabel\s*\(\s*[^,]+,\s*String\s*\(/,
+    'SelfAssessmentTrends.tsx must call `getWarmerInstrumentLabel(<id>, String(record.instrumentId))` — WITH the second, fallback argument. The helper only guarantees a non-undefined result because the caller hands it a concrete fallback; a one-arg call (or a fallback that can itself be undefined) puts "undefined" straight back into the composed a11y label.',
+  )
+
+  // (f.2b) The helper terminates the chain: returns `string`, not
+  //        `string | undefined`, and coalesces to its fallback.
+  assert.match(
+    INSTRUMENT_LABELS_TS_SRC,
+    /export\s+function\s+getWarmerInstrumentLabel\s*\([\s\S]*?\)\s*:\s*string\s*\{/,
+    'lib/instrument-labels.ts must declare `getWarmerInstrumentLabel(...): string` — a `string | undefined` return would re-open the exact hole this wire guards, and TypeScript would not flag the leak because the composed label interpolates into a template literal.',
+  )
+  assert.match(
+    INSTRUMENT_LABELS_TS_SRC,
+    /WARMER_INSTRUMENT_LABEL\s*\[[^\]]+\]\s*\?\?\s*fallback/,
+    'lib/instrument-labels.ts must terminate the lookup with `WARMER_INSTRUMENT_LABEL[instrumentId] ?? fallback`. Without the coalesce, an unmapped (agency-custom or newly BE-added) instrument resolves to undefined and every consumer — trends card, stepper header, catalog — leaks "undefined" into user-visible copy.',
   )
 
   // (f.3) No literal "undefined" appears inside a template literal in

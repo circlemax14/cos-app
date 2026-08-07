@@ -111,6 +111,20 @@ function revalidateInBackground(previousDestination: string, isLocked: boolean) 
     try {
       const result = await checkSession();
       if (!result.authenticated || !result.user) {
+        // ─── BUG #17 FIX (Ken 2026-08-07) ───────────────────────────
+        // Only route to sign-in when the BACKEND definitively rejected
+        // the session. `indeterminate` means we couldn't reach the
+        // backend at all (network error / 5xx / timeout) — the tokens
+        // are still in Keychain and are probably fine. Previously ANY
+        // failure landed here and called requestSignIn(), and because
+        // 'splash_revalidate_failed' is in BYPASS_LOCK_REASONS it
+        // routed straight past the PIN screen to sign-in. That is the
+        // "app opens on the sign-in screen for no reason" report.
+        //
+        // On `indeterminate` we keep the user exactly where they are,
+        // on cached data. The next request that genuinely 401s will
+        // still sign them out through the normal interceptor path.
+        if (result.reason === 'indeterminate') return;
         // Token invalidated server-side — defer the sign-in via the gate.
         await requestSignIn('splash_revalidate_failed');
         return;
@@ -185,6 +199,16 @@ export default function SplashGate() {
       // with backend before routing.
       const result = await checkSession();
       if (!result.authenticated || !result.user) {
+        // BUG #17 FIX (Ken 2026-08-07) — see revalidateInBackground above.
+        // This is the no-cached-profile path, so we can't route optimistically;
+        // but an INDETERMINATE result still must not sign the user out. We
+        // have tokens (hasSession was true to get here) and merely couldn't
+        // reach /v1/auth/me. Surface the offline state and let them retry
+        // instead of destroying a valid session.
+        if (result.reason === 'indeterminate') {
+          setState('no-internet');
+          return;
+        }
         await requestSignIn('splash_revalidate_failed');
         return;
       }

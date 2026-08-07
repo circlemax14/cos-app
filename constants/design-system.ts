@@ -121,6 +121,25 @@ export const Radii = {
   full: 9999,
 } as const;
 
+// ── Score Bands (ADR-0003 Phase 1, WCAG-AA fg/bg pairs) ───────
+
+export const ScoreBands = {
+  optimal:      { fg: '#0F6B36', bg: '#E6F4EC', label: 'Optimal' },
+  developing:   { fg: '#0B6963', bg: '#E0F2F1', label: 'Developing' },
+  foundational: { fg: '#8A5100', bg: '#FDF3E4', label: 'Foundational' },
+  initial:      { fg: '#B23A48', bg: '#FBE7E9', label: 'Initial' },
+} as const;
+
+export type ScoreBandName = keyof typeof ScoreBands;
+
+// ── Breakpoints (ADR-0003 Phase 1) ────────────────────────────
+
+export const Breakpoints = {
+  phone: 0,
+  tabletPortrait: 768,
+  tabletLandscape: 1024,
+} as const;
+
 // ── Status Badge Config ────────────────────────────────────────
 
 export const StatusConfig = {

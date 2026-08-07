@@ -25,7 +25,8 @@ import {
   skipTask,
 } from '@/services/api/ai-health-plan';
 import type { AiHealthPlan, AiPlanGoal, TaskOccurrence, TaskType } from '@/services/api/types';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
@@ -64,6 +65,13 @@ import { BioGoalEditorModal } from '@/components/health-plan/BioGoalEditorModal'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
 import { useBiopsychosocialPlan, useUpdateBioGoal } from '@/hooks/use-biopsychosocial-plan';
 import { usePatientInfo } from '@/hooks/use-patient';
+// ADR-0005 P0/P2 — tab-swap flag + welcome empty state. Both self-gate:
+// `isTabSwapBpsEnabled()` returns false unless the build-time env
+// `EXPO_PUBLIC_TAB_SWAP_BPS_ENABLED === 'true'`. When OFF, the entire
+// tab-swap block below is skipped and the legacy render path runs
+// byte-for-byte unchanged.
+import { isTabSwapBpsEnabled } from '@/hooks/use-tab-swap-bps-flag';
+import { BpsWelcomeEmptyState } from '@/components/plan/BpsWelcomeEmptyState';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import { knownSubdomains } from '@/lib/bps-subdomains';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
@@ -171,6 +179,8 @@ const NOTIF_CATEGORY_LABELS: Record<(typeof NOTIFICATION_CATEGORY_KEYS)[number],
   medicationReminders: 'Medication reminders',
   medicationTask: 'Medication tasks',
   otherTask: 'Other tasks',
+  nudges: 'Proactive nudges',   // SCRUM-641
+  habits: 'Routine reminders',  // SCRUM-659 (renamed #13)
 };
 
 const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: string; label: string }> = {
@@ -182,6 +192,7 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
 export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const queryClient = useQueryClient();
   // COS-360 / SCRUM-577 — resolves 'agency-supported' → "Family Support"
   // when ASSESSMENT_STRATEGY_V2_ENABLED is on. Passed into planTypeLabel()
   // at each call site so the flag effect is consistent across the screen.
@@ -555,9 +566,14 @@ export default function HealthPlanScreen() {
               : t,
           ),
         );
+        return;
       }
+      // Ken 2026-08-06 iter 3 — adherence sub-score changed. Refresh
+      // the wellbeing tile + detail screen so the composite reflects
+      // the new completion without waiting for React Query staleTime.
+      invalidateWellbeingCaches(queryClient);
     },
-    [],
+    [queryClient],
   );
 
   const onSkip = useCallback(
@@ -578,9 +594,11 @@ export default function HealthPlanScreen() {
               : t,
           ),
         );
+        return;
       }
+      invalidateWellbeingCaches(queryClient);
     },
-    [],
+    [queryClient],
   );
 
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
@@ -661,6 +679,75 @@ export default function HealthPlanScreen() {
    */
 
   // ── Render ────────────────────────────────────────────────────────────
+  //
+  // ADR-0005 P0/P2 — tab-swap early branch.
+  //
+  // When `EXPO_PUBLIC_TAB_SWAP_BPS_ENABLED === 'true'`, the Care Plan tab
+  // becomes the mount point for the BPS surface (the classic Plan tab is
+  // temp-retired behind the ClassicViewLink escape hatch rendered at the
+  // bottom of BiopsychosocialPlanScreen's scroll — see that component).
+  //
+  // Rules-of-hooks: every hook in this function has already been called by
+  // this line. The branch below is a pure JSX gate — an early return only.
+  // Flag OFF (default) falls straight through to the legacy branch below,
+  // byte-for-byte identical to pre-ADR-0005 behavior (backward-compat
+  // discipline per feedback_backward_compatibility.md).
+  //
+  // Three sub-branches, mirroring BiopsychosocialPlanScreen's own gating
+  // vocabulary (loading / empty / loaded) but resolved by the parent so
+  // BPS never mounts against an unknown-plan state:
+  //
+  //   - bio query in flight  → generic spinner (same envelope as legacy
+  //                            loading below).
+  //   - no bio plan record   → BpsWelcomeEmptyState (self-contained CTA
+  //                            reusing TryNewPlanCta's regen wiring). Once
+  //                            regen lands, `useBiopsychosocialPlan`
+  //                            invalidates, this branch re-resolves to the
+  //                            loaded path, and the empty state unmounts.
+  //   - bio plan present     → BiopsychosocialPlanScreen with the same
+  //                            props the /Home/biopsychosocial-plan route
+  //                            passes today (currentPlanType, chooser
+  //                            handler, edit-goal callback, patient name).
+  //                            Under BPS_MODAL_CONSOLIDATION_ENABLED the
+  //                            child owns the goal-editor Modal, so the
+  //                            hoisted `openBioGoalEditor` sets dead state
+  //                            here — same shape as
+  //                            /Home/biopsychosocial-plan.
+  //
+  // Rollback: unset the env (or set it to anything other than `"true"`)
+  // and OTA. 30-second revert per feedback_dark_launch_via_ssm_before_code.
+  if (isTabSwapBpsEnabled()) {
+    const hasBioPlan = biopsychosocialPlanQuery.data?.plan != null;
+    const bioLoading = biopsychosocialPlanQuery.isLoading;
+    if (bioLoading) {
+      return (
+        <AppWrapper>
+          <View style={[styles.center, { backgroundColor: colors.background }]}>
+            <ActivityIndicator size="large" color={colors.tint} />
+            <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+              Loading your plan…
+            </Text>
+          </View>
+        </AppWrapper>
+      );
+    }
+    if (!hasBioPlan) {
+      return (
+        <AppWrapper>
+          <BpsWelcomeEmptyState />
+        </AppWrapper>
+      );
+    }
+    return (
+      <BiopsychosocialPlanScreen
+        currentPlanType={currentPlanType}
+        onChangePlanType={openPlanTypeChooser}
+        onEditGoal={openBioGoalEditor}
+        patientName={bioPatientName}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <AppWrapper>

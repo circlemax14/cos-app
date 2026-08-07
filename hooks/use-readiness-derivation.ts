@@ -21,7 +21,8 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing'
 import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
@@ -152,6 +153,14 @@ export interface ReadinessDebugSnapshot {
   todayIsoUtc: string
   todayFound: boolean
   todayHasAnyMetric: boolean
+  // Vishal 2026-08-05 — 48h "recent" fallback fields. When today's
+  // exact bucket is empty (Watch hasn't synced yet this morning), we
+  // fall back to the most-recent bucket within 48h so a score renders.
+  // `todayIsoUsed` is the ISO date actually scored as "today"; equal
+  // to `todayIsoLocal` when no fallback used. `usedRecentFallback` is
+  // the boolean that FE surfaces as a caveat on the Readiness hero.
+  todayIsoUsed?: string
+  usedRecentFallback?: boolean
 }
 
 /**
@@ -289,11 +298,21 @@ async function fetchReadinessInputs(): Promise<{
   // beat after initHealthKit before reads see the new auth state.
   await new Promise((r) => setTimeout(r, 100))
 
-  const [hrv, sleep, hr, resp, hrvProbe15, hrvProbe90] = await Promise.all([
+  // 2026-08-05 (Vishal) — expanded metric universe. Any HealthKit type
+  // the user has granted access to and has data for contributes to
+  // the adaptive score in lib/readiness-score.ts. .catch(()=>null)
+  // per-metric so a missing permission on one doesn't fail the batch.
+  const [hrv, sleep, hr, resp, steps, kcal, exerciseMin, walkingHr, spo2, flights, hrvProbe15, hrvProbe90] = await Promise.all([
     getHealthKitVitalTrend('heart-rate-variability', READINESS_LOOKBACK_DAYS).catch(() => null),
     getHealthKitVitalTrend('sleep-hours', READINESS_LOOKBACK_DAYS).catch(() => null),
     getHealthKitVitalTrend('resting-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
     getHealthKitVitalTrend('respiratory-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('steps', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('active-energy', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('exercise-time', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('walking-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('oxygen-saturation', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthKitVitalTrend('flights-climbed', READINESS_LOOKBACK_DAYS).catch(() => null),
     probeHrvRaw(READINESS_LOOKBACK_DAYS),
     probeHrvRaw90d(90),
   ])
@@ -323,6 +342,13 @@ async function fetchReadinessInputs(): Promise<{
   push(sleep, 'sleepHours')
   push(hr, 'restingHrBpm')
   push(resp, 'respRateBpm')
+  // 2026-08-05 (Vishal) — expanded metric universe fields.
+  push(steps, 'stepsCount')
+  push(kcal, 'activeEnergyKcal')
+  push(exerciseMin, 'exerciseMinutes')
+  push(walkingHr, 'walkingHrBpm')
+  push(spo2, 'spo2Pct')
+  push(flights, 'flightsClimbed')
 
   // MUST be device-LOCAL calendar day, not UTC. HealthKit `startDate`
   // ISO strings come back with the device's local tz offset (e.g.
@@ -334,9 +360,38 @@ async function fetchReadinessInputs(): Promise<{
   // every evening user. See SCRUM-664 / OTA 7701237b post-mortem.
   const todayIso = localDayIso(new Date())
   const sortedDates = Array.from(byDate.keys()).sort() // ISO strings sort chronologically
-  const today = byDate.get(todayIso)
+
+  // Vishal 2026-08-05 — 48h "recent" fallback for today. If today's
+  // exact bucket is empty (Watch hasn't synced this morning yet), use
+  // the most-recent bucket within the last 48h instead. Keeps the
+  // score renderable through the common "woke up, Watch charging"
+  // gap. Falls through gracefully when even that's stale (>48h → no
+  // score, existing empty-state path). The staleness gets surfaced in
+  // debug.todayIsoFallback so the FE can annotate "score based on your
+  // most recent sync (yesterday)" without recomputing.
+  const RECENT_FALLBACK_HOURS = 48
+  const todayExact = byDate.get(todayIso)
+  let today = todayExact
+  let todayIsoUsed = todayIso
+  let usedFallback = false
+  if (!todayExact) {
+    // Walk backwards through sortedDates until we find one within 48h of now.
+    const nowMs = new Date().getTime()
+    for (let i = sortedDates.length - 1; i >= 0; i--) {
+      const candidate = sortedDates[i]
+      if (candidate >= todayIso) continue // skip today (already checked) + any future date
+      const candidateMs = new Date(`${candidate}T12:00:00`).getTime() // local noon of that day
+      const ageHours = (nowMs - candidateMs) / (1000 * 60 * 60)
+      if (ageHours > 0 && ageHours <= RECENT_FALLBACK_HOURS) {
+        today = byDate.get(candidate)
+        todayIsoUsed = candidate
+        usedFallback = true
+        break
+      }
+    }
+  }
   const baseline = sortedDates
-    .filter((d) => d !== todayIso)
+    .filter((d) => d !== todayIsoUsed)
     .map((d) => byDate.get(d))
     .filter((d): d is DailyReadinessMetrics => d !== undefined)
 
@@ -363,9 +418,18 @@ async function fetchReadinessInputs(): Promise<{
     todayIsoLocal: todayIso,
     todayIsoUtc: new Date().toISOString().slice(0, 10),
     todayFound: today !== undefined,
+    // Vishal 2026-08-05 — 48h recent fallback in use? If yes, screens
+    // can annotate the hero with "Score based on your most recent
+    // sync (<date>)" instead of the strict "today" message.
+    todayIsoUsed,
+    usedRecentFallback: usedFallback,
+    // 2026-08-05 (Vishal) — expanded to the full adaptive metric universe.
     todayHasAnyMetric: today !== undefined && (
       today.hrvMs !== undefined || today.sleepHours !== undefined ||
-      today.restingHrBpm !== undefined || today.respRateBpm !== undefined
+      today.restingHrBpm !== undefined || today.respRateBpm !== undefined ||
+      today.stepsCount !== undefined || today.activeEnergyKcal !== undefined ||
+      today.exerciseMinutes !== undefined || today.walkingHrBpm !== undefined ||
+      today.spo2Pct !== undefined || today.flightsClimbed !== undefined
     ),
   }
 
@@ -431,6 +495,11 @@ export interface UseReadinessDerivationResult {
 export function useReadinessDerivation(enabled: boolean): UseReadinessDerivationResult {
   const isIos = Platform.OS === 'ios'
   const isUnavailable = !isIos || !isHealthKitAvailable()
+  // Ken 2026-08-06 iter 3 — a successful readiness snapshot POST feeds
+  // the sleep sub-score of the wellbeing composite. Grab the query
+  // client here so the post effect below can invalidate wellbeing
+  // caches once the BE confirms acceptance.
+  const queryClient = useQueryClient()
 
   // Authoritative "user opted in to Apple Health" signal — mirrors the
   // pattern useHealthKitTrends uses (lib/apple-health-gate.ts, per
@@ -602,6 +671,12 @@ export function useReadinessDerivation(enabled: boolean): UseReadinessDerivation
         try {
           if (res.accepted === 1) {
             await AsyncStorage.setItem(throttleKey, String(now))
+            // Ken 2026-08-06 iter 3 — sleep sub-score changed on the
+            // server. Invalidate wellbeing caches so the tile picks up
+            // the new composite next render. BE also dropped its own
+            // wellbeing cache row on this POST (see
+            // routes/readiness-snapshot.routes.ts).
+            invalidateWellbeingCaches(queryClient)
           } else if (res.reason === 'flag_off' || res.throttled) {
             // Honor server retryAfterSeconds if provided; otherwise use
             // the standard 5-min window.

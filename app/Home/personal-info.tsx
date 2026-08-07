@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Icon, TextInput as PaperTextInput } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppWrapper } from '@/components/app-wrapper';
 import { fetchPatientInfo } from '@/services/api/patient';
 import { EntityIcon } from '@/components/icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -71,11 +71,16 @@ export default function PersonalInfoScreen() {
       await confirmPhotoUpload(photoUrl);
 
       // Get a fresh presigned download URL to display the image.
+      //
+      // #16: NO `|| photoUrl` fallback. `photoUrl` is the canonical, UNSIGNED
+      // S3 key on a private bucket — it can only ever 403, so falling back to
+      // it turns a transient signing failure into a permanently broken image
+      // that looks identical to "no photo set". Null is the honest answer;
+      // the store re-signs on foreground.
       const downloadUrl = await getPhotoDownloadUrl();
-      const displayUrl = downloadUrl || photoUrl;
-      setPhotoUri(displayUrl);
+      setPhotoUri(downloadUrl ?? null);
       // Publish to the global store so Home, drawer, etc. update too.
-      setStorePhotoUrl(displayUrl);
+      setStorePhotoUrl(downloadUrl ?? null);
     } catch {
       Alert.alert('Error', 'Failed to upload photo. Please try again.');
     } finally {
@@ -151,7 +156,8 @@ export default function PersonalInfoScreen() {
           // Load profile photo via presigned download URL
           if ((patient as any).photoUrl) {
             const downloadUrl = await getPhotoDownloadUrl();
-            setPhotoUri(downloadUrl || (patient as any).photoUrl);
+            // #16: signed URL only — see the note above.
+            setPhotoUri(downloadUrl ?? null);
           }
           // Fallback: if email is empty, try getting from auth /me endpoint
           if (!patient.email) {
@@ -193,7 +199,8 @@ export default function PersonalInfoScreen() {
         });
         if ((patient as any).photoUrl) {
           const downloadUrl = await getPhotoDownloadUrl();
-          setPhotoUri(downloadUrl || (patient as any).photoUrl);
+          // #16: signed URL only — see the note above.
+          setPhotoUri(downloadUrl ?? null);
         }
         // Fallback: if email is empty, try getting from auth /me endpoint
         if (!patient.email) {
@@ -242,7 +249,24 @@ export default function PersonalInfoScreen() {
   ];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+    /* ─── BUG #19 FIX (Ken 2026-08-07) ─────────────────────────────────
+       REPORTED: "In personal info screen headers and bottom nav is missing."
+
+       CAUSE (two separate omissions):
+       1. The screen lived at app/(personal-info)/ — a ROOT-level Stack
+          group, a sibling of Home rather than a child of it. Anything
+          outside the Tabs navigator cannot render the tab bar, so the
+          bottom nav was structurally impossible there.
+       2. It rendered a bare SafeAreaView instead of <AppWrapper>, so it
+          also missed the global header (hamburger / logo / accessibility
+          button) that every other authenticated screen shows.
+
+       FIX: moved to app/Home/personal-info.tsx (inside Tabs, registered
+       href:null so it's reachable but not a visible tab) and swapped the
+       SafeAreaView for AppWrapper. AppWrapper already provides the safe-area
+       insets, so no wrapper is lost. The screen keeps its own back+title row
+       because AppWrapper's header has no per-screen title slot. */
+    <AppWrapper>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -465,7 +489,7 @@ export default function PersonalInfoScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
-    </SafeAreaView>
+    </AppWrapper>
   );
 }
 

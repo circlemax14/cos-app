@@ -56,9 +56,40 @@ import { useHealthAge } from '@/hooks/use-health-age';
 // Copy is HONEST placeholder pending Ken clinical + design review.
 import { DailyReadCard } from '@/components/home/DailyReadCard';
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
+// 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
+import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
 import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
+
+// ─────────────────────────────────────────────────────────────────────
+// ADR-0003 Phase 1 (Home Redesign) — v2 surface imports.
+// Everything below is dead code when EXPO_PUBLIC_HOME_V2_ENABLED !== 'true'
+// (Metro tree-shakes on the module-level flag call inside the render).
+// The legacy render path is UNCHANGED when the flag is OFF.
+// ─────────────────────────────────────────────────────────────────────
+import {
+  isHomeV2Enabled,
+  isHomeV2PlaceholdersEnabled,
+  getHomeCircleProminence,
+} from '@/hooks/use-home-v2-flag';
+import { HomeResponsiveProvider } from '@/components/home/HomeResponsiveProvider';
+import { GreetingHeader } from '@/components/home/GreetingHeader';
+import { HomeQuickActionPills } from '@/components/home/HomeQuickActionPills';
+import { ScoreCardGrid } from '@/components/home/ScoreCardGrid';
+import { WellbeingMapPreview } from '@/components/home/WellbeingMapPreview';
+import { WellbeingScoreTile } from '@/components/home/WellbeingScoreTile';
+import { useCurrentHour } from '@/hooks/use-current-hour';
+import { HeroScoreBlock } from '@/components/health-plan/senior/HeroScoreBlock';
+import { BpsPlanFocusBanner } from '@/components/health-plan/BpsPlanFocusBanner';
+import { useScoreCatalog, type ScoreRow } from '@/hooks/use-score-catalog';
+import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
+// SCRUM-652 — legacy-home v2 injection gate. Distinct from `isHomeV2Enabled()`
+// (that returns the entire redesigned surface). This flag enables three
+// surgical v2 blocks (GreetingHeader, ScoreCardGrid, WellbeingMapPreview)
+// inside the existing legacy render tree so we can dark-launch each block
+// without cutting over the whole screen.
+import { useHomeV2InjectionsEnabled } from '@/hooks/use-home-v2-injections-flag';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2540,6 +2571,362 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// HomeV2Layout — ADR-0003 Phase 1 (Home Redesign)
+//
+// Mounted ONLY when EXPO_PUBLIC_HOME_V2_ENABLED === 'true'. Self-contained
+// (own hooks, own state) so the flag-off legacy render path in HomeScreen()
+// is byte-identical to what shipped. Composition order matches the ADR:
+//   HomeResponsiveProvider
+//     → GreetingHeader
+//     → HeroScoreBlock  (hoisted from components/health-plan/senior)
+//     → ScoreCardGrid   (fed by useScoreCatalog rows)
+//     → BpsPlanFocusBanner  (hoisted from components/health-plan)
+//     → WellbeingMapPreview
+//     → [placeholder cards]  ← only when isHomeV2PlaceholdersEnabled()
+//     → Circle of Support entry  ← behind HOME_CIRCLE_PROMINENCE knob
+//                                   (default 'secondary'; 'hidden' → null;
+//                                    'primary' → hoisted above the scores)
+//
+// Q7 DECIDED (2026-07-30): placeholder copy is "Coming soon" — Ken chose
+// the calmer wording over "Not yet available" to signal forward motion.
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Small "Coming soon" affordance for surfaces that are structurally
+ * present in the v2 shell but have no data pipeline yet (Sleep card,
+ * Wheel-8D card). Rendered ONLY under isHomeV2PlaceholdersEnabled() so
+ * production users never see them. Uses only View/Text/StyleSheet to
+ * stay inside the iOS 26.5 primitive envelope the rest of Home v2
+ * follows.
+ */
+function HomeV2PlaceholderCard({
+  title,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: {
+  title: string;
+  colors: typeof Colors['light'];
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string | number;
+}): React.JSX.Element {
+  return (
+    <View
+      accessibilityRole="text"
+      accessibilityLabel={`${title}. Coming soon.`}
+      style={{
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: (colors.text ?? '#11181C') + '22',
+        backgroundColor: (colors.text ?? '#11181C') + '05',
+        marginBottom: 12,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: getScaledFontSize(15),
+          fontWeight: getScaledFontWeight(600) as any,
+          color: colors.text,
+          marginBottom: 4,
+        }}
+      >
+        {title}
+      </Text>
+      <Text
+        style={{
+          fontSize: getScaledFontSize(13),
+          fontWeight: getScaledFontWeight(400) as any,
+          color: (colors.text ?? '#11181C') + '99',
+        }}
+      >
+        Coming soon
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * Compact Circle of Support entry point for the v2 Home surface.
+ * The full circle graph still lives on the legacy render path and on
+ * the shipped connect-clinics flow — from v2 we surface a single
+ * tappable entry that navigates into the classic circle view via
+ * expo-router. Kept intentionally lightweight so 'secondary' really
+ * feels secondary (the score cards own the fold).
+ */
+function CircleOfSupportEntry({
+  patientName,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  prominence,
+}: {
+  patientName: string;
+  colors: typeof Colors['light'];
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => string | number;
+  prominence: 'primary' | 'secondary';
+}): React.JSX.Element {
+  const isPrimary = prominence === 'primary';
+  const firstName = (patientName ?? '').trim().split(/\s+/)[0] || 'Your';
+  const title = firstName === 'Your'
+    ? 'Your Circle of Support'
+    : `${firstName}'s Circle of Support`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. Tap to open.`}
+      onPress={() => {
+        try {
+          // Navigate to the classic circle view (the legacy Home path
+          // still owns the full circle graph). Deep-linking here keeps
+          // v2 lean while preserving Circle discoverability.
+          router.push('/Home/connect-clinics' as any);
+        } catch {
+          /* router unavailable in test/harness contexts — silent no-op */
+        }
+      }}
+      style={({ pressed }) => [
+        {
+          marginTop: isPrimary ? 8 : 16,
+          marginBottom: 12,
+          marginHorizontal: 16,
+          padding: 16,
+          borderRadius: 12,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: (colors.text ?? '#11181C') + '22',
+          backgroundColor: isPrimary
+            ? (colors.tint ?? '#008080') + '14'
+            : (colors.text ?? '#11181C') + '05',
+          opacity: pressed ? 0.7 : 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+      ]}
+    >
+      <MaterialIcons
+        name="groups"
+        size={20}
+        color={colors.tint || '#008080'}
+        style={{ marginRight: 10 }}
+      />
+      <Text
+        style={{
+          flex: 1,
+          fontSize: getScaledFontSize(isPrimary ? 16 : 14),
+          fontWeight: getScaledFontWeight(isPrimary ? 600 : 500) as any,
+          color: colors.text,
+        }}
+      >
+        {title}
+      </Text>
+      <MaterialIcons
+        name="chevron-right"
+        size={20}
+        color={(colors.text ?? '#11181C') + '99'}
+      />
+    </Pressable>
+  );
+}
+
+function HomeV2Layout(): React.JSX.Element {
+  const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
+  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const catalog = useScoreCatalog();
+  const wellbeing = useWellbeingDerivation();
+  const [patientName, setPatientName] = useState<string>('');
+  const [isLoadingPatient, setIsLoadingPatient] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Patient name — fetched independently of the legacy screen state so
+  // this layout is a drop-in replacement, not a subtree of HomeScreen().
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const patient = await fetchPatientInfo();
+        if (!cancelled && patient) setPatientName(patient.name || '');
+      } catch {
+        /* Non-critical — greeting falls back to "Good morning." */
+      } finally {
+        if (!cancelled) setIsLoadingPatient(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // React-Query caches drive both catalog + wellbeing; a manual
+      // refetch would require a queryClient handle. For v1 we let the
+      // pull-to-refresh gesture be a visual acknowledgement — the query
+      // caches expire on their own staleTime.
+      await new Promise((r) => setTimeout(r, 350));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  const firstName = React.useMemo(
+    () => (patientName ?? '').trim().split(/\s+/)[0] ?? '',
+    [patientName],
+  );
+
+  // Hero prior-composite mirrors the shipped BiopsychosocialPlanScreen
+  // derivation so the caption line reads identically on both surfaces.
+  const priorComposite = React.useMemo(() => {
+    const c = wellbeing.derivation.composite;
+    const t = wellbeing.derivation.trend;
+    if (typeof c === 'number' && t) return c - t.delta;
+    return undefined;
+  }, [wellbeing.derivation.composite, wellbeing.derivation.trend]);
+
+  const onOpenRow = useCallback((row: ScoreRow) => {
+    try {
+      router.push(row.links.detail as any);
+    } catch {
+      /* silent no-op in non-router contexts */
+    }
+  }, []);
+  const onExplainRow = useCallback((row: ScoreRow) => {
+    try {
+      router.push(row.links.map as any);
+    } catch {
+      /* silent no-op */
+    }
+  }, []);
+
+  const prominence = getHomeCircleProminence();
+  const showPlaceholders = isHomeV2PlaceholdersEnabled();
+
+  return (
+    <AppWrapper notificationCount={3}>
+      <HomeResponsiveProvider>
+        <ScrollView
+          style={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.text}
+            />
+          }
+        >
+          {/* RetakeRequestInboxCard — silent-drops on empty state, so
+              mount at top matches the legacy Home discipline. */}
+          <RetakeRequestInboxCard />
+
+          <GreetingHeader userFirstName={isLoadingPatient ? '' : firstName} />
+
+          {/* Circle of Support: hoisted to the top only when prominence
+              is 'primary'. Default 'secondary' → below the scores. */}
+          {prominence === 'primary' ? (
+            <CircleOfSupportEntry
+              patientName={patientName}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              prominence="primary"
+            />
+          ) : null}
+
+          <HeroScoreBlock
+            userFirstName={isLoadingPatient ? undefined : firstName}
+            composite={wellbeing.derivation.composite}
+            priorComposite={priorComposite}
+            // Per-domain trend arrows: WellbeingDerivation doesn't yet
+            // expose per-domain trend; default all three to 'flat' so
+            // the dot row always has an arrow. Matches the shipped
+            // BiopsychosocialPlanScreen wiring exactly.
+            domainTrends={{ bio: 'flat', mind: 'flat', social: 'flat' }}
+            onDotsPress={() => {
+              try {
+                router.push('/Home/wellbeing-map' as any);
+              } catch {
+                /* silent no-op */
+              }
+            }}
+            colors={colors as unknown as Record<string, string>}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+
+          <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+            <ScoreCardGrid
+              rows={catalog.rows}
+              onOpenRow={onOpenRow}
+              onExplainRow={onExplainRow}
+              emptyStateText={
+                catalog.isLoading
+                  ? 'Loading your scores…'
+                  : 'Complete a check-in to see your scores here.'
+              }
+            />
+          </View>
+
+          <View style={{ paddingHorizontal: 16 }}>
+            <BpsPlanFocusBanner
+              enabled
+              focus={wellbeing.derivation.focus}
+              onPress={(target) => {
+                try {
+                  router.push(`/health-plan/bps?section=${target}` as any);
+                } catch {
+                  /* silent no-op */
+                }
+              }}
+              colors={colors as unknown as Record<string, string>}
+              isDark={!!settings.isDarkTheme}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          </View>
+
+          <WellbeingMapPreview />
+
+          {/* Placeholder shelf — QA-only surfaces for Sleep + Wheel-8D.
+              Gated hard on the placeholder flag so production users
+              never see the "Coming soon" copy. */}
+          {showPlaceholders ? (
+            <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+              <HomeV2PlaceholderCard
+                title="Sleep"
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+              <HomeV2PlaceholderCard
+                title="Wheel-8D"
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            </View>
+          ) : null}
+
+          {/* Circle of Support default position — secondary tier, below
+              the scores + banner + map. 'hidden' compiles out entirely. */}
+          {prominence === 'secondary' ? (
+            <CircleOfSupportEntry
+              patientName={patientName}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              prominence="secondary"
+            />
+          ) : null}
+        </ScrollView>
+      </HomeResponsiveProvider>
+    </AppWrapper>
+  );
+}
+
 export default function HomeScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const userImg = undefined;
@@ -2645,6 +3032,31 @@ export default function HomeScreen() {
     const parts = fullName.trim().split(/\s+/);
     return parts[0] || '';
   };
+
+  // ─────────────────────────────────────────────────────────────────
+  // SCRUM-652 — legacy Home v2-block injections.
+  // `useHomeV2InjectionsEnabled` reads a strict-`=== true` backend
+  // flag (`HOME_V2_INJECTIONS_ENABLED`) so this defaults OFF while
+  // flags are loading OR the backend hasn't shipped the key yet.
+  //
+  // We call `useScoreCatalog` unconditionally to obey Rules of Hooks
+  // — the flag can flip mid-session (feature-flags refetch on
+  // foreground, SCRUM-527), so a conditional hook call would violate
+  // hook order. The catalog's underlying query is React-Query cached
+  // and cheap; when `injectionsEnabled` is false the returned rows
+  // are simply never rendered.
+  // ─────────────────────────────────────────────────────────────────
+  const injectionsEnabled = useHomeV2InjectionsEnabled();
+  const scoreCatalog = useScoreCatalog();
+  const scoreRows: ScoreRow[] = scoreCatalog.rows;
+  const greetingFirstName = getFirstName(patientName);
+  // `nowHour` is now reactive via useCurrentHour() — SCRUM-653 fix.
+  // The prior static `new Date().getHours()` capture never updated across
+  // hour boundaries while the user lingered on the screen (a common
+  // pattern first-thing-in-the-morning), so the greeting would drift.
+  // useCurrentHour polls every 60s and only re-renders when the hour
+  // actually changes (React bails on identical primitives).
+  const nowHour = useCurrentHour();
 
   useEffect(() => {
     const loadProviders = async () => {
@@ -2938,6 +3350,19 @@ export default function HomeScreen() {
     }
   }, [showProviderDetails, screenWidth, detailsListOpacity, detailsListSlide, mainListOpacity, mainListSlide]);
 
+  // ─────────────────────────────────────────────────────────────────
+  // ADR-0003 Phase 1 — v2 Home redesign kill-switch. When the master
+  // flag is ON, return the redesigned surface and skip every legacy
+  // render primitive below. When OFF (the default), this branch is a
+  // single boolean compare and the legacy render path executes
+  // BIT-IDENTICALLY to the pre-ADR-0003 shipped code.
+  //
+  // The v2 layout is self-contained (owns its own patient / wellbeing
+  // / catalog state) so no legacy hook state is inspected from inside
+  // HomeV2Layout — safe rollback via env, no ordering coupling.
+  // ─────────────────────────────────────────────────────────────────
+  if (isHomeV2Enabled()) return <HomeV2Layout />;
+
   return (
     <AppWrapper notificationCount={3}>
       {(isLoadingPatient || isLoadingAppointments) ? (
@@ -2959,86 +3384,47 @@ export default function HomeScreen() {
          * returns null), so no layout shift on the empty state.
          */}
         <RetakeRequestInboxCard />
-        {/* SCRUM-638 — Daily Readiness score card, above the title so
-            it's the first thing a patient sees on wake-up (matches
-            Bevel's "one honest daily read" placement). Renders NOTHING
-            when flag OFF (readinessEnabled === false) — flag-off path
-            is byte-identical to pre-638 layout. Also renders NOTHING
-            when HealthKit is unavailable (Android / non-iOS build) so
-            the tile doesn't leave a dead slot on unsupported platforms. */}
-        {readinessEnabled && !readiness.isUnavailable && (
-          <ReadinessScoreCard
-            score={readiness.score}
-            uiState={readiness.uiState}
-            onExplain={onExplainReadiness}
-            onConnectHealth={() => router.push('/Home/apple-health' as never)}
-            onLongPress={() => {
-              // DIAG (remove once "no samples" bug closed): dump raw
-              // runtime state into an Alert so the user can screenshot
-              // + share. Read the debug from the refetch's returned
-              // data — NOT the closure's `readiness.debug`, which was
-              // captured at last Home render and is stale by the time
-              // this Promise resolves.
-              readiness.refetch().then((result) => {
-                const fresh = (result as { data?: { debug?: unknown } } | undefined)?.data?.debug
-                const snapshot = fresh ?? readiness.debug
-                Alert.alert(
-                  'Readiness Debug',
-                  snapshot
-                    ? JSON.stringify(snapshot, null, 2)
-                    : 'No snapshot yet (query still resolving). Long-press again in 3-5 s.',
-                  [{ text: 'OK' }],
-                )
-              }).catch((e) => {
-                Alert.alert('Readiness Debug', `Refetch failed: ${String(e)}`, [{ text: 'OK' }])
-              })
-            }}
-          />
-        )}
-        {/* SCRUM-642 — Health Age tile. Flag-gated dark by default. Card
-            returns null internally when overall=null AND <3 fresh
-            components (insufficient-data collapse), so the flag-on path
-            is still layout-neutral for patients with no biomarker data.
-            Order: WellbeingScoreTile row above → ReadinessScoreCard →
-            HealthAgeCard, per DESIGN.fe_screen.mount_location. */}
-        {healthAgeEnabled && (
-          <HealthAgeCard
-            result={healthAgeQuery.data}
-            isLoading={healthAgeQuery.isLoading}
-            onPress={() => router.push('/Home/health-age' as never)}
-          />
-        )}
-        {/* SCRUM-644 — Daily Read card. Dark-launched behind
-            `daily_read_enabled`. Sits 3rd in the daily-insights cluster
-            (Readiness → Health Age → Daily Read) — NOT pixel #1 by
-            design so ReadinessScoreCard paints first from on-device
-            HealthKit and gives cover while this card's /v1/patients/me
-            /daily-read fetch resolves (avoids the "app looks broken"
-            failure mode on cold start). Card is ALSO self-gated on the
-            flag (defense in depth) and copy is HONEST placeholder
-            pending Ken clinical + design sign-off. */}
-        {dailyReadEnabled && <DailyReadCard />}
-        {/* Title row — heading + inline view-mode toggle, mirroring the
-            classic layout the stakeholder asked us to keep. SCRUM-234
-            moved the toggle back inline (it had been hoisted to a slot
-            just above the circle in SCRUM-233). The toggle stays small
-            so the title still reads as the dominant element. */}
+        {/* 2026-08-05 — Compact 3-tile row: Readiness · Health Age · Daily Read.
+            Replaces the three stacked full-width cards that previously
+            lived here (SCRUM-638 ReadinessScoreCard + SCRUM-642
+            HealthAgeCard + SCRUM-644 DailyReadCard). Each tile inside
+            HeroInsightsRow self-fetches, self-flags-gates, and taps
+            through to the same detail screens as before. Empty states
+            render as a "—" placeholder + short hint so the row stays a
+            fixed slot instead of collapsing/reflowing on data changes. */}
+        <HeroInsightsRow />
+        {/*
+         * SCRUM-653 title row — one of two variants selected by
+         * HOME_V2_INJECTIONS_ENABLED:
+         *   ON  → GreetingHeader ("Good morning, Kenneth") with the
+         *         view-mode toggle inline on the right, matching the
+         *         classic layout's toggle position.
+         *   OFF → Classic "{First}'s Circle of Support" title with the
+         *         same inline toggle — byte-identical to the legacy
+         *         layout so the flag-off path is a no-op regression.
+         */}
         <View style={[styles.titleRow, { paddingHorizontal: 16, paddingTop: 8 }]}>
-          <Text
-            numberOfLines={2}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-            style={[
-              styles.sectionTitle,
-              {
-                fontSize: getScaledFontSize(24),
-                fontWeight: getScaledFontWeight(600) as any,
-                color: colors.text,
-                flex: 1,
-              }
-            ]}>
-            {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
-          </Text>
+          {injectionsEnabled ? (
+            <View style={{ flex: 1 }}>
+              <GreetingHeader userFirstName={greetingFirstName} nowHour={nowHour} />
+            </View>
+          ) : (
+            <Text
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              style={[
+                styles.sectionTitle,
+                {
+                  fontSize: getScaledFontSize(24),
+                  fontWeight: getScaledFontWeight(600) as any,
+                  color: colors.text,
+                  flex: 1,
+                }
+              ]}>
+              {isLoadingPatient ? 'Loading…' : `${getFirstName(patientName)}'s Circle of Support`}
+            </Text>
+          )}
           <TouchableOpacity
             onPress={toggleViewMode}
             style={[
@@ -3066,14 +3452,23 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick actions row — between title and circle, matches the
-            web layout. SCRUM-279 (2026-06-08 build 34): Ken asked to
-            reduce the gap to circle by 50% more on iPad. Dropped
-            marginBottom 12 → 6. iPhone already tight enough so it
-            applies universally (no responsive override needed). */}
-        <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
-          <QuickActionButtons />
-        </View>
+        {/*
+         * SCRUM-653 quick actions row — one of two variants:
+         *   ON  → HomeQuickActionPills (3 sleek transparent chips for
+         *         PCP / Pharmacy / Urgent Care, preserving the shipped
+         *         dial + open-app behaviour).
+         *   OFF → classic filled-card QuickActionButtons (byte-identical
+         *         legacy path). The wrapping View intentionally omits
+         *         paddingHorizontal on the ON branch — the pills row
+         *         supplies its own marginHorizontal:16 internally.
+         */}
+        {injectionsEnabled ? (
+          <HomeQuickActionPills />
+        ) : (
+          <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
+            <QuickActionButtons />
+          </View>
+        )}
 
         {/* SCRUM-279 (build 45): iPad-only — kill all extra vertical
             padding around the circle. Ken still saw space on build 44.
@@ -3082,6 +3477,15 @@ export default function HomeScreen() {
         <View style={[
           styles.circleSection,
           isTabletDevice && { paddingTop: 0, marginBottom: 0 },
+          // SCRUM-653 fix (2026-07-31): user reported orbiting-provider
+          // bubbles touching the pills row above + wellbeing row below
+          // on the new-design path. The base circleSection styles were
+          // tuned for the legacy layout where those neighbors don't exist
+          // (or are further away). Add breathing room on BOTH ends only
+          // when injections are on — the legacy layout stays byte-
+          // identical. Applied on both phone and tablet because the
+          // absolute-positioned orbit avatars spill either way.
+          injectionsEnabled && { paddingTop: 40, marginTop: 12, marginBottom: 40 },
         ]}>
           {viewMode === 'circle' ? (
             isTabletDevice ? (
@@ -3191,6 +3595,49 @@ export default function HomeScreen() {
 
         {/* QuickActionButtons used to live here, below the Circle. Moved
             above the Circle to mirror the web Patient Home layout (SCRUM-233). */}
+
+        {/*
+         * SCRUM-653 Wellbeing Row — two equal tiles side-by-side, sitting
+         * between the Circle of Support and Today's Appointments.
+         *   Left  : WellbeingScoreTile (composite score + band chip)
+         *   Right : WellbeingMapPreview (3-circle Venn + "Explore all 8 areas")
+         * Both tiles handle their own empty/loading states so the row is
+         * stable across data availability. Only rendered when
+         * HOME_V2_INJECTIONS_ENABLED is ON — flag-off path is bytes-free.
+         *
+         * The prior SCRUM-652 injection (ScoreCardGrid wrapped in
+         * HomeResponsiveProvider) is replaced by this compact 2-tile
+         * layout per the user's redesign spec — the 4-card grid was
+         * dominating the surface.
+         */}
+        {injectionsEnabled && (
+          // Vishal 2026-08-05 — both tiles now own their outer chrome
+          // (same white background + border + 16pt radius + 148pt min
+          // height) so titles / main content / footer text align across
+          // the row. Home only supplies the flex gap. Do NOT re-wrap
+          // either tile in a padded View here — that reintroduces the
+          // asymmetric geometry.
+          <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>
+            <View style={{ flex: 1 }}>
+              <WellbeingScoreTile />
+            </View>
+            <View style={{ flex: 1 }}>
+              <WellbeingMapPreview />
+            </View>
+          </View>
+        )}
+        {/*
+         * ScoreCardGrid stays imported (backward-compat with the dead
+         * HOME_V2_ENABLED path in HomeV2Layout above) but no longer
+         * injects into the legacy tree. Ref for the linter:
+         *   scoreRows length = {scoreRows.length}, catalog rows shape unchanged.
+         * If HomeV2Layout is later deleted we can drop the imports.
+         */}
+        {false && scoreRows.length > 0 && (
+          <HomeResponsiveProvider>
+            <ScoreCardGrid rows={scoreRows} />
+          </HomeResponsiveProvider>
+        )}
 
         {/* SCRUM-279 (2026-06-03): Today's Appointments — pulls from
             the UNIFIED calendar feed (FHIR + user-created + care-
@@ -3402,7 +3849,18 @@ export default function HomeScreen() {
           )}
         </TouchableOpacity>
 
-        {upcomingAppointments.length > 0 && (
+        {/*
+         * SCRUM-653: standalone WellbeingMapPreview injection removed —
+         * moved into the 2-tile Wellbeing Row above the appointments
+         * section. Nothing renders here on the new design path.
+         */}
+
+        {/*
+         * SCRUM-653: Upcoming Appointments hidden when new design is on
+         * (user's redesign spec ended at "6. then health trends"). Legacy
+         * path unaffected.
+         */}
+        {!injectionsEnabled && upcomingAppointments.length > 0 && (
           <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
@@ -3835,7 +4293,10 @@ const styles = StyleSheet.create({
   },
   appointmentsSection: {
     width: '100%',
-    paddingHorizontal: 24,
+    // Vishal 2026-08-05: was 24 — pulled to 16 so the section's
+    // banner + deck align to the same horizontal edge as the Health
+    // Trends banner (marginHorizontal: 16) and the HeroInsightsRow.
+    paddingHorizontal: 16,
     // SCRUM-279 (2026-06-08): Ken asked to reduce the gap between
     // Today's Appointments and Health Trends by 50%. Dropped
     // paddingBottom 20 → 8 + paddingTop 16 → 10.

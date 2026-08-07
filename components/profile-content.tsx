@@ -5,6 +5,7 @@ import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
+import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
@@ -82,11 +83,20 @@ export function ProfileContent({
   // only when backend flag `habit_journal_enabled` (or the per-user
   // beta override) resolves to true.
   const habitJournalEnabled = useHabitJournalFlag();
+  const habitsInPlanFlagEnabled = useHabitsInPlanFlag();
 
   const [patientName, setPatientName] = useState('User');
   const [patientEmail, setPatientEmail] = useState('');
   const { photoUrl: patientPhotoUrl } = useUserPhoto();
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  // Ken 2026-08-07 (#20) — sign-out gave zero feedback: the alert
+  // dismissed and the screen sat there until the redirect landed,
+  // which reads as "nothing happened". Track the in-flight state so
+  // the button can show a spinner + "Signing out…" AND so a second
+  // tap can't fire a duplicate signOut() while the first is running.
+  // Shared with the delete-account flow (which is slower — it makes a
+  // network call first — and had the exact same dead-air problem).
+  const [authBusy, setAuthBusy] = useState<null | 'signout' | 'delete'>(null);
 
   useEffect(() => {
     // SCRUM-265 #16: hydrate from the local cache on first paint so the
@@ -235,21 +245,19 @@ export function ProfileContent({
             <DrawerRow
               iconName="person"
               label="Personal Information"
-              onPress={() => router.push('/(personal-info)')}
+              onPress={() => router.push('/Home/personal-info' as never)}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
-            <DrawerRow
-              iconName="medication"
-              label="Medications"
-              onPress={() => router.push('/Home/medications' as never)}
-              divider
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-            />
+            {/* Ken 2026-08-07 (#15) — "Medications" drawer row REMOVED.
+                The Plan surface now carries a full-width MedicationsBanner
+                (green, with today's dose preview) as the canonical entry
+                point, so a second path buried in the hamburger was
+                redundant and made the drawer longer to scan. The
+                /Home/medications route itself is unchanged and still
+                deep-linkable — only this menu row is gone. */}
             <DrawerRow
               iconName="emoji-events"
               label="Badges"
@@ -269,13 +277,17 @@ export function ProfileContent({
               getScaledFontWeight={getScaledFontWeight}
             />
             {/*
-              SCRUM-640 — Daily habits entry (dark-launched). Only shown
-              when `habit_journal_enabled` resolves true — either via the
-              fleet-wide SSM key or per-user via SCRUM-663 beta override
-              (`habit_journal_enabled_beta`). While flag is OFF, this row
-              is not mounted so there is no discovery path to the screen.
+              SCRUM-659 Story 5 revised (Vishal 2026-08-05): when
+              habits_in_plan_enabled is ON, hide this drawer row
+              entirely. The Plan-screen HabitsBanner is the ONLY
+              entry point; the drawer entry is redundant. When
+              habits_in_plan_enabled is OFF but the legacy
+              habit_journal_enabled is still ON, keep the old
+              "Daily habits" shortcut into /Home/habit-journal so
+              nothing regresses for accounts on the legacy path.
+              Both flags OFF → row is not mounted.
             */}
-            {habitJournalEnabled && (
+            {!habitsInPlanFlagEnabled && habitJournalEnabled && (
               <DrawerRow
                 iconName="check-circle-outline"
                 label="Daily habits"
@@ -357,7 +369,7 @@ export function ProfileContent({
               description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Update your profile details</Text>}
               left={(props) => <Icon {...props} source="account" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/(personal-info)')}
+              onPress={() => router.push('/Home/personal-info' as never)}
             />
           </Card>
 
@@ -602,14 +614,31 @@ export function ProfileContent({
         <View style={styles.footer}>
           <Button
             mode="outlined"
+            disabled={authBusy !== null}
             onPress={() => {
+              if (authBusy !== null) return;
               Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Sign Out',
                   style: 'destructive',
                   onPress: async () => {
-                    await signOut();
+                    // Ken 2026-08-07 (#20) — flip to the busy state BEFORE
+                    // awaiting so the spinner paints immediately. We
+                    // deliberately do NOT reset authBusy in a finally:
+                    // the happy path unmounts this screen via the
+                    // redirect, and leaving it latched prevents a
+                    // double-fire during the navigation frame.
+                    setAuthBusy('signout');
+                    try {
+                      await signOut();
+                    } catch {
+                      // Local sign-out is best-effort — even if the
+                      // Cognito call fails (offline, token already
+                      // dead), we still clear cached PHI and route to
+                      // sign-in. Leaving the user on an authed screen
+                      // with a dead session is the worse outcome.
+                    }
                     // Clear all cached PHI from React Query memory
                     queryClient.clear();
                     router.replace('/(auth)/sign-in' as never);
@@ -618,12 +647,22 @@ export function ProfileContent({
               ]);
             }}
             style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12) }]}
-            accessibilityLabel="Sign out of your account"
+            accessibilityLabel={authBusy === 'signout' ? 'Signing out' : 'Sign out of your account'}
             accessibilityRole="button"
+            accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'signout' }}
           >
-            <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
-              Sign Out
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              {authBusy === 'signout' ? (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.text}
+                  style={{ marginRight: 8 }}
+                />
+              ) : null}
+              <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
+                {authBusy === 'signout' ? 'Signing out…' : 'Sign Out'}
+              </Text>
+            </View>
           </Button>
 
           {/* SCRUM-319 — Apple Review 5.1.1(v): in-app account
@@ -633,7 +672,9 @@ export function ProfileContent({
               local state and routes to sign-in. */}
           <Button
             mode="text"
+            disabled={authBusy !== null}
             onPress={() => {
+              if (authBusy !== null) return;
               Alert.alert(
                 'Delete account?',
                 "This permanently deletes your Circle Support Health account and all your data, including your records, plans, and trends. This cannot be undone. Are you absolutely sure?",
@@ -652,6 +693,11 @@ export function ProfileContent({
                             text: 'Delete',
                             style: 'destructive',
                             onPress: async () => {
+                              // Ken 2026-08-07 (#20) — same dead-air fix as
+                              // sign-out, and more important here: this
+                              // path makes a network round-trip first, so
+                              // the silent window was longer.
+                              setAuthBusy('delete');
                               try {
                                 await apiClient.delete('/v1/auth/account');
                               } catch {
@@ -660,7 +706,11 @@ export function ProfileContent({
                                 // local wipe — better to leave the user
                                 // signed out than to keep PHI accessible.
                               }
-                              await signOut();
+                              try {
+                                await signOut();
+                              } catch {
+                                // Best-effort; proceed to local wipe.
+                              }
                               queryClient.clear();
                               router.replace('/(auth)/sign-in' as never);
                               setTimeout(() => {
@@ -679,12 +729,18 @@ export function ProfileContent({
               );
             }}
             style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12), marginTop: 8 }]}
-            accessibilityLabel="Permanently delete my account and all my data"
+            accessibilityLabel={authBusy === 'delete' ? 'Deleting account' : 'Permanently delete my account and all my data'}
             accessibilityRole="button"
+            accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'delete' }}
           >
-            <Text style={[{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }]}>
-              Delete Account
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              {authBusy === 'delete' ? (
+                <ActivityIndicator size="small" color="#DC2626" style={{ marginRight: 6 }} />
+              ) : null}
+              <Text style={[{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }]}>
+                {authBusy === 'delete' ? 'Deleting…' : 'Delete Account'}
+              </Text>
+            </View>
           </Button>
         </View>
       )}

@@ -17,6 +17,12 @@ export type Feature =
   // server-side; per-user override grants access (see cos-backend
   // SCRUM-148 / feature-permissions.types.ts).
   | 'ABOUT_SCREEN'
+  // SCRUM-660 (2026-08-05) — Home hero insights tiles. Default TRUE
+  // server-side; care manager can opt individual patients out. Global
+  // feature flag stays as kill-switch above the per-user permission.
+  | 'READINESS_SCORE'
+  | 'HEALTH_AGE'
+  | 'DAILY_READ'
 
 export interface PermissionEntry { enabled: boolean; source: 'role' | 'care_manager'; overriddenBy?: string; overriddenAt?: string }
 

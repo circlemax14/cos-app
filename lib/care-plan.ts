@@ -28,7 +28,10 @@ export const CARE_PLAN_ENABLED = true;
  * plan renders byte-for-byte today's 8 categories. Flip back to false + OTA to
  * instantly revert.
  */
-export const NUTRITION_PLAN_ENABLED = false;
+// 2026-08-02 (session A): flipped ON by user directive ("enable everything and OTA").
+// Backend nutrition SSM flag must also be ON for goals to actually flow.
+// Rollback = flip back to false + OTA (30-sec revert).
+export const NUTRITION_PLAN_ENABLED = true;
 
 export type CarePlanCategoryKey =
   | 'medical' | 'nutrition' | 'cognitive' | 'adl' | 'medication'

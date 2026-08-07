@@ -7,10 +7,14 @@
  *
  * Layout (top → bottom):
  *   1. Hero: Health Age number + band + chronological-age delta line
- *   2. Contributing biomarkers accordion — per-component PHI values
+ *   2. Trend: range toggle (7d / 30d / 90d) + sparkline of the GAP
+ *      between Health Age and actual age over time
+ *   3. "How to improve your health age" — derived from the engine's own
+ *      component output (what it used, what it's missing, what's adding
+ *      years). Lifestyle framing only; never medication or diagnosis.
+ *   4. Contributing biomarkers accordion — per-component PHI values
  *      (visible ONLY inside this drilldown, never on the Home tile)
- *   3. Methodology accordion — Legal-approved disclaimer copy
- *   4. "Talk to your care team" CTA (routes to chat)
+ *   5. Methodology accordion — Legal-approved disclaimer copy
  *
  * Terminology (Legal): "Health Age" only. Never "Biological Age".
  * Do NOT rename copy without a Legal-cleared answer to the
@@ -19,6 +23,8 @@
  * iOS 26.5-hardened envelope: pure View / Text / Pressable /
  * MaterialIcons / StyleSheet. No Animated, no LayoutAnimation
  * (accordion is a plain conditional-render), no ActivityIndicator.
+ * The sparkline reuses components/home/ScoreHistorySparkline.tsx, which
+ * is plain <View> bars — no SVG, no new native dependency.
  */
 
 import React from 'react'
@@ -31,6 +37,10 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
 import { useHealthAge } from '@/hooks/use-health-age'
+import { useHealthAgeHistoryBuckets } from '@/hooks/use-health-age-history'
+import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
+import type { ScoreBandName } from '@/constants/design-system'
+import type { HealthAgeHistoryBucket } from '@/services/api/health-age-history'
 import type {
   HealthAgeBand,
   HealthAgeComponent,
@@ -39,6 +49,14 @@ import type {
 
 const DISCLAIMER =
   'Health Age is a wellness estimate derived from your recent labs and vitals compared to population norms. It is not a diagnosis, not a medical device output, and is not intended to detect, treat, cure, or prevent disease.'
+
+/**
+ * Extra line that rides with the improvement section. The disclaimer
+ * above covers "not a diagnosis"; this one covers the other half of the
+ * Legal ask — that nothing here is medication guidance.
+ */
+const NO_MEDICATION_ADVICE =
+  'These are general wellness ideas, not medical advice. Nothing here tells you to start, stop, or change any medicine — only your clinician can do that. Bring anything that concerns you to your care team.'
 
 const BAND_TOKENS: Record<HealthAgeBand, { fg: string; bg: string; label: string }> = {
   younger:    { fg: '#0F6B36', bg: '#E6F4EC', label: 'YOUNGER' },
@@ -89,6 +107,279 @@ function formatFreshness(iso: string | null): string {
   return `updated ~${months} mo ago`
 }
 
+// ─── Trend (range toggle + delta sparkline) ─────────────────────────
+
+const RANGE_OPTIONS: readonly { label: string; days: number; spoken: string }[] = [
+  { label: '7d', days: 7, spoken: '7 days' },
+  { label: '30d', days: 30, spoken: '30 days' },
+  { label: '90d', days: 90, spoken: '90 days' },
+]
+
+/**
+ * Half-width of the sparkline's y-axis, in years of gap.
+ *
+ * ScoreHistorySparkline speaks 0-100 (taller bar = bigger number), so we
+ * project the gap into that space with 0 years of gap sitting at the
+ * midpoint: gap -10y → bar 0, gap 0 → bar 50, gap +10y → bar 100.
+ *
+ * ±10 years covers essentially every real PhenoAge gap while keeping
+ * ordinary movement (1-3 years) visible rather than squashed flat. Gaps
+ * beyond the window clamp to the top/bottom bar instead of overflowing.
+ *
+ * NOTE THE DIRECTION: a TALLER bar means a HIGHER Health Age relative to
+ * actual age, i.e. WORSE. That is the opposite of every other chart in
+ * the app, which is exactly why the card carries an explicit
+ * "shorter bars are better" sentence rather than relying on the shape.
+ */
+const DELTA_AXIS_YEARS = 10
+
+function deltaToBarValue(delta: number): number {
+  const v = ((delta + DELTA_AXIS_YEARS) / (DELTA_AXIS_YEARS * 2)) * 100
+  if (v < 0) return 0
+  if (v > 100) return 100
+  return v
+}
+
+/**
+ * ScoreHistorySparkline renders exactly SPARKLINE_BARS bars and, given a
+ * longer array, keeps only the NEWEST that many. Handing it a raw 90-day
+ * series would therefore draw the last 7 days no matter which range the
+ * patient picked — the toggle would look broken.
+ *
+ * So we downsample to at most SPARKLINE_BARS evenly-spaced samples that
+ * always include the oldest and newest points. The chart then genuinely
+ * spans the chosen window. This is nearest-sample selection, not
+ * averaging: every bar is a real day's reading, so nothing on screen is
+ * a synthesised value.
+ */
+const SPARKLINE_BARS = 7
+
+function downsample(values: number[], target: number = SPARKLINE_BARS): number[] {
+  if (values.length <= target) return values
+  const out: number[] = []
+  const lastIndex = values.length - 1
+  for (let i = 0; i < target; i += 1) {
+    // i / (target - 1) walks 0 → 1 inclusive, so index 0 and the final
+    // index are always sampled.
+    const idx = Math.round((i / (target - 1)) * lastIndex)
+    out.push(values[idx])
+  }
+  return out
+}
+
+/**
+ * Colour band for the sparkline, chosen from the MOST RECENT gap. Used
+ * for hue only — the band's own label ("Optimal" etc.) belongs to the
+ * wellbeing vocabulary and is deliberately never shown here. Colour is
+ * always paired with the written trend sentence below the chart, so a
+ * patient who cannot distinguish these hues loses nothing.
+ */
+function bandForDelta(delta: number | null): ScoreBandName {
+  if (delta == null) return 'developing'
+  if (delta <= -2) return 'optimal'
+  if (delta < 2) return 'developing'
+  if (delta < 5) return 'foundational'
+  return 'initial'
+}
+
+function formatYears(v: number): string {
+  const abs = Math.abs(v)
+  return `${abs.toFixed(1)} ${abs === 1 ? 'year' : 'years'}`
+}
+
+interface TrendNarrative {
+  icon: 'arrow-downward' | 'arrow-upward' | 'trending-flat'
+  tone: string
+  /** Short headline, e.g. "Down 1.4 years". Always paired with `detail`. */
+  headline: string
+  detail: string
+}
+
+/**
+ * Plain-English narrative for the change in gap across the window.
+ *
+ * Deliberately cautious wording on the "up" case: lab-driven scores move
+ * slowly and a single new panel can shift the estimate. We say that out
+ * loud rather than implying the patient got worse.
+ */
+function describeTrend(
+  oldestDelta: number,
+  newestDelta: number,
+  rangeSpoken: string,
+): TrendNarrative {
+  const change = Math.round((newestDelta - oldestDelta) * 10) / 10
+  if (change <= -0.1) {
+    return {
+      icon: 'arrow-downward',
+      tone: '#0F6B36',
+      headline: `Down ${formatYears(change)}`,
+      detail: `Your gap narrowed by ${formatYears(change)} over the last ${rangeSpoken}. Down is the direction you want.`,
+    }
+  }
+  if (change >= 0.1) {
+    return {
+      icon: 'arrow-upward',
+      tone: '#8A5100',
+      headline: `Up ${formatYears(change)}`,
+      detail: `Your gap widened by ${formatYears(change)} over the last ${rangeSpoken}. Lab-based estimates move slowly, so one new result can shift this — it is a trend to watch, not a verdict.`,
+    }
+  }
+  return {
+    icon: 'trending-flat',
+    tone: '#687076',
+    headline: 'Steady',
+    detail: `Your gap held steady over the last ${rangeSpoken}.`,
+  }
+}
+
+// ─── "How to improve" levers ────────────────────────────────────────
+
+/**
+ * Per-biomarker lifestyle levers, keyed by the EXACT biomarker names the
+ * scoring engine emits (see cos-backend scoring-engine.ts BiomarkerName
+ * and coefficients.defaults.ts — albumin, creatinine, glucose, crp,
+ * lymphocytePercent, meanCellVolume, redCellDistWidth,
+ * alkalinePhosphatase, whiteBloodCellCount).
+ *
+ * COPY RULES (Legal + our patients skew older):
+ *   - Plain English, short sentences, no jargon without a gloss.
+ *   - Everyday actions only — food, movement, sleep, water, dentistry.
+ *   - NO medication guidance of any kind, including "ask about a statin".
+ *   - NO diagnostic claim: we never say a value is high, low, abnormal,
+ *     or indicates a condition. We only say this marker is currently
+ *     adding years to the estimate, which is arithmetic, not diagnosis.
+ *   - Anything clinical routes to "mention it to your care team".
+ */
+const IMPROVEMENT_LEVERS: Record<string, { title: string; body: string }> = {
+  glucose: {
+    title: 'Blood sugar',
+    body: 'A short walk after meals and swapping sweet drinks for water are the two changes people find easiest to keep up.',
+  },
+  crp: {
+    title: 'Inflammation',
+    body: 'Regular sleep, gentle daily movement, and looking after your teeth and gums all help settle this marker.',
+  },
+  albumin: {
+    title: 'Protein in your blood',
+    body: 'Try to include a protein food at every meal — eggs, fish, beans, yoghurt or cheese. Appetite often drops with age, so little and often works well.',
+  },
+  creatinine: {
+    title: 'Kidney workload',
+    body: 'Drinking water steadily through the day helps. This one is worth mentioning to your care team at your next visit.',
+  },
+  lymphocytePercent: {
+    title: 'Immune cells',
+    body: 'Steady sleep, gentle activity, and keeping up with the vaccinations your clinician recommends all support a stable immune picture.',
+  },
+  whiteBloodCellCount: {
+    title: 'White blood cells',
+    body: 'Sleep and gentle daily activity help here. If you have had a recent infection this can move on its own — mention it to your care team.',
+  },
+  meanCellVolume: {
+    title: 'Red blood cell size',
+    body: 'Foods rich in folate and vitamin B12 — leafy greens, beans, eggs, dairy, or fortified cereals — support healthy red blood cells.',
+  },
+  redCellDistWidth: {
+    title: 'Red blood cell variation',
+    body: 'Iron, folate and B12 from food matter here: leafy greens, beans, lean meat or fortified cereals. Worth raising with your care team too.',
+  },
+  alkalinePhosphatase: {
+    title: 'Liver and bone marker',
+    body: 'Weight-bearing walking supports bone, and keeping alcohol low supports the liver. Mention any change here to your care team.',
+  },
+}
+
+/** Generic levers shown when nothing specific is adding years. */
+const GENERAL_LEVERS: readonly { title: string; body: string }[] = [
+  {
+    title: 'Keep moving most days',
+    body: 'Even a 10-minute walk counts. Regular gentle movement is the single most reliable thing people can do for these markers.',
+  },
+  {
+    title: 'Protect your sleep',
+    body: 'A steady bedtime and wake time does more for these numbers than any one night of long sleep.',
+  },
+  {
+    title: 'Eat enough protein and vegetables',
+    body: 'Protein at each meal and colour on the plate support several of the markers used in this estimate.',
+  },
+]
+
+interface ImprovementItem {
+  key: string
+  title: string
+  body: string
+  /** Right-hand caption, e.g. "adds 1.2 yrs" or "not measured yet". */
+  note: string
+}
+
+/**
+ * Build the improvement list from what the ENGINE actually did, not from
+ * a static content list:
+ *
+ *   1. Components the engine could not use ('missing' / 'stale') become a
+ *      single "fill in the gaps" item — the highest-leverage action is
+ *      always getting the estimate more data, since the engine needs at
+ *      least three usable markers before it will return a number at all.
+ *   2. Components it DID use whose contribution is positive (adding years
+ *      to the estimate) become per-marker lifestyle items, biggest first,
+ *      capped at three so the screen stays actionable.
+ *   3. If nothing is adding years, fall back to the general levers with
+ *      an explicit "nothing is pulling your estimate up right now".
+ *
+ * We never label a value high/low/abnormal — "adds N yrs" is a statement
+ * about this arithmetic model, which is what the accordion above already
+ * shows.
+ */
+function buildImprovementItems(result: HealthAgeResult | undefined): {
+  items: ImprovementItem[]
+  allGood: boolean
+} {
+  const components = result?.components ?? []
+  const items: ImprovementItem[] = []
+
+  const unusable = components.filter((c) => c.status !== 'fresh')
+  if (unusable.length > 0) {
+    const names = unusable.slice(0, 4).map((c) => labelFor(c.name).toLowerCase())
+    const more = unusable.length > 4 ? `, and ${unusable.length - 4} more` : ''
+    items.push({
+      key: '__missing__',
+      title: 'Fill in the missing results',
+      body: `We do not have a recent ${names.join(', ')}${more}. Connecting your health records, or asking your care team about routine blood work at your next visit, gives this estimate more to work with.`,
+      note: `${unusable.length} not counted`,
+    })
+  }
+
+  const addingYears = components
+    .filter(
+      (c) =>
+        c.status === 'fresh' &&
+        typeof c.contributionYears === 'number' &&
+        c.contributionYears > 0.1 &&
+        IMPROVEMENT_LEVERS[c.name] !== undefined,
+    )
+    .sort((a, b) => (b.contributionYears ?? 0) - (a.contributionYears ?? 0))
+    .slice(0, 3)
+
+  for (const c of addingYears) {
+    const lever = IMPROVEMENT_LEVERS[c.name]
+    items.push({
+      key: c.name,
+      title: lever.title,
+      body: lever.body,
+      note: `adds ${(c.contributionYears ?? 0).toFixed(1)} yrs`,
+    })
+  }
+
+  if (addingYears.length === 0) {
+    for (const lever of GENERAL_LEVERS) {
+      items.push({ key: lever.title, title: lever.title, body: lever.body, note: '' })
+    }
+  }
+
+  return { items, allGood: addingYears.length === 0 && unusable.length === 0 }
+}
+
 // ─── Screen ─────────────────────────────────────────────────────────
 
 export default function HealthAgeScreen(): React.JSX.Element {
@@ -97,6 +388,12 @@ export default function HealthAgeScreen(): React.JSX.Element {
 
   const flagEnabled = useHealthAgeFlag()
   const { data, isLoading } = useHealthAge()
+
+  // Trend range. 30d is the default because Health Age is lab-driven —
+  // 7d rarely contains two distinct lab draws, so a shorter default
+  // would show a flat line to most patients on first open.
+  const [rangeDays, setRangeDays] = React.useState<number>(30)
+  const { data: history } = useHealthAgeHistoryBuckets(rangeDays)
 
   if (!flagEnabled) {
     return (
@@ -136,6 +433,22 @@ export default function HealthAgeScreen(): React.JSX.Element {
             getScaledFontWeight={getScaledFontWeight}
           />
 
+          <TrendCard
+            buckets={history?.buckets ?? []}
+            rangeDays={rangeDays}
+            onSelectRange={setRangeDays}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+
+          <ImprovementSection
+            result={data}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+
           <ContributorsAccordion
             result={data}
             colors={colors}
@@ -148,30 +461,6 @@ export default function HealthAgeScreen(): React.JSX.Element {
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
           />
-
-          <Pressable
-            onPress={() => router.push('/Home/chat' as never)}
-            accessibilityRole="button"
-            accessibilityLabel="Message your care team"
-            style={({ pressed }) => [
-              styles.ctaCard,
-              { backgroundColor: colors.card as string, opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <MaterialIcons name="chat-bubble-outline" size={20} color={colors.tint as string} />
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(600) as any,
-                marginLeft: 10,
-                flex: 1,
-              }}
-            >
-              Message your care team
-            </Text>
-            <MaterialIcons name="chevron-right" size={22} color={colors.subtext as string} />
-          </Pressable>
 
           <Text
             style={{
@@ -335,6 +624,307 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
           </Text>
         </>
       )}
+    </View>
+  )
+}
+
+// ─── Trend card (range toggle + delta sparkline) ────────────────────
+
+interface TrendCardProps {
+  buckets: HealthAgeHistoryBucket[]
+  rangeDays: number
+  onSelectRange: (days: number) => void
+  colors: typeof Colors.light
+  getScaledFontSize: (n: number) => number
+  getScaledFontWeight: (n: number) => string
+}
+
+/**
+ * Plots the GAP between Health Age and actual age over the selected
+ * window — not the Health Age itself. The gap is the number a patient
+ * can actually move: chronological age only ever goes up, so a raw
+ * Health Age line drifts upward even when someone is doing everything
+ * right, which reads as failure. The gap holds still or falls instead.
+ *
+ * "Lower is better" is stated in words twice (caption + trend sentence)
+ * because a descending line meaning "good" is the opposite of every
+ * other chart in the app and of most charts anywhere.
+ */
+function TrendCard({
+  buckets,
+  rangeDays,
+  onSelectRange,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: TrendCardProps): React.JSX.Element {
+  const spoken = RANGE_OPTIONS.find((r) => r.days === rangeDays)?.spoken ?? `${rangeDays} days`
+
+  // Drop days with no usable gap BEFORE plotting. A null day means "no
+  // snapshot", not "gap of zero" — zero-filling would draw a fake
+  // improvement down to the midline.
+  const deltas = React.useMemo(
+    () =>
+      buckets
+        .map((b) => b.delta)
+        .filter((d): d is number => typeof d === 'number' && Number.isFinite(d)),
+    [buckets],
+  )
+
+  const series = React.useMemo(
+    () => downsample(deltas).map(deltaToBarValue),
+    [deltas],
+  )
+  const newest = deltas.length > 0 ? deltas[deltas.length - 1] : null
+  const oldest = deltas.length > 0 ? deltas[0] : null
+  const narrative =
+    deltas.length >= 2 && oldest != null && newest != null
+      ? describeTrend(oldest, newest, spoken)
+      : null
+
+  return (
+    <View style={[styles.accordionCard, { backgroundColor: colors.card as string }]}>
+      <View style={styles.trendBody}>
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(11),
+            fontWeight: getScaledFontWeight(700) as any,
+            letterSpacing: 0.6,
+          }}
+        >
+          YOUR GAP OVER TIME
+        </Text>
+
+        {/* Range toggle. 44pt minimum tap target per accessibility rules. */}
+        <View style={styles.rangeRow}>
+          {RANGE_OPTIONS.map((opt) => {
+            const active = opt.days === rangeDays
+            return (
+              <Pressable
+                key={opt.days}
+                onPress={() => onSelectRange(opt.days)}
+                style={({ pressed }) => [
+                  styles.rangeBtn,
+                  {
+                    backgroundColor: active ? `${colors.tint as string}22` : 'transparent',
+                    borderColor: active ? (colors.tint as string) : (colors.border as string),
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Show the last ${opt.spoken}`}
+                accessibilityState={{ selected: active }}
+              >
+                <Text
+                  style={{
+                    color: active ? (colors.tint as string) : colors.text,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(active ? 700 : 500) as any,
+                  }}
+                >
+                  {opt.label}
+                </Text>
+              </Pressable>
+            )
+          })}
+        </View>
+
+        {series.length >= 2 ? (
+          <>
+            <View style={styles.chartWrap}>
+              <ScoreHistorySparkline
+                series={series}
+                band={bandForDelta(newest)}
+                accessibilityLabel={`Gap between your Health Age and your actual age over the last ${spoken}. Most recent gap ${
+                  newest != null && newest >= 0 ? 'plus' : 'minus'
+                } ${newest != null ? formatYears(newest) : 'unknown'}. Lower is better.`}
+              />
+            </View>
+
+            {/* Explicit direction copy — the chart alone reads backwards. */}
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                lineHeight: 18,
+                marginTop: 8,
+              }}
+            >
+              Each bar is the gap between your Health Age and your actual age.
+              Shorter bars are better: a shorter bar means your Health Age is
+              closer to — or below — your real age.
+            </Text>
+
+            {narrative ? (
+              <View
+                style={styles.trendNarrativeRow}
+                accessible
+                accessibilityLabel={narrative.detail}
+              >
+                <MaterialIcons
+                  name={narrative.icon}
+                  size={getScaledFontSize(18)}
+                  color={narrative.tone}
+                />
+                <Text
+                  style={{
+                    color: narrative.tone,
+                    fontSize: getScaledFontSize(14),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    marginLeft: 6,
+                  }}
+                >
+                  {narrative.headline}
+                </Text>
+              </View>
+            ) : null}
+
+            {narrative ? (
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(13),
+                  lineHeight: 19,
+                  marginTop: 4,
+                }}
+              >
+                {narrative.detail}
+              </Text>
+            ) : null}
+          </>
+        ) : (
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(13),
+              lineHeight: 19,
+              marginTop: 10,
+            }}
+          >
+            Your trend builds up one day at a time. Once we have a couple of
+            days of results, this chart will show whether the gap between your
+            Health Age and your real age is narrowing.
+          </Text>
+        )}
+      </View>
+    </View>
+  )
+}
+
+// ─── How to improve your health age ─────────────────────────────────
+
+interface ImprovementProps {
+  result: HealthAgeResult | undefined
+  colors: typeof Colors.light
+  getScaledFontSize: (n: number) => number
+  getScaledFontWeight: (n: number) => string
+}
+
+/**
+ * Actionable section derived from the engine's own component output —
+ * see buildImprovementItems for the selection rules. Rendered open (not
+ * an accordion) because it is the point of the screen: the number alone
+ * gives a patient nothing to do.
+ *
+ * Carries BOTH required disclaimers: the standard non-diagnostic
+ * DISCLAIMER that this feature already ships, plus NO_MEDICATION_ADVICE,
+ * since "how to improve" is the one place a patient might read a
+ * suggestion as a prescription.
+ */
+function ImprovementSection({
+  result,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: ImprovementProps): React.JSX.Element | null {
+  const { items, allGood } = React.useMemo(() => buildImprovementItems(result), [result])
+  if (items.length === 0) return null
+
+  return (
+    <View style={[styles.accordionCard, { backgroundColor: colors.card as string }]}>
+      <View style={styles.trendBody}>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: getScaledFontSize(17),
+            fontWeight: getScaledFontWeight(700) as any,
+          }}
+        >
+          How to improve your Health Age
+        </Text>
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(13),
+            lineHeight: 19,
+            marginTop: 4,
+          }}
+        >
+          {allGood
+            ? 'Nothing is pulling your estimate up right now. These habits keep it that way.'
+            : 'Based on the results this estimate actually used, here is where you have the most room.'}
+        </Text>
+
+        {items.map((item) => (
+          <View key={item.key} style={styles.improveRow}>
+            <View style={styles.improveHeaderRow}>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  flex: 1,
+                }}
+              >
+                {item.title}
+              </Text>
+              {item.note !== '' ? (
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    marginLeft: 8,
+                  }}
+                >
+                  {item.note}
+                </Text>
+              ) : null}
+            </View>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(13),
+                lineHeight: 20,
+                marginTop: 4,
+              }}
+            >
+              {item.body}
+            </Text>
+          </View>
+        ))}
+
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(11),
+            lineHeight: 16,
+            marginTop: 14,
+          }}
+        >
+          {NO_MEDICATION_ADVICE}
+        </Text>
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(11),
+            lineHeight: 16,
+            marginTop: 8,
+          }}
+        >
+          {DISCLAIMER}
+        </Text>
+      </View>
     </View>
   )
 }
@@ -567,5 +1157,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     marginTop: 4,
+  },
+  // Shared padding block for the always-open cards (trend + improve).
+  trendBody: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  rangeBtn: {
+    // 44pt minimum tap target — our patients skew older and these are
+    // the smallest controls on the screen.
+    minHeight: 44,
+    minWidth: 56,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chartWrap: {
+    marginTop: 12,
+  },
+  trendNarrativeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  improveRow: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#00000015',
+  },
+  improveHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 })

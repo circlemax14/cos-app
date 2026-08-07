@@ -11,7 +11,7 @@
  * Reachable via the "View my intake" action on the IntakeCtaCard's
  * completed-state card.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -31,6 +31,7 @@ import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { useImmunizations } from '@/hooks/use-immunizations';
 import { immunizationToRow } from '@/services/api/patient-immunizations';
 import ShareIntakeReportSection from './ShareIntakeReportSection';
+import RetakeSectionSheet from './RetakeSectionSheet';
 import {
   buildReport,
   IMMUNIZATIONS_EHR_ENABLED,
@@ -92,7 +93,20 @@ export default function IntakeReportScreen() {
     return { vaccines: list.map(immunizationToRow) };
   }, [immunizations.data]);
 
-  const goRetake = () => router.push('/Home/patient-intake?retake=1' as never);
+  // Ken 2026-08-05 — sectioned retake. Instead of walking all 30+
+  // questions on every "Update my answers" tap, the sheet lets the
+  // patient pick a report group (Demographics / Medical conditions
+  // & medications / Vaccines / Lifestyle / Mental health / Social
+  // support / Work & finances) or "All sections". The wizard filters
+  // questions client-side and preserves the untouched groups' answers
+  // across the fresh intake version. Retake=all preserves the
+  // pre-existing single-tap flow.
+  const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
+  const goRetake = (group?: import('./RetakeSectionSheet').RetakeGroupPick) => {
+    setRetakeSheetOpen(false);
+    const suffix = group ? `&group=${group}` : '';
+    router.push(`/Home/patient-intake?retake=1${suffix}` as never);
+  };
   // router.back() no-ops from this hidden Tabs.Screen (href:null), so
   // route directly to the Health Summary tab that owns the intake CTA.
   const goBack = () => router.replace('/Home/plan' as never);
@@ -490,10 +504,10 @@ export default function IntakeReportScreen() {
         <ShareIntakeReportSection />
 
         <Pressable
-          onPress={goRetake}
+          onPress={() => setRetakeSheetOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel="Retake intake"
-          accessibilityHint="Opens the wizard to update your answers"
+          accessibilityLabel="Update my answers"
+          accessibilityHint="Opens a picker to update one section or all sections of your intake"
           style={({ pressed }) => [
             styles.retakeButton,
             { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
@@ -515,6 +529,15 @@ export default function IntakeReportScreen() {
             Update my answers
           </Text>
         </Pressable>
+
+        <RetakeSectionSheet
+          visible={retakeSheetOpen}
+          onDismiss={() => setRetakeSheetOpen(false)}
+          onPick={goRetake}
+          colors={colors}
+          scale={getScaledFontSize}
+          weight={getScaledFontWeight}
+        />
 
         <View style={{ height: 40 }} />
       </ScrollView>

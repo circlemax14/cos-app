@@ -19,7 +19,8 @@
  * render as gaps.
  */
 import React from 'react'
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import Svg, { Circle, ClipPath, Defs, G, Rect, Text as SvgText } from 'react-native-svg'
 import { Stack, router, useLocalSearchParams } from 'expo-router'
 
@@ -348,6 +349,35 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={{ paddingBottom: 32 }}
       >
+        {/*
+          SCRUM-656 (2026-07-31): explicit back-button row above the
+          header. Parent app/Home/_layout.tsx mounts this route under a
+          Tabs navigator with `headerShown: false` + `href: null` — no
+          Stack, no header, no automatic back affordance. The
+          `<Stack.Screen>` above is a defensive no-op for this navigator
+          shape. User: "same goes for well being map." Same pattern as
+          app/Home/about.tsx: Pressable + arrow-back + router.back().
+        */}
+        <View style={styles.backHeader}>
+          <Pressable
+            onPress={() => {
+              // SCRUM-657 (2026-07-31): router.back() pops the history
+              // stack, but the Plan-tab entry point is a TAB SWITCH
+              // (not a push), so back() falls through to whatever route
+              // was pushed BEFORE the tab switch — usually Home. Use an
+              // explicit router.replace to the Plan (BPS) route so the
+              // destination is deterministic. Mirrors
+              // wellbeing-domain-checkins.tsx's back-to-plan pattern.
+              router.replace('/Home/biopsychosocial-plan' as never);
+            }}
+            style={styles.backBtn}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back to care plan"
+          >
+            <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
+          </Pressable>
+        </View>
         <View style={styles.header}>
           <Text
             style={[
@@ -889,7 +919,17 @@ function pickNextMove(
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
+  backHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  backBtn: {
+    padding: 8,
+  },
+  header: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 4 },
   title: { marginBottom: 4 },
   subtitle: { lineHeight: 18, marginBottom: 12 },
   coverageRow: {

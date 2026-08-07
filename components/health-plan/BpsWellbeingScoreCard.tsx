@@ -70,12 +70,19 @@ import {
   DOMAIN_ORDER,
   deriveWellbeing,
   type BpsDomain,
-  type TrendArrow,
   type WellbeingDerivation,
 } from '@/lib/wellbeing-score'
 import {
   REGENERATE_BIO_PLAN_MUTATION_KEY,
 } from '@/hooks/use-biopsychosocial-plan'
+// Ken 2026-08-06 — hoisted to lib/wellbeing-trend.ts so the Home
+// WellbeingScoreTile renders the identical arrow + tone. Aliased
+// locally to keep the JSX render blocks below byte-identical.
+import {
+  trendIconName as trendIcon,
+  trendTone,
+  TREND_TONE_COLOR as TONE_COLOR,
+} from '@/lib/wellbeing-trend'
 
 /**
  * CHUNK 67 (2026-07-23) — kill-switch for the domain-scoped picker
@@ -129,24 +136,6 @@ export interface BpsWellbeingScoreCardProps {
 // lib/wellbeing-score.ts. Keep these in the card so the pure module
 // stays free of visual concerns.
 // ---------------------------------------------------------------
-
-function trendIcon(arrow: TrendArrow): 'trending-up' | 'trending-down' | 'trending-flat' {
-  if (arrow === 'up') return 'trending-up'
-  if (arrow === 'down') return 'trending-down'
-  return 'trending-flat'
-}
-
-function trendTone(arrow: TrendArrow): 'good' | 'bad' | 'neutral' {
-  if (arrow === 'up') return 'good'
-  if (arrow === 'down') return 'bad'
-  return 'neutral'
-}
-
-const TONE_COLOR = {
-  good: '#10B981',
-  bad: '#DC2626',
-  neutral: '#6B7280',
-} as const
 
 /**
  * CHUNK 65/66 (2026-07-23) — deep-link focus param per BpsDomain for the

@@ -18,6 +18,13 @@ import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 // hook on EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED — default OFF so this ships
 // dark and inert until Ken flips the env var + cuts a new bundle.
 import { useEntitlementsSync } from '@/hooks/use-entitlements-sync';
+// ADR-0004 P1 — health-data-changed WSS sync + long-poll fallback. Mirrors
+// the entitlements-sync contract for lab/vaccine/summary/plan invalidation.
+// Renders nothing; flag-gated inside the hook on
+// EXPO_PUBLIC_LABS_REALTIME_ENABLED — default OFF, ships dark until Ken
+// flips the env var + cuts a new bundle. Runs alongside useEntitlementsSync
+// with an independent WebSocket lifecycle (see hook header for rationale).
+import { useHealthDataSync } from '@/hooks/use-health-data-sync';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -25,6 +32,11 @@ import { AccessibilityProvider } from '@/stores/accessibility-store';
 import { SecurityProvider } from '@/stores/security-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
+// SCRUM-651 — bridges the shared `useFeatureFlags` query to module-
+// level caches consumed by non-hook code paths (today: labs-realtime).
+// Renders nothing; MUST live inside <QueryProvider> so the hook has
+// a QueryClient in context.
+import { FeatureFlagBridge } from '@/components/FeatureFlagBridge';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
@@ -89,6 +101,12 @@ function StackWithAppLock() {
   // Runs iff EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise.
   useEntitlementsSync();
+  // ADR-0004 P1: health-data-changed WSS sync + long-poll fallback.
+  // Runs iff EXPO_PUBLIC_LABS_REALTIME_ENABLED='true' AND a session
+  // exists. Pure passthrough otherwise. Independent WebSocket lifecycle
+  // from useEntitlementsSync so each hook flag-gates + backs off on its
+  // own — a bad labs push can't stall entitlements sync and vice-versa.
+  useHealthDataSync();
   return (
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -96,7 +114,11 @@ function StackWithAppLock() {
       <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
       <Stack.Screen name="(security)" options={{ headerShown: false }} />
       <Stack.Screen name="Home" options={{ headerShown: false }} />
-      <Stack.Screen name="(personal-info)" options={{ headerShown: false }} />
+      {/* Ken 2026-08-07 (#19) — (personal-info) route group removed.
+          The screen moved INTO the Tabs navigator at
+          app/Home/personal-info.tsx so it renders with the bottom tab
+          bar and the AppWrapper header. A root-level Stack sibling of
+          Home structurally cannot show the tab bar. */}
       <Stack.Screen name="(care-manager-detail)" options={{ headerShown: false }} />
       <Stack.Screen name="(doctor-detail)" options={{ headerShown: false }} />
       <Stack.Screen
@@ -205,6 +227,7 @@ function RootLayout() {
 
   return (
     <QueryProvider>
+      <FeatureFlagBridge />
       <AccessibilityProvider>
         <SecurityProvider>
         <ProviderSelectionProvider>

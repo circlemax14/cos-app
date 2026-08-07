@@ -55,13 +55,70 @@ export function useAppLock() {
     if (shouldRestore(pathname)) lastPathRef.current = pathname;
   }, [pathname]);
 
+  /**
+   * BUG #18 FIX (Ken 2026-08-07) — "Face ID prompts three times before
+   * reaching Home."
+   *
+   * ROOT CAUSE: the AppState subscription below is registered with deps
+   * `[isPinConfigured, setIsLocked]`. `pathname` is NOT a dep, so the
+   * handler closes over the pathname AS OF EFFECT CREATION (usually
+   * `/`) and never sees `/(security)/lock-screen`. That made
+   * `computeResumeLockDecision({ wasLocked, pathname })` compute
+   * `onLockScreen === false` on every single resume, so `alreadyLocked`
+   * was permanently `false` and the COS-351 Face-ID-flicker guard could
+   * never fire.
+   *
+   * The loop that produced exactly-three prompts:
+   *   resume → captureAndLock → lock screen mounts → Face ID modal
+   *   → modal presentation causes the documented sub-second AppState
+   *     flicker (see MIN_BG_DEBOUNCE_MS above)
+   *   → handler runs again, guard can't fire (stale pathname)
+   *   → captureAndLock again → REMOUNT → new prompt …
+   * It only terminated once a Face-ID cycle completed inside the 2s
+   * debounce window, which is why it settled around the third attempt.
+   *
+   * `lastPathRef` cannot be reused for this: it is deliberately
+   * blocklisted from ever holding the lock-screen path (that ref answers
+   * "where do I send the user back to AFTER unlock", which must never be
+   * the lock screen itself). So we keep a SECOND ref that mirrors the
+   * raw current pathname unconditionally, purely for the guard.
+   */
+  const currentPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentPathRef.current = pathname ?? null;
+  }, [pathname]);
+
+  /**
+   * BUG #18 FIX — re-entrancy guard. Even with the pathname fix, two
+   * AppState events arriving inside the same tick (or an idle-timer
+   * firing while a resume handler is mid-await) could both reach
+   * captureAndLock and stack two `router.replace` calls at the lock
+   * screen — remounting it and re-prompting. One lock in flight at a
+   * time; cleared when the lock screen is actually reached.
+   */
+  const lockInFlight = useRef(false);
+
   const captureAndLock = async () => {
-    const last = lastPathRef.current;
-    if (shouldRestore(last)) {
-      try { await AsyncStorage.setItem(PRE_LOCK_ROUTE_KEY, last as string); } catch { /* swallow */ }
+    // Already on the lock screen (or one is being routed to) — do not
+    // replace again. A second replace remounts the screen, and the
+    // lock screen fires its biometric prompt from a mount effect.
+    if (lockInFlight.current) return;
+    if ((currentPathRef.current ?? '').startsWith('/(security)/lock-screen')) return;
+    lockInFlight.current = true;
+    try {
+      const last = lastPathRef.current;
+      if (shouldRestore(last)) {
+        try { await AsyncStorage.setItem(PRE_LOCK_ROUTE_KEY, last as string); } catch { /* swallow */ }
+      }
+      setIsLocked(true);
+      router.replace('/(security)/lock-screen' as never);
+    } finally {
+      // Release on the next tick: the pathname mirror needs a frame to
+      // catch up to the replace, and until it does the pathname guard
+      // above can't defend us. Releasing immediately would reopen the
+      // exact window this guard exists to close.
+      setTimeout(() => { lockInFlight.current = false; }, 800);
     }
-    setIsLocked(true);
-    router.replace('/(security)/lock-screen' as never);
   };
 
   // ─── Foreground idle timer ───────────────────────────────────────────
@@ -147,7 +204,16 @@ export function useAppLock() {
           //           skip if the user was GENUINELY mid-unlock (on the lock
           //           screen with the mirror already set). A normal resume
           //           where wasLocked=false now falls through to captureAndLock.
-          const { alreadyLocked } = computeResumeLockDecision({ wasLocked, pathname });
+          // BUG #18 FIX (Ken 2026-08-07): read the LIVE pathname from the
+          // ref, not the stale closure variable. See the currentPathRef
+          // docblock above — passing `pathname` here was the root cause of
+          // the triple Face-ID prompt, because this handler's closure was
+          // frozen at effect-creation time and never observed the lock
+          // screen, so `alreadyLocked` could never become true.
+          const { alreadyLocked } = computeResumeLockDecision({
+            wasLocked,
+            pathname: currentPathRef.current,
+          });
 
           const effectiveTimeout = Math.max(timeout, MIN_BG_DEBOUNCE_MS);
           let didLock = false;

@@ -68,12 +68,79 @@ function daysUntil(iso: string | null): number | null {
   return Math.max(0, Math.round(diffMs / 86_400_000));
 }
 
+/**
+ * Normalize one user-typed time into the strict `HH:mm` the backend
+ * requires, or return null when it genuinely can't be understood.
+ *
+ * ─── BUG #12.4 FIX (Ken 2026-08-07) ─────────────────────────────────
+ * Ken: "Would not add all data and then did not show up on this page in
+ * daily plan."
+ *
+ * `parseTimes` used to do a raw comma-split with ZERO validation, while
+ * the backend enforces `^([01]\d|2[0-3]):[0-5]\d$` inside a `.strict()`
+ * body. So a perfectly reasonable entry — "8:00", "8am", "8 AM",
+ * "20:00 " — produced a 400 that rejected the ENTIRE PUT. The med was
+ * not added at all, and the UI only said "Couldn't save that change",
+ * giving no hint that the times field was the culprit.
+ *
+ * Accepted inputs → output:
+ *   "8:00"    → "08:00"      (zero-pad)
+ *   "8"       → "08:00"      (bare hour)
+ *   "8am"     → "08:00"
+ *   "8 PM"    → "20:00"
+ *   "12am"    → "00:00"      (midnight, not 12:00)
+ *   "12pm"    → "12:00"      (noon)
+ *   "20:00 "  → "20:00"      (trim)
+ * Rejected (returns null): "25:00", "8:99", "morning", "".
+ */
+export function normalizeTimeInput(raw: string): string | null {
+  const t = raw.trim().toLowerCase().replace(/\s+/g, '');
+  if (!t) return null;
+  const m = /^(\d{1,2})(?::(\d{2}))?(am|pm)?$/.exec(t);
+  if (!m) return null;
+  let hour = parseInt(m[1], 10);
+  const minute = m[2] === undefined ? 0 : parseInt(m[2], 10);
+  const meridiem = m[3];
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  if (minute < 0 || minute > 59) return null;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    if (meridiem === 'am') hour = hour === 12 ? 0 : hour;
+    else hour = hour === 12 ? 12 : hour + 12;
+  } else if (hour < 0 || hour > 23) {
+    return null;
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
+ * Parse a comma/newline-separated list of times into strict `HH:mm`
+ * entries. Unparseable entries are reported separately so the caller can
+ * tell the user exactly which token was wrong instead of failing the
+ * whole save with a generic message (BUG #12.4).
+ */
+export function parseTimesDetailed(raw: string): { times: string[]; invalid: string[] } {
+  const times: string[] = [];
+  const invalid: string[] = [];
+  for (const tok of raw.split(/[,\n]/)) {
+    const trimmed = tok.trim();
+    if (!trimmed) continue;
+    const norm = normalizeTimeInput(trimmed);
+    if (norm) {
+      // De-dupe — "8am, 08:00" is one dose, not two.
+      if (!times.includes(norm)) times.push(norm);
+    } else {
+      invalid.push(trimmed);
+    }
+  }
+  // Chronological so the daily plan renders doses in order.
+  times.sort();
+  return { times, invalid };
+}
+
 /** Parse a comma/space-separated list of "HH:MM" times into a clean array. */
 function parseTimes(raw: string): string[] {
-  return raw
-    .split(/[,\n]/)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
+  return parseTimesDetailed(raw).times;
 }
 
 /**
@@ -173,17 +240,42 @@ export interface MedicationsSectionProps {
    * confirming a med. Initial value (0) does nothing.
    */
   openAddSignal?: number;
+  /**
+   * Ken 2026-08-06 — when true, drop the internal 20pt horizontal
+   * margin on cards + section headers so the parent screen can supply
+   * horizontal padding at its own preferred value (16pt to match
+   * Health Trends banner on the medications screen). Defaults false to
+   * preserve the legacy layout on health-plan.tsx +
+   * PlanScreenRedesigned surfaces that rely on the internal margin.
+   */
+  flush?: boolean;
 }
 
 export function MedicationsSection({
   onLayout,
   openAddSignal = 0,
+  flush = false,
 }: MedicationsSectionProps = {}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  const query = usePlanMedications();
-  const updateMutation = useUpdatePlanMedications();
+  // Ken 2026-08-06 — flush override zeroes the internal horizontal
+  // margins on cards + section headers when the parent supplies its
+  // own padding. Threaded into every style array below rather than
+  // via a wrapping conditional so the changes stay local + reviewable.
+  const flushOverride = flush ? { marginHorizontal: 0 } : null;
+  const flushPadOverride = flush ? { paddingHorizontal: 0 } : null;
+
+  // Ken 2026-08-06 — opt into `?includePast=1` (BE PR #365) so
+  // discontinued meds land in the response with `discontinuedAt`
+  // populated. Enables the Active-vs-Past split below (and the
+  // Past section that surfaces user-discontinued rows instead of
+  // silently dropping them). The default (`includePast: false`)
+  // response is still what non-editor surfaces read (e.g. the
+  // Home MedicationsBanner) — separate query key so the banner
+  // never ingests a list inflated with discontinued rows.
+  const query = usePlanMedications({ includePast: true });
+  const updateMutation = useUpdatePlanMedications({ includePast: true });
 
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
@@ -321,6 +413,34 @@ export function MedicationsSection({
       },
     );
   };
+
+  /**
+   * BUG #12.3 FIX (Ken 2026-08-07) — restore a medication from a
+   * Past-section card.
+   *
+   * Ken reported: "One active medication was placed in past medications.
+   * Tried to add back. Buggy." The "buggy" part was that there was NO
+   * per-card restore control at all — CHUNK 52.2 deleted it on the
+   * (then-correct) reasoning that the server never returned hidden meds,
+   * so no card could mount for one. Once `?includePast=1` started
+   * surfacing them, that reasoning expired but the control was never
+   * brought back. The only remaining path was the amber
+   * "recently hidden" banner, which is session-local and wiped on
+   * relaunch — so anything hidden on a previous day was unrecoverable.
+   *
+   * Same `unremove` mutation as the banner path; also clears any banner
+   * entry so the two affordances can't disagree about state.
+   */
+  const restoreMedication = (id: string) => {
+    updateMutation.mutate(
+      { unremove: [id] },
+      {
+        onSuccess: () => {
+          setRecentlyHidden((prev) => prev.filter((e) => e.id !== id));
+        },
+      },
+    );
+  };
   const onToggleTracked = (med: Medication) => {
     updateMutation.mutate({ setTracked: [{ id: med.id, tracked: !med.tracked }] });
   };
@@ -330,8 +450,16 @@ export function MedicationsSection({
 
   return (
     <View onLayout={onLayout}>
-      {/* Section header */}
-      <View style={styles.secHead}>
+      {/* Section header — Ken 2026-08-06: skipped when flush=true (medications
+          screen) because the screen already has its own "Medications" title +
+          "+" Add button in the top header row, and the section itself now
+          renders "ACTIVE MEDICATIONS" / "PAST MEDICATIONS" sub-headers below.
+          Rendering all three tiers is redundant + confusing. Legacy surfaces
+          (health-plan.tsx / PlanScreenRedesigned) still get this header — the
+          section is embedded inside a bigger plan screen there with no
+          dedicated "Medications" title above it. */}
+      {!flush ? (
+      <View style={[styles.secHead, flushPadOverride]}>
         <Text
           style={[
             styles.secLabel,
@@ -369,10 +497,11 @@ export function MedicationsSection({
           </Text>
         </Pressable>
       </View>
+      ) : null}
 
       {/* Always-visible safety disclaimer */}
       <View
-        style={[styles.disclaimer, { backgroundColor: (colors.subtext as string) + '12', borderColor: colors.border }]}
+        style={[styles.disclaimer, flushOverride, { backgroundColor: (colors.subtext as string) + '12', borderColor: colors.border }]}
         accessibilityRole="alert"
         accessibilityLabel={SAFETY_DISCLAIMER}
       >
@@ -400,7 +529,7 @@ export function MedicationsSection({
           identity). */}
       {updateMutation.isError ? (
         <View
-          style={[styles.errorBox, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}
+          style={[styles.errorBox, flushOverride, { borderColor: '#DC2626', backgroundColor: '#FEE2E2' }]}
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
         >
@@ -424,6 +553,7 @@ export function MedicationsSection({
         <View
           style={[
             styles.recentlyHiddenCard,
+            flushOverride,
             { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' },
           ]}
         >
@@ -493,31 +623,123 @@ export function MedicationsSection({
         </View>
       ) : null}
 
-      {medications.length === 0 ? (
-        <View style={[styles.emptyRow, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
-            No medications yet. Tap Add to track one you&apos;re taking.
-          </Text>
-        </View>
-      ) : (
-        medications.map((med) => (
-          <MedicationCard
-            key={med.id}
-            med={med}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            busy={updateMutation.isPending}
-            onEdit={() => setEditor({ kind: 'edit', med })}
-            onRemove={() => onRemove(med)}
-            onToggleTracked={() => onToggleTracked(med)}
-            onUpdateSupply={() => setSupplyEditor({ med })}
-            onSnooze={() => onSnooze(med)}
-            onConfirmAlertOpen={beginConfirmAlert}
-            onConfirmAlertResolve={endConfirmAlert}
-          />
-        ))
-      )}
+      {(() => {
+        // Ken 2026-08-06 — split into Active vs Past on `discontinuedAt`.
+        // Active = actively taken (null / absent). Past = user-discontinued
+        // (ISO string). Legacy `removed[]` overlay entries that predate the
+        // Aug-2026 rollout still surface here — the BE assigns them a
+        // fallback timestamp (`overlay.updatedAt`) so they render in Past
+        // instead of vanishing.
+        // BUG #12.1/#12.2/#12.3 (Ken 2026-08-07) — a medication belongs in
+        // PAST if ANY of three things is true:
+        //   • the patient explicitly discontinued it  (discontinuedAt)
+        //   • the EHR says the course ended            (endedInEhr)
+        //   • it was hidden under the legacy "hide"    (hidden)
+        // The third case used to be misreported as a discontinue with a
+        // fabricated date; it now carries its own flag so the UI can label
+        // it honestly and offer Restore.
+        const isPastMed = (m: Medication) =>
+          !!m.discontinuedAt || m.endedInEhr === true || m.hidden === true;
+        const active = medications.filter((m) => !isPastMed(m));
+        const past = medications.filter(isPastMed);
+        if (medications.length === 0) {
+          return (
+            <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
+                No medications yet. Tap Add to track one you&apos;re taking.
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <>
+            <Text
+              style={{
+                marginTop: 6,
+                marginBottom: 8,
+                color: colors.subtext,
+                fontSize: getScaledFontSize(11),
+                fontWeight: getScaledFontWeight(700) as any,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+              }}
+            >
+              Active medications
+              <Text style={{ letterSpacing: 0.2, fontWeight: getScaledFontWeight(500) as any }}>
+                {`  ·  ${active.length}`}
+              </Text>
+            </Text>
+            {active.length === 0 ? (
+              <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
+                  No active medications. Tap Add to track one you&apos;re taking.
+                </Text>
+              </View>
+            ) : (
+              active.map((med) => (
+                <MedicationCard
+                  key={med.id}
+                  med={med}
+                  colors={colors}
+                  getScaledFontSize={getScaledFontSize}
+                  getScaledFontWeight={getScaledFontWeight}
+                  busy={updateMutation.isPending}
+                  onEdit={() => setEditor({ kind: 'edit', med })}
+                  onRemove={() => onRemove(med)}
+                  onToggleTracked={() => onToggleTracked(med)}
+                  onUpdateSupply={() => setSupplyEditor({ med })}
+                  onSnooze={() => onSnooze(med)}
+                  onRestore={() => restoreMedication(med.id)}
+                  onConfirmAlertOpen={beginConfirmAlert}
+                  onConfirmAlertResolve={endConfirmAlert}
+                  collapsible
+                  flush={flush}
+                />
+              ))
+            )}
+            {past.length > 0 && (
+              <>
+                <Text
+                  style={{
+                    marginTop: 20,
+                    marginBottom: 8,
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    letterSpacing: 0.5,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Past medications
+                  <Text style={{ letterSpacing: 0.2, fontWeight: getScaledFontWeight(500) as any }}>
+                    {`  ·  ${past.length}`}
+                  </Text>
+                </Text>
+                {past.map((med) => (
+                  <MedicationCard
+                    key={med.id}
+                    med={med}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                    busy={updateMutation.isPending}
+                    onEdit={() => setEditor({ kind: 'edit', med })}
+                    onRemove={() => onRemove(med)}
+                    onToggleTracked={() => onToggleTracked(med)}
+                    onUpdateSupply={() => setSupplyEditor({ med })}
+                    onSnooze={() => onSnooze(med)}
+                    onRestore={() => restoreMedication(med.id)}
+                    onConfirmAlertOpen={beginConfirmAlert}
+                    onConfirmAlertResolve={endConfirmAlert}
+                    isPast
+                    flush={flush}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* Add / Edit modal.
           CHUNK 52.3 revert (Ken 2026-07-22 dogfood): chunk 52.1's
@@ -634,6 +856,125 @@ interface ThemeProps {
   getScaledFontWeight: (n: number) => string;
 }
 
+// Ken 2026-08-06 — passive descriptive block extracted so the same
+// content renders inside a Pressable (collapsible + active) OR a plain
+// View (past / non-collapsible). Kept as a named component so the
+// Pressable's `accessibilityLabel` semantics stay on the parent while
+// this block's Text nodes remain accessibilityElementsHidden — that's
+// the CHUNK 99 v2 grouping contract.
+function MedicationCardDescriptive({
+  med,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  badgeColor,
+  badgeLabel,
+  isEhr,
+  isInjectable,
+  formTag,
+  discontinuedLabel,
+}: ThemeProps & {
+  med: Medication;
+  badgeColor: string;
+  badgeLabel: string;
+  isEhr: boolean;
+  isInjectable: boolean;
+  formTag: string;
+  discontinuedLabel: string | null;
+}): React.JSX.Element {
+  return (
+    <>
+      <Text
+        style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
+        numberOfLines={1}
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+      >
+        {med.name}
+      </Text>
+      <Text
+        style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
+        // Ken 2026-08-06 — was 1 line: dose + frequency for pill/patch
+        // meds regularly runs "Take 1 capsule by mouth twice daily" which
+        // truncates on iPhone SE width. Allow up to 3 lines so the full
+        // sig always reads clean.
+        numberOfLines={3}
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+      >
+        {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose set'}
+      </Text>
+      {med.times.length > 0 ? (
+        <Text
+          style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}
+          numberOfLines={2}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          {med.times.join(', ')}
+        </Text>
+      ) : null}
+      <View
+        style={styles.badgeRow}
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+      >
+        <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
+          <MaterialIcons
+            name={isEhr ? 'verified' : 'edit'}
+            size={getScaledFontSize(11)}
+            color={badgeColor}
+          />
+          <Text
+            style={{
+              color: badgeColor,
+              fontSize: getScaledFontSize(10),
+              fontWeight: getScaledFontWeight(700) as any,
+              marginLeft: 4,
+            }}
+          >
+            {badgeLabel}
+          </Text>
+        </View>
+        {/* COS-372: small Injectable/Oral tag. Dark by default. */}
+        {MED_FORMS_ENABLED ? (
+          <View style={[styles.badge, { backgroundColor: (colors.subtext as string) + '14', borderColor: (colors.subtext as string) + '40' }]}>
+            <MaterialIcons
+              name={isInjectable ? 'vaccines' : 'medication'}
+              size={getScaledFontSize(11)}
+              color={colors.subtext}
+            />
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(10),
+                fontWeight: getScaledFontWeight(700) as any,
+                marginLeft: 4,
+              }}
+            >
+              {formTag}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      {discontinuedLabel ? (
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(11),
+            marginTop: 6,
+            fontStyle: 'italic',
+          }}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          {discontinuedLabel}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
 function MedicationCard({
   med,
   colors,
@@ -645,8 +986,12 @@ function MedicationCard({
   onToggleTracked,
   onUpdateSupply,
   onSnooze,
+  onRestore,
   onConfirmAlertOpen,
   onConfirmAlertResolve,
+  collapsible = false,
+  isPast = false,
+  flush = false,
 }: ThemeProps & {
   med: Medication;
   busy: boolean;
@@ -655,6 +1000,9 @@ function MedicationCard({
   onToggleTracked: () => void;
   onUpdateSupply: () => void;
   onSnooze: () => void;
+  /** BUG #12.3 — un-hide / un-discontinue this med (fires `unremove`).
+   *  Only invoked from Past-section rows. */
+  onRestore: () => void;
   /** Signal the parent that a destructive-confirm Alert is presenting.
    *  Parent uses this to gate its openAddSignal effect so it doesn't
    *  mount MedicationEditorModal on top of a live Alert (iOS 26.5
@@ -662,7 +1010,30 @@ function MedicationCard({
    *  in pairs — open on Alert.alert start, resolve on either branch. */
   onConfirmAlertOpen: () => void;
   onConfirmAlertResolve: () => void;
+  /** Ken 2026-08-06 — when true, hide the interactive controls block
+   *  (Edit / Hide / Track adherence / Update supply / Snooze) until
+   *  the card's header is tapped. Applied to Active-section rows so
+   *  the list scans clean; controls stay one tap away. Past-section
+   *  rows render read-only (see `isPast`) and ignore this flag. */
+  collapsible?: boolean;
+  /** Ken 2026-08-06 — Past-section row. Renders read-only (no
+   *  controls), with a muted color treatment + "Discontinued
+   *  {date}" caption. `collapsible` is ignored when isPast=true. */
+  isPast?: boolean;
+  /** Ken 2026-08-06 — see MedicationsSection.flush. Zeroes the card's
+   *  internal 20pt horizontal margin so the parent screen supplies
+   *  its own horizontal padding (medications screen uses 16pt to
+   *  match Health Trends banner). */
+  flush?: boolean;
 }): React.JSX.Element {
+  const [expanded, setExpanded] = React.useState(!collapsible);
+  React.useEffect(() => {
+    // Reset expanded state if the collapsible prop changes (e.g. row
+    // moves between Active/Past on a discontinue). Past rows stay
+    // read-only regardless of the local expanded state.
+    setExpanded(!collapsible);
+  }, [collapsible]);
+  const showControls = !isPast && expanded;
   const isEhr = med.source === 'ehr';
   const badgeColor = isEhr ? (colors.primary as string) : (colors.tint as string);
   const badgeLabel = isEhr ? 'From your records' : 'Added by you';
@@ -671,6 +1042,34 @@ function MedicationCard({
   // COS-372: form-derived display (only surfaced when MED_FORMS_ENABLED).
   const isInjectable = normalizeForm(med.form) === 'injectable';
   const formTag = formTagLabel(med.form);
+  /**
+   * Caption for past-section rows.
+   *
+   * BUG #12.2/#12.3 (Ken 2026-08-07): distinguish a real DISCONTINUE
+   * from a legacy HIDE. Ken saw meds he had merely hidden appear as
+   * "Discontinued <date>" — clinically misleading, and the date shown
+   * was the last time he touched anything (the BE fell back to
+   * overlay.updatedAt). The BE now only sets discontinuedAt on an
+   * explicit discontinue and flags legacy hides with `hidden`.
+   */
+  const pastCaption = React.useMemo(() => {
+    if (!isPast) return null;
+    // BUG #12.1 — the health system reported this course as finished. Say
+    // so explicitly; the patient did not do this, and conflating the two
+    // would misrepresent their own record back to them.
+    if (med.endedInEhr && !med.discontinuedAt) {
+      return 'Ended — reported by your health records';
+    }
+    if (med.hidden && !med.discontinuedAt) {
+      return 'Hidden from your list — tap Restore to bring it back';
+    }
+    if (!med.discontinuedAt) return null;
+    const d = new Date(med.discontinuedAt);
+    if (Number.isNaN(d.getTime())) return null;
+    return `Discontinued ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  }, [isPast, med.discontinuedAt, med.hidden, med.endedInEhr]);
+  // Kept for the descriptive block's existing prop name.
+  const discontinuedLabel = pastCaption;
 
   // CHUNK 52.1 (Concern 1): confirm before firing the destructive Hide
   // mutation. INVARIANT: MedicationsSection must be rendered as INLINE content
@@ -719,124 +1118,171 @@ function MedicationCard({
 
   return (
     <View
-      style={[styles.card, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}
+      style={[
+        styles.card,
+        flush ? { marginHorizontal: 0 } : null,
+        {
+          backgroundColor: (colors.card as string) + 'D9',
+          borderColor: colors.border,
+          // Ken 2026-08-06 — past-section rows read as "history", not
+          // active concerns. Lower the overall opacity so they visually
+          // recede while staying legible for a review.
+          opacity: isPast ? 0.72 : 1,
+        },
+      ]}
     >
+      {/*
+        Ken 2026-08-06 — tap-to-expand for Active-section rows. When
+        `collapsible` is true (Active + not currently editing), the
+        descriptive block (icon + name + dose + times + badges) becomes
+        a Pressable that toggles the controls block below. Collapsed
+        card shows only the passive descriptive text + a chevron;
+        expanded card shows Edit / Hide + Track adherence + Supply
+        actions exactly as before. Past-section rows are read-only
+        (isPast → showControls always false, no chevron, no Pressable
+        wrap) since restore is a separate flow.
+       */}
       <View style={styles.cardTopRow}>
         <View style={[styles.medIcon, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
           <MaterialIcons name="medication" size={getScaledFontSize(20)} color="#8B5CF6" />
         </View>
-        {/* CHUNK 99 v2: NEW inner accessibility grouping. This View is the
-            single a11y leaf for the card's passive descriptive text (name,
-            dose+frequency, times, and badges). The Edit / Hide Pressables
-            below are siblings of this View — NOT descendants — so VoiceOver /
-            TalkBack still focuses them individually after this leaf. */}
-        <View
-          style={{ flex: 1, minWidth: 0 }}
-          accessible={true}
-          accessibilityLabel={composedA11yLabel}
-        >
-          <Text
-            style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
-            numberOfLines={1}
-            accessibilityElementsHidden={true}
-            importantForAccessibility="no-hide-descendants"
+        {/* CHUNK 99 v2: inner accessibility grouping is the single a11y leaf
+            for the passive descriptive text. Wrapping in a Pressable when
+            collapsible keeps the grouping semantics intact (Pressable is
+            focusable as a button, so AT gets one "expand medication card"
+            action instead of three separate leaves) — the Edit / Hide
+            Pressables remain siblings and stay individually focusable when
+            expanded. */}
+        {collapsible && !isPast ? (
+          <Pressable
+            style={{ flex: 1, minWidth: 0 }}
+            onPress={() => setExpanded((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={composedA11yLabel}
+            accessibilityHint={expanded ? 'Collapse controls' : 'Expand to edit or remove this medication'}
+            accessibilityState={{ expanded }}
           >
-            {med.name}
-          </Text>
-          <Text
-            style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
-            numberOfLines={1}
-            accessibilityElementsHidden={true}
-            importantForAccessibility="no-hide-descendants"
-          >
-            {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose set'}
-          </Text>
-          {med.times.length > 0 ? (
-            <Text
-              style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}
-              numberOfLines={1}
-              accessibilityElementsHidden={true}
-              importantForAccessibility="no-hide-descendants"
-            >
-              {med.times.join(', ')}
-            </Text>
-          ) : null}
+            <MedicationCardDescriptive
+              med={med}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              badgeColor={badgeColor}
+              badgeLabel={badgeLabel}
+              isEhr={isEhr}
+              isInjectable={isInjectable}
+              formTag={formTag}
+              discontinuedLabel={discontinuedLabel}
+            />
+          </Pressable>
+        ) : (
           <View
-            style={styles.badgeRow}
-            accessibilityElementsHidden={true}
-            importantForAccessibility="no-hide-descendants"
+            style={{ flex: 1, minWidth: 0 }}
+            accessible={true}
+            accessibilityLabel={composedA11yLabel}
           >
-            <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
-              <MaterialIcons
-                name={isEhr ? 'verified' : 'edit'}
-                size={getScaledFontSize(11)}
-                color={badgeColor}
-              />
-              <Text
-                style={{
-                  color: badgeColor,
-                  fontSize: getScaledFontSize(10),
-                  fontWeight: getScaledFontWeight(700) as any,
-                  marginLeft: 4,
-                }}
-              >
-                {badgeLabel}
-              </Text>
-            </View>
-            {/* COS-372: small Injectable/Oral tag. Dark by default. */}
-            {MED_FORMS_ENABLED ? (
-              <View style={[styles.badge, { backgroundColor: (colors.subtext as string) + '14', borderColor: (colors.subtext as string) + '40' }]}>
-                <MaterialIcons
-                  name={isInjectable ? 'vaccines' : 'medication'}
-                  size={getScaledFontSize(11)}
-                  color={colors.subtext}
-                />
-                <Text
-                  style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(10),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    marginLeft: 4,
-                  }}
-                >
-                  {formTag}
-                </Text>
-              </View>
-            ) : null}
+            <MedicationCardDescriptive
+              med={med}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+              badgeColor={badgeColor}
+              badgeLabel={badgeLabel}
+              isEhr={isEhr}
+              isInjectable={isInjectable}
+              formTag={formTag}
+              discontinuedLabel={discontinuedLabel}
+            />
           </View>
-        </View>
-        <Pressable
-          onPress={onEdit}
-          disabled={busy}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`Edit ${med.name}`}
-          style={styles.iconBtn}
-        >
-          <MaterialIcons name="edit" size={getScaledFontSize(18)} color={colors.subtext} />
-        </Pressable>
-        {/* CHUNK 52.1 (Concerns 1 + 3): destructive Hide is now confirm-
-            gated via Alert.alert and spatially separated from Edit with
-            iconBtnDestructive (marginLeft: 12) + asymmetric hitSlop (smaller
-            on the left) so a stray finger between Edit and Hide falls on
-            Edit — the non-destructive side. */}
-        <Pressable
-          onPress={confirmRemove}
-          disabled={busy}
-          hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel={`Hide ${med.name}`}
-          accessibilityHint="Opens a confirmation dialog before hiding"
-          style={styles.iconBtnDestructive}
-        >
-          <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
-        </Pressable>
+        )}
+        {/* BUG #12.3 FIX (Ken 2026-08-07) — Past rows get a RESTORE control.
+            Ken: "One active medication was placed in past medications. Tried
+            to add back. Buggy."
+
+            Past rows previously rendered with showControls=false and NO
+            actions at all. The per-card Restore Pressable had been deleted
+            in CHUNK 52.2 on the reasoning that the server dropped hidden
+            meds from the response, so no card could ever mount for one —
+            true THEN, but no longer true once ?includePast=1 started
+            surfacing them. The only surviving unremove path was the
+            session-local amber "recently hidden" banner, which is populated
+            only by a remove performed in the CURRENT session and is wiped on
+            relaunch. A med hidden yesterday was therefore permanently
+            unreachable. This restores the direct path. */}
+        {isPast && med.endedInEhr !== true ? (
+          <Pressable
+            onPress={onRestore}
+            disabled={busy}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Restore ${med.name} to your active medications`}
+            style={({ pressed }) => [
+              styles.cardRestorePill,
+              {
+                backgroundColor: (colors.tint as string) + '1A',
+                borderColor: (colors.tint as string) + '55',
+                opacity: pressed || busy ? 0.6 : 1,
+              },
+            ]}
+          >
+            <MaterialIcons name="undo" size={getScaledFontSize(15)} color={colors.tint as string} />
+            <Text
+              style={{
+                color: colors.tint as string,
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(700) as any,
+                marginLeft: 4,
+              }}
+            >
+              Restore
+            </Text>
+          </Pressable>
+        ) : null}
+        {showControls ? (
+          <>
+            <Pressable
+              onPress={onEdit}
+              disabled={busy}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${med.name}`}
+              style={styles.iconBtn}
+            >
+              <MaterialIcons name="edit" size={getScaledFontSize(18)} color={colors.subtext} />
+            </Pressable>
+            {/* CHUNK 52.1 (Concerns 1 + 3): destructive Hide is now confirm-
+                gated via Alert.alert and spatially separated from Edit with
+                iconBtnDestructive (marginLeft: 12) + asymmetric hitSlop (smaller
+                on the left) so a stray finger between Edit and Hide falls on
+                Edit — the non-destructive side. */}
+            <Pressable
+              onPress={confirmRemove}
+              disabled={busy}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Hide ${med.name}`}
+              accessibilityHint="Opens a confirmation dialog before hiding"
+              style={styles.iconBtnDestructive}
+            >
+              <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
+            </Pressable>
+          </>
+        ) : collapsible && !isPast ? (
+          <MaterialIcons
+            name={expanded ? 'expand-less' : 'expand-more'}
+            size={getScaledFontSize(22)}
+            color={colors.subtext}
+          />
+        ) : null}
       </View>
 
       {/* Refill banner.
           CHUNK 99: hidden from AT — refill status is already in the card's
-          composed accessibilityLabel. Visual banner unchanged. */}
-      {needsRefill ? (
+          composed accessibilityLabel. Visual banner unchanged.
+          Ken 2026-08-06: gated on showControls so collapsed Active rows
+          + all Past rows don't surface a refill nag for a med the user
+          isn't currently reviewing. */}
+      {showControls && needsRefill ? (
         <View
           style={[styles.refillBanner, { backgroundColor: '#F59E0B18', borderColor: '#F59E0B' }]}
           accessibilityElementsHidden={true}
@@ -853,8 +1299,9 @@ function MedicationCard({
 
       {/* Supply summary line.
           CHUNK 99: hidden from AT — supply detail is subsumed by the
-          composed card label. Visual line unchanged. */}
-      {med.supply && (med.supply.remainingQuantity != null || med.supply.dosesPerDay != null) ? (
+          composed card label. Visual line unchanged.
+          Ken 2026-08-06: same gate as the refill banner above. */}
+      {showControls && med.supply && (med.supply.remainingQuantity != null || med.supply.dosesPerDay != null) ? (
         <Text
           style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}
           accessibilityElementsHidden={true}
@@ -874,7 +1321,10 @@ function MedicationCard({
         </Text>
       ) : null}
 
-      {/* Action row: track toggle + supply / refill actions */}
+      {/* Action row: track toggle + supply / refill actions.
+          Ken 2026-08-06: full block gated on showControls — collapsed
+          Active rows + all Past rows omit it entirely. */}
+      {showControls && (
       <View style={styles.cardActions}>
         <View style={styles.trackToggle}>
           {/* CHUNK 99: "Track adherence" is the visual label for the Switch
@@ -899,7 +1349,9 @@ function MedicationCard({
           />
         </View>
       </View>
+      )}
 
+      {showControls && (
       <View style={styles.supplyActions}>
         <Pressable
           onPress={onUpdateSupply}
@@ -928,6 +1380,7 @@ function MedicationCard({
           </Pressable>
         ) : null}
       </View>
+      )}
 
       {/* CHUNK 52.2: the per-card "Hid this by mistake? Restore" Pressable
           was removed. It was unreachable — the server drops hidden meds
@@ -972,6 +1425,10 @@ function MedicationEditorModal({
   const [dose, setDose] = React.useState('');
   const [frequency, setFrequency] = React.useState('');
   const [timesRaw, setTimesRaw] = React.useState('');
+  // BUG #12.4 — inline validation message for the times field so a bad
+  // token is attributed to the right input instead of surfacing as a
+  // generic "Couldn't save that change" after a server 400.
+  const [timesError, setTimesError] = React.useState<string | null>(null);
   // COS-372: which form is selected. Only surfaced when MED_FORMS_ENABLED;
   // otherwise it stays at the default and is never sent.
   const [form, setForm] = React.useState<MedicationForm>('consumable');
@@ -996,7 +1453,22 @@ function MedicationEditorModal({
 
   const submit = () => {
     if (!nameValid) return;
-    const times = parseTimes(timesRaw);
+    // BUG #12.4 (Ken 2026-08-07) — validate + normalize times BEFORE
+    // sending. The backend's schema is strict `HH:mm` inside a
+    // `.strict()` body, so one loose token ("8am", "8:00") used to 400
+    // the entire request and silently drop the whole medication. Now we
+    // normalize what we can and tell the user precisely what we can't,
+    // instead of failing the save with a generic error.
+    const { times, invalid } = parseTimesDetailed(timesRaw);
+    if (invalid.length > 0) {
+      setTimesError(
+        invalid.length === 1
+          ? `"${invalid[0]}" isn't a time we recognise. Try 8:00, 8am, or 20:00.`
+          : `These aren't times we recognise: ${invalid.map((v) => `"${v}"`).join(', ')}. Try 8:00, 8am, or 20:00.`,
+      );
+      return;
+    }
+    setTimesError(null);
     onSubmit({
       name: name.trim(),
       dose: dose.trim() || undefined,
@@ -1145,15 +1617,44 @@ function MedicationEditorModal({
             </>
           ) : (
             <>
-              <FieldLabel text="Times (comma-separated, HH:MM)" colors={colors} getScaledFontSize={getScaledFontSize} />
+              <FieldLabel text="Times (comma-separated)" colors={colors} getScaledFontSize={getScaledFontSize} />
               <TextInput
-                style={[styles.input, { color: colors.text, borderColor: colors.text + '30', fontSize: getScaledFontSize(16) }]}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.text,
+                    // BUG #12.4 — red border when the field is the reason
+                    // the save was blocked.
+                    borderColor: timesError ? '#DC2626' : colors.text + '30',
+                    fontSize: getScaledFontSize(16),
+                  },
+                ]}
                 value={timesRaw}
-                onChangeText={setTimesRaw}
-                placeholder="e.g. 08:00, 20:00"
+                onChangeText={(v) => { setTimesRaw(v); if (timesError) setTimesError(null); }}
+                placeholder="e.g. 8am, 8:00, 20:00"
                 placeholderTextColor={colors.text + '40'}
                 autoCapitalize="none"
               />
+              {timesError ? (
+                <Text
+                  style={{ color: '#DC2626', fontSize: getScaledFontSize(12), marginTop: 6 }}
+                  accessibilityLiveRegion="polite"
+                >
+                  {timesError}
+                </Text>
+              ) : (
+                /* BUG #12.5 (Ken 2026-08-07) — "did not show up on this
+                   page in daily plan". A medication with NO times never
+                   generates a daily task (medicationTasksForDate skips
+                   `times.length === 0`), and nothing told the patient
+                   that. Make the consequence explicit at the point of
+                   entry rather than leaving them to discover it. */
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 6 }}>
+                  {timesRaw.trim().length === 0
+                    ? 'Add a time to see this medication in your daily plan.'
+                    : 'These times drive your daily plan reminders.'}
+                </Text>
+              )}
             </>
           )}
 
@@ -1482,6 +1983,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   iconBtn: { padding: 6, marginLeft: 2 },
+  // BUG #12.3 (Ken 2026-08-07) — Restore affordance on Past-section CARDS.
+  // Distinct from `restorePill` above, which belongs to the session-local
+  // "recently hidden" banner and has no border/min-height.
+  cardRestorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginLeft: 8,
+    minHeight: 36,
+  },
   // CHUNK 52.1 (Concern 3): Hide sits 12pt to the right of Edit so a mis-tap
   // between the two lands on Edit (non-destructive). Paired with asymmetric
   // hitSlop on the Hide Pressable (smaller left extent).

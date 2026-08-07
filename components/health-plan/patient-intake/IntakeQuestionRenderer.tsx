@@ -18,9 +18,16 @@ interface Props {
   value: IntakeAnswerValue | undefined;
   onChange: (v: IntakeAnswerValue) => void;
   invalid: boolean;
+  /**
+   * SCRUM-659 followup (2026-08-05) — the full in-progress answers map.
+   * Used to resolve `question.linkSourceKey` into a list of add-list
+   * item labels for the AddListQuestion's link picker. Optional so
+   * legacy callers that don't need linking work unchanged.
+   */
+  allAnswers?: Record<string, IntakeAnswerValue>;
 }
 
-export default function IntakeQuestionRenderer({ question, value, onChange, invalid }: Props) {
+export default function IntakeQuestionRenderer({ question, value, onChange, invalid, allAnswers }: Props) {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const borderColor = invalid ? '#DC2626' : colors.border;
@@ -46,7 +53,7 @@ export default function IntakeQuestionRenderer({ question, value, onChange, inva
           {question.hint}
         </Text>
       )}
-      <View style={{ marginTop: 16 }}>{renderLeaf(question, value, onChange)}</View>
+      <View style={{ marginTop: 16 }}>{renderLeaf(question, value, onChange, allAnswers)}</View>
       {invalid && (
         <Text
           style={{
@@ -66,6 +73,7 @@ function renderLeaf(
   q: IntakeQuestion,
   v: IntakeAnswerValue | undefined,
   onChange: (v: IntakeAnswerValue) => void,
+  allAnswers?: Record<string, IntakeAnswerValue>,
 ) {
   const sectionColor = SECTION_COLOR[q.section];
   // Screener kind (PHQ-2 / GAD-2 / PSS-4 / LSNS-6) always wins over q.type — it forces
@@ -90,10 +98,13 @@ function renderLeaf(
     case 'number':
       return <NumberQuestion value={typeof v === 'number' ? v : null} onChange={onChange} />;
     case 'single':
+      // SCRUM-659 followup — SingleChoiceQuestion now accepts the
+      // `{ choice, specify }` wrapper for options with specifyOnSelect.
+      // Pass the raw answer through; the child component discriminates.
       return (
         <SingleChoiceQuestion
           options={q.options ?? []}
-          value={typeof v === 'string' || typeof v === 'number' ? v : null}
+          value={v ?? null}
           onChange={onChange}
         />
       );
@@ -131,7 +142,26 @@ function renderLeaf(
           sectionColor={sectionColor}
         />
       );
-    case 'add_list':
+    case 'add_list': {
+      // SCRUM-659 followup — when this add_list references another
+      // add_list via linkSourceKey, resolve the source's item labels
+      // and offer them as chip toggles per row. Empty source → the
+      // component hides the picker instead of rendering an empty row.
+      let linkOptions: string[] | undefined;
+      if (q.linkSourceKey && allAnswers) {
+        const sourceValue = allAnswers[q.linkSourceKey];
+        if (Array.isArray(sourceValue)) {
+          linkOptions = sourceValue
+            .filter(
+              (x): x is IntakeAddListItem =>
+                x !== null &&
+                typeof x === 'object' &&
+                'label' in (x as Record<string, unknown>),
+            )
+            .map((x) => x.label)
+            .filter((l) => typeof l === 'string' && l.length > 0);
+        }
+      }
       return (
         <AddListQuestion
           value={
@@ -148,8 +178,11 @@ function renderLeaf(
           onChange={onChange}
           labelPlaceholder={q.addListLabelPlaceholder}
           notePlaceholder={q.addListNotePlaceholder}
+          linkOptions={linkOptions}
+          linkPickerLabel={q.linkPickerLabel}
         />
       );
+    }
     default:
       return null;
   }
