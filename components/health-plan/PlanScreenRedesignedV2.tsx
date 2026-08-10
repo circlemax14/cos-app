@@ -45,6 +45,7 @@ import {
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { PlanSummaryCard } from '@/components/health-plan/PlanSummaryCard';
+import { NutritionPlanSection } from '@/components/health-plan/NutritionPlanSection';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import { HabitsBanner } from '@/components/health-plan/HabitsBanner';
@@ -455,6 +456,17 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
           eyebrowColor={tint}
         />
       )}
+
+      {/* Nutrition plan & support (Ken 2026-08-07) — sits in the bio part of
+          the plan, next to medications. Generates on tap, never on mount:
+          each build is a Bedrock call the backend does not persist. */}
+      <NutritionPlanSection
+        colors={{ card, border, text, subtext, tint }}
+        getScaledFontSize={getScaledFontSize}
+        getScaledFontWeight={getScaledFontWeight}
+        containerStyle={elevation(1)}
+        onTakeScreener={onPersonalize}
+      />
 
       {/* Medications — self-gating; kept so the redesign loses nothing. */}
       <MedicationsSection onLayout={onMedsSectionLayout} openAddSignal={openMedsAddSignal} />
