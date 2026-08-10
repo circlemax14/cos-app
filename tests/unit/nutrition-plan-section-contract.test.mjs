@@ -31,18 +31,29 @@ const SCREEN = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesig
 const BPS = readFileSync(join(ROOT, 'components/health-plan/BiopsychosocialPlanScreen.tsx'), 'utf8');
 const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
 
+/**
+ * Source with comments stripped.
+ *
+ * These contract tests read source text, so any assertion of the form "the
+ * code must NOT contain X" will also match the comment EXPLAINING why X is
+ * absent. That bit three separate assertions in this file (banned units,
+ * "dismissible", marginHorizontal), each failing against correct code. Run
+ * every negative assertion through this.
+ */
+function codeOnly(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
 test('does NOT generate on mount — each build costs a Bedrock call', () => {
   // A useEffect calling generate would bill a model call for every patient
   // who scrolls past the section.
   assert.doesNotMatch(SECTION, /useEffect/, 'no effect should trigger generation');
-  assert.match(SECTION, /onPress=\{\(\) => void onGenerate\(\)\}/, 'generation is user-initiated');
+  // The handler is now a per-state variable bound to the card's onPress,
+  // so assert the binding rather than one literal inline arrow.
+  assert.match(codeOnly(SECTION), /onPress\s*[:=][^\n]*onGenerate\(\)/,
+    'generation must be reachable only from a press handler');
+  assert.match(codeOnly(SECTION), /onPress=\{onPress\}/, 'card press runs the handler');
 });
-
-/** Source with comments removed — the comments legitimately DISCUSS the
- *  banned units, so checking raw source fails on correct code. */
-function codeOnly(src) {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-}
 
 test('never presents a frequency as an amount', () => {
   // The screener measures how OFTEN, not how much. A quantity unit in the
@@ -120,8 +131,41 @@ test('is rendered by the arm that ACTUALLY runs in production (BPS)', () => {
   assert.match(HOST, /if \(isTabSwapBpsEnabled\(\)\)/,
     'the BPS early-return is what makes BPS the live arm');
   assert.match(BPS, /<NutritionPlanSection/, 'BPS screen must render the section');
-  assert.match(BPS, /key === 'biological' &&/,
-    "Ken asked for it in the BIO part of the plan");
+});
+
+test('sits BETWEEN Routines and Medications', () => {
+  // Vishal 2026-08-10: "it should be between routines and medications".
+  // HabitsBanner is the "Routines" row.
+  const habits = BPS.indexOf('<HabitsBanner');
+  const nutrition = BPS.indexOf('<NutritionPlanSection');
+  const meds = BPS.indexOf('<MedicationsBanner');
+  assert.ok(habits > -1 && nutrition > -1 && meds > -1, 'all three must render');
+  assert.ok(habits < nutrition, 'nutrition must come after Routines');
+  assert.ok(nutrition < meds, 'nutrition must come before Medications');
+});
+
+test('matches the sibling banners visually', () => {
+  // "should match with them". MedicationsBanner's card shape is the
+  // reference: no horizontal margin (parent ScrollView owns the padding),
+  // 16 radius, 14 padding, 12 bottom margin, 48pt icon well, tint wash.
+  assert.doesNotMatch(codeOnly(SECTION), /marginHorizontal/,
+    'a horizontal margin would break byte-width match with the siblings');
+  assert.match(SECTION, /borderRadius: 16/);
+  assert.match(SECTION, /paddingHorizontal: 14/);
+  assert.match(SECTION, /marginBottom: 12/);
+  assert.match(SECTION, /width: 48,\s*\n\s*height: 48/);
+  assert.match(SECTION, /backgroundColor: `\$\{tint\}1F`/);
+  assert.match(SECTION, /borderColor: `\$\{tint\}55`/);
+});
+
+test('takes the THEME tint, like its siblings do', () => {
+  // HabitsBanner and MedicationsBanner both resolve `colors?.tint ??
+  // DEFAULT_TINT`, and the theme defines `tint` — so their bespoke
+  // teal/green constants never fire and both render the theme tint.
+  // Passing anything else here makes this the odd row out.
+  assert.match(SECTION, /colors\?\.tint \?\? DEFAULT_TINT/);
+  assert.match(BPS, /tint: colors\.tint as string/,
+    'BPS must pass the theme tint through');
 });
 
 test('is ALSO in V2, so a TAB_SWAP_BPS rollback does not lose it', () => {
