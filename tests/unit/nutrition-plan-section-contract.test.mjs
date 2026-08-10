@@ -48,14 +48,24 @@ function codeOnly(src) {
 test('does NOT generate on mount — each build costs a Bedrock call', () => {
   // A useEffect calling generate would bill a model call for every patient
   // who scrolls past the section.
-  // A focus RESET is allowed (and required — see the focus test below);
-  // auto-GENERATION is not. Assert on what calls onGenerate, not on the
-  // absence of every effect hook.
-  assert.doesNotMatch(codeOnly(SECTION), /React\.useEffect/,
-    'no plain effect should run on mount');
-  const focus = codeOnly(SECTION).match(/useFocusEffect\([\s\S]*?\n  \)/);
+  // The invariant is about COST, not about hooks. A mount effect that READS
+  // the stored plan (one DynamoDB read) is required — without it every app
+  // open re-generates. What must never happen on mount or focus is a
+  // GENERATION, which is a Bedrock call.
+  //
+  // Earlier revisions of this test banned useEffect outright and would have
+  // blocked both correct fixes. Assert the cost, not the mechanism.
+  const code = codeOnly(SECTION);
+  const mount = code.match(/React\.useEffect\([\s\S]*?\n  \}, \[\]\)/);
+  if (mount) {
+    assert.doesNotMatch(mount[0], /generateNutritionPlan|onGenerate/,
+      'the mount effect must READ the stored plan, never generate one');
+    assert.match(mount[0], /fetchNutritionPlan/,
+      'the mount effect exists to load the stored plan');
+  }
+  const focus = code.match(/useFocusEffect\([\s\S]*?\n  \)/);
   if (focus) {
-    assert.doesNotMatch(focus[0], /onGenerate/,
+    assert.doesNotMatch(focus[0], /onGenerate|generateNutritionPlan/,
       'the focus effect must never generate — that is a Bedrock call per focus');
   }
   // The handler is now a per-state variable bound to the card's onPress,
@@ -286,4 +296,42 @@ test('a failed add offers a retry rather than dying silently', () => {
 test('the add control is reachable by screen reader', () => {
   assert.match(SECTION, /accessibilityLabel=\{`Add "\$\{s\.title\}" to my plan`\}/);
   assert.match(SECTION, /accessibilityHint="Adds a daily task you can tick off"/);
+});
+
+
+test('the stored plan is loaded on mount, so reopening does not re-generate', () => {
+  // Vishal 2026-08-10: "whenever i close app and open again ... there is a
+  // loader and then some task". Generation was the only path.
+  assert.match(SECTION, /fetchNutritionPlan/);
+  assert.match(SECTION, /prev\.kind === 'idle' \? \{ kind: 'ready', plan \}/,
+    'a loaded plan must not stomp a state the patient is mid-way through');
+});
+
+test('a failed load leaves the card in its build state, not an error', () => {
+  // The patient has not asked for anything yet on mount; an error here would
+  // be noise about something they did not do.
+  const mount = SECTION.match(/React\.useEffect\([\s\S]*?\n  \}, \[\]\)/);
+  assert.ok(mount, 'expected a mount effect');
+  assert.match(mount[0], /\.catch\(\(\) => undefined\)/);
+});
+
+test('the added-mark is derived from the plan, not local state', () => {
+  // Local state resets every app launch, which made an already-added
+  // suggestion offer "Add to my plan" again — and tapping created a
+  // DUPLICATE task.
+  assert.match(SECTION, /existingTaskTitles/);
+  assert.match(SECTION, /existing\.has\(normalizeTitle\(s\.title\)\)/);
+  assert.match(BPS, /existingTaskTitles=\{allTasks\.map/);
+});
+
+test('adding a task refetches the plan so it actually appears', () => {
+  // Otherwise the patient is told it was added and sees no change anywhere.
+  assert.match(SECTION, /onTaskAdded\?\.\(\)/);
+  assert.match(BPS, /aiPlanQuery\.refetch\(\)/);
+});
+
+test('the added confirmation says WHERE it went', () => {
+  // "Added to my plan" with no destination was reported as "where it is
+  // added don't know".
+  assert.match(SECTION, /On your plan — tick it off below/);
 });

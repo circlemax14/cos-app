@@ -149,7 +149,26 @@ function rethrowTyped(err: unknown): never {
   throw err as Error
 }
 
-// ─── Endpoint ────────────────────────────────────────────────────────
+// ─── Endpoints ───────────────────────────────────────────────────────
+
+/**
+ * Read the LAST GENERATED plan. One DynamoDB read, zero Bedrock calls, so
+ * this is safe to call on mount — unlike generate.
+ *
+ * Resolves to `null` when the patient has not built one yet: the backend
+ * returns 200 with `plan: null` for that, deliberately, so it is
+ * distinguishable from the feature being disabled (404).
+ */
+export async function fetchNutritionPlan(): Promise<NutritionPlan | null> {
+  try {
+    const res = await apiClient.get('/v1/patients/me/nutrition-plan')
+    const body = unwrap<{ plan: Partial<NutritionPlan> | null }>(res.data)
+    return body?.plan ? normalize(body.plan) : null
+  } catch (err) {
+    rethrowTyped(err)
+  }
+}
+
 
 /**
  * Generate a nutrition plan from the patient's latest dietary screener.

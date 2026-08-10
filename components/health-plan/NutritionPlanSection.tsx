@@ -48,6 +48,7 @@ import { useFocusEffect } from 'expo-router'
 
 import {
   generateNutritionPlan,
+  fetchNutritionPlan,
   NutritionFeatureDisabledError,
   NutritionEntitlementError,
   NutritionScreenerRequiredError,
@@ -69,6 +70,17 @@ export interface NutritionPlanSectionProps {
   /** Sends the patient to the assessments catalog to take the screener. */
   onTakeScreener: () => void
   containerStyle?: StyleProp<ViewStyle>
+  /**
+   * Titles of the tasks already on the patient's plan.
+   *
+   * The "already added" mark is derived from THIS, not from local state.
+   * Local state resets on every app launch, which meant a suggestion the
+   * patient had already added showed "Add to my plan" again — and tapping it
+   * created a duplicate task.
+   */
+  existingTaskTitles?: readonly string[]
+  /** Called after a task is created so the parent can refetch the plan. */
+  onTaskAdded?: () => void
 }
 
 type Status =
@@ -93,12 +105,19 @@ const FACTOR_LABEL: Record<string, string> = {
   redAndProcessedMeat: 'Red & processed meat',
 }
 
+/** Loose match so trivial punctuation/case drift does not read as a new task. */
+function normalizeTitle(t: string): string {
+  return t.trim().toLowerCase().replace(/[\s.,!—–-]+/g, ' ')
+}
+
 export function NutritionPlanSection({
   colors,
   getScaledFontSize,
   getScaledFontWeight,
   onTakeScreener,
   containerStyle,
+  existingTaskTitles,
+  onTaskAdded,
 }: NutritionPlanSectionProps): React.ReactElement | null {
   const [status, setStatus] = React.useState<Status>({ kind: 'idle' })
   /**
@@ -107,6 +126,13 @@ export function NutritionPlanSection({
    * rebuild replaces the suggestions wholesale, so this is reset there.
    */
   const [added, setAdded] = React.useState<Record<number, 'saving' | 'done' | 'failed'>>({})
+
+  /** Titles already on the plan, normalised. Survives app restarts because
+   *  it comes from the plan, not from this component. */
+  const existing = React.useMemo(
+    () => new Set((existingTaskTitles ?? []).map(normalizeTitle)),
+    [existingTaskTitles],
+  )
 
   const onGenerate = React.useCallback(async () => {
     setStatus({ kind: 'loading' })
@@ -175,14 +201,44 @@ export function NutritionPlanSection({
           completionStyle: 'simple',
         })
         setAdded((p) => ({ ...p, [index]: 'done' }))
+        // Refetch the plan so the new task actually appears in the section
+        // below — without this the patient is told it was added and sees no
+        // change anywhere, which is what was reported.
+        onTaskAdded?.()
       } catch {
         // Deliberately not surfacing the raw error on the row — the card is
         // a summary surface. 'failed' renders a retry affordance in place.
         setAdded((p) => ({ ...p, [index]: 'failed' }))
       }
     },
-    [],
+    [onTaskAdded],
   )
+
+  /**
+   * Load the STORED plan on mount.
+   *
+   * This is a DynamoDB read, not a generation — no Bedrock call — so it is
+   * safe on mount in a way `onGenerate` is not. Without it, every app open
+   * showed the build prompt again and a tap re-generated from scratch, which
+   * is what "again loader and then task" describes.
+   *
+   * Silent on every failure: a missing plan, a disabled flag or a network
+   * blip all leave the card in its idle build state, which is the honest
+   * fallback. Errors here must not render, because the patient did not ask
+   * for anything yet.
+   */
+  React.useEffect(() => {
+    let cancelled = false
+    void fetchNutritionPlan()
+      .then((plan) => {
+        if (cancelled || !plan || plan.suggestions.length === 0) return
+        setStatus((prev) => (prev.kind === 'idle' ? { kind: 'ready', plan } : prev))
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Re-check when the screen regains focus.
   //
@@ -320,11 +376,11 @@ export function NutritionPlanSection({
                 {/* Turn the suggestion into something the patient can
                     actually tick off. Without this the card is read-only
                     advice that vanishes on the next rebuild. */}
-                {added[i] === 'done' ? (
+                {added[i] === 'done' || existing.has(normalizeTitle(s.title)) ? (
                   <View style={styles.addedRow}>
                     <MaterialIcons name="check-circle" size={sz(14)} color={tint} />
                     <Text style={{ color: tint, fontSize: sz(12), fontWeight: bold, marginLeft: 4 }}>
-                      Added to your plan
+                      On your plan — tick it off below
                     </Text>
                   </View>
                 ) : (
