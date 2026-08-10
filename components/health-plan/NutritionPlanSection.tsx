@@ -54,6 +54,7 @@ import {
   NutritionGenerationError,
   type NutritionPlan,
 } from '@/services/api/nutrition-plan'
+import { createPlanTask } from '@/services/api/plan-tasks'
 
 /** Fallback only — every real caller passes the theme tint. Amber rather
  *  than a teal/green guess so an unstyled render is obvious in review. */
@@ -100,9 +101,16 @@ export function NutritionPlanSection({
   containerStyle,
 }: NutritionPlanSectionProps): React.ReactElement | null {
   const [status, setStatus] = React.useState<Status>({ kind: 'idle' })
+  /**
+   * Which suggestions the patient has turned into plan tasks, and which are
+   * mid-flight. Keyed by suggestion index within the CURRENT plan — a
+   * rebuild replaces the suggestions wholesale, so this is reset there.
+   */
+  const [added, setAdded] = React.useState<Record<number, 'saving' | 'done' | 'failed'>>({})
 
   const onGenerate = React.useCallback(async () => {
     setStatus({ kind: 'loading' })
+    setAdded({})
     try {
       const plan = await generateNutritionPlan()
       setStatus({ kind: 'ready', plan })
@@ -129,6 +137,52 @@ export function NutritionPlanSection({
       })
     }
   }, [])
+
+  /**
+   * Turn a suggestion into a real plan task.
+   *
+   * Vishal 2026-08-10: "how patients will be able to track it or update any
+   * activity". Plan tasks are the answer, and specifically NOT routines —
+   * the routines API is behind `plan_routines_enabled`, which is unset in
+   * production, and it has no completion endpoint at all (five routes: POST,
+   * GET, GET/:id, PATCH/:id, DELETE/:id). Nothing references routineId in any
+   * completion or streak path.
+   *
+   * Plan tasks already have the whole loop live in production: complete/skip
+   * endpoints, getTaskAnalytics (completion rate, on-time rate, streaks), and
+   * Daily Read's taskCompletion pillar reads it. Once a suggestion is a task
+   * the patient can tick it off, edit it, or delete it with the controls they
+   * already use, and patient-override (on in prod) preserves it across plan
+   * regenerations.
+   *
+   * type is 'reminder': the enum is medication|exercise|appointment|reminder
+   * and a dietary change is none of the first three.
+   */
+  const onAddToPlan = React.useCallback(
+    async (index: number, suggestionTitle: string, rationale: string) => {
+      setAdded((p) => ({ ...p, [index]: 'saving' }))
+      try {
+        await createPlanTask({
+          type: 'reminder',
+          title: suggestionTitle.slice(0, 120),
+          description: rationale,
+          // Late morning: early enough to act on at lunch, late enough not to
+          // land in the pre-breakfast cluster of medication reminders.
+          scheduledTime: '11:00',
+          recurrence: 'daily',
+          startDate: new Date().toISOString().slice(0, 10),
+          category: 'nutrition',
+          completionStyle: 'simple',
+        })
+        setAdded((p) => ({ ...p, [index]: 'done' }))
+      } catch {
+        // Deliberately not surfacing the raw error on the row — the card is
+        // a summary surface. 'failed' renders a retry affordance in place.
+        setAdded((p) => ({ ...p, [index]: 'failed' }))
+      }
+    },
+    [],
+  )
 
   // Re-check when the screen regains focus.
   //
@@ -262,6 +316,41 @@ export function NutritionPlanSection({
                   {FACTOR_LABEL[s.factor] ?? s.factor}
                   {s.rationale !== '' ? ` · ${s.rationale}` : ''}
                 </Text>
+
+                {/* Turn the suggestion into something the patient can
+                    actually tick off. Without this the card is read-only
+                    advice that vanishes on the next rebuild. */}
+                {added[i] === 'done' ? (
+                  <View style={styles.addedRow}>
+                    <MaterialIcons name="check-circle" size={sz(14)} color={tint} />
+                    <Text style={{ color: tint, fontSize: sz(12), fontWeight: bold, marginLeft: 4 }}>
+                      Added to your plan
+                    </Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => void onAddToPlan(i, s.title, s.rationale)}
+                    disabled={added[i] === 'saving'}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add "${s.title}" to my plan`}
+                    accessibilityHint="Adds a daily task you can tick off"
+                    hitSlop={8}
+                    style={styles.addBtn}
+                  >
+                    <MaterialIcons
+                      name={added[i] === 'failed' ? 'refresh' : 'add-circle-outline'}
+                      size={sz(14)}
+                      color={tint}
+                    />
+                    <Text style={{ color: tint, fontSize: sz(12), fontWeight: bold, marginLeft: 4 }}>
+                      {added[i] === 'saving'
+                        ? 'Adding…'
+                        : added[i] === 'failed'
+                          ? "Couldn't add — tap to retry"
+                          : 'Add to my plan'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             </View>
           ))}
@@ -316,4 +405,8 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, marginRight: 10, marginTop: 6 },
   previewText: { flex: 1 },
   reviewNote: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 10 },
+  // 44pt target on a compact inline affordance comes from hitSlop rather
+  // than height, so the suggestion rows stay tight.
+  addBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 6, paddingVertical: 4 },
+  addedRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, paddingVertical: 4 },
 })
