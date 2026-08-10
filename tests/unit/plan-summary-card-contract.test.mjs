@@ -24,6 +24,7 @@ const V1 = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesigned.
 const V2 = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesignedV2.tsx'), 'utf8');
 const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
 const FLAGS = readFileSync(join(ROOT, 'lib/care-plan.ts'), 'utf8');
+const BANNER = readFileSync(join(ROOT, 'components/health-plan/BpsAiSummaryBanner.tsx'), 'utf8');
 
 test('the card is tappable', () => {
   assert.match(CARD, /<Pressable/, 'summary card must be a Pressable');
@@ -92,4 +93,34 @@ test('V1 is wired too, so a flag flip back does not silently lose the card', () 
   assert.match(V1, /<PlanSummaryCard/);
   assert.doesNotMatch(V1, /YOUR PLAN, IN SHORT/);
   assert.doesNotMatch(V1, /styles\.summaryCard/, 'orphaned style must be removed');
+});
+
+
+// ── The summary on the surface production patients actually see ──────
+//
+// PlanScreenRedesignedV2 does NOT render in production: health-plan.tsx
+// early-returns <BiopsychosocialPlanScreen> whenever isTabSwapBpsEnabled(),
+// and the backend registry flag TAB_SWAP_BPS_ENABLED is true there. That
+// screen shows its own BpsAiSummaryBanner, so the expandable behaviour had
+// to be ported there too or the request was unfulfilled for every real user.
+
+test('the BPS AI summary banner is tappable and collapses', () => {
+  assert.match(BANNER, /<Pressable/, 'banner must be tappable');
+  assert.match(BANNER, /onPress=\{\(\) => setExpanded/);
+  assert.match(BANNER, /numberOfLines=\{expanded \? undefined : COLLAPSED_LINES\}/,
+    'expanded must pass undefined, never a finite cap');
+});
+
+test('the BPS banner announces its expanded state', () => {
+  assert.match(BANNER, /accessibilityRole="button"/);
+  assert.match(BANNER, /accessibilityState=\{\{ expanded \}\}/);
+});
+
+test('the BPS banner calls useState BEFORE its early return', () => {
+  // Rules of hooks: the component returns null for an empty summary. A hook
+  // after that early return breaks on the first render with content.
+  const hook = BANNER.indexOf('React.useState');
+  const early = BANNER.indexOf('return null');
+  assert.ok(hook > -1 && early > -1);
+  assert.ok(hook < early, 'useState must precede the early return');
 });

@@ -40,7 +40,7 @@
  * Linking + MaterialIcons + View + Text — audited leaf-safe.
  */
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Radii, Spacing } from '@/constants/design-system';
@@ -61,12 +61,17 @@ export interface BpsAiSummaryBannerProps {
   getScaledFontWeight: (w: number) => string;
 }
 
+/** Lines shown while collapsed. Two keeps the card genuinely small. */
+export const COLLAPSED_LINES = 2;
+
 export function BpsAiSummaryBanner({
   summary,
   colors,
   getScaledFontSize,
   getScaledFontWeight,
 }: BpsAiSummaryBannerProps): React.JSX.Element | null {
+  const [expanded, setExpanded] = React.useState(false);
+
   // Guard first: if no summary (bio-only cohort, cache miss, backend
   // disabled) render nothing — never a hollow card. Second layer of
   // defense alongside the parent kill-switch.
@@ -81,13 +86,19 @@ export function BpsAiSummaryBanner({
   const cardBorder = tint + '33';
 
   return (
-    <View
+    <Pressable
+      onPress={() => setExpanded((v) => !v)}
       style={[
         styles.card,
         { backgroundColor: cardBg, borderColor: cardBorder },
       ]}
       accessible
-      accessibilityLabel={`AI summary of your plan: ${summary}`}
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      accessibilityLabel="AI summary of your plan"
+      accessibilityHint={
+        expanded ? 'Tap to collapse the summary' : 'Tap to read the full summary'
+      }
     >
       <View style={styles.header}>
         <MaterialIcons name="auto-awesome" size={14} color={tint} />
@@ -103,6 +114,12 @@ export function BpsAiSummaryBanner({
         >
           AI SUMMARY
         </Text>
+        <View style={{ flex: 1 }} />
+        <MaterialIcons
+          name={expanded ? 'expand-less' : 'expand-more'}
+          size={getScaledFontSize(20)}
+          color={tint}
+        />
       </View>
 
       <Text
@@ -114,6 +131,11 @@ export function BpsAiSummaryBanner({
           },
         ]}
         accessibilityRole="text"
+        // Vishal 2026-08-07: "ai summary in plan screen needs to be a small
+        // card and when we click on it it can be expanded". undefined rather
+        // than a large number when expanded — a finite cap would clip a long
+        // summary in the one state whose purpose is showing all of it.
+        numberOfLines={expanded ? undefined : COLLAPSED_LINES}
       >
         {summary}
       </Text>
@@ -126,7 +148,7 @@ export function BpsAiSummaryBanner({
         a UX enhancement.
       */}
       <AICitationsFooter compact />
-    </View>
+    </Pressable>
   );
 }
 

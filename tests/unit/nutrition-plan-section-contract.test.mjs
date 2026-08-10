@@ -28,6 +28,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SECTION = readFileSync(join(ROOT, 'components/health-plan/NutritionPlanSection.tsx'), 'utf8');
 const CLIENT = readFileSync(join(ROOT, 'services/api/nutrition-plan.ts'), 'utf8');
 const SCREEN = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesignedV2.tsx'), 'utf8');
+const BPS = readFileSync(join(ROOT, 'components/health-plan/BiopsychosocialPlanScreen.tsx'), 'utf8');
+const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
 
 test('does NOT generate on mount — each build costs a Bedrock call', () => {
   // A useEffect calling generate would bill a model call for every patient
@@ -110,6 +112,18 @@ test('touch targets meet the 44pt minimum', () => {
   assert.match(SECTION, /minHeight: 44/);
 });
 
-test('is rendered by the plan screen arm that actually runs (V2)', () => {
+test('is rendered by the arm that ACTUALLY runs in production (BPS)', () => {
+  // health-plan.tsx early-returns <BiopsychosocialPlanScreen> whenever
+  // isTabSwapBpsEnabled(), and the backend registry flag TAB_SWAP_BPS_ENABLED
+  // is TRUE in production — so PlanScreenRedesignedV2 never renders there.
+  // The first version of this feature shipped into V2 only and was invisible.
+  assert.match(HOST, /if \(isTabSwapBpsEnabled\(\)\)/,
+    'the BPS early-return is what makes BPS the live arm');
+  assert.match(BPS, /<NutritionPlanSection/, 'BPS screen must render the section');
+  assert.match(BPS, /key === 'biological' &&/,
+    "Ken asked for it in the BIO part of the plan");
+});
+
+test('is ALSO in V2, so a TAB_SWAP_BPS rollback does not lose it', () => {
   assert.match(SCREEN, /<NutritionPlanSection/);
 });
