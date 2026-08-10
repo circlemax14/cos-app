@@ -56,6 +56,11 @@ function resolveReturnHref(returnTo: string | undefined): string {
       return '/Home/wellbeing-domain-checkins?domain=mind'
     case 'domain-checkins-social':
       return '/Home/wellbeing-domain-checkins?domain=social'
+    // Vishal 2026-08-10: the nutrition card sends people here to take the
+    // dietary screener; without this they land in the assessments catalog
+    // afterwards instead of back at the plan they were building.
+    case 'plan':
+      return '/Home/health-plan'
     default:
       return '/Home/assessments-catalog'
   }
