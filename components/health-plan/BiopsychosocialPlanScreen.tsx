@@ -2057,6 +2057,34 @@ export function BiopsychosocialPlanScreen({
           getScaledFontWeight={getScaledFontWeight}
         />
 
+        {/* Nutrition plan & support — Ken 2026-08-07 asked for this in the
+            BIO part of the plan; Vishal 2026-08-10 placed it BETWEEN Routines
+            and Medications and asked that it match them. It copies
+            MedicationsBanner's card shape exactly (no horizontal margin, tint
+            wash, 48pt icon well) with an amber accent so the three rows read
+            as one system without nutrition looking like a meds sub-card. */}
+        <NutritionPlanSection
+          colors={{
+            card: colors.card as string,
+            border: colors.border as string,
+            text: colors.text as string,
+            subtext: colors.subtext as string,
+            // Pass the THEME tint, exactly as HabitsBanner and
+            // MedicationsBanner receive it. Both of those resolve
+            // `colors?.tint ?? DEFAULT_TINT`, and the theme does define
+            // `tint` — so their green/teal DEFAULT_TINT constants are dead
+            // fallbacks that never fire here, and both siblings actually
+            // render the theme tint. Passing anything else would make this
+            // the odd row out, which is the opposite of matching them.
+            tint: colors.tint as string,
+          }}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          onTakeScreener={() =>
+            router.push('/Home/assessments-catalog?source=nutrition-plan' as never)
+          }
+        />
+
         {/*
           Ken 2026-08-05 — Medications banner sits directly beneath
           HabitsBanner as a sibling section entry. Replaces the small
@@ -2257,33 +2285,6 @@ export function BiopsychosocialPlanScreen({
               }
             />
 
-            {/* Nutrition Plan & Support — Ken 2026-08-07: "an additional
-                section to the BIO part of the plan that we can call
-                'nutritional plan or support' ... I think it is critical".
-                Rendered directly under Biological Wellness, which is the
-                bio part of the plan on this surface.
-
-                This screen — not PlanScreenRedesignedV2 — is what a
-                production patient actually sees: health-plan.tsx
-                early-returns <BiopsychosocialPlanScreen> whenever
-                isTabSwapBpsEnabled(), and the backend registry flag
-                TAB_SWAP_BPS_ENABLED is true in production. */}
-            {key === 'biological' && (
-              <NutritionPlanSection
-                colors={{
-                  card: (colors.card as string) ?? '#fff',
-                  border: (colors.border as string) ?? '#E5E7EB',
-                  text: (colors.text as string) ?? '#111827',
-                  subtext: (colors.subtext as string) ?? '#6B7280',
-                  tint: (colors.tint as string) ?? '#0D9488',
-                }}
-                getScaledFontSize={getScaledFontSize}
-                getScaledFontWeight={getScaledFontWeight}
-                onTakeScreener={() =>
-                  router.push('/Home/assessments-catalog?source=nutrition-plan' as never)
-                }
-              />
-            )}
           </View>
         ))}
 
