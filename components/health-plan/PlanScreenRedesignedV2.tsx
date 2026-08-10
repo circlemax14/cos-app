@@ -44,7 +44,7 @@ import {
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
-import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
+import { PlanSummaryCard } from '@/components/health-plan/PlanSummaryCard';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import { HabitsBanner } from '@/components/health-plan/HabitsBanner';
@@ -438,17 +438,22 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
           per Kenneth's 2026-07-10 feedback. */}
       <ViewBioInsightsLink />
 
-      {/* Plan summary — one idea per card, lifted with subtle elevation. */}
+      {/* Plan summary — a small card that expands on tap (Vishal 2026-08-07).
+          Collapsed to two lines so the tasks and goals below it, which are what
+          people open this screen for, are not pushed off the first screenful.
+
+          This is the arm that actually renders: PLAN_REDESIGN_V2_ENABLED is a
+          hardcoded `true` (lib/care-plan.ts), so health-plan.tsx never reaches
+          the V1 branch. Wiring the card only into V1 shipped nothing. */}
       {!!plan.summary && (
-        <View style={[styles.summaryCard, elevation(1), { backgroundColor: card, borderColor: border }]}>
-          <Text style={[styles.eyebrow, { color: tint, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
-            YOUR PLAN, IN SHORT
-          </Text>
-          <Text style={{ color: text, fontSize: getScaledFontSize(15), lineHeight: 22, marginTop: Spacing.sm }}>
-            {plan.summary}
-          </Text>
-          <AICitationsFooter compact />
-        </View>
+        <PlanSummaryCard
+          summary={plan.summary}
+          colors={{ card, border, text, subtext, tint }}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          containerStyle={elevation(1)}
+          eyebrowColor={tint}
+        />
       )}
 
       {/* Medications — self-gating; kept so the redesign loses nothing. */}
@@ -1007,13 +1012,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
-  summaryCard: {
-    marginHorizontal: Spacing.screenPadding,
-    marginTop: Spacing.md,
-    padding: Spacing.md + 2,
-    borderRadius: Radii.xl,
-    borderWidth: 1,
-  },
+  // `summaryCard` moved to PlanSummaryCard.tsx along with the summary itself.
   eyebrow: { letterSpacing: 1, textTransform: 'uppercase' },
 
   editHint: {

@@ -43,7 +43,7 @@ import {
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
-import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
+import { PlanSummaryCard } from '@/components/health-plan/PlanSummaryCard';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
 import type { AiHealthPlan, AiPlanGoal, PlanTask, TaskType } from '@/services/api/types';
@@ -316,17 +316,16 @@ export function PlanScreenRedesigned(props: PlanScreenRedesignedProps) {
         </Text>
       </Pressable>
 
-      {/* Plan summary — kept, calm. */}
+      {/* Plan summary — a small card that expands on tap (Vishal 2026-08-07).
+          Collapsed to two lines so the tasks and goals below it, which are what
+          people open this screen for, are not pushed off the first screenful. */}
       {!!plan.summary && (
-        <View style={[styles.summaryCard, { backgroundColor: card, borderColor: border }]}>
-          <Text style={[styles.eyebrow, { color: subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any }]}>
-            YOUR PLAN, IN SHORT
-          </Text>
-          <Text style={{ color: text, fontSize: getScaledFontSize(15), lineHeight: 22, marginTop: 8 }}>
-            {plan.summary}
-          </Text>
-          <AICitationsFooter compact />
-        </View>
+        <PlanSummaryCard
+          summary={plan.summary}
+          colors={{ card, border, text, subtext, tint }}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
       )}
 
       {/* Medications — self-gating; kept so the redesign loses nothing. */}
@@ -743,13 +742,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
-  summaryCard: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-  },
+  // `summaryCard` moved to PlanSummaryCard.tsx along with the summary itself.
   eyebrow: { letterSpacing: 1, textTransform: 'uppercase' },
 
   editHint: {
