@@ -18,6 +18,7 @@
 
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
@@ -35,6 +36,17 @@ export interface PlanSummaryCardProps {
   getScaledFontWeight: (n: number) => string;
   /** Test seam — lets a test render the expanded state directly. */
   initiallyExpanded?: boolean;
+  /**
+   * Extra container style. V2 passes its `elevation(1)` here so the card keeps
+   * the lifted look of the block it replaces; V1 passes nothing.
+   */
+  containerStyle?: StyleProp<ViewStyle>;
+  /**
+   * Eyebrow colour. The two plan screens differ here — V1 uses the muted
+   * subtext, V2 uses the accent tint — and silently picking one would leave
+   * whichever screen it isn't looking subtly wrong.
+   */
+  eyebrowColor?: string;
 }
 
 /** Lines shown while collapsed. Two keeps the card genuinely small. */
@@ -46,6 +58,8 @@ export function PlanSummaryCard({
   getScaledFontSize,
   getScaledFontWeight,
   initiallyExpanded = false,
+  containerStyle,
+  eyebrowColor,
 }: PlanSummaryCardProps): React.ReactElement | null {
   const [expanded, setExpanded] = React.useState(initiallyExpanded);
 
@@ -61,14 +75,14 @@ export function PlanSummaryCard({
       accessibilityState={{ expanded }}
       accessibilityLabel="Your plan, in short"
       accessibilityHint={expanded ? 'Tap to collapse the summary' : 'Tap to read the full summary'}
-      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }, containerStyle]}
     >
       <View style={styles.header}>
         <Text
           style={[
             styles.eyebrow,
             {
-              color: colors.subtext,
+              color: eyebrowColor ?? colors.subtext,
               fontSize: getScaledFontSize(11),
               fontWeight: getScaledFontWeight(700) as never,
             },

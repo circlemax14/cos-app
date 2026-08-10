@@ -20,7 +20,10 @@ import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CARD = readFileSync(join(ROOT, 'components/health-plan/PlanSummaryCard.tsx'), 'utf8');
-const SCREEN = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesigned.tsx'), 'utf8');
+const V1 = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesigned.tsx'), 'utf8');
+const V2 = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesignedV2.tsx'), 'utf8');
+const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
+const FLAGS = readFileSync(join(ROOT, 'lib/care-plan.ts'), 'utf8');
 
 test('the card is tappable', () => {
   assert.match(CARD, /<Pressable/, 'summary card must be a Pressable');
@@ -72,12 +75,21 @@ test('stays inside the iOS 26.5 primitive envelope', () => {
   assert.doesNotMatch(CARD, /LayoutAnimation|Animated|react-native-reanimated/);
 });
 
-test('the plan screen delegates to the card and no longer inlines the summary', () => {
-  assert.match(SCREEN, /<PlanSummaryCard/, 'screen must render the card');
-  assert.doesNotMatch(
-    SCREEN,
-    /YOUR PLAN, IN SHORT/,
-    'the inline summary block must be gone, not duplicated',
-  );
-  assert.doesNotMatch(SCREEN, /styles\.summaryCard/, 'orphaned style must be removed');
+test('the card is wired into the arm that ACTUALLY RENDERS (V2)', () => {
+  // The whole point. `PLAN_REDESIGN_V2_ENABLED` is a hardcoded true, so
+  // health-plan.tsx always takes the V2 branch and never reaches V1. The first
+  // version of this change wired the card into V1 only, which meant a green
+  // CI over a screen no user can see. Assert V2 explicitly.
+  assert.match(FLAGS, /export const PLAN_REDESIGN_V2_ENABLED = true;/,
+    'if V2 is no longer force-enabled, revisit which arm this test should guard');
+  assert.match(HOST, /PLAN_REDESIGN_V2_ENABLED \? \(/, 'V2 must be the first branch taken');
+  assert.match(V2, /<PlanSummaryCard/, 'V2 — the rendered screen — must use the card');
+  assert.doesNotMatch(V2, /YOUR PLAN, IN SHORT/,
+    'V2 must not still inline the summary alongside the card');
+});
+
+test('V1 is wired too, so a flag flip back does not silently lose the card', () => {
+  assert.match(V1, /<PlanSummaryCard/);
+  assert.doesNotMatch(V1, /YOUR PLAN, IN SHORT/);
+  assert.doesNotMatch(V1, /styles\.summaryCard/, 'orphaned style must be removed');
 });
