@@ -2080,6 +2080,16 @@ export function BiopsychosocialPlanScreen({
           }}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
+          // Derived from the plan, so an already-added suggestion still reads
+          // as added after an app restart — local state alone reset every
+          // launch and invited duplicate tasks.
+          existingTaskTitles={allTasks.map((t) => t.title)}
+          // A nutrition task lands in the Biological section (category
+          // 'nutrition' falls through sectionForCategory to 'biological'),
+          // directly below this card. Refetch so it actually appears.
+          onTaskAdded={() => {
+            void aiPlanQuery.refetch();
+          }}
           onTakeScreener={() =>
             // Straight to the DSQ stepper, NOT the assessments catalog.
             // Vishal 2026-08-10: the catalog shows the plan-generation
