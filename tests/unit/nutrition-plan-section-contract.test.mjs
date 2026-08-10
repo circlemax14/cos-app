@@ -249,3 +249,41 @@ test('the focus hook runs BEFORE the early return', () => {
   assert.ok(hook > -1 && early > -1);
   assert.ok(hook < early, 'useFocusEffect must precede the early return');
 });
+
+
+// ── Tracking (Vishal 2026-08-10: "how patients will be able to track it") ──
+
+test('suggestions can be turned into PLAN TASKS, not routines', () => {
+  // Routines were the obvious-looking home and are the wrong one: the API is
+  // behind plan_routines_enabled (UNSET in production, so every route 404s)
+  // and has NO completion endpoint — POST, GET, GET/:id, PATCH/:id,
+  // DELETE/:id and nothing else. Plan tasks have complete/skip live plus
+  // getTaskAnalytics, which Daily Read reads in production today.
+  assert.match(SECTION, /createPlanTask/);
+  assert.doesNotMatch(SECTION, /createRoutine|\/routines/);
+});
+
+test('the created task is completable — simple style, daily', () => {
+  // completionStyle 'simple' is what makes it tickable; a measurable task
+  // would demand a logged value the screener cannot supply.
+  assert.match(SECTION, /completionStyle: 'simple'/);
+  assert.match(SECTION, /recurrence: 'daily'/);
+  assert.match(SECTION, /category: 'nutrition'/);
+});
+
+test('add state is per-suggestion and survives nothing but a rebuild', () => {
+  // A rebuild replaces the suggestion list wholesale, so index-keyed state
+  // must be cleared or row 2 inherits row 2's old "added" tick.
+  assert.match(SECTION, /setAdded\(\{\}\)/, 'generate must reset the added map');
+  assert.match(SECTION, /'saving' \| 'done' \| 'failed'/);
+});
+
+test('a failed add offers a retry rather than dying silently', () => {
+  assert.match(SECTION, /Couldn't add — tap to retry/);
+  assert.match(SECTION, /'failed'/);
+});
+
+test('the add control is reachable by screen reader', () => {
+  assert.match(SECTION, /accessibilityLabel=\{`Add "\$\{s\.title\}" to my plan`\}/);
+  assert.match(SECTION, /accessibilityHint="Adds a daily task you can tick off"/);
+});
