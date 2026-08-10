@@ -30,6 +30,7 @@ const CLIENT = readFileSync(join(ROOT, 'services/api/nutrition-plan.ts'), 'utf8'
 const SCREEN = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesignedV2.tsx'), 'utf8');
 const BPS = readFileSync(join(ROOT, 'components/health-plan/BiopsychosocialPlanScreen.tsx'), 'utf8');
 const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
+const STEPPER = readFileSync(join(ROOT, 'app/Home/assessment-stepper.tsx'), 'utf8');
 
 /**
  * Source with comments stripped.
@@ -107,6 +108,36 @@ test('each backend outcome has its own typed error', () => {
 test('a screener-required response offers the screener, not a retry', () => {
   assert.match(SECTION, /kind: 'needs-screener'/);
   assert.match(SECTION, /Take the dietary screener/);
+});
+
+test('the screener link goes to the DSQ ITSELF, not the catalog', () => {
+  // Vishal 2026-08-10: tapping "Take the dietary screener" opened the
+  // assessments catalog, which lists the PLAN-GENERATION check-ins — a set
+  // that does not include dsq-nci (it is in no TIER_POOL). Deep-link to the
+  // instrument instead.
+  assert.match(BPS, /assessment-stepper\?instrumentId=dsq-nci/,
+    'must deep-link to the DSQ stepper');
+  assert.doesNotMatch(codeOnly(BPS).slice(codeOnly(BPS).indexOf('<NutritionPlanSection'),
+    codeOnly(BPS).indexOf('<MedicationsBanner')),
+    /assessments-catalog/,
+    'must not route to the catalog');
+});
+
+test('returnTo=plan exists, so the screener returns to the plan', () => {
+  // Without this the stepper falls through to its default and dumps the
+  // patient in the assessments catalog after submitting — miles from the
+  // nutrition card they were trying to build.
+  assert.match(BPS, /returnTo=plan/);
+  assert.match(STEPPER, /case 'plan':/);
+  assert.match(STEPPER, /return '\/Home\/health-plan'/);
+});
+
+test('the screener prompt says what the screener IS', () => {
+  // The backend message is "Take the dietary screener first", which just
+  // repeats the title. Tapping into a questionnaire blind is the thing to
+  // avoid.
+  assert.match(SECTION, /food-frequency questionnaire/);
+  assert.match(SECTION, /about 5 minutes/);
 });
 
 test('stays inside the iOS 26.5 primitive envelope', () => {

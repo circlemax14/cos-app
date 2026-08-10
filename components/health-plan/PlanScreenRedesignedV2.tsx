@@ -43,6 +43,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 
 import { PlanSummaryCard } from '@/components/health-plan/PlanSummaryCard';
 import { NutritionPlanSection } from '@/components/health-plan/NutritionPlanSection';
@@ -465,7 +466,9 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
         getScaledFontSize={getScaledFontSize}
         getScaledFontWeight={getScaledFontWeight}
         containerStyle={elevation(1)}
-        onTakeScreener={onPersonalize}
+        onTakeScreener={() =>
+          router.push('/Home/assessment-stepper?instrumentId=dsq-nci&returnTo=plan' as never)
+        }
       />
 
       {/* Medications — self-gating; kept so the redesign loses nothing. */}

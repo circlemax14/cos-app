@@ -2081,7 +2081,18 @@ export function BiopsychosocialPlanScreen({
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
           onTakeScreener={() =>
-            router.push('/Home/assessments-catalog?source=nutrition-plan' as never)
+            // Straight to the DSQ stepper, NOT the assessments catalog.
+            // Vishal 2026-08-10: the catalog shows the plan-generation
+            // assessment set, so sending people there to "take the dietary
+            // screener" dropped them on a list of unrelated check-ins.
+            // `dsq-nci` is a system instrument and GET /v1/instruments
+            // returns the full active set for any non-basic tier, so the
+            // stepper resolves it even though the AI selector never assigns
+            // it (it is in no TIER_POOL). returnTo=plan brings them back
+            // here to build the plan rather than to the catalog.
+            router.push(
+              '/Home/assessment-stepper?instrumentId=dsq-nci&returnTo=plan' as never,
+            )
           }
         />
 

@@ -150,10 +150,13 @@ export function NutritionPlanSection({
     onPress = () => undefined
     a11yHint = 'Building your nutrition plan'
   } else if (status.kind === 'needs-screener') {
+    // Deliberately NOT `status.message` — the backend says "Take the dietary
+    // screener first", which just repeats the title. Say what the thing
+    // actually is instead, so nobody taps into a questionnaire blind.
     title = 'Take the dietary screener'
-    subtitle = status.message
+    subtitle = 'A short food-frequency questionnaire — about 5 minutes. Your plan is built from it.'
     onPress = onTakeScreener
-    a11yHint = 'Opens the assessments catalog'
+    a11yHint = 'Opens the dietary screener'
   } else if (status.kind === 'error') {
     subtitle = status.message
     a11yHint = 'Tap to try again'
