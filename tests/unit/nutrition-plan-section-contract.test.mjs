@@ -48,7 +48,16 @@ function codeOnly(src) {
 test('does NOT generate on mount — each build costs a Bedrock call', () => {
   // A useEffect calling generate would bill a model call for every patient
   // who scrolls past the section.
-  assert.doesNotMatch(SECTION, /useEffect/, 'no effect should trigger generation');
+  // A focus RESET is allowed (and required — see the focus test below);
+  // auto-GENERATION is not. Assert on what calls onGenerate, not on the
+  // absence of every effect hook.
+  assert.doesNotMatch(codeOnly(SECTION), /React\.useEffect/,
+    'no plain effect should run on mount');
+  const focus = codeOnly(SECTION).match(/useFocusEffect\([\s\S]*?\n  \)/);
+  if (focus) {
+    assert.doesNotMatch(focus[0], /onGenerate/,
+      'the focus effect must never generate — that is a Bedrock call per focus');
+  }
   // The handler is now a per-state variable bound to the card's onPress,
   // so assert the binding rather than one literal inline arrow.
   assert.match(codeOnly(SECTION), /onPress\s*[:=][^\n]*onGenerate\(\)/,
@@ -201,4 +210,42 @@ test('takes the THEME tint, like its siblings do', () => {
 
 test('is ALSO in V2, so a TAB_SWAP_BPS rollback does not lose it', () => {
   assert.match(SCREEN, /<NutritionPlanSection/);
+});
+
+
+test('returning from the screener clears the needs-screener state', () => {
+  // Vishal 2026-08-10: after completing the screener the card still read
+  // "Take the dietary screener" and tapping it re-opened the finished
+  // stepper. `status` is local state and this component does not remount on
+  // return, so focus has to reset it.
+  assert.match(SECTION, /useFocusEffect/);
+  assert.match(SECTION, /prev\.kind === 'needs-screener' \|\| prev\.kind === 'error'/);
+  assert.match(SECTION, /\{ kind: 'idle' \}/);
+});
+
+test('a ready plan survives tabbing away and back', () => {
+  // The reset must be narrow — wiping a generated plan on focus would cost
+  // another Bedrock call to get it back.
+  const focus = SECTION.match(/useFocusEffect\([\s\S]*?\n  \)/);
+  assert.ok(focus, 'expected a focus effect');
+  assert.doesNotMatch(focus[0], /'ready'/, "must not reset the 'ready' state");
+  assert.doesNotMatch(focus[0], /'loading'/, "must not reset the 'loading' state");
+});
+
+test('the two screener codes do not share copy', () => {
+  // Telling someone to "take" a screener they already took sends them in a
+  // circle — which is exactly what was reported.
+  assert.match(SECTION, /SCREENER_NOT_TAKEN/);
+  assert.match(SECTION, /Take the dietary screener/);
+  assert.match(SECTION, /Finish the dietary screener/);
+  assert.match(SECTION, /A few more answers needed/);
+});
+
+test('the focus hook runs BEFORE the early return', () => {
+  // Rules of hooks: `hidden` returns null. A hook after that breaks the
+  // first render where the card is visible.
+  const hook = SECTION.indexOf('useFocusEffect');
+  const early = SECTION.indexOf("if (status.kind === 'hidden') return null");
+  assert.ok(hook > -1 && early > -1);
+  assert.ok(hook < early, 'useFocusEffect must precede the early return');
 });

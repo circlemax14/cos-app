@@ -44,6 +44,7 @@ import React from 'react'
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native'
 import type { StyleProp, ViewStyle } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
+import { useFocusEffect } from 'expo-router'
 
 import {
   generateNutritionPlan,
@@ -73,7 +74,7 @@ type Status =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'ready'; plan: NutritionPlan }
-  | { kind: 'needs-screener'; message: string }
+  | { kind: 'needs-screener'; code: 'SCREENER_NOT_TAKEN' | 'SCREENER_INCOMPLETE' }
   | { kind: 'error'; message: string; retryable: boolean }
   /** Feature off or not entitled — the section renders nothing at all. */
   | { kind: 'hidden' }
@@ -114,7 +115,7 @@ export function NutritionPlanSection({
         return
       }
       if (err instanceof NutritionScreenerRequiredError) {
-        setStatus({ kind: 'needs-screener', message: err.message })
+        setStatus({ kind: 'needs-screener', code: err.code })
         return
       }
       if (err instanceof NutritionGenerationError) {
@@ -128,6 +129,30 @@ export function NutritionPlanSection({
       })
     }
   }, [])
+
+  // Re-check when the screen regains focus.
+  //
+  // Vishal 2026-08-10: after completing the screener the card still read
+  // "Take the dietary screener", and tapping it re-opened the finished
+  // stepper on its "nicely done" screen. Cause: `status` is local state, so
+  // once it landed on needs-screener it stayed there — returning from the
+  // screener does not remount this component.
+  //
+  // Only 'needs-screener' and 'error' are reset. 'ready' is left alone so a
+  // generated plan is not wiped by tabbing away and back, and 'loading' is
+  // left alone so a focus event mid-request cannot strand the spinner.
+  //
+  // This deliberately does NOT auto-generate — that would be a Bedrock call
+  // on every focus. It returns the card to its tappable idle state.
+  useFocusEffect(
+    React.useCallback(() => {
+      setStatus((prev) =>
+        prev.kind === 'needs-screener' || prev.kind === 'error'
+          ? { kind: 'idle' }
+          : prev,
+      )
+    }, []),
+  )
 
   if (status.kind === 'hidden') return null
 
@@ -150,11 +175,15 @@ export function NutritionPlanSection({
     onPress = () => undefined
     a11yHint = 'Building your nutrition plan'
   } else if (status.kind === 'needs-screener') {
-    // Deliberately NOT `status.message` — the backend says "Take the dietary
-    // screener first", which just repeats the title. Say what the thing
-    // actually is instead, so nobody taps into a questionnaire blind.
-    title = 'Take the dietary screener'
-    subtitle = 'A short food-frequency questionnaire — about 5 minutes. Your plan is built from it.'
+    // The two 409 codes mean different things and must not share copy.
+    // Telling someone to "take" a screener they already took is how you get
+    // sent in a circle. The backend's own message just repeats the title, so
+    // the subtitle says what the thing IS / what is still needed instead.
+    const notTaken = status.code === 'SCREENER_NOT_TAKEN'
+    title = notTaken ? 'Take the dietary screener' : 'Finish the dietary screener'
+    subtitle = notTaken
+      ? 'A short food-frequency questionnaire — about 5 minutes. Your plan is built from it.'
+      : 'A few more answers needed before we can build your plan.'
     onPress = onTakeScreener
     a11yHint = 'Opens the dietary screener'
   } else if (status.kind === 'error') {
