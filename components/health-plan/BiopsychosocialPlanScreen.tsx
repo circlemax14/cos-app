@@ -34,6 +34,7 @@ import {
 import { useIsMutating, useQuery } from '@tanstack/react-query';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
+import { NutritionPlanSection } from '@/components/health-plan/NutritionPlanSection';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -2255,6 +2256,34 @@ export function BiopsychosocialPlanScreen({
                   : (t) => setTaskModal({ mode: 'detail', task: t })
               }
             />
+
+            {/* Nutrition Plan & Support — Ken 2026-08-07: "an additional
+                section to the BIO part of the plan that we can call
+                'nutritional plan or support' ... I think it is critical".
+                Rendered directly under Biological Wellness, which is the
+                bio part of the plan on this surface.
+
+                This screen — not PlanScreenRedesignedV2 — is what a
+                production patient actually sees: health-plan.tsx
+                early-returns <BiopsychosocialPlanScreen> whenever
+                isTabSwapBpsEnabled(), and the backend registry flag
+                TAB_SWAP_BPS_ENABLED is true in production. */}
+            {key === 'biological' && (
+              <NutritionPlanSection
+                colors={{
+                  card: (colors.card as string) ?? '#fff',
+                  border: (colors.border as string) ?? '#E5E7EB',
+                  text: (colors.text as string) ?? '#111827',
+                  subtext: (colors.subtext as string) ?? '#6B7280',
+                  tint: (colors.tint as string) ?? '#0D9488',
+                }}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onTakeScreener={() =>
+                  router.push('/Home/assessments-catalog?source=nutrition-plan' as never)
+                }
+              />
+            )}
           </View>
         ))}
 
