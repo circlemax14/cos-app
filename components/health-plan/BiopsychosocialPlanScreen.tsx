@@ -1154,6 +1154,63 @@ export function BiopsychosocialPlanScreen({
   /** Live scroll offset, needed to convert a screen position into a scroll target. */
   const scrollOffsetY = React.useRef(0);
 
+  /** Cancels an in-flight eased scroll. */
+  const scrollAnimRef = React.useRef<number | null>(null);
+
+  /**
+   * Scroll with a duration we control.
+   *
+   * Vishal 2026-08-11: "scroll is still too fast, it can be smooth".
+   * ScrollView.scrollTo({animated:true}) runs a fixed ~250-300ms native
+   * animation with no duration knob, which reads as a snap on a long travel.
+   *
+   * So drive it from JS: an easeInOutCubic ramp over 700ms, stepping with
+   * scrollTo({animated:false}) each frame. requestAnimationFrame only — no
+   * Animated / LayoutAnimation, which this screen's iOS 26.5 envelope
+   * excludes.
+   *
+   * Honours reduce-motion by jumping straight there (same precedent as
+   * components/home/ScoreCardGrid.tsx). Motion that exists to orient someone
+   * is exactly the motion a vestibular-sensitive user needs skipped.
+   */
+  const smoothScrollTo = React.useCallback((targetY: number) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+
+    if (scrollAnimRef.current !== null) {
+      cancelAnimationFrame(scrollAnimRef.current);
+      scrollAnimRef.current = null;
+    }
+
+    const from = scrollOffsetY.current;
+    const distance = targetY - from;
+    if (Math.abs(distance) < 2) return;
+
+    void AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((reduceMotion) => {
+        if (reduceMotion) {
+          scroller.scrollTo({ y: targetY, animated: false });
+          return;
+        }
+        const DURATION = 700;
+        const started = Date.now();
+        const step = () => {
+          const elapsed = Date.now() - started;
+          const t = Math.min(1, elapsed / DURATION);
+          // easeInOutCubic — slow at both ends, quick through the middle.
+          const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+          scroller.scrollTo({ y: from + distance * eased, animated: false });
+          if (t < 1) {
+            scrollAnimRef.current = requestAnimationFrame(step);
+          } else {
+            scrollAnimRef.current = null;
+          }
+        };
+        scrollAnimRef.current = requestAnimationFrame(step);
+      });
+  }, []);
+
   const revealAddedTask = React.useCallback(
     async (taskId: string) => {
       await aiPlanQuery.refetch();
@@ -1205,7 +1262,7 @@ export function BiopsychosocialPlanScreen({
             // 120px of headroom so the row lands below the section header
             // rather than flush against the top edge.
             const target = scrollOffsetY.current + (rowY - svY) - 120;
-            scroller.scrollTo({ y: Math.max(0, target), animated: true });
+            smoothScrollTo(Math.max(0, target));
           });
         });
       };
@@ -1216,11 +1273,12 @@ export function BiopsychosocialPlanScreen({
       // accordion is still expanding is what made the motion stutter.
       requestAnimationFrame(() => requestAnimationFrame(scrollToHighlightedRow));
     },
-    [aiPlanQuery, scrollToSection, startHighlightTimer],
+    [aiPlanQuery, scrollToSection, startHighlightTimer, smoothScrollTo],
   );
 
   React.useEffect(
     () => () => {
+      if (scrollAnimRef.current !== null) cancelAnimationFrame(scrollAnimRef.current);
       if (highlightTimer.current) clearTimeout(highlightTimer.current);
     },
     [],
@@ -1597,6 +1655,14 @@ export function BiopsychosocialPlanScreen({
         // only writes a ref so it never triggers a render.
         onScroll={(e) => {
           scrollOffsetY.current = e.nativeEvent.contentOffset.y;
+        }}
+        // A JS-driven scroll must never fight the user's finger. Touching the
+        // list cancels the ramp and hands control straight back.
+        onScrollBeginDrag={() => {
+          if (scrollAnimRef.current !== null) {
+            cancelAnimationFrame(scrollAnimRef.current);
+            scrollAnimRef.current = null;
+          }
         }}
         scrollEventThrottle={16}
         // SCRUM-658 (2026-07-31): transparent scroll background per

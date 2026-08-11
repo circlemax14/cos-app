@@ -471,3 +471,41 @@ test('the highlight uses no animation module', () => {
   assert.doesNotMatch(codeOnly(TASKLIST), /Animated|LayoutAnimation/);
   assert.match(TASKLIST, /highlight: \{/);
 });
+
+
+test('the scroll is JS-eased, not the fixed native animation', () => {
+  // Vishal 2026-08-11: "scroll is still too fast, it can be smooth".
+  // scrollTo({animated:true}) is a fixed ~250-300ms native ramp with no
+  // duration knob, which snaps on a long travel.
+  assert.match(BPS, /const smoothScrollTo = React\.useCallback/);
+  assert.match(BPS, /easeInOutCubic|4 \* t \* t \* t/);
+  assert.match(BPS, /DURATION = 700/);
+  assert.match(BPS, /smoothScrollTo\(Math\.max\(0, target\)\)/);
+});
+
+test('the eased scroll uses no animation module', () => {
+  // This screen's iOS 26.5 envelope excludes Animated / LayoutAnimation.
+  const fn = BPS.slice(BPS.indexOf('const smoothScrollTo'), BPS.indexOf('const revealAddedTask'));
+  assert.doesNotMatch(codeOnly(fn), /Animated|LayoutAnimation/);
+  assert.match(fn, /requestAnimationFrame/);
+});
+
+test('reduce-motion jumps instead of animating', () => {
+  // Motion that exists to orient someone is exactly the motion a
+  // vestibular-sensitive user needs skipped.
+  assert.match(BPS, /AccessibilityInfo\.isReduceMotionEnabled\(\)/);
+  const fn = BPS.slice(BPS.indexOf('const smoothScrollTo'));
+  assert.match(fn, /if \(reduceMotion\)[\s\S]{0,140}animated: false/);
+});
+
+test('the user\'s finger always wins', () => {
+  // A JS ramp that keeps stepping while someone is dragging feels broken.
+  assert.match(BPS, /onScrollBeginDrag=\{\(\) => \{/);
+  const drag = BPS.slice(BPS.indexOf('onScrollBeginDrag'));
+  assert.match(drag.slice(0, 300), /cancelAnimationFrame/);
+});
+
+test('an in-flight ramp cannot leak past unmount', () => {
+  const cleanup = BPS.slice(BPS.indexOf('React.useEffect(\n    () => () => {'));
+  assert.match(cleanup.slice(0, 300), /cancelAnimationFrame\(scrollAnimRef\.current\)/);
+});
