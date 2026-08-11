@@ -171,7 +171,17 @@ export function TodayTimeline({
         return (
           <View key={h.hour}>
             {showNowBefore ? <NowMarker colors={colors} sz={sz} wt={wt} /> : null}
-            <View style={[styles.hour, idx > 0 && { borderTopWidth: 1, borderTopColor: colors.border, borderStyle: 'dashed' }]}>
+            <View
+              style={[
+                styles.hour,
+                // Hairline rule, NOT borderStyle:'dashed'. RN only honours a
+                // dashed border when every side has a width; with just
+                // borderTopWidth it falls back to solid on iOS and can draw
+                // artifacts on Android. A hairline is what the rest of the
+                // app uses and is what actually renders.
+                idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+              ]}
+            >
               <Text
                 style={{
                   color: isNow ? colors.tint : colors.subtext,
