@@ -99,6 +99,7 @@ import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
 import { bpsToSection } from '@/lib/wellbeing-score';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { TaskEditorModal, TaskEditorBody } from './TaskEditorModal';
+import { PLAN_TASK_WRITE_KEY, PLAN_TASK_DELETE_KEY } from '@/hooks/use-plan-tasks';
 import { TaskDetailModal, TaskDetailBody } from './tasks/TaskDetailModal';
 import { BioGoalEditorBody } from './BioGoalEditorModal';
 import { useAiHealthPlan } from '@/hooks/use-plan-tasks';
@@ -1150,6 +1151,21 @@ export function BiopsychosocialPlanScreen({
 
   /** The highlighted row's node, registered by TaskListSection. */
   const highlightNodeRef = React.useRef<View | null>(null);
+
+  /**
+   * In-flight task writes, so the screen can say something is happening.
+   *
+   * Vishal 2026-08-11 (Ken): "there was no way to show that task is being
+   * added ... ken wants some way of notification", and the same on delete.
+   *
+   * TaskEditorModal closes on the same tick it saves — deliberately, because
+   * awaiting inside a tap handler is the iOS 26.5 SIGABRT trap and
+   * Alert-over-Modal is a second crash surface. So the modal cannot report
+   * progress; the screen has to. useIsMutating on the tagged keys is how it
+   * knows, and it costs no extra state.
+   */
+  const savingTasks = useIsMutating({ mutationKey: PLAN_TASK_WRITE_KEY });
+  const deletingTasks = useIsMutating({ mutationKey: PLAN_TASK_DELETE_KEY });
 
   /** Live scroll offset, needed to convert a screen position into a scroll target. */
   const scrollOffsetY = React.useRef(0);
@@ -2239,6 +2255,50 @@ export function BiopsychosocialPlanScreen({
           getScaledFontWeight={getScaledFontWeight}
         />
 
+        {/* Task write in flight. Sits above the section cards so it is visible
+            wherever the patient is when they save or delete, and it is a
+            plain View — never an Alert, which cannot be shown over a Modal on
+            this device class. Disappears on its own when the write lands. */}
+        {(savingTasks > 0 || deletingTasks > 0) && (
+          <View
+            style={[
+              styles.taskBusyBanner,
+              {
+                backgroundColor: `${(colors.tint as string) ?? '#0D9488'}14`,
+                borderColor: `${(colors.tint as string) ?? '#0D9488'}33`,
+              },
+            ]}
+            accessibilityRole="text"
+            accessibilityLabel={
+              deletingTasks > 0 ? 'Removing your task' : 'Saving your task'
+            }
+            accessibilityLiveRegion="polite"
+          >
+            {/* Static icon, NOT ActivityIndicator. This file's header records
+                that ActivityIndicator was deliberately scrubbed from these
+                surfaces for iOS 26.5 (chunk 46.1) and the sanctioned pending
+                affordance is a static one. The copy carries the "in progress"
+                meaning instead. */}
+            <MaterialIcons
+              name="sync"
+              size={getScaledFontSize(16)}
+              color={colors.tint as string}
+            />
+            <Text
+              style={{
+                color: colors.text as string,
+                fontSize: getScaledFontSize(13),
+                marginLeft: 10,
+                flex: 1,
+              }}
+            >
+              {deletingTasks > 0
+                ? 'Removing your task…'
+                : 'Saving your task — it will appear in a moment.'}
+            </Text>
+          </View>
+        )}
+
         {/* Nutrition plan & support — Ken 2026-08-07 asked for this in the
             BIO part of the plan; Vishal 2026-08-10 placed it BETWEEN Routines
             and Medications and asked that it match them. It copies
@@ -2739,6 +2799,17 @@ export function BiopsychosocialPlanScreen({
 }
 
 const styles = StyleSheet.create({
+  // Matches the sibling banners' rhythm (no horizontal margin — the parent
+  // ScrollView owns the padding).
+  taskBusyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.lg },
   loadingText: { marginTop: 12 },

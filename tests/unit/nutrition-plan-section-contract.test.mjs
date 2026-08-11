@@ -163,7 +163,10 @@ test('the screener prompt says what the screener IS', () => {
 test('stays inside the iOS 26.5 primitive envelope', () => {
   const rn = /import \{([^}]+)\} from 'react-native'/.exec(SECTION);
   assert.ok(rn, 'expected a react-native import');
-  const allowed = new Set(['View', 'Text', 'Pressable', 'ActivityIndicator', 'StyleSheet']);
+  // ActivityIndicator deliberately EXCLUDED — BiopsychosocialPlanScreen
+  // records that it was scrubbed from these surfaces for iOS 26.5 and that
+  // the sanctioned pending affordance is static.
+  const allowed = new Set(['View', 'Text', 'Pressable', 'StyleSheet']);
   for (const n of rn[1].split(',').map((s) => s.trim()).filter(Boolean)) {
     assert.ok(allowed.has(n), `${n} is outside the primitive envelope`);
   }
@@ -508,4 +511,33 @@ test('the user\'s finger always wins', () => {
 test('an in-flight ramp cannot leak past unmount', () => {
   const cleanup = BPS.slice(BPS.indexOf('React.useEffect(\n    () => () => {'));
   assert.match(cleanup.slice(0, 300), /cancelAnimationFrame\(scrollAnimRef\.current\)/);
+});
+
+
+test('no ActivityIndicator on the iOS 26.5 plan surfaces', () => {
+  // The screen that renders this card scrubbed ActivityIndicator deliberately
+  // (chunk 46.1); the pending affordance is static + copy.
+  assert.doesNotMatch(codeOnly(SECTION), /<ActivityIndicator/);
+  assert.doesNotMatch(codeOnly(BPS), /<ActivityIndicator/);
+});
+
+test('a task write in flight is announced on the screen', () => {
+  // Vishal 2026-08-11 (Ken): "there was no way to show that task is being
+  // added". TaskEditorModal closes same-tick by design (awaiting in a tap
+  // handler is the iOS 26.5 SIGABRT trap), so the SCREEN has to report it.
+  assert.match(BPS, /useIsMutating\(\{ mutationKey: PLAN_TASK_WRITE_KEY \}\)/);
+  assert.match(BPS, /useIsMutating\(\{ mutationKey: PLAN_TASK_DELETE_KEY \}\)/);
+  assert.match(BPS, /Saving your task/);
+  assert.match(BPS, /Removing your task/);
+  assert.match(BPS, /accessibilityLiveRegion="polite"/);
+});
+
+test('the added flag defers to the plan once it catches up', () => {
+  // Vishal 2026-08-11: "once deleted routines is still saying on your plan".
+  // The local 'done' was OR'd with the derived check forever, so deleting the
+  // task cleared it from the plan but not from this card.
+  const fn = SECTION.slice(SECTION.indexOf('const onAddToPlan'));
+  assert.match(fn, /await onTaskAdded\?\.\(created\.id\)/,
+    'must wait for the parent refetch before dropping the local flag');
+  assert.match(fn, /delete next\[index\]/, 'local flag must be released');
 });
