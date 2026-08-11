@@ -43,7 +43,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
-import { Radii, Spacing } from '@/constants/design-system';
+import { Spacing } from '@/constants/design-system';
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 
 export interface BpsAiSummaryBannerProps {
@@ -79,8 +79,9 @@ export function BpsAiSummaryBanner({
 
   // Pre-computed tint tint-tinted card colors — legal-static rgba
   // envelope (no color-mix / interpolation).
-  const cardBg = tint + '14';
-  const cardBorder = tint + '33';
+  // 1F / 55 — the wash Nutrition and Medications share.
+  const cardBg = tint + '1F';
+  const cardBorder = tint + '55';
 
   return (
     <Pressable
@@ -97,21 +98,31 @@ export function BpsAiSummaryBanner({
         expanded ? 'Tap to collapse the summary' : 'Tap to read the full summary'
       }
     >
+      {/* Vishal 2026-08-11: "AI summary ... format is not matching with
+          nutrition and medication card". Was an 11pt uppercase eyebrow with a
+          14pt inline icon — a different class of header entirely. Now the
+          same 48pt solid icon well + 16/700 title + chevron the other three
+          use, so all four read as one stack. */}
       <View style={styles.header}>
-        <MaterialIcons name="auto-awesome" size={14} color={tint} />
-        <Text
-          style={[
-            styles.eyebrow,
-            {
-              color: tint,
-              fontSize: getScaledFontSize(11),
-              fontWeight: getScaledFontWeight(700) as any,
-            },
-          ]}
+        <View
+          style={[styles.iconWrap, { backgroundColor: tint, borderColor: tint }]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
         >
-          AI SUMMARY
-        </Text>
-        <View style={{ flex: 1 }} />
+          <MaterialIcons name="auto-awesome" size={24} color="#FFFFFF" />
+        </View>
+        <View style={styles.textCol}>
+          <Text
+            style={{
+              color: text,
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+            numberOfLines={1}
+          >
+            AI summary
+          </Text>
+        </View>
         <MaterialIcons
           name={expanded ? 'expand-less' : 'expand-more'}
           size={getScaledFontSize(20)}
@@ -161,20 +172,29 @@ const styles = StyleSheet.create({
     // boundary. Component is BPS-only (grep for BpsAiSummaryBanner —
     // only mounted in BiopsychosocialPlanScreen), so removing mH here
     // has no back-compat impact.
-    marginBottom: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: Radii.xl,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
     borderWidth: 1,
   },
+  // Shape shared with HabitsBanner / NutritionPlanSection / MedicationsBanner
+  // so the four cards read as one system.
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    minHeight: 44,
   },
-  eyebrow: {
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+  iconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
+  textCol: { flex: 1, marginRight: 8 },
   body: {
     lineHeight: 22,
     marginTop: Spacing.sm,

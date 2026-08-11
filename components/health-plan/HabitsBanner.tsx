@@ -99,8 +99,13 @@ function HabitsBannerBase({ colors, getScaledFontSize, getScaledFontWeight }: Ha
       style={({ pressed }) => [
         styles.card,
         {
-          backgroundColor: `${tint}14`,
-          borderColor: `${tint}33`,
+          // Vishal 2026-08-11: "routines card format is not matching with
+          // nutrition and medication card". Aligned to the 1F/55 wash those
+          // two share. NOTE this overrides Ken's 2026-08-06 iter-2 call,
+          // which deliberately kept Routines lighter than Medications — with
+          // four cards in the stack now, matching beats contrast.
+          backgroundColor: `${tint}1F`,
+          borderColor: `${tint}55`,
           opacity: pressed ? 0.85 : 1,
         },
       ]}
@@ -109,11 +114,13 @@ function HabitsBannerBase({ colors, getScaledFontSize, getScaledFontWeight }: Ha
           card in size + shape (48pt circle) so both banners are visually
           symmetric side-by-side / above-and-below. */}
       <View
-        style={[styles.iconWrap, { backgroundColor: `${tint}22`, borderColor: `${tint}44` }]}
+        // Solid well + white glyph, matching Medications and Nutrition. The
+        // soft-wash version read as a different class of card next to them.
+        style={[styles.iconWrap, { backgroundColor: tint, borderColor: tint }]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <MaterialIcons name="repeat" size={24} color={tint} />
+        <MaterialIcons name="repeat" size={24} color="#FFFFFF" />
       </View>
 
       <View style={styles.textCol}>
