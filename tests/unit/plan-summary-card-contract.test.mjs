@@ -112,7 +112,11 @@ test('the BPS AI summary banner is a pure accordion', () => {
   assert.match(BANNER, /onPress=\{\(\) => setExpanded/);
   assert.match(BANNER, /\{expanded && \(\s*<Text/, 'body renders only when expanded');
   assert.match(BANNER, /\{expanded && <AICitationsFooter compact \/>\}/);
-  assert.doesNotMatch(BANNER, /numberOfLines/, 'no line cap — it is all or nothing now');
+  // Scoped to the BODY. The title legitimately carries numberOfLines={1} as
+  // part of the shape shared with the other three banners — an unscoped
+  // doesNotMatch here failed against correct code.
+  const body = BANNER.slice(BANNER.indexOf('{expanded && ('));
+  assert.doesNotMatch(body, /numberOfLines/, 'the summary body must have no line cap');
 });
 
 test('the BPS banner announces its expanded state', () => {
