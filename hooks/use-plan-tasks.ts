@@ -98,6 +98,40 @@ export function useCreatePlanTask() {
         setTimeout(resolve, TASK_MUTATION_PENDING_WINDOW_MS),
       );
     },
+    // Optimistic INSERT. Vishal 2026-08-11: "add task directly with a loader
+    // and when you got response from backend then remove loader".
+    //
+    // Without this the row does not exist for the full 8s pending window, so
+    // there is nothing to attach progress to — which is why a screen-level
+    // banner was the only option before, and why it felt like indirection.
+    // The task appears immediately, marked 'creating', and the invalidate in
+    // onSettled swaps the placeholder for the server's real row.
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
+      const prev = qc.getQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY);
+      if (prev) {
+        const optimistic = {
+          ...(body as unknown as PlanTask),
+          // Namespaced so it can never collide with a server id, and so a
+          // stray optimistic row is obvious in any log or inspector.
+          id: `optimistic-create-${Date.now()}`,
+          source: 'patient',
+          __optimistic: 'creating',
+        } as PlanTask;
+        qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, {
+          ...prev,
+          tasks: [...(prev.tasks ?? []), optimistic],
+        });
+      }
+      return { prevAiPlan: prev };
+    },
+    onError: (_err, _vars, context) => {
+      // Put the list back. A row that silently sticks around after a failed
+      // write is worse than never showing it.
+      if (context?.prevAiPlan) {
+        qc.setQueryData(AI_HEALTH_PLAN_QUERY_KEY, context.prevAiPlan);
+      }
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
     },
@@ -154,7 +188,33 @@ export function useDeletePlanTask() {
   return useMutation({
     mutationKey: PLAN_TASK_DELETE_KEY,
     mutationFn: (id: string) => deletePlanTask(id),
-    onSuccess: () => {
+    // Optimistic STRIKE-THROUGH, not an optimistic removal. Vishal
+    // 2026-08-11: "cross it with a loader and then we receive response from
+    // backend then remove it properly".
+    //
+    // Removing the row immediately would be a lie if the delete fails, and
+    // the patient would have no idea their task came back. Crossing it out
+    // says "going" without claiming "gone".
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
+      const prev = qc.getQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY);
+      if (prev?.tasks) {
+        qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, {
+          ...prev,
+          tasks: prev.tasks.map((t): PlanTask =>
+            t.id === id ? { ...t, __optimistic: 'deleting' } : t,
+          ),
+        });
+      }
+      return { prevAiPlan: prev };
+    },
+    onError: (_err, _vars, context) => {
+      // Un-cross it. The task is still there and must stop looking doomed.
+      if (context?.prevAiPlan) {
+        qc.setQueryData(AI_HEALTH_PLAN_QUERY_KEY, context.prevAiPlan);
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
     },
   });

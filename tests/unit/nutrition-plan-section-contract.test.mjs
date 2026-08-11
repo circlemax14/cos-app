@@ -32,6 +32,8 @@ const BPS = readFileSync(join(ROOT, 'components/health-plan/BiopsychosocialPlanS
 const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
 const STEPPER = readFileSync(join(ROOT, 'app/Home/assessment-stepper.tsx'), 'utf8');
 const TASKLIST = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskListSection.tsx'), 'utf8');
+const TASKROW = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskRow.tsx'), 'utf8');
+const HOOKS = readFileSync(join(ROOT, 'hooks/use-plan-tasks.ts'), 'utf8');
 
 /**
  * Source with comments stripped.
@@ -521,15 +523,60 @@ test('no ActivityIndicator on the iOS 26.5 plan surfaces', () => {
   assert.doesNotMatch(codeOnly(BPS), /<ActivityIndicator/);
 });
 
-test('a task write in flight is announced on the screen', () => {
-  // Vishal 2026-08-11 (Ken): "there was no way to show that task is being
-  // added". TaskEditorModal closes same-tick by design (awaiting in a tap
-  // handler is the iOS 26.5 SIGABRT trap), so the SCREEN has to report it.
-  assert.match(BPS, /useIsMutating\(\{ mutationKey: PLAN_TASK_WRITE_KEY \}\)/);
-  assert.match(BPS, /useIsMutating\(\{ mutationKey: PLAN_TASK_DELETE_KEY \}\)/);
-  assert.match(BPS, /Saving your task/);
-  assert.match(BPS, /Removing your task/);
-  assert.match(BPS, /accessibilityLiveRegion="polite"/);
+test('feedback lives on the ROW, not in a screen banner', () => {
+  // Vishal 2026-08-11: "this message idea is not good". A screen-level banner
+  // reported that SOMETHING was happening while saying nothing about WHICH
+  // row, so the eye had nowhere to go.
+  assert.doesNotMatch(codeOnly(BPS), /Saving your task/);
+  assert.doesNotMatch(codeOnly(BPS), /taskBusyBanner/);
+  assert.match(HOOKS, /__optimistic: 'creating'/);
+  assert.match(HOOKS, /__optimistic: 'deleting'/);
+});
+
+test('a created task appears immediately, marked creating', () => {
+  // "add task directly with a loader and when you got response from backend
+  // then remove loader". Without the optimistic insert the row does not exist
+  // for the full 8s pending window, so there is nothing to attach progress to.
+  const fn = HOOKS.slice(HOOKS.indexOf('export function useCreatePlanTask'));
+  assert.match(fn, /onMutate/);
+  assert.match(fn, /tasks: \[\.\.\.\(prev\.tasks \?\? \[\]\), optimistic\]/);
+  assert.match(fn, /id: `optimistic-create-/, 'temp id must not collide with a server id');
+});
+
+test('a deleted task is CROSSED, not removed, until the server confirms', () => {
+  // "cross it with a loader and then we receive response from backend then
+  // remove it properly". Removing it immediately would be a lie if the delete
+  // fails, and the task would silently reappear.
+  const fn = HOOKS.slice(HOOKS.indexOf('export function useDeletePlanTask'));
+  assert.match(fn, /__optimistic: 'deleting'/);
+  assert.doesNotMatch(fn, /tasks: prev\.tasks\.filter/, 'must not drop the row optimistically');
+  assert.match(TASKROW, /textDecorationLine: 'line-through'/);
+});
+
+test('both optimistic writes roll back on failure', () => {
+  // A row that sticks around after a failed create, or stays struck through
+  // after a failed delete, is worse than no optimism at all.
+  const create = HOOKS.slice(
+    HOOKS.indexOf('export function useCreatePlanTask'),
+    HOOKS.indexOf('export function useUpdatePlanTask'),
+  );
+  const del = HOOKS.slice(HOOKS.indexOf('export function useDeletePlanTask'));
+  for (const fn of [create, del]) {
+    assert.match(fn, /onError/);
+    assert.match(fn, /setQueryData\(AI_HEALTH_PLAN_QUERY_KEY, context\.prevAiPlan\)/);
+  }
+});
+
+test('a mid-flight row cannot be opened', () => {
+  // Editing a task the server has not acknowledged would race the write.
+  assert.match(TASKROW, /onPress=\{busy \? undefined/);
+  assert.match(TASKROW, /disabled=\{busy\}/);
+  assert.match(TASKROW, /accessibilityState=\{\{ disabled: busy, busy \}\}/);
+});
+
+test('the row says which direction it is moving', () => {
+  // Dim + icon alone is ambiguous between adding and removing.
+  assert.match(TASKROW, /creating \? 'Adding…' : deleting \? 'Removing…'/);
 });
 
 test('the added flag defers to the plan once it catches up', () => {

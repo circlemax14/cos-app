@@ -327,6 +327,16 @@ export interface TaskMetric {
 }
 
 export interface PlanTask {
+  /**
+   * CLIENT-ONLY. Set by the optimistic create/delete mutations so a row can
+   * show it is mid-flight; never sent by or to the backend.
+   *
+   * Vishal 2026-08-11: "when we add any task then add task directly with a
+   * loader and when you got response from backend then remove loader ... when
+   * we delete any task then cross it with a loader". A banner elsewhere on the
+   * screen was the wrong answer — the feedback belongs on the row it is about.
+   */
+  __optimistic?: 'creating' | 'deleting';
   id: string;
   type: TaskType;
   title: string;
