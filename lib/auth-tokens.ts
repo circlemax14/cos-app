@@ -56,6 +56,73 @@ async function readSecureWithRetry(key: string, attempts = 3): Promise<string | 
   throw lastErr;
 }
 
+/**
+ * Read a secure value, retrying when it comes back NULL as well as when it
+ * throws.
+ *
+ * BUG #17, attempt 3 (Ken 2026-08-11: "when i opened app i was taken to sign
+ * in screen and when i force close and open app again then i was taken to pin
+ * screen").
+ *
+ * That second sentence is the whole diagnosis: the token EXISTS — the second
+ * launch found it. The first launch did not. So this was never about which
+ * token we read (attempt 2) or about the network (attempt 1); the read itself
+ * comes back empty on a cold start and is believed.
+ *
+ * `readSecureWithRetry` above only retries when getItemAsync THROWS. On iOS
+ * the Keychain-not-yet-available case frequently returns nil instead —
+ * expo-secure-store surfaces that as a plain `null`, no error — so the retry
+ * loop never engages and we conclude "no session" from a read that simply had
+ * not settled.
+ *
+ * Retrying on null is only safe when we have corroborating evidence that a
+ * session SHOULD exist, otherwise every genuinely signed-out launch pays the
+ * backoff for nothing. The caller supplies that evidence.
+ */
+async function readSecureExpectingValue(key: string, attempts = 3): Promise<string | null> {
+  for (let i = 0; i < attempts; i++) {
+    const value = await readSecureWithRetry(key, 1).catch(() => null);
+    if (value !== null && value.length > 0) return value;
+    if (i < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether a session exists — with an explicit "could not tell" arm.
+ *
+ * `hasStoredSession()` returns a boolean, which means "no token" and "could
+ * not read the token" collapse to the same value, and the splash gate signs
+ * the user out for both. The NETWORK path already learned this lesson —
+ * checkSession() has an `indeterminate` reason and the splash explicitly
+ * refuses to sign out on it. The LOCAL-READ path never got the equivalent,
+ * and that is the gap this closes.
+ */
+export type SessionPresence = 'present' | 'absent' | 'indeterminate';
+
+export async function readSessionPresence(
+  opts: { expectSession?: boolean } = {},
+): Promise<SessionPresence> {
+  const read = opts.expectSession ? readSecureExpectingValue : (k: string) =>
+    readSecureWithRetry(k).catch(() => null);
+
+  const [access, refresh] = await Promise.all([read(KEYS.access), read(KEYS.refresh)]);
+  if ((refresh?.length ?? 0) > 0 || (access?.length ?? 0) > 0) {
+    // Warm the module cache so the very next getRefreshToken() is free.
+    if (refresh) cachedRefreshToken = refresh;
+    if (access) cachedAccessToken = access;
+    return 'present';
+  }
+
+  // Both empty. If the caller had reason to believe a session exists (a PIN is
+  // configured, or a cached profile is on disk), an empty read is far more
+  // likely to be a Keychain that has not woken up than a real sign-out — say
+  // so rather than forcing a sign-in.
+  return opts.expectSession ? 'indeterminate' : 'absent';
+}
+
 export async function storeTokens(
   accessToken: string,
   refreshToken: string,
