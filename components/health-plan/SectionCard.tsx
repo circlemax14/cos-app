@@ -168,6 +168,8 @@ export interface SectionCardProps {
   openTasksSignal?: number;
   /** Task to flash briefly after it is added. */
   highlightTaskId?: string | null;
+  /** Ref callback for the highlighted row, so the parent can scroll to it. */
+  onHighlightRef?: (node: View | null) => void;
 }
 
 export function SectionCard({
@@ -184,6 +186,7 @@ export function SectionCard({
   isFocus,
   openTasksSignal,
   highlightTaskId,
+  onHighlightRef,
 }: SectionCardProps) {
   const style = SECTION_STYLE[sectionKey];
   const statusStyle = STATUS_STYLE[section.status] ?? STATUS_STYLE['just-started'];
@@ -515,6 +518,7 @@ export function SectionCard({
           tasks={tasks}
           openSignal={openTasksSignal}
           highlightTaskId={highlightTaskId}
+          onHighlightRef={onHighlightRef}
           accentColor={style.color}
           colors={colors}
           getScaledFontSize={getScaledFontSize}

@@ -34,6 +34,15 @@ export interface TaskListSectionProps {
   openSignal?: number;
   /** Task to flash briefly so the eye lands on the new row. */
   highlightTaskId?: string | null;
+  /**
+   * Ref callback for the highlighted row's wrapper.
+   *
+   * The parent owns the ScrollView, so it measures this node against the
+   * scroll content and scrolls to the ROW. Scrolling to the section instead
+   * lands on the section header with the task still below the fold — which
+   * is exactly what Vishal reported ("i was scrolled to beginning of task").
+   */
+  onHighlightRef?: (node: View | null) => void;
 }
 
 export function TaskListSection({
@@ -46,6 +55,7 @@ export function TaskListSection({
   onTaskPress,
   openSignal,
   highlightTaskId,
+  onHighlightRef,
 }: TaskListSectionProps): React.JSX.Element {
   // COS-434 experiment #3: default CLOSED to keep first-paint view-tree small,
   // matches bullets/interventions/goals CollapsibleGroups in SectionCard.
@@ -105,6 +115,7 @@ export function TaskListSection({
                presentation of a task. */
             <View
               key={t.id}
+              ref={highlightTaskId && t.id === highlightTaskId ? onHighlightRef : undefined}
               style={
                 highlightTaskId && t.id === highlightTaskId
                   ? [styles.highlight, { borderColor: accentColor, backgroundColor: `${accentColor}1F` }]
