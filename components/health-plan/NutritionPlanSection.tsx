@@ -37,11 +37,14 @@
  * indicating the need for professional oversight."
  *
  * iOS 26.5-safe primitive envelope (View / Text / Pressable /
- * ActivityIndicator / MaterialIcons / StyleSheet).
+ * MaterialIcons / StyleSheet). Deliberately NO ActivityIndicator:
+ * BiopsychosocialPlanScreen, which is what renders this card in production,
+ * records that ActivityIndicator was scrubbed from these surfaces (chunk
+ * 46.1) and that the sanctioned pending affordance is static.
  */
 
 import React from 'react'
-import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native'
+import { View, Text, Pressable, StyleSheet } from 'react-native'
 import type { StyleProp, ViewStyle } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 import { useFocusEffect } from 'expo-router'
@@ -83,7 +86,7 @@ export interface NutritionPlanSectionProps {
    * Called after a task is created, with the new task's id, so the parent can
    * refetch the plan and then show the patient WHERE it landed.
    */
-  onTaskAdded?: (taskId: string) => void
+  onTaskAdded?: (taskId: string) => void | Promise<void>
 }
 
 type Status =
@@ -210,7 +213,23 @@ export function NutritionPlanSection({
         // Vishal 2026-08-11: "we are not giving user any info where its
         // added". Showing beats telling — a modal would explain the
         // destination; this reveals it.
-        onTaskAdded?.(created.id)
+        await onTaskAdded?.(created.id)
+
+        // Then DROP the local flag and let `existingTaskTitles` own the
+        // answer from here on.
+        //
+        // Vishal 2026-08-11: "once deleted routines is still saying on your
+        // plan". The local 'done' was OR'd with the derived check forever, so
+        // deleting the task cleared it from the plan but not from this card.
+        // The parent has refetched by now, so the title is in `existing` and
+        // the row still reads "On your plan" — but via the source of truth,
+        // which also means it correctly reverts to "Add to my plan" when the
+        // task is deleted.
+        setAdded((p) => {
+          const next = { ...p }
+          delete next[index]
+          return next
+        })
       } catch {
         // Deliberately not surfacing the raw error on the row — the card is
         // a summary surface. 'failed' renders a retry affordance in place.
@@ -355,7 +374,12 @@ export function NutritionPlanSection({
         </View>
 
         {status.kind === 'loading' ? (
-          <ActivityIndicator color={tint} />
+          // Static, not ActivityIndicator: BiopsychosocialPlanScreen — which
+          // is what renders this card in production — records that
+          // ActivityIndicator was scrubbed from these surfaces for iOS 26.5.
+          // The subtitle already says "Building your plan…", so the icon does
+          // not have to carry the motion.
+          <MaterialIcons name="sync" size={sz(22)} color={tint} />
         ) : (
           <MaterialIcons
             name={isReady ? 'refresh' : 'chevron-right'}

@@ -67,9 +67,27 @@ const TASK_MUTATION_PENDING_WINDOW_MS = 8_000;
 
 const BASE_PATH = '/v1/patients/me/health-plan/tasks';
 
+/**
+ * Mutation keys so a screen can tell the user something is happening.
+ *
+ * Vishal 2026-08-11 (Ken): "i clicked on add task and then added details but
+ * there was no way to show that task is being added ... ken wants some way of
+ * notification", and the same for delete.
+ *
+ * These writes are deliberately fire-and-forget with an 8s pending latch (see
+ * useCreatePlanTask) because awaiting inside a tap handler is the iOS 26.5
+ * SIGABRT trap, and Alert-over-Modal is a second crash surface. That rules out
+ * a blocking spinner or a dialog — but it does not rule out the SCREEN saying
+ * so. A tagged mutation is how the screen finds out.
+ */
+export const PLAN_TASK_MUTATION_KEY = ['plan-task'] as const;
+export const PLAN_TASK_WRITE_KEY = ['plan-task', 'write'] as const;
+export const PLAN_TASK_DELETE_KEY = ['plan-task', 'delete'] as const;
+
 export function useCreatePlanTask() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: PLAN_TASK_WRITE_KEY,
     mutationFn: (body: CreateTaskBody) => {
       // Fire the POST immediately — no await (chunk 9.5 rule; see
       // components/unified-plan/v2/net.ts header for the SIGABRT trap).
@@ -89,6 +107,7 @@ export function useCreatePlanTask() {
 export function useUpdatePlanTask() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: PLAN_TASK_WRITE_KEY,
     mutationFn: (args: { id: string; body: UpdateTaskBody }) => {
       // Fire the PATCH immediately — no await (chunk 9.5 rule; see
       // components/unified-plan/v2/net.ts header for the SIGABRT trap).
@@ -133,6 +152,7 @@ export function useUpdatePlanTask() {
 export function useDeletePlanTask() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: PLAN_TASK_DELETE_KEY,
     mutationFn: (id: string) => deletePlanTask(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY });
