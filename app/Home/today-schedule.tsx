@@ -81,7 +81,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -90,12 +89,20 @@ import { RecordMetricModal } from '@/components/home/record-metric-modal';
 import { EntityIcon } from '@/components/icons';
 import { Colors } from '@/constants/theme';
 import { useAppointments } from '@/hooks/use-appointments';
+import {
+  buildTimeline,
+  computeAdherence,
+  minutesSinceMidnight,
+  type TimelineItem,
+} from '@/lib/today-timeline';
+import { TodayTimeline, TodayLegend } from '@/components/today/TodayTimeline';
+import { AdherenceScore } from '@/components/today/AdherenceScore';
 import { useCalendar } from '@/hooks/use-calendar';
 import { useHabitsInPlanFlag, usePlanHabits } from '@/hooks/use-plan-habits';
 import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing';
-import { completeTask, fetchTasksForDate, skipTask } from '@/services/api/ai-health-plan';
+import { completeTask, fetchTasksForDate } from '@/services/api/ai-health-plan';
 import { fetchMedicationsSummary, fetchPatientInfo } from '@/services/api/patient';
-import type { MedicationSummary, PlanHabit, TaskOccurrence, TaskType } from '@/services/api/types';
+import type { MedicationSummary, TaskOccurrence, } from '@/services/api/types';
 import {
   getPermissionStatus,
   getReminderPermissionStatus,
@@ -124,26 +131,7 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** "14:30" → "2:30 PM". Plan tasks store a wall-clock HH:MM string. */
-function formatTaskTime(hhmm: string): string {
-  const [hStr, m] = hhmm.split(':');
-  const h = parseInt(hStr, 10);
-  const meridiem = h >= 12 ? 'PM' : 'AM';
-  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${display}:${m} ${meridiem}`;
-}
 
-/** Calendar items carry a full ISO instant; all-day items have no time. */
-function formatEventTime(item: CalendarEvent): string {
-  if (item.allDay) return 'All day';
-  const d = new Date(item.startDate);
-  if (Number.isNaN(d.getTime())) return '';
-  const hh = d.getHours();
-  const mm = d.getMinutes().toString().padStart(2, '0');
-  const meridiem = hh >= 12 ? 'PM' : 'AM';
-  const display = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
-  return `${display}:${mm} ${meridiem}`;
-}
 
 /**
  * Compose an ISO instant from the backend appointment's separate
@@ -164,128 +152,12 @@ function toIso(date: string, time?: string): string {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 }
 
-/** Human label for a routine's cadence. */
-function formatCadence(cadence: PlanHabit['cadence']): string {
-  if (cadence === 'daily') return 'Daily';
-  if (cadence === 'weekly') return 'Weekly';
-  if (cadence && typeof cadence === 'object' && typeof cadence.everyNDays === 'number') {
-    return `Every ${cadence.everyNDays} days`;
-  }
-  return '';
-}
 
-const TASK_ICON_CONFIG: Record<TaskType, { name: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }> = {
-  medication: { name: 'medication', color: '#8B5CF6', bg: 'rgba(139,92,246,0.12)' },
-  exercise: { name: 'directions-walk', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
-  appointment: { name: 'local-hospital', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
-  reminder: { name: 'notifications', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
-};
 
-const DONE_TEAL = '#008080';
 
 // ─── Section shell ───────────────────────────────────────────────────
 
-interface ScheduleSectionProps {
-  title: string;
-  /** Rendered next to the title, e.g. "3". Always shown, even at zero. */
-  count: number;
-  /** Shown instead of children when `count === 0` and not loading. */
-  emptyLabel: string;
-  /** Extra honest context under the empty line (permission off, error). */
-  emptyHint?: string;
-  isLoading?: boolean;
-  /** Set when the underlying fetch failed — replaces the empty line. */
-  errorLabel?: string;
-  /** Optional trailing summary text in the header (e.g. "2 / 5 done"). */
-  headerNote?: string;
-  children?: React.ReactNode;
-}
 
-/**
- * One labelled group of the day view.
- *
- * Deliberately renders even at zero items: a section that disappears on
- * a quiet day is what made this screen read as "tasks only". An honest
- * "No appointments today" is more trustworthy than a missing heading.
- */
-function ScheduleSection({
-  title,
-  count,
-  emptyLabel,
-  emptyHint,
-  isLoading,
-  errorLabel,
-  headerNote,
-  children,
-}: ScheduleSectionProps): React.JSX.Element {
-  const { getScaledFontSize, getScaledFontWeight, settings } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionHeaderLeft}>
-          <Text
-            style={[
-              {
-                fontSize: getScaledFontSize(18),
-                fontWeight: getScaledFontWeight(700) as any,
-                color: colors.text,
-              },
-            ]}>
-            {title}
-          </Text>
-          {/* Count badge. Paired with the number as text (not a dot) so
-              it is readable by screen readers and at large font sizes. */}
-          <View style={[styles.countBadge, { backgroundColor: colors.primary + '18' }]}>
-            <Text
-              style={{
-                fontSize: getScaledFontSize(12),
-                fontWeight: getScaledFontWeight(700) as any,
-                color: colors.primary,
-              }}
-              accessibilityLabel={`${count} ${title.toLowerCase()}`}>
-              {count}
-            </Text>
-          </View>
-        </View>
-        {!!headerNote && (
-          <Text
-            style={{
-              fontSize: getScaledFontSize(12),
-              fontWeight: getScaledFontWeight(600) as any,
-              color: DONE_TEAL,
-            }}>
-            {headerNote}
-          </Text>
-        )}
-      </View>
-
-      {errorLabel ? (
-        <Text style={[styles.emptyLine, { fontSize: getScaledFontSize(14), color: '#B45309' }]}>
-          {errorLabel}
-        </Text>
-      ) : isLoading && count === 0 ? (
-        <Text style={[styles.emptyLine, { fontSize: getScaledFontSize(14), color: colors.text + '80' }]}>
-          Loading…
-        </Text>
-      ) : count === 0 ? (
-        <>
-          <Text style={[styles.emptyLine, { fontSize: getScaledFontSize(14), color: colors.text + '80' }]}>
-            {emptyLabel}
-          </Text>
-          {!!emptyHint && (
-            <Text style={[styles.emptyHint, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]}>
-              {emptyHint}
-            </Text>
-          )}
-        </>
-      ) : (
-        children
-      )}
-    </View>
-  );
-}
 
 // ─── Screen ──────────────────────────────────────────────────────────
 
@@ -435,6 +307,159 @@ export default function TodayScheduleScreen(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── The single timeline (Ken 2026-08-11) ──────────────────────────
+  //
+  // Four streams in, one time-ordered spine out. The mapping is the whole
+  // trick, so each source states how it gets a time:
+  //
+  //   appointments — ISO startDate, already on the clock
+  //   tasks        — PlanTask.scheduledTime (HH:MM)
+  //   routines     — PlanHabit.scheduledTime, OPTIONAL (be #380). A routine
+  //                  had only a cadence, which says how often and never when.
+  //                  Without a time it goes to "Anytime today" — honest, and
+  //                  true of "stretch sometime today". Existing routines have
+  //                  no time until a plan regenerates.
+  //   reminders    — ISO startDate when the source gave one, else anytime.
+  //
+  // Merge logic + ordering live in lib/today-timeline.ts so they are testable
+  // without a device; this memo only shapes the inputs.
+  const hhmmFromIso = (iso: string): string | null => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const timelineItems = useMemo<TimelineItem[]>(() => {
+    const out: TimelineItem[] = [];
+
+    for (const a of appointmentItems) {
+      out.push({
+        id: `appt:${a.id}`,
+        kind: 'appointment',
+        title: a.title,
+        time: a.allDay ? null : hhmmFromIso(a.startDate),
+        done: completedCalendarIds.has(a.id),
+        detail: a.location || undefined,
+      });
+    }
+
+    for (const t of planTasks) {
+      out.push({
+        id: `task:${t.id}`,
+        kind: 'task',
+        title: t.title,
+        time: t.scheduledTime || null,
+        done: t.status === 'completed',
+        detail: t.completionStyle === 'measurable' ? t.metric?.name : undefined,
+      });
+    }
+
+    if (routinesEnabled) {
+      for (const r of routines) {
+        out.push({
+          id: `routine:${r.habitId}`,
+          kind: 'routine',
+          title: r.label,
+          time: r.scheduledTime || null,
+          done: false,
+          detail: typeof r.cadence === 'string' ? undefined : `every ${r.cadence.everyNDays} days`,
+        });
+      }
+    }
+
+    for (const r of reminderItems) {
+      out.push({
+        id: `rem:${r.id}`,
+        kind: 'reminder',
+        title: r.title,
+        time: r.allDay ? null : hhmmFromIso(r.startDate),
+        done: completedCalendarIds.has(r.id),
+      });
+    }
+
+    return out;
+  }, [appointmentItems, planTasks, routines, routinesEnabled, reminderItems, completedCalendarIds]);
+
+  // Recomputed on each render rather than ticked on a timer: the NOW marker
+  // only has to be right when the patient is looking, and a per-minute
+  // interval on this screen would re-render the whole day for a line that
+  // moves an hour at a time.
+  const nowMinutes = minutesSinceMidnight(new Date());
+  const timeline = useMemo(() => buildTimeline(timelineItems), [timelineItems]);
+  const adherence = useMemo(
+    () => computeAdherence(timelineItems, nowMinutes),
+    [timelineItems, nowMinutes],
+  );
+
+  const timelineColors = useMemo(
+    () => ({
+      text: colors.text as string,
+      subtext: colors.subtext as string,
+      card: (colors.card as string) ?? (colors.background as string),
+      border: colors.border as string,
+      tint: colors.tint as string,
+    }),
+    [colors],
+  );
+
+  /**
+   * Loading / permission / error state, surfaced ABOVE the timeline.
+   *
+   * A timeline has no per-group headers to hang "No appointments today" on,
+   * so an empty day and a denied calendar look identical. That is the one
+   * regression a spine can cause versus the grouped layout, and these lines
+   * are what prevent it.
+   */
+  const timelineNotices = useMemo(() => {
+    const n: string[] = [];
+    if (isLoadingAppointments || isLoadingCalendar || isLoadingTasks || isLoadingRoutines) {
+      n.push('Loading your day…');
+    }
+    if (calendarAccessDenied) {
+      n.push('Calendar access is off, so events saved on this device are not shown.');
+    }
+    if (reminderAccessDenied) {
+      n.push('Reminders access is off, so your Reminders list is not shown.');
+    }
+    if (appointmentsError) n.push("Couldn't load appointments. Pull down to try again.");
+    if (tasksError) n.push("Couldn't load tasks. Pull down to try again.");
+    if (routinesError) n.push("Couldn't load routines. Pull down to try again.");
+    return n;
+  }, [
+    isLoadingAppointments, isLoadingCalendar, isLoadingTasks, isLoadingRoutines,
+    calendarAccessDenied, reminderAccessDenied, appointmentsError, tasksError, routinesError,
+  ]);
+
+  /**
+   * Tapping a timeline row routes back to the SAME handlers the grouped rows
+   * used, keyed by the id prefix the merge stamped on.
+   *
+   * Deliberately no new completion path: the task flow already carries
+   * optimistic update, rollback on failure, and the measurable-task capture
+   * modal. Re-implementing any of that here would be a second source of
+   * truth for "done", which is how the two surfaces start disagreeing.
+   */
+  const onPressTimelineItem = (item: TimelineItem) => {
+    if (item.id.startsWith('task:')) {
+      const id = item.id.slice('task:'.length);
+      const task = planTasks.find((t) => t.id === id);
+      // Completed tasks are not un-completed from the timeline — the
+      // grouped rows had an explicit control for that and this is a
+      // one-tap surface. Tapping a done row is a no-op, not a silent undo.
+      if (task && task.status !== 'completed') void handleTaskComplete(task);
+      return;
+    }
+    if (item.id.startsWith('appt:') || item.id.startsWith('rem:')) {
+      const id = item.id.slice(item.id.indexOf(':') + 1);
+      const ev = todayCalendarItems.find((e) => e.id === id);
+      if (ev) toggleCalendarItem(ev);
+      return;
+    }
+    // Routines have no per-day completion concept on this screen; they are
+    // structure, not asks. Tapping one is a no-op rather than a dead-looking
+    // control that silently does nothing meaningful.
+  };
+
   const toggleCalendarItem = (item: CalendarEvent) => {
     setCompletedCalendarIds((prev) => {
       const next = new Set(prev);
@@ -454,19 +479,6 @@ export default function TodayScheduleScreen(): React.JSX.Element {
    * to the unified /calendar-event-detail popover instead, which knows
    * how to look them up.
    */
-  const openCalendarDetail = (event: CalendarEvent) => {
-    if (event.origin === 'app' && (event.appKind === 'appointment' || event.appKind === 'past-visit')) {
-      const prefix = `app:${event.appKind}:`;
-      const apptId = event.id.startsWith(prefix)
-        ? event.id.slice(prefix.length)
-        : event.id.startsWith('app:')
-          ? event.id.slice(4)
-          : event.id;
-      router.push({ pathname: '/Home/appointment-detail', params: { id: apptId } } as never);
-      return;
-    }
-    router.push({ pathname: '/calendar-event-detail', params: { eventId: event.id } } as never);
-  };
 
   // ── Initial load ──────────────────────────────────────────────────
   useEffect(() => {
@@ -596,31 +608,14 @@ export default function TodayScheduleScreen(): React.JSX.Element {
     await persistTaskCompletion(task);
   };
 
-  const handleTaskSkip = async (task: TaskOccurrence) => {
-    setPlanTasks((prev) =>
-      prev.map((t) =>
-        t.id === task.id && t.scheduledFor === task.scheduledFor ? { ...t, status: 'skipped' } : t,
-      ),
-    );
-    const result = await skipTask(task.id, task.scheduledFor);
-    if (!result.ok) {
-      setPlanTasks((prev) =>
-        prev.map((t) =>
-          t.id === task.id && t.scheduledFor === task.scheduledFor ? { ...t, status: 'pending' } : t,
-        ),
-      );
-      const reason = result.code === 'NETWORK_ERROR'
-        ? 'No internet connection. Try again when you’re back online.'
-        : result.status === 401 || result.status === 403
-          ? 'Your session expired. Please sign in again to skip tasks.'
-          : (result.message ?? 'Could not save task skip.');
-      Alert.alert("Couldn't skip task", reason);
-      return;
-    }
-    // Skips also count as expected-not-done in completionRate — same
-    // wellbeing invalidation as complete.
-    invalidateWellbeingCaches(queryClient);
-  };
+  // NOTE: `handleTaskSkip` lived here for the grouped rows' explicit Skip
+  // control. The timeline is a one-tap surface and has no room for a second
+  // per-row action, so it was removed rather than left as dead code that
+  // looks live. Skipping a task is still reachable from the Plan screen
+  // (app/Home/health-plan.tsx) — the capability moved surface, it was not
+  // lost. If Skip is wanted back here it belongs on a long-press or in a
+  // row detail sheet, not as a second inline button.
+
 
   // ── Pull to refresh — every group, not just tasks ─────────────────
   const onRefresh = async () => {
@@ -645,230 +640,7 @@ export default function TodayScheduleScreen(): React.JSX.Element {
     }
   };
 
-  // ── Row renderers ─────────────────────────────────────────────────
-
-  /**
-   * Calendar-derived row (appointment or reminder).
-   *
-   * Two distinct tap targets so both existing capabilities survive:
-   *   • the 44pt check circle toggles the local per-day done flag
-   *   • the row body opens the item's detail screen
-   */
-  const renderCalendarRow = (item: CalendarEvent, kind: 'appointment' | 'reminder') => {
-    const done = completedCalendarIds.has(item.id) || !!item.completed;
-    const iconBg = kind === 'reminder' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)';
-    const iconColor = kind === 'reminder' ? '#F59E0B' : '#3B82F6';
-    const iconName: keyof typeof MaterialIcons.glyphMap = kind === 'reminder' ? 'notifications' : 'event';
-    const subtitle = item.location || item.source?.title || '';
-
-    return (
-      <View
-        key={`${kind}:${item.id}`}
-        style={[
-          styles.row,
-          { backgroundColor: colors.background, borderColor: colors.text + '15', opacity: done ? 0.6 : 1 },
-        ]}>
-        <Pressable
-          onPress={() => toggleCalendarItem(item)}
-          style={styles.checkHit}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: done }}
-          accessibilityLabel={done ? `Mark ${item.title} not done` : `Mark ${item.title} done`}>
-          <View
-            style={[
-              styles.checkCircle,
-              {
-                borderColor: done ? DONE_TEAL : colors.text + '50',
-                backgroundColor: done ? DONE_TEAL : 'transparent',
-              },
-            ]}>
-            {done && <MaterialIcons name="check" size={14} color="#fff" />}
-          </View>
-        </Pressable>
-
-        <Pressable
-          onPress={() => openCalendarDetail(item)}
-          style={styles.rowBodyHit}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.title}, ${formatEventTime(item)}. Open details.`}>
-          <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
-            <MaterialIcons name={iconName} size={18} color={iconColor} />
-          </View>
-          <View style={styles.rowBody}>
-            <Text
-              style={{
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(600) as any,
-                color: colors.text,
-                textDecorationLine: done ? 'line-through' : 'none',
-              }}
-              numberOfLines={2}>
-              {item.title}
-            </Text>
-            {/* State is never colour-only: a done row also says "Done". */}
-            <Text
-              style={[styles.rowSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]}
-              numberOfLines={1}>
-              {done ? (subtitle ? `Done · ${subtitle}` : 'Done') : subtitle}
-            </Text>
-          </View>
-          <Text
-            style={{
-              fontSize: getScaledFontSize(12),
-              color: colors.text + '80',
-              fontWeight: getScaledFontWeight(600) as any,
-            }}>
-            {formatEventTime(item)}
-          </Text>
-        </Pressable>
-      </View>
-    );
-  };
-
-  /** Plan-task row — tap completes, long-press skips (unchanged). */
-  const renderTaskRow = (task: TaskOccurrence) => {
-    const icon = TASK_ICON_CONFIG[task.type];
-    const done = task.status === 'completed';
-    const skipped = task.status === 'skipped';
-    // SCRUM-279 (build 45): if this task is metric-trackable, show a
-    // small "Record" pill so the patient sees that tapping will ask
-    // them for a value (not just check off).
-    const spec = !done && !skipped ? detectMetricForTask(task) : null;
-    const stateLabel = done ? 'Done' : skipped ? 'Skipped' : '';
-    const subtitle = task.description || '';
-
-    return (
-      <Pressable
-        key={`${task.id}#${task.scheduledFor}`}
-        onPress={() => handleTaskComplete(task)}
-        onLongPress={() => handleTaskSkip(task)}
-        accessibilityRole="button"
-        accessibilityLabel={
-          `${task.title}, ${formatTaskTime(task.scheduledTime)}.` +
-          (stateLabel ? ` ${stateLabel}.` : '') +
-          (spec ? ' Tap to record a value.' : ' Tap to complete, long press to skip.')
-        }
-        style={[
-          styles.row,
-          {
-            backgroundColor: colors.background,
-            borderColor: colors.text + '15',
-            opacity: done || skipped ? 0.6 : 1,
-          },
-        ]}>
-        <View style={styles.checkHit}>
-          <View
-            style={[
-              styles.checkCircle,
-              {
-                borderColor: done ? DONE_TEAL : colors.text + '50',
-                backgroundColor: done ? DONE_TEAL : 'transparent',
-              },
-            ]}>
-            {done && <MaterialIcons name="check" size={14} color="#fff" />}
-            {skipped && <MaterialIcons name="close" size={14} color={colors.text + '70'} />}
-          </View>
-        </View>
-        <View style={[styles.rowIcon, { backgroundColor: icon.bg }]}>
-          <MaterialIcons name={icon.name} size={18} color={icon.color} />
-        </View>
-        <View style={styles.rowBody}>
-          <Text
-            style={{
-              fontSize: getScaledFontSize(14),
-              fontWeight: getScaledFontWeight(600) as any,
-              color: colors.text,
-              textDecorationLine: done ? 'line-through' : 'none',
-            }}
-            numberOfLines={2}>
-            {task.title}
-          </Text>
-          {(!!stateLabel || !!subtitle) && (
-            <Text
-              style={[styles.rowSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]}
-              numberOfLines={1}>
-              {stateLabel && subtitle ? `${stateLabel} · ${subtitle}` : stateLabel || subtitle}
-            </Text>
-          )}
-        </View>
-        {spec ? (
-          <View
-            style={[
-              styles.recordPill,
-              { backgroundColor: (colors.tint ?? DONE_TEAL) + '22', borderColor: (colors.tint ?? DONE_TEAL) + '55' },
-            ]}>
-            <Text
-              style={{
-                color: colors.tint ?? DONE_TEAL,
-                fontSize: getScaledFontSize(10),
-                fontWeight: getScaledFontWeight(700) as any,
-                letterSpacing: 0.3,
-              }}>
-              RECORD
-            </Text>
-          </View>
-        ) : null}
-        <Text
-          style={{
-            fontSize: getScaledFontSize(12),
-            color: colors.text + '80',
-            fontWeight: getScaledFontWeight(600) as any,
-          }}>
-          {formatTaskTime(task.scheduledTime)}
-        </Text>
-      </Pressable>
-    );
-  };
-
-  /**
-   * Routine row — DISPLAY ONLY on this screen.
-   *
-   * Ken's spec: routines are shown here for awareness; editing lives on
-   * the routines screen. Tapping navigates there rather than mutating
-   * anything, so no CRUD surface leaks onto the day view.
-   */
-  const renderRoutineRow = (habit: PlanHabit) => {
-    const cadence = formatCadence(habit.cadence);
-    const target = habit.targetValue !== undefined
-      ? `${habit.targetValue}${habit.unit ? ` ${habit.unit}` : ''}`
-      : '';
-    const subtitle = [cadence, target].filter(Boolean).join(' · ');
-
-    return (
-      <Pressable
-        key={habit.habitId}
-        onPress={() => router.push('/Home/habits' as never)}
-        accessibilityRole="button"
-        accessibilityLabel={`${habit.label}${subtitle ? `, ${subtitle}` : ''}. Open routines.`}
-        style={[styles.row, { backgroundColor: colors.background, borderColor: colors.text + '15' }]}>
-        <View style={[styles.rowIcon, { backgroundColor: 'rgba(122,111,240,0.12)' }]}>
-          <MaterialIcons name="repeat" size={18} color="#7A6FF0" />
-        </View>
-        <View style={styles.rowBody}>
-          <Text
-            style={{
-              fontSize: getScaledFontSize(14),
-              fontWeight: getScaledFontWeight(600) as any,
-              color: colors.text,
-            }}
-            numberOfLines={2}>
-            {habit.label}
-          </Text>
-          {!!subtitle && (
-            <Text
-              style={[styles.rowSub, { fontSize: getScaledFontSize(12), color: colors.text + '70' }]}
-              numberOfLines={1}>
-              {subtitle}
-            </Text>
-          )}
-        </View>
-        <MaterialIcons name="chevron-right" size={20} color={colors.text + '60'} />
-      </Pressable>
-    );
-  };
-
-  const completedTaskCount = planTasks.filter((t) => t.status === 'completed').length;
-
+  //
   return (
     <AppWrapper>
       <ScrollView
@@ -897,6 +669,18 @@ export default function TodayScheduleScreen(): React.JSX.Element {
             ]}>
             Today&apos;s Schedule
           </Text>
+
+          {/* Ken 2026-08-11: "adherence score up in right corner as well?".
+              Treatment B (percentage leads) per Vishal, and tappable — a
+              number nobody can interrogate gets mistrusted the first time it
+              looks wrong, and this one WILL look wrong to anyone expecting
+              their 8pm task in the denominator at lunchtime. */}
+          <AdherenceScore
+            adherence={adherence}
+            colors={timelineColors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
         </View>
 
         {/* Profile summary */}
@@ -934,61 +718,44 @@ export default function TodayScheduleScreen(): React.JSX.Element {
           )}
         </View>
 
-        {/* ── 1. Appointments ─────────────────────────────────────── */}
-        <ScheduleSection
-          title="Appointments"
-          count={appointmentItems.length}
-          emptyLabel="No appointments today"
-          emptyHint={
-            calendarAccessDenied
-              ? 'Calendar access is off, so events saved on this device are not shown. Turn it on in Settings.'
-              : undefined
-          }
-          isLoading={isLoadingAppointments || isLoadingCalendar}
-          errorLabel={
-            appointmentsError && appointmentItems.length === 0
-              ? "Couldn't load appointments. Pull down to try again."
-              : undefined
-          }>
-          {appointmentItems.map((item) => renderCalendarRow(item, 'appointment'))}
-        </ScheduleSection>
+        {/* ── One chronological spine (Ken 2026-08-11) ─────────────
+            "This is where appts / routines and tasks come together to build
+            our daily schedule." The four groups this replaces meant 9am was
+            described in three places and the patient merged the lists
+            themselves to answer "what's next?".
 
-        {/* ── 2. Tasks ────────────────────────────────────────────── */}
-        <ScheduleSection
-          title="Tasks"
-          count={planTasks.length}
-          emptyLabel="No tasks today"
-          isLoading={isLoadingTasks}
-          errorLabel={tasksError ? "Couldn't load tasks. Pull down to try again." : undefined}
-          headerNote={planTasks.length > 0 ? `${completedTaskCount} / ${planTasks.length} done` : undefined}>
-          {planTasks.map(renderTaskRow)}
-        </ScheduleSection>
+            The good idea from those groups is kept: nothing is silently
+            dropped. Anything without a time lands in "Anytime today" rather
+            than vanishing — the exact failure the groups were built to fix
+            in August. Loading and permission states are surfaced above the
+            timeline for the same reason: "nothing scheduled" must never be
+            the way a patient learns calendar access is off. */}
+        <TodayLegend
+          colors={timelineColors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
-        {/* ── 3. Routines (plan habits — label only; identifiers stay
-               `habit*`, another workstream owns the rename) ───────── */}
-        <ScheduleSection
-          title="Routines"
-          count={routines.length}
-          emptyLabel={routinesEnabled ? 'No routines yet' : 'No routines today'}
-          emptyHint={routinesEnabled ? 'Add routines from your plan to see them here.' : undefined}
-          isLoading={isLoadingRoutines}
-          errorLabel={routinesError ? "Couldn't load routines. Pull down to try again." : undefined}>
-          {routines.map(renderRoutineRow)}
-        </ScheduleSection>
+        {timelineNotices.length > 0 && (
+          <View style={styles.noticeStack}>
+            {timelineNotices.map((n) => (
+              <Text
+                key={n}
+                style={[styles.noticeText, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+                {n}
+              </Text>
+            ))}
+          </View>
+        )}
 
-        {/* ── 4. Reminders ────────────────────────────────────────── */}
-        <ScheduleSection
-          title="Reminders"
-          count={reminderItems.length}
-          emptyLabel="No reminders today"
-          emptyHint={
-            reminderAccessDenied
-              ? 'Reminders access is off, so your Reminders list is not shown. Turn it on in Settings.'
-              : undefined
-          }
-          isLoading={isLoadingCalendar}>
-          {reminderItems.map((item) => renderCalendarRow(item, 'reminder'))}
-        </ScheduleSection>
+        <TodayTimeline
+          timeline={timeline}
+          nowMinutes={nowMinutes}
+          colors={timelineColors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+          onPressItem={onPressTimelineItem}
+        />
 
         {/* Current medications — kept from the previous version. Not one
             of the four day groups, so it sits below them and, unlike the
@@ -1114,8 +881,10 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    // Was `center`: the title sat alone. The score now takes the right
+    // corner Ken asked for, so the two ends of the row anchor.
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
@@ -1165,6 +934,8 @@ const styles = StyleSheet.create({
   // Medications
   medCard: { borderWidth: 1, borderLeftWidth: 3, borderRadius: 14, padding: 14, marginBottom: 8 },
   medCardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  noticeStack: { marginBottom: 12, gap: 4 },
+  noticeText: { lineHeight: 17 },
   medDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
