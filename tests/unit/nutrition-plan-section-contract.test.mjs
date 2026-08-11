@@ -31,6 +31,7 @@ const SCREEN = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesig
 const BPS = readFileSync(join(ROOT, 'components/health-plan/BiopsychosocialPlanScreen.tsx'), 'utf8');
 const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
 const STEPPER = readFileSync(join(ROOT, 'app/Home/assessment-stepper.tsx'), 'utf8');
+const TASKLIST = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskListSection.tsx'), 'utf8');
 
 /**
  * Source with comments stripped.
@@ -326,7 +327,9 @@ test('the added-mark is derived from the plan, not local state', () => {
 
 test('adding a task refetches the plan so it actually appears', () => {
   // Otherwise the patient is told it was added and sees no change anywhere.
-  assert.match(SECTION, /onTaskAdded\?\.\(\)/);
+  // The callback now carries the new task id so the parent can also reveal
+  // where it landed — see the reveal tests below.
+  assert.match(SECTION, /onTaskAdded\?\.\(created\.id\)/);
   assert.match(BPS, /aiPlanQuery\.refetch\(\)/);
 });
 
@@ -334,4 +337,63 @@ test('the added confirmation says WHERE it went', () => {
   // "Added to my plan" with no destination was reported as "where it is
   // added don't know".
   assert.match(SECTION, /On your plan — tick it off below/);
+});
+
+
+// ── Show where it landed (Vishal 2026-08-11) ─────────────────────────
+
+test('the new task id is handed up, not just a bare notification', () => {
+  // "we are not giving user any info where its added". Revealing the
+  // destination needs the id; a void callback cannot highlight anything.
+  assert.match(SECTION, /onTaskAdded\?\.\(created\.id\)/);
+  assert.match(SECTION, /const created = await createPlanTask/);
+});
+
+test('the reveal refetches BEFORE scrolling', () => {
+  // Scrolling first lands on a task list that does not contain the new row
+  // yet, and the flash highlights nothing.
+  const fn = BPS.slice(BPS.indexOf('const revealAddedTask'));
+  const refetch = fn.indexOf('await aiPlanQuery.refetch()');
+  const scroll = fn.indexOf("scrollToSection('biological')");
+  assert.ok(refetch > -1 && scroll > -1);
+  assert.ok(refetch < scroll, 'refetch must resolve before the scroll');
+});
+
+test('only the section the task landed in reacts', () => {
+  // Adding a nutrition task must not expand Psychological or Social.
+  assert.match(BPS, /openTasksSignal=\{key === 'biological' \? openTasksSignal : undefined\}/);
+  assert.match(BPS, /highlightTaskId=\{key === 'biological' \? highlightTaskId : null\}/);
+});
+
+test('the accordion opens on a COUNTER, so a second add re-opens it', () => {
+  // A boolean would latch: collapse the section after the first add and the
+  // second add would silently do nothing.
+  assert.match(TASKLIST, /openSignal\?: number/);
+  assert.match(TASKLIST, /openSignal !== lastSignal\.current/);
+  assert.match(BPS, /setOpenTasksSignal\(\(n\) => n \+ 1\)/);
+});
+
+test('the signal only ever OPENS, never force-closes', () => {
+  // The patient's own toggle may only be overridden in the direction that
+  // reveals something.
+  const eff = TASKLIST.slice(TASKLIST.indexOf('const lastSignal'));
+  assert.match(eff, /setOpen\(true\)/);
+  assert.doesNotMatch(eff.slice(0, eff.indexOf('}, [openSignal])')), /setOpen\(false\)/);
+});
+
+test('the highlight clears itself and cannot leak a timer', () => {
+  assert.match(BPS, /setHighlightTaskId\(null\), 3500/);
+  assert.match(BPS, /clearTimeout\(highlightTimer\.current\)/);
+  assert.match(BPS, /React\.useEffect\(\s*\(\) => \(\) => \{/, 'needs an unmount cleanup');
+});
+
+test('the highlight uses no animation module', () => {
+  // This screen's iOS 26.5 envelope excludes Animated; a static flash on a
+  // timer reads just as clearly.
+  // codeOnly: the style comment legitimately explains WHY there is no
+  // Animated here, and would otherwise fail this assertion. Fourth time this
+  // trap has fired in this file — every negative assertion goes through
+  // codeOnly.
+  assert.doesNotMatch(codeOnly(TASKLIST), /Animated|LayoutAnimation/);
+  assert.match(TASKLIST, /highlight: \{/);
 });

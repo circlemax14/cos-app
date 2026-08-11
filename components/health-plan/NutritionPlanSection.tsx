@@ -79,8 +79,11 @@ export interface NutritionPlanSectionProps {
    * created a duplicate task.
    */
   existingTaskTitles?: readonly string[]
-  /** Called after a task is created so the parent can refetch the plan. */
-  onTaskAdded?: () => void
+  /**
+   * Called after a task is created, with the new task's id, so the parent can
+   * refetch the plan and then show the patient WHERE it landed.
+   */
+  onTaskAdded?: (taskId: string) => void
 }
 
 type Status =
@@ -188,7 +191,7 @@ export function NutritionPlanSection({
     async (index: number, suggestionTitle: string, rationale: string) => {
       setAdded((p) => ({ ...p, [index]: 'saving' }))
       try {
-        await createPlanTask({
+        const created = await createPlanTask({
           type: 'reminder',
           title: suggestionTitle.slice(0, 120),
           description: rationale,
@@ -201,10 +204,13 @@ export function NutritionPlanSection({
           completionStyle: 'simple',
         })
         setAdded((p) => ({ ...p, [index]: 'done' }))
-        // Refetch the plan so the new task actually appears in the section
-        // below — without this the patient is told it was added and sees no
-        // change anywhere, which is what was reported.
-        onTaskAdded?.()
+        // Hand the id up so the parent can refetch, scroll to the section the
+        // task landed in, open its Tasks accordion and flash the new row.
+        //
+        // Vishal 2026-08-11: "we are not giving user any info where its
+        // added". Showing beats telling — a modal would explain the
+        // destination; this reveals it.
+        onTaskAdded?.(created.id)
       } catch {
         // Deliberately not surfacing the raw error on the row — the card is
         // a summary surface. 'failed' renders a retry affordance in place.
