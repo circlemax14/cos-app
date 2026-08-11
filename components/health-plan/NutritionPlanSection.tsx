@@ -127,6 +127,14 @@ export function NutritionPlanSection({
 }: NutritionPlanSectionProps): React.ReactElement | null {
   const [status, setStatus] = React.useState<Status>({ kind: 'idle' })
   /**
+   * Vishal 2026-08-11: "this card needs to be an accordion".
+   *
+   * Collapsed shows the title row only. Everything else — the subtitle, the
+   * build action, the suggestions and the review notice — lives in the body,
+   * so the card costs one line in the stack until someone asks for it.
+   */
+  const [open, setOpen] = React.useState(false)
+  /**
    * Which suggestions the patient has turned into plan tasks, and which are
    * mid-flight. Keyed by suggestion index within the CURRENT plan — a
    * rebuild replaces the suggestions wholesale, so this is reset there.
@@ -336,23 +344,17 @@ export function NutritionPlanSection({
   const isReady = status.kind === 'ready'
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityHint={a11yHint}
-      hitSlop={4}
-      style={({ pressed }) => [
-        styles.card,
-        {
-          backgroundColor: `${tint}1F`,
-          borderColor: `${tint}55`,
-          opacity: pressed && status.kind !== 'loading' ? 0.85 : 1,
-        },
-        containerStyle,
-      ]}
-    >
-      <View style={styles.headerRow}>
+    <View style={[styles.card, { backgroundColor: `${tint}1F`, borderColor: `${tint}55` }, containerStyle]}>
+      {/* Header row IS the accordion toggle. */}
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel="Nutrition plan and support"
+        accessibilityHint={open ? 'Tap to collapse' : 'Tap to expand'}
+        hitSlop={4}
+        style={styles.headerRow}
+      >
         <View
           style={[styles.iconWrap, { backgroundColor: tint, borderColor: tint }]}
           accessibilityElementsHidden
@@ -363,34 +365,50 @@ export function NutritionPlanSection({
 
         <View style={styles.textCol}>
           <Text style={{ color: text, fontSize: sz(16), fontWeight: bold }} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text
-            style={{ color: subtext, fontSize: sz(13), marginTop: 3, lineHeight: 18 }}
-            numberOfLines={2}
-          >
-            {subtitle}
+            Nutrition plan &amp; support
           </Text>
         </View>
 
-        {status.kind === 'loading' ? (
-          // Static, not ActivityIndicator: BiopsychosocialPlanScreen — which
-          // is what renders this card in production — records that
-          // ActivityIndicator was scrubbed from these surfaces for iOS 26.5.
-          // The subtitle already says "Building your plan…", so the icon does
-          // not have to carry the motion.
-          <MaterialIcons name="sync" size={sz(22)} color={tint} />
-        ) : (
-          <MaterialIcons
-            name={isReady ? 'refresh' : 'chevron-right'}
-            size={sz(22)}
-            color={subtext}
-          />
-        )}
-      </View>
+        {/* Vishal 2026-08-11: "reload icon is not required on nutrition".
+            The chevron is now purely the accordion affordance — rebuilding
+            moved into the body where it reads as a deliberate action rather
+            than something you might hit while trying to expand. */}
+        <MaterialIcons
+          name={open ? 'expand-less' : 'expand-more'}
+          size={sz(22)}
+          color={subtext}
+        />
+      </Pressable>
 
-      {isReady && (
-        <View style={[styles.previewSection, { borderTopColor: `${tint}44` }]}>
+      {open && (
+        <View style={[styles.body, { borderTopColor: `${tint}44` }]}>
+          <Text style={{ color: subtext, fontSize: sz(13), lineHeight: 18 }}>
+            {subtitle}
+          </Text>
+
+          {status.kind !== 'loading' && status.kind !== 'ready' && (
+            <Pressable
+              onPress={onPress}
+              accessibilityRole="button"
+              accessibilityLabel={title}
+              accessibilityHint={a11yHint}
+              style={[styles.cta, { backgroundColor: tint }]}
+            >
+              <Text style={{ color: '#fff', fontSize: sz(14), fontWeight: bold }}>{title}</Text>
+            </Pressable>
+          )}
+
+          {status.kind === 'loading' && (
+            <View style={styles.loadingRow}>
+              <MaterialIcons name="sync" size={sz(16)} color={tint} />
+              <Text style={{ color: subtext, fontSize: sz(13), marginLeft: 8 }}>
+                Building your plan…
+              </Text>
+            </View>
+          )}
+
+          {isReady && (
+            <View style={styles.previewSection}>
           {status.plan.suggestions.map((s, i) => (
             <View key={`${s.factor}-${i}`} style={styles.previewRow}>
               <View style={[styles.dot, { backgroundColor: tint, borderColor: tint }]} />
@@ -456,9 +474,26 @@ export function NutritionPlanSection({
               </Text>
             </View>
           )}
+
+              {/* Rebuild lives here, as words, instead of the header icon
+                  Vishal asked to remove. It is a deliberate action, not
+                  something to hit while reaching for the chevron. */}
+              <Pressable
+                onPress={() => void onGenerate()}
+                accessibilityRole="button"
+                accessibilityLabel="Rebuild my nutrition plan"
+                hitSlop={8}
+                style={styles.rebuild}
+              >
+                <Text style={{ color: tint, fontSize: sz(13), fontWeight: bold }}>
+                  Rebuild my plan
+                </Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       )}
-    </Pressable>
+    </View>
   )
 }
 
@@ -475,7 +510,18 @@ const styles = StyleSheet.create({
     // Keeps the whole card a comfortable target even in its shortest state.
     minHeight: 44,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  body: { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+  cta: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, minHeight: 44 },
+  rebuild: { marginTop: 12, alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
   iconWrap: {
     width: 48,
     height: 48,
@@ -486,7 +532,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   textCol: { flex: 1, marginRight: 8 },
-  previewSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+  previewSection: { marginTop: 4 },
   previewRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 5 },
   dot: { width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, marginRight: 10, marginTop: 6 },
   previewText: { flex: 1 },
