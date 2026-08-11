@@ -1136,18 +1136,78 @@ export function BiopsychosocialPlanScreen({
   const [highlightTaskId, setHighlightTaskId] = React.useState<string | null>(null);
   const highlightTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * Start the clear timer only once the scroll has been issued.
+   *
+   * Previously the 3.5s began before the scroll, so a slow layout ate most of
+   * the window and Vishal never saw the flash. The row is on screen by the
+   * time this runs.
+   */
+  const startHighlightTimer = React.useCallback(() => {
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightTaskId(null), 3500);
+  }, []);
+
+  /** The highlighted row's node, registered by TaskListSection. */
+  const highlightNodeRef = React.useRef<View | null>(null);
+
   const revealAddedTask = React.useCallback(
     async (taskId: string) => {
       await aiPlanQuery.refetch();
       setOpenTasksSignal((n) => n + 1);
       setHighlightTaskId(taskId);
-      // One frame for the accordion to lay out before measuring/scrolling —
-      // sectionYByKey is written by onLayout and would otherwise be stale.
-      setTimeout(() => scrollToSection('biological'), 120);
-      if (highlightTimer.current) clearTimeout(highlightTimer.current);
-      highlightTimer.current = setTimeout(() => setHighlightTaskId(null), 3500);
+
+      // Vishal 2026-08-11: "scroll wasn't smooth" and "i was scrolled to
+      // beginning of task".
+      //
+      // Both came from scrolling too early and to the wrong thing. The old
+      // code fired scrollToSection() 120ms after opening the accordion, so the
+      // scroll animation ran WHILE the accordion was still expanding — the
+      // content grew underneath the animation, which is the jank — and it
+      // targeted the SECTION, leaving the new row below the fold.
+      //
+      // Now: let the accordion finish laying out, measure the ROW against the
+      // scroll content, then perform ONE smooth scroll to it. Measuring beats
+      // summing onLayout offsets across three nested components, which would
+      // silently drift the moment any of them gained padding.
+      const scrollToHighlightedRow = () => {
+        const node = highlightNodeRef.current;
+        const scroller = scrollRef.current;
+        if (!node || !scroller) {
+          // Fall back to the section — still better than not moving at all.
+          scrollToSection('biological');
+          startHighlightTimer();
+          return;
+        }
+        const inner = (
+          scroller as unknown as { getInnerViewNode?: () => number }
+        ).getInnerViewNode?.();
+        if (inner == null) {
+          scrollToSection('biological');
+          startHighlightTimer();
+          return;
+        }
+        node.measureLayout(
+          inner,
+          (_x: number, y: number) => {
+            // Leave the row a comfortable distance below the top rather than
+            // flush against it, so surrounding context stays visible.
+            scroller.scrollTo({ y: Math.max(0, y - 120), animated: true });
+            startHighlightTimer();
+          },
+          () => {
+            scrollToSection('biological');
+            startHighlightTimer();
+          },
+        );
+      };
+
+      // Two frames: one for the accordion's state change to commit, one for
+      // its children to lay out. requestAnimationFrame rather than a fixed
+      // timeout so this tracks the device rather than a guessed duration.
+      requestAnimationFrame(() => requestAnimationFrame(scrollToHighlightedRow));
     },
-    [aiPlanQuery, scrollToSection],
+    [aiPlanQuery, scrollToSection, startHighlightTimer],
   );
 
   React.useEffect(
@@ -2317,6 +2377,9 @@ export function BiopsychosocialPlanScreen({
               // nutrition task never expands Psychological or Social.
               openTasksSignal={key === 'biological' ? openTasksSignal : undefined}
               highlightTaskId={key === 'biological' ? highlightTaskId : null}
+              onHighlightRef={(node) => {
+                if (key === 'biological') highlightNodeRef.current = node;
+              }}
               // CHUNK 53: intercept goal-edit locally when consolidation is ON
               // so the bio-goal editor renders inside the one consolidated
               // Modal owned by this screen. Under flag=false, forward to the

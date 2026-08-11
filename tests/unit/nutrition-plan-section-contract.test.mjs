@@ -349,12 +349,46 @@ test('the new task id is handed up, not just a bare notification', () => {
   assert.match(SECTION, /const created = await createPlanTask/);
 });
 
+test('the scroll targets the ROW, not the section', () => {
+  // Vishal 2026-08-11: "i was scrolled to beginning of task, ideally i should
+  // be scrolled to place of task". Scrolling to the section header leaves the
+  // new row below the fold, so the 3.5s flash happens off-screen.
+  assert.match(BPS, /measureLayout/);
+  assert.match(BPS, /getInnerViewNode/);
+  assert.match(BPS, /highlightNodeRef/);
+  assert.match(TASKLIST, /onHighlightRef/);
+});
+
+test('the scroll waits for the accordion to lay out', () => {
+  // "scroll wasn't smooth": the old code scrolled 120ms after opening the
+  // accordion, so the animation ran while content was still growing beneath
+  // it. Two frames — one to commit the state change, one to lay out.
+  assert.match(BPS, /requestAnimationFrame\(\(\) => requestAnimationFrame\(/);
+  assert.doesNotMatch(codeOnly(BPS), /setTimeout\(\(\) => scrollToSection/);
+});
+
+test('a failed measure still moves the patient somewhere useful', () => {
+  // measureLayout can fail if the node unmounts mid-flight. Falling back to
+  // the section beats not moving at all.
+  const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
+  const fallbacks = fn.match(/scrollToSection\('biological'\)/g) ?? [];
+  assert.ok(fallbacks.length >= 3, 'every early-out needs a fallback scroll');
+});
+
+test('the highlight timer starts AFTER the scroll is issued', () => {
+  // Starting it before meant a slow layout ate the window and the flash was
+  // never seen.
+  assert.match(BPS, /const startHighlightTimer = React\.useCallback/);
+  const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
+  assert.match(fn, /scrollTo\([\s\S]{0,120}startHighlightTimer\(\)/);
+});
+
 test('the reveal refetches BEFORE scrolling', () => {
   // Scrolling first lands on a task list that does not contain the new row
   // yet, and the flash highlights nothing.
   const fn = BPS.slice(BPS.indexOf('const revealAddedTask'));
   const refetch = fn.indexOf('await aiPlanQuery.refetch()');
-  const scroll = fn.indexOf("scrollToSection('biological')");
+  const scroll = fn.indexOf('scrollToHighlightedRow');
   assert.ok(refetch > -1 && scroll > -1);
   assert.ok(refetch < scroll, 'refetch must resolve before the scroll');
 });
