@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { checkSession, UserProfile } from '@/services/auth';
-import { hasStoredSession } from '@/lib/auth-tokens';
+import { readSessionPresence } from '@/lib/auth-tokens';
 import { getCachedProfile } from '@/lib/cached-profile';
 import { isPinSetup } from '@/services/pin-auth';
 import { Colors } from '@/constants/theme';
@@ -169,12 +169,38 @@ export default function SplashGate() {
     try {
       // Step 1: Read token + cached profile in parallel. Both are local reads
       // (SecureStore + AsyncStorage) — no network.
-      const [hasSession, cachedProfile] = await Promise.all([
-        hasStoredSession(),
+      // BUG #17, attempt 3. Corroborate BEFORE deciding "no session".
+      //
+      // A PIN on disk or a cached profile means this device has signed in
+      // before, so an empty token read is far more likely to be a Keychain
+      // that has not woken up than a real sign-out. readSessionPresence uses
+      // that to retry the read and, if it still comes back empty, to say
+      // 'indeterminate' rather than 'absent'.
+      //
+      // Ken 2026-08-11: first launch → sign-in, force-close → PIN screen.
+      // The token was there the whole time; the first read had not settled.
+      const [cachedProfile, pinConfigured] = await Promise.all([
         getCachedProfile(),
+        isPinSetup().catch(() => false),
       ]);
+      const presence = await readSessionPresence({
+        expectSession: pinConfigured || cachedProfile !== null,
+      });
 
-      if (!hasSession) {
+      if (presence === 'indeterminate') {
+        // Same rule the COS-353 catch below already applies to a THROWN read
+        // failure: this is not a sign-out condition. Unlocking re-reads the
+        // token once the Keychain is available, and the unlock path forces a
+        // real sign-in if the session turns out to be genuinely gone.
+        if (pinConfigured) {
+          router.replace('/(security)/lock-screen' as never);
+        } else {
+          setState('no-internet');
+        }
+        return;
+      }
+
+      if (presence === 'absent') {
         await requestSignIn('splash_no_session');
         return;
       }
