@@ -1151,60 +1151,69 @@ export function BiopsychosocialPlanScreen({
   /** The highlighted row's node, registered by TaskListSection. */
   const highlightNodeRef = React.useRef<View | null>(null);
 
+  /** Live scroll offset, needed to convert a screen position into a scroll target. */
+  const scrollOffsetY = React.useRef(0);
+
   const revealAddedTask = React.useCallback(
     async (taskId: string) => {
       await aiPlanQuery.refetch();
       setOpenTasksSignal((n) => n + 1);
       setHighlightTaskId(taskId);
 
-      // Vishal 2026-08-11: "scroll wasn't smooth" and "i was scrolled to
-      // beginning of task".
+      // Start the clear timer HERE, unconditionally.
       //
-      // Both came from scrolling too early and to the wrong thing. The old
-      // code fired scrollToSection() 120ms after opening the accordion, so the
-      // scroll animation ran WHILE the accordion was still expanding — the
-      // content grew underneath the animation, which is the jank — and it
-      // targeted the SECTION, leaving the new row below the fold.
+      // Vishal 2026-08-11: "i can see highlight but it fixed, its not
+      // disappearing". My previous attempt started this inside measureLayout's
+      // success/failure callbacks — and measureLayout silently fired NEITHER
+      // (it no-ops when the relative-to handle is not a valid ancestor), so
+      // the timer never armed and the outline stayed forever. The same dead
+      // callback is why nothing scrolled.
       //
-      // Now: let the accordion finish laying out, measure the ROW against the
-      // scroll content, then perform ONE smooth scroll to it. Measuring beats
-      // summing onLayout offsets across three nested components, which would
-      // silently drift the moment any of them gained padding.
+      // A visual cue must never depend on a measurement succeeding. The scroll
+      // may fail; the highlight still clears.
+      startHighlightTimer();
+
+      // Position the row using measureInWindow on both the row and the
+      // ScrollView, plus the live offset. Every input here is a value that
+      // reliably arrives for a mounted view — unlike measureLayout, which
+      // needs a valid ancestor handle and fails silently when it does not get
+      // one.
+      //
+      //   target = currentOffset + (rowScreenY - scrollViewScreenY) - headroom
       const scrollToHighlightedRow = () => {
         const node = highlightNodeRef.current;
         const scroller = scrollRef.current;
         if (!node || !scroller) {
-          // Fall back to the section — still better than not moving at all.
           scrollToSection('biological');
-          startHighlightTimer();
           return;
         }
-        const inner = (
-          scroller as unknown as { getInnerViewNode?: () => number }
-        ).getInnerViewNode?.();
-        if (inner == null) {
-          scrollToSection('biological');
-          startHighlightTimer();
-          return;
-        }
-        node.measureLayout(
-          inner,
-          (_x: number, y: number) => {
-            // Leave the row a comfortable distance below the top rather than
-            // flush against it, so surrounding context stays visible.
-            scroller.scrollTo({ y: Math.max(0, y - 120), animated: true });
-            startHighlightTimer();
-          },
-          () => {
-            scrollToSection('biological');
-            startHighlightTimer();
-          },
-        );
+
+        // Belt: if either measure callback never fires, still move.
+        let settled = false;
+        const fallback = setTimeout(() => {
+          if (!settled) scrollToSection('biological');
+        }, 300);
+
+        node.measureInWindow((_rx: number, rowY: number) => {
+          (
+            scroller as unknown as {
+              measureInWindow?: (cb: (x: number, y: number) => void) => void;
+            }
+          ).measureInWindow?.((_sx: number, svY: number) => {
+            settled = true;
+            clearTimeout(fallback);
+            // 120px of headroom so the row lands below the section header
+            // rather than flush against the top edge.
+            const target = scrollOffsetY.current + (rowY - svY) - 120;
+            scroller.scrollTo({ y: Math.max(0, target), animated: true });
+          });
+        });
       };
 
       // Two frames: one for the accordion's state change to commit, one for
-      // its children to lay out. requestAnimationFrame rather than a fixed
-      // timeout so this tracks the device rather than a guessed duration.
+      // its children to lay out. rAF rather than a fixed timeout so this
+      // tracks the device rather than a guessed duration — scrolling while the
+      // accordion is still expanding is what made the motion stutter.
       requestAnimationFrame(() => requestAnimationFrame(scrollToHighlightedRow));
     },
     [aiPlanQuery, scrollToSection, startHighlightTimer],
@@ -1582,6 +1591,14 @@ export function BiopsychosocialPlanScreen({
     <AppWrapper>
       <ScrollView
         ref={scrollRef}
+        // Live offset for revealAddedTask: measureInWindow gives SCREEN
+        // coordinates, and converting one into a scroll target needs to know
+        // where we currently are. 16ms is one frame — cheap, and the handler
+        // only writes a ref so it never triggers a render.
+        onScroll={(e) => {
+          scrollOffsetY.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         // SCRUM-658 (2026-07-31): transparent scroll background per
         // user request ("i want to set plan screen background as
         // transparent because its cutting bubbles"). AppWrapper's

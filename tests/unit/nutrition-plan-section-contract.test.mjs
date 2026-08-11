@@ -353,10 +353,46 @@ test('the scroll targets the ROW, not the section', () => {
   // Vishal 2026-08-11: "i was scrolled to beginning of task, ideally i should
   // be scrolled to place of task". Scrolling to the section header leaves the
   // new row below the fold, so the 3.5s flash happens off-screen.
-  assert.match(BPS, /measureLayout/);
-  assert.match(BPS, /getInnerViewNode/);
+  assert.match(BPS, /measureInWindow/);
   assert.match(BPS, /highlightNodeRef/);
+  assert.match(BPS, /scrollOffsetY\.current \+ \(rowY - svY\)/);
   assert.match(TASKLIST, /onHighlightRef/);
+});
+
+test('does NOT use measureLayout — it fails silently', () => {
+  // Vishal 2026-08-11: "its not scrolling ... i can see highlight but it
+  // fixed, its not disappearing". measureLayout no-ops when the relative-to
+  // handle is not a valid ancestor and fires NEITHER callback, so the scroll
+  // never happened and the timer (then living inside those callbacks) never
+  // armed. Both symptoms, one dead callback.
+  assert.doesNotMatch(codeOnly(BPS), /measureLayout/);
+  assert.doesNotMatch(codeOnly(BPS), /getInnerViewNode/);
+});
+
+test('the highlight clears even if the scroll never happens', () => {
+  // THE invariant this regression taught. A visual cue must not depend on a
+  // measurement succeeding — startHighlightTimer runs before any measuring.
+  const fn = BPS.slice(
+    BPS.indexOf('const revealAddedTask'),
+    BPS.indexOf('const scrollToHighlightedRow'),
+  );
+  assert.match(fn, /startHighlightTimer\(\)/, 'timer must arm before any measurement');
+});
+
+test('a scroll is attempted even if measurement callbacks never fire', () => {
+  // Same failure mode, other half: a belt timeout falls back to the section
+  // scroll so the patient always ends up somewhere sensible.
+  const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
+  assert.match(fn, /let settled = false/);
+  assert.match(fn, /if \(!settled\) scrollToSection\('biological'\)/);
+  assert.match(fn, /clearTimeout\(fallback\)/);
+});
+
+test('the live scroll offset is tracked without causing renders', () => {
+  // measureInWindow returns SCREEN coordinates; converting one to a scroll
+  // target needs the current offset. Writing a ref keeps it render-free.
+  assert.match(BPS, /scrollOffsetY\.current = e\.nativeEvent\.contentOffset\.y/);
+  assert.match(BPS, /scrollEventThrottle=\{16\}/);
 });
 
 test('the scroll waits for the accordion to lay out', () => {
@@ -368,19 +404,23 @@ test('the scroll waits for the accordion to lay out', () => {
 });
 
 test('a failed measure still moves the patient somewhere useful', () => {
-  // measureLayout can fail if the node unmounts mid-flight. Falling back to
-  // the section beats not moving at all.
+  // Two ways this can go wrong — the node/scroller is missing, or the
+  // measure callbacks never fire. Both fall back to the section scroll;
+  // landing roughly right beats not moving at all.
   const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
   const fallbacks = fn.match(/scrollToSection\('biological'\)/g) ?? [];
-  assert.ok(fallbacks.length >= 3, 'every early-out needs a fallback scroll');
+  assert.equal(fallbacks.length, 2, 'both failure paths need a fallback scroll');
 });
 
-test('the highlight timer starts AFTER the scroll is issued', () => {
-  // Starting it before meant a slow layout ate the window and the flash was
-  // never seen.
+test('the highlight timer is armed unconditionally, not inside a callback', () => {
+  // Reversed deliberately. An earlier revision started this AFTER the scroll
+  // so a slow layout could not eat the window — but that put it inside
+  // measureLayout's callbacks, which never fired, and the highlight stuck
+  // forever. Correctness (it always clears) beats the smaller nicety.
   assert.match(BPS, /const startHighlightTimer = React\.useCallback/);
   const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
-  assert.match(fn, /scrollTo\([\s\S]{0,120}startHighlightTimer\(\)/);
+  assert.doesNotMatch(fn, /startHighlightTimer\(\)/,
+    'must not live inside the scroll path');
 });
 
 test('the reveal refetches BEFORE scrolling', () => {
