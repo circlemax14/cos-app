@@ -30,7 +30,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { Radii, Spacing } from '@/constants/design-system';
 import { fireAndForgetDelete } from '@/components/unified-plan/v2/net';
-import type { PlanTask } from '@/services/api/types';
+import type { AiHealthPlan, PlanTask } from '@/services/api/types';
 
 import { MeasurementLogInput } from './MeasurementLogInput';
 import { MeasurementHistoryList } from './MeasurementHistoryList';
@@ -150,10 +150,40 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
     if (!removed) return;
     onDeleted?.(removed);
     onClose();
+
+    // Optimistic strike-through. Vishal 2026-08-11: "when we delete any task
+    // then cross it with a loader and then we receive response from backend
+    // then remove it properly".
+    //
+    // Mark the row rather than dropping it: removing it here would be a lie
+    // if the DELETE fails, and the task would silently reappear later with no
+    // explanation. TaskRow renders __optimistic:'deleting' dimmed, struck
+    // through, "Removing…".
+    qc.setQueryData<AiHealthPlan | null>(['ai-health-plan'], (prev) =>
+      prev?.tasks
+        ? {
+            ...prev,
+            tasks: prev.tasks.map((t): PlanTask =>
+              t.id === removed.id ? { ...t, __optimistic: 'deleting' } : t,
+            ),
+          }
+        : prev,
+    );
+
     void fireAndForgetDelete(
       `/v1/patients/me/health-plan/tasks/${encodeURIComponent(removed.id)}`,
     );
-    qc.invalidateQueries({ queryKey: ['ai-health-plan'] });
+
+    // The invalidate used to fire on this same line, SYNCHRONOUSLY — before
+    // the fire-and-forget DELETE could possibly have landed. The refetch then
+    // returned the task still present, which both wiped the strike-through
+    // and made the row look like the delete had failed. That is why delete
+    // "wasn't working" while add was.
+    //
+    // Two passes: one after a single DDB round trip, one with headroom for a
+    // cold Lambda. Cheap, and the second covers a slow first.
+    setTimeout(() => qc.invalidateQueries({ queryKey: ['ai-health-plan'] }), 2_500);
+    setTimeout(() => qc.invalidateQueries({ queryKey: ['ai-health-plan'] }), 6_000);
   };
 
   return (

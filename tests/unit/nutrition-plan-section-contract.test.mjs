@@ -34,6 +34,7 @@ const STEPPER = readFileSync(join(ROOT, 'app/Home/assessment-stepper.tsx'), 'utf
 const TASKLIST = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskListSection.tsx'), 'utf8');
 const TASKROW = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskRow.tsx'), 'utf8');
 const HOOKS = readFileSync(join(ROOT, 'hooks/use-plan-tasks.ts'), 'utf8');
+const DETAIL = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskDetailModal.tsx'), 'utf8');
 
 /**
  * Source with comments stripped.
@@ -547,10 +548,32 @@ test('a deleted task is CROSSED, not removed, until the server confirms', () => 
   // "cross it with a loader and then we receive response from backend then
   // remove it properly". Removing it immediately would be a lie if the delete
   // fails, and the task would silently reappear.
-  const fn = HOOKS.slice(HOOKS.indexOf('export function useDeletePlanTask'));
-  assert.match(fn, /__optimistic: 'deleting'/);
-  assert.doesNotMatch(fn, /tasks: prev\.tasks\.filter/, 'must not drop the row optimistically');
+  //
+  // Asserted against TaskDetailModal, NOT useDeletePlanTask: the shipping
+  // delete is inline there via fireAndForgetDelete. The hook has no callers —
+  // wiring the optimism there first did nothing at all.
+  assert.match(DETAIL, /__optimistic: 'deleting'/);
+  assert.doesNotMatch(DETAIL, /tasks: prev\.tasks\.filter/, 'must not drop the row optimistically');
   assert.match(TASKROW, /textDecorationLine: 'line-through'/);
+});
+
+test('the delete invalidate is DEFERRED, not synchronous', () => {
+  // The invalidate used to fire on the same line as the fire-and-forget
+  // DELETE — before it could possibly have landed. The refetch returned the
+  // task still present, wiping the strike-through and making the delete look
+  // broken. This is the actual reason delete "wasn't working" while add was.
+  const fn = DETAIL.slice(DETAIL.indexOf('const removed = localTask'));
+  assert.match(fn, /setTimeout\(\(\) => qc\.invalidateQueries/);
+  assert.doesNotMatch(
+    fn.slice(0, fn.indexOf('setTimeout')),
+    /qc\.invalidateQueries/,
+    'no synchronous invalidate before the delete can land',
+  );
+});
+
+test('the unused delete hook says so, loudly', () => {
+  // Dead code that looks live cost a shipped-but-inert fix here.
+  assert.match(HOOKS, /NO CALLERS as of 2026-08-11/);
 });
 
 test('both optimistic writes roll back on failure', () => {
