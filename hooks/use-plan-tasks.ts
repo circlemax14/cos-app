@@ -183,6 +183,16 @@ export function useUpdatePlanTask() {
   });
 }
 
+/**
+ * ⚠️ NO CALLERS as of 2026-08-11. The delete that ships is inline in
+ * components/health-plan/tasks/TaskDetailModal.tsx, which uses
+ * fireAndForgetDelete directly (iOS 26.5 chunk 9.5). I wired optimistic
+ * marking here first and it did nothing, because nothing invokes this.
+ *
+ * Kept because it is correct and is the right home if the delete ever moves
+ * to a mutation — but if you are changing delete BEHAVIOUR, change
+ * TaskDetailModal, not this.
+ */
 export function useDeletePlanTask() {
   const qc = useQueryClient();
   return useMutation({
