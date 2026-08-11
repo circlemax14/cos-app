@@ -164,6 +164,10 @@ export interface SectionCardProps {
    * out across all cards in one line.
    */
   isFocus?: boolean;
+  /** Bump to force this section's Tasks accordion open (see TaskListSection). */
+  openTasksSignal?: number;
+  /** Task to flash briefly after it is added. */
+  highlightTaskId?: string | null;
 }
 
 export function SectionCard({
@@ -178,6 +182,8 @@ export function SectionCard({
   onAddTask,
   onTaskPress,
   isFocus,
+  openTasksSignal,
+  highlightTaskId,
 }: SectionCardProps) {
   const style = SECTION_STYLE[sectionKey];
   const statusStyle = STATUS_STYLE[section.status] ?? STATUS_STYLE['just-started'];
@@ -507,6 +513,8 @@ export function SectionCard({
       {onAddTask && onTaskPress && (
         <TaskListSection
           tasks={tasks}
+          openSignal={openTasksSignal}
+          highlightTaskId={highlightTaskId}
           accentColor={style.color}
           colors={colors}
           getScaledFontSize={getScaledFontSize}

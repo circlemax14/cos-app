@@ -20,6 +20,20 @@ export interface TaskListSectionProps {
   onAddTask: () => void;
   /** Opens TaskDetailModal for the tapped task. */
   onTaskPress: (task: PlanTask) => void;
+  /**
+   * Bump to force the accordion open.
+   *
+   * Vishal 2026-08-11: adding a nutrition suggestion said "added to your plan"
+   * and nothing visibly moved, because tasks default to COLLAPSED. The parent
+   * increments this after a task is created so the patient is shown where it
+   * landed instead of being told.
+   *
+   * A counter, not a boolean: two adds in a row must both re-open a section
+   * the patient may have collapsed in between.
+   */
+  openSignal?: number;
+  /** Task to flash briefly so the eye lands on the new row. */
+  highlightTaskId?: string | null;
 }
 
 export function TaskListSection({
@@ -30,10 +44,23 @@ export function TaskListSection({
   getScaledFontWeight,
   onAddTask,
   onTaskPress,
+  openSignal,
+  highlightTaskId,
 }: TaskListSectionProps): React.JSX.Element {
   // COS-434 experiment #3: default CLOSED to keep first-paint view-tree small,
   // matches bullets/interventions/goals CollapsibleGroups in SectionCard.
   const [open, setOpen] = React.useState(false);
+
+  // Open on every bump. Deliberately one-way: it never force-CLOSES, so the
+  // patient's own toggle is only ever overridden in the direction that
+  // reveals something.
+  const lastSignal = React.useRef(openSignal);
+  React.useEffect(() => {
+    if (openSignal !== undefined && openSignal !== lastSignal.current) {
+      lastSignal.current = openSignal;
+      setOpen(true);
+    }
+  }, [openSignal]);
   const subtext = colors.subtext;
   const border = colors.border;
   const count = tasks.length;
@@ -73,15 +100,26 @@ export function TaskListSection({
       {open ? (
         <View style={styles.body}>
           {tasks.map((t) => (
-            <TaskRow
+            /* Wrapper, not a TaskRow prop: the highlight is a transient
+               attention cue owned by this list, and TaskRow stays a pure
+               presentation of a task. */
+            <View
               key={t.id}
-              task={t}
-              accentColor={accentColor}
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-              onPress={onTaskPress}
-            />
+              style={
+                highlightTaskId && t.id === highlightTaskId
+                  ? [styles.highlight, { borderColor: accentColor, backgroundColor: `${accentColor}1F` }]
+                  : undefined
+              }
+            >
+              <TaskRow
+                task={t}
+                accentColor={accentColor}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onPress={onTaskPress}
+              />
+            </View>
           ))}
           {tasks.length === 0 ? (
             <Text
@@ -124,6 +162,15 @@ export function TaskListSection({
 }
 
 const styles = StyleSheet.create({
+  // Transient cue after a task is added. A tinted well + accent border rather
+  // than an animation — the iOS 26.5 envelope on this screen excludes
+  // Animated, and a static flash cleared on a timer reads just as clearly.
+  highlight: {
+    borderWidth: 2,
+    borderRadius: 12,
+    paddingHorizontal: 4,
+    marginVertical: 2,
+  },
   group: {
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 16,

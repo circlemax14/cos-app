@@ -1118,6 +1118,45 @@ export function BiopsychosocialPlanScreen({
       scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
     }
   }, []);
+  /**
+   * Reveal-where-it-landed, after a nutrition suggestion becomes a task.
+   *
+   * Vishal 2026-08-11: "we are not giving user any info where its added". Two
+   * options were on the table — a modal explaining the destination, or
+   * navigating to it. This is the second: scroll to the section, open its
+   * Tasks accordion, and flash the new row. It uses machinery that already
+   * exists here (scrollToSection, the section onLayout map) and leaves no
+   * dialog to dismiss.
+   *
+   * Order matters. The refetch has to RESOLVE first, or we scroll to a
+   * section whose task list does not contain the new row yet and the flash
+   * lands on nothing.
+   */
+  const [openTasksSignal, setOpenTasksSignal] = React.useState(0);
+  const [highlightTaskId, setHighlightTaskId] = React.useState<string | null>(null);
+  const highlightTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const revealAddedTask = React.useCallback(
+    async (taskId: string) => {
+      await aiPlanQuery.refetch();
+      setOpenTasksSignal((n) => n + 1);
+      setHighlightTaskId(taskId);
+      // One frame for the accordion to lay out before measuring/scrolling —
+      // sectionYByKey is written by onLayout and would otherwise be stale.
+      setTimeout(() => scrollToSection('biological'), 120);
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+      highlightTimer.current = setTimeout(() => setHighlightTaskId(null), 3500);
+    },
+    [aiPlanQuery, scrollToSection],
+  );
+
+  React.useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    },
+    [],
+  );
+
   // Value-keyed guard (not a boolean latch): stores the last focus VALUE
   // handled. Repeat identical value = no-op; a fresh value on route
   // re-entry re-fires. Strictly more correct than legacy's boolean
@@ -2087,8 +2126,8 @@ export function BiopsychosocialPlanScreen({
           // A nutrition task lands in the Biological section (category
           // 'nutrition' falls through sectionForCategory to 'biological'),
           // directly below this card. Refetch so it actually appears.
-          onTaskAdded={() => {
-            void aiPlanQuery.refetch();
+          onTaskAdded={(taskId) => {
+            void revealAddedTask(taskId);
           }}
           onTakeScreener={() =>
             // Straight to the DSQ stepper, NOT the assessments catalog.
@@ -2274,6 +2313,10 @@ export function BiopsychosocialPlanScreen({
               // focusSectionKey is undefined and this evaluates false
               // on every card — pill compiles out everywhere in one line.
               isFocus={focusSectionKey === key}
+              // Only the section the task landed in reacts, so adding a
+              // nutrition task never expands Psychological or Social.
+              openTasksSignal={key === 'biological' ? openTasksSignal : undefined}
+              highlightTaskId={key === 'biological' ? highlightTaskId : null}
               // CHUNK 53: intercept goal-edit locally when consolidation is ON
               // so the bio-goal editor renders inside the one consolidated
               // Modal owned by this screen. Under flag=false, forward to the
