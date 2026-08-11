@@ -76,7 +76,6 @@ test('does NOT generate on mount — each build costs a Bedrock call', () => {
   // so assert the binding rather than one literal inline arrow.
   assert.match(codeOnly(SECTION), /onPress\s*[:=][^\n]*onGenerate\(\)/,
     'generation must be reachable only from a press handler');
-  assert.match(codeOnly(SECTION), /onPress=\{onPress\}/, 'card press runs the handler');
 });
 
 test('never presents a frequency as an amount', () => {
@@ -610,4 +609,30 @@ test('the added flag defers to the plan once it catches up', () => {
   assert.match(fn, /await onTaskAdded\?\.\(created\.id\)/,
     'must wait for the parent refetch before dropping the local flag');
   assert.match(fn, /delete next\[index\]/, 'local flag must be released');
+});
+
+
+test('the nutrition card is an accordion', () => {
+  // Vishal 2026-08-11: "this card needs to be an accordion".
+  assert.match(SECTION, /const \[open, setOpen\] = React\.useState\(false\)/);
+  assert.match(SECTION, /onPress=\{\(\) => setOpen\(\(v\) => !v\)\}/);
+  assert.match(SECTION, /accessibilityState=\{\{ expanded: open \}\}/);
+  assert.match(SECTION, /\{open && \(/, 'body renders only when expanded');
+});
+
+test('no reload icon in the header', () => {
+  // Vishal 2026-08-11: "reload icon is not required on nutrition". The
+  // chevron is purely the accordion affordance now; rebuilding is a worded
+  // action in the body so it cannot be hit while reaching for the chevron.
+  assert.doesNotMatch(codeOnly(SECTION), /name=\{isReady \? 'refresh'/);
+  assert.match(SECTION, /name=\{open \? 'expand-less' : 'expand-more'\}/);
+  assert.match(SECTION, /Rebuild my plan/);
+});
+
+test('collapsed costs one row in the stack', () => {
+  // The subtitle, build action, suggestions and review notice all live in the
+  // body — collapsed is the title row alone.
+  const header = SECTION.slice(SECTION.indexOf('Header row IS the accordion'), SECTION.indexOf('{open && ('));
+  assert.doesNotMatch(header, /subtitle/, 'subtitle belongs in the body');
+  assert.doesNotMatch(header, /suggestions/, 'suggestions belong in the body');
 });

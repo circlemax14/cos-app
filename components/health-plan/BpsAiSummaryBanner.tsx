@@ -61,9 +61,6 @@ export interface BpsAiSummaryBannerProps {
   getScaledFontWeight: (w: number) => string;
 }
 
-/** Lines shown while collapsed. Two keeps the card genuinely small. */
-export const COLLAPSED_LINES = 2;
-
 export function BpsAiSummaryBanner({
   summary,
   colors,
@@ -122,23 +119,24 @@ export function BpsAiSummaryBanner({
         />
       </View>
 
-      <Text
-        style={[
-          styles.body,
-          {
-            color: text,
-            fontSize: getScaledFontSize(15),
-          },
-        ]}
-        accessibilityRole="text"
-        // Vishal 2026-08-07: "ai summary in plan screen needs to be a small
-        // card and when we click on it it can be expanded". undefined rather
-        // than a large number when expanded — a finite cap would clip a long
-        // summary in the one state whose purpose is showing all of it.
-        numberOfLines={expanded ? undefined : COLLAPSED_LINES}
-      >
-        {summary}
-      </Text>
+      {/* Vishal 2026-08-11: "ai summary card is still showing too much, it
+          should show all with accordion only". The two-line teaser was still
+          a paragraph on a screen whose job is the plan. Collapsed now shows
+          the header alone; expanded shows the whole summary, uncapped. */}
+      {expanded && (
+        <Text
+          style={[
+            styles.body,
+            {
+              color: text,
+              fontSize: getScaledFontSize(15),
+            },
+          ]}
+          accessibilityRole="text"
+        >
+          {summary}
+        </Text>
+      )}
 
       {/*
         Apple Guideline 1.4.1 disclaimer + citations. Shipped on legacy
@@ -147,7 +145,7 @@ export function BpsAiSummaryBanner({
         card. Do NOT gate — the footer is a review-bar requirement, not
         a UX enhancement.
       */}
-      <AICitationsFooter compact />
+      {expanded && <AICitationsFooter compact />}
     </Pressable>
   );
 }

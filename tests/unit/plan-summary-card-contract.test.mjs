@@ -104,11 +104,15 @@ test('V1 is wired too, so a flag flip back does not silently lose the card', () 
 // screen shows its own BpsAiSummaryBanner, so the expandable behaviour had
 // to be ported there too or the request was unfulfilled for every real user.
 
-test('the BPS AI summary banner is tappable and collapses', () => {
+test('the BPS AI summary banner is a pure accordion', () => {
+  // Vishal 2026-08-11: "ai summary card is still showing too much, it should
+  // show all with accordion only". A two-line teaser was still a paragraph on
+  // a screen whose job is the plan. Collapsed shows the header alone.
   assert.match(BANNER, /<Pressable/, 'banner must be tappable');
   assert.match(BANNER, /onPress=\{\(\) => setExpanded/);
-  assert.match(BANNER, /numberOfLines=\{expanded \? undefined : COLLAPSED_LINES\}/,
-    'expanded must pass undefined, never a finite cap');
+  assert.match(BANNER, /\{expanded && \(\s*<Text/, 'body renders only when expanded');
+  assert.match(BANNER, /\{expanded && <AICitationsFooter compact \/>\}/);
+  assert.doesNotMatch(BANNER, /numberOfLines/, 'no line cap — it is all or nothing now');
 });
 
 test('the BPS banner announces its expanded state', () => {
