@@ -443,6 +443,15 @@ export interface AiHealthPlan {
 export interface PlanHabit {
   habitId: string;
   label: string;
+  /**
+   * HH:MM 24h, OPTIONAL. Mirrors cos-backend #380.
+   *
+   * Cadence says how OFTEN a routine happens, never WHEN — so without this
+   * Today's Schedule cannot place "Coffee" at 7am and every routine falls
+   * into "Anytime today". Absent is a legitimate state ("stretch sometime
+   * today"), not a gap.
+   */
+  scheduledTime?: string;
   cadence: 'daily' | 'weekly' | { everyNDays: number };
   targetValue?: number;
   unit?: string;
