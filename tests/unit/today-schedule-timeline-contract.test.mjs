@@ -138,3 +138,29 @@ test('stays inside the iOS 26.5 primitive envelope', () => {
     assert.doesNotMatch(codeOnly(src), /ActivityIndicator|Animated|LayoutAnimation/);
   }
 });
+
+
+// ── Layout regressions from the first cut (Vishal: "looks very bad") ──
+
+test('the timeline block is inset like every other section', () => {
+  // scrollContent carries only paddingBottom. The four groups this replaced
+  // each supplied their own `section` inset of 16 — without it the timeline
+  // rendered flush to both screen edges while the profile card and
+  // medications stayed inset.
+  assert.match(SCREEN, /timelineBlock: \{ marginHorizontal: 16/);
+  assert.match(SCREEN, /<View style=\{styles\.timelineBlock\}>/);
+});
+
+test('the title is left-aligned now that the score shares its row', () => {
+  // textAlign:'center' inside flex:1 leaves the text visibly off-axis
+  // against a dead gap once something occupies the right corner.
+  assert.match(SCREEN, /headerTitle: \{[^}]*textAlign: 'left'/);
+});
+
+test('hour rules use a hairline, not borderStyle dashed', () => {
+  // RN only honours a dashed border when EVERY side has a width. With just
+  // borderTopWidth it falls back to solid on iOS and can draw artifacts on
+  // Android — so the dashed rule was never going to render as designed.
+  assert.match(TIMELINE, /borderTopWidth: StyleSheet\.hairlineWidth/);
+  assert.doesNotMatch(codeOnly(TIMELINE), /borderStyle: 'dashed'/);
+});

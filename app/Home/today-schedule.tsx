@@ -693,7 +693,7 @@ export default function TodayScheduleScreen(): React.JSX.Element {
                 type="patient"
                 imageUrl={patientPhotoUrl ?? null}
                 name={patientName || 'Patient'}
-                size={getScaledFontSize(80)}
+                size={getScaledFontSize(44)}
               />
               <View style={styles.profileInfo}>
                 <Text
@@ -730,6 +730,7 @@ export default function TodayScheduleScreen(): React.JSX.Element {
             in August. Loading and permission states are surfaced above the
             timeline for the same reason: "nothing scheduled" must never be
             the way a patient learns calendar access is off. */}
+        <View style={styles.timelineBlock}>
         <TodayLegend
           colors={timelineColors}
           getScaledFontSize={getScaledFontSize}
@@ -756,6 +757,7 @@ export default function TodayScheduleScreen(): React.JSX.Element {
           getScaledFontWeight={getScaledFontWeight}
           onPressItem={onPressTimelineItem}
         />
+        </View>
 
         {/* Current medications — kept from the previous version. Not one
             of the four day groups, so it sits below them and, unlike the
@@ -888,14 +890,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  headerTitle: { flex: 1, flexShrink: 1, textAlign: 'center', marginHorizontal: 8 },
+  // Was centred, from when the title was alone in the row. With the
+  // adherence score occupying the right corner, centring inside flex:1
+  // leaves the text visibly off-axis against a dead gap.
+  headerTitle: { flex: 1, flexShrink: 1, textAlign: 'left', marginRight: 12 },
 
-  profileCard: { margin: 16, padding: 20, borderRadius: 16 },
+  // Was margin 16 / padding 20 around an 80pt avatar — a large block between
+  // the header and the actual day, on the screen you reach BY TAPPING that
+  // same avatar on the Home circle. Ken 2026-08-11: "too crowded". Trimmed to
+  // a identification strip; the day starts higher.
+  profileCard: { marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 14 },
   profileContent: { flexDirection: 'row', alignItems: 'center' },
-  profileInfo: { marginLeft: 16, flex: 1 },
+  profileInfo: { marginLeft: 12, flex: 1 },
 
   // Day groups
   section: { marginHorizontal: 16, marginBottom: 20 },
+  // The four groups this replaced each carried `section`'s 16pt inset.
+  // Without it the timeline rendered flush to both screen edges while the
+  // profile card and medications stayed inset — which is what "looks very
+  // bad" was.
+  timelineBlock: { marginHorizontal: 16, marginBottom: 20 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
