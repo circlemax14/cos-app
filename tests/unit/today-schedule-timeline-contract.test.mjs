@@ -249,6 +249,95 @@ test('the legend key appears only on days a bell is on screen', () => {
   assert.match(SCREEN, /showReminderKey=\{timelineItems\.some\(\(i\) => i\.willRemind\)\}/);
 });
 
+// ── SCRUM-666 r2: completable routines, and per-routine reminders ─────
+
+test('tapping a routine completes it — no longer a no-op', () => {
+  // "user should be able to complete them similar to task" (2026-08-12).
+  const code = codeOnly(SCREEN);
+  assert.match(code, /item\.id\.startsWith\('routine:'\)/);
+  assert.match(code, /toggleRoutine\.mutate\(\{ habitId, done: !item\.done \}\)/);
+});
+
+test('a routine CAN be un-ticked, unlike a task', () => {
+  // A task completion is a clinical event that feeds adherence, so undo lives
+  // behind a deliberate control. A routine tick counts toward nothing, so a
+  // mistaken tap should cost exactly one more tap.
+  assert.match(codeOnly(SCREEN), /done: !item\.done/);
+});
+
+test('THE REQUIREMENT: routine completion touches no score', () => {
+  // "but they won't impact any score". The routine branch must not invalidate
+  // wellbeing the way handleTaskComplete does.
+  const code = codeOnly(SCREEN);
+  const branch = code.slice(code.indexOf("item.id.startsWith('routine:')"));
+  const end = branch.indexOf('return;');
+  const body = branch.slice(0, end);
+  assert.doesNotMatch(body, /invalidateWellbeingCaches/, 'routines must not touch wellbeing');
+  assert.doesNotMatch(body, /completeTask/, 'routines must not use the task completion path');
+});
+
+test('adherence still counts tasks ONLY, so routines cannot leak into it', () => {
+  const LIB = readFileSync(join(ROOT, 'lib/today-timeline.ts'), 'utf8');
+  assert.match(LIB, /i\.kind === 'task'/);
+});
+
+test('routine ticks live on their own query key, never in the plan cache', () => {
+  // A plan refetch must not be able to carry per-day ticks into a scorer's
+  // input, and a tick must not invalidate the plan.
+  const HOOKS = readFileSync(join(ROOT, 'hooks/use-plan-habits.ts'), 'utf8');
+  assert.match(HOOKS, /\['routine-completions', date\]/);
+  // Bound the slice to THIS function. Reading to end-of-file would sweep in
+  // useAddHabit/useUpdateHabit, which use the plan key entirely legitimately —
+  // the assertion would then be testing nothing and failing for the wrong
+  // reason.
+  const start = HOOKS.indexOf('export function useToggleRoutineCompletion');
+  assert.ok(start > -1, 'useToggleRoutineCompletion must exist');
+  const after = HOOKS.indexOf('export function ', start + 1);
+  const toggle = codeOnly(HOOKS.slice(start, after > -1 ? after : undefined));
+  assert.doesNotMatch(toggle, /AI_HEALTH_PLAN_QUERY_KEY/, 'must not invalidate the plan');
+  assert.doesNotMatch(toggle, /invalidateWellbeing/, 'must not touch wellbeing');
+});
+
+test('the tick is optimistic and rolls back on failure', () => {
+  // It fires from a tap on the schedule; an unresponsive checkbox is the
+  // whole complaint. A tick that survives a failed write is worse still.
+  const HOOKS = readFileSync(join(ROOT, 'hooks/use-plan-habits.ts'), 'utf8');
+  assert.match(HOOKS, /onMutate:/);
+  assert.match(HOOKS, /onError:.*\n?[\s\S]{0,300}?ctx\.previous/);
+});
+
+test('the completed Set is memoised, or the timeline memo is decorative', () => {
+  const HOOKS = readFileSync(join(ROOT, 'hooks/use-plan-habits.ts'), 'utf8');
+  assert.match(HOOKS, /useMemo\(\(\) => new Set\(data \?\? \[\]\), \[data\]\)/);
+});
+
+test('the tick state is in the timeline memo deps', () => {
+  const deps = SCREEN.slice(SCREEN.indexOf('return out;'));
+  assert.match(deps, /completedRoutineIds,/);
+});
+
+test('a routine with reminders OFF is placed but never buzzes', () => {
+  // The whole point of splitting time from bell: 11 timed routines must not
+  // mean 11 pushes a day.
+  assert.match(SCREEN, /r\.remindersEnabled !== false/);
+});
+
+test('the reminder toggle only appears once a valid time exists', () => {
+  // There is no hour to remind at otherwise, and a toggle that silently does
+  // nothing is the failure this feature exists to remove.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /Remind me at \{editing\.scheduledTime\.trim\(\)\}/);
+  assert.match(HABITS, /accessibilityRole="switch"/);
+});
+
+test('remindersEnabled is sent EXPLICITLY, because PATCH merges', () => {
+  // Omitting it would preserve the old value and the toggle would appear
+  // broken — the same trap scheduledTime already hit.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /payload\.remindersEnabled = editing\.remindersEnabled !== false/);
+  assert.match(HABITS, /remindersEnabled: h\.remindersEnabled/, 'must prefill on edit');
+});
+
 test('a half-typed time is never persisted', () => {
   // "7:" must not reach the backend, and blank is a legitimate answer rather
   // than an error.
