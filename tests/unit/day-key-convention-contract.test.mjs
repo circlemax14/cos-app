@@ -126,3 +126,35 @@ test('a task created today is dated today', () => {
   assert.ok(f);
   assert.match(f.src, /startDate: todayLocalIso\(\)/);
 });
+
+// ── The patient's local frame reaches the backend (2026-08-12) ────────
+
+test('completeTask sends patientLocalDate — the backend fix was dead code without it', () => {
+  // cos-backend has accepted patientLocalDate since SCRUM-595, added to fix
+  // "the ±14h off-by-one where an Auckland patient completing a today task
+  // before the slot had the early claim silently dropped". The app never sent
+  // it, so that fix has been unreachable since it shipped.
+  const f = FILES.find((x) => x.path === 'services/api/ai-health-plan.ts');
+  assert.ok(f);
+  assert.match(f.src, /patientLocalDate: todayLocalIso\(now\)/);
+});
+
+test('completeTask sends tzOffsetMinutes, so onTime can be computed at all', () => {
+  // scheduledTime is the patient's LOCAL wall clock; completedAt is a UTC
+  // instant. Compared directly, onTime is false for everyone more than 2h from
+  // UTC — making "On-Time Master" (60% over 30 days) arithmetically impossible
+  // rather than merely hard.
+  const f = FILES.find((x) => x.path === 'services/api/ai-health-plan.ts');
+  assert.match(f.src, /tzOffsetMinutes: tzOffsetMinutes\(now\)/);
+});
+
+test('both come from ONE `now`, not two clock reads', () => {
+  // Two separate new Date() calls can straddle midnight, sending a date and an
+  // offset from different days. Rare, and exactly the kind of thing that is
+  // impossible to reproduce.
+  const f = FILES.find((x) => x.path === 'services/api/ai-health-plan.ts');
+  const fn = f.src.slice(f.src.indexOf('export async function completeTask'));
+  const body = fn.slice(0, fn.indexOf('describeError'));
+  assert.match(body, /const now = new Date\(\)/);
+  assert.equal((body.match(/new Date\(\)/g) ?? []).length, 1, 'exactly one clock read');
+});

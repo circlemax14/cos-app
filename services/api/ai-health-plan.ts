@@ -1,5 +1,6 @@
 import { apiClient } from '@/lib/api-client';
 import type { AiHealthPlan, AiPlanGoal, TaskOccurrence } from './types';
+import { todayLocalIso, tzOffsetMinutes } from '@/lib/day-key'
 
 // ── Care Plan goal editing (COS-377) ───────────────────────────────────────
 // COS-430: `subdomains` added — NovoPsych biopsychosocial subdomain tags per
@@ -107,16 +108,40 @@ function describeError(err: unknown): TaskActionResult {
   return { ok: false, message: err instanceof Error ? err.message : 'Unknown error' };
 }
 
-/** Mark a task occurrence complete. */
+/**
+ * Mark a task occurrence complete.
+ *
+ * Sends the patient's local frame alongside the completion. Both fields are
+ * things only the DEVICE knows, and the backend had been guessing at both:
+ *
+ * `patientLocalDate` — the backend has accepted this since SCRUM-595, added
+ * to fix "the ±14h off-by-one where an Auckland patient completing a today
+ * task before the slot had the early claim silently dropped because server-UTC
+ * was still yesterday". The app never sent it, so that fix has been
+ * unreachable dead code ever since it shipped.
+ *
+ * `tzOffsetMinutes` — minutes AHEAD of UTC (Los Angeles in summer → -420).
+ * `scheduledTime` on a task is the patient's LOCAL wall clock while
+ * `completedAt` is a UTC instant, and the backend compared them directly, so
+ * `onTime` was false for every patient more than 2 hours from UTC. That flag
+ * feeds the "On-Time Master" badge, which needs 60% over 30 days — meaning it
+ * was not hard for US patients, it was arithmetically impossible.
+ *
+ * Both are additive and optional server-side: an older client omitting them
+ * gets exactly the previous behaviour.
+ */
 export async function completeTask(
   taskId: string,
   scheduledFor: string,
   notes?: string,
 ): Promise<TaskActionResult> {
   try {
+    const now = new Date();
     await apiClient.post(`/v1/patients/me/tasks/${encodeURIComponent(taskId)}/complete`, {
       scheduledFor,
       notes,
+      patientLocalDate: todayLocalIso(now),
+      tzOffsetMinutes: tzOffsetMinutes(now),
     });
     return { ok: true };
   } catch (err) {
