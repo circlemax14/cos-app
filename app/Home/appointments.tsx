@@ -63,6 +63,7 @@ import { hapticSelection, hapticImpact } from '@/utils/haptics'
 import { addRecentSearch } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
 import { todayLocalIso } from '@/lib/day-key';
+import { useNotificationCategories } from '@/hooks/use-notification-categories'
 
 // Year / Month / Week / Day / List — Week was added in v7 at Ken's
 // request (Apple's iPad + Mac Calendar both include Week; iPhone's
@@ -305,11 +306,25 @@ export default function CalendarScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permissions.state.granted])
 
+  // 2026-08-12 — pass the patient's notification-category preferences.
+  //
+  // This scheduler consulted the per-CALENDAR toggles but never the
+  // per-CATEGORY ones, so "Appointments" and "Reminders" in Profile ->
+  // Reminders were promises nothing kept. Reported: a patient with every
+  // category switched off was still receiving these.
+  const { data: notifCategories } = useNotificationCategories()
   useEffect(() => {
-    if (permissions.state.granted && events.length > 0) {
-      void reconcileEventNotifications(events, notificationDisabledCalendarIds)
-    }
-  }, [permissions.state.granted, events, notificationDisabledCalendarIds])
+    if (!permissions.state.granted) return
+    // Runs even with no events: reconcile cancels before it schedules, so an
+    // empty list is "cancel everything", which is what a disabled category
+    // means. Guarding on events.length would leave already-queued
+    // notifications firing for up to the 7-day horizon.
+    void reconcileEventNotifications(
+      events,
+      notificationDisabledCalendarIds,
+      notifCategories?.preferences,
+    )
+  }, [permissions.state.granted, events, notificationDisabledCalendarIds, notifCategories])
 
   const refreshPermissions = permissions.refresh
   useFocusEffect(useCallback(() => {

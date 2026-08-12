@@ -75,12 +75,26 @@ export function useUpdateNotificationCategories() {
       // prefetched by auth-prefetch / today-schedule) and build the gate
       // directly from the server-confirmed prefs — no extra network call.
       // Fire-and-forget; failures are non-fatal.
+      // 2026-08-12 — reconcile UNCONDITIONALLY, even with no cached tasks.
+      //
+      // This used to be guarded by `if (cached && cached.length > 0)`, which
+      // made turning a category OFF depend on today's tasks happening to be in
+      // the query cache. Open Reminders settings without having visited Today's
+      // Schedule that session — or straight after an app restart — and the
+      // cache is cold, the reconcile never runs, and every notification already
+      // sitting in the OS queue keeps firing for up to the 7-day scheduling
+      // horizon. Reported: "i disabled all reminders for my user but still i am
+      // recieving task notifications."
+      //
+      // reconcilePlanTaskNotifications cancels every plan-task notification
+      // BEFORE it schedules, so passing [] is precisely "cancel everything and
+      // schedule nothing" — which is what turning a category off means.
+      // Scheduling is driven by the gate regardless, so an empty list can never
+      // over-schedule.
       const todayIso = todayLocalIso();
       const cached = qc.getQueryData<TaskOccurrence[]>(['plan-tasks', todayIso]);
-      if (cached && cached.length > 0) {
-        const gate = buildCategoryGateFromPrefs(updated.flagEnabled, updated.preferences);
-        void reconcilePlanTaskNotifications(cached, gate).catch(() => { /* non-fatal */ });
-      }
+      const gate = buildCategoryGateFromPrefs(updated.flagEnabled, updated.preferences);
+      void reconcilePlanTaskNotifications(cached ?? [], gate).catch(() => { /* non-fatal */ });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: NOTIFICATION_CATEGORIES_KEY });
