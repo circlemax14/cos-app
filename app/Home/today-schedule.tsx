@@ -422,6 +422,12 @@ export default function TodayScheduleScreen(): React.JSX.Element {
         title: r.title,
         time: r.allDay ? null : hhmmFromIso(r.startDate),
         done: completedCalendarIds.has(r.id),
+        // 2026-08-12 — Vishal: "in my app i have 2 reminders without any
+        // expiry date but in csh app i don't see them." They were dropped
+        // before ever reaching this screen. Now they land in "Anytime today",
+        // and the sub-line says why they have no hour rather than leaving the
+        // patient to wonder whether we lost their time.
+        detail: r.undated ? 'No due date' : undefined,
       });
     }
 

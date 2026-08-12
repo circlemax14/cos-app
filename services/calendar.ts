@@ -143,6 +143,13 @@ export interface CalendarEvent {
   alarms: number[]
   /** For reminders: whether marked complete in iOS Reminders. */
   completed?: boolean
+  /**
+   * For reminders: this one has NO due date and was anchored to today so it
+   * lands in "Anytime today" rather than being dropped. Most people's
+   * Reminders lists are mostly undated, and until 2026-08-12 every one of
+   * them was discarded before it ever reached the app.
+   */
+  undated?: boolean
 }
 
 export interface PermissionState {
@@ -557,13 +564,27 @@ export async function requestReminderPermission(): Promise<PermissionState> {
  * Read iOS Reminders within the window. Reminders without a due date
  * are EXCLUDED — they'd have nowhere to render on the calendar.
  */
-export async function readReminders(opts: ReadEventsOptions = {}): Promise<CalendarEvent[]> {
+export async function readReminders(
+  opts: ReadEventsOptions & {
+    /**
+     * Include reminders with NO due date, anchored to today (default true).
+     *
+     * The snapshot uploader passes false: an undated reminder is timeless and
+     * our snapshot rows are date-keyed, so persisting one would stamp it with
+     * whatever day the sync happened to run and then re-upload it every day as
+     * that stamp drifted. It is device-local and always-today, so a live read
+     * is both sufficient and always correct.
+     */
+    includeUndated?: boolean
+  } = {},
+): Promise<CalendarEvent[]> {
   if (Platform.OS !== 'ios') return [] // expo-calendar reminders are iOS-only
   const status = await getReminderPermissionStatus()
   if (!status.granted) return []
 
   const windowStart = opts.windowStart ?? defaultWindowStart()
   const windowEnd = opts.windowEnd ?? defaultWindowEnd()
+  const includeUndated = opts.includeUndated ?? true
 
   let calendars: Calendar.Calendar[]
   try {
@@ -614,9 +635,60 @@ export async function readReminders(opts: ReadEventsOptions = {}): Promise<Calen
 
   const events: CalendarEvent[] = []
   for (const r of raw) {
-    // Reminders without a due date have nothing to anchor on the calendar.
     const due = r.dueDate ?? r.startDate
-    if (!due) continue
+
+    // ── Undated reminders (2026-08-12) ───────────────────────────────
+    //
+    // Vishal: "in my app i have 2 reminders without any expiry date but in
+    // csh app i don't see them."
+    //
+    // They were dropped here, and the original reason was honest at the time:
+    // a reminder with no due date has nothing to anchor on a CALENDAR. But
+    // that reason expired when Today's Schedule gained an explicit "Anytime
+    // today" bucket — which is precisely where an open, undated to-do belongs.
+    // Most people's Reminders lists are mostly undated ("pick up
+    // prescription"), so this was silently discarding the majority of them.
+    //
+    // Anchored to TODAY rather than to windowStart: an undated reminder is
+    // outstanding now, not at the beginning of whatever range the caller
+    // happened to ask for. Anchoring to windowStart would file it a year in
+    // the past on the ±1-year Appointments window.
+    if (!due) {
+      if (!includeUndated) continue
+      // A COMPLETED undated reminder is skipped. A completed dated one ages
+      // out of the window on its own; an undated one never would, so it would
+      // sit struck-through on "today" forever.
+      if (r.completed) continue
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (today < windowStart || today > windowEnd) continue
+      const source = sourceById.get(r.calendarId ?? '') ?? {
+        id: r.calendarId ?? 'reminders',
+        title: 'Reminders',
+        source: 'Reminders',
+        color: '#FF9500',
+        allowsWrite: false,
+      }
+      events.push({
+        id: `reminder:${r.id}`,
+        title: r.title ?? '(No title)',
+        startDate: today.toISOString(),
+        endDate: today.toISOString(),
+        // allDay ⇒ the timeline gives it `time: null` ⇒ "Anytime today",
+        // which is the whole point.
+        allDay: true,
+        location: r.location ?? undefined,
+        notes: r.notes ?? undefined,
+        calendarId: r.calendarId ?? '',
+        source,
+        origin: 'reminder',
+        alarms: [],
+        completed: false,
+        undated: true,
+      })
+      continue
+    }
+
     const dueIso = isoOf(due)
     const source = sourceById.get(r.calendarId ?? '') ?? {
       id: r.calendarId ?? 'reminders',
