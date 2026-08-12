@@ -47,6 +47,23 @@ const MAX_TOTAL_SCHEDULES = 50
 export async function reconcileEventNotifications(
   events: CalendarEvent[],
   notificationDisabledCalendarIds?: Set<string>,
+  /**
+   * 2026-08-12 — the patient's notification-category preferences.
+   *
+   * This scheduler was entirely UNGATED: it consulted the per-CALENDAR toggles
+   * but never the per-CATEGORY ones, so "Appointments" and "Reminders" in
+   * Profile -> Reminders promised something they did not deliver. A patient who
+   * switched every category off still received these, which is what was
+   * reported ("i disabled all reminders ... but still i am recieving task
+   * notifications").
+   *
+   * Mapping follows the labels the patient actually reads:
+   *   iOS Reminders (origin 'reminder') -> "Reminders"
+   *   everything else (events, visits)  -> "Appointments"
+   *
+   * Omitted ⇒ ungated, preserving every existing caller byte-for-byte.
+   */
+  categoryPrefs?: { appointments?: boolean; reminders?: boolean },
 ): Promise<{ scheduled: number; skippedDueToCap: number; queueSize: number }> {
   try {
     await cancelAllAppScheduled()
@@ -82,6 +99,14 @@ export async function reconcileEventNotifications(
     if (event.origin === 'device' && !event.source.allowsWrite && !isSnapshotEvent) continue
     if (event.alarms.length === 0) continue
     if (notificationDisabledCalendarIds?.has(event.source.id)) continue
+    // Category gate. `!== false` so an absent pref means enabled — a missing
+    // or failed prefs read must never silently suppress a push, matching the
+    // fail-open stance at the backend chokepoint.
+    if (event.origin === 'reminder') {
+      if (categoryPrefs?.reminders === false) continue
+    } else if (categoryPrefs?.appointments === false) {
+      continue
+    }
 
     const startMs = new Date(event.startDate).getTime()
     if (Number.isNaN(startMs)) continue
