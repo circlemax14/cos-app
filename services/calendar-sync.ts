@@ -74,7 +74,11 @@ export async function buildAndUploadSnapshot(): Promise<number> {
   const windowEnd = new Date(Date.now() + 365 * 24 * 60 * 60_000)
   const [events, reminders] = await Promise.all([
     readEvents({ windowStart, windowEnd }),
-    readReminders({ windowStart, windowEnd }).catch(() => []),
+    // includeUndated:false — an undated reminder has no date to key a snapshot
+    // row on. Persisting one would stamp it with the day the sync ran and
+    // re-upload it every day as that stamp drifted. They are device-local and
+    // always-today, so the live read on Today's Schedule covers them.
+    readReminders({ windowStart, windowEnd, includeUndated: false }).catch(() => []),
   ])
   const payload: SnapshotEventPayload[] = [
     ...events.map((e) => ({
