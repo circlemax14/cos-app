@@ -36,6 +36,7 @@ export type NotificationCategory =
   | 'medicationReminders'
   | 'medicationTask'
   | 'otherTask'
+  | 'healthAlerts'
   | 'nudges'   // SCRUM-641 — Proactive Nudges
   | 'habits';  // SCRUM-659 — Habits-in-Plan reminders
 
@@ -48,6 +49,7 @@ export const NOTIFICATION_CATEGORY_KEYS: readonly NotificationCategory[] = [
   'otherTask',
   'nudges',
   'habits',
+  'healthAlerts',
 ] as const;
 
 /** A full set of category preferences (all five keys → on/off). */
@@ -79,5 +81,10 @@ export function defaultCategoryPrefs(): NotificationCategoryPrefs {
     otherTask: false,
     nudges: true,   // SCRUM-641 — matches backend defaultCategoryPrefs
     habits: true,   // SCRUM-659 — matches backend defaultCategoryPrefs
+    // 2026-08-12 — vitals recheck alerts, scheduled locally when a reading
+    // goes amber/red. Default ON: it fires only when something actually needs
+    // attention, and defaulting it off would mean the one alert that matters
+    // clinically is the one nobody gets. Matches backend defaultCategoryPrefs.
+    healthAlerts: true,
   };
 }

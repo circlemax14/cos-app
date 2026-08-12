@@ -60,6 +60,7 @@ import {
   type Severity,
 } from '@/lib/vitals-red-flag-rules';
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types';
+import { useNotificationCategories } from './use-notification-categories';
 
 /**
  * Dedupe key format: one entry per (metric, day, severity) so the same
@@ -197,6 +198,12 @@ function evaluateHealthKitTrends(trends: LongitudinalTrend[]): VitalsCandidate[]
 
 export function useVitalsRedFlagNotifications(): void {
   const { data: trends, disabled } = useHealthKitTrends(90);
+  // 2026-08-12 — the "Health alerts" category. Undefined while the prefs
+  // query is loading or on error, which the scheduler treats as ENABLED: a
+  // failed prefs read must never silently swallow a "recheck your blood
+  // pressure".
+  const { data: notifCategories } = useNotificationCategories();
+  const healthAlertsEnabled = notifCategories?.preferences?.healthAlerts;
   const postMutation = usePostVitalsRedFlag();
   const inFlight = useRef(false);
 
@@ -262,7 +269,10 @@ export function useVitalsRedFlagNotifications(): void {
           metricType: c.metricType,
           observedAt: c.observedAt,
         }));
-        await reconcileVitalsRecheckNotifications(active).catch(() => {
+        // 2026-08-12 — honour the "Health alerts" category. Read straight
+        // from the query cache the settings screen already populates; a miss
+        // leaves it undefined, which the scheduler treats as enabled.
+        await reconcileVitalsRecheckNotifications(active, healthAlertsEnabled).catch(() => {
           // Non-fatal — local reminders are a nice-to-have.
         });
       } finally {
@@ -273,5 +283,5 @@ export function useVitalsRedFlagNotifications(): void {
     // the mutation object per QueryClient) — depending on it would just
     // add noise without changing behaviour.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trends, disabled]);
+  }, [trends, disabled, healthAlertsEnabled]);
 }

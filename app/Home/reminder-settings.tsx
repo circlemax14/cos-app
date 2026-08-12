@@ -150,6 +150,17 @@ const CATEGORY_SPECS: Record<NotificationCategory, CategorySpec> = {
     subtitle: 'Reminders for the routines on your plan — meals, washing, appointments, classes.',
     iconName: 'repeat',
   },
+  // 2026-08-12 — vitals rechecks, scheduled locally when a reading goes
+  // amber/red. Its own row rather than folded into "Other tasks" (the only
+  // category that defaults OFF, which would silence the most clinically
+  // urgent alert we send) or "Proactive nudges" (which promises AI-informed
+  // prompts; these are rule-based).
+  healthAlerts: {
+    key: 'healthAlerts',
+    title: 'Health alerts',
+    subtitle: 'A nudge to recheck a reading when blood pressure, glucose, heart rate or oxygen looks off.',
+    iconName: 'favorite',
+  },
 }
 
 /**

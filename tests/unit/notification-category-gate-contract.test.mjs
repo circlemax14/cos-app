@@ -99,3 +99,54 @@ test('the calendar reconcile is no longer gated on having events', () => {
     'must reconcile even with no events, so cancellation always runs',
   );
 });
+
+// ── Health alerts get their own switch (2026-08-12) ──────────────────
+
+test('vitals rechecks are gated by their OWN category, not a borrowed one', () => {
+  // Not `otherTask`: it is the only category that defaults OFF, so borrowing
+  // it would silence the most clinically urgent alert we send for every
+  // patient who never opens the screen.
+  // Not `nudges`: that promises "AI-informed prompts"; these are rule-based.
+  const VITALS = read('services/vitals-recheck-notifications.ts');
+  assert.match(codeOnly(VITALS), /healthAlertsEnabled\?: boolean/);
+  assert.match(codeOnly(VITALS), /if \(healthAlertsEnabled === false\)/);
+});
+
+test('turning Health alerts off CANCELS what is already queued', () => {
+  // Merely not scheduling more would leave existing alerts firing for their
+  // full cooldown window — the same trap as the plan-task cache guard.
+  const VITALS = read('services/vitals-recheck-notifications.ts');
+  const code = codeOnly(VITALS);
+  assert.match(code, /async function cancelAllVitalsScheduled/);
+  const branch = code.slice(code.indexOf('if (healthAlertsEnabled === false)'));
+  assert.match(branch.slice(0, 300), /cancelAllVitalsScheduled\(\)/);
+});
+
+test('cancellation is TAG-SCOPED so it cannot touch other schedulers', () => {
+  // plan-task and calendar reminders share the same iOS queue.
+  const VITALS = read('services/vitals-recheck-notifications.ts');
+  const fn = codeOnly(VITALS).slice(codeOnly(VITALS).indexOf('async function cancelAllVitalsScheduled'));
+  assert.match(fn.slice(0, 600), /if \(tag !== TAG\) continue/);
+});
+
+test('health alerts FAIL OPEN — only an explicit false suppresses', () => {
+  const VITALS = read('services/vitals-recheck-notifications.ts');
+  assert.doesNotMatch(
+    codeOnly(VITALS),
+    /if \(!healthAlertsEnabled\)/,
+    'must test === false, or a loading prefs query would silence a BP alert',
+  );
+});
+
+test('the hook reads the pref and re-runs when it changes', () => {
+  const HOOK2 = read('hooks/use-vitals-red-flag-notifications.ts');
+  assert.match(HOOK2, /preferences\?\.healthAlerts/);
+  assert.match(HOOK2, /\}, \[trends, disabled, healthAlertsEnabled\]\)/);
+});
+
+test('the category exists on every surface, or the type system lied', () => {
+  // Record<NotificationCategory, ...> is exhaustive, so a missing entry is a
+  // compile error — but the SETTINGS ROW is what the patient actually needs.
+  assert.match(read('lib/notification-categories.ts'), /healthAlerts: true/);
+  assert.match(read('app/Home/reminder-settings.tsx'), /title: 'Health alerts'/);
+});

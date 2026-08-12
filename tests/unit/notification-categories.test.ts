@@ -60,7 +60,7 @@ test('defaultCategoryPrefs: returns a fresh object each call (no shared mutation
 // keys keep their positions so the settings rows patients already know
 // don't reshuffle under them, and so this list stays index-comparable with
 // the backend's own ordered mirror. New categories go on the END.
-test('NOTIFICATION_CATEGORY_KEYS: the seven expected keys, in order', () => {
+test('NOTIFICATION_CATEGORY_KEYS: the eight expected keys, in order', () => {
   assert.deepEqual(
     [...NOTIFICATION_CATEGORY_KEYS],
     [
@@ -71,8 +71,10 @@ test('NOTIFICATION_CATEGORY_KEYS: the seven expected keys, in order', () => {
       'otherTask',
       'nudges',
       'habits',
+      // 2026-08-12 — vitals recheck alerts. Appended, per the rule above.
+      'healthAlerts',
     ],
-    'NOTIFICATION_CATEGORY_KEYS must stay in lockstep with the backend preference keys AND keep the original COS-373 five in their original positions, with SCRUM-641 `nudges` and SCRUM-659 `habits` appended after them. A reorder silently reshuffles the reminder-settings rows; a missing key means that category can never be toggled off in the app even though the backend persists it.',
+    'NOTIFICATION_CATEGORY_KEYS must stay in lockstep with the backend preference keys AND keep the original COS-373 five in their original positions, with `nudges` (SCRUM-641), `habits` (SCRUM-659) and `healthAlerts` (2026-08-12) appended after them. A reorder silently reshuffles the reminder-settings rows; a missing key means that category can never be toggled off in the app even though the backend persists it.',
   );
 });
 
