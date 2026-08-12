@@ -68,7 +68,12 @@ export function TodayLegend({
 }): React.ReactElement {
   return (
     <View style={[styles.legend, { borderColor: colors.border }]} accessibilityRole="text">
-      {(['appointment', 'routine', 'task'] as TimelineKind[]).map((k) => (
+      {/* Ken 2026-08-11: "we don't have reminders and we aren't showing
+          them." Reminders were merged into the timeline but omitted from the
+          legend, so an amber row had nothing explaining it. All four kinds
+          are listed — a legend that only covers three of them is worse than
+          none, because it implies the fourth colour means something else. */}
+      {(['appointment', 'routine', 'task', 'reminder'] as TimelineKind[]).map((k) => (
         <View key={k} style={styles.legendItem}>
           <View style={[styles.glyph, { backgroundColor: KIND[k].color }]}>
             <MaterialIcons name={KIND[k].icon} size={getScaledFontSize(10)} color="#FFFFFF" />

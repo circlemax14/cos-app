@@ -71,6 +71,8 @@ interface DraftHabit {
   habitId?: string
   label: string
   cadence: 'daily' | 'weekly'
+  /** HH:MM 24h, or '' for "anytime today". */
+  scheduledTime?: string
   targetValue?: string
   unit?: string
   bpsDomain: BpsDomain
@@ -113,6 +115,9 @@ export default function HabitsScreen(): React.JSX.Element {
       habitId: h.habitId,
       label: h.label,
       cadence: h.cadence === 'weekly' ? 'weekly' : 'daily',
+      // Prefill, or the edit form silently CLEARS a time the patient already
+      // set — an omitted field on PATCH is indistinguishable from "remove it".
+      scheduledTime: h.scheduledTime ?? '',
       targetValue: typeof h.targetValue === 'number' ? String(h.targetValue) : undefined,
       unit: h.unit,
       bpsDomain: h.bpsDomain,
@@ -128,6 +133,20 @@ export default function HabitsScreen(): React.JSX.Element {
       label: editing.label.trim(),
       cadence: editing.cadence,
       bpsDomain: editing.bpsDomain,
+    }
+    // Ken 2026-08-11: "place a time on each routine so that it integrates
+    // into the schedule flow and is not separate". Only sent when it parses
+    // — a half-typed "7:" must not be persisted, and an empty box is the
+    // legitimate "anytime today" state rather than an error.
+    const time = editing.scheduledTime?.trim()
+    if (time && /^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      payload.scheduledTime = time
+    } else if (editing.habitId && !time) {
+      // Explicit clear. PATCH merges, so simply omitting the field would
+      // PRESERVE the old time and "anytime today" would be unreachable once
+      // a time had been chosen. Only sent when editing — there is nothing to
+      // clear on a new routine.
+      payload.scheduledTime = ''
     }
     const tv = editing.targetValue?.trim()
     if (tv && !Number.isNaN(Number(tv))) payload.targetValue = Number(tv)
@@ -364,6 +383,42 @@ export default function HabitsScreen(): React.JSX.Element {
               onChangeText={(v) => setEditing((e) => (e ? { ...e, label: v } : e))}
               maxLength={60}
             />
+
+            {/* Ken 2026-08-11: "we have to be able to place a time on each
+                routine so that it integrates into the schedule flow and is
+                not separate." Without a time a routine lands in Today's
+                Schedule under "Anytime today" instead of at its hour.
+
+                A plain HH:MM field rather than a native picker: the picker is
+                an extra native surface on a screen whose iOS 26.5 envelope is
+                already tight, and the value is two numbers. Empty is a real
+                answer — "stretch sometime today" is a legitimate routine — so
+                the hint says so instead of treating blank as an error. */}
+            <Text style={styles.label}>Time of day</Text>
+            <TextInput
+              style={[styles.input, { color: colors.text, borderColor: colors.subtext as string }]}
+              value={editing.scheduledTime ?? ''}
+              placeholder="e.g. 07:00 — leave blank for anytime"
+              placeholderTextColor={colors.subtext as string}
+              onChangeText={(v) =>
+                setEditing((e) => (e ? { ...e, scheduledTime: v.trim() } : e))
+              }
+              keyboardType="numbers-and-punctuation"
+              maxLength={5}
+              accessibilityLabel="Time of day, 24 hour, hours colon minutes"
+            />
+            <Text
+              style={{
+                color: colors.subtext as string,
+                fontSize: getScaledFontSize(12),
+                marginTop: -6,
+                marginBottom: 10,
+              }}
+            >
+              {editing.scheduledTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(editing.scheduledTime.trim())
+                ? 'Use 24-hour time, like 07:00 or 18:30.'
+                : 'Appears at this hour on Today\u2019s Schedule. Blank means anytime.'}
+            </Text>
 
             <Text style={styles.label}>Cadence</Text>
             <View style={styles.pillRow}>
