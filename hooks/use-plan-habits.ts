@@ -13,6 +13,7 @@
  * When OFF, the banner + screen render as a no-op and mutations 404.
  */
 
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api-client'
@@ -87,10 +88,104 @@ export interface UpsertHabitInput {
    * separate." Backend accepts it since #380; this is the client half.
    */
   scheduledTime?: string
+  /**
+   * Does it also push at that time? SCRUM-666 r2.
+   *
+   * A time places the routine on the schedule; this decides whether it buzzes.
+   * Sent explicitly (never omitted) once the editor exposes the toggle, because
+   * PATCH merges — omitting it would silently preserve the old value and make
+   * the switch feel broken.
+   */
+  remindersEnabled?: boolean
   targetValue?: number
   unit?: string
   bpsDomain?: PlanHabit['bpsDomain']
   rationale?: string
+}
+
+// ─── Per-day completion (SCRUM-666 r2) ───────────────────────────────
+//
+// Vishal 2026-08-12: "user should be able to complete them similar to task but
+// they won't impact any score."
+//
+// Deliberately its OWN query key, not folded into the plan. Routine ticks are
+// per-day state that must never reach adherence, wellbeing or Daily Read; the
+// backend keeps them on a separate row for the same reason. Keeping the client
+// cache separate means no plan refetch can accidentally carry them into a
+// scorer's input, and no completion write invalidates the plan.
+
+const ROUTINE_COMPLETIONS_KEY = (date: string) => ['routine-completions', date] as const
+
+/** habitIds ticked on `date`. Empty while loading, on error, or when flag-off. */
+export function useRoutineCompletions(date: string): {
+  completedIds: Set<string>
+  isLoading: boolean
+} {
+  const flag = useHabitsInPlanFlag()
+  const { data, isLoading } = useQuery({
+    queryKey: ROUTINE_COMPLETIONS_KEY(date),
+    queryFn: async (): Promise<string[]> => {
+      const res = await apiClient.get<{ success: boolean; data: { habitIds: string[] } }>(
+        `${HABITS_ROUTE}/completions?date=${encodeURIComponent(date)}`,
+      )
+      return res.data.data.habitIds ?? []
+    },
+    staleTime: 30_000,
+    enabled: flag,
+  })
+  // Memoised on the array identity, not rebuilt per render. A fresh Set every
+  // render would be a new reference, so any useMemo depending on it (the
+  // timeline builder does) would recompute on every render and the
+  // memoisation would be decorative.
+  const completedIds = useMemo(() => new Set(data ?? []), [data])
+  return { completedIds, isLoading }
+}
+
+/**
+ * Tick / untick a routine for one day.
+ *
+ * Optimistic, and it must be: this fires from a tap on Today's Schedule, where
+ * an unresponsive checkbox is the whole complaint. The cache is updated before
+ * the request, rolled back on failure, and re-synced from the server's
+ * authoritative list on success.
+ *
+ * Deliberately does NOT call invalidateWellbeingCaches — that is what task
+ * completion does, and the requirement here is the opposite.
+ */
+export function useToggleRoutineCompletion(date: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      habitId,
+      done,
+    }: {
+      habitId: string
+      done: boolean
+    }): Promise<string[]> => {
+      const res = await apiClient.post<{ success: boolean; data: { habitIds: string[] } }>(
+        `${HABITS_ROUTE}/${encodeURIComponent(habitId)}/complete`,
+        { date, done },
+      )
+      return res.data.data.habitIds ?? []
+    },
+    onMutate: async ({ habitId, done }) => {
+      await qc.cancelQueries({ queryKey: ROUTINE_COMPLETIONS_KEY(date) })
+      const previous = qc.getQueryData<string[]>(ROUTINE_COMPLETIONS_KEY(date)) ?? []
+      const next = done
+        ? Array.from(new Set([...previous, habitId]))
+        : previous.filter((id) => id !== habitId)
+      qc.setQueryData<string[]>(ROUTINE_COMPLETIONS_KEY(date), next)
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      // Put the tick back where it was — a checkbox that stays ticked after a
+      // failed write is a lie the patient acts on.
+      if (ctx?.previous) qc.setQueryData<string[]>(ROUTINE_COMPLETIONS_KEY(date), ctx.previous)
+    },
+    onSuccess: (habitIds) => {
+      qc.setQueryData<string[]>(ROUTINE_COMPLETIONS_KEY(date), habitIds)
+    },
+  })
 }
 
 export function useAddHabit() {

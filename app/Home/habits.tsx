@@ -73,6 +73,11 @@ interface DraftHabit {
   cadence: 'daily' | 'weekly'
   /** HH:MM 24h, or '' for "anytime today". */
   scheduledTime?: string
+  /**
+   * Does it also push at that hour? Absent/true = yes, false = placed
+   * silently. Mirrors PlanHabit.remindersEnabled, where absent reads as true.
+   */
+  remindersEnabled?: boolean
   targetValue?: string
   unit?: string
   bpsDomain: BpsDomain
@@ -83,6 +88,9 @@ const EMPTY_DRAFT: DraftHabit = {
   label: '',
   cadence: 'daily',
   bpsDomain: 'bio',
+  // A new routine the patient deliberately gave a time to should remind by
+  // default — that is why they set the time. They can switch it off in place.
+  remindersEnabled: true,
 }
 
 const CADENCE_OPTIONS: Array<{ key: 'daily' | 'weekly'; label: string }> = [
@@ -118,6 +126,9 @@ export default function HabitsScreen(): React.JSX.Element {
       // Prefill, or the edit form silently CLEARS a time the patient already
       // set — an omitted field on PATCH is indistinguishable from "remove it".
       scheduledTime: h.scheduledTime ?? '',
+      // Prefilled for the same reason as the time: PATCH merges, so the form
+      // must open showing the routine's ACTUAL reminder state, not a default.
+      remindersEnabled: h.remindersEnabled,
       targetValue: typeof h.targetValue === 'number' ? String(h.targetValue) : undefined,
       unit: h.unit,
       bpsDomain: h.bpsDomain,
@@ -147,6 +158,13 @@ export default function HabitsScreen(): React.JSX.Element {
       // a time had been chosen. Only sent when editing — there is nothing to
       // clear on a new routine.
       payload.scheduledTime = ''
+    }
+    // SCRUM-666 r2 — sent EXPLICITLY whenever a time exists, never omitted.
+    // PATCH merges, so omitting it would preserve the previous value and the
+    // toggle would appear to do nothing. Only meaningful alongside a time:
+    // an "anytime" routine has no hour to remind at.
+    if (payload.scheduledTime) {
+      payload.remindersEnabled = editing.remindersEnabled !== false
     }
     const tv = editing.targetValue?.trim()
     if (tv && !Number.isNaN(Number(tv))) payload.targetValue = Number(tv)
@@ -420,6 +438,67 @@ export default function HabitsScreen(): React.JSX.Element {
                 : 'Appears at this hour on Today\u2019s Schedule. Blank means anytime.'}
             </Text>
 
+            {/* SCRUM-666 r2 \u2014 a time and a reminder are different questions.
+                Only offered once a time exists: there is no hour to remind at
+                otherwise, and a toggle that silently does nothing is the
+                failure this whole feature exists to remove. */}
+            {editing.scheduledTime &&
+            /^([01]\d|2[0-3]):[0-5]\d$/.test(editing.scheduledTime.trim()) ? (
+              <Pressable
+                onPress={() =>
+                  setEditing((e) =>
+                    e ? { ...e, remindersEnabled: e.remindersEnabled === false } : e,
+                  )
+                }
+                accessibilityRole="switch"
+                accessibilityState={{ checked: editing.remindersEnabled !== false }}
+                accessibilityLabel="Remind me at this time"
+                style={styles.remindRow}
+                hitSlop={6}
+              >
+                <MaterialIcons
+                  name={
+                    editing.remindersEnabled === false
+                      ? 'notifications-off'
+                      : 'notifications-active'
+                  }
+                  size={getScaledFontSize(20)}
+                  color={
+                    editing.remindersEnabled === false
+                      ? (colors.subtext as string)
+                      : (colors.tint as string)
+                  }
+                />
+                <View style={styles.remindText}>
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(15) }}>
+                    Remind me at {editing.scheduledTime.trim()}
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.subtext as string,
+                      fontSize: getScaledFontSize(12),
+                      marginTop: 2,
+                    }}
+                  >
+                    {editing.remindersEnabled === false
+                      ? 'Off \u2014 it still shows on your schedule, it just won\u2019t buzz.'
+                      : 'On \u2014 you\u2019ll get a notification at this time.'}
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name={
+                    editing.remindersEnabled === false ? 'toggle-off' : 'toggle-on'
+                  }
+                  size={getScaledFontSize(30)}
+                  color={
+                    editing.remindersEnabled === false
+                      ? (colors.subtext as string)
+                      : (colors.tint as string)
+                  }
+                />
+              </Pressable>
+            ) : null}
+
             <Text style={styles.label}>Cadence</Text>
             <View style={styles.pillRow}>
               {CADENCE_OPTIONS.map((opt) => {
@@ -581,6 +660,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 15,
   },
+  // SCRUM-666 r2 — reminder toggle. minHeight 44 keeps it on the app's tap
+  // target floor; the whole row is pressable, not just the switch glyph.
+  remindRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+  },
+  remindText: { flex: 1 },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {
     paddingHorizontal: 12,

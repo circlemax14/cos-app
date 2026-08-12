@@ -452,6 +452,19 @@ export interface PlanHabit {
    * today"), not a gap.
    */
   scheduledTime?: string;
+  /**
+   * Does this routine also PUSH at its time? Mirrors cos-backend SCRUM-666 r2.
+   *
+   * The time decides WHERE the routine sits on Today's Schedule; this decides
+   * whether it BUZZES THE PHONE. Separate on purpose: one production plan
+   * carries 11 routines, and "timed ⇒ reminded" would mean 11 pushes a day for
+   * one patient — the volume at which people mute notifications altogether and
+   * stop receiving their medication reminders too.
+   *
+   * ABSENT ⇒ TRUE, matching the backend, so routines that already carry a time
+   * keep reminding.
+   */
+  remindersEnabled?: boolean;
   cadence: 'daily' | 'weekly' | { everyNDays: number };
   targetValue?: number;
   unit?: string;

@@ -114,6 +114,8 @@ import {
   useHabitRemindersFlag,
   useHabitsInPlanFlag,
   usePlanHabits,
+  useRoutineCompletions,
+  useToggleRoutineCompletion,
 } from '@/hooks/use-plan-habits';
 import { useNotificationCategories } from '@/hooks/use-notification-categories';
 import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing';
@@ -291,6 +293,11 @@ export default function TodayScheduleScreen(): React.JSX.Element {
   // Profile → Reminders. `prefs` falls back to nothing rather than to a
   // default-ON assumption, so a failed prefs fetch hides the bell instead of
   // promising a push we cannot confirm.
+  // SCRUM-666 r2 — per-day routine ticks. Own query key, never folded into the
+  // plan cache, so no plan refetch can carry them into a scorer's input.
+  const { completedIds: completedRoutineIds } = useRoutineCompletions(today);
+  const toggleRoutine = useToggleRoutineCompletion(today);
+
   const habitRemindersFlag = useHabitRemindersFlag();
   const { data: notificationCategories } = useNotificationCategories();
   const habitRemindersLive =
@@ -391,7 +398,7 @@ export default function TodayScheduleScreen(): React.JSX.Element {
           kind: 'routine',
           title: r.label,
           time,
-          done: false,
+          done: completedRoutineIds.has(r.habitId),
           detail: typeof r.cadence === 'string' ? undefined : `every ${r.cadence.everyNDays} days`,
           // SCRUM-666. Three conditions, all required, because each one is a
           // way the bell could lie:
@@ -400,7 +407,10 @@ export default function TodayScheduleScreen(): React.JSX.Element {
           //     from habits_in_plan_enabled, which is already on in prod
           //   • the patient's own toggle — "Routine reminders" is finally
           //     load-bearing, so it has to be honoured here too
-          willRemind: !!time && habitRemindersLive,
+          //   • SCRUM-666 r2 — this routine's OWN bell. Absent reads as true,
+          //     matching the backend, so already-timed routines keep their
+          //     reminder; an explicit false places it silently.
+          willRemind: !!time && habitRemindersLive && r.remindersEnabled !== false,
         });
       }
     }
@@ -427,6 +437,9 @@ export default function TodayScheduleScreen(): React.JSX.Element {
     // "Routine reminders" off in Profile and comes straight back here — the
     // screen would show reminders for pushes it has just stopped sending.
     habitRemindersLive,
+    // The tick itself. Without this the row keeps its old strikethrough after
+    // a tap — the write succeeds and the screen silently disagrees with it.
+    completedRoutineIds,
   ]);
 
   // Recomputed on each render rather than ticked on a timer: the NOW marker
@@ -504,9 +517,22 @@ export default function TodayScheduleScreen(): React.JSX.Element {
       if (ev) toggleCalendarItem(ev);
       return;
     }
-    // Routines have no per-day completion concept on this screen; they are
-    // structure, not asks. Tapping one is a no-op rather than a dead-looking
-    // control that silently does nothing meaningful.
+    if (item.id.startsWith('routine:')) {
+      // SCRUM-666 r2 — Vishal 2026-08-12: "user should be able to complete
+      // them similar to task but they won't impact any score."
+      //
+      // Unlike a task, a routine CAN be un-ticked here. A task completion is a
+      // clinical event that feeds adherence, so undo lives behind a deliberate
+      // control; a routine tick is per-day UI state that counts toward
+      // nothing, so a mistaken tap should cost exactly one more tap.
+      //
+      // Note what is absent: no invalidateWellbeingCaches, no adherence
+      // recompute. computeAdherence filters to kind === 'task', so routines
+      // are excluded structurally rather than by remembering not to add them.
+      const habitId = item.id.slice('routine:'.length);
+      toggleRoutine.mutate({ habitId, done: !item.done });
+      return;
+    }
   };
 
   const toggleCalendarItem = (item: CalendarEvent) => {
