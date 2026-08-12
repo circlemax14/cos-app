@@ -695,8 +695,31 @@ export async function readReminders(
       // out of the window on its own; an undated one never would, so it would
       // sit struck-through on "today" forever.
       if (r.completed) continue
+      // NOON, not midnight — and this is load-bearing, not cosmetic.
+      //
+      // The app keys days two different ways, and an undated reminder has to
+      // satisfy both:
+      //   • Home (index.tsx) compares the LOCAL date — getFullYear/Month/Date
+      //   • the calendar screen (appointments.tsx:182) compares
+      //     `e.startDate.slice(0, 10)`, which is the UTC date in the ISO string
+      //
+      // Anchored at local midnight, those two disagree for every timezone EAST
+      // of UTC: local 00:00 is still the previous day in UTC, so the reminder
+      // showed on Home and vanished from the calendar. That is exactly what
+      // was reported on 2026-08-12 ("home screen i can see reminder … but
+      // there is no reminder in calendar").
+      //
+      // Local noon is the same calendar day under both readings for every
+      // offset from UTC-12 to UTC+12. It is never displayed — allDay puts the
+      // row in "Anytime today" with no time — so the hour is purely a
+      // day-bucketing anchor.
+      //
+      // The real defect is that the app has two day-key conventions at all.
+      // Fixing that means changing every screen at once (today-schedule.tsx
+      // carries the same note about todayISO), so it is deliberately out of
+      // scope here.
       const today = new Date()
-      today.setHours(0, 0, 0, 0)
+      today.setHours(12, 0, 0, 0)
       if (today < windowStart || today > windowEnd) continue
       const source = sourceById.get(r.calendarId ?? '') ?? {
         id: r.calendarId ?? 'reminders',

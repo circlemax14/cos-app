@@ -87,8 +87,51 @@ test('it is anchored to TODAY, not to windowStart', () => {
   // Anchoring to the window would file it a year in the past on the ±1-year
   // Appointments window. An undated reminder is outstanding NOW.
   const code = codeOnly(CAL);
-  assert.match(code, /today\.setHours\(0, 0, 0, 0\)/);
   assert.match(code, /today < windowStart \|\| today > windowEnd/);
+});
+
+test('anchored at local NOON, because the app keys days two different ways', () => {
+  // Reported 2026-08-12: "home screen i can see reminder ... but there is no
+  // reminder in calendar."
+  //
+  //   Home (index.tsx)            compares the LOCAL date
+  //   calendar (appointments:182) compares startDate.slice(0,10) — the UTC date
+  //
+  // At local MIDNIGHT those disagree for every timezone east of UTC, so the
+  // row appeared on Home and vanished from the calendar. Noon is the same
+  // calendar day under both readings from UTC-12 to UTC+12.
+  const code = codeOnly(CAL);
+  assert.match(code, /today\.setHours\(12, 0, 0, 0\)/);
+  assert.doesNotMatch(
+    code,
+    /today\.setHours\(0, 0, 0, 0\)/,
+    'midnight breaks the calendar screen east of UTC',
+  );
+});
+
+test('noon satisfies BOTH day-key conventions across real offsets', () => {
+  // Executable proof rather than a claim in a comment. Mirrors the two
+  // conventions exactly: UTC via toISOString().slice(0,10), local via
+  // getFullYear/getMonth/getDate.
+  const check = (offsetHours, anchorHour) => {
+    const nowUtc = new Date('2026-08-12T09:00:00.000Z');
+    const local = new Date(nowUtc.getTime() + offsetHours * 3600e3);
+    const anchorLocal = Date.UTC(
+      local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), anchorHour,
+    );
+    const instant = new Date(anchorLocal - offsetHours * 3600e3);
+    const utcKey = instant.toISOString().slice(0, 10);
+    const localKey = new Date(instant.getTime() + offsetHours * 3600e3)
+      .toISOString().slice(0, 10);
+    const todayLocal = local.toISOString().slice(0, 10);
+    return utcKey === todayLocal && localKey === todayLocal;
+  };
+  for (const off of [-11, -8, -5, 0, 1, 5.5, 8, 9, 12]) {
+    assert.equal(check(off, 12), true, `noon must work at UTC${off >= 0 ? '+' : ''}${off}`);
+  }
+  // And demonstrate the bug this replaced, so the reasoning cannot rot.
+  assert.equal(check(5.5, 0), false, 'midnight is expected to FAIL east of UTC');
+  assert.equal(check(-8, 0), true, 'midnight only ever worked west of UTC');
 });
 
 test('allDay is set, which is what routes it to "Anytime today"', () => {
