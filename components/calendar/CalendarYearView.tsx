@@ -38,6 +38,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticImpact } from '@/utils/haptics'
+import { todayLocalIso } from '@/lib/day-key';
 
 interface Props {
   year: number
@@ -91,7 +92,7 @@ export function CalendarYearView({ year, events, onJumpToMonth, onLongPressMonth
     return set
   }, [events])
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = todayLocalIso()
   const listRef = useRef<FlatList<number>>(null)
   const didInitialScroll = useRef(false)
 

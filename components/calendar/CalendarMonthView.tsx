@@ -24,6 +24,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
+import { todayLocalIso } from '@/lib/day-key';
 
 export type MonthDensityMode = 'compact' | 'stacked' | 'details'
 
@@ -159,7 +160,7 @@ export function CalendarMonthView({
     return map
   }, [events])
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = todayLocalIso()
 
   // Calendar's `theme` covers the chrome. We do per-cell visuals
   // inside `dayComponent` so we have total control over the density modes.

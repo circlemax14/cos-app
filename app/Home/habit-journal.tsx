@@ -49,6 +49,7 @@ import type {
   HabitStreak,
 } from '@/services/api/habit-journal'
 import { HabitCorrelationStrip } from '@/components/health-plan/HabitCorrelationStrip'
+import { todayLocalIso } from '@/lib/day-key';
 
 type DraftValue = number | boolean
 
@@ -137,7 +138,7 @@ export default function HabitJournalScreen(): React.JSX.Element {
   for (const s of todayQuery.data?.streaks ?? []) streaksById.set(s.habitId, s)
 
   const isLoading = catalogQuery.isLoading || todayQuery.isLoading
-  const localDate = todayQuery.data?.localDate ?? new Date().toISOString().slice(0, 10)
+  const localDate = todayQuery.data?.localDate ?? todayLocalIso()
 
   function setValue(habitId: string, next: DraftValue) {
     setDraft((prev) => ({ ...prev, [habitId]: next }))

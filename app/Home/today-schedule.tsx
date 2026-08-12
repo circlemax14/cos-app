@@ -133,21 +133,34 @@ import { reconcilePlanTaskNotifications } from '@/services/plan-task-notificatio
 import { detectMetricForTask, type MetricInputSpec } from '@/services/smart-task-detection';
 import { getPhotoDownloadUrl } from '@/services/user-photo';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { todayLocalIso } from '@/lib/day-key';
 
 // ─── Small pure helpers ──────────────────────────────────────────────
 
 /**
- * Today's date as YYYY-MM-DD.
+ * Today's date as YYYY-MM-DD, in the patient's LOCAL timezone.
  *
- * NOTE: intentionally UTC-based (`toISOString`) because every other
- * caller in the app derives "today" the same way — app/Home/
- * appointments.tsx, health-plan.tsx, bps-progress.tsx, auth-prefetch.ts.
- * Switching only this screen to a local-timezone day would make it
- * disagree with the task list the plan screen shows late in the evening
- * for US timezones. If we fix it, we fix it everywhere at once.
+ * This was UTC-based until 2026-08-12, with a note saying that was deliberate
+ * because every other caller derived "today" the same way, and "if we fix it,
+ * we fix it everywhere at once."
+ *
+ * We fixed it everywhere at once. The premise had also been wrong: Home
+ * (index.tsx) and the readiness hook were already LOCAL, which is why Home and
+ * this screen visibly disagreed about which appointments belonged to today.
+ *
+ * What UTC cost, for a patient in Los Angeles, every day from 17:00 local:
+ *   - fetchTasksForDate() asked for TOMORROW, so this screen showed tomorrow's
+ *     task list
+ *   - on a Friday evening every `weekdays` task returned zero occurrences and
+ *     computeAdherence reported 100% — nothing was due, so nothing was missed
+ *   - routine completion ticks were PERSISTED against tomorrow's date
+ *   - undated reminders disappeared from this screen entirely
+ *
+ * See lib/day-key.ts. Keep this a thin alias rather than inlining the helper:
+ * the name `todayISO` appears throughout this file and in its contract tests.
  */
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalIso();
 }
 
 

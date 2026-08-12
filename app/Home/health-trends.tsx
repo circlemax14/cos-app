@@ -30,6 +30,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { todayLocalIso } from '@/lib/day-key';
 
 /**
  * Result Trends — redesigned (SCRUM-237).
@@ -147,7 +148,7 @@ export default function HealthTrendsScreen() {
     }
     try {
       const csv = buildTrendsCsv(allVisible)
-      const filename = `trends-${new Date().toISOString().slice(0, 10)}.csv`
+      const filename = `trends-${todayLocalIso()}.csv`
       const path = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${filename}`
       await FileSystem.writeAsStringAsync(path, csv, {
         encoding: FileSystem.EncodingType.UTF8,

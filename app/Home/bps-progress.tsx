@@ -122,6 +122,7 @@ import {
   type MetricCardSpec,
   type MetricHistory,
 } from '@/hooks/use-metric-history';
+import { todayLocalIso } from '@/lib/day-key';
 
 /** How many bars ScoreHistorySparkline can actually draw. Mirrored here so
  *  the caption can be truthful about how much of the window is visible. */
@@ -131,7 +132,7 @@ const SPARKLINE_BARS = 7;
  *  BiopsychosocialPlanScreen (['plan-tasks', todayIso()]) and
  *  auth-prefetch.ts so we ride the warm cache on first render. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalIso();
 }
 
 /** Short relative timestamp for a reading ("2 h ago", "Jul 28"). */
