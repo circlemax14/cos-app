@@ -164,3 +164,44 @@ test('hour rules use a hairline, not borderStyle dashed', () => {
   assert.match(TIMELINE, /borderTopWidth: StyleSheet\.hairlineWidth/);
   assert.doesNotMatch(codeOnly(TIMELINE), /borderStyle: 'dashed'/);
 });
+
+
+// ── Ken 2026-08-11, second round ─────────────────────────────────────
+
+test('the legend covers ALL FOUR kinds, including reminders', () => {
+  // "we don't have reminders and we aren't showing them". Reminders were
+  // merged into the timeline but omitted from the legend, so an amber row had
+  // nothing explaining it. A legend covering three of four is worse than
+  // none — it implies the fourth colour means something else.
+  assert.match(TIMELINE, /'appointment', 'routine', 'task', 'reminder'/);
+});
+
+test('a routine can be given a time from the routines screen', () => {
+  // Ken: "we have to be able to place a time on each routine so that it
+  // integrates into the schedule flow and is not separate." be #380 accepted
+  // the field; nothing could SET it.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /Time of day/);
+  assert.match(HABITS, /scheduledTime: v\.trim\(\)/);
+  assert.match(HABITS, /payload\.scheduledTime = time/);
+});
+
+test('an existing time is prefilled when editing', () => {
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /scheduledTime: h\.scheduledTime \?\? ''/);
+});
+
+test('clearing the time is possible — PATCH merges, so omission preserves', () => {
+  // Without an explicit clear a patient could set a time and never remove it;
+  // "anytime today" would be unreachable once chosen.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /payload\.scheduledTime = ''/);
+  assert.match(HABITS, /editing\.habitId && !time/, 'only clears when editing');
+});
+
+test('a half-typed time is never persisted', () => {
+  // "7:" must not reach the backend, and blank is a legitimate answer rather
+  // than an error.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /\^\(\[01\]\\d\|2\[0-3\]\):\[0-5\]\\d\$/);
+});

@@ -65,6 +65,12 @@ export interface UpsertHabitInput {
   habitId?: string
   label: string
   cadence: PlanHabit['cadence']
+  /**
+   * HH:MM 24h. Ken 2026-08-11: "we have to be able to place a time on each
+   * routine so that it integrates into the schedule flow and is not
+   * separate." Backend accepts it since #380; this is the client half.
+   */
+  scheduledTime?: string
   targetValue?: number
   unit?: string
   bpsDomain?: PlanHabit['bpsDomain']
