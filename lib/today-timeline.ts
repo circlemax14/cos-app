@@ -27,6 +27,25 @@ export interface TimelineItem {
   done: boolean;
   /** Sub-line: location, metric, cadence — whatever the source offers. */
   detail?: string;
+  /**
+   * True when this row will actually produce a push notification.
+   *
+   * Ken 2026-08-11: "we don't have reminders and we aren't showing them." The
+   * second half was the visible one — the legend listed a Reminders colour no
+   * row ever used. The first half was worse: "Routine reminders" shipped
+   * default-ON, described what it would do, and was read by nothing.
+   *
+   * Both are now real (cos-backend SCRUM-666), and this flag is how the
+   * schedule says so. It is deliberately NOT a separate timeline row: drawing
+   * a reminder beside the routine it reminds you of would double every timed
+   * item on the screen. The reminder is an ATTRIBUTE of the thing, in the same
+   * way its time is.
+   *
+   * Only ever true when the backend flag says dispatch is live AND the
+   * patient's category toggle is on — a bell that lies is the failure this
+   * whole change exists to remove.
+   */
+  willRemind?: boolean;
 }
 
 export interface TimelineHour {

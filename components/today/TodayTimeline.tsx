@@ -61,10 +61,16 @@ export function TodayLegend({
   colors,
   getScaledFontSize,
   getScaledFontWeight,
+  showReminderKey = false,
 }: {
   colors: Palette
   getScaledFontSize: (n: number) => number
   getScaledFontWeight: (n: number) => string
+  /**
+   * Explain the bell — but only on days it appears. A key for a symbol that
+   * is nowhere on screen is just another thing to read past.
+   */
+  showReminderKey?: boolean
 }): React.ReactElement {
   return (
     <View style={[styles.legend, { borderColor: colors.border }]} accessibilityRole="text">
@@ -90,6 +96,25 @@ export function TodayLegend({
           </Text>
         </View>
       ))}
+      {showReminderKey ? (
+        <View style={styles.legendItem}>
+          <MaterialIcons
+            name="notifications-active"
+            size={getScaledFontSize(13)}
+            color={colors.subtext}
+          />
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as never,
+              marginLeft: 4,
+            }}
+          >
+            We&apos;ll remind you
+          </Text>
+        </View>
+      ) : null}
     </View>
   )
 }
@@ -132,6 +157,20 @@ function Row({
           </Text>
         ) : null}
       </View>
+      {/* SCRUM-666 — this row will actually buzz the phone at its hour.
+          An attribute of the item, not a row of its own: a separate reminder
+          entry beside the routine it reminds you of would double every timed
+          thing on the screen. Only rendered when dispatch is genuinely live
+          and the patient's category toggle is on — see TimelineItem.willRemind
+          for why a bell that lies is the specific thing being fixed here. */}
+      {item.willRemind && !item.done ? (
+        <MaterialIcons
+          name="notifications-active"
+          size={sz(13)}
+          color={colors.subtext}
+          accessibilityLabel="You'll be reminded"
+        />
+      ) : null}
       {item.done ? (
         <MaterialIcons name="check" size={sz(15)} color={KIND.task.color} />
       ) : null}
@@ -143,7 +182,10 @@ function Row({
     <Pressable
       onPress={() => onPress(item)}
       accessibilityRole="button"
-      accessibilityLabel={`${meta.label.replace(/s$/, '')}: ${item.title}${item.done ? ', done' : ''}`}
+      accessibilityLabel={
+        `${meta.label.replace(/s$/, '')}: ${item.title}` +
+        (item.done ? ', done' : item.willRemind ? ", you'll be reminded" : '')
+      }
       hitSlop={4}
     >
       {body}

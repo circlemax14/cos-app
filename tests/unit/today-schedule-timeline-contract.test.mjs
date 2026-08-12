@@ -44,7 +44,9 @@ test('all four streams still reach the timeline', () => {
 test('routines use their scheduledTime when they have one', () => {
   // be #380 added the field. Without it every routine falls to "Anytime
   // today" — 14 of ~22 items on Ken's own day.
-  assert.match(SCREEN, /time: r\.scheduledTime \|\| null/);
+  // Hoisted to a local in SCRUM-666 so `willRemind` can also test it — a
+  // routine with no hour has nothing to fire at.
+  assert.match(SCREEN, /const time = r\.scheduledTime \|\| null;/);
 });
 
 test('loading and permission state is surfaced ABOVE the timeline', () => {
@@ -197,6 +199,54 @@ test('clearing the time is possible — PATCH merges, so omission preserves', ()
   const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
   assert.match(HABITS, /payload\.scheduledTime = ''/);
   assert.match(HABITS, /editing\.habitId && !time/, 'only clears when editing');
+});
+
+// ── SCRUM-666: reminders that actually exist ──────────────────────────
+
+test('the bell requires BOTH the dispatch flag and the patient toggle', () => {
+  // Each condition is a distinct way the bell could lie. The backend flag is
+  // dark-launched separately from habits_in_plan_enabled (already true in
+  // production), and the patient can switch "Routine reminders" off.
+  assert.match(SCREEN, /useHabitRemindersFlag\(\)/);
+  assert.match(SCREEN, /notificationCategories\?\.preferences\?\.habits === true/);
+  assert.match(SCREEN, /willRemind: !!time && habitRemindersLive/);
+});
+
+test('a routine with no time never claims it will remind', () => {
+  // "Anytime today" has no hour to fire at.
+  const code = codeOnly(SCREEN);
+  assert.match(code, /willRemind: !!time &&/, 'must be gated on the time being present');
+});
+
+test('the bell state is in the memo deps, so toggling it off takes effect', () => {
+  // Otherwise the screen keeps showing reminders for pushes it just stopped
+  // sending, until something unrelated invalidates the memo.
+  const deps = SCREEN.slice(SCREEN.indexOf('return out;'));
+  assert.match(deps, /habitRemindersLive,/);
+});
+
+test('reminders are an ATTRIBUTE, not a second row', () => {
+  // Our reminders are always about something already on the timeline, so
+  // emitting them as rows would draw every timed routine twice.
+  assert.match(TIMELINE, /item\.willRemind && !item\.done/);
+  assert.match(TIMELINE, /notifications-active/);
+  // The reminder KIND still exists — that is the iOS Reminders slice — but
+  // nothing may synthesise a reminder row from a routine.
+  assert.doesNotMatch(
+    codeOnly(SCREEN),
+    /kind: 'reminder',[\s\S]{0,120}routine/,
+    'must not emit a reminder row derived from a routine',
+  );
+});
+
+test('the bell carries a text label, not colour or shape alone', () => {
+  assert.match(TIMELINE, /accessibilityLabel="You'll be reminded"/);
+  assert.match(TIMELINE, /you'll be reminded/);
+});
+
+test('the legend key appears only on days a bell is on screen', () => {
+  assert.match(TIMELINE, /showReminderKey/);
+  assert.match(SCREEN, /showReminderKey=\{timelineItems\.some\(\(i\) => i\.willRemind\)\}/);
 });
 
 test('a half-typed time is never persisted', () => {

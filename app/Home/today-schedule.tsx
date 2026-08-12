@@ -48,6 +48,18 @@
  *                 schedules, not dated items, so they cannot populate a
  *                 "what is on today" list.
  *
+ * SCRUM-666 (Ken 2026-08-11, "we don't have reminders and we aren't showing
+ * them") adds a SECOND sense of reminder to this screen, and the distinction
+ * matters when reading the code below:
+ *
+ *   - a reminder ROW is still only the iOS Reminders slice described above;
+ *   - a reminder BELL marks a row that will itself buzz the phone at its hour.
+ *
+ * The bell is an attribute rather than a row on purpose. Our own reminders are
+ * always about something already on this screen, so emitting them as rows
+ * would draw every timed routine twice — the routine, and a reminder for the
+ * routine, an hour apart on the same spine. See TimelineItem.willRemind.
+ *
  * Health-plan tasks that the backend also publishes onto the calendar
  * feed (`origin:'app'`, `appKind:'task'`) are explicitly EXCLUDED from
  * the Appointments group — otherwise every plan task would appear twice
@@ -98,7 +110,12 @@ import {
 import { TodayTimeline, TodayLegend } from '@/components/today/TodayTimeline';
 import { AdherenceScore } from '@/components/today/AdherenceScore';
 import { useCalendar } from '@/hooks/use-calendar';
-import { useHabitsInPlanFlag, usePlanHabits } from '@/hooks/use-plan-habits';
+import {
+  useHabitRemindersFlag,
+  useHabitsInPlanFlag,
+  usePlanHabits,
+} from '@/hooks/use-plan-habits';
+import { useNotificationCategories } from '@/hooks/use-notification-categories';
 import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing';
 import { completeTask, fetchTasksForDate } from '@/services/api/ai-health-plan';
 import { fetchMedicationsSummary, fetchPatientInfo } from '@/services/api/patient';
@@ -267,6 +284,18 @@ export default function TodayScheduleScreen(): React.JSX.Element {
   const routinesEnabled = useHabitsInPlanFlag();
   const { habits: routines, isLoading: isLoadingRoutines, isError: routinesError } = usePlanHabits();
 
+  // SCRUM-666 — whether a timed routine will genuinely buzz the phone. Both
+  // halves are required and neither is inferable from the other: the backend
+  // dispatch flag rolls out separately from habits_in_plan_enabled (already on
+  // in production), and the patient can switch "Routine reminders" off in
+  // Profile → Reminders. `prefs` falls back to nothing rather than to a
+  // default-ON assumption, so a failed prefs fetch hides the bell instead of
+  // promising a push we cannot confirm.
+  const habitRemindersFlag = useHabitRemindersFlag();
+  const { data: notificationCategories } = useNotificationCategories();
+  const habitRemindersLive =
+    habitRemindersFlag && notificationCategories?.preferences?.habits === true;
+
   // ── Permission state — so empty states can be honest ──────────────
   // "No appointments today" is misleading when the real reason is that
   // calendar access was denied. Surface that as a hint rather than
@@ -356,13 +385,22 @@ export default function TodayScheduleScreen(): React.JSX.Element {
 
     if (routinesEnabled) {
       for (const r of routines) {
+        const time = r.scheduledTime || null;
         out.push({
           id: `routine:${r.habitId}`,
           kind: 'routine',
           title: r.label,
-          time: r.scheduledTime || null,
+          time,
           done: false,
           detail: typeof r.cadence === 'string' ? undefined : `every ${r.cadence.everyNDays} days`,
+          // SCRUM-666. Three conditions, all required, because each one is a
+          // way the bell could lie:
+          //   • a time — an "anytime today" routine has no hour to fire at
+          //   • dispatch live — the backend sweep is dark-launched separately
+          //     from habits_in_plan_enabled, which is already on in prod
+          //   • the patient's own toggle — "Routine reminders" is finally
+          //     load-bearing, so it has to be honoured here too
+          willRemind: !!time && habitRemindersLive,
         });
       }
     }
@@ -378,7 +416,18 @@ export default function TodayScheduleScreen(): React.JSX.Element {
     }
 
     return out;
-  }, [appointmentItems, planTasks, routines, routinesEnabled, reminderItems, completedCalendarIds]);
+  }, [
+    appointmentItems,
+    planTasks,
+    routines,
+    routinesEnabled,
+    reminderItems,
+    completedCalendarIds,
+    // Without this the bells keep their old state after the patient toggles
+    // "Routine reminders" off in Profile and comes straight back here — the
+    // screen would show reminders for pushes it has just stopped sending.
+    habitRemindersLive,
+  ]);
 
   // Recomputed on each render rather than ticked on a timer: the NOW marker
   // only has to be right when the patient is looking, and a per-minute
@@ -735,6 +784,9 @@ export default function TodayScheduleScreen(): React.JSX.Element {
           colors={timelineColors}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
+          // Only on days something actually carries a bell — a key for a
+          // symbol that is nowhere on the screen is noise.
+          showReminderKey={timelineItems.some((i) => i.willRemind)}
         />
 
         {timelineNotices.length > 0 && (
