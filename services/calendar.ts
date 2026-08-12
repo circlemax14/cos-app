@@ -633,6 +633,42 @@ export async function readReminders(
     return []
   }
 
+  // ── Undated reminders need their own query (2026-08-12, round 2) ────
+  //
+  // The two queries above CANNOT return them, which is why filtering for
+  // them in JS alone did nothing. expo-calendar maps a non-null status to
+  // EventKit's date-ranged predicates (see
+  // node_modules/expo-calendar/ios/CalendarModule.swift:612):
+  //
+  //     predicateForIncompleteReminders(withDueDateStarting:ending:calendars:)
+  //
+  // and Apple excludes reminders with NO due date from that predicate — there
+  // is no date for the range to match. Only a nil status maps to
+  //
+  //     predicateForReminders(in: calendars)
+  //
+  // which returns every reminder in the calendar regardless of due date. So
+  // undated reminders require a separate call with status AND both dates null.
+  //
+  // That call returns everything, including reminders we already have, so we
+  // keep only the ones with no due date at all and let the dated queries above
+  // own the rest. Guarded by its own try/catch: a failure here must not cost
+  // the dated reminders we already fetched successfully.
+  if (includeUndated) {
+    try {
+      const all = await withCalendarLock('getReminders:undated', () =>
+        Calendar.getRemindersAsync(calendarIds, null, null, null),
+      )
+      for (const r of all) {
+        if (r.dueDate ?? r.startDate) continue // dated — already covered above
+        if (r.completed) continue // see the mapping branch for why
+        raw.push(r)
+      }
+    } catch {
+      // Leave `raw` as-is; dated reminders still render.
+    }
+  }
+
   const events: CalendarEvent[] = []
   for (const r of raw) {
     const due = r.dueDate ?? r.startDate

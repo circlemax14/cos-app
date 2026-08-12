@@ -33,6 +33,49 @@ const SCREEN = readFileSync(join(ROOT, 'app/Home/today-schedule.tsx'), 'utf8');
 const codeOnly = (src) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
+test('THE ACTUAL BUG: undated reminders need their own null-status query', () => {
+  // Round 1 filtered for undated reminders in JS and shipped, and nothing
+  // changed — because the OS never returned them in the first place.
+  //
+  // expo-calendar maps a non-null status to EventKit's date-ranged predicate
+  // (node_modules/expo-calendar/ios/CalendarModule.swift:612):
+  //     predicateForIncompleteReminders(withDueDateStarting:ending:calendars:)
+  // and Apple excludes reminders with NO due date from it — there is no date
+  // for the range to match. Only a nil status maps to
+  //     predicateForReminders(in: calendars)
+  // which returns every reminder regardless of due date.
+  //
+  // So the null-status call is the fix. Without it every other assertion in
+  // this file passes while the feature does nothing.
+  const code = codeOnly(CAL);
+  assert.match(
+    code,
+    /Calendar\.getRemindersAsync\(calendarIds, null, null, null\)/,
+    'must query with null status AND null dates, or iOS returns no undated reminders',
+  );
+});
+
+test('the undated query cannot cost us the dated reminders', () => {
+  // It runs after the dated queries have already succeeded, in its own
+  // try/catch, so a failure there leaves `raw` intact.
+  const code = codeOnly(CAL);
+  const idx = code.indexOf('getReminders:undated');
+  assert.ok(idx > code.indexOf('raw = [...incomplete, ...completed]'), 'must run after');
+  const block = code.slice(idx - 400, idx + 700);
+  assert.match(block, /try \{/);
+  assert.match(block, /catch \{/);
+});
+
+test('the undated query keeps only undated, incomplete rows', () => {
+  // predicateForReminders(in:) returns EVERYTHING, including reminders the
+  // dated queries already returned. Without these two filters they would be
+  // duplicated onto the timeline.
+  const code = codeOnly(CAL);
+  const block = code.slice(code.indexOf('getReminders:undated'));
+  assert.match(block, /if \(r\.dueDate \?\? r\.startDate\) continue/);
+  assert.match(block, /if \(r\.completed\) continue/);
+});
+
 test('an undated reminder is no longer discarded outright', () => {
   const code = codeOnly(CAL);
   // The old behaviour was a bare `if (!due) continue` with nothing before it.
