@@ -31,6 +31,8 @@
 import * as Calendar from 'expo-calendar'
 import { Platform } from 'react-native'
 
+import { occurrencesInWindow, type RecurrenceLike } from '@/lib/reminder-recurrence'
+
 // ── Native access serialization (CRASH #22) ──────────────────────────────
 
 /**
@@ -150,6 +152,12 @@ export interface CalendarEvent {
    * them was discarded before it ever reached the app.
    */
   undated?: boolean
+  /**
+   * For reminders: this row is a GENERATED occurrence of a repeating series,
+   * not the reminder object iOS returned. iOS expands recurring events but not
+   * reminders, so we expand them (see lib/reminder-recurrence.ts).
+   */
+  repeating?: boolean
 }
 
 export interface PermissionState {
@@ -576,6 +584,19 @@ export async function readReminders(
      * is both sufficient and always correct.
      */
     includeUndated?: boolean
+    /**
+     * Expand REPEATING reminders across the window (default true).
+     *
+     * iOS returns a repeating reminder as one object with a recurrenceRule; it
+     * does not expand reminder recurrences the way it expands events. Without
+     * this a weekday reminder appears on one day and is missing on the other
+     * four.
+     *
+     * The snapshot uploader passes false: an expansion is DERIVED data, and
+     * persisting hundreds of generated rows for one reminder would bloat the
+     * snapshot and go stale the moment the rule changed.
+     */
+    expandRecurring?: boolean
   } = {},
 ): Promise<CalendarEvent[]> {
   if (Platform.OS !== 'ios') return [] // expo-calendar reminders are iOS-only
@@ -585,6 +606,7 @@ export async function readReminders(
   const windowStart = opts.windowStart ?? defaultWindowStart()
   const windowEnd = opts.windowEnd ?? defaultWindowEnd()
   const includeUndated = opts.includeUndated ?? true
+  const expandRecurring = opts.expandRecurring ?? true
 
   let calendars: Calendar.Calendar[]
   try {
@@ -654,15 +676,81 @@ export async function readReminders(
   // keep only the ones with no due date at all and let the dated queries above
   // own the rest. Guarded by its own try/catch: a failure here must not cost
   // the dated reminders we already fetched successfully.
-  if (includeUndated) {
+  // Reminders the two dated queries above cannot return. One extra call gets
+  // both: the null status maps to predicateForReminders(in:), which returns
+  // every reminder in the calendar regardless of due date or completion.
+  const expanded: CalendarEvent[] = []
+  if (includeUndated || expandRecurring) {
     try {
-      const all = await withCalendarLock('getReminders:undated', () =>
+      const all = await withCalendarLock('getReminders:all', () =>
         Calendar.getRemindersAsync(calendarIds, null, null, null),
       )
       for (const r of all) {
-        if (r.dueDate ?? r.startDate) continue // dated — already covered above
-        if (r.completed) continue // see the mapping branch for why
-        raw.push(r)
+        if (r.completed) continue
+        const due = r.dueDate ?? r.startDate
+
+        if (!due) {
+          if (includeUndated) raw.push(r) // mapped by the `if (!due)` branch below
+          continue
+        }
+
+        // ── Repeating reminders (2026-08-12) ──────────────────────────
+        //
+        // "i have few more reminders for weekdays they are not coming in home
+        // page and calendar."
+        //
+        // EventKit expands recurring EVENTS but NOT reminders: a weekday
+        // reminder is one EKReminder with a recurrenceRule and a single
+        // dueDate. So it surfaced on that one day and was invisible on the
+        // other four — and if the dueDate had drifted outside the window it
+        // was invisible entirely.
+        //
+        // Expand it ourselves across the window. The occurrence keeps the
+        // series' own time of day, so a 09:00 weekday reminder lands at 9am on
+        // each of those days rather than at midnight.
+        if (!expandRecurring) continue
+        const rule = (r as unknown as { recurrenceRule?: RecurrenceLike | null }).recurrenceRule
+        if (!rule) continue
+
+        const anchor = due instanceof Date ? due : new Date(due)
+        if (Number.isNaN(anchor.getTime())) continue
+
+        const source = sourceById.get(r.calendarId ?? '') ?? {
+          id: r.calendarId ?? 'reminders',
+          title: 'Reminders',
+          source: 'Reminders',
+          color: '#FF9500',
+          allowsWrite: false,
+        }
+
+        for (const day of occurrencesInWindow(rule, anchor, windowStart, windowEnd)) {
+          // The anchor's own dueDate is already returned by the dated queries
+          // above; emitting it again would draw that day twice.
+          if (day.toDateString() === anchor.toDateString()) continue
+
+          const at = new Date(day)
+          at.setHours(anchor.getHours(), anchor.getMinutes(), 0, 0)
+          const isAllDay =
+            anchor.getHours() === 0 && anchor.getMinutes() === 0 && anchor.getSeconds() === 0
+
+          expanded.push({
+            // Suffixed with the day so React keys stay unique across
+            // occurrences of the same series.
+            id: `reminder:${r.id}:${at.getFullYear()}-${at.getMonth() + 1}-${at.getDate()}`,
+            title: r.title ?? '(No title)',
+            startDate: at.toISOString(),
+            endDate: isAllDay ? at.toISOString() : new Date(at.getTime() + 30 * 60_000).toISOString(),
+            allDay: isAllDay,
+            location: r.location ?? undefined,
+            notes: r.notes ?? undefined,
+            calendarId: r.calendarId ?? '',
+            source,
+            origin: 'reminder',
+            alarms: [],
+            completed: false,
+            repeating: true,
+          })
+        }
       }
     } catch {
       // Leave `raw` as-is; dated reminders still render.
@@ -813,6 +901,10 @@ export async function readReminders(
       completed: !!r.completed,
     })
   }
+  // Generated occurrences of repeating series, appended after the reminders
+  // iOS returned directly. The expansion loop already skips the anchor day, so
+  // a repeating reminder is never drawn twice on its own due date.
+  events.push(...expanded)
   events.sort((a, b) => a.startDate.localeCompare(b.startDate))
   return events
 }

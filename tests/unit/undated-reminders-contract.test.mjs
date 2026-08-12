@@ -55,25 +55,27 @@ test('THE ACTUAL BUG: undated reminders need their own null-status query', () =>
   );
 });
 
-test('the undated query cannot cost us the dated reminders', () => {
+test('the extra query cannot cost us the dated reminders', () => {
   // It runs after the dated queries have already succeeded, in its own
   // try/catch, so a failure there leaves `raw` intact.
   const code = codeOnly(CAL);
-  const idx = code.indexOf('getReminders:undated');
+  const idx = code.indexOf('getReminders:all');
   assert.ok(idx > code.indexOf('raw = [...incomplete, ...completed]'), 'must run after');
   const block = code.slice(idx - 400, idx + 700);
   assert.match(block, /try \{/);
   assert.match(block, /catch \{/);
 });
 
-test('the undated query keeps only undated, incomplete rows', () => {
-  // predicateForReminders(in:) returns EVERYTHING, including reminders the
-  // dated queries already returned. Without these two filters they would be
-  // duplicated onto the timeline.
+test('the extra query routes each row to exactly one path', () => {
+  // predicateForReminders(in:) returns EVERYTHING — undated, dated, and
+  // repeating. Undated rows go to the mapping branch; DATED non-repeating
+  // rows must be dropped here because the dated queries already returned
+  // them, or every reminder would be drawn twice.
   const code = codeOnly(CAL);
-  const block = code.slice(code.indexOf('getReminders:undated'));
-  assert.match(block, /if \(r\.dueDate \?\? r\.startDate\) continue/);
+  const block = code.slice(code.indexOf('getReminders:all'));
   assert.match(block, /if \(r\.completed\) continue/);
+  assert.match(block, /if \(!due\) \{/, 'undated rows push to raw');
+  assert.match(block, /if \(!rule\) continue/, 'dated non-repeating rows are dropped');
 });
 
 test('an undated reminder is no longer discarded outright', () => {
@@ -168,5 +170,54 @@ test('the default is INCLUDE — the live read is the one that matters', () => {
 });
 
 test('the schedule says why the row has no hour', () => {
-  assert.match(SCREEN, /r\.undated \? 'No due date' : undefined/);
+  assert.match(SCREEN, /r\.undated \? 'No due date'/);
+});
+
+// ── Repeating reminders (2026-08-12, round 3) ────────────────────────
+
+test('REPEATING reminders are expanded — iOS does not do it for us', () => {
+  // "i have few more reminders for weekdays they are not coming in home page
+  // and calendar." EventKit expands recurring EVENTS but returns a recurring
+  // REMINDER as one object with a recurrenceRule and a single dueDate, so a
+  // weekday reminder surfaced on one day and was invisible on the other four.
+  const code = codeOnly(CAL);
+  assert.match(code, /occurrencesInWindow\(rule, anchor, windowStart, windowEnd\)/);
+  assert.match(code, /recurrenceRule/);
+  assert.match(code, /repeating: true/);
+});
+
+test('an expanded occurrence keeps the series TIME OF DAY', () => {
+  // Otherwise a 09:00 weekday reminder lands at midnight on the four days we
+  // generate, and sorts to the top of the timeline instead of into 9am.
+  const code = codeOnly(CAL);
+  assert.match(code, /at\.setHours\(anchor\.getHours\(\), anchor\.getMinutes\(\), 0, 0\)/);
+});
+
+test('the anchor day is NOT drawn twice', () => {
+  // The dated queries already return the reminder on its own dueDate. Emitting
+  // an expansion for that same day would duplicate it.
+  const code = codeOnly(CAL);
+  assert.match(code, /day\.toDateString\(\) === anchor\.toDateString\(\)/);
+});
+
+test('expanded occurrences get unique ids', () => {
+  // Same series, many days — a shared id would collapse them to one row and
+  // trigger duplicate-key warnings.
+  assert.match(codeOnly(CAL), /id: `reminder:\$\{r\.id\}:\$\{at\.getFullYear\(\)\}/);
+});
+
+test('completed repeating reminders are not expanded', () => {
+  const code = codeOnly(CAL);
+  const block = code.slice(code.indexOf('getReminders:all'));
+  assert.match(block, /if \(r\.completed\) continue/);
+});
+
+test('the snapshot uploader does not persist DERIVED occurrences', () => {
+  // An expansion is generated data; persisting hundreds of rows for one
+  // reminder would bloat the snapshot and go stale when the rule changed.
+  assert.match(codeOnly(SYNC), /expandRecurring: false/);
+});
+
+test('a generated occurrence says so on the row', () => {
+  assert.match(SCREEN, /r\.repeating \? 'Repeats' : undefined/);
 });
