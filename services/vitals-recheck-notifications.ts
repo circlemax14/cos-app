@@ -89,7 +89,62 @@ async function isGranted(): Promise<boolean> {
  * missing notifications permission, empty input, storage failure, or a
  * scheduling throw (best-effort throughout).
  */
-export async function reconcileVitalsRecheckNotifications(active: ActiveFlag[]): Promise<void> {
+/**
+ * Cancel every notification this module scheduled, by tag.
+ *
+ * The file header has claimed "cancel-by-tag reconciliation" since HS-3b, but
+ * no such function existed — the scheduler only ever ADDED, relying on a
+ * per-day AsyncStorage dedupe key to avoid repeats. That was survivable while
+ * nothing could turn the feature off; it is not survivable now that "Health
+ * alerts" can be switched off, because the already-queued alerts would keep
+ * firing for their full cooldown window.
+ *
+ * Tag-scoped on purpose: plan-task and calendar reminders live in the same iOS
+ * queue and must not be touched.
+ */
+async function cancelAllVitalsScheduled(): Promise<void> {
+  let scheduled: Notifications.NotificationRequest[] = [];
+  try {
+    scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  } catch {
+    return;
+  }
+  for (const req of scheduled) {
+    const tag = (req.content.data as { tag?: string } | null)?.tag ?? '';
+    if (tag !== TAG) continue;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(req.identifier);
+    } catch {
+      // ignore — best effort
+    }
+  }
+}
+
+export async function reconcileVitalsRecheckNotifications(
+  active: ActiveFlag[],
+  /**
+   * 2026-08-12 — the "Health alerts" notification category.
+   *
+   * This scheduler was entirely ungated: a patient who switched every toggle
+   * off still received vitals rechecks, which is what was reported
+   * ("i disabled all reminders ... but still i am recieving task
+   * notifications"). It now has its own category rather than borrowing one —
+   * `otherTask` defaults OFF and would have silenced the most clinically
+   * urgent alert we send, and `nudges` promises AI-informed prompts while
+   * these are rule-based.
+   *
+   * FAILS OPEN: only an explicit `false` suppresses, so a missing or failed
+   * prefs read can never swallow a "recheck your blood pressure".
+   */
+  healthAlertsEnabled?: boolean,
+): Promise<void> {
+  if (healthAlertsEnabled === false) {
+    // Cancel anything already queued, then stop. Turning the switch off has
+    // to clear the existing queue, not merely stop adding to it — otherwise
+    // alerts scheduled earlier keep firing for their full cooldown window.
+    await cancelAllVitalsScheduled().catch(() => { /* non-fatal */ });
+    return;
+  }
   if (SCHEDULE_ONLY_WHEN_GRANTED && !(await isGranted())) return;
 
   const now = Date.now();
