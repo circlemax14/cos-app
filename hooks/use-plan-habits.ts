@@ -38,6 +38,22 @@ export function useHabitsInPlanFlag(): boolean {
   return data?.habits_in_plan_enabled === true
 }
 
+/**
+ * SCRUM-666 — will a routine with a time actually produce a push?
+ *
+ * Separate from the flag above, and deliberately so: `habits_in_plan_enabled`
+ * is already true in production, while reminder DISPATCH rolls out on its own
+ * switch. Today's Schedule draws a bell on the rows that will remind, and a
+ * bell shown while dispatch is dark would repeat the exact failure Ken
+ * reported — a UI promising a notification nobody receives.
+ *
+ * Falls open OFF, so the bell appears only once the backend says it is real.
+ */
+export function useHabitRemindersFlag(): boolean {
+  const { data } = useFeatureFlags()
+  return data?.habit_reminders_enabled === true
+}
+
 // ─── Read selector ───────────────────────────────────────────────────
 
 export function usePlanHabits(): {
