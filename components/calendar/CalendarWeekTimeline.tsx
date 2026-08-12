@@ -26,6 +26,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { IconSymbol } from '@/components/ui/icon-symbol'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
+import { todayLocalIso } from '@/lib/day-key';
 
 const HOUR_HEIGHT = 56
 const HOUR_LABEL_WIDTH = 48
@@ -98,7 +99,7 @@ export function CalendarWeekTimeline({
   void nowTick
 
   const week = useMemo(() => buildWeek(dateIso), [dateIso])
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = todayLocalIso()
 
   // Bucket events per day for fast lookup.
   const eventsByDay = useMemo(() => {

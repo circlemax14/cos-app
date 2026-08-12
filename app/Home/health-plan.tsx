@@ -76,6 +76,7 @@ import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import { knownSubdomains } from '@/lib/bps-subdomains';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
+import { todayLocalIso } from '@/lib/day-key';
 
 /**
  * COS-434 experiment #5: dark-launchable local flag around the hoisted bio
@@ -108,7 +109,7 @@ const INITIAL_LOAD_TIMEOUT_MS = 20_000;
 
 // Today's ISO date in the patient's local timezone
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalIso();
 }
 
 // Format "HH:MM" -> "8:00 AM" / "6:30 PM"

@@ -59,6 +59,7 @@ import {
   type NutritionPlan,
 } from '@/services/api/nutrition-plan'
 import { createPlanTask } from '@/services/api/plan-tasks'
+import { todayLocalIso } from '@/lib/day-key';
 
 /** Fallback only — every real caller passes the theme tint. Amber rather
  *  than a teal/green guess so an unstyled render is obvious in review. */
@@ -210,7 +211,7 @@ export function NutritionPlanSection({
           // land in the pre-breakfast cluster of medication reminders.
           scheduledTime: '11:00',
           recurrence: 'daily',
-          startDate: new Date().toISOString().slice(0, 10),
+          startDate: todayLocalIso(),
           category: 'nutrition',
           completionStyle: 'simple',
         })

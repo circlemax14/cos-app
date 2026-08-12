@@ -25,6 +25,7 @@ import {
 import { buildCategoryGateFromPrefs } from '@/services/notification-category-gate';
 import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
 import type { TaskOccurrence } from '@/services/api/types';
+import { todayLocalIso } from '@/lib/day-key';
 
 const NOTIFICATION_CATEGORIES_KEY = ['notification-categories'] as const;
 
@@ -74,7 +75,7 @@ export function useUpdateNotificationCategories() {
       // prefetched by auth-prefetch / today-schedule) and build the gate
       // directly from the server-confirmed prefs — no extra network call.
       // Fire-and-forget; failures are non-fatal.
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = todayLocalIso();
       const cached = qc.getQueryData<TaskOccurrence[]>(['plan-tasks', todayIso]);
       if (cached && cached.length > 0) {
         const gate = buildCategoryGateFromPrefs(updated.flagEnabled, updated.preferences);

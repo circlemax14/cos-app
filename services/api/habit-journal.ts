@@ -13,6 +13,7 @@
  */
 
 import { apiClient } from '@/lib/api-client'
+import { todayLocalIso } from '@/lib/day-key'
 
 export type HabitInputType = 'numeric' | 'scale' | 'boolean'
 export type HabitBpsDomain = 'biological' | 'psychological' | 'social'
@@ -94,7 +95,7 @@ export async function fetchHabitEntriesToday(): Promise<HabitEntriesTodayRespons
   const body = res.data
   const shaped = unwrap<HabitEntriesTodayResponse>(body, ['localDate', 'entries', 'streaks'])
   return {
-    localDate: shaped?.localDate ?? new Date().toISOString().slice(0, 10),
+    localDate: shaped?.localDate ?? todayLocalIso(),
     entries: shaped?.entries ?? [],
     streaks: shaped?.streaks ?? [],
   }

@@ -20,6 +20,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { IconSymbol } from '@/components/ui/icon-symbol'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
+import { todayLocalIso } from '@/lib/day-key';
 
 const HOUR_HEIGHT = 56 // px per hour row
 const HOUR_LABEL_WIDTH = 56
@@ -67,7 +68,7 @@ export function CalendarDayTimeline({
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), [])
 
   // Now-line position: only render when viewing TODAY.
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = todayLocalIso()
   const isToday = dateIso === todayIso
   let nowTop: number | null = null
   if (isToday) {

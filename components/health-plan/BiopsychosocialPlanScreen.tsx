@@ -106,6 +106,7 @@ import { fetchTasksForDate } from '@/services/api/ai-health-plan';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { PlanType } from '@/services/api/plan-type';
 import type { PlanTask, TaskOccurrence } from '@/services/api/types';
+import { todayLocalIso } from '@/lib/day-key';
 // ADR-0005 P0/P2 — bottom-anchored "Classic view" escape hatch. The
 // component self-gates on `isTabSwapBpsEnabled()` (returns null when the
 // build-time env is unset), so mounting it inside this ScrollView is a
@@ -496,7 +497,7 @@ const BPS_HERO_LAYOUT_ENABLED = false as const;
  *  ['plan-tasks', todayIso()] cache key lines up with the pre-warmed
  *  entry — the hero rides that warm read on first render. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalIso();
 }
 
 const SECTION_ORDER: { key: BiopsychosocialSectionKey; title: string }[] = [

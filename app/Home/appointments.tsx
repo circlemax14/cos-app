@@ -62,6 +62,7 @@ import { useAppointments } from '@/hooks/use-appointments'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
 import { addRecentSearch } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
+import { todayLocalIso } from '@/lib/day-key';
 
 // Year / Month / Week / Day / List — Week was added in v7 at Ken's
 // request (Apple's iPad + Mac Calendar both include Week; iPhone's
@@ -87,7 +88,7 @@ function weekRangeForDay(dayIso: string): { startIso: string; endIso: string } {
 const SEARCH_HEIGHT = 44 // pixel height of the slide-in search bar
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayLocalIso()
 }
 
 /**

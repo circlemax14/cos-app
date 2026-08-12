@@ -30,12 +30,13 @@ import { listSelfReportedMetrics } from '@/services/api/self-reported-metrics';
 import { apiClient } from '@/lib/api-client';
 import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
 import { resolveCategoryGate } from '@/services/notification-category-gate';
+import { todayLocalIso } from '@/lib/day-key';
 
 const COOLDOWN_MS = 30_000;
 let lastRunAt = 0;
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalIso();
 }
 
 function calendarWindow(): { from: string; to: string } {
