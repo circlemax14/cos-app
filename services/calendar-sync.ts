@@ -78,7 +78,7 @@ export async function buildAndUploadSnapshot(): Promise<number> {
     // row on. Persisting one would stamp it with the day the sync ran and
     // re-upload it every day as that stamp drifted. They are device-local and
     // always-today, so the live read on Today's Schedule covers them.
-    readReminders({ windowStart, windowEnd, includeUndated: false }).catch(() => []),
+    readReminders({ windowStart, windowEnd, includeUndated: false, expandRecurring: false }).catch(() => []),
   ])
   const payload: SnapshotEventPayload[] = [
     ...events.map((e) => ({

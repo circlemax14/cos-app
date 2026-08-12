@@ -440,7 +440,10 @@ export default function TodayScheduleScreen(): React.JSX.Element {
         // before ever reaching this screen. Now they land in "Anytime today",
         // and the sub-line says why they have no hour rather than leaving the
         // patient to wonder whether we lost their time.
-        detail: r.undated ? 'No due date' : undefined,
+        // "No due date" explains an Anytime row; "Repeats" explains a row
+        // the patient never sees in iOS on this specific day, because iOS
+        // shows a repeating reminder only on its next due date.
+        detail: r.undated ? 'No due date' : r.repeating ? 'Repeats' : undefined,
       });
     }
 
