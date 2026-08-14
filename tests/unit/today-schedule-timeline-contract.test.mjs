@@ -545,7 +545,7 @@ test('there is ONE scale helper, and layout goes through it', () => {
   assert.match(code, /const fs = PixelRatio\.getFontScale\(\)/);
   // The glyph box and the line box must come from the same helper, or they
   // cannot stay centred on each other.
-  assert.match(code, /const size = f\(17\)/);
+  assert.match(code, /const size = f\(15\)/);
   assert.match(code, /const lineHeight = f\(19\)/);
 });
 
@@ -561,8 +561,24 @@ test('no raw sz() survives in row layout — it is only half the scale', () => {
   assert.doesNotMatch(row, /width: \d+,/, 'no fixed widths');
 });
 
-test('the hour column width comes from the combined scale', () => {
+test('the hour column scales but is CAPPED', () => {
+  // Uncapped, f(52) reaches ~136pt at a large text size — the hour then sits
+  // a third of the screen from its own row and reads as detached, which is
+  // what Ken's 2026-08-14 screenshot actually showed.
   const code = codeOnly(TIMELINE);
-  assert.match(code, /width: f\(52\)/);
-  assert.doesNotMatch(code, /width: 52/);
+  assert.match(code, /width: Math\.min\(f\(52\), 96\)/);
+  assert.doesNotMatch(code, /width: 52[,)]/);
+});
+
+test('icons are centred STRUCTURALLY, not by computed margins', () => {
+  // Three attempts computed a marginTop from font metrics and each was off,
+  // because the computation has to predict where the OS draws a glyph inside
+  // its line box. A container exactly one line high with justifyContent
+  // 'center' is correct by construction — no prediction involved.
+  const all = codeOnly(TIMELINE);
+  const row = all.slice(all.indexOf('function Row('), all.indexOf('function NowMarker'));
+  assert.match(row, /height: glyph\.lineHeight, justifyContent: 'center'/);
+  assert.match(row, /height: f\(19\), justifyContent: 'center'/);
+  assert.doesNotMatch(row, /marginTop: Math\.max/, 'no computed vertical nudges');
+  assert.doesNotMatch(row, /marginTop: \d+/, 'no unscaled vertical nudges');
 });

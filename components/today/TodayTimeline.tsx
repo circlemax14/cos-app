@@ -107,18 +107,19 @@ function glyphGeometry(sz: (n: number) => number) {
   // sized sz(17) does not move at all. Scaling the box by the same OS factor
   // the text is actually being rendered at is what makes them track.
   const f = scaled(sz)
-  const size = f(17)
+  // Smaller than the text it sits beside: at f(17) the box was competing with
+  // the title rather than labelling it.
+  const size = f(15)
   const lineHeight = f(19) // must match the title's lineHeight below
   return {
     size,
+    lineHeight,
     style: {
       width: size,
       height: size,
       borderRadius: size * 0.3,
-      // Centre on the FIRST line of a title that may wrap to several.
-      marginTop: Math.max(0, (lineHeight - size) / 2),
     },
-    iconSize: Math.round(size * 0.6),
+    iconSize: Math.round(size * 0.62),
   }
 }
 
@@ -244,8 +245,16 @@ function Row({
   const glyph = glyphGeometry(sz)
   const body = (
     <View style={[styles.row, dim && styles.dim]}>
-      <View style={[styles.glyph, glyph.style, { backgroundColor: meta.color }]}>
-        <MaterialIcons name={meta.icon} size={glyph.iconSize} color="#FFFFFF" />
+      {/* Centred STRUCTURALLY, not by arithmetic. Three earlier attempts
+          computed a marginTop from font metrics and each was off, because the
+          computation has to predict where the OS actually draws the glyph
+          inside its line box. A container exactly one line high with
+          justifyContent:'center' is correct by construction at any scale, for
+          any font, on any OS version. */}
+      <View style={{ height: glyph.lineHeight, justifyContent: 'center' }}>
+        <View style={[styles.glyph, glyph.style, { backgroundColor: meta.color }]}>
+          <MaterialIcons name={meta.icon} size={glyph.iconSize} color="#FFFFFF" />
+        </View>
       </View>
       <View style={styles.rowText}>
         <Text
@@ -266,7 +275,7 @@ function Row({
         {item.detail ? (
           <Text
             allowFontScaling={false}
-            style={{ color: colors.subtext, fontSize: f(12), lineHeight: f(16), marginTop: 1 }}
+            style={{ color: colors.subtext, fontSize: f(12), lineHeight: f(16) }}
           >
             {item.detail}
           </Text>
@@ -279,13 +288,14 @@ function Row({
           and the patient's category toggle is on — see TimelineItem.willRemind
           for why a bell that lies is the specific thing being fixed here. */}
       {item.willRemind && !item.done ? (
+        <View style={{ height: f(19), justifyContent: 'center' }}>
         <MaterialIcons
           name="notifications-active"
           size={f(13)}
           color={colors.subtext}
           accessibilityLabel="You'll be reminded"
-          style={{ marginTop: Math.max(0, (f(19) - f(13)) / 2) }}
         />
+        </View>
       ) : null}
       {/* Ken 2026-08-14: "How does the user know that they can check off
           tasks in schedule screen?"
@@ -304,20 +314,14 @@ function Row({
           wraps to three lines the tick sits beside the words rather than
           floating at the top of a tall row. */}
       {onPress && !item.done ? (
-        <MaterialIcons
-          name="radio-button-unchecked"
-          size={f(20)}
-          color={colors.subtext}
-          style={{ marginTop: Math.max(0, (f(19) - f(20)) / 2) }}
-        />
+        <View style={{ height: f(19), justifyContent: 'center' }}>
+          <MaterialIcons name="radio-button-unchecked" size={f(18)} color={colors.subtext} />
+        </View>
       ) : null}
       {item.done ? (
-        <MaterialIcons
-          name="check-circle"
-          size={f(20)}
-          color={KIND.task.color}
-          style={{ marginTop: Math.max(0, (f(19) - f(20)) / 2) }}
-        />
+        <View style={{ height: f(19), justifyContent: 'center' }}>
+          <MaterialIcons name="check-circle" size={f(18)} color={KIND.task.color} />
+        </View>
       ) : null}
     </View>
   )
@@ -384,13 +388,16 @@ export function TodayTimeline({
                 style={{
                   color: isNow ? colors.tint : colors.subtext,
                   fontSize: f(12),
+                  // Matches the item's line box so the hour sits level with the
+                  // first line of whatever is beside it.
+                  lineHeight: f(19),
                   fontWeight: wt(isNow ? 800 : 700) as never,
-                  // Tracks the RENDERED text, OS Dynamic Type included — at a
-                  // fixed 52 (and even at a merely sz-scaled 52) the label
-                  // wrapped, "10 am" became "10" / "am", and the whole hour
-                  // block fell out of line with its items.
-                  width: f(52),
-                  paddingTop: 2,
+                  // Wide enough for "10 am" on one line, capped so it cannot
+                  // run away. Uncapped, f(52) reaches ~136pt at a large text
+                  // size and opens a gap that leaves the hour looking detached
+                  // from the row it belongs to — visible in Ken's 2026-08-14
+                  // screenshot. numberOfLines={1} keeps it honest at the cap.
+                  width: Math.min(f(52), 96),
                 }}
               >
                 {h.label}
@@ -469,7 +476,7 @@ function NowMarker({
           color: colors.tint,
           fontSize: f(10),
           fontWeight: wt(800) as never,
-          width: f(52),
+          width: Math.min(f(52), 96),
         }}
       >
         NOW
