@@ -3391,7 +3391,16 @@ export default function HomeScreen() {
             through to the same detail screens as before. Empty states
             render as a "—" placeholder + short hint so the row stays a
             fixed slot instead of collapsing/reflowing on data changes. */}
+        {/* Ken 2026-08-14: "only 2 scores, wellbeing score and health age, and
+            in home screen we should have these at top". HeroInsightsRow now
+            renders exactly those two. */}
         <HeroInsightsRow />
+        {/* Daily Read left this row when it became the two-scores row. It is
+            NOT a score — it is a daily content card — so it keeps its place on
+            Home as its own card rather than disappearing. Ken asked to remove
+            other SCORES; dropping a content card on that basis would be reading
+            more into the ask than it says. Self-gates on daily_read_enabled. */}
+        <DailyReadCard />
         {/*
          * SCRUM-653 title row — one of two variants selected by
          * HOME_V2_INJECTIONS_ENABLED:
@@ -3616,13 +3625,13 @@ export default function HomeScreen() {
           // the row. Home only supplies the flex gap. Do NOT re-wrap
           // either tile in a padded View here — that reintroduces the
           // asymmetric geometry.
-          <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>
-            <View style={{ flex: 1 }}>
-              <WellbeingScoreTile />
-            </View>
-            <View style={{ flex: 1 }}>
-              <WellbeingMapPreview />
-            </View>
+          // SCRUM-676: WellbeingScoreTile moved to the two-scores row at the
+          // top of Home, so this row would otherwise show the SAME wellbeing
+          // number twice on one screen. The map preview takes the full width.
+          // WellbeingScoreTile stays imported and unchanged — restoring the
+          // two-up is one line if Ken prefers it.
+          <View style={{ marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>
+            <WellbeingMapPreview />
           </View>
         )}
         {/*
