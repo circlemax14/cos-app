@@ -542,32 +542,35 @@ export default function HabitsScreen(): React.JSX.Element {
             </Pressable>
 
             {showTimePicker ? (
-              <View>
-                <DateTimePicker
-                  value={parseHHMM(editing.scheduledTime)}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(_, d) => {
-                    if (Platform.OS === 'android') setShowTimePicker(false)
-                    if (!d) return
-                    const hh = String(d.getHours()).padStart(2, '0')
-                    const mm = String(d.getMinutes()).padStart(2, '0')
-                    setEditing((e) => (e ? { ...e, scheduledTime: `${hh}:${mm}` } : e))
-                  }}
-                />
-                {/* Ken 2026-08-14: "after selection i am stuck i am not able to
-                    select or change cadance or domain".
+              <View style={styles.pickerBlock}>
+                {/* Ken 2026-08-14, second pass: "done button is only partially
+                    visible".
 
-                    An iOS spinner swallows vertical drags, so with it open
-                    inside a ScrollView there was no way to scroll PAST it to
-                    reach the fields below, and nothing to close it with — the
-                    wheel emits a value on every tick, so there is no natural
-                    "finished" moment to collapse on. An explicit Done gives
-                    one. Full-width and 44pt so it cannot be missed. */}
-                {Platform.OS === 'ios' ? (
+                    It was BELOW the wheel. An iOS spinner is ~216pt tall, so
+                    Done landed past the bottom of the card — and the spinner
+                    swallows the vertical drag that would have scrolled to it,
+                    so it could not be reached at all.
+
+                    Above the wheel it sits immediately under the field the
+                    patient just tapped, which is where iOS puts Done on a
+                    picker toolbar anyway. The wheel is height-capped as well,
+                    so the whole block stays inside the card even at large
+                    accessibility text sizes. */}
+                <View style={styles.pickerBar}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: colors.subtext as string,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    Choose a time
+                  </Text>
                   <Pressable
                     onPress={() => setShowTimePicker(false)}
                     style={({ pressed }) => [styles.pickerDone, pressed && styles.pressed]}
+                    hitSlop={8}
                     accessibilityRole="button"
                     accessibilityLabel="Done choosing the time"
                   >
@@ -581,7 +584,20 @@ export default function HabitsScreen(): React.JSX.Element {
                       Done
                     </Text>
                   </Pressable>
-                ) : null}
+                </View>
+                <DateTimePicker
+                  value={parseHHMM(editing.scheduledTime)}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  style={Platform.OS === 'ios' ? styles.picker : undefined}
+                  onChange={(_, d) => {
+                    if (Platform.OS === 'android') setShowTimePicker(false)
+                    if (!d) return
+                    const hh = String(d.getHours()).padStart(2, '0')
+                    const mm = String(d.getMinutes()).padStart(2, '0')
+                    setEditing((e) => (e ? { ...e, scheduledTime: `${hh}:${mm}` } : e))
+                  }}
+                />
               </View>
             ) : null}
 
@@ -845,14 +861,21 @@ const styles = StyleSheet.create({
     // and large type clips against the border.
     minHeight: 44,
   },
+  pickerBlock: { marginTop: 8 },
+  // Done sits ABOVE the wheel: below it, a ~216pt spinner pushed it past the
+  // bottom of the card and swallowed the drag that would have scrolled to it.
+  pickerBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   pickerDone: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+    minWidth: 88,
+    paddingHorizontal: 18,
     borderRadius: 10,
     backgroundColor: '#1F6F63',
-    marginTop: 4,
   },
+  // Shorter than the iOS default so the block fits the card at large text.
+  picker: { height: 170 },
   // Tappable time field — replaces the numeric TextInput (Ken 2026-08-14).
   // Row layout so the value and the clear affordance sit on one line, with the
   // same 44pt floor as every other tap target on this screen.
