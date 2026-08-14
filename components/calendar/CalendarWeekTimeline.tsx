@@ -26,7 +26,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { IconSymbol } from '@/components/ui/icon-symbol'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
-import { todayLocalIso } from '@/lib/day-key';
+import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 
 const HOUR_HEIGHT = 56
 const HOUR_LABEL_WIDTH = 48
@@ -105,7 +105,7 @@ export function CalendarWeekTimeline({
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>()
     for (const e of events) {
-      const day = e.startDate.slice(0, 10)
+      const day = eventDayKey(e)
       const bucket = map.get(day) ?? []
       bucket.push(e)
       map.set(day, bucket)

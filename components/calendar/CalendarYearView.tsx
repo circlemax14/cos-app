@@ -38,7 +38,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticImpact } from '@/utils/haptics'
-import { todayLocalIso } from '@/lib/day-key';
+import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 
 interface Props {
   year: number
@@ -88,7 +88,7 @@ export function CalendarYearView({ year, events, onJumpToMonth, onLongPressMonth
 
   const daysWithEvents = useMemo(() => {
     const set = new Set<string>()
-    for (const e of events) set.add(e.startDate.slice(0, 10))
+    for (const e of events) set.add(eventDayKey(e))
     return set
   }, [events])
 

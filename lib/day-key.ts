@@ -82,3 +82,32 @@ export function dayKeyOf(iso: string | number | Date | null | undefined): string
 export function tzOffsetMinutes(now: Date = new Date()): number {
   return -now.getTimezoneOffset()
 }
+
+/**
+ * The local calendar day a CALENDAR EVENT belongs on.
+ *
+ * Calendar screens bucket events with `e.startDate.slice(0, 10)`, which reads
+ * the date straight out of the ISO string. That is right or wrong depending on
+ * what produced the string, and this app produces both kinds:
+ *
+ *   - expo-calendar values pass through `isoOf` VERBATIM when they are already
+ *     strings, so an iOS event keeps its own offset
+ *     ("2026-08-03T08:15:00.000-0700") and slicing gives the LOCAL day.
+ *   - values we synthesise — virtualEventFromAppEntity, toIso(), the undated
+ *     reminder anchor — go through `.toISOString()` and are UTC `Z`, so
+ *     slicing gives the UTC day. For anyone west of UTC an evening event then
+ *     files under TOMORROW, all year round, not just in some window.
+ *
+ * ALL-DAY EVENTS ARE THE EXCEPTION, and the reason this is a helper rather
+ * than a find-and-replace. An all-day event is anchored to a DATE, not an
+ * instant: converting "2026-08-12T00:00:00.000Z" into a local day shifts it to
+ * the 11th for anyone west of UTC. For those the date part IS the answer, and
+ * the existing slice is correct.
+ */
+export function eventDayKey(event: {
+  startDate: string
+  allDay?: boolean
+}): string {
+  if (event.allDay) return event.startDate.slice(0, 10)
+  return dayKeyOf(event.startDate) ?? event.startDate.slice(0, 10)
+}
