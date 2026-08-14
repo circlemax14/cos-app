@@ -135,6 +135,7 @@ import { getPhotoDownloadUrl } from '@/services/user-photo';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useTodayWindow } from '@/hooks/use-local-day';
+import { formatDayLabel } from '@/lib/day-key';
 
 // ─── Small pure helpers ──────────────────────────────────────────────
 
@@ -753,18 +754,36 @@ export default function TodayScheduleScreen(): React.JSX.Element {
         showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text
-            numberOfLines={2}
-            style={[
-              styles.headerTitle,
-              {
-                fontSize: getScaledFontSize(24),
-                fontWeight: getScaledFontWeight(700) as any,
-                color: colors.text,
-              },
-            ]}>
-            Today&apos;s Schedule
-          </Text>
+          <View style={styles.headerTitleBlock}>
+            <Text
+              numberOfLines={2}
+              style={[
+                styles.headerTitle,
+                {
+                  fontSize: getScaledFontSize(24),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  color: colors.text,
+                },
+              ]}>
+              Today&apos;s Schedule
+            </Text>
+            {/* Ken 2026-08-14: "Possible to put today's date on schedule?"
+                Derived from the same day key the screen is built from, not
+                from a fresh clock read — so the label and the schedule roll
+                over together at midnight instead of drifting apart, which is
+                the bug class this whole area has been about. */}
+            <Text
+              numberOfLines={1}
+              accessibilityLabel={`Today is ${formatDayLabel(todayWindow.dayKey)}`}
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(600) as any,
+                marginTop: 2,
+              }}>
+              {formatDayLabel(todayWindow.dayKey)}
+            </Text>
+          </View>
 
           {/* Ken 2026-08-11: "adherence score up in right corner as well?".
               Treatment B (percentage leads) per Vishal, and tappable — a
@@ -992,7 +1011,11 @@ const styles = StyleSheet.create({
   // Was centred, from when the title was alone in the row. With the
   // adherence score occupying the right corner, centring inside flex:1
   // leaves the text visibly off-axis against a dead gap.
-  headerTitle: { flex: 1, flexShrink: 1, textAlign: 'left', marginRight: 12 },
+  // The flex/shrink moved to headerTitleBlock when the date line was added
+  // (Ken 2026-08-14) — the title and date share a column, and the block is
+  // what has to yield width to the adherence score, not the title alone.
+  headerTitleBlock: { flex: 1, flexShrink: 1, marginRight: 12 },
+  headerTitle: { textAlign: 'left' },
 
   // Was margin 16 / padding 20 around an 80pt avatar — a large block between
   // the header and the actual day, on the screen you reach BY TAPPING that

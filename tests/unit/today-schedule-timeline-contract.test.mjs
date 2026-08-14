@@ -344,3 +344,37 @@ test('a half-typed time is never persisted', () => {
   const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
   assert.match(HABITS, /\^\(\[01\]\\d\|2\[0-3\]\):\[0-5\]\\d\$/);
 });
+
+// ── Ken 2026-08-14: "Possible to put today's date on schedule?" ───────
+
+test('the header shows the date', () => {
+  assert.match(SCREEN, /formatDayLabel\(todayWindow\.dayKey\)/);
+});
+
+test('the date comes from the day KEY, not a fresh clock read', () => {
+  // If it were built from new Date(), the label and the schedule would drift
+  // apart at midnight — the label would roll over while the day window it sits
+  // above did not, or vice versa. Deriving both from one key makes that
+  // impossible rather than unlikely.
+  const code = codeOnly(SCREEN);
+  // Anchor on the JSX usage, not the identifier — `AdherenceScore` appears
+  // first as an import, which would invert the slice and silently test an
+  // empty string.
+  const start = code.indexOf('styles.headerTitleBlock');
+  const end = code.indexOf('<AdherenceScore', start);
+  assert.ok(start > -1 && end > start, 'header block must precede the score');
+  const header = code.slice(start, end);
+  assert.match(header, /formatDayLabel\(todayWindow\.dayKey\)/);
+  assert.doesNotMatch(header, /new Date\(\)/, 'must not read the clock separately');
+});
+
+test('the date is announced to screen readers as a sentence', () => {
+  // "Friday 14 August" read out bare, straight after the title, is ambiguous.
+  assert.match(SCREEN, /accessibilityLabel=\{`Today is \$\{formatDayLabel/);
+});
+
+test('the title block yields width to the score, not the title alone', () => {
+  // The title and date now share a column; the flex has to be on the block or
+  // the date pushes the adherence score off its corner.
+  assert.match(SCREEN, /headerTitleBlock: \{ flex: 1, flexShrink: 1/);
+});

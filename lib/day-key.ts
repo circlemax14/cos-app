@@ -111,3 +111,36 @@ export function eventDayKey(event: {
   if (event.allDay) return event.startDate.slice(0, 10)
   return dayKeyOf(event.startDate) ?? event.startDate.slice(0, 10)
 }
+
+/**
+ * A day key rendered for a patient to read: "Thursday, 14 August".
+ *
+ * Ken 2026-08-14: "Possible to put today's date on schedule?"
+ *
+ * Built from the KEY rather than from `new Date()` so the label can never
+ * disagree with the day the screen is actually showing — the two would drift
+ * apart at midnight otherwise, which is exactly the class of bug the day-key
+ * work has been about.
+ *
+ * Weekday first because that is what someone checks a schedule for; the year
+ * is omitted because a schedule showing today never needs it, and it costs
+ * width on a line that already shares its row with the adherence score.
+ *
+ * Falls back to the raw key rather than throwing — a schedule that renders
+ * without a date is a small loss; one that crashes is not.
+ */
+export function formatDayLabel(dayKey: string, locale?: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey)
+  if (!m) return dayKey
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(d.getTime())) return dayKey
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(d)
+  } catch {
+    return dayKey
+  }
+}
