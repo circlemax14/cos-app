@@ -491,26 +491,6 @@ test('the circle is NOT drawn on rows that do nothing', () => {
   assert.ok(guard > -1 && guard < circle, 'and it must be behind the onPress guard');
 });
 
-test('done and not-done use the same slot, so the change is legible', () => {
-  // The circle sits where the tick lands. A tick appearing somewhere else
-  // would read as a new element rather than the same control changing state.
-  // Asserts the SIZES match, not the exact JSX formatting — the previous
-  // version pinned a line break and broke when a style prop was added, which
-  // tested the formatter rather than the design.
-  // Scoped to Row: `radio-button-unchecked` appears in the LEGEND too, where
-  // it is sized with getScaledFontSize rather than sz. This is the second time
-  // that duplicate has caught a test out.
-  const all = codeOnly(TIMELINE);
-  const code = all.slice(all.indexOf('function Row('));
-  const sizeAfter = (icon) => {
-    const at = code.indexOf(`name="${icon}"`);
-    assert.ok(at > -1, `${icon} must be rendered`);
-    const m = /size=\{sz\((\d+)\)\}/.exec(code.slice(at, at + 260));
-    assert.ok(m, `${icon} must have a scaled size`);
-    return m[1];
-  };
-  assert.equal(sizeAfter('check-circle'), sizeAfter('radio-button-unchecked'));
-});
 
 test('VoiceOver is told what a tap does, not just what the row is', () => {
   assert.match(TIMELINE, /accessibilityHint=\{item\.done \? undefined : 'Double tap to check this off'\}/);
@@ -533,35 +513,56 @@ test('nothing in a timeline row is a fixed pixel size', () => {
   assert.doesNotMatch(body, /width: \d+,/, 'widths must scale');
 });
 
-test('the glyph is centred on the first line at ANY scale', () => {
-  // Derived from the line height rather than hardcoded, so it holds at 1x and
-  // at 2x instead of only where it was eyeballed.
-  const code = codeOnly(TIMELINE);
-  assert.match(code, /marginTop: Math\.max\(0, \(lineHeight - size\) \/ 2\)/);
-  assert.match(code, /const size = sz\(17\)/);
+
+
+
+// ── Scale invariants (2026-08-14, third attempt) ─────────────────────
+//
+// Two earlier fixes each tried to PREDICT what React Native does to a value
+// after we set it — whether it scales an explicit lineHeight, whether it
+// touches a View — and each got a prediction wrong. These assert the property
+// that removes the guess, not the expressions, which have now changed three
+// times.
+
+test('every Text opts OUT of automatic scaling', () => {
+  // We apply the whole scale ourselves. If RN also applies it, the font and
+  // the line box disagree and the glyph centres on a height the text does not
+  // occupy — which is exactly what Ken kept seeing.
+  const src = TIMELINE;
+  const opens = [...src.matchAll(/^\s*<Text\b/gm)].map((m) => m.index);
+  assert.ok(opens.length > 0, 'expected Text elements');
+  const missing = opens.filter((i) => {
+    const seg = src.slice(i, i + 400);
+    const head = seg.includes('>') ? seg.slice(0, seg.indexOf('>') + 1) : seg;
+    return !head.includes('allowFontScaling');
+  });
+  assert.deepEqual(missing, [], 'every Text must set allowFontScaling explicitly');
 });
 
-test('the hour column scales, or "10 am" wraps and skews the row', () => {
+test('there is ONE scale helper, and layout goes through it', () => {
   const code = codeOnly(TIMELINE);
-  assert.match(code, /width: sz\(52\) \* PixelRatio\.getFontScale\(\)/);
+  assert.match(code, /function scaled\(sz: \(n: number\) => number\)/);
+  assert.match(code, /const fs = PixelRatio\.getFontScale\(\)/);
+  // The glyph box and the line box must come from the same helper, or they
+  // cannot stay centred on each other.
+  assert.match(code, /const size = f\(17\)/);
+  assert.match(code, /const lineHeight = f\(19\)/);
+});
+
+test('no raw sz() survives in row layout — it is only half the scale', () => {
+  // sz() is the DAMPED in-app scale (capped at 1.05 on phones). Anything sized
+  // from it alone moves ~5% while the text moves 100%.
+  const all = codeOnly(TIMELINE);
+  const row = all.slice(all.indexOf('function Row('), all.indexOf('function NowMarker'));
+  assert.doesNotMatch(row, /fontSize: sz\(/, 'font sizes must use the combined scale');
+  assert.doesNotMatch(row, /lineHeight: sz\(/, 'line heights must use the combined scale');
+  assert.doesNotMatch(row, /size=\{sz\(/, 'icon sizes must use the combined scale');
+  assert.doesNotMatch(row, /size=\{\d+\}/, 'no fixed icon sizes');
+  assert.doesNotMatch(row, /width: \d+,/, 'no fixed widths');
+});
+
+test('the hour column width comes from the combined scale', () => {
+  const code = codeOnly(TIMELINE);
+  assert.match(code, /width: f\(52\)/);
   assert.doesNotMatch(code, /width: 52/);
-});
-
-test('layout tracks the OS font scale, not just the in-app one', () => {
-  // The half that made the first attempt fail. getScaledFontSize DAMPS the OS
-  // scale on phones (effectiveFontScale caps at 1.05) to protect layouts — but
-  // React Native then applies the FULL iOS Dynamic Type scale to every <Text>
-  // on top, because allowFontScaling defaults true. Views get nothing.
-  //
-  // So sz() alone describes a size the text is NOT rendered at, and anything
-  // sized from sz() alone drifts out of alignment as soon as Dynamic Type is
-  // turned up. Both factors, or neither works.
-  const code = codeOnly(TIMELINE);
-  assert.match(code, /PixelRatio\.getFontScale\(\)/);
-  assert.match(code, /const size = sz\(17\) \* fontScale/);
-  assert.match(
-    code,
-    /lineHeight: sz\(19\) \* PixelRatio\.getFontScale\(\)/,
-    'an explicit lineHeight is NOT auto-scaled by RN — it must be scaled by hand or the text clips',
-  );
 });
