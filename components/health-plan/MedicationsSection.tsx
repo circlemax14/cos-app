@@ -46,6 +46,7 @@ import {
   normalizeForm,
   supplyUnitLabel,
 } from '@/lib/med-forms';
+import { splitByMedicationClass } from '@/lib/medication-classification';
 
 const SAFETY_DISCLAIMER =
   'This updates your tracking only — it does not change your prescription or ' +
@@ -676,26 +677,58 @@ export function MedicationsSection({
                 </Text>
               </View>
             ) : (
-              active.map((med) => (
-                <MedicationCard
-                  key={med.id}
-                  med={med}
-                  colors={colors}
-                  getScaledFontSize={getScaledFontSize}
-                  getScaledFontWeight={getScaledFontWeight}
-                  busy={updateMutation.isPending}
-                  onEdit={() => setEditor({ kind: 'edit', med })}
-                  onRemove={() => onRemove(med)}
-                  onToggleTracked={() => onToggleTracked(med)}
-                  onUpdateSupply={() => setSupplyEditor({ med })}
-                  onSnooze={() => onSnooze(med)}
-                  onRestore={() => restoreMedication(med.id)}
-                  onConfirmAlertOpen={beginConfirmAlert}
-                  onConfirmAlertResolve={endConfirmAlert}
-                  collapsible
-                  flush={flush}
-                />
-              ))
+              /* Ken 2026-08-14: divide medications into medical and
+                 psychiatric. The sub-heading only appears when BOTH kinds are
+                 present — on a list that is all one kind a lone "MEDICAL"
+                 heading tells the patient nothing and just adds furniture. */
+              (() => {
+                const { medical, psychiatric } = splitByMedicationClass(active);
+                const showHeadings = medical.length > 0 && psychiatric.length > 0;
+                const renderCard = (med: Medication) => (
+                  <MedicationCard
+                    key={med.id}
+                    med={med}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                    busy={updateMutation.isPending}
+                    onEdit={() => setEditor({ kind: 'edit', med })}
+                    onRemove={() => onRemove(med)}
+                    onToggleTracked={() => onToggleTracked(med)}
+                    onUpdateSupply={() => setSupplyEditor({ med })}
+                    onSnooze={() => onSnooze(med)}
+                    onRestore={() => restoreMedication(med.id)}
+                    onConfirmAlertOpen={beginConfirmAlert}
+                    onConfirmAlertResolve={endConfirmAlert}
+                    collapsible
+                    flush={flush}
+                  />
+                );
+                const heading = (label: string, n: number) => (
+                  <Text
+                    accessibilityRole="header"
+                    style={{
+                      marginTop: 10,
+                      marginBottom: 6,
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(11),
+                      fontWeight: getScaledFontWeight(600) as any,
+                      letterSpacing: 0.4,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {`${label}  ·  ${n}`}
+                  </Text>
+                );
+                return (
+                  <>
+                    {showHeadings && heading('Medical', medical.length)}
+                    {medical.map(renderCard)}
+                    {showHeadings && heading('Psychiatric', psychiatric.length)}
+                    {psychiatric.map(renderCard)}
+                  </>
+                );
+              })()
             )}
             {past.length > 0 && (
               <>
