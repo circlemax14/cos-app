@@ -28,6 +28,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  PixelRatio,
   Platform,
   Pressable,
   ScrollView,
@@ -56,6 +57,19 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
   const { visible, spec, taskTitle, sourceTaskId, onClose, onConfirmComplete } = props;
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  /**
+   * Stack the actions instead of rowing them once the OS text scale is large.
+   *
+   * PixelRatio.getFontScale() is the RAW OS scale, deliberately — not the
+   * app's damped getScaledFontSize. What overflows the card is the width the
+   * OS actually renders the button labels at, and Bold Text widens glyphs on
+   * top of that, so the raw scale is the honest signal. 1.3 is below the
+   * accessibility sizes where the two labels stop fitting side by side on a
+   * 390pt-wide phone, and above the ordinary Larger-Text settings where the
+   * row is still comfortable.
+   */
+  const stackActions = PixelRatio.getFontScale() >= 1.3;
 
   // Ken 2026-08-07: "Couldn't register numbers because keypad blocked submit
   // button." The numeric keypads this modal uses (number-pad / decimal-pad)
@@ -276,11 +290,28 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
 
             </ScrollView>
 
-          <View style={styles.buttonRow}>
+          {/* Ken 2026-08-14, Bold Text + Larger Text on: "skip recording button
+              is half out of modal".
+
+              The row was flexDirection row + justifyContent flex-end, with a
+              minWidth:130 primary. At large accessibility sizes the two
+              buttons are wider than the card, and flex-end pushes the
+              overflow off the LEFT edge — so the secondary action is the one
+              that gets clipped, and "Skip recording" became unreachable.
+
+              Above ~1.3x we stack instead. column-reverse so the DOM order
+              (skip, save) renders as save-on-top: the primary action keeps
+              the prominent position it has in the row layout, without
+              duplicating the JSX to reorder it. */}
+          <View style={[styles.buttonRow, stackActions && styles.buttonColumn]}>
             <Pressable
               onPress={handleSkip}
               accessibilityRole="button"
-              style={({ pressed }) => [styles.btnGhost, { opacity: pressed ? 0.6 : 1, borderColor: colors.text + '40' }]}
+              style={({ pressed }) => [
+                styles.btnGhost,
+                stackActions && styles.btnStacked,
+                { opacity: pressed ? 0.6 : 1, borderColor: colors.text + '40' },
+              ]}
             >
               <Text style={[styles.btnGhostText, { color: colors.text + 'BB', fontSize: getScaledFontSize(13) }]}>
                 Skip recording
@@ -292,6 +323,7 @@ export function RecordMetricModal(props: RecordMetricModalProps) {
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.btnPrimary,
+                stackActions && styles.btnStacked,
                 {
                   opacity: !allValid || saving ? 0.45 : pressed ? 0.85 : 1,
                   backgroundColor: colors.tint || '#008080',
@@ -353,12 +385,24 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 10,
     marginTop: 16,
+    // Even in row mode the pair must never be able to overflow the card.
+    flexWrap: 'wrap',
   },
+  // column-reverse: DOM order is (skip, save), rendered order is (save, skip).
+  buttonColumn: { flexDirection: 'column-reverse', alignItems: 'stretch' },
+  // Full width when stacked, and minWidth released so it cannot force overflow.
+  btnStacked: { alignSelf: 'stretch', minWidth: 0, width: '100%' },
   btnGhost: {
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 10,
     borderWidth: 1,
+    // 44pt is the minimum comfortable target; the ghost button's padding alone
+    // does not reach it at default text size.
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 1,
   },
   btnGhostText: { fontWeight: '600' },
   btnPrimary: {
@@ -366,8 +410,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderRadius: 10,
     minWidth: 130,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 1,
   },
   btnPrimaryText: { color: '#fff', fontWeight: '700' },
 });
