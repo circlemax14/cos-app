@@ -488,9 +488,22 @@ test('the circle is NOT drawn on rows that do nothing', () => {
 test('done and not-done use the same slot, so the change is legible', () => {
   // The circle sits where the tick lands. A tick appearing somewhere else
   // would read as a new element rather than the same control changing state.
-  const code = codeOnly(TIMELINE);
-  assert.match(code, /name="check-circle" size=\{sz\(20\)\}/);
-  assert.match(code, /name="radio-button-unchecked"\s*\n\s*size=\{sz\(20\)\}/);
+  // Asserts the SIZES match, not the exact JSX formatting — the previous
+  // version pinned a line break and broke when a style prop was added, which
+  // tested the formatter rather than the design.
+  // Scoped to Row: `radio-button-unchecked` appears in the LEGEND too, where
+  // it is sized with getScaledFontSize rather than sz. This is the second time
+  // that duplicate has caught a test out.
+  const all = codeOnly(TIMELINE);
+  const code = all.slice(all.indexOf('function Row('));
+  const sizeAfter = (icon) => {
+    const at = code.indexOf(`name="${icon}"`);
+    assert.ok(at > -1, `${icon} must be rendered`);
+    const m = /size=\{sz\((\d+)\)\}/.exec(code.slice(at, at + 260));
+    assert.ok(m, `${icon} must have a scaled size`);
+    return m[1];
+  };
+  assert.equal(sizeAfter('check-circle'), sizeAfter('radio-button-unchecked'));
 });
 
 test('VoiceOver is told what a tap does, not just what the row is', () => {
@@ -500,4 +513,30 @@ test('VoiceOver is told what a tap does, not just what the row is', () => {
 test('the key names the affordance, and only when something is tickable', () => {
   assert.match(TIMELINE, /Tap to check off/);
   assert.match(SCREEN, /showTapHint=\{timelineItems\.some\(\(i\) => !i\.done\)\}/);
+});
+
+test('nothing in a timeline row is a fixed pixel size', () => {
+  // Ken 2026-08-14 with Bold Text + a large text size: "icon and text don't
+  // align with each other". Anything fixed stops tracking the text the moment
+  // the OS scales it — the glyph was a 17pt box pinned at marginTop:1, which
+  // centres on a default line by luck and rides high on a 38pt one.
+  const all = codeOnly(TIMELINE);
+  const row = all.slice(all.indexOf('function Row('));
+  const body = row.slice(0, row.indexOf('function NowMarker'));
+  assert.doesNotMatch(body, /size=\{\d+\}/, 'icon sizes must go through sz()');
+  assert.doesNotMatch(body, /width: \d+,/, 'widths must scale');
+});
+
+test('the glyph is centred on the first line at ANY scale', () => {
+  // Derived from the line height rather than hardcoded, so it holds at 1x and
+  // at 2x instead of only where it was eyeballed.
+  const code = codeOnly(TIMELINE);
+  assert.match(code, /marginTop: Math\.max\(0, \(lineHeight - size\) \/ 2\)/);
+  assert.match(code, /const size = sz\(17\)/);
+});
+
+test('the hour column scales, or "10 am" wraps and skews the row', () => {
+  const code = codeOnly(TIMELINE);
+  assert.match(code, /width: sz\(52\)/);
+  assert.doesNotMatch(code, /width: 52/);
 });
