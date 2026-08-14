@@ -57,6 +57,35 @@ const KIND: Record<TimelineKind, { color: string; icon: keyof typeof MaterialIco
   reminder: { color: '#B45309', icon: 'notifications-none', label: 'Reminders' },
 }
 
+/**
+ * Glyph geometry that scales with the text — Ken 2026-08-14, testing with Bold
+ * Text and a large text size: "icon and text don't align with each other".
+ *
+ * The glyph was a fixed 17pt box pinned at marginTop:1. That centres it on a
+ * default-size line by luck, not by construction: at 2x scale the title's line
+ * height becomes ~38pt while the box stays 17pt at the very top of it, so the
+ * icon rides high above text that is centred in its own line.
+ *
+ * Sizing the box FROM the same scale as the text keeps the ratio fixed, and
+ * deriving the offset from the line height centres it at any size rather than
+ * at one.
+ */
+function glyphGeometry(sz: (n: number) => number) {
+  const size = sz(17)
+  const lineHeight = sz(19) // must match the title's lineHeight below
+  return {
+    size,
+    style: {
+      width: size,
+      height: size,
+      borderRadius: size * 0.3,
+      // Centre on the FIRST line of a title that may wrap to several.
+      marginTop: Math.max(0, (lineHeight - size) / 2),
+    },
+    iconSize: Math.round(size * 0.6),
+  }
+}
+
 export function TodayLegend({
   colors,
   getScaledFontSize,
@@ -89,8 +118,18 @@ export function TodayLegend({
           none, because it implies the fourth colour means something else. */}
       {(['appointment', 'routine', 'task', 'reminder'] as TimelineKind[]).map((k) => (
         <View key={k} style={styles.legendItem}>
-          <View style={[styles.glyph, { backgroundColor: KIND[k].color }]}>
-            <MaterialIcons name={KIND[k].icon} size={getScaledFontSize(10)} color="#FFFFFF" />
+          <View
+            style={[
+              styles.glyph,
+              glyphGeometry(getScaledFontSize).style,
+              { marginTop: 0, backgroundColor: KIND[k].color },
+            ]}
+          >
+            <MaterialIcons
+              name={KIND[k].icon}
+              size={glyphGeometry(getScaledFontSize).iconSize}
+              color="#FFFFFF"
+            />
           </View>
           <Text
             style={{
@@ -162,10 +201,11 @@ function Row({
   dim: boolean
 }): React.ReactElement {
   const meta = KIND[item.kind]
+  const glyph = glyphGeometry(sz)
   const body = (
     <View style={[styles.row, dim && styles.dim]}>
-      <View style={[styles.glyph, { backgroundColor: meta.color }]}>
-        <MaterialIcons name={meta.icon} size={sz(10)} color="#FFFFFF" />
+      <View style={[styles.glyph, glyph.style, { backgroundColor: meta.color }]}>
+        <MaterialIcons name={meta.icon} size={glyph.iconSize} color="#FFFFFF" />
       </View>
       <View style={styles.rowText}>
         <Text
@@ -196,6 +236,7 @@ function Row({
           size={sz(13)}
           color={colors.subtext}
           accessibilityLabel="You'll be reminded"
+          style={{ marginTop: Math.max(0, (sz(19) - sz(13)) / 2) }}
         />
       ) : null}
       {/* Ken 2026-08-14: "How does the user know that they can check off
@@ -211,15 +252,24 @@ function Row({
           when the item is already complete. Only rendered where a tap
           actually does something — a circle on an inert row would be a
           different lie. */}
+      {/* Centred on the FIRST line like the kind glyph, so on a title that
+          wraps to three lines the tick sits beside the words rather than
+          floating at the top of a tall row. */}
       {onPress && !item.done ? (
         <MaterialIcons
           name="radio-button-unchecked"
           size={sz(20)}
           color={colors.subtext}
+          style={{ marginTop: Math.max(0, (sz(19) - sz(20)) / 2) }}
         />
       ) : null}
       {item.done ? (
-        <MaterialIcons name="check-circle" size={sz(20)} color={KIND.task.color} />
+        <MaterialIcons
+          name="check-circle"
+          size={sz(20)}
+          color={KIND.task.color}
+          style={{ marginTop: Math.max(0, (sz(19) - sz(20)) / 2) }}
+        />
       ) : null}
     </View>
   )
@@ -280,11 +330,15 @@ export function TodayTimeline({
               ]}
             >
               <Text
+                numberOfLines={1}
                 style={{
                   color: isNow ? colors.tint : colors.subtext,
                   fontSize: sz(12),
                   fontWeight: wt(isNow ? 800 : 700) as never,
-                  width: 52,
+                  // Scales with the text: at a fixed 52 the label wrapped —
+                  // "10 am" became "10" / "am" — which pulled the whole row
+                  // out of line with its items (Ken 2026-08-14).
+                  width: sz(52),
                   paddingTop: 2,
                 }}
               >
@@ -352,7 +406,10 @@ function NowMarker({
 }): React.ReactElement {
   return (
     <View style={styles.now} accessibilityRole="text" accessibilityLabel="Now">
-      <Text style={{ color: colors.tint, fontSize: sz(10), fontWeight: wt(800) as never, width: 52 }}>
+      <Text
+        numberOfLines={1}
+        style={{ color: colors.tint, fontSize: sz(10), fontWeight: wt(800) as never, width: sz(52) }}
+      >
         NOW
       </Text>
       <View style={[styles.nowLine, { backgroundColor: colors.tint }]} />
@@ -372,14 +429,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   legendItem: { flexDirection: 'row', alignItems: 'center' },
-  glyph: {
-    width: 17,
-    height: 17,
-    borderRadius: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
+  // Geometry comes from glyphGeometry() so it scales with the text; only the
+  // centring of the icon INSIDE the box is static.
+  glyph: { alignItems: 'center', justifyContent: 'center' },
   hour: { flexDirection: 'row', paddingVertical: 11 },
   hourItems: { flex: 1, gap: 8 },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
