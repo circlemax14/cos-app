@@ -211,3 +211,57 @@ test('the timer and listener are cleaned up', () => {
   assert.match(code, /sub\.remove\(\)/);
   assert.match(code, /clearTimeout\(timer\)/);
 });
+
+// ── Step 2: which day does an INSTANT fall on (2026-08-14) ───────────
+
+test('calendar screens bucket events via eventDayKey, not a raw slice', () => {
+  // CalendarEvent.startDate is MIXED: isoOf passes expo-calendar strings
+  // through verbatim (keeping their local offset) while values we synthesise
+  // go through toISOString() and are UTC Z. Slicing is right for the first and
+  // wrong for the second, so an evening appointment filed under TOMORROW for
+  // anyone west of UTC — all year, not just in a window.
+  for (const path of [
+    'app/Home/today-schedule.tsx',
+    'app/Home/appointments.tsx',
+    'components/calendar/CalendarYearView.tsx',
+    'components/calendar/CalendarMonthView.tsx',
+    'components/calendar/CalendarWeekTimeline.tsx',
+  ]) {
+    const f = FILES.find((x) => x.path === path);
+    assert.ok(f, `${path} must exist`);
+    assert.match(f.src, /eventDayKey/, `${path} must bucket events via eventDayKey`);
+    assert.doesNotMatch(
+      stripComments(f.src),
+      /\.(startDate|endDate)\.slice\(0, ?10\)/,
+      `${path} still slices an event instant directly`,
+    );
+  }
+});
+
+test('THE TRAP: HealthKit sites are already local and must NOT be converted', () => {
+  // HealthKit ISO strings carry the DEVICE'S offset
+  // ("2026-08-03T08:15:00.000-0700"), so slicing them ALREADY yields the local
+  // day. A mechanical sweep over `.slice(0, 10)` would "fix" four sites that
+  // are currently correct, and nothing would fail.
+  for (const path of [
+    'hooks/use-readiness-derivation.ts',
+    'hooks/use-vitals-red-flag-notifications.ts',
+    'services/health.ts',
+  ]) {
+    const f = FILES.find((x) => x.path === path);
+    assert.ok(f, `${path} must exist`);
+    assert.doesNotMatch(
+      stripComments(f.src),
+      /eventDayKey|dayKeyOf/,
+      `${path} slices HealthKit strings, which are already local — leave it alone`,
+    );
+  }
+});
+
+test('all-day events keep their date, or they shift a day west of UTC', () => {
+  // The reason eventDayKey exists rather than a find-and-replace: an all-day
+  // event is anchored to a DATE. Converting 2026-08-12T00:00:00.000Z to a
+  // local instant makes it the 11th in Los Angeles.
+  const f = FILES.find((x) => x.path === 'lib/day-key.ts');
+  assert.match(stripComments(f.src), /if \(event\.allDay\) return event\.startDate\.slice\(0, 10\)/);
+});

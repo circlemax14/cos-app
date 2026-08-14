@@ -62,7 +62,7 @@ import { useAppointments } from '@/hooks/use-appointments'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
 import { addRecentSearch } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
-import { todayLocalIso } from '@/lib/day-key';
+import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useNotificationCategories } from '@/hooks/use-notification-categories'
 
 // Year / Month / Week / Day / List — Week was added in v7 at Ken's
@@ -181,7 +181,7 @@ function isViewingToday(dayIso: string, view: CalendarViewMode): boolean {
 function groupByDay(events: CalendarEvent[]): { day: string; items: CalendarEvent[] }[] {
   const map = new Map<string, CalendarEvent[]>()
   for (const e of events) {
-    const day = e.startDate.slice(0, 10)
+    const day = eventDayKey(e)
     const bucket = map.get(day)
     if (bucket) bucket.push(e)
     else map.set(day, [e])
@@ -346,7 +346,7 @@ export default function CalendarScreen() {
   }, [refreshPermissions]))
 
   const eventsForSelectedDay = useMemo(
-    () => filteredEvents.filter((e) => e.startDate.slice(0, 10) === selectedDay),
+    () => filteredEvents.filter((e) => eventDayKey(e) === selectedDay),
     [filteredEvents, selectedDay],
   )
 

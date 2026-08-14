@@ -24,7 +24,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import type { CalendarEvent } from '@/services/calendar'
 import { hapticSelection, hapticImpact } from '@/utils/haptics'
-import { todayLocalIso } from '@/lib/day-key';
+import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 
 export type MonthDensityMode = 'compact' | 'stacked' | 'details'
 
@@ -88,7 +88,7 @@ export function CalendarMonthView({
   const eventsByDay = useMemo(() => {
     const map = new Map<string, DayEventSummary>()
     for (const e of events) {
-      const day = e.startDate.slice(0, 10)
+      const day = eventDayKey(e)
       const bucket = map.get(day) ?? { count: 0, sources: [], titles: [] }
       bucket.count += 1
       const colorAlreadyIn = bucket.sources.some((s) => s.color === e.source.color)
@@ -109,7 +109,7 @@ export function CalendarMonthView({
   // adjacent day cells render bars at the same Y offset and visually
   // form one continuous bar across the week row.
   const multiDayByDay = useMemo(() => {
-    const multi = events.filter((e) => e.startDate.slice(0, 10) !== e.endDate.slice(0, 10))
+    const multi = events.filter((e) => eventDayKey(e) !== eventDayKey({ startDate: e.endDate, allDay: e.allDay }))
     // Sort by start; ties broken by longer-event-first (visually preferred).
     multi.sort((a, b) => {
       const cmp = a.startDate.localeCompare(b.startDate)
@@ -120,8 +120,8 @@ export function CalendarMonthView({
     const laneEnd: string[] = [] // ISO date when each lane is "free" again
     const eventLane = new Map<string, number>()
     for (const e of multi) {
-      const s = e.startDate.slice(0, 10)
-      const en = e.endDate.slice(0, 10)
+      const s = eventDayKey(e)
+      const en = eventDayKey({ startDate: e.endDate, allDay: e.allDay })
       let lane = -1
       for (let i = 0; i < laneEnd.length; i++) {
         if (laneEnd[i] < s) { lane = i; break }
@@ -133,8 +133,8 @@ export function CalendarMonthView({
     // Expand: emit one MultiDayLane entry per day in the span.
     const map = new Map<string, MultiDayLane[]>()
     for (const e of multi) {
-      const sIso = e.startDate.slice(0, 10)
-      const eIso = e.endDate.slice(0, 10)
+      const sIso = eventDayKey(e)
+      const eIso = eventDayKey({ startDate: e.endDate, allDay: e.allDay })
       const lane = eventLane.get(e.id) ?? 0
       const startD = new Date(`${sIso}T00:00:00`)
       const endD = new Date(`${eIso}T00:00:00`)

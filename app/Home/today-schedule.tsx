@@ -133,7 +133,7 @@ import { reconcilePlanTaskNotifications } from '@/services/plan-task-notificatio
 import { detectMetricForTask, type MetricInputSpec } from '@/services/smart-task-detection';
 import { getPhotoDownloadUrl } from '@/services/user-photo';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { todayLocalIso } from '@/lib/day-key';
+import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useTodayWindow } from '@/hooks/use-local-day';
 
 // ─── Small pure helpers ──────────────────────────────────────────────
@@ -268,7 +268,7 @@ export default function TodayScheduleScreen(): React.JSX.Element {
   const todayCalendarItems = useMemo(
     () =>
       calendarEvents
-        .filter((e) => e.startDate.slice(0, 10) === today)
+        .filter((e) => eventDayKey(e) === today)
         .sort((a, b) => a.startDate.localeCompare(b.startDate)),
     [calendarEvents, today],
   );
