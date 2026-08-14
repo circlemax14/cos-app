@@ -425,19 +425,23 @@ export default function HabitsScreen(): React.JSX.Element {
            at once would throw away what the patient just typed the moment they
            tried to get the keyboard out of the way — which is the actual
            complaint, not a request to close the form. */
-        <Pressable
-          style={styles.modalScrim}
-          accessibilityLabel="Close"
-          onPress={() => {
-            if (keyboardOpen) { Keyboard.dismiss(); return }
-            closeEdit()
-          }}
-        >
-          {/* Swallows taps so pressing inside the card never closes it. */}
+        <View style={styles.modalScrim}>
+          {/* The backdrop is a SIBLING behind the card, not a parent of it.
+              Wrapping the card in a Pressable (as this did on 2026-08-14)
+              makes that Pressable intercept every touch inside it — the
+              cadence and domain pills stopped responding and neither Target
+              field could be focused. Ken: "i am not able to select or change
+              cadance or domain ... no way to select anything". A backdrop
+              only needs to cover the screen BEHIND the card to be tappable. */}
           <Pressable
-            style={[styles.modalCard, { backgroundColor: colors.card as string }]}
-            onPress={() => { /* absorb */ }}
-          >
+            style={StyleSheet.absoluteFill}
+            accessibilityLabel="Close"
+            onPress={() => {
+              if (keyboardOpen) { Keyboard.dismiss(); return }
+              closeEdit()
+            }}
+          />
+          <View style={[styles.modalCard, { backgroundColor: colors.card as string }]}>
             <Text
               style={{
                 color: colors.text,
@@ -538,21 +542,47 @@ export default function HabitsScreen(): React.JSX.Element {
             </Pressable>
 
             {showTimePicker ? (
-              <DateTimePicker
-                value={parseHHMM(editing.scheduledTime)}
-                mode="time"
-                // Spinner on iOS: it is the wheel Ken asked for, and it stays
-                // inline rather than covering the Save button the way the
-                // keypad did.
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, d) => {
-                  if (Platform.OS === 'android') setShowTimePicker(false)
-                  if (!d) return
-                  const hh = String(d.getHours()).padStart(2, '0')
-                  const mm = String(d.getMinutes()).padStart(2, '0')
-                  setEditing((e) => (e ? { ...e, scheduledTime: `${hh}:${mm}` } : e))
-                }}
-              />
+              <View>
+                <DateTimePicker
+                  value={parseHHMM(editing.scheduledTime)}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_, d) => {
+                    if (Platform.OS === 'android') setShowTimePicker(false)
+                    if (!d) return
+                    const hh = String(d.getHours()).padStart(2, '0')
+                    const mm = String(d.getMinutes()).padStart(2, '0')
+                    setEditing((e) => (e ? { ...e, scheduledTime: `${hh}:${mm}` } : e))
+                  }}
+                />
+                {/* Ken 2026-08-14: "after selection i am stuck i am not able to
+                    select or change cadance or domain".
+
+                    An iOS spinner swallows vertical drags, so with it open
+                    inside a ScrollView there was no way to scroll PAST it to
+                    reach the fields below, and nothing to close it with — the
+                    wheel emits a value on every tick, so there is no natural
+                    "finished" moment to collapse on. An explicit Done gives
+                    one. Full-width and 44pt so it cannot be missed. */}
+                {Platform.OS === 'ios' ? (
+                  <Pressable
+                    onPress={() => setShowTimePicker(false)}
+                    style={({ pressed }) => [styles.pickerDone, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Done choosing the time"
+                  >
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: getScaledFontSize(15),
+                        fontWeight: getScaledFontWeight(600) as any,
+                      }}
+                    >
+                      Done
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : null}
 
             <Text
@@ -664,6 +694,21 @@ export default function HabitsScreen(): React.JSX.Element {
             </View>
 
             <Text style={styles.label}>Target (optional)</Text>
+            {/* Ken 2026-08-14: "what is use of target". Fair — it was two
+                unlabelled boxes. It IS used: the value and unit render on the
+                routine itself ("Walk · 30 minutes", line ~383) and in the
+                printed plan. Say so, rather than leaving the patient to
+                deduce it from a placeholder. */}
+            <Text
+              style={{
+                color: colors.subtext as string,
+                fontSize: getScaledFontSize(12),
+                marginBottom: 8,
+              }}
+            >
+              Shown on the routine, like &ldquo;Walk · 30 minutes&rdquo;. Leave blank if
+              there is nothing to count.
+            </Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TextInput
                 style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.subtext as string }]}
@@ -708,8 +753,8 @@ export default function HabitsScreen(): React.JSX.Element {
                 </Text>
               </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       )}
     </AppWrapper>
   )
@@ -799,6 +844,14 @@ const styles = StyleSheet.create({
     // The OS scales this text; without a floor the box does not grow with it
     // and large type clips against the border.
     minHeight: 44,
+  },
+  pickerDone: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: '#1F6F63',
+    marginTop: 4,
   },
   // Tappable time field — replaces the numeric TextInput (Ken 2026-08-14).
   // Row layout so the value and the clear affordance sit on one line, with the
