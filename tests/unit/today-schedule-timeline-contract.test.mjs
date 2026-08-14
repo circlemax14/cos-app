@@ -458,3 +458,46 @@ test('Target says what it is for', () => {
   const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
   assert.match(HABITS, /Shown on the routine, like/);
 });
+
+// ── Ken 2026-08-14: "how does the user know they can check off tasks?" ─
+
+test('an unchecked row SHOWS it can be checked', () => {
+  // Before this a row carried a tick only AFTER completion, so there was
+  // nothing on it beforehand suggesting a tap did anything — the screen read
+  // as a list to look at rather than one to act on.
+  assert.match(TIMELINE, /name="radio-button-unchecked"/);
+  const code = codeOnly(TIMELINE);
+  assert.match(code, /\{onPress && !item\.done \? \(/, 'circle only where a tap does something');
+});
+
+test('the circle is NOT drawn on rows that do nothing', () => {
+  // A circle on an inert row would be a different lie — the same class of
+  // problem as the bell that promised a reminder nobody received.
+  //
+  // Scoped to the Row function: `radio-button-unchecked` now appears TWICE,
+  // once here and once in the legend key, and the legend one is defined first
+  // in the file. An unscoped search finds the wrong one and proves nothing.
+  const code = codeOnly(TIMELINE);
+  const row = code.slice(code.indexOf('function Row('));
+  const circle = row.indexOf('radio-button-unchecked');
+  const guard = row.indexOf('onPress && !item.done');
+  assert.ok(circle > -1, 'the row must render a circle');
+  assert.ok(guard > -1 && guard < circle, 'and it must be behind the onPress guard');
+});
+
+test('done and not-done use the same slot, so the change is legible', () => {
+  // The circle sits where the tick lands. A tick appearing somewhere else
+  // would read as a new element rather than the same control changing state.
+  const code = codeOnly(TIMELINE);
+  assert.match(code, /name="check-circle" size=\{sz\(20\)\}/);
+  assert.match(code, /name="radio-button-unchecked"\s*\n\s*size=\{sz\(20\)\}/);
+});
+
+test('VoiceOver is told what a tap does, not just what the row is', () => {
+  assert.match(TIMELINE, /accessibilityHint=\{item\.done \? undefined : 'Double tap to check this off'\}/);
+});
+
+test('the key names the affordance, and only when something is tickable', () => {
+  assert.match(TIMELINE, /Tap to check off/);
+  assert.match(SCREEN, /showTapHint=\{timelineItems\.some\(\(i\) => !i\.done\)\}/);
+});
