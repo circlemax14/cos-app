@@ -42,6 +42,13 @@ export interface AssessmentRecord {
   completedAt: string
   expiresAt: string
   updatedBy: string
+  /**
+   * BPS subdomains of the INSTRUMENT, joined onto the record by the
+   * backend list route from the instrument definition — not stored on the
+   * response itself. Optional because older app builds talk to backends
+   * that predate the join, and because a definition row may lack it.
+   */
+  subdomains?: string[]
 }
 
 export interface PrefillItem<T> {
