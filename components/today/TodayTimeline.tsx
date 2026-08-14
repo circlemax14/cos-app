@@ -70,6 +70,30 @@ const KIND: Record<TimelineKind, { color: string; icon: keyof typeof MaterialIco
  * deriving the offset from the line height centres it at any size rather than
  * at one.
  */
+/**
+ * The FINAL rendered size of a piece of text on this screen.
+ *
+ * `sz()` is the in-app scale, deliberately damped on phones. `getFontScale()`
+ * is the OS Dynamic Type scale. Multiplying them gives what the text should
+ * actually be — and because every Text here sets allowFontScaling={false},
+ * this is exactly what it IS, rather than something React Native then scales
+ * again behind us.
+ *
+ * That determinism is the point. The previous two attempts each tried to
+ * predict what RN would do to a value after we set it — whether it scales an
+ * explicit lineHeight, whether it touches a View — and each got one of those
+ * predictions wrong. Opting out of the automatic scaling and doing all of it
+ * in one place removes the guess: the glyph, the line box and the font all
+ * come from the same number.
+ *
+ * Text still scales fully with the patient's settings; it just does so
+ * predictably.
+ */
+function scaled(sz: (n: number) => number) {
+  const fs = PixelRatio.getFontScale()
+  return (n: number) => sz(n) * fs
+}
+
 function glyphGeometry(sz: (n: number) => number) {
   // PixelRatio.getFontScale() is the missing half, and without it the previous
   // fix could not work.
@@ -82,9 +106,9 @@ function glyphGeometry(sz: (n: number) => number) {
   // So with large text the title renders at roughly sz(14) x 2 while a glyph
   // sized sz(17) does not move at all. Scaling the box by the same OS factor
   // the text is actually being rendered at is what makes them track.
-  const fontScale = PixelRatio.getFontScale()
-  const size = sz(17) * fontScale
-  const lineHeight = sz(19) * fontScale // must match the title's lineHeight below
+  const f = scaled(sz)
+  const size = f(17)
+  const lineHeight = f(19) // must match the title's lineHeight below
   return {
     size,
     style: {
@@ -144,9 +168,10 @@ export function TodayLegend({
             />
           </View>
           <Text
+            allowFontScaling={false}
             style={{
               color: colors.subtext,
-              fontSize: getScaledFontSize(11),
+              fontSize: scaled(getScaledFontSize)(11),
               fontWeight: getScaledFontWeight(700) as never,
               marginLeft: 5,
             }}
@@ -159,13 +184,14 @@ export function TodayLegend({
         <View style={styles.legendItem}>
           <MaterialIcons
             name="radio-button-unchecked"
-            size={getScaledFontSize(13)}
+            size={scaled(getScaledFontSize)(13)}
             color={colors.subtext}
           />
           <Text
+            allowFontScaling={false}
             style={{
               color: colors.subtext,
-              fontSize: getScaledFontSize(11),
+              fontSize: scaled(getScaledFontSize)(11),
               fontWeight: getScaledFontWeight(700) as never,
               marginLeft: 4,
             }}
@@ -178,13 +204,14 @@ export function TodayLegend({
         <View style={styles.legendItem}>
           <MaterialIcons
             name="notifications-active"
-            size={getScaledFontSize(13)}
+            size={scaled(getScaledFontSize)(13)}
             color={colors.subtext}
           />
           <Text
+            allowFontScaling={false}
             style={{
               color: colors.subtext,
-              fontSize: getScaledFontSize(11),
+              fontSize: scaled(getScaledFontSize)(11),
               fontWeight: getScaledFontWeight(700) as never,
               marginLeft: 4,
             }}
@@ -213,6 +240,7 @@ function Row({
   dim: boolean
 }): React.ReactElement {
   const meta = KIND[item.kind]
+  const f = scaled(sz)
   const glyph = glyphGeometry(sz)
   const body = (
     <View style={[styles.row, dim && styles.dim]}>
@@ -221,21 +249,25 @@ function Row({
       </View>
       <View style={styles.rowText}>
         <Text
+          // We apply the whole scale ourselves (see `scaled`), so RN must not
+          // apply it a second time — that is what left the font and the line
+          // box disagreeing, and the glyph centred on a height the text did
+          // not occupy.
+          allowFontScaling={false}
           style={{
             color: item.done ? colors.subtext : colors.text,
-            fontSize: sz(14),
-            // Scaled by the same factor as the glyph geometry above: RN grows
-            // the FONT with Dynamic Type but leaves an explicit lineHeight
-            // alone, which both clips tall text and makes the glyph centre on
-            // a height the text no longer occupies.
-            lineHeight: sz(19) * PixelRatio.getFontScale(),
+            fontSize: f(14),
+            lineHeight: f(19),
             ...(item.done ? { textDecorationLine: 'line-through' as const } : {}),
           }}
         >
           {item.title}
         </Text>
         {item.detail ? (
-          <Text style={{ color: colors.subtext, fontSize: sz(12), lineHeight: sz(16), marginTop: 1 }}>
+          <Text
+            allowFontScaling={false}
+            style={{ color: colors.subtext, fontSize: f(12), lineHeight: f(16), marginTop: 1 }}
+          >
             {item.detail}
           </Text>
         ) : null}
@@ -249,10 +281,10 @@ function Row({
       {item.willRemind && !item.done ? (
         <MaterialIcons
           name="notifications-active"
-          size={sz(13)}
+          size={f(13)}
           color={colors.subtext}
           accessibilityLabel="You'll be reminded"
-          style={{ marginTop: Math.max(0, (sz(19) * PixelRatio.getFontScale() - sz(13)) / 2) }}
+          style={{ marginTop: Math.max(0, (f(19) - f(13)) / 2) }}
         />
       ) : null}
       {/* Ken 2026-08-14: "How does the user know that they can check off
@@ -274,17 +306,17 @@ function Row({
       {onPress && !item.done ? (
         <MaterialIcons
           name="radio-button-unchecked"
-          size={sz(20)}
+          size={f(20)}
           color={colors.subtext}
-          style={{ marginTop: Math.max(0, (sz(19) * PixelRatio.getFontScale() - sz(20)) / 2) }}
+          style={{ marginTop: Math.max(0, (f(19) - f(20)) / 2) }}
         />
       ) : null}
       {item.done ? (
         <MaterialIcons
           name="check-circle"
-          size={sz(20)}
+          size={f(20)}
           color={KIND.task.color}
-          style={{ marginTop: Math.max(0, (sz(19) * PixelRatio.getFontScale() - sz(20)) / 2) }}
+          style={{ marginTop: Math.max(0, (f(19) - f(20)) / 2) }}
         />
       ) : null}
     </View>
@@ -318,6 +350,7 @@ export function TodayTimeline({
   onPressItem,
 }: TodayTimelineProps): React.ReactElement {
   const { hours, anytime } = timeline
+  const f = scaled(sz)
   const currentHour = Math.floor(nowMinutes / 60)
 
   return (
@@ -347,15 +380,16 @@ export function TodayTimeline({
             >
               <Text
                 numberOfLines={1}
+                allowFontScaling={false}
                 style={{
                   color: isNow ? colors.tint : colors.subtext,
-                  fontSize: sz(12),
+                  fontSize: f(12),
                   fontWeight: wt(isNow ? 800 : 700) as never,
                   // Tracks the RENDERED text, OS Dynamic Type included — at a
                   // fixed 52 (and even at a merely sz-scaled 52) the label
                   // wrapped, "10 am" became "10" / "am", and the whole hour
                   // block fell out of line with its items.
-                  width: sz(52) * PixelRatio.getFontScale(),
+                  width: f(52),
                   paddingTop: 2,
                 }}
               >
@@ -387,9 +421,10 @@ export function TodayTimeline({
       {anytime.length > 0 ? (
         <View style={[styles.anytime, { borderTopColor: colors.border }]}>
           <Text
+            allowFontScaling={false}
             style={{
               color: colors.subtext,
-              fontSize: sz(11),
+              fontSize: f(11),
               fontWeight: wt(800) as never,
               letterSpacing: 0.7,
               marginBottom: 8,
@@ -404,7 +439,10 @@ export function TodayTimeline({
       ) : null}
 
       {hours.length === 0 && anytime.length === 0 ? (
-        <Text style={{ color: colors.subtext, fontSize: sz(14), paddingVertical: 18, textAlign: 'center' }}>
+        <Text
+          allowFontScaling={false}
+          style={{ color: colors.subtext, fontSize: f(14), paddingVertical: 18, textAlign: 'center' }}
+        >
           Nothing scheduled today.
         </Text>
       ) : null}
@@ -421,15 +459,17 @@ function NowMarker({
   sz: (n: number) => number
   wt: (n: number) => string
 }): React.ReactElement {
+  const f = scaled(sz)
   return (
     <View style={styles.now} accessibilityRole="text" accessibilityLabel="Now">
       <Text
         numberOfLines={1}
+        allowFontScaling={false}
         style={{
           color: colors.tint,
-          fontSize: sz(10),
+          fontSize: f(10),
           fontWeight: wt(800) as never,
-          width: sz(52) * PixelRatio.getFontScale(),
+          width: f(52),
         }}
       >
         NOW
