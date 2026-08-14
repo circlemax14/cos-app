@@ -678,12 +678,21 @@ export function MedicationsSection({
               </View>
             ) : (
               /* Ken 2026-08-14: divide medications into medical and
-                 psychiatric. The sub-heading only appears when BOTH kinds are
-                 present — on a list that is all one kind a lone "MEDICAL"
-                 heading tells the patient nothing and just adds furniture. */
+                 psychiatric.
+
+                 A heading renders for each NON-EMPTY group. The first cut
+                 required BOTH kinds to be present, reasoning that a lone
+                 "MEDICAL" heading over an all-medical list was furniture —
+                 which made the whole feature invisible to anyone who takes no
+                 psychiatric medication, i.e. most people, including the first
+                 person who tried to test it. A heading that says "these are
+                 your medical ones" is not noise; it is how the patient learns
+                 the grouping exists at all.
+
+                 Still no empty groups: a group with nothing in it renders
+                 neither heading nor space. */
               (() => {
                 const { medical, psychiatric } = splitByMedicationClass(active);
-                const showHeadings = medical.length > 0 && psychiatric.length > 0;
                 const renderCard = (med: Medication) => (
                   <MedicationCard
                     key={med.id}
@@ -722,9 +731,9 @@ export function MedicationsSection({
                 );
                 return (
                   <>
-                    {showHeadings && heading('Medical', medical.length)}
+                    {medical.length > 0 && heading('Medical', medical.length)}
                     {medical.map(renderCard)}
-                    {showHeadings && heading('Psychiatric', psychiatric.length)}
+                    {psychiatric.length > 0 && heading('Psychiatric', psychiatric.length)}
                     {psychiatric.map(renderCard)}
                   </>
                 );
