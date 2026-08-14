@@ -853,6 +853,9 @@ export default function TodayScheduleScreen(): React.JSX.Element {
           // Only on days something actually carries a bell — a key for a
           // symbol that is nowhere on the screen is noise.
           showReminderKey={timelineItems.some((i) => i.willRemind)}
+          // Only when something is actually tickable — a key for an action
+          // the patient cannot take today is noise.
+          showTapHint={timelineItems.some((i) => !i.done)}
         />
 
         {timelineNotices.length > 0 && (

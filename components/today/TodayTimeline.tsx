@@ -62,6 +62,7 @@ export function TodayLegend({
   getScaledFontSize,
   getScaledFontWeight,
   showReminderKey = false,
+  showTapHint = false,
 }: {
   colors: Palette
   getScaledFontSize: (n: number) => number
@@ -71,6 +72,13 @@ export function TodayLegend({
    * is nowhere on screen is just another thing to read past.
    */
   showReminderKey?: boolean
+  /**
+   * Ken 2026-08-14: "How does the user know that they can check off tasks in
+   * schedule screen?" The circle on each row is the affordance; this names it
+   * once, in the key that already explains the other glyphs. Only shown when
+   * there is something to check off, so it never describes an empty day.
+   */
+  showTapHint?: boolean
 }): React.ReactElement {
   return (
     <View style={[styles.legend, { borderColor: colors.border }]} accessibilityRole="text">
@@ -96,6 +104,25 @@ export function TodayLegend({
           </Text>
         </View>
       ))}
+      {showTapHint ? (
+        <View style={styles.legendItem}>
+          <MaterialIcons
+            name="radio-button-unchecked"
+            size={getScaledFontSize(13)}
+            color={colors.subtext}
+          />
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(11),
+              fontWeight: getScaledFontWeight(700) as never,
+              marginLeft: 4,
+            }}
+          >
+            Tap to check off
+          </Text>
+        </View>
+      ) : null}
       {showReminderKey ? (
         <View style={styles.legendItem}>
           <MaterialIcons
@@ -171,8 +198,28 @@ function Row({
           accessibilityLabel="You'll be reminded"
         />
       ) : null}
+      {/* Ken 2026-08-14: "How does the user know that they can check off
+          tasks in schedule screen?"
+
+          They did not. A row showed a tick only AFTER it was done, so before
+          that there was nothing on it suggesting a tap would do anything —
+          the whole screen read as a list to look at, not one to act on.
+
+          An empty circle is the affordance. It is the one control everybody
+          already recognises as "you can tick this", it sits where the tick
+          will land so the transition is legible, and it costs a row nothing
+          when the item is already complete. Only rendered where a tap
+          actually does something — a circle on an inert row would be a
+          different lie. */}
+      {onPress && !item.done ? (
+        <MaterialIcons
+          name="radio-button-unchecked"
+          size={sz(20)}
+          color={colors.subtext}
+        />
+      ) : null}
       {item.done ? (
-        <MaterialIcons name="check" size={sz(15)} color={KIND.task.color} />
+        <MaterialIcons name="check-circle" size={sz(20)} color={KIND.task.color} />
       ) : null}
     </View>
   )
@@ -186,6 +233,9 @@ function Row({
         `${meta.label.replace(/s$/, '')}: ${item.title}` +
         (item.done ? ', done' : item.willRemind ? ", you'll be reminded" : '')
       }
+      // VoiceOver users get the same discoverability the circle gives everyone
+      // else — the label alone said what the row WAS, never what tapping did.
+      accessibilityHint={item.done ? undefined : 'Double tap to check this off'}
       hitSlop={4}
     >
       {body}
