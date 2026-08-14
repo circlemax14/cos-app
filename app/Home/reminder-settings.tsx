@@ -8,11 +8,8 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
-  fetchHealthPlanReminderPrefs,
-  updateHealthPlanReminderPrefs,
   fetchTimezonePref,
   updateTimezonePref,
-  type HealthPlanReminderPrefs,
 } from '@/services/api/notification-prefs'
 import {
   NOTIFICATION_CATEGORIES_ENABLED,
@@ -79,18 +76,30 @@ function timezoneDisplayLabel(tzId: string | null | undefined): string {
   return known ? known.label : tzId
 }
 
-interface SlotSpec {
-  key: keyof HealthPlanReminderPrefs
-  title: string
-  subtitle: string
-  iconName: keyof typeof MaterialIcons.glyphMap
-}
-
-const SLOTS: SlotSpec[] = [
-  { key: 'am',     title: 'Morning kickoff', subtitle: 'Around 9:00 AM — what\'s on your plan today', iconName: 'wb-sunny' },
-  { key: 'midday', title: 'Midday check-in', subtitle: 'Around 1:00 PM — pending tasks reminder', iconName: 'schedule' },
-  { key: 'eod',    title: 'End of day', subtitle: 'Around 7:00 PM — final nudge before bed', iconName: 'nightlight-round' },
-]
+// 2026-08-14 — the "Morning kickoff / Midday check-in / End of day" switches
+// were REMOVED, not repaired.
+//
+// They were dead for every patient, and unreachably so. Their only non-route
+// consumer sits behind `if (item.timezone) continue` in the legacy sweeper;
+// the tz-aware sweeper that actually reminds those patients never read them.
+// And this screen auto-writes the device timezone on mount (see the effect
+// below), so the act of opening the only page where the switches existed was
+// what moved you onto the path that ignores them. Nobody has ever had a
+// working slot switch.
+//
+// They describe a model that no longer exists — three digest pushes a day —
+// while the sweeper sends one push per task at that task's own time. There is
+// nothing for "midday digest" to map onto.
+//
+// Reinterpreting them as time-of-day windows was considered and rejected: the
+// screen already has per-category switches, routines have their own per-routine
+// bell, and quiet hours covers the night. A third overlapping control would
+// mean "why didn't I get my medication reminder?" has three independent
+// answers, which is the exact debugging problem this week was spent removing.
+//
+// The backend endpoint and the legacy tz-less digest path are left intact —
+// they still serve patients with no stored timezone, who by construction never
+// saw these switches anyway.
 
 // COS-373: notification-category rows. Each maps to one server preference key.
 // Only rendered when NOTIFICATION_CATEGORIES_ENABLED. "Other tasks" starts OFF
@@ -175,18 +184,6 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
 
-  const query = useQuery({
-    queryKey: ['reminder-prefs'],
-    queryFn: fetchHealthPlanReminderPrefs,
-  })
-
-  const mutation = useMutation({
-    mutationFn: (partial: Partial<HealthPlanReminderPrefs>) => updateHealthPlanReminderPrefs(partial),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(['reminder-prefs'], updated)
-    },
-  })
-
   // SCRUM-257: timezone preference for per-user reminder routing.
   const tzQuery = useQuery({
     queryKey: ['timezone-pref'],
@@ -231,7 +228,6 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tzQuery.isLoading, tzQuery.data?.timezone])
 
-  const prefs = query.data ?? { am: true, midday: true, eod: true }
 
   return (
     <AppWrapper>
@@ -254,35 +250,9 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
         </View>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 14 }}>
-            Daily push reminders for your Health Plan tasks. We&apos;ll only notify you when you have pending tasks — completed days won&apos;t trigger reminders.
+            Choose what Circle Support Health can notify you about. Reminders arrive at the time each task or routine is scheduled for, and only when something is still pending.
           </Text>
 
-          {SLOTS.map((slot) => {
-            const enabled = prefs[slot.key]
-            return (
-              <Card key={slot.key} style={[styles.row, { backgroundColor: colors.card }]}>
-                <Card.Content style={styles.rowContent}>
-                  <View style={[styles.iconWrap, { backgroundColor: (colors.tint as string) + '22' }]}>
-                    <MaterialIcons name={slot.iconName} size={20} color={colors.tint as string} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
-                      {slot.title}
-                    </Text>
-                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}>
-                      {slot.subtitle}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={enabled}
-                    onValueChange={(value) => mutation.mutate({ [slot.key]: value })}
-                    disabled={mutation.isPending}
-                    accessibilityLabel={`${slot.title} ${enabled ? 'enabled' : 'disabled'}`}
-                  />
-                </Card.Content>
-              </Card>
-            )
-          })}
 
           {/* SCRUM-257: timezone picker. Surfaces the effective TZ (stored
               if the user picked one, else the device-detected default) and
