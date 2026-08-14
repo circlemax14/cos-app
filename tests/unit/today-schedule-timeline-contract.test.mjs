@@ -412,3 +412,33 @@ test('the title block yields width to the score, not the title alone', () => {
   // the date pushes the adherence score off its corner.
   assert.match(SCREEN, /headerTitleBlock: \{ flex: 1, flexShrink: 1/);
 });
+
+test('the modal backdrop does not intercept the controls inside it', () => {
+  // 2026-08-14 regression, mine: wrapping the card in a Pressable to absorb
+  // taps made THAT Pressable intercept every touch inside — the cadence and
+  // domain pills stopped responding and neither Target field could be focused.
+  // A backdrop only needs to cover the screen BEHIND the card.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  const code = codeOnly(HABITS);
+  assert.match(code, /<Pressable\s+style=\{StyleSheet\.absoluteFill\}/);
+  assert.doesNotMatch(
+    code,
+    /<Pressable\s+style=\{\[styles\.modalCard/,
+    'the card must be a View — a Pressable wrapper swallows its own controls',
+  );
+});
+
+test('the time picker can be closed', () => {
+  // An iOS spinner swallows vertical drags, so with it open inside a
+  // ScrollView there was no way to scroll PAST it to the fields below — and
+  // the wheel emits on every tick, so there is no natural moment to auto-close.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  const code = codeOnly(HABITS);
+  assert.match(code, /onPress=\{\(\) => setShowTimePicker\(false\)\}/);
+  assert.match(code, /pickerDone: \{[\s\S]*?minHeight: 44/);
+});
+
+test('Target says what it is for', () => {
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /Shown on the routine, like/);
+});
