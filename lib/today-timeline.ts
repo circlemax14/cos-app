@@ -172,7 +172,10 @@ export function buildTimeline(items: TimelineItem[]): Timeline {
  * the day, every day. "Due by now" keeps 100% honestly reachable at any hour.
  *
  * An untimed task counts as due — it was for "anytime today", and today has
- * started.
+ * started. A COMPLETED task counts as due whatever its time: you cannot have
+ * done something that was not owed, and hiding finished work behind the clock
+ * made the header read "Nothing due yet" right after a patient ticked
+ * something off.
  *
  * Nothing due yet ⇒ 100%, not 0%. A patient who has been awake ten minutes
  * has not failed at anything, and 0% is the wrong thing to greet them with.
@@ -180,6 +183,19 @@ export function buildTimeline(items: TimelineItem[]): Timeline {
 export function computeAdherence(items: TimelineItem[], nowMinutes: number): Adherence {
   const tasks = items.filter((i) => i.kind === 'task');
   const due = tasks.filter((t) => {
+    // A DONE task is always counted, whatever the clock says.
+    //
+    // Ken 2026-08-14: "still seeing nothing due yet rather than percentage
+    // even after completing task." Tick off a task scheduled for this evening
+    // at breakfast and, without this line, `due` stayed 0 — so the header said
+    // "Nothing due yet" immediately after he completed something. The app
+    // looked like it had not registered the tap.
+    //
+    // It is also just true: you cannot have completed something that was not
+    // yet owed. Only the UNDONE tasks need the clock test, and keeping it for
+    // them is what preserves the original rule — an unfinished evening task
+    // still must not drag the number down at breakfast.
+    if (t.done) return true;
     const mins = minutesOf(t.time);
     return mins === null || mins <= nowMinutes;
   });
