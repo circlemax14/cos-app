@@ -133,7 +133,13 @@ test('stays inside the iOS 26.5 primitive envelope', () => {
   for (const [name, src] of [['timeline', TIMELINE], ['score', SCORE]]) {
     const rn = /import \{([^}]+)\} from 'react-native'/.exec(src);
     assert.ok(rn, `${name}: expected a react-native import`);
-    const allowed = new Set(['View', 'Text', 'Pressable', 'Modal', 'StyleSheet']);
+    // The envelope exists because certain NATIVE RENDERING components have a
+    // history of throwing fatal NSExceptions on iOS 26.5 — ActivityIndicator,
+    // Animated, LayoutAnimation. StyleSheet and PixelRatio are not rendering
+    // surfaces at all: they are pure JS utilities that read a static value and
+    // mount nothing. PixelRatio.getFontScale() is what lets layout track the
+    // OS Dynamic Type scale, which is not otherwise reachable.
+    const allowed = new Set(['View', 'Text', 'Pressable', 'Modal', 'StyleSheet', 'PixelRatio']);
     for (const n of rn[1].split(',').map((x) => x.trim()).filter(Boolean)) {
       assert.ok(allowed.has(n), `${name}: ${n} is outside the envelope`);
     }
@@ -537,6 +543,25 @@ test('the glyph is centred on the first line at ANY scale', () => {
 
 test('the hour column scales, or "10 am" wraps and skews the row', () => {
   const code = codeOnly(TIMELINE);
-  assert.match(code, /width: sz\(52\)/);
+  assert.match(code, /width: sz\(52\) \* PixelRatio\.getFontScale\(\)/);
   assert.doesNotMatch(code, /width: 52/);
+});
+
+test('layout tracks the OS font scale, not just the in-app one', () => {
+  // The half that made the first attempt fail. getScaledFontSize DAMPS the OS
+  // scale on phones (effectiveFontScale caps at 1.05) to protect layouts — but
+  // React Native then applies the FULL iOS Dynamic Type scale to every <Text>
+  // on top, because allowFontScaling defaults true. Views get nothing.
+  //
+  // So sz() alone describes a size the text is NOT rendered at, and anything
+  // sized from sz() alone drifts out of alignment as soon as Dynamic Type is
+  // turned up. Both factors, or neither works.
+  const code = codeOnly(TIMELINE);
+  assert.match(code, /PixelRatio\.getFontScale\(\)/);
+  assert.match(code, /const size = sz\(17\) \* fontScale/);
+  assert.match(
+    code,
+    /lineHeight: sz\(19\) \* PixelRatio\.getFontScale\(\)/,
+    'an explicit lineHeight is NOT auto-scaled by RN — it must be scaled by hand or the text clips',
+  );
 });
