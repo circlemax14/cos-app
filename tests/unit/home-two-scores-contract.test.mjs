@@ -46,8 +46,27 @@ test('ONE wellbeing number on the screen, from ONE implementation', () => {
   assert.doesNotMatch(HOME, /<WellbeingScoreTile \/>/, 'would be the same score twice');
 });
 
-test('Daily Read survives — it is a content card, not a score', () => {
-  assert.match(HOME, /<DailyReadCard \/>/);
+test('Daily Read and the wellbeing map are OFF Home', () => {
+  // Vishal 2026-08-14: "daily reads and wellbeing map not required on home
+  // screen." This overruled my earlier guess that Ken meant scores only.
+  //
+  // Scoped to the LIVE tree: index.tsx also contains a dead HOME_V2 layout
+  // that still references the map preview, and an unscoped check would fail
+  // on code that never renders.
+  const live = HOME.slice(HOME.indexOf('<HeroInsightsRow />'));
+  assert.doesNotMatch(live, /<DailyReadCard \/>/);
+  assert.doesNotMatch(live, /<WellbeingMapPreview \/>/);
+});
+
+test('removing them orphaned two screens — recorded so it is not a surprise', () => {
+  // WellbeingMapPreview held the only live link to /Home/wellbeing-map, and
+  // DailyReadCard the only one to /Home/daily-read. Both screens still exist
+  // and work; nothing on Home routes to them. If that is wrong, the fix is an
+  // entry point elsewhere, not reverting this.
+  // Read RAW, not codeOnly — the note is a comment, and codeOnly strips them.
+  const raw = read('app/Home/index.tsx');
+  assert.match(raw, /last live link to \/Home\/daily-read/);
+  assert.match(raw, /last live link to\s*\n?\s*\/\/?\s*\/Home\/wellbeing-map|last live link to[\s\S]{0,40}wellbeing-map/);
 });
 
 test('nothing was deleted, only unrouted', () => {

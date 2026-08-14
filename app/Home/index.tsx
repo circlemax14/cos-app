@@ -3395,12 +3395,14 @@ export default function HomeScreen() {
             in home screen we should have these at top". HeroInsightsRow now
             renders exactly those two. */}
         <HeroInsightsRow />
-        {/* Daily Read left this row when it became the two-scores row. It is
-            NOT a score — it is a daily content card — so it keeps its place on
-            Home as its own card rather than disappearing. Ken asked to remove
-            other SCORES; dropping a content card on that basis would be reading
-            more into the ask than it says. Self-gates on daily_read_enabled. */}
-        <DailyReadCard />
+        {/* Vishal 2026-08-14: "daily reads and wellbeing map not required on
+            home screen." So Daily Read is off Home entirely — I had kept it
+            here on the reading that Ken meant remove other SCORES; that guess
+            is now overruled.
+
+            NOTE: this was the last live link to /Home/daily-read. The screen
+            still exists and still works, but nothing on Home routes to it now.
+            If it should stay reachable it needs an entry point elsewhere. */}
         {/*
          * SCRUM-653 title row — one of two variants selected by
          * HOME_V2_INJECTIONS_ENABLED:
@@ -3625,14 +3627,15 @@ export default function HomeScreen() {
           // the row. Home only supplies the flex gap. Do NOT re-wrap
           // either tile in a padded View here — that reintroduces the
           // asymmetric geometry.
-          // SCRUM-676: WellbeingScoreTile moved to the two-scores row at the
-          // top of Home, so this row would otherwise show the SAME wellbeing
-          // number twice on one screen. The map preview takes the full width.
-          // WellbeingScoreTile stays imported and unchanged — restoring the
-          // two-up is one line if Ken prefers it.
-          <View style={{ marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>
-            <WellbeingMapPreview />
-          </View>
+          // Vishal 2026-08-14: "daily reads and wellbeing map not required on
+          // home screen." The whole row is gone — WellbeingScoreTile had
+          // already moved to the two-scores row at the top (SCRUM-676), and
+          // the map preview is now off Home too.
+          //
+          // NOTE: WellbeingMapPreview was the last live link to
+          // /Home/wellbeing-map. That screen still exists and still works, but
+          // nothing on Home routes to it now.
+          null
         )}
         {/*
          * ScoreCardGrid stays imported (backward-compat with the dead
