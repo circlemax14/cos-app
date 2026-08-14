@@ -17,6 +17,8 @@ import {
 // and trends. The old inline FRIENDLY_NAME map lived here from
 // SCRUM-268; that copy was migrated verbatim into the shared helper.
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
+import { groupAssessmentsByDomain } from '@/lib/assessment-grouping'
+import { getSubdomain } from '@/lib/bps-subdomains'
 import {
   computeBand,
   computeTrend,
@@ -263,265 +265,317 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
     )
   }
 
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.carousel}
-      decelerationRate="fast"
-    >
-      {records.map((record) => {
-        // Wave 2 (2026-07-28): warmer label lookup now goes through the
-        // shared helper so stepper/catalog/trends stay in lockstep.
-        const label = getWarmerInstrumentLabel(String(record.instrumentId), String(record.instrumentId))
-        const isOverdue = record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()
+  // Extracted verbatim from the old inline records.map callback so the very
+  // same card renders whether the carousel is flat or grouped. Nothing about
+  // an individual card changed in this commit.
+  const renderCard = (record: AssessmentRecord) => {
+    // Wave 2 (2026-07-28): warmer label lookup now goes through the
+    // shared helper so stepper/catalog/trends stay in lockstep.
+    const label = getWarmerInstrumentLabel(String(record.instrumentId), String(record.instrumentId))
+    const isOverdue = record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()
 
-        if (!SELF_ASSESSMENTS_HUMAN_LABELS_ENABLED) {
-          // Pre-chunk-58 render, kept behind the kill-switch.
-          const bandTextColor = legacyBandColor(record.band, colors.tint as string)
-          return (
-            <Pressable
-              key={record.instrumentId}
-              onPress={() => onOpenInstrument?.(record.instrumentId)}
-              style={({ pressed }) => [
-                styles.card,
-                {
-                  backgroundColor: (colors.card as string) + 'D9',
-                  borderColor: colors.border,
-                  opacity: pressed ? 0.85 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`${label}, ${record.band?.label ?? 'completed'}, ${formatRelative(record.completedAt)}`}
-            >
+    if (!SELF_ASSESSMENTS_HUMAN_LABELS_ENABLED) {
+      // Pre-chunk-58 render, kept behind the kill-switch.
+      const bandTextColor = legacyBandColor(record.band, colors.tint as string)
+      return (
+        <Pressable
+          key={record.instrumentId}
+          onPress={() => onOpenInstrument?.(record.instrumentId)}
+          style={({ pressed }) => [
+            styles.card,
+            {
+              backgroundColor: (colors.card as string) + 'D9',
+              borderColor: colors.border,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}, ${record.band?.label ?? 'completed'}, ${formatRelative(record.completedAt)}`}
+        >
+          <Text
+            numberOfLines={2}
+            style={{
+              color: colors.text,
+              fontSize: fontSize(13),
+              fontWeight: fontWeight(700) as any,
+              marginBottom: 6,
+            }}
+          >
+            {label}
+          </Text>
+          <Text style={{ color: bandTextColor, fontSize: fontSize(22), fontWeight: fontWeight(700) as any }}>
+            {typeof record.scores?.total === 'number' ? String(record.scores.total) : '—'}
+          </Text>
+          {record.band?.label ? (
+            <View style={[styles.bandPill, { borderColor: bandTextColor }]}>
+              <View style={[styles.bandDot, { backgroundColor: bandTextColor }]} />
               <Text
-                numberOfLines={2}
                 style={{
-                  color: colors.text,
-                  fontSize: fontSize(13),
+                  color: bandTextColor,
+                  fontSize: fontSize(10),
                   fontWeight: fontWeight(700) as any,
-                  marginBottom: 6,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
                 }}
               >
-                {label}
+                {record.band.label}
               </Text>
-              <Text style={{ color: bandTextColor, fontSize: fontSize(22), fontWeight: fontWeight(700) as any }}>
-                {typeof record.scores?.total === 'number' ? String(record.scores.total) : '—'}
+            </View>
+          ) : null}
+          <Text style={{ color: colors.subtext, fontSize: fontSize(11), marginTop: 8 }}>
+            {formatRelative(record.completedAt)}
+            {isOverdue ? '  ·  Due' : ''}
+          </Text>
+        </Pressable>
+      )
+    }
+
+    // -------- Chunk 58 human-labeled render --------
+    const def = getBandDef(String(record.instrumentId))
+    const currScore = extractScore(def, record.scores)
+    const band = def ? computeBand(def, currScore) : undefined
+
+    // Trend from history — lookup by instrumentId (chunk 58 adversarial
+    // verify fix: index-coupled lookup was fragile under refetch).
+    // history is guaranteed newest-first by historyById's sort.
+    //
+    // Chunk 58 v2 verify fix (stale-history race): the summary list
+    // (['assessments-trends'], 60s stale) can refresh while the
+    // per-instrument history (['assessment-history:{id}'], 5min stale)
+    // is still cached. In that window history[0] IS the prior of the
+    // current record — not the current record itself — so history[1]
+    // would be prior-of-prior. Detect by comparing completedAt: if
+    // history[0].completedAt is older than record.completedAt, the
+    // history is stale relative to the summary; use history[0] as
+    // prior. Otherwise use history[1] as prior (history[0] is curr).
+    const history = historyById.get(String(record.instrumentId)) ?? []
+    let priorScore: number | undefined
+    if (def && history.length >= 1) {
+      const h0 = history[0]
+      const h0IsCurrent =
+        !!h0 &&
+        !!h0.completedAt &&
+        !!record.completedAt &&
+        h0.completedAt >= record.completedAt
+      const priorRecord = h0IsCurrent ? history[1] : history[0]
+      priorScore = priorRecord ? extractScore(def, priorRecord.scores) : undefined
+    }
+    const trend = def ? computeTrend(def, currScore, priorScore) : undefined
+
+    const pillColor = band ? TONE_COLORS[band.tone] : TONE_COLORS.neutral
+    const pillLabel = band ? band.label : '—'
+    const rawScoreText = formatScore(currScore)
+    const humanTitle = def?.humanLabel ?? label
+
+    // Chunk 58 adversarial-verify fix (a11y direction): read the
+    // MEANING of the trend ("improving"/"worsening") into VoiceOver,
+    // not the arrow direction ("trend up"/"trend down"). "Trend down"
+    // on a pain card actually means the patient is improving.
+    const trendA11y = trend
+      ? trend.direction === 'flat'
+        ? 'steady'
+        : trend.tone === 'good'
+          ? 'improving'
+          : 'worsening'
+      : undefined
+
+    // CHUNK 93 (2026-07-23): direction-of-goodness announcement.
+    // Old label: "Depression, Low, improving, 2w ago" — VoiceOver
+    // user can't tell if "Low" is good or bad for this instrument.
+    // New label: "Depression: low. Healthy. Trending downward.
+    // Improving. 2w ago." — pill container + arrow read via one
+    // composed sentence. Inner Text + arrow are marked hidden
+    // (see below) so nothing gets double-announced.
+    //
+    // Rule (d): direction pulled from ASSESSMENT_BANDS via
+    // getBandDef(def) — computeBand already folds direction into
+    // band.tone (good/warn/bad), so bandDirectionPhrasing reads
+    // tone rather than re-deriving the mapping.
+    const directionPhrase = bandDirectionPhrasing(def, band)
+    const arrowPhrase = trendArrowPhrasing(trend?.direction)
+    const spokenBand = band ? pillLabel.toLowerCase() : 'no band available'
+    const composedA11yLabel =
+      `${humanTitle}: ${spokenBand}.` +
+      (directionPhrase ? ` ${directionPhrase[0].toUpperCase()}${directionPhrase.slice(1)}.` : '') +
+      (arrowPhrase ? ` ${arrowPhrase[0].toUpperCase()}${arrowPhrase.slice(1)}.` : '') +
+      (trendA11y ? ` ${trendA11y[0].toUpperCase()}${trendA11y.slice(1)}.` : '') +
+      ` ${formatRelative(record.completedAt)}` +
+      (isOverdue ? '. Due.' : '.')
+
+    return (
+      <Pressable
+        key={record.instrumentId}
+        onPress={() => onOpenInstrument?.(record.instrumentId)}
+        style={({ pressed }) => [
+          styles.card,
+          {
+            backgroundColor: (colors.card as string) + 'D9',
+            borderColor: colors.border,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={composedA11yLabel}
+      >
+        {/* Row 1: small-caps human label */}
+        <Text
+          numberOfLines={2}
+          style={{
+            color: colors.subtext,
+            fontSize: fontSize(11),
+            fontWeight: fontWeight(700) as any,
+            textTransform: 'uppercase',
+            letterSpacing: 0.6,
+            marginBottom: 8,
+          }}
+        >
+          {humanTitle}
+        </Text>
+
+        {/* Row 2: High/Medium/Low pill — the visual focal point.
+          * CHUNK 93 (2026-07-23): pill container is hidden from
+          * VoiceOver so the outer Pressable's composed label
+          * ("Depression: low. Healthy. Trending downward.")
+          * reads once instead of the bare "Low" bubbling up.
+          * accessibilityElementsHidden covers iOS;
+          * importantForAccessibility="no-hide-descendants" covers
+          * Android (the pill's dot + Text are decorative here).
+          */}
+        <View
+          style={[
+            styles.humanBandPill,
+            {
+              borderColor: pillColor,
+              backgroundColor: pillColor + '1A', // ~10% alpha tint
+            },
+          ]}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          <View style={[styles.bandDot, { backgroundColor: pillColor }]} />
+          <Text
+            numberOfLines={1}
+            style={{
+              color: pillColor,
+              fontSize: fontSize(13),
+              fontWeight: fontWeight(700) as any,
+            }}
+          >
+            {pillLabel}
+          </Text>
+        </View>
+
+        {/* Row 3: trend arrow (reserves space so cards are same
+          * height). CHUNK 93: hidden from VoiceOver — arrow shape
+          * + "Improving/Worsening/Steady" are already spoken by
+          * the parent Pressable's composed label. Keeping them
+          * a11y-visible here would produce a double-read.
+          */}
+        <View
+          style={styles.trendRow}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          {trend ? (
+            <>
+              <MaterialIcons
+                name={trendIconName(trend.direction)}
+                size={fontSize(16)}
+                color={TONE_COLORS[trend.tone]}
+              />
+              <Text
+                style={{
+                  color: TONE_COLORS[trend.tone],
+                  fontSize: fontSize(11),
+                  fontWeight: fontWeight(600) as any,
+                  marginLeft: 4,
+                }}
+              >
+                {trend.direction === 'flat'
+                  ? 'Steady'
+                  : trend.tone === 'good'
+                    ? 'Improving'
+                    : 'Worsening'}
               </Text>
-              {record.band?.label ? (
-                <View style={[styles.bandPill, { borderColor: bandTextColor }]}>
-                  <View style={[styles.bandDot, { backgroundColor: bandTextColor }]} />
-                  <Text
-                    style={{
-                      color: bandTextColor,
-                      fontSize: fontSize(10),
-                      fontWeight: fontWeight(700) as any,
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    {record.band.label}
-                  </Text>
-                </View>
-              ) : null}
-              <Text style={{ color: colors.subtext, fontSize: fontSize(11), marginTop: 8 }}>
-                {formatRelative(record.completedAt)}
-                {isOverdue ? '  ·  Due' : ''}
-              </Text>
-            </Pressable>
-          )
-        }
+            </>
+          ) : (
+            <Text style={{ color: colors.subtext, fontSize: fontSize(11) }}>
+              {def
+                ? 'New — need 2 check-ins for trend'
+                : 'Trend unavailable'}
+            </Text>
+          )}
+        </View>
 
-        // -------- Chunk 58 human-labeled render --------
-        const def = getBandDef(String(record.instrumentId))
-        const currScore = extractScore(def, record.scores)
-        const band = def ? computeBand(def, currScore) : undefined
+        {/* Row 4: raw score caption (clinician view) + relative time */}
+        <Text style={{ color: colors.subtext, fontSize: fontSize(10), marginTop: 6 }}>
+          {`Score ${rawScoreText}  ·  ${formatRelative(record.completedAt)}`}
+          {isOverdue ? '  ·  Due' : ''}
+        </Text>
+      </Pressable>
+    )
+  }
 
-        // Trend from history — lookup by instrumentId (chunk 58 adversarial
-        // verify fix: index-coupled lookup was fragile under refetch).
-        // history is guaranteed newest-first by historyById's sort.
-        //
-        // Chunk 58 v2 verify fix (stale-history race): the summary list
-        // (['assessments-trends'], 60s stale) can refresh while the
-        // per-instrument history (['assessment-history:{id}'], 5min stale)
-        // is still cached. In that window history[0] IS the prior of the
-        // current record — not the current record itself — so history[1]
-        // would be prior-of-prior. Detect by comparing completedAt: if
-        // history[0].completedAt is older than record.completedAt, the
-        // history is stale relative to the summary; use history[0] as
-        // prior. Otherwise use history[1] as prior (history[0] is curr).
-        const history = historyById.get(String(record.instrumentId)) ?? []
-        let priorScore: number | undefined
-        if (def && history.length >= 1) {
-          const h0 = history[0]
-          const h0IsCurrent =
-            !!h0 &&
-            !!h0.completedAt &&
-            !!record.completedAt &&
-            h0.completedAt >= record.completedAt
-          const priorRecord = h0IsCurrent ? history[1] : history[0]
-          priorScore = priorRecord ? extractScore(def, priorRecord.scores) : undefined
-        }
-        const trend = def ? computeTrend(def, currScore, priorScore) : undefined
+  // Ken 2026-08-14: "the self-assessments by biopsychosocial". The domain
+  // comes from the instrument's own subdomains (joined on by the backend),
+  // resolved through the existing wellbeing-map taxonomy — no new mapping.
+  const groups = groupAssessmentsByDomain(records, (key) => getSubdomain(key)?.domain ?? null)
 
-        const pillColor = band ? TONE_COLORS[band.tone] : TONE_COLORS.neutral
-        const pillLabel = band ? band.label : '—'
-        const rawScoreText = formatScore(currScore)
-        const humanTitle = def?.humanLabel ?? label
+  // Nothing placeable ⇒ the flat carousel, byte-for-byte as it shipped
+  // before this change. That is the state of every client running against a
+  // backend that predates the subdomain join, so it is the common path
+  // until both halves are live — and a single "Other" heading sitting above
+  // every card would be worse than no heading at all.
+  if (groups.length === 1 && groups[0].domain === null) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.carousel}
+        decelerationRate="fast"
+      >
+        {records.map(renderCard)}
+      </ScrollView>
+    )
+  }
 
-        // Chunk 58 adversarial-verify fix (a11y direction): read the
-        // MEANING of the trend ("improving"/"worsening") into VoiceOver,
-        // not the arrow direction ("trend up"/"trend down"). "Trend down"
-        // on a pain card actually means the patient is improving.
-        const trendA11y = trend
-          ? trend.direction === 'flat'
-            ? 'steady'
-            : trend.tone === 'good'
-              ? 'improving'
-              : 'worsening'
-          : undefined
-
-        // CHUNK 93 (2026-07-23): direction-of-goodness announcement.
-        // Old label: "Depression, Low, improving, 2w ago" — VoiceOver
-        // user can't tell if "Low" is good or bad for this instrument.
-        // New label: "Depression: low. Healthy. Trending downward.
-        // Improving. 2w ago." — pill container + arrow read via one
-        // composed sentence. Inner Text + arrow are marked hidden
-        // (see below) so nothing gets double-announced.
-        //
-        // Rule (d): direction pulled from ASSESSMENT_BANDS via
-        // getBandDef(def) — computeBand already folds direction into
-        // band.tone (good/warn/bad), so bandDirectionPhrasing reads
-        // tone rather than re-deriving the mapping.
-        const directionPhrase = bandDirectionPhrasing(def, band)
-        const arrowPhrase = trendArrowPhrasing(trend?.direction)
-        const spokenBand = band ? pillLabel.toLowerCase() : 'no band available'
-        const composedA11yLabel =
-          `${humanTitle}: ${spokenBand}.` +
-          (directionPhrase ? ` ${directionPhrase[0].toUpperCase()}${directionPhrase.slice(1)}.` : '') +
-          (arrowPhrase ? ` ${arrowPhrase[0].toUpperCase()}${arrowPhrase.slice(1)}.` : '') +
-          (trendA11y ? ` ${trendA11y[0].toUpperCase()}${trendA11y.slice(1)}.` : '') +
-          ` ${formatRelative(record.completedAt)}` +
-          (isOverdue ? '. Due.' : '.')
-
-        return (
-          <Pressable
-            key={record.instrumentId}
-            onPress={() => onOpenInstrument?.(record.instrumentId)}
-            style={({ pressed }) => [
-              styles.card,
+  return (
+    <View>
+      {groups.map((group) => (
+        <View key={group.label} style={styles.group}>
+          <Text
+            style={[
+              styles.groupLabel,
               {
-                backgroundColor: (colors.card as string) + 'D9',
-                borderColor: colors.border,
-                opacity: pressed ? 0.85 : 1,
+                color: colors.subtext as string,
+                fontSize: fontSize(12),
+                fontWeight: fontWeight(700) as any,
               },
             ]}
-            accessibilityRole="button"
-            accessibilityLabel={composedA11yLabel}
+            accessibilityRole="header"
           >
-            {/* Row 1: small-caps human label */}
-            <Text
-              numberOfLines={2}
-              style={{
-                color: colors.subtext,
-                fontSize: fontSize(11),
-                fontWeight: fontWeight(700) as any,
-                textTransform: 'uppercase',
-                letterSpacing: 0.6,
-                marginBottom: 8,
-              }}
-            >
-              {humanTitle}
-            </Text>
-
-            {/* Row 2: High/Medium/Low pill — the visual focal point.
-              * CHUNK 93 (2026-07-23): pill container is hidden from
-              * VoiceOver so the outer Pressable's composed label
-              * ("Depression: low. Healthy. Trending downward.")
-              * reads once instead of the bare "Low" bubbling up.
-              * accessibilityElementsHidden covers iOS;
-              * importantForAccessibility="no-hide-descendants" covers
-              * Android (the pill's dot + Text are decorative here).
-              */}
-            <View
-              style={[
-                styles.humanBandPill,
-                {
-                  borderColor: pillColor,
-                  backgroundColor: pillColor + '1A', // ~10% alpha tint
-                },
-              ]}
-              accessibilityElementsHidden={true}
-              importantForAccessibility="no-hide-descendants"
-            >
-              <View style={[styles.bandDot, { backgroundColor: pillColor }]} />
-              <Text
-                numberOfLines={1}
-                style={{
-                  color: pillColor,
-                  fontSize: fontSize(13),
-                  fontWeight: fontWeight(700) as any,
-                }}
-              >
-                {pillLabel}
-              </Text>
-            </View>
-
-            {/* Row 3: trend arrow (reserves space so cards are same
-              * height). CHUNK 93: hidden from VoiceOver — arrow shape
-              * + "Improving/Worsening/Steady" are already spoken by
-              * the parent Pressable's composed label. Keeping them
-              * a11y-visible here would produce a double-read.
-              */}
-            <View
-              style={styles.trendRow}
-              accessibilityElementsHidden={true}
-              importantForAccessibility="no-hide-descendants"
-            >
-              {trend ? (
-                <>
-                  <MaterialIcons
-                    name={trendIconName(trend.direction)}
-                    size={fontSize(16)}
-                    color={TONE_COLORS[trend.tone]}
-                  />
-                  <Text
-                    style={{
-                      color: TONE_COLORS[trend.tone],
-                      fontSize: fontSize(11),
-                      fontWeight: fontWeight(600) as any,
-                      marginLeft: 4,
-                    }}
-                  >
-                    {trend.direction === 'flat'
-                      ? 'Steady'
-                      : trend.tone === 'good'
-                        ? 'Improving'
-                        : 'Worsening'}
-                  </Text>
-                </>
-              ) : (
-                <Text style={{ color: colors.subtext, fontSize: fontSize(11) }}>
-                  {def
-                    ? 'New — need 2 check-ins for trend'
-                    : 'Trend unavailable'}
-                </Text>
-              )}
-            </View>
-
-            {/* Row 4: raw score caption (clinician view) + relative time */}
-            <Text style={{ color: colors.subtext, fontSize: fontSize(10), marginTop: 6 }}>
-              {`Score ${rawScoreText}  ·  ${formatRelative(record.completedAt)}`}
-              {isOverdue ? '  ·  Due' : ''}
-            </Text>
-          </Pressable>
-        )
-      })}
-    </ScrollView>
+            {group.label.toUpperCase()}
+          </Text>
+          {/* One carousel PER domain: a single scroller with headings
+              interleaved would put a heading mid-scroll where it reads as a
+              label for whatever card happens to be beside it. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.carousel}
+            decelerationRate="fast"
+          >
+            {group.records.map(renderCard)}
+          </ScrollView>
+        </View>
+      ))}
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
+  group: { marginBottom: 2 },
+  groupLabel: { marginHorizontal: 16, marginTop: 10, marginBottom: 2, letterSpacing: 0.6 },
   carousel: {
     paddingHorizontal: 16,
     paddingTop: 4,
