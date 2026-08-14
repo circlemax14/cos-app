@@ -31,6 +31,7 @@ import {
   View,
 } from 'react-native'
 import { todayLocalIso } from '@/lib/day-key';
+import { groupTrendsByBodySystem } from '@/lib/body-system-grouping';
 
 /**
  * Result Trends — redesigned (SCRUM-237).
@@ -317,23 +318,48 @@ export default function HealthTrendsScreen() {
                 Apple Health
               </Text>
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.carouselContent}
-              decelerationRate="fast"
-            >
-              {appleHealthTrends.map((t) => (
-                <AppleHealthMiniCard
-                  key={t.id}
-                  trend={t}
-                  colors={colors}
-                  fontSize={getScaledFontSize}
-                  fontWeight={getScaledFontWeight}
-                  onPress={() => setActiveTrend(t)}
-                />
-              ))}
-            </ScrollView>
+            {/* Ken 2026-08-14: group by body system / organ. One carousel per
+                group — a single scroller with headings interleaved would put a
+                heading mid-scroll, reading as a label for whatever card is
+                beside it. groupTrendsByBodySystem returns ONE unlabelled group
+                when it recognises nothing, which renders exactly the flat row
+                that shipped before. */}
+            {groupTrendsByBodySystem(appleHealthTrends).map((group) => (
+              <View key={group.label || 'ungrouped'}>
+                {group.label ? (
+                  <Text
+                    accessibilityRole="header"
+                    style={[
+                      styles.systemGroupLabel,
+                      {
+                        color: colors.subtext as string,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      },
+                    ]}
+                  >
+                    {group.label.toUpperCase()}
+                  </Text>
+                ) : null}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.carouselContent}
+                  decelerationRate="fast"
+                >
+                  {group.metrics.map((t) => (
+                    <AppleHealthMiniCard
+                      key={t.id}
+                      trend={t}
+                      colors={colors}
+                      fontSize={getScaledFontSize}
+                      fontWeight={getScaledFontWeight}
+                      onPress={() => setActiveTrend(t)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -387,23 +413,44 @@ export default function HealthTrendsScreen() {
         ) : null}
 
         {clinicTrends.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.carouselContent}
-            decelerationRate="fast"
-          >
-            {clinicSliderTrends.map((t) => (
-              <AppleHealthMiniCard
-                key={t.id}
-                trend={t}
-                colors={colors}
-                fontSize={getScaledFontSize}
-                fontWeight={getScaledFontWeight}
-                onPress={() => setActiveTrend(t)}
-              />
+          <View>
+            {groupTrendsByBodySystem(clinicSliderTrends).map((group) => (
+              <View key={group.label || 'ungrouped'}>
+                {group.label ? (
+                  <Text
+                    accessibilityRole="header"
+                    style={[
+                      styles.systemGroupLabel,
+                      {
+                        color: colors.subtext as string,
+                        fontSize: getScaledFontSize(12),
+                        fontWeight: getScaledFontWeight(700) as any,
+                      },
+                    ]}
+                  >
+                    {group.label.toUpperCase()}
+                  </Text>
+                ) : null}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.carouselContent}
+                  decelerationRate="fast"
+                >
+                  {group.metrics.map((t) => (
+                    <AppleHealthMiniCard
+                      key={t.id}
+                      trend={t}
+                      colors={colors}
+                      fontSize={getScaledFontSize}
+                      fontWeight={getScaledFontWeight}
+                      onPress={() => setActiveTrend(t)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
             ))}
-          </ScrollView>
+          </View>
         ) : null}
 
         {/* Truly empty — no Apple Health AND no Clinic data. When Apple Health
@@ -937,6 +984,9 @@ function capitalize(s: string): string {
 }
 
 const styles = StyleSheet.create({
+  // Body-system group heading. Sits between the section header
+  // ("From Your Clinic" / "Apple Health") and that group's carousel.
+  systemGroupLabel: { marginHorizontal: 16, marginTop: 10, marginBottom: 2, letterSpacing: 0.6 },
   container: { flex: 1, paddingHorizontal: 16 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   retryButton: { marginTop: 18, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999 },
