@@ -42,6 +42,8 @@
 import React from 'react'
 import {
   Alert,
+  Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -50,6 +52,7 @@ import {
   View,
 } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { router } from 'expo-router'
 
 import { AppWrapper } from '@/components/app-wrapper'
@@ -93,6 +96,19 @@ const EMPTY_DRAFT: DraftHabit = {
   remindersEnabled: true,
 }
 
+/**
+ * 'HH:MM' -> a Date for the picker, defaulting to 08:00 when unset.
+ *
+ * The date part is irrelevant — only hours/minutes are read back — but it has
+ * to be a REAL date or the picker renders blank on Android.
+ */
+function parseHHMM(hhmm: string | undefined): Date {
+  const d = new Date()
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec((hhmm ?? '').trim())
+  d.setHours(m ? Number(m[1]) : 8, m ? Number(m[2]) : 0, 0, 0)
+  return d
+}
+
 const CADENCE_OPTIONS: Array<{ key: 'daily' | 'weekly'; label: string }> = [
   { key: 'daily', label: 'Daily' },
   { key: 'weekly', label: 'Weekly' },
@@ -115,10 +131,32 @@ export default function HabitsScreen(): React.JSX.Element {
   const colors = Colors.light
 
   const [editing, setEditing] = React.useState<DraftHabit | null>(null)
+  // Closed by default so the card opens compact; the field above expands it.
+  const [showTimePicker, setShowTimePicker] = React.useState(false)
+
+  // Tracked so a backdrop tap can dismiss the KEYBOARD without also closing
+  // the card and discarding what was typed. Keyboard.dismiss() alone gives us
+  // no way to tell the two situations apart.
+  const [keyboardOpen, setKeyboardOpen] = React.useState(false)
+  React.useEffect(() => {
+    // iOS reports Will*, Android only Did* — subscribe to both so this works
+    // on either without a Platform branch.
+    const subs = [
+      Keyboard.addListener('keyboardWillShow', () => setKeyboardOpen(true)),
+      Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true)),
+      Keyboard.addListener('keyboardWillHide', () => setKeyboardOpen(false)),
+      Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false)),
+    ]
+    return () => { subs.forEach((sub) => sub.remove()) }
+  }, [])
   const isNew = editing !== null && !editing.habitId
 
-  const openAdd = React.useCallback(() => setEditing({ ...EMPTY_DRAFT }), [])
+  const openAdd = React.useCallback(() => {
+    setShowTimePicker(false)
+    setEditing({ ...EMPTY_DRAFT })
+  }, [])
   const openEdit = React.useCallback((h: PlanHabit) => {
+    setShowTimePicker(false)
     setEditing({
       habitId: h.habitId,
       label: h.label,
@@ -136,7 +174,10 @@ export default function HabitsScreen(): React.JSX.Element {
     })
   }, [])
 
-  const closeEdit = React.useCallback(() => setEditing(null), [])
+  const closeEdit = React.useCallback(() => {
+    setShowTimePicker(false)
+    setEditing(null)
+  }, [])
 
   const submitEdit = React.useCallback(async () => {
     if (!editing || !editing.label.trim()) return
@@ -376,8 +417,27 @@ export default function HabitsScreen(): React.JSX.Element {
 
       {/* Overlay editor */}
       {editing && (
-        <View style={styles.modalScrim}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card as string }]}>
+        /* Ken 2026-08-14: "when i try to add routine and within input field and
+           try to click outside of input field then keyboard is not moving
+           away". The scrim was an inert View, so there was nothing to tap.
+
+           One tap dismisses the KEYBOARD; a second closes the card. Doing both
+           at once would throw away what the patient just typed the moment they
+           tried to get the keyboard out of the way — which is the actual
+           complaint, not a request to close the form. */
+        <Pressable
+          style={styles.modalScrim}
+          accessibilityLabel="Close"
+          onPress={() => {
+            if (keyboardOpen) { Keyboard.dismiss(); return }
+            closeEdit()
+          }}
+        >
+          {/* Swallows taps so pressing inside the card never closes it. */}
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card as string }]}
+            onPress={() => { /* absorb */ }}
+          >
             <Text
               style={{
                 color: colors.text,
@@ -387,6 +447,15 @@ export default function HabitsScreen(): React.JSX.Element {
             >
               {isNew ? 'New routine' : 'Edit routine'}
             </Text>
+
+            {/* Body scrolls; the actions below do NOT, so Save stays reachable
+                however large the text is set. keyboardShouldPersistTaps keeps
+                the first tap on a control working while the keyboard is up
+                instead of being eaten by the dismiss. */}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
 
             <Text style={styles.label}>Label</Text>
             <TextInput
@@ -413,29 +482,88 @@ export default function HabitsScreen(): React.JSX.Element {
                 answer — "stretch sometime today" is a legitimate routine — so
                 the hint says so instead of treating blank as an error. */}
             <Text style={styles.label}>Time of day</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.subtext as string }]}
-              value={editing.scheduledTime ?? ''}
-              placeholder="e.g. 07:00 — leave blank for anytime"
-              placeholderTextColor={colors.subtext as string}
-              onChangeText={(v) =>
-                setEditing((e) => (e ? { ...e, scheduledTime: v.trim() } : e))
+            {/* Ken 2026-08-14: "very difficult to add time manually like 08:30
+                — can we use some meters for selection". Typing HH:MM on a
+                numeric keypad is a poor ask of anyone, and worse for this
+                cohort: a half-typed "8:3" is invalid, the keypad covered the
+                Save button, and tapping away did not dismiss it.
+
+                A wheel removes all three problems at once — there is no
+                keyboard to trap, and every value it can produce is already
+                valid, so the format hint and its error state are gone too.
+                Same picker the calendar event editor already uses. */}
+            <Pressable
+              onPress={() => { setShowTimePicker((v) => !v) }}
+              style={[styles.timeField, { borderColor: colors.subtext as string }]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                editing.scheduledTime
+                  ? `Time of day, ${editing.scheduledTime}. Tap to change.`
+                  : 'Time of day, anytime. Tap to choose a time.'
               }
-              keyboardType="numbers-and-punctuation"
-              maxLength={5}
-              accessibilityLabel="Time of day, 24 hour, hours colon minutes"
-            />
+            >
+              <MaterialIcons
+                name="schedule"
+                size={getScaledFontSize(18)}
+                color={colors.subtext as string}
+              />
+              <Text
+                style={{
+                  flex: 1,
+                  marginLeft: 10,
+                  color: editing.scheduledTime ? colors.text : (colors.subtext as string),
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(editing.scheduledTime ? 600 : 400) as any,
+                }}
+              >
+                {editing.scheduledTime ? editing.scheduledTime : 'Anytime'}
+              </Text>
+              {editing.scheduledTime ? (
+                <Pressable
+                  onPress={() => {
+                    setShowTimePicker(false)
+                    setEditing((e) => (e ? { ...e, scheduledTime: '' } : e))
+                  }}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear the time, make this anytime"
+                >
+                  <MaterialIcons
+                    name="close"
+                    size={getScaledFontSize(20)}
+                    color={colors.subtext as string}
+                  />
+                </Pressable>
+              ) : null}
+            </Pressable>
+
+            {showTimePicker ? (
+              <DateTimePicker
+                value={parseHHMM(editing.scheduledTime)}
+                mode="time"
+                // Spinner on iOS: it is the wheel Ken asked for, and it stays
+                // inline rather than covering the Save button the way the
+                // keypad did.
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, d) => {
+                  if (Platform.OS === 'android') setShowTimePicker(false)
+                  if (!d) return
+                  const hh = String(d.getHours()).padStart(2, '0')
+                  const mm = String(d.getMinutes()).padStart(2, '0')
+                  setEditing((e) => (e ? { ...e, scheduledTime: `${hh}:${mm}` } : e))
+                }}
+              />
+            ) : null}
+
             <Text
               style={{
                 color: colors.subtext as string,
                 fontSize: getScaledFontSize(12),
-                marginTop: -6,
-                marginBottom: 10,
+                marginTop: 6,
+                marginBottom: 12,
               }}
             >
-              {editing.scheduledTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(editing.scheduledTime.trim())
-                ? 'Use 24-hour time, like 07:00 or 18:30.'
-                : 'Appears at this hour on Today\u2019s Schedule. Blank means anytime.'}
+              Appears at this hour on Today\u2019s Schedule. Anytime means no set hour.
             </Text>
 
             {/* SCRUM-666 r2 \u2014 a time and a reminder are different questions.
@@ -556,6 +684,8 @@ export default function HabitsScreen(): React.JSX.Element {
               />
             </View>
 
+            </ScrollView>
+
             <View style={styles.modalActions}>
               <Pressable
                 onPress={closeEdit}
@@ -578,8 +708,8 @@ export default function HabitsScreen(): React.JSX.Element {
                 </Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       )}
     </AppWrapper>
   )
@@ -651,14 +781,36 @@ const styles = StyleSheet.create({
     maxWidth: 480,
     borderRadius: 16,
     padding: 18,
+    // Ken 2026-08-14, with Bold Text + a large text size on: the card grew
+    // past the screen and the Save button went with it. Cap it and let the
+    // body scroll; the actions live OUTSIDE that scroll so they are always
+    // reachable no matter how large the text is set.
+    maxHeight: '88%',
   },
-  label: { color: '#687076', fontSize: 12, fontWeight: '600', marginTop: 12, marginBottom: 6, letterSpacing: 0.3 },
+  // marginTop 12 -> 16: at large accessibility sizes the previous gap let a
+  // hint line sit flush against the field above it (Ken 2026-08-14).
+  label: { color: '#687076', fontSize: 12, fontWeight: '600', marginTop: 16, marginBottom: 6, letterSpacing: 0.3 },
   input: {
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+    // The OS scales this text; without a floor the box does not grow with it
+    // and large type clips against the border.
+    minHeight: 44,
+  },
+  // Tappable time field — replaces the numeric TextInput (Ken 2026-08-14).
+  // Row layout so the value and the clear affordance sit on one line, with the
+  // same 44pt floor as every other tap target on this screen.
+  timeField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 48,
   },
   // SCRUM-666 r2 — reminder toggle. minHeight 44 keeps it on the app's tap
   // target floor; the whole row is pressable, not just the switch glyph.

@@ -184,8 +184,42 @@ test('a routine can be given a time from the routines screen', () => {
   // the field; nothing could SET it.
   const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
   assert.match(HABITS, /Time of day/);
-  assert.match(HABITS, /scheduledTime: v\.trim\(\)/);
+  // 2026-08-14 — set by a WHEEL, not typed. Ken: "very difficult to add time
+  // manually like 08:30 — can we use some meters for selection". The picker
+  // also removed the keyboard that was trapping people in this form.
+  assert.match(HABITS, /<DateTimePicker/);
+  assert.match(HABITS, /mode="time"/);
   assert.match(HABITS, /payload\.scheduledTime = time/);
+});
+
+test('the time picker cannot produce an invalid time', () => {
+  // The old numeric field could hold a half-typed "8:3", which is why there
+  // was a format hint and an error state. A wheel only emits real times, so
+  // the value is zero-padded straight from the Date and both are gone.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  assert.match(HABITS, /String\(d\.getHours\(\)\)\.padStart\(2, '0'\)/);
+  assert.match(HABITS, /String\(d\.getMinutes\(\)\)\.padStart\(2, '0'\)/);
+});
+
+test('a backdrop tap dismisses the KEYBOARD before it closes the card', () => {
+  // Ken 2026-08-14: "try to click outside of input field then keyboard is not
+  // moving away". Closing outright on the first tap would discard what the
+  // patient just typed, which is not what they were asking for.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  const code = codeOnly(HABITS);
+  assert.match(code, /if \(keyboardOpen\) \{ Keyboard\.dismiss\(\); return \}/);
+});
+
+test('the actions row sits OUTSIDE the scroll, so Save is always reachable', () => {
+  // With Bold Text and a large text size the card outgrew the screen and took
+  // the Save button with it.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  const code = codeOnly(HABITS);
+  const closeScroll = code.indexOf('</ScrollView>');
+  const actions = code.indexOf('styles.modalActions');
+  assert.ok(closeScroll > -1 && actions > closeScroll, 'actions must follow </ScrollView>');
+  assert.match(code, /keyboardShouldPersistTaps="handled"/);
+  assert.match(code, /maxHeight: '88%'/);
 });
 
 test('an existing time is prefilled when editing', () => {
