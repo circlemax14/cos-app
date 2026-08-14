@@ -35,7 +35,8 @@ import { router } from 'expo-router'
 
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
-import { useScoreCatalog, scoreToBand } from '@/hooks/use-score-catalog'
+import { useScoreCatalog } from '@/hooks/use-score-catalog'
+import { pickWellbeingDisplayScore } from '@/lib/wellbeing-display-score'
 // Ken 2026-08-06 (Wellbeing V2 Phase 2) — trend arrow. Pulls the
 // composite trend directly from the shared derivation hook so this
 // tile and the BPS card render the identical arrow/delta.
@@ -61,29 +62,12 @@ import {
  * Returns undefined only when every row is empty — the tile then
  * renders its empty state.
  */
-function pickDisplayScore(catalog: ReturnType<typeof useScoreCatalog>): {
-  score: number | undefined
-  band: ReturnType<typeof scoreToBand>
-} {
-  if (typeof catalog.composite === 'number' && Number.isFinite(catalog.composite)) {
-    return { score: catalog.composite, band: catalog.compositeBand }
-  }
-  const numericRows = catalog.rows.filter(
-    (r): r is typeof r & { score: number } =>
-      typeof r.score === 'number' && Number.isFinite(r.score),
-  )
-  if (numericRows.length > 0) {
-    const mean = Math.round(
-      numericRows.reduce((acc, r) => acc + r.score, 0) / numericRows.length,
-    )
-    return { score: mean, band: scoreToBand(mean) }
-  }
-  return { score: undefined, band: undefined }
-}
+// Moved to lib/wellbeing-display-score.ts (SCRUM-676) so the new Home
+// scores row cannot drift from this tile's number.
 
 function WellbeingScoreTileBase(): React.JSX.Element {
   const catalog = useScoreCatalog()
-  const { score, band } = pickDisplayScore(catalog)
+  const { score, band } = pickWellbeingDisplayScore(catalog)
   const isEmpty = typeof score !== 'number'
 
   // Ken 2026-08-06 — trend arrow reads the shared derivation directly

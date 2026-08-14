@@ -40,6 +40,8 @@ import { useHealthAge } from '@/hooks/use-health-age'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
 import { useDailyRead } from '@/hooks/use-daily-read'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
+import { useScoreCatalog } from '@/hooks/use-score-catalog'
+import { pickWellbeingDisplayScore } from '@/lib/wellbeing-display-score'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
 
@@ -56,6 +58,12 @@ const HEALTH_AGE_BANDS: Record<string, { fg: string; bg: string; label: string }
   younger:    { fg: '#0F6B36', bg: '#E6F4EC', label: 'YOUNGER' },
   'on-track': { fg: '#0B6963', bg: '#E0F2F1', label: 'ON TRACK' },
   older:      { fg: '#8A5100', bg: '#FDF3E4', label: 'OLDER' },
+}
+const WELLBEING_BANDS: Record<string, { fg: string; bg: string; label: string }> = {
+  optimal:      { fg: '#0F6B36', bg: '#E6F4EC', label: 'OPTIMAL' },
+  developing:   { fg: '#0B6963', bg: '#E0F2F1', label: 'DEVELOPING' },
+  foundational: { fg: '#8A5100', bg: '#FDF3E4', label: 'FOUNDATIONAL' },
+  initial:      { fg: '#5A6270', bg: '#EEF0F2', label: 'INITIAL' },
 }
 const DAILY_READ_TONES: Record<string, { fg: string; bg: string; label: string }> = {
   positive:  { fg: '#0F6B36', bg: '#E6F4EC', label: 'POSITIVE' },
@@ -82,6 +90,9 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   const healthAgePerm = useIsFeatureEnabled('HEALTH_AGE')
   const dailyReadPerm = useIsFeatureEnabled('DAILY_READ')
 
+  // Still computed so the two-layer gate stays visible in one place, and so
+  // restoring the tile to the row is a one-line change (SCRUM-676).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const readinessEnabled = readinessFlag && readinessPerm
   const healthAgeEnabled = healthAgeFlag && healthAgePerm
   const dailyReadEnabled = dailyReadFlag && dailyReadPerm
@@ -90,18 +101,34 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   // Daily Read wellbeing pillar has data to read.
   useWellbeingScoreWarmer(dailyReadEnabled)
 
-  const enabledCount =
-    (readinessEnabled ? 1 : 0) + (healthAgeEnabled ? 1 : 0) + (dailyReadEnabled ? 1 : 0)
-
-  if (enabledCount === 0) return null
+  /**
+   * Ken 2026-08-14: "we should have only 2 scores, wellbeing score and health
+   * age, and in home screen we should have these at top and remove other."
+   *
+   * So this row is now the TWO SCORES. Readiness and Daily Read no longer sit
+   * in it.
+   *
+   * Neither is deleted:
+   *   - Readiness is gated OFF fleet-wide already (readiness_score_enabled),
+   *     so it costs nothing to leave the tile in the file, and re-adding it is
+   *     one line if Ken changes his mind.
+   *   - Daily Read is NOT a score — it is a content card — so it moves to its
+   *     own slot on Home rather than disappearing. Ken asked to remove other
+   *     SCORES; dropping a daily content card on that basis would be reading
+   *     more into the ask than it says.
+   *
+   * Wellbeing has no dark-launch flag of its own: it reads useScoreCatalog,
+   * which is already live everywhere, and the tile renders its own empty
+   * state. So it is gated on having something to say rather than on a flag.
+   */
+  const enabledCount = 1 + (healthAgeEnabled ? 1 : 0);
 
   const variant: Variant = enabledCount === 1 ? 'large' : 'compact'
 
   return (
     <View style={variant === 'large' ? styles.singleColumn : styles.row}>
-      {readinessEnabled && <ReadinessTile variant={variant} />}
+      <WellbeingTile variant={variant} />
       {healthAgeEnabled && <HealthAgeTile variant={variant} />}
-      {dailyReadEnabled && <DailyReadTile variant={variant} />}
     </View>
   )
 }
@@ -111,6 +138,8 @@ HeroInsightsRow.displayName = 'HeroInsightsRow'
 export default HeroInsightsRow
 
 // ─── Readiness tile ──────────────────────────────────────────────────
+// Kept deliberately after SCRUM-676 removed it from the row: readiness_score_enabled is OFF fleet-wide, so this costs nothing to keep and re-adding the tile to the row is one line.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ReadinessTile({ variant }: { variant: Variant }): React.JSX.Element {
   const flag = useReadinessScoreFlag()
   const readiness = useReadinessDerivation(flag)
@@ -142,6 +171,43 @@ function ReadinessTile({ variant }: { variant: Variant }): React.JSX.Element {
                 ? 'Connect Apple Health so we can compute HRV, sleep, and heart-rate readings for your daily readiness score.'
                 : 'Waiting for HRV / sleep'
             }
+            variant={variant}
+          />
+        )
+      }
+    />
+  )
+}
+
+// ─── Wellbeing tile ──────────────────────────────────────────────────
+/**
+ * Reads the SAME aggregator as WellbeingScoreTile (useScoreCatalog), so the
+ * number here and the one on the wellbeing row can never disagree — a patient
+ * seeing two different wellbeing scores on one screen would rightly distrust
+ * both.
+ */
+function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
+  const catalog = useScoreCatalog()
+  const { score: composite, band } = pickWellbeingDisplayScore(catalog)
+  const hasScore = typeof composite === 'number' && Number.isFinite(composite)
+  const bandTokens = band ? WELLBEING_BANDS[band] : null
+
+  return (
+    <Tile
+      variant={variant}
+      label="Wellbeing"
+      onPress={() => router.push('/Home/wellbeing-score' as never)}
+      accessibilityLabel={
+        hasScore
+          ? `Wellbeing score ${Math.round(composite as number)}${bandTokens ? ', ' + bandTokens.label : ''}`
+          : 'Wellbeing score not available yet'
+      }
+      body={
+        hasScore ? (
+          <Ready number={Math.round(composite as number)} chip={bandTokens} variant={variant} />
+        ) : (
+          <Empty
+            hint={variant === 'large' ? 'Complete a check-in to see your wellbeing score.' : 'Take a check-in'}
             variant={variant}
           />
         )
@@ -187,6 +253,8 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
 }
 
 // ─── Daily Read tile ─────────────────────────────────────────────────
+// Kept deliberately after SCRUM-676 removed it from the row: Daily Read moved to its own card on Home; this compact variant is kept so it can be put back in the row without rewriting it.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function DailyReadTile({ variant }: { variant: Variant }): React.JSX.Element {
   const flag = useDailyReadFlag()
   const { data, isError } = useDailyRead(flag)
