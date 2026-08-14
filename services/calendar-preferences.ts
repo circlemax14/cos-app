@@ -27,7 +27,17 @@ export interface CalendarPreferences {
   showHolidays: boolean
   /** Whether to surface iOS Reminders alongside calendar events. */
   showReminders: boolean
-  /** Time zone override — if set, render all event times in this TZ. */
+  /**
+   * DEPRECATED 2026-08-14 — never honoured, and the control that set it has
+   * been removed.
+   *
+   * Its contract read "if set, render all event times in this TZ". Nothing
+   * ever read it: the only references were the settings row, the picker and
+   * this declaration. Kept on the type so existing AsyncStorage rows still
+   * parse rather than being dropped on read; delete once no stored prefs
+   * carry it. Do NOT wire a renderer to this without threading a zone through
+   * every time formatter in the app — that is a feature, not a repair.
+   */
   timeZoneOverride: string | null
   /** Last-used per-field state in the editor (so re-creates feel smart). */
   lastUsedTimeZone: string | null

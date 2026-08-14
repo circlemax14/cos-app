@@ -30,7 +30,6 @@ import {
 } from '@/services/calendar-preferences'
 import {
   SelectionPicker,
-  TimeZonePicker,
   type SelectionOption,
 } from '@/components/calendar/pickers'
 import { hapticSelection } from '@/utils/haptics'
@@ -151,7 +150,6 @@ export default function CalendarSettingsScreen() {
   // Picker visibility
   const [showStartWeekPicker, setShowStartWeekPicker] = useState(false)
   const [showDefaultCalPicker, setShowDefaultCalPicker] = useState(false)
-  const [showTzPicker, setShowTzPicker] = useState(false)
 
   // Group by source ("iCloud", "Google", "Outlook", "Local", ...) so the
   // list reads like Apple's Settings → Calendar → Accounts view.
@@ -331,19 +329,15 @@ export default function CalendarSettingsScreen() {
               </Pressable>
 
               {/* I11: Time Zone Override */}
-              <Pressable
-                onPress={() => { hapticSelection(); setShowTzPicker(true) }}
-                style={[styles.prefRow, { borderBottomColor: colors.border }]}
-                accessibilityRole="button"
-                accessibilityLabel="Choose time zone override"
-              >
-                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '500', flex: 1 }}>
-                  Time Zone Override
-                </Text>
-                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
-                  {prefs.timeZoneOverride ? prefs.timeZoneOverride.replace(/_/g, ' ') : 'Device'} ›
-                </Text>
-              </Pressable>
+              {/* 2026-08-14 — "Time Zone Override" REMOVED.
+                  Its declared contract was "if set, render all event times in
+                  this TZ". Nothing read it: the only three references were
+                  this row, the picker, and the type. A traveller could set it
+                  and every time on every screen stayed in device local.
+                  Honouring it properly means threading a zone through every
+                  time formatter in the app — a real feature, not a bug fix —
+                  so the dead control is gone rather than left promising
+                  something. Same call as the three digest switches. */}
 
               {/* I9: Default Alert Times */}
               <View style={[styles.prefRow, { borderBottomColor: 'transparent', paddingTop: 12, paddingBottom: 16, flexWrap: 'wrap', alignItems: 'flex-start' }]}>
@@ -511,12 +505,6 @@ export default function CalendarSettingsScreen() {
           selectedValue={prefs?.defaultCalendarId ?? ''}
           onSelect={(v) => void updatePref({ defaultCalendarId: v })}
           onClose={() => setShowDefaultCalPicker(false)}
-        />
-        <TimeZonePicker
-          visible={showTzPicker}
-          selectedZone={prefs?.timeZoneOverride ?? ''}
-          onSelect={(v) => void updatePref({ timeZoneOverride: v || null })}
-          onClose={() => setShowTzPicker(false)}
         />
       </CalendarPermissionGate>
     </AppWrapper>
