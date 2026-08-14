@@ -90,6 +90,7 @@ import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
 // inside the existing legacy render tree so we can dark-launch each block
 // without cutting over the whole screen.
 import { useHomeV2InjectionsEnabled } from '@/hooks/use-home-v2-injections-flag';
+import { useTodayWindow } from '@/hooks/use-local-day';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2982,13 +2983,11 @@ export default function HomeScreen() {
   // added appointments, health-plan tasks, device events, and
   // reminders — not just FHIR appointments. Narrow window to keep
   // home-screen network cost bounded.
-  const todayWindow = useMemo(() => {
-    const start = new Date()
-    start.setHours(0, 0, 0, 0)
-    const end = new Date()
-    end.setHours(23, 59, 59, 999)
-    return { start, end }
-  }, [])
+  // Refreshed across midnight and on foreground. Home is a long-lived tab
+  // that does NOT remount on resume, so the previous useMemo(..., []) meant a
+  // phone left on this screen overnight woke showing yesterday's day window.
+  // See hooks/use-local-day.ts.
+  const todayWindow = useTodayWindow()
   const calendar = useCalendar({
     windowStart: todayWindow.start,
     windowEnd: todayWindow.end,
