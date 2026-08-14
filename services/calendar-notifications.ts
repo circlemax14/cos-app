@@ -187,12 +187,35 @@ function formatBody(event: CalendarEvent, minutesBefore: number): string {
 }
 
 /**
- * Cancel every notification we scheduled — calendar OR test ones.
- * "App-tagged" = any notification whose data.tag starts with "csh-".
- * Broader than the prior csh-calendar-v1-only sweep, because Ken's
- * build-30 testing accumulated 64 entries that included stale
- * csh-test schedules from the diagnostic button — those weren't
- * being reclaimed and contributed to the cap.
+ * Tags this module is allowed to cancel.
+ *
+ * 2026-08-14 — this used to cancel ANY tag starting with `csh-`, which was
+ * deliberate (build 30: stale `csh-test` schedules from the diagnostic button
+ * were never reclaimed and ate into the shared 64-notification cap) and had a
+ * consequence nobody noticed: `csh-plan-task-v1` and `csh-vitals-recheck-v1`
+ * start with `csh-` too.
+ *
+ * So every mount of the Appointments screen silently deleted the patient's
+ * plan-task reminders AND their vitals-recheck alerts. The vitals loss is
+ * permanent for the day: the per-day dedupe key is written after a successful
+ * schedule and is NOT cleared by a cancel, so the next reconcile sees
+ * "already scheduled today" and never re-creates it. A red blood-pressure
+ * reading could schedule its recheck ping and then lose it because the patient
+ * opened a different screen.
+ *
+ * plan-task-notifications.ts and vitals-recheck-notifications.ts both cancel
+ * by their OWN exact tag; this is the one that reached across. Keep the
+ * build-30 intent — reclaim our own strays — without touching theirs.
+ */
+const OWNED_TAG_PREFIXES = ['csh-calendar', 'csh-test'] as const
+
+function ownsTag(tag: string): boolean {
+  return OWNED_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix))
+}
+
+/**
+ * Cancel every notification THIS module scheduled — calendar plus the
+ * diagnostic test ones. Never plan-task or vitals-recheck.
  */
 async function cancelAllAppScheduled(): Promise<void> {
   let scheduled: Notifications.NotificationRequest[] = []
@@ -203,7 +226,7 @@ async function cancelAllAppScheduled(): Promise<void> {
   }
   for (const req of scheduled) {
     const tag = (req.content.data as { tag?: string } | null)?.tag ?? ''
-    if (!tag.startsWith('csh-')) continue
+    if (!ownsTag(tag)) continue
     try {
       await Notifications.cancelScheduledNotificationAsync(req.identifier)
     } catch {

@@ -134,6 +134,7 @@ import { detectMetricForTask, type MetricInputSpec } from '@/services/smart-task
 import { getPhotoDownloadUrl } from '@/services/user-photo';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { todayLocalIso } from '@/lib/day-key';
+import { useTodayWindow } from '@/hooks/use-local-day';
 
 // ─── Small pure helpers ──────────────────────────────────────────────
 
@@ -215,13 +216,11 @@ export default function TodayScheduleScreen(): React.JSX.Element {
   const today = todayISO();
 
   // ── Calendar window: local midnight → local end of day ────────────
-  const todayWindow = useMemo(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
-  }, []);
+  // Refreshed across midnight and on foreground. This used to be
+  // useMemo(..., []) — evaluated once on mount — so a screen left open
+  // overnight kept YESTERDAY's window with nothing to indicate it was stale.
+  // See hooks/use-local-day.ts.
+  const todayWindow = useTodayWindow();
 
   // ── Appointments (backend) → virtual calendar events ──────────────
   // Passing them through useCalendar rather than rendering them from a

@@ -158,3 +158,56 @@ test('both come from ONE `now`, not two clock reads', () => {
   assert.match(body, /const now = new Date\(\)/);
   assert.equal((body.match(/new Date\(\)/g) ?? []).length, 1, 'exactly one clock read');
 });
+
+// ── The day window no longer goes stale overnight (2026-08-14) ────────
+
+test('the day window refreshes; it is not useMemo(..., [])', () => {
+  // Home is a long-lived tab that does NOT remount on resume, so a phone left
+  // on it overnight woke showing YESTERDAY's window — yesterday's events,
+  // task list and adherence — with nothing to indicate staleness. Latent while
+  // "today" was UTC; reachable once the day keys were fixed.
+  for (const path of ['app/Home/index.tsx', 'app/Home/today-schedule.tsx']) {
+    const f = FILES.find((x) => x.path === path);
+    assert.ok(f, `${path} must exist`);
+    assert.match(f.src, /useTodayWindow\(\)/, `${path} must use the refreshing window`);
+    assert.doesNotMatch(
+      stripComments(f.src),
+      /const todayWindow = useMemo\(/,
+      `${path} must not compute its day window once on mount`,
+    );
+  }
+});
+
+test('the window updates on BOTH midnight and foreground', () => {
+  // Neither alone is sufficient: AppState never fires for an app left awake
+  // across midnight, and a timer set before the device slept has an untrusted
+  // deadline afterwards.
+  const f = FILES.find((x) => x.path === 'hooks/use-local-day.ts');
+  assert.ok(f);
+  const code = stripComments(f.src);
+  assert.match(code, /AppState\.addEventListener\('change'/);
+  assert.match(code, /msUntilLocalMidnight/);
+  assert.match(code, /armMidnightTimer\(\)/);
+});
+
+test('the midnight timer RE-ARMS, or it only ever fires once', () => {
+  // A single setTimeout would leave an app open for two days stale again.
+  const f = FILES.find((x) => x.path === 'hooks/use-local-day.ts');
+  const code = stripComments(f.src);
+  const fn = code.slice(code.indexOf('const armMidnightTimer'));
+  assert.match(fn.slice(0, 400), /armMidnightTimer\(\)/, 'must schedule itself again');
+});
+
+test('the window is memoised on the day key, not rebuilt per render', () => {
+  // useCalendar takes these Dates as dependencies — fresh objects every render
+  // would re-run the whole calendar fetch every render.
+  const f = FILES.find((x) => x.path === 'hooks/use-local-day.ts');
+  assert.match(stripComments(f.src), /return useMemo\(\(\) => \{[\s\S]*?\}, \[dayKey\]\)/);
+});
+
+test('the timer and listener are cleaned up', () => {
+  const f = FILES.find((x) => x.path === 'hooks/use-local-day.ts');
+  const code = stripComments(f.src);
+  assert.match(code, /sub\.remove\(\)/);
+  assert.match(code, /clearTimeout\(timer\)/);
+});

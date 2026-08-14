@@ -102,7 +102,7 @@ async function isGranted(): Promise<boolean> {
  * Tag-scoped on purpose: plan-task and calendar reminders live in the same iOS
  * queue and must not be touched.
  */
-async function cancelAllVitalsScheduled(): Promise<void> {
+export async function cancelAllVitalsScheduled(): Promise<void> {
   let scheduled: Notifications.NotificationRequest[] = [];
   try {
     scheduled = await Notifications.getAllScheduledNotificationsAsync();

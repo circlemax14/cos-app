@@ -150,3 +150,59 @@ test('the category exists on every surface, or the type system lied', () => {
   assert.match(read('lib/notification-categories.ts'), /healthAlerts: true/);
   assert.match(read('app/Home/reminder-settings.tsx'), /title: 'Health alerts'/);
 });
+
+// ── Schedulers no longer cancel each other's work (2026-08-14) ───────
+
+test('the calendar reconcile cancels ONLY its own tags', () => {
+  // It used to cancel any tag starting with `csh-`, which was deliberate
+  // (build 30: stale csh-test schedules ate the 64-notification cap) and had
+  // a consequence nobody noticed: csh-plan-task-v1 and csh-vitals-recheck-v1
+  // start with `csh-` too. Every mount of the Appointments screen silently
+  // deleted the patient's plan-task reminders AND their vitals alerts.
+  const CAL = read('services/calendar-notifications.ts');
+  const code = codeOnly(CAL);
+  assert.match(code, /OWNED_TAG_PREFIXES = \['csh-calendar', 'csh-test'\]/);
+  assert.match(code, /if \(!ownsTag\(tag\)\) continue/);
+  // Scoped to the AUTOMATIC reconcile only. clearAllAppNotifications keeps the
+  // broad `csh-` match on purpose: it is a user-tapped "reset stuck queues"
+  // diagnostic in calendar-settings, where wiping everything is the point.
+  // The bug was an automatic path doing it silently on every screen mount.
+  const auto = code.slice(
+    code.indexOf('async function cancelAllAppScheduled'),
+    code.indexOf('export async function clearAllAppNotifications'),
+  );
+  assert.ok(auto.length > 0, 'cancelAllAppScheduled must precede the manual wipe');
+  assert.doesNotMatch(
+    auto,
+    /startsWith\('csh-'\)/,
+    'the automatic reconcile must not reach into the other schedulers',
+  );
+});
+
+test('the MANUAL reset button may still wipe everything', () => {
+  // Deliberate, and worth pinning so nobody "fixes" it into uselessness: the
+  // patient taps it precisely because the queue is stuck.
+  const CAL = read('services/calendar-notifications.ts');
+  const manual = codeOnly(CAL).slice(codeOnly(CAL).indexOf('export async function clearAllAppNotifications'));
+  assert.match(manual, /startsWith\('csh-'\)/);
+});
+
+test('the owned prefixes cannot match the other schedulers', () => {
+  // Executable rather than asserted in a comment: prove the real tags are
+  // excluded, so renaming a prefix cannot silently re-break this.
+  const OWNED = ['csh-calendar', 'csh-test'];
+  const owns = (t) => OWNED.some((p) => t.startsWith(p));
+  assert.equal(owns('csh-calendar-v1'), true);
+  assert.equal(owns('csh-test-diagnostic'), true);
+  assert.equal(owns('csh-plan-task-v1'), false, 'must not cancel plan tasks');
+  assert.equal(owns('csh-vitals-recheck-v1'), false, 'must not cancel vitals alerts');
+});
+
+test('turning Health alerts off cancels the vitals queue from the TOGGLE', () => {
+  // The 2026-08-12 fix routed this only through use-vitals-red-flag-
+  // notifications, which sits behind two early returns and is mounted on one
+  // screen — so the cancel never ran if Apple Health was off.
+  const code = codeOnly(HOOK);
+  assert.match(code, /updated\.preferences\.healthAlerts === false/);
+  assert.match(code, /cancelAllVitalsScheduled\(\)/);
+});

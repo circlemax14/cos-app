@@ -26,6 +26,7 @@ import { buildCategoryGateFromPrefs } from '@/services/notification-category-gat
 import { reconcilePlanTaskNotifications } from '@/services/plan-task-notifications';
 import type { TaskOccurrence } from '@/services/api/types';
 import { todayLocalIso } from '@/lib/day-key';
+import { cancelAllVitalsScheduled } from '@/services/vitals-recheck-notifications';
 
 const NOTIFICATION_CATEGORIES_KEY = ['notification-categories'] as const;
 
@@ -95,6 +96,22 @@ export function useUpdateNotificationCategories() {
       const cached = qc.getQueryData<TaskOccurrence[]>(['plan-tasks', todayIso]);
       const gate = buildCategoryGateFromPrefs(updated.flagEnabled, updated.preferences);
       void reconcilePlanTaskNotifications(cached ?? [], gate).catch(() => { /* non-fatal */ });
+
+      // 2026-08-14 — cancel the VITALS queue here too.
+      //
+      // The 2026-08-12 fix made vitals-recheck honour `healthAlerts`, but only
+      // via use-vitals-red-flag-notifications, which sits behind two early
+      // returns (`if (disabled) return; if (!trends?.length) return;`) and is
+      // mounted on exactly one screen. So a patient who switched Health alerts
+      // off kept receiving recheck pings for the full cooldown unless they
+      // happened to open the Plan screen with non-empty HealthKit trends — and
+      // never at all if Apple Health was off.
+      //
+      // Cancelling straight from the toggle is the same unconditional
+      // treatment plan-task notifications already get above.
+      if (updated.preferences.healthAlerts === false) {
+        void cancelAllVitalsScheduled().catch(() => { /* non-fatal */ });
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: NOTIFICATION_CATEGORIES_KEY });
