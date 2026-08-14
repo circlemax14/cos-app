@@ -28,7 +28,7 @@
  */
 
 import React from 'react'
-import { View, Text, Pressable, StyleSheet } from 'react-native'
+import { View, Text, Pressable, StyleSheet, PixelRatio } from 'react-native'
 import { MaterialIcons } from '@expo/vector-icons'
 
 import type { Timeline, TimelineItem, TimelineKind } from '@/lib/today-timeline'
@@ -71,8 +71,20 @@ const KIND: Record<TimelineKind, { color: string; icon: keyof typeof MaterialIco
  * at one.
  */
 function glyphGeometry(sz: (n: number) => number) {
-  const size = sz(17)
-  const lineHeight = sz(19) // must match the title's lineHeight below
+  // PixelRatio.getFontScale() is the missing half, and without it the previous
+  // fix could not work.
+  //
+  // getScaledFontSize DAMPS the OS scale on phones — effectiveFontScale caps
+  // at 1.05 — deliberately, to stop layouts blowing up. But React Native then
+  // applies the FULL iOS Dynamic Type scale to every <Text> on top of that,
+  // because allowFontScaling defaults to true. A View gets no such treatment.
+  //
+  // So with large text the title renders at roughly sz(14) x 2 while a glyph
+  // sized sz(17) does not move at all. Scaling the box by the same OS factor
+  // the text is actually being rendered at is what makes them track.
+  const fontScale = PixelRatio.getFontScale()
+  const size = sz(17) * fontScale
+  const lineHeight = sz(19) * fontScale // must match the title's lineHeight below
   return {
     size,
     style: {
@@ -212,7 +224,11 @@ function Row({
           style={{
             color: item.done ? colors.subtext : colors.text,
             fontSize: sz(14),
-            lineHeight: sz(19),
+            // Scaled by the same factor as the glyph geometry above: RN grows
+            // the FONT with Dynamic Type but leaves an explicit lineHeight
+            // alone, which both clips tall text and makes the glyph centre on
+            // a height the text no longer occupies.
+            lineHeight: sz(19) * PixelRatio.getFontScale(),
             ...(item.done ? { textDecorationLine: 'line-through' as const } : {}),
           }}
         >
@@ -236,7 +252,7 @@ function Row({
           size={sz(13)}
           color={colors.subtext}
           accessibilityLabel="You'll be reminded"
-          style={{ marginTop: Math.max(0, (sz(19) - sz(13)) / 2) }}
+          style={{ marginTop: Math.max(0, (sz(19) * PixelRatio.getFontScale() - sz(13)) / 2) }}
         />
       ) : null}
       {/* Ken 2026-08-14: "How does the user know that they can check off
@@ -260,7 +276,7 @@ function Row({
           name="radio-button-unchecked"
           size={sz(20)}
           color={colors.subtext}
-          style={{ marginTop: Math.max(0, (sz(19) - sz(20)) / 2) }}
+          style={{ marginTop: Math.max(0, (sz(19) * PixelRatio.getFontScale() - sz(20)) / 2) }}
         />
       ) : null}
       {item.done ? (
@@ -268,7 +284,7 @@ function Row({
           name="check-circle"
           size={sz(20)}
           color={KIND.task.color}
-          style={{ marginTop: Math.max(0, (sz(19) - sz(20)) / 2) }}
+          style={{ marginTop: Math.max(0, (sz(19) * PixelRatio.getFontScale() - sz(20)) / 2) }}
         />
       ) : null}
     </View>
@@ -335,10 +351,11 @@ export function TodayTimeline({
                   color: isNow ? colors.tint : colors.subtext,
                   fontSize: sz(12),
                   fontWeight: wt(isNow ? 800 : 700) as never,
-                  // Scales with the text: at a fixed 52 the label wrapped —
-                  // "10 am" became "10" / "am" — which pulled the whole row
-                  // out of line with its items (Ken 2026-08-14).
-                  width: sz(52),
+                  // Tracks the RENDERED text, OS Dynamic Type included — at a
+                  // fixed 52 (and even at a merely sz-scaled 52) the label
+                  // wrapped, "10 am" became "10" / "am", and the whole hour
+                  // block fell out of line with its items.
+                  width: sz(52) * PixelRatio.getFontScale(),
                   paddingTop: 2,
                 }}
               >
@@ -408,7 +425,12 @@ function NowMarker({
     <View style={styles.now} accessibilityRole="text" accessibilityLabel="Now">
       <Text
         numberOfLines={1}
-        style={{ color: colors.tint, fontSize: sz(10), fontWeight: wt(800) as never, width: sz(52) }}
+        style={{
+          color: colors.tint,
+          fontSize: sz(10),
+          fontWeight: wt(800) as never,
+          width: sz(52) * PixelRatio.getFontScale(),
+        }}
       >
         NOW
       </Text>
