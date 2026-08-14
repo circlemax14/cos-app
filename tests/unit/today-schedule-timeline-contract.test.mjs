@@ -428,6 +428,22 @@ test('the modal backdrop does not intercept the controls inside it', () => {
   );
 });
 
+test('Done sits ABOVE the wheel, or it falls off the bottom of the card', () => {
+  // Ken 2026-08-14 2nd pass: "done button is only partially visible". Below a
+  // ~216pt iOS spinner it landed past the card edge — and the spinner swallows
+  // the vertical drag that would have scrolled to it, so it was unreachable
+  // rather than merely awkward.
+  const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
+  const code = codeOnly(HABITS);
+  const block = code.slice(code.indexOf('{showTimePicker ? ('));
+  const body = block.slice(0, block.indexOf(') : null}'));
+  assert.ok(
+    body.indexOf('Done choosing the time') < body.indexOf('<DateTimePicker'),
+    'Done must render before the wheel',
+  );
+  assert.match(code, /picker: \{ height: 170 \}/, 'the wheel must be height-capped');
+});
+
 test('the time picker can be closed', () => {
   // An iOS spinner swallows vertical drags, so with it open inside a
   // ScrollView there was no way to scroll PAST it to the fields below — and
