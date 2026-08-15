@@ -90,22 +90,30 @@ function MedicationsBannerBase({
 }: MedicationsBannerProps): React.JSX.Element | null {
   const { data, isLoading } = usePlanMedications()
 
-  if (isLoading) return null
-
-  const medications = data?.medications ?? []
-  const count = medications.length
-  const isEmpty = count === 0
+  const medications = React.useMemo(() => data?.medications ?? [], [data])
 
   // Order the meds by first scheduled time so the banner's dose preview
   // reads chronologically (Morning first, then Afternoon, then Evening).
   // Skips meds with no times[] — they'd read as "as prescribed" and
   // clutter the preview without adding schedule info.
+  //
+  // ABOVE THE EARLY RETURN, and it must stay there. This useMemo used to sit
+  // after `if (isLoading) return null`, so the loading render ran fewer hooks
+  // than the loaded one and React threw "Rendered more hooks than during the
+  // previous render" the moment loading flipped. That is the same mistake that
+  // killed the whole app from IntakeCtaCard on 2026-08-15.
   const scheduledMeds = React.useMemo(() => {
     return medications
       .filter((m) => (m.times ?? []).length > 0)
       .slice()
       .sort((a, b) => firstTimeKey(a).localeCompare(firstTimeKey(b)))
   }, [medications])
+
+  // EVERY HOOK MUST BE CALLED ABOVE THIS LINE.
+  if (isLoading) return null
+
+  const count = medications.length
+  const isEmpty = count === 0
   const previewMeds = scheduledMeds.slice(0, MAX_DOSE_PREVIEW_ROWS)
   const extraCount = Math.max(0, scheduledMeds.length - previewMeds.length)
 

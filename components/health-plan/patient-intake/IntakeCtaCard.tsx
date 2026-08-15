@@ -52,24 +52,36 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
   const tint = colors.tint as string;
 
   const q = usePatientIntake();
+
+  // Ken 2026-08-05 — retake opens the section picker sheet (Demographics /
+  // Medical conditions & medications / Vaccines / Lifestyle / Mental health /
+  // Social support / Work & finances / All sections) so patients don't have to
+  // walk all 30+ questions when they only want to update one area.
+  //
+  // DECLARED BEFORE THE EARLY RETURN BELOW, and it must stay there. It used to
+  // sit further down, after `if (q.isLoading) return null` — so the loading
+  // render ran two hooks and the loaded render ran three. React threw
+  // "Rendered more hooks than during the previous render" on the transition and,
+  // with no error boundary anywhere in the app at the time, that killed the
+  // whole process. Crash report 2026-08-15, iOS 26.6, SIGABRT on
+  // expo.controller.errorRecoveryQueue.
+  //
+  // It only fired when isLoading actually flipped true → false with this card
+  // mounted, which is why it looked intermittent rather than obvious.
+  const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
+
   // Silent while loading; on error we still render the pre-intake CTA so
   // the patient always has a path forward from the Health Summary tab
   // (the tab fail-closes the summary body when intake status is unknown,
   // so returning null here would strand them).
+  //
+  // EVERY HOOK THIS COMPONENT USES MUST BE CALLED ABOVE THIS LINE.
   if (q.isLoading) return null;
 
   const intake = q.data?.intake ?? null;
   const isComplete = intake?.status === 'complete';
 
   const go = () => router.push('/Home/patient-intake' as never);
-  // Ken 2026-08-05 — retake now opens the section picker sheet
-  // (Demographics / Medical conditions & medications / Vaccines /
-  // Lifestyle / Mental health / Social support / Work & finances /
-  // All sections) so patients don't have to walk all 30+ questions
-  // when they only want to update one area. Sheet callback routes
-  // to the wizard with `?retake=1&group=X` (or omits group for the
-  // "All" path, matching legacy behavior).
-  const [retakeSheetOpen, setRetakeSheetOpen] = useState(false);
   const handleRetakePick = (group: RetakeGroupPick) => {
     setRetakeSheetOpen(false);
     const suffix = group ? `&group=${group}` : '';

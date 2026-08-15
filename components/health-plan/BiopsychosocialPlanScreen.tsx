@@ -1432,48 +1432,6 @@ export function BiopsychosocialPlanScreen({
   // Guard on `!planQuery.data` (mirrors PlanScreenV2's `(isLoading || isFetching)
   // && !data` shape) so background refetches do NOT flash the skeleton over
   // already-loaded content — the skeleton is a cold-mount surface only.
-  if ((planQuery.isLoading || planQuery.isFetching) && !planQuery.data) {
-    return (
-      <AppWrapper>
-        <ScrollView
-          style={[styles.container, { backgroundColor: 'transparent' }]}
-          contentContainerStyle={{ paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg }}
-          refreshControl={
-            // CHUNK 39 fix (adversarial-verify minor): every other BPS
-            // branch (error/no-tier/empty/loaded) attaches a RefreshControl.
-            // Skeleton branch omitted it, so a hung cold-fetch had no
-            // in-screen recovery — user had to background the app.
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        >
-          <PlanSkeleton />
-        </ScrollView>
-      </AppWrapper>
-    );
-  }
-
-  // ── Error ────────────────────────────────────────────────────────────────
-  if (planQuery.isError) {
-    return (
-      <AppWrapper>
-        <ScrollView
-          style={[styles.container, { backgroundColor: 'transparent' }]}
-          contentContainerStyle={{ flexGrow: 1 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
-        >
-          <View style={styles.center}>
-            <MaterialIcons name="error-outline" size={40} color={colors.error ?? '#DC2626'} />
-            <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
-              Couldn&apos;t load your plan
-            </Text>
-            <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-              Pull down to try again.
-            </Text>
-          </View>
-        </ScrollView>
-      </AppWrapper>
-    );
-  }
 
   const plan = planQuery.data?.plan ?? null;
   // SCRUM-660: generatedDate no longer surfaced on this screen — the
@@ -1582,6 +1540,61 @@ export function BiopsychosocialPlanScreen({
     if (cancelMutation.isPending) return;
     cancelMutation.mutate({ jobId: inFlightJobId });
   }, [cancelMutation, inFlightJobId, isGeneratingFromAnySource]);
+
+  // ── Loading / error guards ───────────────────────────────────────────────
+  //
+  // MOVED DOWN HERE from just after the query, and they must stay below every
+  // hook. They used to sit above useCurrentHour and the onRegenerate/onCancel
+  // callbacks, which meant a loading or error render ran THREE FEWER HOOKS
+  // than a loaded one. React throws "Rendered more hooks than during the
+  // previous render" the moment that flips, and with no error boundary that
+  // took the entire app down — which is exactly what IntakeCtaCard did on
+  // 2026-08-15 (iOS 26.6, SIGABRT on expo.controller.errorRecoveryQueue).
+  //
+  // Safe to run the hooks first: nothing between here and the query
+  // dereferences `plan`, so the guards protect the RENDER, not the hooks.
+  if ((planQuery.isLoading || planQuery.isFetching) && !planQuery.data) {
+    return (
+      <AppWrapper>
+        <ScrollView
+          style={[styles.container, { backgroundColor: 'transparent' }]}
+          contentContainerStyle={{ paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg }}
+          refreshControl={
+            // CHUNK 39 fix (adversarial-verify minor): every other BPS
+            // branch (error/no-tier/empty/loaded) attaches a RefreshControl.
+            // Skeleton branch omitted it, so a hung cold-fetch had no
+            // in-screen recovery — user had to background the app.
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          <PlanSkeleton />
+        </ScrollView>
+      </AppWrapper>
+    );
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────────
+  if (planQuery.isError) {
+    return (
+      <AppWrapper>
+        <ScrollView
+          style={[styles.container, { backgroundColor: 'transparent' }]}
+          contentContainerStyle={{ flexGrow: 1 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}
+        >
+          <View style={styles.center}>
+            <MaterialIcons name="error-outline" size={40} color={colors.error ?? '#DC2626'} />
+            <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as any }]}>
+              Couldn&apos;t load your plan
+            </Text>
+            <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+              Pull down to try again.
+            </Text>
+          </View>
+        </ScrollView>
+      </AppWrapper>
+    );
+  }
 
 
   // ── No tier selected yet (COS-411) ──────────────────────────────────────

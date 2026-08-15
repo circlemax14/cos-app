@@ -57,8 +57,11 @@ export function ClassicViewLink({
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
-  if (!isTabSwapBpsEnabled()) return null;
-
+  // Declared BEFORE the early return below. Hooks after an early return make
+  // the render's hook COUNT depend on the flag, and React throws "Rendered
+  // more hooks than during the previous render" the moment that flips. With no
+  // error boundary that killed the whole app on 2026-08-15 (IntakeCtaCard, the
+  // same mistake). Every hook must be above the return.
   const handlePress = React.useCallback(() => {
     if (onPress) {
       onPress();
@@ -69,6 +72,10 @@ export function ClassicViewLink({
     // legacy `TryUnifiedViewLink` navigates.
     router.push({ pathname: '/Home/plan', params: { classic: '1' } } as never);
   }, [onPress]);
+
+  // Renders nothing when the tab-swap flag is OFF, so it stays invisible on the
+  // legacy Care Plan render path. EVERY HOOK MUST BE CALLED ABOVE THIS LINE.
+  if (!isTabSwapBpsEnabled()) return null;
 
   return (
     <View style={styles.wrap} testID="classic-view-link-wrap">
