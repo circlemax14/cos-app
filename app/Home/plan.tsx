@@ -24,8 +24,16 @@ import RecommendationsSection from '@/components/health-summary/RecommendationsS
 import ShareSummarySection from '@/components/health-summary/ShareSummarySection';
 import UpdatedAtFooter from '@/components/health-summary/UpdatedAtFooter';
 import { useVitalsRedFlagNotifications } from '@/hooks/use-vitals-red-flag-notifications';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
-export default function HealthSummaryScreen() {
+/**
+ * Renamed from the default export and wrapped below. This screen crashed the
+ * whole app on 2026-08-15 — a JS throw with no boundary anywhere in the app
+ * meant expo-updates' error recovery aborted the process rather than the screen
+ * degrading. The boundary is inside the tab, so the tab bar survives and the
+ * patient can walk away from a broken screen instead of losing the app.
+ */
+function HealthSummaryScreenInner() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -229,3 +237,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 });
+
+export default function HealthSummaryScreen() {
+  return (
+    <ScreenErrorBoundary screen="health-summary">
+      <HealthSummaryScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
