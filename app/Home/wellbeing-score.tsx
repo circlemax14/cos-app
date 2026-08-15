@@ -242,6 +242,11 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
                   series={seriesFromHistory}
                   accessibilityLabel={`Wellbeing score, last ${rangeDays} days`}
                   band={band}
+                  // Reference zones behind the bars. The wellbeing score IS a
+                  // 0-100 on the ScoreBands scale, so the four zones are
+                  // literally its own bands made visible — a bar now says
+                  // where you are, not just "taller than yesterday".
+                  showBands
                 />
               </View>
               {whyLine ? (
