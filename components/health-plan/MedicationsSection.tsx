@@ -47,6 +47,7 @@ import {
   supplyUnitLabel,
 } from '@/lib/med-forms';
 import { splitByMedicationClass } from '@/lib/medication-classification';
+import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
 
 const SAFETY_DISCLAIMER =
   'This updates your tracking only — it does not change your prescription or ' +
@@ -1384,6 +1385,20 @@ function MedicationCard({
             ? ` · runs out ${new Date(med.supply.runOutDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
             : ''}
         </Text>
+      ) : null}
+
+      {/* SCRUM-674b — "About this medication", straight off the FDA label.
+          Only on an EXPANDED row: it is reference material a patient goes
+          looking for, not something to push into a list they are scanning.
+          Renders nothing at all when the lookup finds nothing, which today is
+          always — the endpoint is dark behind drug_label_lookup_enabled. */}
+      {showControls && med.name ? (
+        <DrugLabelFactsBlock
+          name={med.name}
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
       ) : null}
 
       {/* Action row: track toggle + supply / refill actions.
