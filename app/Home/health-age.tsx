@@ -736,6 +736,16 @@ function TrendCard({
               <ScoreHistorySparkline
                 series={series}
                 band={bandForDelta(newest)}
+                // Your actual age. deltaToBarValue maps a zero gap to exactly
+                // the midpoint of the axis, so 50 IS that line — it is not a
+                // guess or a nice round number.
+                //
+                // This chart cannot use the score-band zones the wellbeing
+                // sparkline uses: its axis runs the other way (taller = older
+                // = worse), so higher-is-better bands would state the opposite
+                // of the truth. One line answers the only question the chart
+                // asks — am I above or below my real age.
+                referenceAt={deltaToBarValue(0)}
                 accessibilityLabel={`Gap between your Health Age and your actual age over the last ${spoken}. Most recent gap ${
                   newest != null && newest >= 0 ? 'plus' : 'minus'
                 } ${newest != null ? formatYears(newest) : 'unknown'}. Lower is better.`}
@@ -751,9 +761,9 @@ function TrendCard({
                 marginTop: 8,
               }}
             >
-              Each bar is the gap between your Health Age and your actual age.
-              Shorter bars are better: a shorter bar means your Health Age is
-              closer to — or below — your real age.
+              The line across the chart is your actual age. Bars below it mean
+              your Health Age is younger than your real age; bars above it mean
+              it is older. Shorter is better.
             </Text>
 
             {narrative ? (
