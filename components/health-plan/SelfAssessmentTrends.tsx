@@ -1,9 +1,10 @@
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useRouter } from 'expo-router'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
+import { Radii, Spacing } from '@/constants/design-system'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
   fetchAssessmentHistory,
@@ -71,6 +72,24 @@ interface SelfAssessmentTrendsProps {
  * no trend arrow). Layout-shift-neutral either way.
  */
 const SELF_ASSESSMENTS_HUMAN_LABELS_ENABLED = true
+
+/**
+ * Same shadow ramp SectionCard uses, copied rather than imported because it is
+ * private there. Kept identical on purpose — the accordion cards sit directly
+ * among SectionCards on the Care Plan screen, and a different shadow is
+ * exactly the kind of half-match that reads as a bug.
+ */
+const elevation = (level: 1 | 2) =>
+  Platform.select({
+    ios: {
+      shadowColor: '#0F172A',
+      shadowOffset: { width: 0, height: level },
+      shadowOpacity: 0.04 + level * 0.03,
+      shadowRadius: level * 3 + 2,
+    },
+    android: { elevation: level * 2 },
+    default: {},
+  }) as object
 
 const TONE_COLORS: Record<BandTone, string> = {
   good: '#10B981',
@@ -595,11 +614,13 @@ export function SelfAssessmentTrends({
   /* One carousel PER domain: a single scroller with headings interleaved
      would put a heading mid-scroll where it reads as a label for whatever
      card happens to be beside it. */
-  const renderCarousel = (group: (typeof groups)[number]) => (
+  const renderCarousel = (group: (typeof groups)[number], insideCard = false) => (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.carousel}
+      // Inside a card the card already supplies the horizontal inset; the
+      // carousel's own 16pt would double it and push the first tile off-centre.
+      contentContainerStyle={insideCard ? styles.carouselInCard : styles.carousel}
       decelerationRate="fast"
     >
       {group.records.map(renderCard)}
@@ -613,13 +634,25 @@ export function SelfAssessmentTrends({
           const isOpen = openDomains.includes(group.label)
           const count = group.records.length
           return (
-            <View key={group.label} style={styles.group}>
+            /* Each group is a CARD, not a bare row — same geometry as the
+               SectionCard blocks it sits between on this screen (border 1,
+               Radii.xl, Spacing.md padding, elevation 1) and the same
+               card + 'D9' fill the check-in tiles use. A hairline-ruled list
+               in among rounded cards read as a different component. */
+            <View
+              key={group.label}
+              style={[
+                styles.accordionCard,
+                elevation(1),
+                {
+                  backgroundColor: (colors.card as string) + 'D9',
+                  borderColor: colors.border as string,
+                },
+              ]}
+            >
               <Pressable
                 onPress={() => toggleDomain(group.label)}
-                style={({ pressed }) => [
-                  styles.accordionRow,
-                  { borderBottomColor: colors.border as string, opacity: pressed ? 0.6 : 1 },
-                ]}
+                style={({ pressed }) => [styles.accordionRow, { opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 // Announces "expanded"/"collapsed" and, with the count in the
                 // label, what is behind a shut row.
@@ -653,7 +686,16 @@ export function SelfAssessmentTrends({
                   color={colors.subtext as string}
                 />
               </Pressable>
-              {isOpen ? renderCarousel(group) : null}
+              {isOpen ? (
+                <>
+                  {/* Divider only once open. A rule under a shut row would
+                      underline nothing. */}
+                  <View
+                    style={[styles.accordionDivider, { backgroundColor: colors.border as string }]}
+                  />
+                  {renderCarousel(group, true)}
+                </>
+              ) : null}
             </View>
           )
         })}
@@ -688,14 +730,33 @@ export function SelfAssessmentTrends({
 const styles = StyleSheet.create({
   group: { marginBottom: 2 },
   groupLabel: { marginHorizontal: 16, marginTop: 10, marginBottom: 2, letterSpacing: 0.6 },
+  // Geometry copied from SectionCard so these sit in the same visual family
+  // as the Biological / Psychological / Social & Faith cards below them.
+  accordionCard: {
+    borderWidth: 1,
+    borderRadius: Radii.xl,
+    paddingHorizontal: Spacing.md,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    overflow: 'hidden',
+  },
   accordionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    // 44pt is the minimum comfortable touch target; the row is the control.
-    minHeight: 48,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    // 44pt is the minimum comfortable touch target; the whole row is the control.
+    minHeight: 52,
+    paddingVertical: Spacing.sm,
+  },
+  accordionDivider: {
+    height: StyleSheet.hairlineWidth,
+    // Full-bleed inside the card: cancels the card's own horizontal padding so
+    // the rule spans edge to edge the way a card divider should.
+    marginHorizontal: -Spacing.md,
+  },
+  carouselInCard: {
+    paddingTop: Spacing.sm + 4,
+    paddingBottom: Spacing.sm + 4,
+    gap: 12,
   },
   carousel: {
     paddingHorizontal: 16,

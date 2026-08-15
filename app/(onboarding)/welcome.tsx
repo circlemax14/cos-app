@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Colors } from '@/constants/theme';
+import { ConfettiBurst } from '@/components/onboarding/ConfettiBurst';
 import { checkSession, markWelcomeSeen } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
@@ -32,6 +33,10 @@ export default function WelcomeScreen() {
   const waveRotation = useSharedValue(0);
   const contentOpacity = useSharedValue(0);
   const contentTranslate = useSharedValue(16);
+  // The popper's own pop. Starts collapsed so it appears to fire, rather than
+  // being present from the first frame the way the hand is.
+  const popperScale = useSharedValue(0);
+  const popperRotate = useSharedValue(-35);
 
   // Fallback: only fetch from the server if no name was passed via the
   // route param. This avoids the flash where "Hi!" renders first and then
@@ -63,10 +68,30 @@ export default function WelcomeScreen() {
         -1,
       ),
     );
-  }, [contentOpacity, contentTranslate, waveRotation]);
+
+    // Popper fires just after the content has settled, and lands slightly
+    // over-scaled before easing back — the small overshoot is what sells it
+    // as a pop rather than a fade-in.
+    popperScale.value = withDelay(
+      260,
+      withSequence(
+        withTiming(1.25, { duration: 220, easing: Easing.out(Easing.back(2)) }),
+        withTiming(1, { duration: 180, easing: Easing.out(Easing.quad) }),
+      ),
+    );
+    popperRotate.value = withDelay(260, withTiming(0, { duration: 340, easing: Easing.out(Easing.quad) }));
+  }, [contentOpacity, contentTranslate, waveRotation, popperScale, popperRotate]);
 
   const waveStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${waveRotation.value}deg` }],
+  }));
+
+  const popperStyle = useAnimatedStyle(() => ({
+    opacity: popperScale.value === 0 ? 0 : 1,
+    transform: [
+      { scale: popperScale.value },
+      { rotate: `${popperRotate.value}deg` },
+    ],
   }));
 
   const contentStyle = useAnimatedStyle(() => ({
@@ -96,8 +121,12 @@ export default function WelcomeScreen() {
         style={[styles.blobBottomLeft, { backgroundColor: tintSofter }]}
       />
 
+      {/* Fires once behind the hero. Self-suppresses under Reduce Motion. */}
+      <ConfettiBurst />
+
       <Animated.View style={[styles.hero, contentStyle]}>
-        {/* Waving hand in a soft circle */}
+        {/* Waving hand in a soft circle — unchanged; the popper joins it
+            rather than replacing it, per "along with existing design". */}
         <View style={[styles.handCircle, { backgroundColor: tintSoft }]}>
           <Animated.Text
             style={[
@@ -109,6 +138,20 @@ export default function WelcomeScreen() {
             importantForAccessibility="no"
           >
             👋
+          </Animated.Text>
+
+          {/* Party popper, tucked on the circle's shoulder so it reads as
+              going off beside the wave instead of competing with it. */}
+          <Animated.Text
+            style={[
+              styles.popperEmoji,
+              popperStyle,
+              { fontSize: getScaledFontSize(40) },
+            ]}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            🎉
           </Animated.Text>
         </View>
 
@@ -225,6 +268,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+  },
+  popperEmoji: {
+    position: 'absolute',
+    // Upper-right shoulder of the circle. Outside the fill so it reads as
+    // going off beside the wave rather than sharing its space.
+    top: -6,
+    right: -10,
   },
   handEmoji: {
     // Shift the anchor point so the wave pivots around the wrist, not the center.
