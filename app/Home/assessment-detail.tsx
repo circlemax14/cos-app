@@ -37,6 +37,8 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
+import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
+import { isHeavySubject, shouldOfferSupportOnResult } from '@/lib/crisis-support'
 import {
   fetchAssessmentHistory,
   type AssessmentRecord,
@@ -80,6 +82,17 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
   )
   const latest = records[0]
   const subscales: SubscaleScore[] = latest?.subscales ?? []
+
+  const heavySubject = isHeavySubject(instrumentId)
+  const showSupport =
+    !!latest &&
+    (heavySubject ||
+      shouldOfferSupportOnResult({
+        instrumentId,
+        responses: latest.responses,
+        severity: latest.band?.severity,
+        careAction: latest.band?.careAction,
+      }))
 
   const sectionLabel = (t: string) => (
     <Text
@@ -129,6 +142,22 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
           </Text>
         ) : (
           <>
+            {/* BEFORE the result, when the result is one that warrants it.
+                Three independent triggers: the patient endorsed a risk item,
+                the band came back high, or the band carries a careAction --
+                the field that until today was written to every record and read
+                by nothing. Also always shown for ACE and PCL-5, where a score
+                of zero does not mean answering was easy. */}
+            {showSupport ? (
+              <CrisisSupportCard
+                intro={
+                  heavySubject
+                    ? 'That covered some hard ground. If any of it stayed with you, someone is available.'
+                    : 'Support is available right now, any time of day.'
+                }
+              />
+            ) : null}
+
             {/* Words before numbers: the band is what the patient can act on. */}
             {sectionLabel('Your latest result')}
             <View style={[styles.card, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>

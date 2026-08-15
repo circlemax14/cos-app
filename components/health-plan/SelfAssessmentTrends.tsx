@@ -1,10 +1,9 @@
 import React from 'react'
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useRouter } from 'expo-router'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
-import { Radii, Spacing } from '@/constants/design-system'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
   fetchAssessmentHistory,
@@ -72,24 +71,6 @@ interface SelfAssessmentTrendsProps {
  * no trend arrow). Layout-shift-neutral either way.
  */
 const SELF_ASSESSMENTS_HUMAN_LABELS_ENABLED = true
-
-/**
- * Same shadow ramp SectionCard uses, copied rather than imported because it is
- * private there. Kept identical on purpose — the accordion cards sit directly
- * among SectionCards on the Care Plan screen, and a different shadow is
- * exactly the kind of half-match that reads as a bug.
- */
-const elevation = (level: 1 | 2) =>
-  Platform.select({
-    ios: {
-      shadowColor: '#0F172A',
-      shadowOffset: { width: 0, height: level },
-      shadowOpacity: 0.04 + level * 0.03,
-      shadowRadius: level * 3 + 2,
-    },
-    android: { elevation: level * 2 },
-    default: {},
-  }) as object
 
 const TONE_COLORS: Record<BandTone, string> = {
   good: '#10B981',
@@ -643,7 +624,6 @@ export function SelfAssessmentTrends({
               key={group.label}
               style={[
                 styles.accordionCard,
-                elevation(1),
                 {
                   backgroundColor: (colors.card as string) + 'D9',
                   borderColor: colors.border as string,
@@ -730,14 +710,25 @@ export function SelfAssessmentTrends({
 const styles = StyleSheet.create({
   group: { marginBottom: 2 },
   groupLabel: { marginHorizontal: 16, marginTop: 10, marginBottom: 2, letterSpacing: 0.6 },
-  // Geometry copied from SectionCard so these sit in the same visual family
-  // as the Biological / Psychological / Social & Faith cards below them.
+  /**
+   * Geometry copied from BpsAiSummaryBanner, which shares it with HabitsBanner,
+   * NutritionPlanSection and MedicationsBanner — the comment there says those
+   * cards are meant to "read as one system", and these are now part of it.
+   *
+   * NO marginHorizontal, deliberately. The BPS ScrollView's contentContainer
+   * already supplies Spacing.md horizontally; a card adding its own 16 lands at
+   * a 32pt inset and sits visibly farther in than every sibling. That was the
+   * actual mismatch Ken saw — the first version of this used SectionCard's
+   * geometry plus a margin and was inset twice.
+   *
+   * 14pt padding and no shadow, matching the banner family rather than
+   * SectionCard's 16pt + elevation.
+   */
   accordionCard: {
     borderWidth: 1,
-    borderRadius: Radii.xl,
-    paddingHorizontal: Spacing.md,
-    marginHorizontal: Spacing.md,
-    marginBottom: Spacing.sm,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    marginBottom: 12,
     overflow: 'hidden',
   },
   accordionRow: {
@@ -745,17 +736,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     // 44pt is the minimum comfortable touch target; the whole row is the control.
     minHeight: 52,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 8,
   },
   accordionDivider: {
     height: StyleSheet.hairlineWidth,
-    // Full-bleed inside the card: cancels the card's own horizontal padding so
-    // the rule spans edge to edge the way a card divider should.
-    marginHorizontal: -Spacing.md,
+    // Full-bleed inside the card: cancels the card's own 14pt horizontal
+    // padding so the rule spans edge to edge the way a card divider should.
+    marginHorizontal: -14,
   },
   carouselInCard: {
-    paddingTop: Spacing.sm + 4,
-    paddingBottom: Spacing.sm + 4,
+    paddingTop: 12,
+    paddingBottom: 12,
     gap: 12,
   },
   carousel: {
