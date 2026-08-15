@@ -56,7 +56,6 @@ const TIME_FILTERS: { id: TimeFilter; label: string }[] = [
   { id: 'year',        label: 'Year' },
 ]
 
-const MAX_SELECTED = 10
 const MOST_RECENT_LIMIT = 10
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
@@ -126,17 +125,31 @@ export default function HealthTrendsScreen() {
       .filter((t) => t.dataPoints.length > 0)
   }, [healthKitTrends, clinicTrends, timeFilter])
 
-  // SCRUM-265 #13: the clinic section is a horizontal slider now, no
-  // multi-select. Auto-pick the top MAX_SELECTED most interesting trends
-  // (out-of-range points or improving/worsening direction). Tapping a
-  // card opens the full TrendCard modal — same UX as Apple Health.
-  const clinicSliderTrends = useMemo<LongitudinalTrend[]>(() => {
-    const selected = pickInitialSelection(clinicTrends, MAX_SELECTED)
-    return clinicTrends
-      .filter((t) => selected.has(t.metricCode))
-      .map((t) => applyTimeFilter(t, timeFilter))
-      .filter((t) => t.dataPoints.length > 0)
-  }, [clinicTrends, timeFilter])
+  /**
+   * SCRUM-265 #13 made this a slider and capped it at the ten most
+   * interesting trends — out-of-range points, or a clear direction. That cap
+   * existed because ONE flat row of every lab a clinic has ever sent is
+   * unreadable.
+   *
+   * SCRUM-671 removed that premise: the row is now grouped by body system, so
+   * ten results spread over seven organ headings looked sparse and arbitrary —
+   * a patient with a full panel saw Liver with one card and no idea the rest
+   * existed. Ken 2026-08-15 confirmed lifting it.
+   *
+   * The RANKING IS KEPT and now does real work. It previously returned an
+   * unordered Set that the caller filtered by, so it chose WHICH trends
+   * appeared and never their order. rankByInterest returns an ordered array
+   * instead, so within each organ heading the out-of-range and moving results
+   * lead and the flat ones trail. We show everything; we show the interesting
+   * things first.
+   */
+  const clinicSliderTrends = useMemo<LongitudinalTrend[]>(
+    () =>
+      rankByInterest(clinicTrends)
+        .map((t) => applyTimeFilter(t, timeFilter))
+        .filter((t) => t.dataPoints.length > 0),
+    [clinicTrends, timeFilter],
+  )
 
   // Download results — build a CSV of everything currently on-screen
   // (Apple Health carousel + visible clinic trends) and hand it to the
@@ -893,7 +906,21 @@ function AppleHealthMiniCard({
 const MINI_CARD_WIDTH = 260
 const MINI_CHART_WIDTH = MINI_CARD_WIDTH - 24
 
-function pickInitialSelection(trends: LongitudinalTrend[], cap: number): Set<string> {
+/**
+ * Order clinic trends by how much they warrant attention: out-of-range points
+ * first, then a worsening direction, then improving, then alphabetical.
+ *
+ * This REPLACES pickInitialSelection, which returned an unordered Set of the
+ * top N codes. The caller then filtered the source array by that Set — which
+ * preserved the SOURCE order, so the ranking only ever chose *which* trends
+ * appeared, never the order they appeared in. Once SCRUM-671 grouped the row
+ * by body system and the cap was lifted, that Set matched everything and the
+ * ranking silently did nothing at all.
+ *
+ * Returning an array makes the ordering real, which is what the grouping
+ * needs: within each organ heading, the results worth looking at lead.
+ */
+function rankByInterest(trends: LongitudinalTrend[]): LongitudinalTrend[] {
   const score = (t: LongitudinalTrend): number => {
     let s = 0
     for (const p of t.dataPoints) {
@@ -903,11 +930,8 @@ function pickInitialSelection(trends: LongitudinalTrend[], cap: number): Set<str
     else if (t.trendDirection === 'improving') s += 2
     return s
   }
-  return new Set(
-    [...trends]
-      .sort((a, b) => score(b) - score(a) || a.metricName.localeCompare(b.metricName))
-      .slice(0, cap)
-      .map((t) => t.metricCode),
+  return [...trends].sort(
+    (a, b) => score(b) - score(a) || a.metricName.localeCompare(b.metricName),
   )
 }
 
