@@ -84,3 +84,13 @@ test('the scores row sits above the greeting, i.e. at the top', () => {
   assert.ok(row !== -1 && title !== -1);
   assert.ok(row < title, 'the two scores must come before the title row');
 });
+
+test('the two screens Home stopped linking to are reachable again', () => {
+  // Removing the Home cards took away their ONLY live links. Both screens
+  // still existed and still worked, but nothing routed to them — dead code
+  // that looks alive. They now live on the wellbeing score screen, which is
+  // where the map belonged anyway.
+  const SCORE = codeOnly(read('app/Home/wellbeing-score.tsx'));
+  assert.match(SCORE, /'\/Home\/wellbeing-map'/);
+  assert.match(SCORE, /'\/Home\/daily-read'/);
+});

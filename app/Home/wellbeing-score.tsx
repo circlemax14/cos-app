@@ -352,6 +352,43 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
           </View>
         ) : null}
 
+        {/* Entry points restored 2026-08-14.
+            Removing the Home cards (SCRUM-676 follow-up) took away the ONLY
+            live links to these two screens — they still existed and still
+            worked, but nothing routed to them. This is where the wellbeing map
+            belongs anyway: the patient is already looking at the score it
+            breaks down. Daily Read sits here rather than nowhere. */}
+        <View style={{ marginTop: 8, gap: 8 }}>
+          {([
+            { label: 'Explore your wellbeing map', hint: 'See the areas behind this score', to: '/Home/wellbeing-map', icon: 'donut-large' as const },
+            { label: 'Your daily read', hint: 'Today’s short summary', to: '/Home/daily-read', icon: 'auto-stories' as const },
+          ]).map((row) => (
+            <Pressable
+              key={row.to}
+              onPress={() => router.push(row.to as never)}
+              accessibilityRole="button"
+              accessibilityLabel={row.label}
+              accessibilityHint={row.hint}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.navRow,
+                { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9', opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <MaterialIcons name={row.icon} size={getScaledFontSize(20)} color={colors.tint as string} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as never }}>
+                  {row.label}
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}>
+                  {row.hint}
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.subtext as string} />
+            </Pressable>
+          ))}
+        </View>
+
         <View style={{ height: 32 }} />
       </ScrollView>
     </AppWrapper>
@@ -428,6 +465,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
+  },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 56,
   },
   card: {
     borderRadius: 16,
