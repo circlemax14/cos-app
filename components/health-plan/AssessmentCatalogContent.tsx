@@ -89,14 +89,45 @@ type Palette = typeof Colors['light'] | typeof Colors['dark']
 // `domain` (pre-backfill, or seeded before ASSESSMENT_STRATEGY_V2_ENABLED
 // existed) fall into a trailing "Other" bucket — expected to be empty once
 // the backend backfill lands.
-type CatalogDomainBucket = 'biological' | 'psychological' | 'social' | 'other'
+type CatalogDomainBucket = 'biological' | 'psychological' | 'cognitive' | 'social' | 'other'
 
 const DOMAIN_BUCKET_LABEL: Record<CatalogDomainBucket, string> = {
   biological: 'Biological',
   psychological: 'Psychological',
-  social: 'Social & Spiritual',
+  cognitive: 'Cognitive',
+  // Matches the Care Plan screen's own third section card and Ken's
+  // "Social and faith assessments" (2026-08-14). See lib/assessment-grouping.
+  social: 'Social & Faith',
   other: 'Other',
 }
+
+/**
+ * Ken 2026-08-14: "Let's add a special section for Cognitive Assessment for
+ * when the Boston Cognitive comes on line", and separately, of a screener
+ * sitting under Biological: "This can be moved to psychological cat".
+ *
+ * Both are answered by lifting the cognitive screeners out of Biological into
+ * a section of their own, ordered immediately after Psychological — where Ken
+ * has put cognition since 2026-07-03 ("The PSYCHO is the Boston Cog/ phq9/
+ * gad7/ pss/ IADL").
+ *
+ * This is deliberately a PRESENTATION-layer override keyed on instrument id,
+ * not a change to the seeded `domain` field. Cognition is cross-cutting —
+ * Ken, 2026-07-11: "Cognitive functioning needs to be in here it overlaps
+ * with all three areas" — so promoting it to a fourth BPS domain in the data
+ * model would contradict the three-domain structure the wellbeing map, the
+ * care plan and the health summary are all built on. Rebucketing here gives
+ * Ken the section he asked for without a platform-wide taxonomy change, and
+ * reverts in one OTA.
+ *
+ * Boston Cognitive joins this list under whatever id it is seeded with.
+ */
+const COGNITIVE_INSTRUMENT_IDS: ReadonlySet<string> = new Set([
+  'cognition-8',
+  'mini-cog',
+  'moca',
+  'moca-xpresso',
+])
 
 interface CatalogDomainGroup {
   key: CatalogDomainBucket
@@ -109,16 +140,20 @@ function groupInstrumentsByDomain(items: InstrumentSummary[]): CatalogDomainGrou
   const buckets: Record<CatalogDomainBucket, InstrumentSummary[]> = {
     biological: [],
     psychological: [],
+    cognitive: [],
     social: [],
     other: [],
   }
   for (const it of items) {
-    if (it.domain === 'biological') buckets.biological.push(it)
+    // Cognitive wins over the seeded domain — that is the whole point of the
+    // override, since every cognitive screener is currently seeded biological.
+    if (COGNITIVE_INSTRUMENT_IDS.has(it.instrumentId)) buckets.cognitive.push(it)
+    else if (it.domain === 'biological') buckets.biological.push(it)
     else if (it.domain === 'psychological') buckets.psychological.push(it)
     else if (it.domain === 'social' || it.domain === 'spiritual') buckets.social.push(it)
     else buckets.other.push(it)
   }
-  return (['biological', 'psychological', 'social', 'other'] as const)
+  return (['biological', 'psychological', 'cognitive', 'social', 'other'] as const)
     .map((key) => ({ key, label: DOMAIN_BUCKET_LABEL[key], items: buckets[key] }))
     .filter((g) => g.items.length > 0)
 }

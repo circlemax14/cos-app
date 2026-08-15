@@ -2168,7 +2168,10 @@ export function BiopsychosocialPlanScreen({
                 Self-Assessments
               </Text>
             </View>
-            <SelfAssessmentTrends />
+            {/* Ken 2026-08-14: collapse the three domain groups here, like the
+                SECTION_ORDER cards below. Health Trends keeps the open
+                carousels — that screen exists to show these results. */}
+            <SelfAssessmentTrends collapsible />
           </View>
         )}
 

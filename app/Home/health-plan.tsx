@@ -77,6 +77,8 @@ import { knownSubdomains } from '@/lib/bps-subdomains';
 import { useUpdatePlanGoal } from '@/hooks/use-health-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
 import { todayLocalIso } from '@/lib/day-key';
+// One definition of today's adherence, shared with app/Home/today-schedule.tsx.
+import { computeAdherence, minutesSinceMidnight } from '@/lib/today-timeline';
 
 /**
  * COS-434 experiment #5: dark-launchable local flag around the hoisted bio
@@ -605,7 +607,42 @@ export default function HealthPlanScreen() {
 
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
   const skippedCount = tasks.filter((t) => t.status === 'skipped').length;
-  const progressPct = tasks.length > 0 ? completedCount / tasks.length : 0;
+
+  /**
+   * Ken 2026-08-13, of this hero beside the schedule screen: "Does not match
+   * with patient page."
+   *
+   * It did not, and the reason was two definitions of the same number. This
+   * screen divided by EVERY task in the day; the schedule screen divides by
+   * the tasks DUE so far (lib/today-timeline.ts, computeAdherence). At 9am
+   * with two of six tasks done and only two yet due, one surface said 33% and
+   * the other 100%. Both were internally reasonable and the pair was
+   * indefensible.
+   *
+   * There is now one rule, and it lives in one place. The due-so-far rule wins
+   * because it is the one that survives contact with a day in progress — a
+   * whole-day denominator greets the patient with 12% every morning and reads
+   * as failure for most of the day. See computeAdherence for the full argument.
+   *
+   * The plan tasks are adapted to the timeline shape rather than the rule
+   * being reimplemented here; a second copy is how the screens drifted apart
+   * in the first place.
+   */
+  const adherence = React.useMemo(
+    () =>
+      computeAdherence(
+        tasks.map((t) => ({
+          id: t.id,
+          kind: 'task' as const,
+          title: t.title,
+          time: t.scheduledTime ?? null,
+          done: t.status === 'completed',
+        })),
+        minutesSinceMidnight(new Date()),
+      ),
+    [tasks],
+  );
+  const progressPct = adherence.percent / 100;
 
   // COS-373: read-only "what you'll be notified about" glimpse on the plan
   // surface. The hook always runs (defensive), but the card only renders when
@@ -854,7 +891,10 @@ export default function HealthPlanScreen() {
   // Stats surfaced to the Progress tab — computed once from existing state
   const completedToday = tasks.filter((t) => t.status === 'completed').length;
   const totalToday = tasks.length;
-  const adherencePercent = totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
+  // Same number as the hero above and the schedule screen. This stat is
+  // literally labelled "Adherence" in ProgressTab, so a third definition of it
+  // was never defensible — see the `adherence` memo for the full note.
+  const adherencePercent = adherence.percent;
 
   return (
     <AppWrapper>
@@ -1118,7 +1158,12 @@ export default function HealthPlanScreen() {
                   fontSize: getScaledFontSize(13),
                   marginTop: 2,
                 }}>
-                  {completedCount} of {tasks.length} task{tasks.length === 1 ? '' : 's'} done
+                  {/* Reads against the SAME denominator as the percentage
+                      above it. "100%" over "2 of 6 tasks done" was the
+                      contradiction Ken could see without leaving the screen. */}
+                  {adherence.due === 0
+                    ? 'Nothing due yet'
+                    : `${adherence.done} of ${adherence.due} due so far`}
                 </Text>
               </View>
               <View style={[styles.heroBadge, { backgroundColor: progressPct === 1 ? '#16A34A18' : (colors.tint as string) + '18' }]}>
