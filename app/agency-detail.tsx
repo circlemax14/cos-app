@@ -10,6 +10,7 @@ import { getCareManagerAgencyById, type CareManagerAgency } from '@/services/car
 import { apiClient } from '@/lib/api-client';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { AgencyTeamSection } from '@/components/agency/AgencyTeamSection';
 
 /**
  * Dismiss the agency detail modal. Prefer `router.dismiss` (proper modal
@@ -334,12 +335,19 @@ export default function AgencyDetailScreen() {
       {/* Request Care Manager Button / Status */}
       <View style={styles.buttonContainer}>
         {requestStatus === 'approved' ? (
-          <View style={[styles.requestButton, { backgroundColor: '#E8F5E9', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
-            <MaterialIcons name="check-circle" size={getScaledFontSize(24)} color="#2E7D32" />
-            <Text style={{ color: '#2E7D32', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
-              You are assigned to this agency
-            </Text>
-          </View>
+          <>
+            <View style={[styles.requestButton, { backgroundColor: '#E8F5E9', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
+              <MaterialIcons name="check-circle" size={getScaledFontSize(24)} color="#2E7D32" />
+              <Text style={{ color: '#2E7D32', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
+                You are assigned to this agency
+              </Text>
+            </View>
+            {/* Gated on approval, not on the endpoint's own 403. The API
+                refuses a patient who is not assigned, but swallowing that here
+                would render an empty list — indistinguishable from "my agency
+                has no staff". */}
+            {agencyId ? <AgencyTeamSection agencyId={String(agencyId)} /> : null}
+          </>
         ) : requestStatus === 'pending' ? (
           <View style={[styles.requestButton, { backgroundColor: '#FFF3E0', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
             <MaterialIcons name="hourglass-top" size={getScaledFontSize(24)} color="#E65100" />
