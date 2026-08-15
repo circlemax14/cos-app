@@ -82,6 +82,21 @@ export interface ScoreHistorySparklineProps {
    * `fg` stay legible on top of them.
    */
   showBands?: boolean
+  /**
+   * Draw a horizontal reference line at this point on the 0-100 axis.
+   *
+   * The other half of the Bevel read, for charts whose axis is NOT a
+   * higher-is-better score and therefore cannot use `showBands`. Health Age is
+   * the case that needs it: its axis is a projected year-gap (-10y maps to 0,
+   * 0 to 50, +10y to 100) and a TALLER bar is WORSE, so band zones would state
+   * the opposite of the truth. What that chart actually needs is one line —
+   * where the gap is zero, i.e. your real age — because "am I above or below
+   * that line" is the only question the chart is asking.
+   *
+   * Drawn IN FRONT of the bars, unlike the zones. A threshold that bars can
+   * hide is not a threshold.
+   */
+  referenceAt?: number
 }
 
 function normalizeSeries(input: number[]): number[] {
@@ -153,6 +168,7 @@ export function ScoreHistorySparkline({
   accessibilityLabel,
   band,
   showBands = false,
+  referenceAt,
 }: ScoreHistorySparklineProps): React.JSX.Element | null {
   // Deferred mount — see file header. `mounted` starts false so the
   // very first render is a cheap track-only View; the bars flip in
@@ -238,6 +254,25 @@ export function ScoreHistorySparkline({
             )
           })
         : null}
+
+      {/* In FRONT of the bars, deliberately — a threshold bars can hide is not
+          a threshold. Decorative: the value either side of it is already in
+          this view's accessibilityValue and spelled out in the caption below
+          the chart, so a fifth announced element would only add noise. */}
+      {typeof referenceAt === 'number' ? (
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={[
+            styles.reference,
+            {
+              bottom: `${clamp01to100(referenceAt)}%`,
+              backgroundColor: ScoreBands[band ?? 'developing'].fg,
+            },
+          ]}
+        />
+      ) : null}
     </View>
   )
 }
@@ -268,6 +303,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+  },
+  reference: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    // Legible over both the track and a bar without shouting.
+    opacity: 0.55,
   },
   bar: {
     // Fixed width — the parent's fixed track height + 7 fixed-width
