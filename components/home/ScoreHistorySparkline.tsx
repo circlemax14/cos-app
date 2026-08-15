@@ -63,6 +63,25 @@ export interface ScoreHistorySparklineProps {
    * therefore the safest default for a "no band yet" cold-mount.
    */
   band?: ScoreBandName
+  /**
+   * Draw the four score bands as horizontal reference zones behind the bars.
+   *
+   * Bevel's signature chart reads a trend AGAINST coloured ranges rather than
+   * floating in an empty box, and it is the single thing that makes their
+   * scores feel legible at a glance — "Turn your body's signals into clear,
+   * actionable metrics". Without a reference, a bar's height only says
+   * "taller than the one before it"; with one it says where you actually are.
+   *
+   * The band thresholds are not invented here: ScoreBands in the design system
+   * already defines optimal 85-100 / developing 65-84 / foundational 40-64 /
+   * initial 0-39, and those are the same numbers the hero chip reports. Drawing
+   * them makes an existing rule visible instead of adding a new one.
+   *
+   * Opt-in, so every current caller renders byte-identically. Zones use each
+   * band's own `bg` (the soft half of the WCAG-AA pair), so bars in their
+   * `fg` stay legible on top of them.
+   */
+  showBands?: boolean
 }
 
 function normalizeSeries(input: number[]): number[] {
@@ -117,10 +136,23 @@ function clamp01to100(v: number): number {
   return v
 }
 
+/**
+ * The four bands as fractions of the track, bottom-up. Derived from the same
+ * 0-39 / 40-64 / 65-84 / 85-100 thresholds ScoreBands documents, so the zones
+ * and the hero's band chip can never disagree.
+ */
+const BAND_ZONES: readonly { name: ScoreBandName; from: number; to: number }[] = [
+  { name: 'initial', from: 0, to: 40 },
+  { name: 'foundational', from: 40, to: 65 },
+  { name: 'developing', from: 65, to: 85 },
+  { name: 'optimal', from: 85, to: 100 },
+]
+
 export function ScoreHistorySparkline({
   series,
   accessibilityLabel,
   band,
+  showBands = false,
 }: ScoreHistorySparklineProps): React.JSX.Element | null {
   // Deferred mount — see file header. `mounted` starts false so the
   // very first render is a cheap track-only View; the bars flip in
@@ -152,8 +184,33 @@ export function ScoreHistorySparkline({
       accessibilityRole="adjustable"
       accessibilityLabel={accessibilityLabel}
       accessibilityValue={{ min, max, now: current }}
-      style={[styles.track, { backgroundColor: trackColor }]}
+      style={[styles.track, { backgroundColor: showBands ? 'transparent' : trackColor }]}
     >
+      {/* Reference zones, behind everything. Absolutely positioned so they
+          cost the flex row nothing and the bars keep their exact geometry —
+          this must not move a single bar by a pixel. Decorative: the band is
+          already spoken by the hero chip and by this view's own
+          accessibilityValue, so announcing four coloured stripes would be
+          noise. */}
+      {showBands
+        ? BAND_ZONES.map((z) => (
+            <View
+              key={z.name}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={[
+                styles.zone,
+                {
+                  backgroundColor: ScoreBands[z.name].bg,
+                  bottom: `${z.from}%`,
+                  height: `${z.to - z.from}%`,
+                },
+              ]}
+            />
+          ))
+        : null}
+
       {mounted && normalized.length > 0
         ? normalized.map((raw, i) => {
             const v = clamp01to100(raw)
@@ -201,8 +258,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'flex-start',
+    // Clips the zone stripes to the rounded track. Without this the topmost
+    // and bottommost zones square off the corners.
+    overflow: 'hidden',
     // Track color set inline from ScoreBands so a band change re-
     // colors both the track (soft) and the bars (bold) in sync.
+  },
+  zone: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   bar: {
     // Fixed width — the parent's fixed track height + 7 fixed-width
