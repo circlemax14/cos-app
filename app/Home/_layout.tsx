@@ -236,6 +236,18 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      {/* SCRUM-686. Reached from the Supports modal, never the tab bar. Same
+          declaration as assessment-detail above and for the same reason —
+          expo-router registers every file in this directory as a TAB unless
+          told otherwise, which is exactly how assessment-detail shipped as a
+          stray tab on 2026-08-14. */}
+      <Tabs.Screen
+        name="connections"
+        options={{
+          title: 'People',
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="connected-ehrs"
         options={{

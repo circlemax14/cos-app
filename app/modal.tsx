@@ -5,7 +5,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
 import { Button, Menu, Portal, Text, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs, TabScreen, TabsProvider } from 'react-native-paper-tabs';
@@ -432,6 +432,46 @@ export default function ModalScreen() {
                   ? subCategories.find(sub => sub.id === manualSubCategoryId)?.name
                   : undefined;
 
+                // SCRUM-686 — the Social tab gets a way IN to patient-to-patient
+                // connections. Ken's ask was scoped to Social specifically
+                // ("in social i want to give a functionality where we can
+                // search other patients"), so it is not offered on the other
+                // categories, whose members are providers rather than peers.
+                //
+                // A banner rather than a tab: the existing sub-category tabs
+                // list people already in the circle, and "go find someone new"
+                // is a different verb from "browse who I have".
+                const socialConnectBanner =
+                  category.id === 'social' ? (
+                    <Pressable
+                      onPress={() => {
+                        closeModal();
+                        router.push('/Home/connections' as never);
+                      }}
+                      style={({ pressed }: { pressed: boolean }) => [
+                        styles.connectBanner,
+                        {
+                          borderColor: colors.tint as string,
+                          backgroundColor: (colors.tint as string) + '12',
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Find and connect with other people"
+                    >
+                      <MaterialIcons name="person-search" size={getScaledFontSize(20)} color={colors.tint as string} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                          Find people
+                        </Text>
+                        <Text style={{ color: colors.text + '99', fontSize: getScaledFontSize(12), marginTop: 1 }}>
+                          Connect with someone you know
+                        </Text>
+                      </View>
+                      <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.text + '99'} />
+                    </Pressable>
+                  ) : null;
+
                 // Handle Care Manager category specially - show agencies directly
                 if (category.id === 'care-manager') {
                   return (
@@ -787,6 +827,8 @@ export default function ModalScreen() {
                       </ScrollView>
                     ) : category.subCategories && category.subCategories.length > 0 ? (
                       // Category has subcategories: Show nested tabs
+                      <>
+                      {socialConnectBanner}
                       <TabsProvider defaultIndex={0}>
                         <Tabs
                           showLeadingSpace={false}
@@ -1013,6 +1055,7 @@ export default function ModalScreen() {
                           })}
                         </Tabs>
                       </TabsProvider>
+                      </>
                     ) : (
                       // Category has no subcategories: Show all providers directly
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
@@ -1211,6 +1254,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+  },
+  connectBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 56,
   },
   listItemRole: {
     fontSize: 14,
