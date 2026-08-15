@@ -153,6 +153,26 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
   const fontWeight = getScaledFontWeight
   const router = useRouter()
 
+  /**
+   * The cards were tappable and went NOWHERE: `onOpenInstrument` is optional
+   * and neither mount point passed it, so every tap was a no-op. It is still
+   * honoured when supplied — a caller may want its own destination — and
+   * otherwise routes to the detail screen (SCRUM-675).
+   */
+  const openInstrument = React.useCallback(
+    (instrumentId: InstrumentId) => {
+      if (onOpenInstrument) {
+        onOpenInstrument(instrumentId)
+        return
+      }
+      router.push({
+        pathname: '/Home/assessment-detail',
+        params: { instrumentId: String(instrumentId) },
+      } as never)
+    },
+    [onOpenInstrument, router],
+  )
+
   const query = useQuery({
     queryKey: ['assessments-trends'],
     queryFn: fetchAssessments,
@@ -280,7 +300,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
       return (
         <Pressable
           key={record.instrumentId}
-          onPress={() => onOpenInstrument?.(record.instrumentId)}
+          onPress={() => openInstrument(record.instrumentId)}
           style={({ pressed }) => [
             styles.card,
             {
@@ -405,7 +425,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
     return (
       <Pressable
         key={record.instrumentId}
-        onPress={() => onOpenInstrument?.(record.instrumentId)}
+        onPress={() => openInstrument(record.instrumentId)}
         style={({ pressed }) => [
           styles.card,
           {

@@ -31,6 +31,21 @@ export interface BandSnapshot {
   careAction?: string
 }
 
+/** Mirrors cos-backend src/services/subscale-scoring.ts. */
+export interface SubscaleScore {
+  key: string
+  label: string
+  group?: string
+  /** null when the subscale is not complete — NOT zero. */
+  score: number | null
+  kind: 'sum' | 'mean'
+  answered: number
+  total: number
+  complete: boolean
+  band?: string
+  severity?: 'low' | 'moderate' | 'high'
+}
+
 export interface AssessmentRecord {
   instrumentId: InstrumentId
   version: number
@@ -42,6 +57,13 @@ export interface AssessmentRecord {
   completedAt: string
   expiresAt: string
   updatedBy: string
+  /**
+   * Per-subscale scores, frozen at completion by the backend (SCRUM-675).
+   * Absent on every instrument that declares no subscales, which is all of
+   * them until Brief-COPE is assignable — so the detail screen must render
+   * perfectly well without it.
+   */
+  subscales?: SubscaleScore[]
   /**
    * BPS subdomains of the INSTRUMENT, joined onto the record by the
    * backend list route from the instrument definition — not stored on the
