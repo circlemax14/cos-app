@@ -51,11 +51,21 @@ export interface AssessmentGroup<T> {
   records: T[]
 }
 
-/** Display order and copy. "Social & Spiritual" matches the wellbeing map. */
+/**
+ * Display order and copy.
+ *
+ * "Social & Faith" rather than the wellbeing map's "Social & Spiritual":
+ * these headings sit on the Care Plan screen directly among its three
+ * SECTION_ORDER cards, and that screen's third card is already titled
+ * "Social & Faith" (BiopsychosocialPlanScreen.tsx). Ken 2026-08-14 asked for
+ * "Social and faith assessments" by name. Two labels for one domain on one
+ * screen is the confusing outcome; matching the neighbouring sections wins
+ * over matching a taxonomy the patient never sees.
+ */
 const DOMAIN_ORDER: readonly { domain: BpsDomain; label: string }[] = [
   { domain: 'biological', label: 'Biological' },
   { domain: 'psychological', label: 'Psychological' },
-  { domain: 'social', label: 'Social & Spiritual' },
+  { domain: 'social', label: 'Social & Faith' },
 ]
 
 /** The domain a record belongs to, or null when it cannot be placed. */

@@ -49,6 +49,20 @@ import {
 
 interface SelfAssessmentTrendsProps {
   onOpenInstrument?: (instrumentId: InstrumentId) => void
+  /**
+   * Ken 2026-08-14: "Possible for the self-assessments on the plan page
+   * collapse like the other sections … Then the series of assessments in each
+   * categories opens/closes with a touch."
+   *
+   * ON the Care Plan screen, where this block is one of many and three
+   * stacked carousels cost most of a screen height. OFF (default) on Health
+   * Trends, which the patient opened *for* these results — collapsing them
+   * there would hide the reason they navigated.
+   *
+   * Only affects the grouped branch. With nothing placeable there are no
+   * categories to open or close, and the flat carousel renders untouched.
+   */
+  collapsible?: boolean
 }
 
 /**
@@ -146,12 +160,31 @@ function trendArrowPhrasing(direction: TrendResult['direction'] | undefined): st
   return 'no change'
 }
 
-export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsProps): React.JSX.Element | null {
+export function SelfAssessmentTrends({
+  onOpenInstrument,
+  collapsible = false,
+}: SelfAssessmentTrendsProps): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const fontSize = getScaledFontSize
   const fontWeight = getScaledFontWeight
   const router = useRouter()
+
+  /**
+   * Which domains are open. Empty ⇒ all closed, which is the state Ken drew
+   * ("Biological assessments >"). Closing by default is the entire point of
+   * the ask; opening by default would collapse nothing and save no height.
+   *
+   * The header row carries a count so a shut section still answers "how many
+   * check-ins do I have here?" without a tap — the one thing collapsing would
+   * otherwise take away.
+   */
+  const [openDomains, setOpenDomains] = React.useState<readonly string[]>([])
+  const toggleDomain = React.useCallback((label: string) => {
+    setOpenDomains((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+    )
+  }, [])
 
   /**
    * The cards were tappable and went NOWHERE: `onOpenInstrument` is optional
@@ -559,6 +592,75 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
     )
   }
 
+  /* One carousel PER domain: a single scroller with headings interleaved
+     would put a heading mid-scroll where it reads as a label for whatever
+     card happens to be beside it. */
+  const renderCarousel = (group: (typeof groups)[number]) => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.carousel}
+      decelerationRate="fast"
+    >
+      {group.records.map(renderCard)}
+    </ScrollView>
+  )
+
+  if (collapsible) {
+    return (
+      <View>
+        {groups.map((group) => {
+          const isOpen = openDomains.includes(group.label)
+          const count = group.records.length
+          return (
+            <View key={group.label} style={styles.group}>
+              <Pressable
+                onPress={() => toggleDomain(group.label)}
+                style={({ pressed }) => [
+                  styles.accordionRow,
+                  { borderBottomColor: colors.border as string, opacity: pressed ? 0.6 : 1 },
+                ]}
+                accessibilityRole="button"
+                // Announces "expanded"/"collapsed" and, with the count in the
+                // label, what is behind a shut row.
+                accessibilityState={{ expanded: isOpen }}
+                accessibilityLabel={`${group.label} assessments, ${count} ${count === 1 ? 'check-in' : 'check-ins'}`}
+                accessibilityHint={isOpen ? 'Collapses this group' : 'Expands this group'}
+              >
+                <Text
+                  style={{
+                    flex: 1,
+                    color: colors.text,
+                    fontSize: fontSize(14),
+                    fontWeight: fontWeight(600) as any,
+                  }}
+                >
+                  {group.label} assessments
+                </Text>
+                <Text
+                  style={{ color: colors.subtext, fontSize: fontSize(13), marginRight: 6 }}
+                  // Spoken already as part of the row label above.
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no-hide-descendants"
+                >
+                  {count}
+                </Text>
+                {/* Ken drew ">" for a shut row. Static glyph swap, no rotate
+                    transform — iOS 26.5 primitive envelope. */}
+                <MaterialIcons
+                  name={isOpen ? 'expand-more' : 'chevron-right'}
+                  size={fontSize(22)}
+                  color={colors.subtext as string}
+                />
+              </Pressable>
+              {isOpen ? renderCarousel(group) : null}
+            </View>
+          )
+        })}
+      </View>
+    )
+  }
+
   return (
     <View>
       {groups.map((group) => (
@@ -576,17 +678,7 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
           >
             {group.label.toUpperCase()}
           </Text>
-          {/* One carousel PER domain: a single scroller with headings
-              interleaved would put a heading mid-scroll where it reads as a
-              label for whatever card happens to be beside it. */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.carousel}
-            decelerationRate="fast"
-          >
-            {group.records.map(renderCard)}
-          </ScrollView>
+          {renderCarousel(group)}
         </View>
       ))}
     </View>
@@ -596,6 +688,15 @@ export function SelfAssessmentTrends({ onOpenInstrument }: SelfAssessmentTrendsP
 const styles = StyleSheet.create({
   group: { marginBottom: 2 },
   groupLabel: { marginHorizontal: 16, marginTop: 10, marginBottom: 2, letterSpacing: 0.6 },
+  accordionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    // 44pt is the minimum comfortable touch target; the row is the control.
+    minHeight: 48,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   carousel: {
     paddingHorizontal: 16,
     paddingTop: 4,
