@@ -226,6 +226,16 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      {/* SCRUM-675. Reached from a self-assessment card, never from the tab
+          bar — without this declaration expo-router auto-registers the file
+          as a TAB, which is exactly what it did on first ship. */}
+      <Tabs.Screen
+        name="assessment-detail"
+        options={{
+          title: 'Assessment detail',
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="connected-ehrs"
         options={{
