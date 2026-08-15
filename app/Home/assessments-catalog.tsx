@@ -25,7 +25,10 @@ import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCat
 // when the assessment-strategy-v2 flag is OFF (no per-domain sections
 // rendered — flat grid only).
 type CatalogFocusToken = 'bio' | 'psy' | 'soc'
-type CatalogDomainKey = 'biological' | 'psychological' | 'social' | 'other'
+// Mirrors CatalogDomainBucket in AssessmentCatalogContent. 'cognitive' is a
+// section but not a deep-link target — FOCUS_TO_DOMAIN only maps bio/psy/soc,
+// which are the three slices the wellbeing card can be tapped through.
+type CatalogDomainKey = 'biological' | 'psychological' | 'cognitive' | 'social' | 'other'
 const FOCUS_TO_DOMAIN: Record<CatalogFocusToken, CatalogDomainKey> = {
   bio: 'biological',
   psy: 'psychological',
