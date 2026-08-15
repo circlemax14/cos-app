@@ -34,6 +34,8 @@ import {
   acknowledgeSpiritualConsent,
 } from '@/lib/spiritual-consent'
 import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsentModal'
+import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
+import { shouldOfferImmediateSupport } from '@/lib/crisis-support'
 
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
@@ -371,6 +373,22 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     setAnswers((prev) => ({ ...prev, [item.id]: value }))
   }
 
+  /**
+   * PHQ-9 q9 is "Thoughts that you would be better off dead, or hurting
+   * yourself". Until today, answering it did nothing at all.
+   *
+   * Read off the CURRENT answer rather than a latch, so going Back to the
+   * question shows it again — someone who returns to reconsider that answer is
+   * the last person who should find the offer withdrawn. Any endorsement
+   * counts, including "Several days"; see lib/crisis-support for why the
+   * threshold is not higher.
+   */
+  const showCrisisSupport = shouldOfferImmediateSupport(
+    instrument.instrumentId,
+    item.id,
+    currentValue,
+  )
+
   const advance = () => {
     if (!currentAnswered) return
     if (isLast) {
@@ -438,6 +456,17 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
             />
           </View>
         </View>
+
+        {/* Appears the instant the item is endorsed, under the question that
+            asked it — not on the results screen. Question nine of nine is a
+            plausible place to stop, and a design that waits for submission
+            reaches nobody who stops there.
+
+            It does not block, and there is no dismiss control: it sits in the
+            flow and scrolls past. A patient who learns that honest answers
+            trap them in a dialog learns to answer dishonestly, and then the
+            instrument measures nothing. */}
+        {showCrisisSupport ? <CrisisSupportCard /> : null}
 
         <View style={styles.actions}>
           <Pressable
