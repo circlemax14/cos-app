@@ -64,6 +64,7 @@ import { addRecentSearch } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
 import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useNotificationCategories } from '@/hooks/use-notification-categories'
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // Year / Month / Week / Day / List — Week was added in v7 at Ken's
 // request (Apple's iPad + Mac Calendar both include Week; iPhone's
@@ -202,7 +203,7 @@ function applySearch(events: CalendarEvent[], q: string): CalendarEvent[] {
   )
 }
 
-export default function CalendarScreen() {
+function CalendarScreenInner() {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const permissions = useCalendarPermissions()
@@ -516,7 +517,7 @@ export default function CalendarScreen() {
                     <View style={styles.emptyView}>
                       <IconSymbol name="magnifyingglass" size={getScaledFontSize(56)} color={colors.subtext} />
                       <Text style={[styles.emptyText, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-                        No events matching "{searchQuery}"
+                        No events matching &quot;{searchQuery}&quot;
                       </Text>
                     </View>
                   }
@@ -1081,3 +1082,16 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
 })
+
+/**
+ * Wrapped INSIDE the tab so a throw here costs this screen, not the app.
+ * Before 2026-08-15 there was no boundary anywhere and one screen's error
+ * aborted the whole process — see components/ScreenErrorBoundary.tsx.
+ */
+export default function CalendarScreen() {
+  return (
+    <ScreenErrorBoundary screen="appointments">
+      <CalendarScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
