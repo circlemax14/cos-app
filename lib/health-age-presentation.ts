@@ -257,3 +257,139 @@ export function orderMarkers<T extends { contributionYears: number | null; statu
     return Math.abs(b.contributionYears as number) - Math.abs(a.contributionYears as number)
   })
 }
+
+/**
+ * Grouping the markers into something a person can act on.
+ *
+ * ─── THE MISMATCH THIS FIXES ─────────────────────────────────────────
+ *
+ * Bevel's reference lists five rows: Sleep, Activity, Fitness, Lifestyle,
+ * Blood. Ours listed nine: Albumin, Creatinine, C-reactive protein, Lymphocyte
+ * %, Mean cell volume, Red-cell distribution width, Alkaline phosphatase,
+ * White-blood-cell count, Glucose.
+ *
+ * A patient reading "Red-cell distribution width — 0.4 years older" has no idea
+ * what to do with it. That is a lab report, not a health screen, and it was the
+ * biggest difference from the reference — bigger than the arc gauge, and unlike
+ * the arc it needs no native dependency to fix.
+ *
+ * ─── WHY THERE IS NO SLEEP OR ACTIVITY ROW ───────────────────────────
+ *
+ * There is a tempting version of this that mirrors Bevel exactly and adds
+ * Sleep / Activity / Fitness rows reading "No data available". It would look
+ * closer to the screenshot and it would be a LIE.
+ *
+ * Bevel's model consumes sleep and activity. Ours is Levine PhenoAge, which is
+ * blood-only — all nine markers are analytes. A "Sleep — No data available" row
+ * tells a patient that connecting a sleep tracker would improve their health
+ * age estimate, and with this model it would not change it by a single day.
+ * Matching a competitor's layout is not worth telling someone that.
+ *
+ * So the groups below are the body systems those nine analytes actually speak
+ * for — the same taxonomy the LOINC work uses elsewhere in the app, so a
+ * patient meets one vocabulary rather than two.
+ */
+export interface MarkerGroup {
+  key: string
+  label: string
+  /** Plain-language hint at what the group speaks for. */
+  hint: string
+  members: string[]
+}
+
+export const MARKER_GROUPS: readonly MarkerGroup[] = [
+  {
+    key: 'metabolic',
+    label: 'Blood sugar',
+    hint: 'How your body handles glucose',
+    members: ['glucose'],
+  },
+  {
+    key: 'inflammation',
+    label: 'Inflammation & immunity',
+    hint: 'Signs of inflammation and immune activity',
+    members: ['crp', 'whiteBloodCellCount', 'lymphocytePercent'],
+  },
+  {
+    key: 'liver',
+    label: 'Liver & nutrition',
+    hint: 'Liver function and protein status',
+    members: ['albumin', 'alkalinePhosphatase'],
+  },
+  {
+    key: 'kidneys',
+    label: 'Kidneys',
+    hint: 'How well your kidneys are filtering',
+    members: ['creatinine'],
+  },
+  {
+    key: 'bloodcells',
+    label: 'Blood cells',
+    hint: 'Size and variation of your red cells',
+    members: ['meanCellVolume', 'redCellDistWidth'],
+  },
+]
+
+export interface GroupedMarker {
+  key: string
+  label: string
+  hint: string
+  /** Summed years across the group's members, or null when none has a reading. */
+  contributionYears: number | null
+  /** 'fresh' when ANY member has a current reading; drives the row's phrasing. */
+  status: 'fresh' | 'missing'
+  /** How many of the group's markers have a current reading. */
+  freshCount: number
+  total: number
+  /** The underlying markers, for the drill-down. */
+  members: { name: string; contributionYears: number | null; status: string }[]
+}
+
+/**
+ * Roll the raw analytes up into the groups above.
+ *
+ * Contributions SUM within a group, which is the correct operation here: they
+ * are additive year terms in a linear model, so "Liver & nutrition, 0.8 years
+ * older" is a true statement about albumin plus alkaline phosphatase. It would
+ * NOT be true of a model that combined them any other way, which is why this
+ * lives beside the coefficients rather than in a generic helper.
+ *
+ * A group with no fresh member reports null rather than 0. Zero means "measured
+ * and neutral"; null means "not measured", and collapsing the two would tell a
+ * patient their kidneys are fine when nobody has looked.
+ */
+export function groupMarkers(
+  components: readonly { name: string; contributionYears: number | null; status: string }[],
+): GroupedMarker[] {
+  const byName = new Map(components.map((c) => [c.name, c]))
+
+  return MARKER_GROUPS.map((g) => {
+    const members = g.members
+      .map((n) => byName.get(n))
+      .filter((c): c is NonNullable<typeof c> => c != null)
+
+    const usable = members.filter(
+      (m) =>
+        m.status === 'fresh' &&
+        typeof m.contributionYears === 'number' &&
+        Number.isFinite(m.contributionYears),
+    )
+
+    return {
+      key: g.key,
+      label: g.label,
+      hint: g.hint,
+      contributionYears: usable.length
+        ? usable.reduce((sum, m) => sum + (m.contributionYears as number), 0)
+        : null,
+      status: usable.length ? ('fresh' as const) : ('missing' as const),
+      freshCount: usable.length,
+      total: members.length,
+      members: members.map((m) => ({
+        name: m.name,
+        contributionYears: m.contributionYears,
+        status: m.status,
+      })),
+    }
+  }).filter((g) => g.total > 0)
+}

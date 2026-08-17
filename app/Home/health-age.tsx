@@ -43,7 +43,7 @@ import {
   coverage,
   rangePosition,
   markerPhrase,
-  orderMarkers,
+  groupMarkers,
 } from '@/lib/health-age-presentation'
 import { useHealthAge } from '@/hooks/use-health-age'
 import { useHealthAgeHistoryBuckets } from '@/hooks/use-health-age-history'
@@ -1204,17 +1204,44 @@ function CoverageCard({
   )
 }
 
+/**
+ * The markers, grouped into something a person can act on.
+ *
+ * ─── WHY THIS CHANGED AGAIN ──────────────────────────────────────────
+ *
+ * The previous version listed the nine raw analytes: Albumin, Creatinine,
+ * C-reactive protein, Lymphocyte %, Mean cell volume, Red-cell distribution
+ * width, Alkaline phosphatase, White-blood-cell count, Glucose.
+ *
+ * Vishal's reference lists five readable rows. A patient reading "Red-cell
+ * distribution width — 0.4 years older" has nothing to do with it; that is a
+ * lab report, not a health screen. This was the single biggest difference from
+ * the reference — bigger than the missing arc gauge, and unlike the arc it
+ * needs no native dependency.
+ *
+ * NO SLEEP OR ACTIVITY ROW, and that is deliberate. Bevel shows those because
+ * their model consumes them; ours is Levine PhenoAge, which is blood-only. A
+ * "Sleep — No data available" row would tell a patient that connecting a
+ * tracker improves their health age, and with this model it would not move it
+ * by a day. See lib/health-age-presentation.
+ *
+ * Each group is tappable to reveal the analytes underneath, so the detail a
+ * clinician wants is one tap away rather than gone.
+ *
+ * iOS 26.5 envelope: View / Text / Pressable / MaterialIcons / StyleSheet.
+ * Bevel draws a circular progress ring per row; a ring needs react-native-svg,
+ * which is not installed and would change the native fingerprint — a new
+ * binary, not an OTA. A filled/hollow dot carries the three states instead.
+ */
 function ContributorCards({
   result,
   colors,
   getScaledFontSize,
   getScaledFontWeight,
 }: ContributorsProps): React.JSX.Element | null {
-  const components = result?.components ?? []
-  const measured = components.filter(
-    (c) => c.name !== 'chronologicalAge' && c.name !== 'intercept',
-  )
-  if (measured.length === 0) return null
+  const [openKey, setOpenKey] = React.useState<string | null>(null)
+  const groups = groupMarkers(result?.components ?? [])
+  if (groups.length === 0) return null
 
   return (
     <View style={styles.cardsBlock}>
@@ -1230,52 +1257,89 @@ function ContributorCards({
       </Text>
 
       <View style={{ gap: 8 }}>
-        {orderMarkers(measured).map((c) => {
-          const phrase = markerPhrase(c.contributionYears, c.status)
+        {groups.map((g) => {
+          const phrase = markerPhrase(g.contributionYears, g.status)
           const tone =
             phrase.tone === 'younger'
               ? '#0F6B36'
               : phrase.tone === 'older'
                 ? '#8A5100'
                 : (colors.subtext as string)
+          const open = openKey === g.key
+
           return (
-            <View
-              key={c.name}
-              style={[styles.markerRow, { backgroundColor: colors.card as string }]}
-              accessible
-              accessibilityLabel={`${labelFor(c.name)}, ${phrase.text}`}
-            >
-              <View
-                style={[
-                  styles.markerDot,
-                  {
-                    backgroundColor: phrase.tone === 'none' ? 'transparent' : tone,
-                    borderColor: phrase.tone === 'none' ? (colors.border as string) : tone,
-                  },
-                ]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    color: colors.text,
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(600) as any,
-                  }}
-                >
-                  {labelFor(c.name)}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    color: tone,
-                    fontSize: getScaledFontSize(13),
-                    marginTop: 1,
-                  }}
-                >
-                  {phrase.text}
-                </Text>
-              </View>
+            <View key={g.key} style={[styles.markerRow, { backgroundColor: colors.card as string }]}>
+              <Pressable
+                onPress={() => setOpenKey(open ? null : g.key)}
+                accessibilityRole="button"
+                accessibilityLabel={`${g.label}, ${phrase.text}. ${open ? 'Hide' : 'Show'} the tests behind this.`}
+                style={styles.markerHeader}
+              >
+                <View
+                  style={[
+                    styles.markerDot,
+                    {
+                      backgroundColor: phrase.tone === 'none' ? 'transparent' : tone,
+                      borderColor: phrase.tone === 'none' ? (colors.border as string) : tone,
+                    },
+                  ]}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: colors.text,
+                      fontSize: getScaledFontSize(15),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {g.label}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: tone, fontSize: getScaledFontSize(13), marginTop: 1 }}
+                  >
+                    {phrase.text}
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name={open ? 'expand-less' : 'expand-more'}
+                  size={getScaledFontSize(22)}
+                  color={colors.subtext as string}
+                />
+              </Pressable>
+
+              {open ? (
+                <View style={styles.markerDetail}>
+                  {/* The hint answers "what is this group even about", which a
+                      lab name never did. */}
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(12),
+                      marginBottom: 8,
+                    }}
+                  >
+                    {g.hint} · based on {g.freshCount} of {g.total}
+                  </Text>
+                  {g.members.map((m) => {
+                    const mp = markerPhrase(m.contributionYears, m.status)
+                    return (
+                      <View key={m.name} style={styles.markerDetailRow}>
+                        <Text
+                          style={{ color: colors.subtext, fontSize: getScaledFontSize(12), flex: 1 }}
+                          numberOfLines={1}
+                        >
+                          {labelFor(m.name)}
+                        </Text>
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+                          {mp.text}
+                        </Text>
+                      </View>
+                    )
+                  })}
+                </View>
+              ) : null}
             </View>
           )
         })}
@@ -1550,15 +1614,17 @@ const styles = StyleSheet.create({
   },
   coverageCard: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
   cardsBlock: { marginTop: 4, marginBottom: 12 },
-  markerRow: {
+  markerRow: { borderRadius: 14, overflow: 'hidden' },
+  markerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     minHeight: 56,
   },
+  markerDetail: { paddingHorizontal: 14, paddingBottom: 12, paddingTop: 2 },
+  markerDetailRow: { flexDirection: 'row', gap: 12, paddingVertical: 3 },
   // Bevel draws a circular progress ring here. A ring needs SVG, which this
   // screen's envelope forbids, so a filled dot carries the same three states:
   // solid = a reading that helps, solid amber = one that hurts, hollow = no
