@@ -16,8 +16,9 @@ import type { Report } from '@/services/api/types';
 import { LabResultsTable } from '@/components/reports/lab-results-table';
 import { DocumentViewer, type DocumentViewerSource } from '@/components/reports/document-viewer';
 import { InlineVisitSummary } from '@/components/reports/inline-visit-summary';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
-export default function Reports() {
+function ReportsInner() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const insets = useSafeAreaInsets();
@@ -1841,3 +1842,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+
+/**
+ * Wrapped INSIDE the tab so a throw here costs this screen, not the app.
+ * Before 2026-08-15 there was no boundary anywhere and one screen's error
+ * aborted the whole process — see components/ScreenErrorBoundary.tsx.
+ */
+export default function Reports() {
+  return (
+    <ScreenErrorBoundary screen="reports">
+      <ReportsInner />
+    </ScreenErrorBoundary>
+  );
+}

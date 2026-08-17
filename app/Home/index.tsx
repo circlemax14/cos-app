@@ -91,6 +91,7 @@ import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
 // without cutting over the whole screen.
 import { useHomeV2InjectionsEnabled } from '@/hooks/use-home-v2-injections-flag';
 import { useTodayWindow } from '@/hooks/use-local-day';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2928,7 +2929,7 @@ function HomeV2Layout(): React.JSX.Element {
   );
 }
 
-export default function HomeScreen() {
+function HomeScreenInner() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const userImg = undefined;
   const isTabletDevice = isTablet();
@@ -3666,7 +3667,7 @@ export default function HomeScreen() {
                 fontWeight: getScaledFontWeight(600) as any,
                 color: colors.text,
               }
-            ]}>Today's Appointments</Text>
+            ]}>Today&apos;s Appointments</Text>
             {todayCalendarItems.length === 0 ? (
               // SCRUM-279 (2026-06-08 build 34): empty state replaces
               // the silent-hide so the user always sees the card.
@@ -4521,3 +4522,16 @@ const styles = StyleSheet.create({
     // Styles applied inline
   },
 });
+
+/**
+ * Wrapped INSIDE the tab so a throw here costs this screen, not the app.
+ * Before 2026-08-15 there was no boundary anywhere and one screen's error
+ * aborted the whole process — see components/ScreenErrorBoundary.tsx.
+ */
+export default function HomeScreen() {
+  return (
+    <ScreenErrorBoundary screen="home">
+      <HomeScreenInner />
+    </ScreenErrorBoundary>
+  );
+}

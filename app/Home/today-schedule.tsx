@@ -136,6 +136,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useTodayWindow } from '@/hooks/use-local-day';
 import { formatDayLabel } from '@/lib/day-key';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // ─── Small pure helpers ──────────────────────────────────────────────
 
@@ -195,7 +196,7 @@ function toIso(date: string, time?: string): string {
 
 // ─── Screen ──────────────────────────────────────────────────────────
 
-export default function TodayScheduleScreen(): React.JSX.Element {
+function TodayScheduleScreenInner(): React.JSX.Element {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const queryClient = useQueryClient();
@@ -1085,3 +1086,16 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(0,0,0,0.05)',
   },
 });
+
+/**
+ * Wrapped INSIDE the tab so a throw here costs this screen, not the app.
+ * Before 2026-08-15 there was no boundary anywhere and one screen's error
+ * aborted the whole process — see components/ScreenErrorBoundary.tsx.
+ */
+export default function TodayScheduleScreen() {
+  return (
+    <ScreenErrorBoundary screen="today-schedule">
+      <TodayScheduleScreenInner />
+    </ScreenErrorBoundary>
+  );
+}
