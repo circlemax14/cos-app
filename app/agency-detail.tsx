@@ -11,6 +11,7 @@ import { apiClient } from '@/lib/api-client';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AgencyTeamSection } from '@/components/agency/AgencyTeamSection';
+import { AgencyVisitsSection } from '@/components/agency/AgencyVisitsSection';
 
 /**
  * Dismiss the agency detail modal. Prefer `router.dismiss` (proper modal
@@ -346,7 +347,17 @@ export default function AgencyDetailScreen() {
                 refuses a patient who is not assigned, but swallowing that here
                 would render an empty list — indistinguishable from "my agency
                 has no staff". */}
-            {agencyId ? <AgencyTeamSection agencyId={String(agencyId)} /> : null}
+            {agencyId ? (
+              <>
+                <AgencyTeamSection agencyId={String(agencyId)} />
+                {/* SCRUM-688 — the WHEN to the team list's WHO. Directly below
+                    it, because the two answer halves of one question.
+                    Null-renders unless a visit is actually booked, and is
+                    dark-flagged, so a patient with an empty calendar sees this
+                    screen exactly as it is today. */}
+                <AgencyVisitsSection agencyId={String(agencyId)} />
+              </>
+            ) : null}
           </>
         ) : requestStatus === 'pending' ? (
           <View style={[styles.requestButton, { backgroundColor: '#FFF3E0', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
