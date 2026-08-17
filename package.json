@@ -13,7 +13,8 @@
     "eas:update:preview": "./scripts/eas-update.sh preview",
     "eas:update:prod": "./scripts/eas-update.sh production",
     "check-runtime": "node scripts/check-runtime-version.mjs",
-    "postinstall": "npx patch-package"
+    "postinstall": "npx patch-package",
+    "prepare": "husky"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -88,6 +89,8 @@
     "@types/react": "~19.2.10",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~55.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "typescript": "~5.9.2"
   },
   "private": true,
@@ -102,5 +105,10 @@
         "listUnknownPackages": false
       }
     }
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint"
+    ]
   }
 }
