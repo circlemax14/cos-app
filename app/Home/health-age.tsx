@@ -36,6 +36,8 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
+import { ScoreArc } from '@/components/health/ScoreArc'
+import { MarkerRing } from '@/components/health/MarkerRing'
 import {
   formatAge,
   gapPhrase,
@@ -71,6 +73,15 @@ const BAND_TOKENS: Record<HealthAgeBand, { fg: string; bg: string; label: string
   younger:    { fg: '#0F6B36', bg: '#E6F4EC', label: 'YOUNGER' },
   'on-track': { fg: '#0B6963', bg: '#E0F2F1', label: 'ON TRACK' },
   older:      { fg: '#8A5100', bg: '#FDF3E4', label: 'OLDER' },
+}
+
+/** One glyph per marker group, so a row is recognisable before it is read. */
+const GROUP_ICON: Record<string, React.ComponentProps<typeof MaterialIcons>['name']> = {
+  metabolic: 'water-drop',
+  inflammation: 'shield',
+  liver: 'restaurant',
+  kidneys: 'filter-alt',
+  bloodcells: 'science',
 }
 
 const COMPONENT_LABELS: Record<string, string> = {
@@ -608,6 +619,22 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
       </Text>
       {typeof overall === 'number' ? (
         <>
+          {/* THE ARC. Bevel draws the number inside a semicircular gauge whose
+              midpoint is the patient's real age, so "left of centre" reads as
+              younger at a glance. Needs react-native-svg, which is why this
+              waited for a binary. Rendered only when both ages are known —
+              an arc with one endpoint missing is a decoration, not a scale. */}
+          {typeof chrono === 'number' && typeof overall === 'number' ? (
+            <ScoreArc
+              value={overall}
+              center={chrono}
+              trackColor={(colors.border as string) ?? '#E3E6E8'}
+              fillColor={tokens?.fg ?? '#0F6B36'}
+              labelColor={colors.subtext as string}
+              getScaledFontSize={getScaledFontSize}
+            />
+          ) : null}
+
           {/* ONE DECIMAL, not a rounded integer. A figure that moves about a
               year annually earns it — rounding to "36" hides every change
               smaller than six months, which is most of them. Bevel shows 36.0
@@ -1275,14 +1302,15 @@ function ContributorCards({
                 accessibilityLabel={`${g.label}, ${phrase.text}. ${open ? 'Hide' : 'Show'} the tests behind this.`}
                 style={styles.markerHeader}
               >
-                <View
-                  style={[
-                    styles.markerDot,
-                    {
-                      backgroundColor: phrase.tone === 'none' ? 'transparent' : tone,
-                      borderColor: phrase.tone === 'none' ? (colors.border as string) : tone,
-                    },
-                  ]}
+                {/* The ring encodes DATA COMPLETENESS, not how good the result
+                    is — see components/health/MarkerRing. Direction is carried
+                    by the colour and the words beside it, because a ring
+                    cannot say "5.4 years younger". */}
+                <MarkerRing
+                  fraction={g.total > 0 ? g.freshCount / g.total : 0}
+                  color={phrase.tone === 'none' ? (colors.subtext as string) : tone}
+                  trackColor={(colors.border as string) ?? '#E3E6E8'}
+                  icon={GROUP_ICON[g.key] ?? 'science'}
                 />
                 <View style={{ flex: 1 }}>
                   <Text

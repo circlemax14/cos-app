@@ -38,6 +38,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
+import { ScoreArc } from '@/components/health/ScoreArc'
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
 import {
   useWellbeingHistory,
@@ -152,6 +153,27 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
               /100
             </Text>
           </View>
+          {/* THE ARC, same gauge as Health Age so the two screens read as one
+              family. The scale differs and that difference matters: wellbeing
+              runs 0-100 where HIGHER IS BETTER, the opposite of health age.
+              The arc is therefore centred on 50 — the middle of the scale —
+              rather than on a personal reference point, because there is no
+              "your actual score" analogue to centre on here. Passing the
+              patient's own score as the centre would make the midpoint move
+              every week and mean nothing. */}
+          {typeof composite === 'number' ? (
+            <ScoreArc
+              value={composite}
+              center={50}
+              span={50}
+              size={230}
+              trackColor={(colors.border as string) ?? '#E3E6E8'}
+              fillColor={(colors.tint as string) ?? '#0F6B36'}
+              labelColor={colors.subtext as string}
+              getScaledFontSize={getScaledFontSize}
+            />
+          ) : null}
+
           {trend ? (
             <View
               style={styles.heroTrendRow}
