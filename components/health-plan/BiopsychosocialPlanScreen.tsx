@@ -64,6 +64,7 @@ import { MedicationsBanner } from './MedicationsBanner';
 // so the linter doesn't flag it as unused; add back if a future change
 // mounts it standalone again.
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
+import { RetakeRequestInboxCard } from './retake-request/RetakeRequestInboxCard';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
@@ -2210,6 +2211,35 @@ export function BiopsychosocialPlanScreen({
           `BPS_AI_SUMMARY_ENABLED` at module top. Component itself
           null-renders when summary is empty (two-layer defense).
         */}
+        {/* ─── Pending retake, SCRUM-687 ────────────────────────────────────
+            Vishal, 2026-08-15, on the retake work: "if patient go to plan page
+            without clicking notification then there should be message to its
+            time to take your assessment SO BOTH ARE DIFFERENT FEATURES".
+
+            They are, and only one of them existed. The notification deep-link
+            is one path; this is the other, and it is the one that catches the
+            patient who never tapped the notification — dismissed it, missed
+            it, or has notifications off entirely. That is most patients, so a
+            retake feature reachable only from a notification reaches almost
+            nobody.
+
+            SAME CARD AS HOME, DELIBERATELY. A second differently-worded
+            "time to reassess" surface would read as a second, separate
+            request, and a patient who acts on one would still see the other
+            sitting there unanswered. One component, one source of truth, one
+            request — it disappears from both places when answered.
+
+            Mounted ABOVE the AI summary because a request the care team is
+            waiting on outranks a generated recap. It null-renders when there
+            is nothing pending (silent-drop, same as Home), so the plan screen
+            is unchanged for a patient with no outstanding assessment.
+
+            iOS 26.5 envelope is satisfied by the card itself: View / Text /
+            Pressable / StyleSheet / MaterialIcons, no Modal or Animated. Its
+            "Not now" path opens a sheet SCREEN, not an overlay, for the same
+            reason — see the card's header. Safe on this surface. */}
+        <RetakeRequestInboxCard />
+
         {BPS_AI_SUMMARY_ENABLED && (
           // CHUNK 48 fix (adversarial-verify major): reserve fixed-height
           // slot while ai-health-plan is loading. Cold mount had banner
