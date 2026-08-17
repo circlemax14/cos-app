@@ -442,6 +442,17 @@ export default function HealthAgeScreen(): React.JSX.Element {
             getScaledFontWeight={getScaledFontWeight}
           />
 
+          {/* Reading order: what it is → how it has moved → WHAT IS DRIVING IT
+              → what to do → how it is calculated. The driving factors were
+              previously collapsed, which put the answer to the screen's
+              obvious question behind a tap. */}
+          <ContributorCards
+            result={data}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+
           <ImprovementSection
             result={data}
             colors={colors}
@@ -531,13 +542,19 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
   const tokens = band ? BAND_TOKENS[band] : undefined
 
   return (
-    <View style={[styles.heroCard, { backgroundColor: colors.card as string }]}>
+    <View style={[styles.heroCard, styles.heroCentered, { backgroundColor: colors.card as string }]}>
+      {/* CENTRED, and the date sits under the number. Both are Bevel's
+          treatment and neither was here before: the hero was left-aligned and
+          carried no date at all, so a patient had no idea whether they were
+          looking at today's number or one from three weeks ago. On a figure
+          that only moves slowly, "as of when" is not decoration. */}
       <Text
         style={{
           color: colors.subtext,
           fontSize: getScaledFontSize(11),
           fontWeight: getScaledFontWeight(700) as any,
           letterSpacing: 0.6,
+          textAlign: 'center',
         }}
       >
         YOUR HEALTH AGE
@@ -573,12 +590,39 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
               <Text style={[styles.chipLabel, { color: tokens.fg }]}>{tokens.label}</Text>
             </View>
           ) : null}
+          {/* As-of date, derived from the newest observation feeding any
+              component — the result has no top-level timestamp of its own.
+              Omitted entirely rather than guessed when nothing is dated:
+              a wrong date on a health figure is worse than no date. */}
+          {(() => {
+            const newest = (result?.components ?? [])
+              .map((c) => c.freshness?.newestObservationAt)
+              .filter((d): d is string => typeof d === 'string' && d !== '')
+              .sort()
+              .pop()
+            if (!newest) return null
+            const d = new Date(newest)
+            if (Number.isNaN(d.getTime())) return null
+            return (
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                  marginTop: 6,
+                  textAlign: 'center',
+                }}
+              >
+                {`as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+              </Text>
+            )
+          })()}
           {typeof chrono === 'number' ? (
             <Text
               style={{
                 color: colors.subtext,
                 fontSize: getScaledFontSize(13),
                 marginTop: 8,
+                textAlign: 'center',
               }}
             >
               vs chronological age {Math.round(chrono)}
@@ -951,6 +995,137 @@ interface ContributorsProps extends AccordionProps {
   result: HealthAgeResult | undefined
 }
 
+
+/**
+ * What is driving the number, as SCANNABLE CARDS rather than a hidden list.
+ *
+ * ─── WHY THIS EXISTS (2026-08-17) ────────────────────────────────────
+ *
+ * Vishal asked for this screen to match Bevel. What was shipped first was a
+ * reference line on the trend chart (#404) — a real improvement, but a chart
+ * detail, and the task was logged as done. It was not.
+ *
+ * The substantive difference is not the chart. Bevel's whole pattern is
+ * "primary number, then the supporting metrics as compact widget cards, each
+ * isolating one data point". Ours had the equivalent information — the
+ * per-component contributions — collapsed behind an accordion tap, so the
+ * answer to "why is my health age 47?" was invisible until you went looking
+ * for it. A number nobody can interrogate is a number nobody trusts.
+ *
+ * ─── ORDERING IS THE DESIGN DECISION HERE ────────────────────────────
+ *
+ * Sorted by contribution DESCENDING, so whatever is adding the most years
+ * comes first. That is the opposite of alphabetical and it is deliberate: the
+ * top-left card is the thing most worth acting on, which is the only ordering
+ * that makes a glance useful.
+ *
+ * Neutral and negative contributors still render — a component that is pulling
+ * the number DOWN is good news and worth seeing — they simply sort below.
+ *
+ * ─── CAPPED, AND THE CAP IS NOT COSMETIC ─────────────────────────────
+ *
+ * Six cards. ADR-0003 traced the iOS 26.5 crashes to render-primitive DENSITY,
+ * not to any one component, so an unbounded grid on a patient with a full lab
+ * panel would recreate the original condition. The accordion below keeps the
+ * complete list, so nothing is hidden — it is paged.
+ *
+ * iOS 26.5 envelope: View / Text / StyleSheet only.
+ */
+function ContributorCards({
+  result,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: ContributorsProps): React.JSX.Element | null {
+  const components = result?.components ?? []
+  if (components.length === 0) return null
+
+  const ranked = [...components]
+    .sort((a, b) => (b.contributionYears ?? -Infinity) - (a.contributionYears ?? -Infinity))
+    .slice(0, 6)
+
+  return (
+    <View style={styles.cardsBlock}>
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: getScaledFontSize(11),
+          fontWeight: getScaledFontWeight(700) as any,
+          letterSpacing: 0.6,
+          marginBottom: 8,
+        }}
+      >
+        WHAT IS DRIVING THIS
+      </Text>
+
+      <View style={styles.cardsGrid}>
+        {ranked.map((c) => {
+          const years = c.contributionYears
+          const adds = typeof years === 'number' && years >= 0.1
+          const subtracts = typeof years === 'number' && years <= -0.1
+          // Colour carries the direction, so the sign is not the only cue —
+          // a glance at a grid should not require reading every minus sign.
+          const valueColor = adds
+            ? '#B4441F'
+            : subtracts
+              ? '#0F6B36'
+              : (colors.subtext as string)
+
+          return (
+            <View
+              key={c.name}
+              style={[styles.contribCard, { backgroundColor: colors.card as string }]}
+              accessible
+              accessibilityLabel={`${labelFor(c.name)}, ${contributionLabel(years)}${
+                c.status === 'fresh' ? '' : `, ${statusChipStyle(c.status).label.toLowerCase()}`
+              }`}
+            >
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                }}
+              >
+                {labelFor(c.name)}
+              </Text>
+              <Text
+                style={{
+                  color: valueColor,
+                  fontSize: getScaledFontSize(19),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  marginTop: 2,
+                }}
+              >
+                {contributionLabel(years)}
+              </Text>
+              {/* Only surfaced when it is NOT fresh. A "FRESH" badge on every
+                  card is noise, and noise is what stops the one STALE badge
+                  from being noticed. */}
+              {c.status !== 'fresh' ? (
+                <View
+                  style={[styles.miniChip, { backgroundColor: statusChipStyle(c.status).bg }]}
+                >
+                  <Text
+                    style={{
+                      color: statusChipStyle(c.status).fg,
+                      fontSize: getScaledFontSize(9),
+                      fontWeight: getScaledFontWeight(700) as any,
+                      letterSpacing: 0.4,
+                    }}
+                  >
+                    {statusChipStyle(c.status).label}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
 function ContributorsAccordion({
   result,
   colors,
@@ -1107,6 +1282,7 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 12,
   },
+  heroCentered: { alignItems: 'center' },
   heroCard: {
     borderRadius: 16,
     padding: 16,
@@ -1116,6 +1292,7 @@ const styles = StyleSheet.create({
   heroScoreRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    justifyContent: 'center',
     marginTop: 4,
   },
   chip: {
@@ -1202,6 +1379,27 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#00000015',
+  },
+  // ── Contributor cards (Bevel-style widget grid) ──
+  cardsBlock: { marginTop: 4, marginBottom: 12 },
+  // Two-up via wrap rather than a fixed column count, so the cards reflow at
+  // large accessibility text sizes instead of clipping their own values.
+  cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  contribCard: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    minWidth: 150,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 72,
+  },
+  miniChip: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   improveHeaderRow: {
     flexDirection: 'row',
