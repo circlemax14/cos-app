@@ -393,3 +393,52 @@ export function groupMarkers(
     }
   }).filter((g) => g.total > 0)
 }
+
+/**
+ * How a group's ring divides into helping / hurting / unmeasured.
+ *
+ * ─── WHY THIS REPLACED THE COMPLETENESS RING ─────────────────────────
+ *
+ * The first ring encoded one number — what share of the group's tests had a
+ * current reading. It was honest but it wasted the ring: the reference uses
+ * TWO colours in one track, and the second colour is where the meaning is.
+ *
+ * A single fraction cannot say whether the readings you do have are good news.
+ * Splitting the same track three ways can, and every piece comes from data we
+ * already hold per member:
+ *
+ *   green  — measured, and pulling the age DOWN (contribution < 0)
+ *   amber  — measured, and pulling it UP (contribution > 0)
+ *   grey   — no current reading, so the remainder of the ring stays empty
+ *
+ * The grey is not padding. A half-grey ring means half this group is unknown,
+ * which is the one thing on the row a patient can actually act on.
+ *
+ * Members that are measured but exactly neutral count as helping, so the ring
+ * always closes when the group is fully measured — a sliver of grey that
+ * merely means "0.0 years" would read as a missing test.
+ */
+export function splitGroup(members: readonly { contributionYears: number | null; status: string }[]): {
+  helping: number
+  hurting: number
+  missing: number
+} {
+  const total = members.length
+  if (total === 0) return { helping: 0, hurting: 0, missing: 0 }
+
+  let helping = 0
+  let hurting = 0
+  for (const m of members) {
+    const measured =
+      m.status === 'fresh' && typeof m.contributionYears === 'number' && Number.isFinite(m.contributionYears)
+    if (!measured) continue
+    if ((m.contributionYears as number) > 0.05) hurting += 1
+    else helping += 1
+  }
+
+  return {
+    helping: helping / total,
+    hurting: hurting / total,
+    missing: (total - helping - hurting) / total,
+  }
+}

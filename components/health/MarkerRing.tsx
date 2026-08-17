@@ -1,28 +1,30 @@
 /**
- * The circular progress ring from Bevel's biomarker rows.
+ * The segmented ring on each biomarker row.
  *
- * A ring with an icon inside, drawn as two arcs: a full track and a partial
- * sweep whose length is how much of the group has current data. That second
- * meaning is the one worth being careful about — see below.
+ * ─── WHAT CHANGED, AND WHY ───────────────────────────────────────────
  *
- * Needs react-native-svg, so it is part of the same binary as ScoreArc.
+ * The first version drew ONE arc whose length was data completeness. Honest,
+ * but it spent a whole ring on a single number and left the reference's second
+ * colour unexplained. The reference splits one track between two colours, and
+ * that split is where the meaning lives.
  *
- * ─── WHAT THE SWEEP MEANS, AND WHAT IT DOES NOT ──────────────────────
+ * So the track now divides three ways, every piece computed from data we
+ * already hold per member (see splitGroup in lib/health-age-presentation):
  *
- * In the reference the ring appears to encode how the marker is doing. Ours
- * encodes DATA COMPLETENESS — how many of the group's tests have a current
- * reading — and that is a deliberate difference.
+ *   green  — measured, pulling the age DOWN
+ *   amber  — measured, pulling it UP
+ *   grey   — no current reading; the ring stays open by that much
  *
- * Encoding "how good is this result" as ring fullness would need a normal
- * range per analyte to scale against, and we do not have one. The contribution
- * in years is not a percentage of anything; a −5.4 year contribution has no
- * natural ceiling to draw it against, so any sweep length would be invented.
- * Meanwhile completeness is a real fraction we can compute honestly, and it is
- * the thing a patient can act on: an empty ring means go and get the test.
+ * The grey is the actionable part: an open ring means a test is missing, not
+ * that a result is bad.
  *
- * The DIRECTION (better or worse) is carried by colour and by the text beside
- * it, which is where it belongs — a number can say "5.4 years younger"; a ring
- * cannot.
+ * ─── WHAT IT STILL DOES NOT ENCODE ───────────────────────────────────
+ *
+ * Segment LENGTH is a count of markers, not a magnitude. Scaling length by
+ * years-contributed would need a normal range per analyte to divide against
+ * and we have none — a −5.4 year contribution has no natural ceiling, so any
+ * length would be invented. Magnitude stays in the words beside the ring,
+ * which can say "5.4 years younger" precisely.
  */
 
 import React from 'react'
@@ -31,51 +33,98 @@ import Svg, { Circle } from 'react-native-svg'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 
 export interface MarkerRingProps {
-  /** 0-1 — the fraction of this group's markers with a current reading. */
-  fraction: number
-  /** Ring colour. Grey when nothing is measured. */
-  color: string
+  /** Fraction of the group's markers that are measured and helping. */
+  helping: number
+  /** Fraction measured and hurting. */
+  hurting: number
+  helpingColor: string
+  hurtingColor: string
+  /** The unmeasured remainder, and the ring's resting colour. */
   trackColor: string
+  /** Thin inner ring echoing the outer one, as in the reference. */
+  innerColor: string
+  iconColor: string
   icon: React.ComponentProps<typeof MaterialIcons>['name']
   size?: number
 }
 
+const clamp01 = (n: number): number => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0)
+
 export function MarkerRing({
-  fraction,
-  color,
+  helping,
+  hurting,
+  helpingColor,
+  hurtingColor,
   trackColor,
+  innerColor,
+  iconColor,
   icon,
-  size = 40,
+  size = 48,
 }: MarkerRingProps): React.JSX.Element {
-  const stroke = 3.5
+  const stroke = size * 0.1
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
-  const safe = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0))
-  // A zero-length dash still paints a round cap, which reads as a small filled
-  // pip and implies data that is not there. Suppress the sweep entirely.
-  const dash = safe <= 0 ? 0 : c * safe
+
+  const h = clamp01(helping)
+  // Never let rounding push the two segments past a full turn.
+  const u = clamp01(Math.min(hurting, 1 - h))
+
+  const innerR = r - stroke * 1.15
+  const innerStroke = Math.max(1.5, stroke * 0.42)
+
+  // Start at 12 o'clock, where a person expects a ring to begin.
+  const spin = `rotate(-90 ${size / 2} ${size / 2})`
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
+        {/* The unmeasured remainder — a full track the segments sit on. */}
         <Circle cx={size / 2} cy={size / 2} r={r} stroke={trackColor} strokeWidth={stroke} fill="none" />
-        {dash > 0 ? (
+
+        {/* Helping, from 12 o'clock clockwise. */}
+        {h > 0 ? (
           <Circle
             cx={size / 2}
             cy={size / 2}
             r={r}
-            stroke={color}
+            stroke={helpingColor}
             strokeWidth={stroke}
             fill="none"
             strokeLinecap="round"
-            strokeDasharray={`${dash} ${c}`}
-            // Start at 12 o'clock rather than 3, which is where a person
-            // expects a progress ring to begin.
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            strokeDasharray={`${c * h} ${c}`}
+            transform={spin}
           />
         ) : null}
+
+        {/* Hurting, picking up exactly where helping stops. A negative
+            dashoffset advances the start of the dash around the circle. */}
+        {u > 0 ? (
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            stroke={hurtingColor}
+            strokeWidth={stroke}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={`${c * u} ${c}`}
+            strokeDashoffset={-c * h}
+            transform={spin}
+          />
+        ) : null}
+
+        {/* The reference's inner ring — decorative, and it stops the icon
+            from floating in the middle of an empty disc. */}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={innerR}
+          stroke={innerColor}
+          strokeWidth={innerStroke}
+          fill="none"
+        />
       </Svg>
-      <MaterialIcons name={icon} size={size * 0.45} color={color} />
+      <MaterialIcons name={icon} size={size * 0.36} color={iconColor} />
     </View>
   )
 }
