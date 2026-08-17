@@ -187,6 +187,34 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
           <View style={styles.heroChipRow}>
             <ScoreBandChip band={band} />
           </View>
+          {/* AS-OF DATE. `computedAt` has always been in the payload and was
+              never shown, so a patient could not tell whether they were
+              reading a score from this morning or from before a week of
+              changes. This screen already had the two things Health Age was
+              missing — a centred hero and a visible drivers list — so the date
+              was the only real gap against Bevel's treatment.
+
+              Omitted rather than guessed when the timestamp is unparseable: a
+              wrong date on a health figure is worse than no date. */}
+          {(() => {
+            const iso = endpoint?.computedAt
+            if (!iso) return null
+            const d = new Date(iso)
+            if (Number.isNaN(d.getTime())) return null
+            return (
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(12),
+                  marginTop: 8,
+                  textAlign: 'center',
+                }}
+                maxFontSizeMultiplier={1.3}
+              >
+                {`as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+              </Text>
+            )
+          })()}
         </View>
 
         {/* Range toggle */}
@@ -285,7 +313,7 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
                 { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as any },
               ]}
             >
-              WHAT'S DRIVING THIS
+              WHAT&apos;S DRIVING THIS
             </Text>
             {endpoint.components.map((comp) => {
               const label = COMPONENT_LABEL[comp.name] ?? comp.name
