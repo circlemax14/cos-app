@@ -36,6 +36,15 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
+import {
+  formatAge,
+  gapPhrase,
+  weekChange,
+  coverage,
+  rangePosition,
+  markerPhrase,
+  orderMarkers,
+} from '@/lib/health-age-presentation'
 import { useHealthAge } from '@/hooks/use-health-age'
 import { useHealthAgeHistoryBuckets } from '@/hooks/use-health-age-history'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
@@ -433,6 +442,44 @@ export default function HealthAgeScreen(): React.JSX.Element {
             getScaledFontWeight={getScaledFontWeight}
           />
 
+          {/* Directly under the hero, as in the reference: how much to trust
+              the number comes before how the number has moved. */}
+          <CoverageCard
+            result={data}
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+
+          {/* Week-over-week movement, the pill Bevel shows under the gap
+              ("▼ -0.7 from last week"). Compared against a point at least five
+              days back rather than simply the previous bucket — buckets are
+              irregular, and calling a one-day gap "last week" would be a claim
+              about a timescale the data does not support. */}
+          {(() => {
+            const wc = weekChange(history?.buckets ?? [])
+            if (!wc.text) return null
+            const tone =
+              wc.direction === 'down' ? '#0F6B36' : wc.direction === 'up' ? '#8A5100' : (colors.subtext as string)
+            const arrow = wc.direction === 'down' ? 'arrow-downward' : wc.direction === 'up' ? 'arrow-upward' : 'remove'
+            return (
+              <View style={styles.weekPillRow}>
+                <View style={[styles.weekPill, { backgroundColor: colors.card as string }]}>
+                  <MaterialIcons name={arrow} size={getScaledFontSize(14)} color={tone} />
+                  <Text
+                    style={{
+                      color: tone,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {wc.text}
+                  </Text>
+                </View>
+              </View>
+            )
+          })()}
+
           <TrendCard
             buckets={history?.buckets ?? []}
             rangeDays={rangeDays}
@@ -561,6 +608,10 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
       </Text>
       {typeof overall === 'number' ? (
         <>
+          {/* ONE DECIMAL, not a rounded integer. A figure that moves about a
+              year annually earns it — rounding to "36" hides every change
+              smaller than six months, which is most of them. Bevel shows 36.0
+              for the same reason. */}
           <View style={styles.heroScoreRow}>
             <Text
               style={{
@@ -570,9 +621,9 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
                 fontWeight: getScaledFontWeight(800) as any,
                 letterSpacing: -1,
               }}
-              accessibilityLabel={`Your Health Age is ${Math.round(overall)} years`}
+              accessibilityLabel={`Your Health Age is ${formatAge(overall)} years`}
             >
-              {Math.round(overall)}
+              {formatAge(overall)}
             </Text>
             <Text
               style={{
@@ -585,6 +636,37 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
               yrs
             </Text>
           </View>
+
+          {/* THE GAP LEADS, in plain language and in colour.
+              This screen used to say "vs chronological age 44", which makes the
+              reader do the subtraction. "8.3 years younger" is the entire
+              finding in three words, and it is what Bevel puts directly under
+              the number. Green when younger, amber when older — the direction
+              is carried by colour as well as by the word, because the word is
+              the part that gets skimmed past. */}
+          {(() => {
+            const phrase = gapPhrase(gap)
+            if (!phrase.text) return null
+            const tone =
+              phrase.direction === 'younger'
+                ? '#0F6B36'
+                : phrase.direction === 'older'
+                  ? '#8A5100'
+                  : (colors.subtext as string)
+            return (
+              <Text
+                style={{
+                  color: tone,
+                  fontSize: getScaledFontSize(17),
+                  fontWeight: getScaledFontWeight(700) as any,
+                  marginTop: 2,
+                  textAlign: 'center',
+                }}
+              >
+                {phrase.text}
+              </Text>
+            )
+          })()}
           {tokens ? (
             <View style={[styles.chip, { backgroundColor: tokens.bg }]}>
               <Text style={[styles.chipLabel, { color: tokens.fg }]}>{tokens.label}</Text>
@@ -1031,6 +1113,97 @@ interface ContributorsProps extends AccordionProps {
  *
  * iOS 26.5 envelope: View / Text / StyleSheet only.
  */
+/**
+ * Every marker the estimate uses, as rows — INCLUDING the empty ones.
+ *
+ * ─── A CORRECTION TO MY OWN FIRST PASS ───────────────────────────────
+ *
+ * The first version of this was a card grid sorted by impact and sliced to the
+ * top six. Vishal's second Bevel reference shows why that was wrong: their
+ * screen renders Sleep, Activity and Fitness as "No data available" rather than
+ * dropping them. Sorting by impact pushes empty markers to the bottom, and
+ * slicing then deletes exactly the rows a patient most needs.
+ *
+ * Those rows are the actionable ones. "+1.2 years" tells someone something is
+ * wrong; "No data available" tells them what to DO about it — connect the
+ * tracker, get the bloods done — and it is the only thing that moves the data
+ * coverage figure sitting above. Hiding them leaves a patient looking at a
+ * low-coverage estimate with no idea why it is low.
+ *
+ * Rows rather than cards, also from the reference: a row fits a full phrase
+ * like "15.2 years younger" without truncating, and costs fewer render
+ * primitives than a card — which matters on this screen (ADR-0003).
+ *
+ * NO CAP. The model has around nine measured markers; that is a bounded list,
+ * not an unbounded one, so the density argument that justified capping the
+ * cards does not apply to a fixed-length row list.
+ *
+ * iOS 26.5 envelope: View / Text / StyleSheet only. Bevel draws a circular
+ * progress ring per row; a ring needs SVG, which this screen forbids, so the
+ * indicator is a filled dot whose colour carries the same three states.
+ */
+/**
+ * How complete is the data behind this number?
+ *
+ * Bevel puts a confidence card directly under the hero — "92% confidence, high
+ * quality" in green on one screen, "56% confidence, partial or aging data" in
+ * amber on the other. That second screenshot is the useful one, because it
+ * shows the design taking a weak estimate and SAYING SO rather than presenting
+ * it with the same authority as a strong one.
+ *
+ * Ours says the same thing under an honest name. What is computable here is
+ * data COVERAGE — how many of the model's markers had a fresh reading — and
+ * that is not a statistical confidence interval. Calling it "confidence" would
+ * put a figure in front of a clinician that looks like it came from the model's
+ * error bounds when it came from counting rows. See lib/health-age-presentation.
+ *
+ * This is the "improve the calculation" half of the ask: the number itself is
+ * unchanged, but until now the screen said nothing at all about whether it
+ * rested on nine markers or two.
+ */
+function CoverageCard({
+  result,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: ContributorsProps): React.JSX.Element | null {
+  const cov = coverage(result?.components ?? [])
+  if (!cov) return null
+
+  const tone =
+    cov.tone === 'good' ? '#0F6B36' : cov.tone === 'caution' ? '#8A5100' : '#B4441F'
+  const bg =
+    cov.tone === 'good' ? '#E6F4EC' : cov.tone === 'caution' ? '#FDF3E4' : '#FBEBE6'
+
+  return (
+    <View
+      style={[styles.coverageCard, { backgroundColor: bg }]}
+      accessible
+      accessibilityLabel={`${cov.label}. ${cov.detail}`}
+    >
+      <Text
+        style={{
+          color: tone,
+          fontSize: getScaledFontSize(15),
+          fontWeight: getScaledFontWeight(700) as any,
+        }}
+      >
+        {`${cov.percent}% of markers current — ${cov.label}`}
+      </Text>
+      <Text
+        style={{
+          color: '#4A5257',
+          fontSize: getScaledFontSize(12),
+          lineHeight: 17,
+          marginTop: 3,
+        }}
+      >
+        {cov.detail}
+      </Text>
+    </View>
+  )
+}
+
 function ContributorCards({
   result,
   colors,
@@ -1038,86 +1211,71 @@ function ContributorCards({
   getScaledFontWeight,
 }: ContributorsProps): React.JSX.Element | null {
   const components = result?.components ?? []
-  if (components.length === 0) return null
-
-  const ranked = [...components]
-    .sort((a, b) => (b.contributionYears ?? -Infinity) - (a.contributionYears ?? -Infinity))
-    .slice(0, 6)
+  const measured = components.filter(
+    (c) => c.name !== 'chronologicalAge' && c.name !== 'intercept',
+  )
+  if (measured.length === 0) return null
 
   return (
     <View style={styles.cardsBlock}>
       <Text
         style={{
-          color: colors.subtext,
-          fontSize: getScaledFontSize(11),
+          color: colors.text,
+          fontSize: getScaledFontSize(17),
           fontWeight: getScaledFontWeight(700) as any,
-          letterSpacing: 0.6,
-          marginBottom: 8,
+          marginBottom: 10,
         }}
       >
-        WHAT IS DRIVING THIS
+        Age markers
       </Text>
 
-      <View style={styles.cardsGrid}>
-        {ranked.map((c) => {
-          const years = c.contributionYears
-          const adds = typeof years === 'number' && years >= 0.1
-          const subtracts = typeof years === 'number' && years <= -0.1
-          // Colour carries the direction, so the sign is not the only cue —
-          // a glance at a grid should not require reading every minus sign.
-          const valueColor = adds
-            ? '#B4441F'
-            : subtracts
+      <View style={{ gap: 8 }}>
+        {orderMarkers(measured).map((c) => {
+          const phrase = markerPhrase(c.contributionYears, c.status)
+          const tone =
+            phrase.tone === 'younger'
               ? '#0F6B36'
-              : (colors.subtext as string)
-
+              : phrase.tone === 'older'
+                ? '#8A5100'
+                : (colors.subtext as string)
           return (
             <View
               key={c.name}
-              style={[styles.contribCard, { backgroundColor: colors.card as string }]}
+              style={[styles.markerRow, { backgroundColor: colors.card as string }]}
               accessible
-              accessibilityLabel={`${labelFor(c.name)}, ${contributionLabel(years)}${
-                c.status === 'fresh' ? '' : `, ${statusChipStyle(c.status).label.toLowerCase()}`
-              }`}
+              accessibilityLabel={`${labelFor(c.name)}, ${phrase.text}`}
             >
-              <Text
-                numberOfLines={1}
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(12),
-                }}
-              >
-                {labelFor(c.name)}
-              </Text>
-              <Text
-                style={{
-                  color: valueColor,
-                  fontSize: getScaledFontSize(19),
-                  fontWeight: getScaledFontWeight(700) as any,
-                  marginTop: 2,
-                }}
-              >
-                {contributionLabel(years)}
-              </Text>
-              {/* Only surfaced when it is NOT fresh. A "FRESH" badge on every
-                  card is noise, and noise is what stops the one STALE badge
-                  from being noticed. */}
-              {c.status !== 'fresh' ? (
-                <View
-                  style={[styles.miniChip, { backgroundColor: statusChipStyle(c.status).bg }]}
+              <View
+                style={[
+                  styles.markerDot,
+                  {
+                    backgroundColor: phrase.tone === 'none' ? 'transparent' : tone,
+                    borderColor: phrase.tone === 'none' ? (colors.border as string) : tone,
+                  },
+                ]}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(15),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
                 >
-                  <Text
-                    style={{
-                      color: statusChipStyle(c.status).fg,
-                      fontSize: getScaledFontSize(9),
-                      fontWeight: getScaledFontWeight(700) as any,
-                      letterSpacing: 0.4,
-                    }}
-                  >
-                    {statusChipStyle(c.status).label}
-                  </Text>
-                </View>
-              ) : null}
+                  {labelFor(c.name)}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: tone,
+                    fontSize: getScaledFontSize(13),
+                    marginTop: 1,
+                  }}
+                >
+                  {phrase.text}
+                </Text>
+              </View>
             </View>
           )
         })}
@@ -1381,7 +1539,31 @@ const styles = StyleSheet.create({
     borderTopColor: '#00000015',
   },
   // ── Contributor cards (Bevel-style widget grid) ──
+  weekPillRow: { alignItems: 'center', marginBottom: 12 },
+  weekPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  coverageCard: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
   cardsBlock: { marginTop: 4, marginBottom: 12 },
+  markerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 56,
+  },
+  // Bevel draws a circular progress ring here. A ring needs SVG, which this
+  // screen's envelope forbids, so a filled dot carries the same three states:
+  // solid = a reading that helps, solid amber = one that hurts, hollow = no
+  // data. Information preserved even though the shape is not.
+  markerDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
   // Two-up via wrap rather than a fixed column count, so the cards reflow at
   // large accessibility text sizes instead of clipping their own values.
   cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
