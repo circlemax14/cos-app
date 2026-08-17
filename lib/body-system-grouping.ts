@@ -4,12 +4,33 @@
  *
  * ─── WHERE THIS TAXONOMY CAME FROM ───────────────────────────────────
  *
- * Ken referred to a doc with his categories. It was never located, and no
- * body-system taxonomy existed anywhere in either repo, so the groups below
- * are a conventional clinical panel grouping rather than his. Every
- * assignment is a single table entry: when his doc surfaces, reconciling it
- * is a data edit here, not a rewrite. The two judgement calls most likely to
- * differ from his are marked JUDGEMENT below.
+ * Ken referred to a doc with his categories. It was not located when this file
+ * was first written, so the groups below started as a conventional clinical
+ * panel grouping rather than his, on the bet that reconciling later would be a
+ * data edit rather than a rewrite.
+ *
+ * 2026-08-16 — HIS SOURCES ARRIVED, and the bet paid: this is a data edit.
+ *
+ *   [TOP2000] LOINC Mapper's Guide to the Top 2000+ US Lab Tests, v1.6,
+ *             Regenstrief Institute, June 2017.
+ *   [HCUP]    LOINC Codes for Laboratory Data in the Enhanced Administrative
+ *             Database, AHRQ HCUP, Oct 2010. 26 core tests + valid ranges.
+ *
+ * Every code added below carries its source in a trailing comment. Codes that
+ * were already here have been checked against [TOP2000] and none were wrong.
+ * One assignment CHANGED as a result — hs-CRP, see the note on it below — and
+ * that change is Regenstrief's stated clinical use, not our opinion.
+ *
+ * NOT SETTLED BY THESE DOCS: neither source maps a code to an ORGAN. [TOP2000]
+ * gives a lab-discipline Class (Chem / Heme / Micro / Coagulation …) and a
+ * specimen System (Ser/Plas, Bld, Urine); [HCUP] gives codes, units and ranges.
+ * So the organ assignment stays ours. What the docs did settle is WHICH CODE
+ * IS WHICH — which is what the table was actually getting wrong by omission.
+ * The judgement calls below still want Ken's eye.
+ *
+ * ALSO IN [HCUP] AND NOT YET USED: absolute and relative valid ranges for 26
+ * analytes. We show lab values today with no reference range at all. That is a
+ * real gap and a separate piece of work — it needs a UI decision, not a table.
  *
  * ─── WHY MATCHING IS NOT JUST A CODE LOOKUP ──────────────────────────
  *
@@ -127,13 +148,145 @@ const BY_CODE: Readonly<Record<string, BodySystem>> = {
   // ── LOINC: health-age biomarkers ──
   '1751-7': 'liver',       // Albumin — see JUDGEMENT in BY_NAME
   '6768-6': 'liver',       // Alkaline phosphatase
-  '1988-5': 'immune',      // CRP
-  '30522-7': 'immune',     // hs-CRP
+  // [TOP2000] distinguishes these two by clinical USE, and they are not the
+  // same marker: 1988-5 "is used to assess severity of inflammatory diseases
+  // such as rheumatoid arthritis"; 30522-7 "is used to assess cardiovascular
+  // risk". Both sat under Immune here, which put a patient's cardiac-risk
+  // number under an inflammation heading. hs-CRP therefore moves to Heart.
+  // This is Regenstrief's stated use, not our reading.
+  '1988-5': 'immune',      // CRP, standard sensitivity          [TOP2000]
+  '30522-7': 'heart',      // hs-CRP — cardiovascular risk       [TOP2000]
   '6690-2': 'blood',       // WBC
   '736-9': 'blood',        // Lymphocyte %
   '26478-8': 'blood',      // Lymphocytes
   '787-2': 'blood',        // MCV
-  '788-0': 'blood',        // RDW
+  '788-0': 'blood',        // RDW, as a ratio/%                  [TOP2000]
+
+  // ══ ADDED 2026-08-16 FROM KEN'S SOURCES ═══════════════════════════════
+  //
+  // WHY THIS MATTERS MORE THAN IT LOOKS: BY_CODE is consulted before BY_NAME,
+  // but a FHIR Observation that arrives with NO display name falls through to
+  // normalize(), which then has only the bare code to match on — "1920 8"
+  // matches no pattern, so the result lands in "Other". Every code below was
+  // already handled by name; none of them were handled when the name was
+  // missing. This closes that hole for the labs US hospitals order most.
+  //
+  // ── Liver ── [HCUP] 1-7, [TOP2000] Chem
+  '1742-6': 'liver',       // ALT (SGPT)                         [TOP2000]
+  '1920-8': 'liver',       // AST (SGOT)                         [HCUP 4]
+  '1783-0': 'liver',       // ALP, whole blood                   [HCUP 2A]
+  '1975-2': 'liver',       // Bilirubin total                    [HCUP 7]
+  '14631-6': 'liver',      // Bilirubin total, molar              [HCUP 7A]
+  '2324-2': 'liver',       // GGT                                [TOP2000]
+  '2885-2': 'liver',       // Total protein                      [TOP2000]
+
+  // ── Kidneys ── [HCUP] 11, 22-23, 25
+  '3094-0': 'kidneys',     // BUN                                [HCUP 25]
+  '14937-7': 'kidneys',    // BUN, molar                         [HCUP 25A]
+  '14682-9': 'kidneys',    // Creatinine, molar                  [HCUP 11A]
+  '2951-2': 'kidneys',     // Sodium                             [HCUP 23]
+  '2947-0': 'kidneys',     // Sodium, whole blood                [HCUP 23A]
+  '2823-3': 'kidneys',     // Potassium                          [HCUP 22]
+  '6298-4': 'kidneys',     // Potassium, whole blood             [HCUP 22A]
+  '2075-0': 'kidneys',     // Chloride                           [TOP2000]
+  '2028-9': 'kidneys',     // CO2 total                          [TOP2000]
+  '1963-8': 'kidneys',     // Bicarbonate, serum                 [HCUP 6]
+  '1962-0': 'kidneys',     // Bicarbonate, plasma                [HCUP 6A]
+  '33037-3': 'kidneys',    // Anion gap                          [TOP2000]
+  '3084-1': 'kidneys',     // Urate / uric acid                  [TOP2000]
+  '48642-3': 'kidneys',    // eGFR MDRD, non-black               [TOP2000]
+  '48643-1': 'kidneys',    // eGFR MDRD, black                   [TOP2000]
+
+  // ── Blood ── [HCUP] 13, 15, 17, 20, 26
+  '718-7': 'blood',        // Haemoglobin                        [HCUP 13]
+  '30352-9': 'blood',      // Haemoglobin, capillary             [HCUP 13A]
+  '4544-3': 'blood',       // Haematocrit, automated             [TOP2000]
+  '789-8': 'blood',        // RBC                                [TOP2000]
+  '777-3': 'blood',        // Platelets, automated               [HCUP 20B]
+  '26515-7': 'blood',      // Platelets, method unstated         [HCUP 20]
+  '26464-8': 'blood',      // WBC, method unstated               [HCUP 26]
+  '785-6': 'blood',        // MCH                                [TOP2000]
+  '786-4': 'blood',        // MCHC                               [TOP2000]
+  // [TOP2000] warns explicitly that 788-0 (%) and 21000-5 (fL) are the same
+  // test reported in different units and must not be confused. Both are RDW
+  // and both belong here; carrying only one silently drops the other lab's.
+  '21000-5': 'blood',      // RDW, as a volume in fL             [TOP2000]
+  '6301-6': 'blood',       // INR                                [HCUP 15]
+  '5902-2': 'blood',       // Prothrombin time                   [HCUP 15A]
+  '14979-9': 'blood',      // aPTT                               [HCUP 17]
+  '751-8': 'blood',        // Neutrophils, absolute              [TOP2000]
+  '731-0': 'blood',        // Lymphocytes, absolute              [TOP2000]
+
+  // ── Heart ── [HCUP] 10, 24
+  '10839-9': 'heart',      // Troponin I                         [HCUP 24]
+  '42757-5': 'heart',      // Troponin I, whole blood            [HCUP 24A]
+  '6598-7': 'heart',       // Troponin T                         [TOP2000]
+  '13969-1': 'heart',      // CK-MB, mass                        [HCUP 10]
+  '32673-6': 'heart',      // CK-MB, activity                    [HCUP 10A]
+  '2157-6': 'heart',       // Creatine kinase total              [HCUP 9]
+  '30934-4': 'heart',      // BNP                                [TOP2000]
+  '33762-6': 'heart',      // NT-proBNP                          [TOP2000]
+  '2089-1': 'heart',       // LDL, method unstated  ← JUDGEMENT  [TOP2000]
+  '18262-6': 'heart',      // LDL, direct assay     ← JUDGEMENT  [TOP2000]
+  '2095-8': 'heart',       // HDL/total ratio       ← JUDGEMENT  [TOP2000]
+  '9830-1': 'heart',       // Total/HDL ratio       ← JUDGEMENT  [TOP2000]
+  '43396-1': 'heart',      // Non-HDL cholesterol   ← JUDGEMENT  [TOP2000]
+
+  // ── Lungs ── [HCUP] 14, 18-19, 21. Blood gases are respiratory function
+  // even though the specimen is blood; a patient looking for "my oxygen"
+  // looks under Lungs, not Blood.
+  '2744-1': 'lungs',       // pH, arterial                       [HCUP 19]
+  '2019-8': 'lungs',       // pCO2, arterial                     [HCUP 18]
+  '2703-7': 'lungs',       // pO2, arterial                      [HCUP 21]
+  '2708-6': 'lungs',       // O2 saturation, arterial            [HCUP 21A]
+  '3150-0': 'lungs',       // FiO2, inhaled O2 %                 [HCUP 14]
+  '3151-8': 'lungs',       // Inhaled O2 flow rate               [HCUP 14A]
+  '1925-7': 'lungs',       // Base excess                        [HCUP 5A]
+  '1922-4': 'lungs',       // Base deficit                       [HCUP 5]
+
+  // ── Metabolic & hormones ──
+  // [TOP2000] on TSH: 3016-3 is the obsolete first-generation assay and
+  // should be avoided; 11579-0 (2nd gen) and 11580-8 (3rd gen) are the ones
+  // in real use. All three map to the same place for the patient, so all
+  // three are carried — the distinction matters to the lab, not the reader.
+  '3016-3': 'metabolic',   // TSH, 1st generation                [TOP2000]
+  '11579-0': 'metabolic',  // TSH, 2nd generation                [TOP2000]
+  '11580-8': 'metabolic',  // TSH, 3rd generation                [TOP2000]
+  '3024-7': 'metabolic',   // Free T4                            [TOP2000]
+  '3053-6': 'metabolic',   // T3                                 [TOP2000]
+  '3026-2': 'metabolic',   // Total T4                           [TOP2000]
+  '2339-0': 'metabolic',   // Glucose, whole blood               [HCUP 12D]
+  '14749-6': 'metabolic',  // Glucose, molar                     [HCUP 12A]
+  '20448-7': 'metabolic',  // Insulin                            [TOP2000]
+  '1986-9': 'metabolic',   // C-peptide                          [TOP2000]
+  '2857-1': 'metabolic',   // PSA                                [TOP2000]
+  '2986-8': 'metabolic',   // Testosterone                       [TOP2000]
+  '2143-6': 'metabolic',   // Cortisol                           [TOP2000]
+  // JUDGEMENT: amylase and lipase are pancreatic, and this taxonomy has no
+  // pancreas group. Adding one for two analytes would put a near-empty
+  // heading on the screen, so they sit under Metabolic — the pancreas being
+  // the metabolic organ a patient associates with blood sugar. If Ken wants
+  // a Digestive group, these two and the liver block move together.
+  '1798-8': 'metabolic',   // Amylase           ← JUDGEMENT      [HCUP 3]
+  '3040-3': 'metabolic',   // Lipase            ← JUDGEMENT      [TOP2000]
+  '2532-0': 'metabolic',   // LDH                                [HCUP 16]
+
+  // ── Nutrition & vitamins ──
+  '1989-3': 'nutrition',   // Vitamin D, calcidiol 25-OH         [TOP2000]
+  '2132-9': 'nutrition',   // Vitamin B12 / cobalamin            [TOP2000]
+  '2284-8': 'nutrition',   // Folate, serum                      [TOP2000]
+  '2276-4': 'nutrition',   // Ferritin                           [TOP2000]
+  '2498-4': 'nutrition',   // Iron                               [TOP2000]
+  '2500-7': 'nutrition',   // TIBC                               [TOP2000]
+  '2502-3': 'nutrition',   // Iron saturation                    [TOP2000]
+  '17861-6': 'nutrition',  // Calcium, mass                      [HCUP 8]
+  '2000-8': 'nutrition',   // Calcium, molar                     [HCUP 8A]
+  '19123-9': 'nutrition',  // Magnesium                          [TOP2000]
+  '2777-1': 'nutrition',   // Phosphate                          [TOP2000]
+
+  // ── Immune & inflammation ──
+  '4537-7': 'immune',      // ESR, Westergren                    [TOP2000]
+  '30341-2': 'immune',     // ESR, method unstated               [TOP2000]
 }
 
 /**
