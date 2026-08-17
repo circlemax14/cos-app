@@ -28,7 +28,7 @@
  */
 
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router } from 'expo-router'
 
@@ -36,16 +36,19 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
-import { ScoreArc } from '@/components/health/ScoreArc'
+import { DialGauge } from '@/components/health/DialGauge'
 import { MarkerRing } from '@/components/health/MarkerRing'
 import {
   formatAge,
   gapPhrase,
   weekChange,
   coverage,
-  rangePosition,
+  // rangePosition is no longer imported: it placed the number on a written
+  // scale, and the dial now shows that position as a shape. The function stays
+  // exported and tested — it is the fallback if the gauge is ever dropped.
   markerPhrase,
   groupMarkers,
+  splitGroup,
 } from '@/lib/health-age-presentation'
 import { useHealthAge } from '@/hooks/use-health-age'
 import { useHealthAgeHistoryBuckets } from '@/hooks/use-health-age-history'
@@ -69,10 +72,19 @@ const DISCLAIMER =
 const NO_MEDICATION_ADVICE =
   'These are general wellness ideas, not medical advice. Nothing here tells you to start, stop, or change any medicine — only your clinician can do that. Bring anything that concerns you to your care team.'
 
-const BAND_TOKENS: Record<HealthAgeBand, { fg: string; bg: string; label: string }> = {
-  younger:    { fg: '#0F6B36', bg: '#E6F4EC', label: 'YOUNGER' },
-  'on-track': { fg: '#0B6963', bg: '#E0F2F1', label: 'ON TRACK' },
-  older:      { fg: '#8A5100', bg: '#FDF3E4', label: 'OLDER' },
+/**
+ * `fg` is text, `arc` is the dial's filled band.
+ *
+ * They are deliberately different weights. Text needs a dark tone to clear
+ * contrast against a light card; a 13pt-wide arc drawn in that same near-black
+ * green reads as a heavy slab rather than the light band in the reference.
+ * Same hue family, lighter value — the arc is a shape, not a label, and it
+ * carries no contrast requirement of its own because nothing is written on it.
+ */
+const BAND_TOKENS: Record<HealthAgeBand, { fg: string; bg: string; arc: string; label: string }> = {
+  younger:    { fg: '#0F6B36', bg: '#E6F4EC', arc: '#5CBF9A', label: 'YOUNGER' },
+  'on-track': { fg: '#0B6963', bg: '#E0F2F1', arc: '#4FB6AE', label: 'ON TRACK' },
+  older:      { fg: '#8A5100', bg: '#FDF3E4', arc: '#DFA24B', label: 'OLDER' },
 }
 
 /** One glyph per marker group, so a row is recognisable before it is read. */
@@ -448,6 +460,7 @@ export default function HealthAgeScreen(): React.JSX.Element {
           <HeroTile
             result={data}
             isLoading={isLoading}
+            buckets={history?.buckets ?? []}
             colors={colors}
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
@@ -462,34 +475,10 @@ export default function HealthAgeScreen(): React.JSX.Element {
             getScaledFontWeight={getScaledFontWeight}
           />
 
-          {/* Week-over-week movement, the pill Bevel shows under the gap
-              ("▼ -0.7 from last week"). Compared against a point at least five
-              days back rather than simply the previous bucket — buckets are
-              irregular, and calling a one-day gap "last week" would be a claim
-              about a timescale the data does not support. */}
-          {(() => {
-            const wc = weekChange(history?.buckets ?? [])
-            if (!wc.text) return null
-            const tone =
-              wc.direction === 'down' ? '#0F6B36' : wc.direction === 'up' ? '#8A5100' : (colors.subtext as string)
-            const arrow = wc.direction === 'down' ? 'arrow-downward' : wc.direction === 'up' ? 'arrow-upward' : 'remove'
-            return (
-              <View style={styles.weekPillRow}>
-                <View style={[styles.weekPill, { backgroundColor: colors.card as string }]}>
-                  <MaterialIcons name={arrow} size={getScaledFontSize(14)} color={tone} />
-                  <Text
-                    style={{
-                      color: tone,
-                      fontSize: getScaledFontSize(13),
-                      fontWeight: getScaledFontWeight(600) as any,
-                    }}
-                  >
-                    {wc.text}
-                  </Text>
-                </View>
-              </View>
-            )
-          })()}
+          {/* The week-change pill used to render here, a full section below
+              the number it qualifies. It now lives INSIDE the dial, directly
+              under the gap phrase, which is where the reference puts it and
+              where it reads as part of the reading rather than a new topic. */}
 
           <TrendCard
             buckets={history?.buckets ?? []}
@@ -587,172 +576,217 @@ function ScreenHeader({ title, colors, getScaledFontSize, getScaledFontWeight }:
 interface HeroProps {
   result: HealthAgeResult | undefined
   isLoading: boolean
+  /** History, so the week-change pill can sit inside the dial where it belongs. */
+  buckets: HealthAgeHistoryBucket[]
   colors: typeof Colors.light
   getScaledFontSize: (n: number) => number
   getScaledFontWeight: (n: number) => string
 }
 
-function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontWeight }: HeroProps): React.JSX.Element {
+function HeroTile({
+  result,
+  isLoading,
+  buckets,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: HeroProps): React.JSX.Element {
   const overall = result?.overall ?? null
   const chrono = result?.chronologicalAge ?? null
   const gap = result?.healthAgeGap ?? null
   const band = result?.band ?? null
   const tokens = band ? BAND_TOKENS[band] : undefined
+  const { width } = useWindowDimensions()
 
-  return (
-    <View style={[styles.heroCard, styles.heroCentered, { backgroundColor: colors.card as string }]}>
-      {/* CENTRED, and the date sits under the number. Both are Bevel's
-          treatment and neither was here before: the hero was left-aligned and
-          carried no date at all, so a patient had no idea whether they were
-          looking at today's number or one from three weeks ago. On a figure
-          that only moves slowly, "as of when" is not decoration. */}
+  // The dial is the hero, so it takes the width it can get — but capped, or on
+  // a tablet it becomes a circle the size of a dinner plate.
+  const dialSize = Math.min(340, Math.max(240, width - 56))
+
+  // As-of date, from the newest observation feeding any component — the result
+  // has no top-level timestamp of its own. Omitted rather than guessed when
+  // nothing is dated: a wrong date on a health figure is worse than no date.
+  const asOf = (() => {
+    const newest = (result?.components ?? [])
+      .map((c) => c.freshness?.newestObservationAt)
+      .filter((d): d is string => typeof d === 'string' && d !== '')
+      .sort()
+      .pop()
+    if (!newest) return null
+    const d = new Date(newest)
+    if (Number.isNaN(d.getTime())) return null
+    return `As of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+  })()
+
+  /**
+   * The stack that sits INSIDE the ring: title, date, number, gap, week pill.
+   *
+   * This is the structural correction. Previously the arc was a sibling
+   * ABOVE the number — a chart with a caption. In the reference the ring
+   * encircles all of this, which is what makes it read as a dial: the number
+   * is the thing being measured and the arc is where it falls on a scale.
+   */
+  const dialContents = (
+    <>
       <Text
         style={{
-          color: colors.subtext,
-          fontSize: getScaledFontSize(11),
+          color: colors.text,
+          fontSize: getScaledFontSize(19),
           fontWeight: getScaledFontWeight(700) as any,
-          letterSpacing: 0.6,
           textAlign: 'center',
         }}
       >
-        YOUR HEALTH AGE
+        Health Age
       </Text>
-      {typeof overall === 'number' ? (
-        <>
-          {/* THE ARC. Bevel draws the number inside a semicircular gauge whose
-              midpoint is the patient's real age, so "left of centre" reads as
-              younger at a glance. Needs react-native-svg, which is why this
-              waited for a binary. Rendered only when both ages are known —
-              an arc with one endpoint missing is a decoration, not a scale. */}
-          {typeof chrono === 'number' && typeof overall === 'number' ? (
-            <ScoreArc
-              value={overall}
-              center={chrono}
-              trackColor={(colors.border as string) ?? '#E3E6E8'}
-              fillColor={tokens?.fg ?? '#0F6B36'}
-              labelColor={colors.subtext as string}
-              getScaledFontSize={getScaledFontSize}
-            />
-          ) : null}
+      {asOf ? (
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(13),
+            marginTop: 1,
+            textAlign: 'center',
+          }}
+        >
+          {asOf}
+        </Text>
+      ) : null}
 
-          {/* ONE DECIMAL, not a rounded integer. A figure that moves about a
-              year annually earns it — rounding to "36" hides every change
-              smaller than six months, which is most of them. Bevel shows 36.0
-              for the same reason. */}
-          <View style={styles.heroScoreRow}>
+      {/* ONE DECIMAL, not a rounded integer. A figure that moves about a year
+          annually earns it — rounding to "36" hides every change smaller than
+          six months, which is most of them. */}
+      {typeof overall === 'number' ? (
+        <Text
+          style={{
+            color: tokens?.fg ?? (colors.text as string),
+            fontSize: getScaledFontSize(52),
+            lineHeight: getScaledFontSize(60),
+            fontWeight: getScaledFontWeight(800) as any,
+            letterSpacing: -1.5,
+            marginTop: 4,
+            textAlign: 'center',
+          }}
+          accessibilityLabel={`Your Health Age is ${formatAge(overall)} years`}
+        >
+          {formatAge(overall)}
+        </Text>
+      ) : (
+        <Text
+          style={{
+            color: colors.subtext,
+            fontSize: getScaledFontSize(48),
+            fontWeight: getScaledFontWeight(700) as any,
+            marginTop: 4,
+          }}
+        >
+          —
+        </Text>
+      )}
+
+      {/* THE GAP LEADS, in plain language and in colour. The screen used to
+          say "vs chronological age 44", which makes the reader do the
+          subtraction; "8.3 years younger" is the whole finding in three
+          words. That older line is now gone rather than kept alongside —
+          two ways of saying one thing is how a hero gets cluttered, and the
+          real age is already printed under the arc. */}
+      {(() => {
+        const phrase = gapPhrase(gap)
+        if (!phrase.text) return null
+        const tone =
+          phrase.direction === 'younger'
+            ? '#0F6B36'
+            : phrase.direction === 'older'
+              ? '#8A5100'
+              : (colors.subtext as string)
+        return (
+          <Text
+            style={{
+              color: tone,
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(700) as any,
+              marginTop: 1,
+              textAlign: 'center',
+            }}
+          >
+            {phrase.text}
+          </Text>
+        )
+      })()}
+
+      {/* The week-change pill, which used to sit far below the hero where it
+          read as unrelated. The reference puts it directly under the gap,
+          inside the ring — it is a qualifier on the number, not a section. */}
+      {(() => {
+        const wc = weekChange(buckets ?? [])
+        if (!wc.text) return null
+        const tone =
+          wc.direction === 'down' ? '#0F6B36' : wc.direction === 'up' ? '#8A5100' : (colors.subtext as string)
+        const arrow = wc.direction === 'down' ? 'arrow-downward' : wc.direction === 'up' ? 'arrow-upward' : 'remove'
+        return (
+          <View style={[styles.weekPill, { backgroundColor: colors.card as string, marginTop: 8 }]}>
+            <MaterialIcons name={arrow} size={getScaledFontSize(13)} color={tone} />
             <Text
+              numberOfLines={1}
               style={{
                 color: colors.text,
-                fontSize: getScaledFontSize(56),
-                lineHeight: getScaledFontSize(60),
-                fontWeight: getScaledFontWeight(800) as any,
-                letterSpacing: -1,
-              }}
-              accessibilityLabel={`Your Health Age is ${formatAge(overall)} years`}
-            >
-              {formatAge(overall)}
-            </Text>
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(16),
-                marginLeft: 6,
-                marginBottom: 8,
+                fontSize: getScaledFontSize(12),
+                fontWeight: getScaledFontWeight(600) as any,
               }}
             >
-              yrs
+              {wc.text}
             </Text>
           </View>
+        )
+      })()}
+      {tokens ? (
+        <View style={[styles.chip, { backgroundColor: tokens.bg, alignSelf: 'center' }]}>
+          <Text style={[styles.chipLabel, { color: tokens.fg }]}>{tokens.label}</Text>
+        </View>
+      ) : null}
+    </>
+  )
 
-          {/* THE GAP LEADS, in plain language and in colour.
-              This screen used to say "vs chronological age 44", which makes the
-              reader do the subtraction. "8.3 years younger" is the entire
-              finding in three words, and it is what Bevel puts directly under
-              the number. Green when younger, amber when older — the direction
-              is carried by colour as well as by the word, because the word is
-              the part that gets skimmed past. */}
-          {(() => {
-            const phrase = gapPhrase(gap)
-            if (!phrase.text) return null
-            const tone =
-              phrase.direction === 'younger'
-                ? '#0F6B36'
-                : phrase.direction === 'older'
-                  ? '#8A5100'
-                  : (colors.subtext as string)
-            return (
-              <Text
-                style={{
-                  color: tone,
-                  fontSize: getScaledFontSize(17),
-                  fontWeight: getScaledFontWeight(700) as any,
-                  marginTop: 2,
-                  textAlign: 'center',
-                }}
-              >
-                {phrase.text}
-              </Text>
-            )
-          })()}
-          {tokens ? (
-            <View style={[styles.chip, { backgroundColor: tokens.bg }]}>
-              <Text style={[styles.chipLabel, { color: tokens.fg }]}>{tokens.label}</Text>
-            </View>
-          ) : null}
-          {/* As-of date, derived from the newest observation feeding any
-              component — the result has no top-level timestamp of its own.
-              Omitted entirely rather than guessed when nothing is dated:
-              a wrong date on a health figure is worse than no date. */}
-          {(() => {
-            const newest = (result?.components ?? [])
-              .map((c) => c.freshness?.newestObservationAt)
-              .filter((d): d is string => typeof d === 'string' && d !== '')
-              .sort()
-              .pop()
-            if (!newest) return null
-            const d = new Date(newest)
-            if (Number.isNaN(d.getTime())) return null
-            return (
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(12),
-                  marginTop: 6,
-                  textAlign: 'center',
-                }}
-              >
-                {`as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
-              </Text>
-            )
-          })()}
+  return (
+    <View style={[styles.heroCard, styles.heroCentered]}>
+      {typeof overall === 'number' ? (
+        <>
+          {/* The dial is drawn only when BOTH ages are known — a scale with one
+              endpoint missing is decoration, not a measurement. When the real
+              age is absent the same stack renders bare. */}
           {typeof chrono === 'number' ? (
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(13),
-                marginTop: 8,
-                textAlign: 'center',
-              }}
+            <DialGauge
+              value={overall}
+              center={chrono}
+              span={10}
+              size={dialSize}
+              ringColor={(colors.border as string) ?? '#E3E6E8'}
+              trackColor={(colors.border as string) ?? '#E3E6E8'}
+              tickColor="#C7CDD1"
+              fillColor={tokens?.arc ?? '#5CBF9A'}
+              labelColor={colors.subtext as string}
+              dotCoreColor={(colors.background as string) ?? '#FFFFFF'}
+              getScaledFontSize={getScaledFontSize}
+              centerLabel={formatAge(chrono)}
             >
-              vs chronological age {Math.round(chrono)}
-              {gap != null && Math.abs(gap) >= 0.1 ? (
-                <>
-                  {' · '}
-                  <Text
-                    style={{
-                      color: gap > 0 ? '#8A5100' : '#0F6B36',
-                      fontWeight: getScaledFontWeight(600) as any,
-                    }}
-                  >
-                    {gap > 0 ? `+${gap.toFixed(1)}` : gap.toFixed(1)} yrs
-                  </Text>
-                </>
-              ) : null}
-            </Text>
-          ) : null}
+              {dialContents}
+            </DialGauge>
+          ) : (
+            dialContents
+          )}
         </>
       ) : (
+        // No number yet. The ring is deliberately NOT drawn here: an empty
+        // dial implies a scale we cannot place anyone on, and a gauge reading
+        // zero is worse than no gauge.
         <>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(19),
+              fontWeight: getScaledFontWeight(700) as any,
+              textAlign: 'center',
+            }}
+          >
+            Health Age
+          </Text>
           <Text
             style={{
               color: colors.subtext,
@@ -768,6 +802,7 @@ function HeroTile({ result, isLoading, colors, getScaledFontSize, getScaledFontW
               color: colors.subtext,
               fontSize: getScaledFontSize(13),
               lineHeight: 19,
+              textAlign: 'center',
               marginTop: 6,
             }}
           >
@@ -1255,10 +1290,11 @@ function CoverageCard({
  * Each group is tappable to reveal the analytes underneath, so the detail a
  * clinician wants is one tap away rather than gone.
  *
- * iOS 26.5 envelope: View / Text / Pressable / MaterialIcons / StyleSheet.
- * Bevel draws a circular progress ring per row; a ring needs react-native-svg,
- * which is not installed and would change the native fingerprint — a new
- * binary, not an OTA. A filled/hollow dot carries the three states instead.
+ * iOS 26.5 envelope: View / Text / Pressable / MaterialIcons / StyleSheet,
+ * plus a small fixed-node SVG ring per row. react-native-svg turned out to be
+ * a long-standing dependency already linked into the shipped binary, so the
+ * ring needed no new binary — an earlier note here claimed the opposite
+ * because the check was run from the wrong directory.
  */
 function ContributorCards({
   result,
@@ -1283,7 +1319,7 @@ function ContributorCards({
         Age markers
       </Text>
 
-      <View style={{ gap: 8 }}>
+      <View style={{ gap: 12 }}>
         {groups.map((g) => {
           const phrase = markerPhrase(g.contributionYears, g.status)
           const tone =
@@ -1302,16 +1338,26 @@ function ContributorCards({
                 accessibilityLabel={`${g.label}, ${phrase.text}. ${open ? 'Hide' : 'Show'} the tests behind this.`}
                 style={styles.markerHeader}
               >
-                {/* The ring encodes DATA COMPLETENESS, not how good the result
-                    is — see components/health/MarkerRing. Direction is carried
-                    by the colour and the words beside it, because a ring
-                    cannot say "5.4 years younger". */}
-                <MarkerRing
-                  fraction={g.total > 0 ? g.freshCount / g.total : 0}
-                  color={phrase.tone === 'none' ? (colors.subtext as string) : tone}
-                  trackColor={(colors.border as string) ?? '#E3E6E8'}
-                  icon={GROUP_ICON[g.key] ?? 'science'}
-                />
+                {/* Segmented like the reference: green for markers pulling the
+                    age down, amber for those pushing it up, grey for the ones
+                    with no current reading. Segment LENGTH is a count of
+                    markers, never a magnitude — see components/health/MarkerRing
+                    for why years-contributed cannot set an arc length. */}
+                {(() => {
+                  const split = splitGroup(g.members)
+                  return (
+                    <MarkerRing
+                      helping={split.helping}
+                      hurting={split.hurting}
+                      helpingColor="#0F6B36"
+                      hurtingColor="#C97A10"
+                      trackColor={(colors.border as string) ?? '#E3E6E8'}
+                      innerColor={phrase.tone === 'none' ? ((colors.border as string) ?? '#E3E6E8') : '#CFE8DA'}
+                      iconColor={phrase.tone === 'none' ? (colors.subtext as string) : tone}
+                      icon={GROUP_ICON[g.key] ?? 'science'}
+                    />
+                  )
+                })()}
                 <View style={{ flex: 1 }}>
                   <Text
                     numberOfLines={1}
@@ -1533,17 +1579,12 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   heroCentered: { alignItems: 'center' },
+  // NO CARD. The dial IS the container — boxing a circle inside a rounded
+  // rectangle gives the eye two competing frames, and the reference floats
+  // the whole thing on the page background instead.
   heroCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  heroScoreRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    marginTop: 4,
+    paddingTop: 4,
+    marginBottom: 14,
   },
   chip: {
     alignSelf: 'flex-start',
@@ -1631,7 +1672,6 @@ const styles = StyleSheet.create({
     borderTopColor: '#00000015',
   },
   // ── Contributor cards (Bevel-style widget grid) ──
-  weekPillRow: { alignItems: 'center', marginBottom: 12 },
   weekPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1642,14 +1682,25 @@ const styles = StyleSheet.create({
   },
   coverageCard: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
   cardsBlock: { marginTop: 4, marginBottom: 12 },
-  markerRow: { borderRadius: 14, overflow: 'hidden' },
+  markerRow: {
+    // Near-fully rounded, like the reference's pill rows. Not 9999: these
+    // expand into an accordion, and a capsule with a paragraph inside it
+    // reads as a broken button.
+    borderRadius: 26,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
   markerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 56,
+    gap: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 68,
   },
   markerDetail: { paddingHorizontal: 14, paddingBottom: 12, paddingTop: 2 },
   markerDetailRow: { flexDirection: 'row', gap: 12, paddingVertical: 3 },

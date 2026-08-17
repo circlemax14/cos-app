@@ -29,7 +29,7 @@
  */
 
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router } from 'expo-router'
 
@@ -38,7 +38,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
-import { ScoreArc } from '@/components/health/ScoreArc'
+import { DialGauge } from '@/components/health/DialGauge'
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
 import {
   useWellbeingHistory,
@@ -120,6 +120,78 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
     return `Down ${Math.abs(delta)} points across the last ${rangeLabel}.`
   }, [seriesFromHistory, rangeDays])
 
+  const { width } = useWindowDimensions()
+  const dialSize = Math.min(340, Math.max(240, width - 56))
+
+  /**
+   * Everything that sits INSIDE the dial: the score, its trend, its band and
+   * its date. Declared once and used in both branches below, because the
+   * gauge is only drawn when there is a score to place on it — a dial reading
+   * zero is worse than no dial.
+   */
+  const heroStack = (
+    <>
+      <View style={styles.heroTopRow}>
+        <Text style={[styles.heroNumber, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
+          {typeof composite === 'number' ? composite : '—'}
+        </Text>
+        <Text style={[styles.heroScale, { color: colors.subtext }]} maxFontSizeMultiplier={1.3}>
+          /100
+        </Text>
+      </View>
+
+      {trend ? (
+        <View
+          style={styles.heroTrendRow}
+          accessible
+          accessibilityLabel={trendA11yLabel(trend.arrow, trend.delta)}
+        >
+          <MaterialIcons
+            name={trendIconName(trend.arrow)}
+            size={16}
+            color={TREND_TONE_COLOR[trendTone(trend.arrow)]}
+          />
+          <Text
+            style={[styles.heroTrendLabel, { color: TREND_TONE_COLOR[trendTone(trend.arrow)] }]}
+            maxFontSizeMultiplier={1.3}
+          >
+            {trendLabel(trend.arrow, trend.delta)}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.heroChipRow}>
+        <ScoreBandChip band={band} />
+      </View>
+
+      {/* AS-OF DATE. `computedAt` has always been in the payload and was never
+          shown, so a patient could not tell whether they were reading a score
+          from this morning or from before a week of changes.
+
+          Omitted rather than guessed when the timestamp is unparseable: a
+          wrong date on a health figure is worse than no date. */}
+      {(() => {
+        const iso = endpoint?.computedAt
+        if (!iso) return null
+        const d = new Date(iso)
+        if (Number.isNaN(d.getTime())) return null
+        return (
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(12),
+              marginTop: 6,
+              textAlign: 'center',
+            }}
+            maxFontSizeMultiplier={1.3}
+          >
+            {`as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+          </Text>
+        )
+      })()}
+    </>
+  )
+
   return (
     <AppWrapper>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -143,100 +215,37 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
           </Text>
         </View>
 
-        {/* Hero — big number + trend arrow + band chip */}
-        <View style={[styles.hero, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>
-          <View style={styles.heroTopRow}>
-            <Text style={[styles.heroNumber, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
-              {typeof composite === 'number' ? composite : '—'}
-            </Text>
-            <Text style={[styles.heroScale, { color: colors.subtext }]} maxFontSizeMultiplier={1.3}>
-              /100
-            </Text>
-          </View>
-          {/* THE ARC, same gauge as Health Age so the two screens read as one
-              family. The scale differs and that difference matters: wellbeing
-              runs 0-100 where HIGHER IS BETTER, the opposite of health age.
-              The arc is therefore centred on 50 — the middle of the scale —
-              rather than on a personal reference point, because there is no
-              "your actual score" analogue to centre on here. Passing the
-              patient's own score as the centre would make the midpoint move
-              every week and mean nothing. */}
+        {/* Hero — the dial, with the score and its qualifiers INSIDE it. The
+            arc used to hang below the number as a separate graphic, which
+            reads as a chart with a caption rather than a gauge.
+
+            NO CARD around it: boxing a circle inside a rounded rectangle gives
+            the eye two competing frames.
+
+            End labels are whole numbers here, not the one-decimal ages Health
+            Age shows — "0.0" and "100.0" on a points scale is false
+            precision. */}
+        <View style={styles.hero}>
           {typeof composite === 'number' ? (
-            <ScoreArc
+            <DialGauge
               value={composite}
               center={50}
               span={50}
-              size={230}
+              size={dialSize}
+              ringColor={(colors.border as string) ?? '#E3E6E8'}
               trackColor={(colors.border as string) ?? '#E3E6E8'}
-              fillColor={(colors.tint as string) ?? '#0F6B36'}
+              tickColor="#C7CDD1"
+              fillColor="#5CBF9A"
               labelColor={colors.subtext as string}
+              dotCoreColor={(colors.background as string) ?? '#FFFFFF'}
               getScaledFontSize={getScaledFontSize}
-            />
-          ) : null}
-
-          {trend ? (
-            <View
-              style={styles.heroTrendRow}
-              accessible
-              accessibilityLabel={trendA11yLabel(trend.arrow, trend.delta)}
+              formatEnd={(n) => String(Math.round(n))}
             >
-              <MaterialIcons
-                name={trendIconName(trend.arrow)}
-                size={18}
-                color={TREND_TONE_COLOR[trendTone(trend.arrow)]}
-              />
-              <Text
-                style={[
-                  styles.heroTrendLabel,
-                  { color: TREND_TONE_COLOR[trendTone(trend.arrow)] },
-                ]}
-                maxFontSizeMultiplier={1.3}
-              >
-                {trendLabel(trend.arrow, trend.delta)}
-              </Text>
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(12),
-                  marginLeft: 8,
-                }}
-                maxFontSizeMultiplier={1.3}
-              >
-                vs last week
-              </Text>
-            </View>
-          ) : null}
-          <View style={styles.heroChipRow}>
-            <ScoreBandChip band={band} />
-          </View>
-          {/* AS-OF DATE. `computedAt` has always been in the payload and was
-              never shown, so a patient could not tell whether they were
-              reading a score from this morning or from before a week of
-              changes. This screen already had the two things Health Age was
-              missing — a centred hero and a visible drivers list — so the date
-              was the only real gap against Bevel's treatment.
-
-              Omitted rather than guessed when the timestamp is unparseable: a
-              wrong date on a health figure is worse than no date. */}
-          {(() => {
-            const iso = endpoint?.computedAt
-            if (!iso) return null
-            const d = new Date(iso)
-            if (Number.isNaN(d.getTime())) return null
-            return (
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(12),
-                  marginTop: 8,
-                  textAlign: 'center',
-                }}
-                maxFontSizeMultiplier={1.3}
-              >
-                {`as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
-              </Text>
-            )
-          })()}
+              {heroStack}
+            </DialGauge>
+          ) : (
+            heroStack
+          )}
         </View>
 
         {/* Range toggle */}
@@ -469,10 +478,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { letterSpacing: -0.4 },
+  // The dial is the container now, so the card's border and fill are gone —
+  // a circle inside a rounded rectangle gives the eye two competing frames.
   hero: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
     marginBottom: 16,
     alignItems: 'center',
   },
