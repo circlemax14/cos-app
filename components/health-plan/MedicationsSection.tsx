@@ -58,13 +58,39 @@ import {
 // cadenceLabel deliberately NOT imported here — lib/med-forms already exports
 // one and it is already in use in this file. Two functions answering the same
 // question is how they drift.
-import { passedTodayTimes, upcomingTodayTimes } from '@/lib/medication-schedule';
+import {
+  canDrawSupplyBar,
+  passedTodayTimes,
+  supplyStatus,
+  upcomingTodayTimes,
+} from '@/lib/medication-schedule';
 import { NextScheduledBand } from './NextScheduledBand';
 
 import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
 
 /** The one class we assert. Medical is a default, so it gets no colour. */
 const PSYCH_TINT = '#6B4FA8';
+
+/**
+ * Direction D's monogram palette. Decorative — it aids recognition and encodes
+ * NOTHING, so nothing on the screen may depend on reading it. Deliberately
+ * dark enough for white text at every entry (all ≥4.5:1 on #FFF).
+ */
+/** Refill amber. #B45309 clears 4.5:1 on white; the lighter #F59E0B never carries text. */
+const REFILL_AMBER = '#B45309';
+const SUPPLY_OK = '#0F7A4A';
+
+/** Local YYYY-MM-DD. toISOString would shift the date either side of midnight. */
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const MONOGRAM_HUES = ['#0B6963', '#2C5EA8', '#8A4B7D', '#A8632C', '#3E7A3E'];
+function monogramHue(name: string | null | undefined): string {
+  const c = (name ?? '?').trim().charCodeAt(0);
+  return MONOGRAM_HUES[(Number.isFinite(c) ? c : 0) % MONOGRAM_HUES.length] as string;
+}
 
 const SAFETY_DISCLAIMER =
   'This updates your tracking only — it does not change your prescription or ' +
@@ -1171,6 +1197,23 @@ function MedicationCardDescriptive({
                   </Text>
                 </View>
               ))}
+              {/* D moves the class into the chip row as a LABELLED chip. That
+                  is what frees the monogram to be decorative — the class now
+                  has its own channel, with the word in it, instead of relying
+                  on a tile colour a reader has to decode. */}
+              {mark.show ? (
+                <View style={[styles.timeChip, { backgroundColor: PSYCH_TINT + '1F' }]}>
+                  <Text
+                    style={{
+                      color: PSYCH_TINT,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {mark.label}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ) : injectableCadence ? (
             // An injectable has no clock time and that is CORRECT — saying
@@ -1214,6 +1257,95 @@ function MedicationCardDescriptive({
         <View style={[styles.cardRule, { backgroundColor: colors.border as string }]} />
       )}
 
+      {/* ─── D'S SUPPLY BLOCK ────────────────────────────────────────
+          Direction D shows days-of-supply and a bar under every card. It can
+          only be shown where the data exists, and it mostly does not:
+          `supply` is written ONLY by the hand-entry modal — no EHR or FHIR
+          path populates it — so it is null on essentially every row until a
+          patient types a quantity.
+
+          So this renders NOTHING by default, and the card above it is
+          complete without it. Drawing an empty track on every row would be a
+          gauge of a number we do not have, which is worse than silence.
+
+          The BAR needs both a day count and a quantity. With only one, the
+          length is an invented fraction, so the text is shown alone. */}
+      {(() => {
+        if (compact) return null;
+        const st = supplyStatus(med.supply, todayISO());
+        if (st.kind === 'none') return null;
+
+        const urgent =
+          st.kind === 'overdue' || (st.kind === 'reorder' && st.urgent);
+        const amber = st.kind === 'overdue' || st.kind === 'reorder';
+        const tone = amber ? REFILL_AMBER : (colors.subtext as string);
+
+        const label =
+          st.kind === 'overdue'
+            ? `Refill overdue by ${st.days} day${st.days === 1 ? '' : 's'}`
+            : st.kind === 'reorder'
+              ? st.days == null
+                ? 'Time to reorder'
+                : `About ${st.days} day${st.days === 1 ? '' : 's'} left — time to reorder`
+              : st.kind === 'ok'
+                ? `${st.days} day${st.days === 1 ? '' : 's'} of supply`
+                : st.kind === 'snoozed'
+                  ? 'Refill reminder paused'
+                  : `${st.remaining} left`;
+
+        const qty = med.supply?.remainingQuantity;
+        const showBar = canDrawSupplyBar(med.supply);
+        const pct =
+          st.kind === 'ok' || st.kind === 'reorder'
+            ? Math.max(0.04, Math.min(1, (st.kind === 'ok' ? st.days : (st.days ?? 0)) / 30))
+            : 0.04;
+
+        return (
+          <View
+            style={styles.supplyBlock}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            <View style={styles.supplyRow}>
+              <Text
+                style={{
+                  color: tone,
+                  fontSize: getScaledFontSize(13),
+                  fontWeight: urgent ? (getScaledFontWeight(700) as any) : undefined,
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                {label}
+              </Text>
+              {typeof qty === 'number' && Number.isFinite(qty) ? (
+                <Text
+                  style={{
+                    color: tone,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {`${qty} left`}
+                </Text>
+              ) : null}
+            </View>
+            {showBar ? (
+              <View style={[styles.supplyTrack, { backgroundColor: colors.border as string }]}>
+                <View
+                  style={{
+                    height: 6,
+                    borderRadius: 3,
+                    width: `${Math.round(pct * 100)}%`,
+                    backgroundColor: amber ? REFILL_AMBER : SUPPLY_OK,
+                  }}
+                />
+              </View>
+            ) : null}
+          </View>
+        );
+      })()}
+
       {/* The footnote line: class (only when detected), form (only when
           notable), provenance. Plain grey, one line, no chrome. */}
       <View
@@ -1221,15 +1353,8 @@ function MedicationCardDescriptive({
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
-        {mark.show ? (
-          <>
-            <View style={[styles.classDot, { backgroundColor: PSYCH_TINT }]} />
-            <Text style={{ color: PSYCH_TINT, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
-              {mark.label}
-            </Text>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>·</Text>
-          </>
-        ) : null}
+        {/* No psychiatric mark here — it is a chip in the row above now.
+            Saying it twice on one card is how a footnote becomes noise. */}
         {notableForm ? (
           <>
             <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>{notableForm}</Text>
@@ -1435,23 +1560,30 @@ function MedicationCard({
         wrap) since restore is a separate flow.
        */}
       <View style={styles.cardTopRow}>
-        {/* THE ANCHOR — and now the class marker.
-            It used to be violet on EVERY card, which was worse than
-            decorative: violet is this screen's psychiatric colour, so a
-            psychiatric row's mark was invisible against a list where every
-            tile was already violet. Now violet means psychiatric and nothing
-            else; every other medication gets a neutral tile. */}
-        <View
-          style={[
-            styles.medIcon,
-            { backgroundColor: (isPsychRow ? PSYCH_TINT : (colors.subtext as string)) + '1F' },
-          ]}
-        >
-          <MaterialIcons
-            name={isInjectable ? 'vaccines' : 'medication'}
-            size={getScaledFontSize(20)}
-            color={isPsychRow ? PSYCH_TINT : (colors.subtext as string)}
-          />
+        {/* DIRECTION D'S MONOGRAM. A solid tile carrying the medication's
+            initial, replacing the tinted pill glyph that used to sit here.
+            THE SAME TILE, restyled — not an extra one. Adding a second was
+            what crushed the text last time.
+
+            The hue is decorative and I argued against it earlier, on the
+            grounds that six hash-picked colours compete with the two that
+            carry meaning. D defuses that: psychiatric is now a LABELLED CHIP
+            in the row below, so the class has its own channel and the tile is
+            free to be identity. Two medications starting with the same letter
+            still get the same colour — the tile aids recognition, it does not
+            encode anything, and nothing on this screen depends on reading it. */}
+        <View style={[styles.medIcon, { backgroundColor: monogramHue(med.name) }]}>
+          <Text
+            style={{
+              color: '#FFFFFF',
+              fontSize: getScaledFontSize(19),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {(med.name ?? '?').trim().charAt(0).toUpperCase() || '?'}
+          </Text>
         </View>
         {/* CHUNK 99 v2: inner accessibility grouping is the single a11y leaf
             for the passive descriptive text. Wrapping in a Pressable when
@@ -2303,6 +2435,11 @@ const styles = StyleSheet.create({
   timeChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
   // Separates what the patient DOES from where the row came from.
   cardRule: { height: StyleSheet.hairlineWidth, marginTop: 12, opacity: 0.9 },
+  supplyBlock: { marginTop: 10 },
+  supplyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // Fixed 6pt and never font-scaled: it carries no text, and a bar that grew
+  // with the type size would dominate the card at large accessibility sizes.
+  supplyTrack: { height: 6, borderRadius: 3, marginTop: 6, overflow: 'hidden' },
   scheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   // Wraps rather than truncates: at large accessibility text sizes these
   // three fragments will not fit one line, and clipping provenance is worse
@@ -2325,9 +2462,9 @@ const styles = StyleSheet.create({
   },
   cardTopRow: { flexDirection: 'row', alignItems: 'flex-start' },
   medIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,

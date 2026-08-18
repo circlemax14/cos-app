@@ -105,16 +105,36 @@ export function NextScheduledBand({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        NEXT SCHEDULED
+        {when && !model.tomorrow ? `NEXT SCHEDULED · ${when.split(' · ')[0].toUpperCase()}` : 'NEXT SCHEDULED'}
       </Text>
 
-      <Text
-        style={[styles.name, { fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never }]}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      >
-        {nameLine}
-      </Text>
+      {/* DIRECTION D'S HERO ROW: a monogram beside the name, matching the
+          tiles in the list below so the same medication is recognisable in
+          both places.
+
+          NO CHECK CIRCLE. D draws one and it cannot work — the medication API
+          has add / edit / remove / setTracked / setSupply / snoozeRefill and
+          NO dose-taken event. A 38pt circle that looks tappable and records
+          nothing is worse than an unbalanced hero. The time takes its place
+          on the right, which is the fact the circle was sitting next to. */}
+      <View style={styles.heroRow}>
+        <View style={styles.heroMono}>
+          <Text
+            style={{ color: '#FFFFFF', fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never }}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            {(model.names[0] ?? '?').trim().charAt(0).toUpperCase() || '?'}
+          </Text>
+        </View>
+        <Text
+          style={[styles.name, { fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never, flex: 1, minWidth: 0 }]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {nameLine}
+        </Text>
+      </View>
 
       {/* The dose line only when exactly ONE medication is due at that time —
           with several, a single dose would be attributed to all of them. */}
@@ -165,8 +185,20 @@ const styles = StyleSheet.create({
   // No numberOfLines anywhere: every line wraps. At a large accessibility
   // text size a clamped band would hide the medication's own name.
   eyebrow: { color: 'rgba(255,255,255,0.8)', letterSpacing: 0.5 },
-  name: { color: '#FFFFFF', marginTop: 6 },
-  dose: { color: 'rgba(255,255,255,0.9)', marginTop: 2 },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
+  // Matches styles.medIcon in the list so the same medication reads as the
+  // same object in both places.
+  heroMono: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  name: { color: '#FFFFFF' },
+  dose: { color: 'rgba(255,255,255,0.9)', marginTop: 4 },
   when: { color: '#FFFFFF', marginTop: 8 },
   earlier: { color: 'rgba(255,255,255,0.85)', marginTop: 8 },
 })
