@@ -55,13 +55,16 @@ import {
   type Connection,
   type DiscoverableProfile,
   acceptConnection,
+  addToCircle,
   getDiscoverability,
   isFeatureOff,
   listConnections,
   removeConnection,
+  removeFromCircle,
   requestConnection,
   searchByEmail,
   setDiscoverability,
+  updateCategory,
 } from '@/services/api/connections'
 
 const ALL_CATEGORIES = [...SOCIAL_CATEGORIES, ...PSYCHOLOGICAL_CATEGORIES]
@@ -82,6 +85,8 @@ export default function ConnectionsScreen(): React.JSX.Element {
   const [found, setFound] = React.useState<DiscoverableProfile | null>(null)
   const [category, setCategory] = React.useState<string>('friend')
   const [notice, setNotice] = React.useState<string | null>(null)
+  // Which connected peer, if any, has its category picker open (peerId).
+  const [editingCategory, setEditingCategory] = React.useState<string | null>(null)
 
   const discoverability = useQuery({
     queryKey: ['discoverability'],
@@ -136,10 +141,33 @@ export default function ConnectionsScreen(): React.JSX.Element {
     onSuccess: invalidate,
   })
 
+  // Re-file an accepted connection under a different sub-category (SCRUM-691).
+  const recategorize = useMutation({
+    mutationFn: (v: { peerId: string; category: string }) => updateCategory(v.peerId, v.category),
+    onSuccess: () => {
+      setEditingCategory(null)
+      invalidate()
+    },
+  })
+
+  // Add / remove an accepted connection from my circle (SCRUM-692).
+  const addCircle = useMutation({
+    mutationFn: (peerId: string) => addToCircle(peerId),
+    onSuccess: invalidate,
+  })
+  const removeCircle = useMutation({
+    mutationFn: (peerId: string) => removeFromCircle(peerId),
+    onSuccess: invalidate,
+  })
+
   const all = connections.data ?? []
   const incoming = all.filter((c) => c.status === 'pending_incoming')
   const outgoing = all.filter((c) => c.status === 'pending_outgoing')
   const accepted = all.filter((c) => c.status === 'accepted')
+  // "Add them in circle" is the culmination of Ken's flow — circle members
+  // graduate into their own section; the rest stay under "Connected".
+  const circle = accepted.filter((c) => c.inCircle)
+  const others = accepted.filter((c) => !c.inCircle)
 
   const section = (t: string) => (
     <Text
@@ -166,6 +194,111 @@ export default function ConnectionsScreen(): React.JSX.Element {
       {children}
     </View>
   )
+
+  // An accepted connection: its category (tap "Change" to re-file it), an
+  // add/remove-circle toggle, and disconnect. Used by both the "Your circle"
+  // and "Connected" sections so the two stay identical.
+  const connectedCard = (c: Connection) => {
+    const inCircle = c.inCircle === true
+    const circleBusy = addCircle.isPending || removeCircle.isPending
+    return card(
+      <View>
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as never }}>
+              {labelFor(c.category)}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => remove.mutate(c.peerId)}
+            style={styles.plainBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Disconnect"
+          >
+            <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Disconnect</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.actionRow}>
+          <Pressable
+            onPress={() => (inCircle ? removeCircle.mutate(c.peerId) : addCircle.mutate(c.peerId))}
+            disabled={circleBusy}
+            style={[
+              styles.pill,
+              {
+                borderColor: inCircle ? (colors.tint as string) : (colors.border as string),
+                backgroundColor: inCircle ? (colors.tint as string) + '1F' : 'transparent',
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: inCircle }}
+            accessibilityLabel={inCircle ? 'Remove from your circle' : 'Add to your circle'}
+          >
+            <MaterialIcons
+              name={inCircle ? 'check-circle' : 'add-circle-outline'}
+              size={fs(16)}
+              color={inCircle ? (colors.tint as string) : (colors.subtext as string)}
+            />
+            <Text
+              style={{
+                color: inCircle ? (colors.tint as string) : colors.text,
+                fontSize: fs(12),
+                fontWeight: fw(inCircle ? 700 : 500) as never,
+              }}
+            >
+              {inCircle ? 'In your circle' : 'Add to circle'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setEditingCategory(editingCategory === c.peerId ? null : c.peerId)}
+            style={[styles.pill, { borderColor: colors.border as string }]}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: editingCategory === c.peerId }}
+            accessibilityLabel="Change category"
+          >
+            <MaterialIcons name="edit" size={fs(15)} color={colors.subtext as string} />
+            <Text style={{ color: colors.text, fontSize: fs(12) }}>Change</Text>
+          </Pressable>
+        </View>
+
+        {editingCategory === c.peerId ? (
+          <View style={[styles.chips, { marginTop: 10 }]}>
+            {ALL_CATEGORIES.map((cat) => {
+              const on = cat.id === c.category
+              return (
+                <Pressable
+                  key={cat.id}
+                  onPress={() => recategorize.mutate({ peerId: c.peerId, category: cat.id })}
+                  disabled={recategorize.isPending}
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: on ? (colors.tint as string) : (colors.border as string),
+                      backgroundColor: on ? (colors.tint as string) + '1F' : 'transparent',
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Text
+                    style={{
+                      color: on ? (colors.tint as string) : colors.text,
+                      fontSize: fs(12),
+                      fontWeight: fw(on ? 700 : 500) as never,
+                    }}
+                  >
+                    {cat.label}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        ) : null}
+      </View>,
+      c.peerId,
+    )
+  }
 
   return (
     <AppWrapper>
@@ -366,29 +499,17 @@ export default function ConnectionsScreen(): React.JSX.Element {
               </View>,
             )}
 
-            {accepted.length > 0 ? (
+            {circle.length > 0 ? (
+              <>
+                {section('Your circle')}
+                {circle.map((c) => connectedCard(c))}
+              </>
+            ) : null}
+
+            {others.length > 0 ? (
               <>
                 {section('Connected')}
-                {accepted.map((c) =>
-                  card(
-                    <View style={styles.row}>
-                      <View style={styles.rowText}>
-                        <Text style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as never }}>
-                          {labelFor(c.category)}
-                        </Text>
-                      </View>
-                      <Pressable
-                        onPress={() => remove.mutate(c.peerId)}
-                        style={styles.plainBtn}
-                        accessibilityRole="button"
-                        accessibilityLabel="Disconnect"
-                      >
-                        <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Disconnect</Text>
-                      </Pressable>
-                    </View>,
-                    c.peerId,
-                  ),
-                )}
+                {others.map((c) => connectedCard(c))}
               </>
             ) : null}
 
@@ -433,6 +554,18 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
   rowText: { flex: 1 },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
   smallBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, minHeight: 44, justifyContent: 'center' },
   plainBtn: { paddingHorizontal: 8, paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
   wideBtn: { marginTop: 12, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
