@@ -61,6 +61,7 @@ import {
 import {
   canDrawSupplyBar,
   passedTodayTimes,
+  supplyProvenance,
   supplyStatus,
   upcomingTodayTimes,
 } from '@/lib/medication-schedule';
@@ -79,6 +80,13 @@ const PSYCH_TINT = '#6B4FA8';
 /** Refill amber. #B45309 clears 4.5:1 on white; the lighter #F59E0B never carries text. */
 const REFILL_AMBER = '#B45309';
 const SUPPLY_OK = '#0F7A4A';
+
+/** "17 Aug" — short enough to sit inside a one-line qualifier. */
+function formatShortDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
 
 /** Local YYYY-MM-DD. toISOString would shift the date either side of midnight. */
 function todayISO(): string {
@@ -1290,6 +1298,7 @@ function MedicationCardDescriptive({
         if (compact) return null;
         const st = supplyStatus(med.supply, todayISO());
         if (st.kind === 'none') return null;
+        const prov = supplyProvenance(med.supply);
 
         const urgent =
           st.kind === 'overdue' || (st.kind === 'reorder' && st.urgent);
@@ -1346,6 +1355,22 @@ function MedicationCardDescriptive({
                 </Text>
               ) : null}
             </View>
+            {/* SAY THAT IT IS AN ESTIMATE.
+                The backend derives this from the dispense quantity when
+                nobody has typed a count, assuming the fill happened the day
+                the script was written and that every dose since was taken.
+                Neither is observable. Unqualified, "About 4 days left" reads
+                as a measurement — and the bar below it reads as one even
+                harder. The invitation to correct it is the useful half: a
+                patient who has actually counted can replace a guess with a
+                fact in two taps. */}
+            {prov.estimated ? (
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 3 }}>
+                {prov.basedOn
+                  ? `Estimated from your ${formatShortDate(prov.basedOn)} prescription · tap to correct`
+                  : 'Estimated from your prescription · tap to correct'}
+              </Text>
+            ) : null}
             {showBar ? (
               <View style={[styles.supplyTrack, { backgroundColor: colors.border as string }]}>
                 <View

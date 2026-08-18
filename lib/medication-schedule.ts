@@ -36,6 +36,9 @@ export interface ScheduleSupply {
   snoozedUntil?: string | null
   cadence?: Cadence | null
   startDate?: string | null
+  /** Derived by the backend from the dispense quantity, not typed by anyone. */
+  estimated?: boolean
+  estimatedFrom?: string | null
 }
 
 export interface ScheduleMed {
@@ -195,6 +198,18 @@ export function signedDaysUntil(iso: string | null | undefined): number | null {
   return Math.round((target.getTime() - today.getTime()) / 86_400_000)
 }
 
+/**
+ * Whether a supply figure was DERIVED or TYPED, and what it was derived from.
+ *
+ * Carried on every non-empty status so the row can qualify the number. A
+ * derived count assumes the fill date and full adherence; neither is
+ * observable, so the screen must not state it as fact.
+ */
+export interface SupplyProvenance {
+  estimated: boolean
+  basedOn: string | null
+}
+
 export type SupplyStatus =
   | { kind: 'none' }
   | { kind: 'snoozed'; until: string }
@@ -214,6 +229,19 @@ export type SupplyStatus =
  * because `null <= 2` is `true` in JavaScript and that is exactly how a row
  * ends up reading "About null days left".
  */
+/**
+ * Where a supply figure came from. Read alongside supplyStatus so the row can
+ * qualify the number rather than assert it.
+ */
+export function supplyProvenance(
+  supply: ScheduleSupply | null | undefined,
+): SupplyProvenance {
+  return {
+    estimated: supply?.estimated === true,
+    basedOn: typeof supply?.estimatedFrom === 'string' ? supply.estimatedFrom : null,
+  }
+}
+
 export function supplyStatus(
   supply: ScheduleSupply | null | undefined,
   todayISO: string,
