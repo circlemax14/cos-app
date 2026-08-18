@@ -46,7 +46,7 @@ import {
   normalizeForm,
   supplyUnitLabel,
 } from '@/lib/med-forms';
-import { splitByMedicationClass } from '@/lib/medication-classification';
+import { classifyMedication, splitByMedicationClass } from '@/lib/medication-classification';
 import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
 
 const SAFETY_DISCLAIMER =
@@ -678,22 +678,22 @@ export function MedicationsSection({
                 </Text>
               </View>
             ) : (
-              /* Ken 2026-08-14: divide medications into medical and
-                 psychiatric.
+              /* Ken 2026-08-14 asked for medical vs psychiatric. This was
+                 built as TWO HEADED SECTIONS, and Vishal 2026-08-18 corrected
+                 it: "it's not like we have 2 sections, it has to be icon
+                 based."
 
-                 A heading renders for each NON-EMPTY group. The first cut
-                 required BOTH kinds to be present, reasoning that a lone
-                 "MEDICAL" heading over an all-medical list was furniture —
-                 which made the whole feature invisible to anyone who takes no
-                 psychiatric medication, i.e. most people, including the first
-                 person who tried to test it. A heading that says "these are
-                 your medical ones" is not noise; it is how the patient learns
-                 the grouping exists at all.
+                 The headings did more harm than being heavy. They SPLIT THE
+                 LIST IN TWO, so a patient's medications stopped appearing in
+                 one place and the order they were added in was destroyed —
+                 someone scanning for the drug they just took had to work out
+                 which half it lived in first. The distinction is a property
+                 OF a medication, not a way to file them.
 
-                 Still no empty groups: a group with nothing in it renders
-                 neither heading nor space. */
+                 So: one list, in one order, with a glyph on each row. Nothing
+                 about the classification is lost — see MedicationCardDescriptive
+                 for the icon and the legend below for what the glyphs mean. */
               (() => {
-                const { medical, psychiatric } = splitByMedicationClass(active);
                 const renderCard = (med: Medication) => (
                   <MedicationCard
                     key={med.id}
@@ -714,28 +714,45 @@ export function MedicationsSection({
                     flush={flush}
                   />
                 );
-                const heading = (label: string, n: number) => (
-                  <Text
-                    accessibilityRole="header"
-                    style={{
-                      marginTop: 10,
-                      marginBottom: 6,
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(11),
-                      fontWeight: getScaledFontWeight(600) as any,
-                      letterSpacing: 0.4,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {`${label}  ·  ${n}`}
-                  </Text>
+                // A legend, shown only when BOTH kinds are present. With one
+                // kind there is nothing to tell apart, and a key explaining a
+                // distinction the patient cannot see on their own list is
+                // furniture. Counts stay — they were the useful half of the
+                // headings.
+                const { medical, psychiatric } = splitByMedicationClass(active);
+                const showLegend = medical.length > 0 && psychiatric.length > 0;
+
+                const legendItem = (
+                  icon: React.ComponentProps<typeof MaterialIcons>['name'],
+                  tint: string,
+                  label: string,
+                  n: number,
+                ) => (
+                  <View style={styles.legendItem}>
+                    <View style={[styles.classIconWrap, { backgroundColor: tint + '1A' }]}>
+                      <MaterialIcons name={icon} size={getScaledFontSize(12)} color={tint} />
+                    </View>
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
+                      {`${label} · ${n}`}
+                    </Text>
+                  </View>
                 );
+
                 return (
                   <>
-                    {medical.length > 0 && heading('Medical', medical.length)}
-                    {medical.map(renderCard)}
-                    {psychiatric.length > 0 && heading('Psychiatric', psychiatric.length)}
-                    {psychiatric.map(renderCard)}
+                    {showLegend ? (
+                      <View
+                        style={styles.legendRow}
+                        accessible
+                        accessibilityLabel={`${medical.length} medical and ${psychiatric.length} psychiatric medications. Each row is marked with its kind.`}
+                      >
+                        {legendItem('medical-services', '#0B6963', 'Medical', medical.length)}
+                        {legendItem('psychology', '#6B4FA8', 'Psychiatric', psychiatric.length)}
+                      </View>
+                    ) : null}
+                    {/* ONE list, in the order the patient's medications
+                        actually arrived — not re-sorted by class. */}
+                    {active.map(renderCard)}
                   </>
                 );
               })()
@@ -925,16 +942,44 @@ function MedicationCardDescriptive({
   formTag: string;
   discontinuedLabel: string | null;
 }): React.JSX.Element {
+  // Ken's medical/psychiatric split, carried by an ICON on the row rather than
+  // by two headed sections. Vishal 2026-08-18: "it's not like we have 2
+  // sections, it has to be icon based."
+  //
+  // The headings were doing real damage beyond looking heavy: they FORCED THE
+  // LIST INTO TWO BLOCKS, so a patient's medications no longer appeared in one
+  // place and the order they were added in was lost. A glyph on each row says
+  // the same thing without cutting the list in half.
+  //
+  // Colour is NOT the carrier — the two glyphs differ in shape as well as
+  // tone, because a colour-only distinction is invisible to a colour-blind
+  // reader, and the accessibility label says the word outright.
+  const medClass = classifyMedication(med);
+  const isPsych = medClass === 'psychiatric';
+  const classIcon = isPsych ? 'psychology' : 'medical-services';
+  const classTint = isPsych ? '#6B4FA8' : '#0B6963';
+
   return (
     <>
-      <Text
-        style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}
-        numberOfLines={1}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no-hide-descendants"
-      >
-        {med.name}
-      </Text>
+      <View style={styles.titleRow}>
+        <View style={[styles.classIconWrap, { backgroundColor: classTint + '1A' }]}>
+          <MaterialIcons name={classIcon} size={getScaledFontSize(14)} color={classTint} />
+        </View>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: getScaledFontSize(15),
+            fontWeight: getScaledFontWeight(700) as any,
+            flex: 1,
+            minWidth: 0,
+          }}
+          numberOfLines={1}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          {med.name}
+        </Text>
+      </View>
       <Text
         style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
         // Ken 2026-08-06 — was 1 line: dose + frequency for pill/patch
@@ -2029,6 +2074,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // Fixed square so every row's name starts at the same x — a glyph that
+  // shifts the title left and right down the list is worse than no glyph.
+  classIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legendRow: { flexDirection: 'row', gap: 14, marginTop: 4, marginBottom: 8, flexWrap: 'wrap' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   emptyRow: {
     marginHorizontal: 20,
     marginBottom: 10,

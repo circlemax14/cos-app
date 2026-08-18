@@ -36,7 +36,7 @@ export function DrugLabelFactsBlock({
   getScaledFontSize,
   getScaledFontWeight,
 }: DrugLabelFactsProps): React.JSX.Element | null {
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['drug-label', name.trim().toLowerCase()],
     queryFn: () => fetchDrugLabel(name),
     enabled: name.trim() !== '',
@@ -45,6 +45,53 @@ export function DrugLabelFactsBlock({
     staleTime: 60 * 60 * 1000,
     retry: false,
   })
+
+  // WHILE FETCHING, SHOW THAT SOMETHING IS COMING.
+  //
+  // Vishal 2026-08-18: "when I click on active medication name then there is
+  // no loader which shows we are fetching something."
+  //
+  // He was right, and the cause is one line: `isLoading` was never read. The
+  // early return below fires on the first render — when `data` is still
+  // undefined — so expanding a medication rendered NOTHING, waited on a call
+  // that reaches api.fda.gov, and then popped a block in. Indistinguishable
+  // from a drug we have no label for, which is the one thing this must not be
+  // confused with.
+  //
+  // A STATIC skeleton, not a spinner: ADR-0003's envelope keeps animation off
+  // these surfaces, and three grey bars in the shape of the block that is
+  // about to arrive tell the patient more about what is coming than a
+  // rotating circle does.
+  if (isLoading) {
+    return (
+      <View
+        style={[styles.wrap, { borderColor: colors.border }]}
+        accessible
+        accessibilityLabel="Looking up information about this medication"
+        accessibilityRole="progressbar"
+      >
+        <View style={styles.head}>
+          <MaterialIcons name="info-outline" size={getScaledFontSize(15)} color={colors.subtext} />
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: getScaledFontSize(12),
+              fontWeight: getScaledFontWeight(700) as never,
+              letterSpacing: 0.4,
+              textTransform: 'uppercase',
+            }}
+          >
+            Looking this up…
+          </Text>
+        </View>
+        {/* Widths deliberately uneven — a stack of identical bars reads as a
+            rendering fault rather than as text that has not arrived. */}
+        <View style={[styles.skeletonBar, { backgroundColor: colors.border, width: '38%', marginTop: 12 }]} />
+        <View style={[styles.skeletonBar, { backgroundColor: colors.border, width: '92%', marginTop: 6 }]} />
+        <View style={[styles.skeletonBar, { backgroundColor: colors.border, width: '74%', marginTop: 4 }]} />
+      </View>
+    )
+  }
 
   if (!data?.found) return null
 
@@ -130,5 +177,8 @@ export function DrugLabelFactsBlock({
 
 const styles = StyleSheet.create({
   wrap: { marginTop: 12, paddingTop: 10, borderTopWidth: 1 },
-  head: { flexDirection: 'row', alignItems: 'center' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Line-height of the body text this stands in for, so the block does not
+  // jump size when the real content replaces it.
+  skeletonBar: { height: 11, borderRadius: 4, opacity: 0.7 },
 })
