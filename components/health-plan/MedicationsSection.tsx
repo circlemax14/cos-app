@@ -1320,10 +1320,14 @@ function MedicationCardDescriptive({
 
         const qty = med.supply?.remainingQuantity;
         const showBar = canDrawSupplyBar(med.supply);
+        // An overdue supply is EMPTY, not nearly-empty — a 4% sliver would
+        // read as "a little left" on the row that has none.
         const pct =
-          st.kind === 'ok' || st.kind === 'reorder'
-            ? Math.max(0.04, Math.min(1, (st.kind === 'ok' ? st.days : (st.days ?? 0)) / 30))
-            : 0.04;
+          st.kind === 'overdue'
+            ? 0
+            : st.kind === 'ok' || st.kind === 'reorder'
+              ? Math.max(0.04, Math.min(1, (st.kind === 'ok' ? st.days : (st.days ?? 0)) / 30))
+              : 0.04;
 
         return (
           <View
