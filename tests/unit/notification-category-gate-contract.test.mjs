@@ -141,7 +141,22 @@ test('health alerts FAIL OPEN — only an explicit false suppresses', () => {
 test('the hook reads the pref and re-runs when it changes', () => {
   const HOOK2 = read('hooks/use-vitals-red-flag-notifications.ts');
   assert.match(HOOK2, /preferences\?\.healthAlerts/);
-  assert.match(HOOK2, /\}, \[trends, disabled, healthAlertsEnabled\]\)/);
+  // Assert healthAlertsEnabled is IN the dependency array, rather than pinning
+  // the array's exact contents.
+  //
+  // This used to read /\}, \[trends, disabled, healthAlertsEnabled\]\)/, which
+  // says more than the test's own name claims: it failed on any legitimate
+  // dependency addition. SCRUM-715 added `enabled` (the entitlement gate) and
+  // tripped it, even though the pref is still read and still a dependency.
+  // The contract being defended is "the effect re-runs when the pref changes";
+  // that is exactly what this now checks, and nothing more.
+  const deps = /\}, \[([^\]]*)\]\)/.exec(HOOK2);
+  assert.ok(deps, 'expected a useEffect dependency array in the hook');
+  const names = deps[1].split(',').map((s) => s.trim());
+  assert.ok(
+    names.includes('healthAlertsEnabled'),
+    `healthAlertsEnabled must be a dependency so the effect re-runs when the pref changes; found [${names.join(', ')}]`,
+  );
 });
 
 test('the category exists on every surface, or the type system lied', () => {
