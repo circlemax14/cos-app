@@ -334,9 +334,6 @@ export function MedicationsSection({
 
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
-  // Past medications collapse. Closed on mount: this section is reference
-  // material, never the reason the screen was opened.
-  const [pastOpen, setPastOpen] = React.useState(false);
 
   // CHUNK 52.2 — session-local "recently hidden" restore banner.
   //
@@ -814,47 +811,26 @@ export function MedicationsSection({
             )}
             {past.length > 0 && (
               <>
-                {/* PAST MEDICATIONS AS AN ACCORDION, COLLAPSED BY DEFAULT.
-                    Vishal 2026-08-18: "past medications needs to be an
-                    accordion also to hide info which is not required."
-
-                    It rendered every discontinued card unconditionally, so a
-                    patient with a long history scrolled through medications
-                    they are NOT taking to reach the ones they are — on the
-                    screen whose entire job is the current list. The count
-                    stays on the header, so nothing is hidden that the reader
-                    did not already know was there.
-
-                    Collapsed is the right default because this section is
-                    reference material: you come looking for it deliberately,
-                    usually to restore something. It is never the reason the
-                    screen was opened. */}
-                <Pressable
-                  onPress={() => setPastOpen((v) => !v)}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: pastOpen }}
-                  accessibilityLabel={`Past medications, ${past.length}`}
-                  accessibilityHint={pastOpen ? 'Hide past medications' : 'Show past medications'}
-                  style={styles.pastHeader}
-                  hitSlop={8}
+                {/* A PLAIN HEADING AGAIN.
+                    I first made this whole section one accordion hanging off
+                    the title. That was a misread: Vishal asked for the
+                    accordion to be PER MEDICATION, so each past row can hide
+                    its own detail. Collapsing the entire section instead hid
+                    the fact that any history existed at all, behind a control
+                    nobody asked for. The per-row collapse lives on
+                    MedicationCard via `collapsible` (see below). */}
+                <Text
+                  style={{
+                    marginTop: 20,
+                    marginBottom: 8,
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
                 >
-                  <Text
-                    style={{
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(13),
-                      fontWeight: getScaledFontWeight(600) as any,
-                      flex: 1,
-                    }}
-                  >
-                    {`Past · ${past.length} medication${past.length === 1 ? '' : 's'}`}
-                  </Text>
-                  <MaterialIcons
-                    name={pastOpen ? 'expand-less' : 'expand-more'}
-                    size={getScaledFontSize(22)}
-                    color={colors.subtext as string}
-                  />
-                </Pressable>
-                {pastOpen && past.map((med) => (
+                  {`Past · ${past.length} medication${past.length === 1 ? '' : 's'}`}
+                </Text>
+                {past.map((med) => (
                   <MedicationCard
                     key={med.id}
                     med={med}
@@ -871,6 +847,11 @@ export function MedicationsSection({
                     onConfirmAlertOpen={beginConfirmAlert}
                     onConfirmAlertResolve={endConfirmAlert}
                     isPast
+                    // PER-MEDICATION ACCORDION. A past row now shows its name
+                    // and why it ended, and hides the dose, schedule and
+                    // footnote until tapped — "info which is not required"
+                    // for a medication the patient is no longer taking.
+                    collapsible
                     flush={flush}
                   />
                 ))}
@@ -1012,6 +993,7 @@ function MedicationCardDescriptive({
   isInjectable,
   formTag,
   discontinuedLabel,
+  compact = false,
 }: ThemeProps & {
   med: Medication;
   badgeColor: string;
@@ -1020,6 +1002,13 @@ function MedicationCardDescriptive({
   isInjectable: boolean;
   formTag: string;
   discontinuedLabel: string | null;
+  /**
+   * A collapsed PAST row. Shows the name and why it ended, and hides the
+   * dose, schedule and footnote — detail that is not required for a
+   * medication the patient is no longer taking, and which pushed the rows
+   * they ARE taking off the screen.
+   */
+  compact?: boolean;
 }): React.JSX.Element {
   // ─── HIERARCHY, CORRECTED (Vishal 2026-08-18) ──────────────────────
   //
@@ -1097,26 +1086,16 @@ function MedicationCardDescriptive({
   //
   // NO numberOfLines ANYWHERE. A clamped name hides the drug; a clamped sig
   // hides the instruction.
-  const anchorTint = mark.show ? PSYCH_TINT : (colors.subtext as string);
-
   return (
     <>
-      <View style={styles.cardTop}>
-        <View style={[styles.anchor, { backgroundColor: anchorTint + '1F' }]}>
-          <Text
-            style={{
-              color: anchorTint,
-              fontSize: getScaledFontSize(16),
-              fontWeight: getScaledFontWeight(700) as any,
-            }}
-            accessibilityElementsHidden={true}
-            importantForAccessibility="no-hide-descendants"
-          >
-            {(med.name ?? '?').trim().charAt(0).toUpperCase() || '?'}
-          </Text>
-        </View>
-
-        <View style={styles.cardTopBody}>
+      {/* NO TILE HERE. MedicationCard ALREADY renders one — styles.medIcon at
+          the top of cardTopRow — and adding a second put two icon columns side
+          by side on every card, squeezing the text into a strip. That is what
+          "details are not laid out properly" was, and my HTML mock never
+          showed it because the mock did not include the wrapper. The existing
+          tile now carries the class instead; see MedicationCard. */}
+      <>
+        <View style={{ minWidth: 0 }}>
           <Text
             style={{
               color: colors.text,
@@ -1129,6 +1108,22 @@ function MedicationCardDescriptive({
             {med.name}
           </Text>
 
+          {/* A COLLAPSED PAST ROW STOPS HERE — name plus why it ended. The
+              dose, schedule and footnote of a medication the patient is no
+              longer taking is exactly the "info which is not required" that
+              was pushing their CURRENT medications off the screen. */}
+          {compact ? (
+            discontinuedLabel ? (
+              <Text
+                style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}
+                accessibilityElementsHidden={true}
+                importantForAccessibility="no-hide-descendants"
+              >
+                {discontinuedLabel}
+              </Text>
+            ) : null
+          ) : (
+            <>
           {/* THE INSTRUCTION — the reason the card exists. */}
           <Text
             style={{
@@ -1210,10 +1205,14 @@ function MedicationCardDescriptive({
               {`${formatTimes(passed)} ${passed.length === 1 ? 'was' : 'were'} scheduled earlier today`}
             </Text>
           ) : null}
+            </>
+          )}
         </View>
-      </View>
+      </>
 
-      <View style={[styles.cardRule, { backgroundColor: colors.border as string }]} />
+      {compact ? null : (
+        <View style={[styles.cardRule, { backgroundColor: colors.border as string }]} />
+      )}
 
       {/* The footnote line: class (only when detected), form (only when
           notable), provenance. Plain grey, one line, no chrome. */}
@@ -1436,8 +1435,23 @@ function MedicationCard({
         wrap) since restore is a separate flow.
        */}
       <View style={styles.cardTopRow}>
-        <View style={[styles.medIcon, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
-          <MaterialIcons name="medication" size={getScaledFontSize(20)} color="#8B5CF6" />
+        {/* THE ANCHOR — and now the class marker.
+            It used to be violet on EVERY card, which was worse than
+            decorative: violet is this screen's psychiatric colour, so a
+            psychiatric row's mark was invisible against a list where every
+            tile was already violet. Now violet means psychiatric and nothing
+            else; every other medication gets a neutral tile. */}
+        <View
+          style={[
+            styles.medIcon,
+            { backgroundColor: (isPsychRow ? PSYCH_TINT : (colors.subtext as string)) + '1F' },
+          ]}
+        >
+          <MaterialIcons
+            name={isInjectable ? 'vaccines' : 'medication'}
+            size={getScaledFontSize(20)}
+            color={isPsychRow ? PSYCH_TINT : (colors.subtext as string)}
+          />
         </View>
         {/* CHUNK 99 v2: inner accessibility grouping is the single a11y leaf
             for the passive descriptive text. Wrapping in a Pressable when
@@ -1446,7 +1460,7 @@ function MedicationCard({
             action instead of three separate leaves) — the Edit / Hide
             Pressables remain siblings and stay individually focusable when
             expanded. */}
-        {collapsible && !isPast ? (
+        {collapsible ? (
           <Pressable
             style={{ flex: 1, minWidth: 0 }}
             onPress={() => setExpanded((v) => !v)}
@@ -1466,6 +1480,7 @@ function MedicationCard({
               isInjectable={isInjectable}
               formTag={formTag}
               discontinuedLabel={discontinuedLabel}
+              compact={isPast && !expanded}
             />
           </Pressable>
         ) : (
@@ -1560,7 +1575,7 @@ function MedicationCard({
               <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
             </Pressable>
           </>
-        ) : collapsible && !isPast ? (
+        ) : collapsible ? (
           // Ken 2026-08-07: "When I went to edit it took a few presses for the
           // box to drop down."
           //
@@ -2282,33 +2297,12 @@ const styles = StyleSheet.create({
   // A dot, not a boxed glyph. The class is a footnote-level fact; giving it a
   // filled tile put it at the same weight as the drug name.
   classDot: { width: 6, height: 6, borderRadius: 3 },
-  // Top-aligned, not centred: the text column grows downward as the sig wraps
-  // and the anchor must stay level with the NAME, not drift to the middle.
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  // Fixed 40pt square so every row's text starts at the same x. A tile that
-  // resized with its content would make the list ragged.
-  anchor: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  cardTopBody: { flex: 1, minWidth: 0 },
   // WRAPS: four dose times fit one line, but not at a large accessibility
   // text size, and clipping a dose time is not an option.
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   timeChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
   // Separates what the patient DOES from where the row came from.
   cardRule: { height: StyleSheet.hairlineWidth, marginTop: 12, opacity: 0.9 },
-  pastHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 8,
-    minHeight: 44,
-  },
   scheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   // Wraps rather than truncates: at large accessibility text sizes these
   // three fragments will not fit one line, and clipping provenance is worse
