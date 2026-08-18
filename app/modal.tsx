@@ -16,6 +16,7 @@ import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerA
 import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
+import { useSocialConnectFlag } from '@/hooks/use-social-connect-flag';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   getNonEhrProviders,
@@ -53,6 +54,10 @@ type ManualMember = {
 export default function ModalScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // SCRUM-688 — gate the "Find people" banner backend-driven + beta-first.
+  // Default-OFF until /v1/feature-flags says social_connect_enabled is on for
+  // this user, so the fleet never sees the banner while it is dark for them.
+  const socialConnectOn = useSocialConnectFlag();
   const { selectedProviders, selectedCareManager, addProvider, removeProvider, setSelectedCareManager } = useProviderSelection();
   const [categoryGroups, setCategoryGroups] = React.useState<CategoryGroup[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -442,7 +447,7 @@ export default function ModalScreen() {
                 // list people already in the circle, and "go find someone new"
                 // is a different verb from "browse who I have".
                 const socialConnectBanner =
-                  category.id === 'social' ? (
+                  category.id === 'social' && socialConnectOn ? (
                     <Pressable
                       onPress={() => {
                         closeModal();
