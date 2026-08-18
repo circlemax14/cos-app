@@ -51,6 +51,7 @@ import {
   classMark,
   doseLine,
   formTagIfNotable,
+  formatTimeLabel,
   formatTimes,
   provenanceLabel,
 } from '@/lib/medication-display';
@@ -333,6 +334,9 @@ export function MedicationsSection({
 
   const [editor, setEditor] = React.useState<EditorMode | null>(null);
   const [supplyEditor, setSupplyEditor] = React.useState<SupplyMode | null>(null);
+  // Past medications collapse. Closed on mount: this section is reference
+  // material, never the reason the screen was opened.
+  const [pastOpen, setPastOpen] = React.useState(false);
 
   // CHUNK 52.2 — session-local "recently hidden" restore banner.
   //
@@ -810,23 +814,47 @@ export function MedicationsSection({
             )}
             {past.length > 0 && (
               <>
-                <Text
-                  style={{
-                    marginTop: 20,
-                    marginBottom: 8,
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    letterSpacing: 0.5,
-                    textTransform: 'uppercase',
-                  }}
+                {/* PAST MEDICATIONS AS AN ACCORDION, COLLAPSED BY DEFAULT.
+                    Vishal 2026-08-18: "past medications needs to be an
+                    accordion also to hide info which is not required."
+
+                    It rendered every discontinued card unconditionally, so a
+                    patient with a long history scrolled through medications
+                    they are NOT taking to reach the ones they are — on the
+                    screen whose entire job is the current list. The count
+                    stays on the header, so nothing is hidden that the reader
+                    did not already know was there.
+
+                    Collapsed is the right default because this section is
+                    reference material: you come looking for it deliberately,
+                    usually to restore something. It is never the reason the
+                    screen was opened. */}
+                <Pressable
+                  onPress={() => setPastOpen((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: pastOpen }}
+                  accessibilityLabel={`Past medications, ${past.length}`}
+                  accessibilityHint={pastOpen ? 'Hide past medications' : 'Show past medications'}
+                  style={styles.pastHeader}
+                  hitSlop={8}
                 >
-                  Past medications
-                  <Text style={{ letterSpacing: 0.2, fontWeight: getScaledFontWeight(500) as any }}>
-                    {`  ·  ${past.length}`}
+                  <Text
+                    style={{
+                      color: colors.subtext,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                      flex: 1,
+                    }}
+                  >
+                    {`Past · ${past.length} medication${past.length === 1 ? '' : 's'}`}
                   </Text>
-                </Text>
-                {past.map((med) => (
+                  <MaterialIcons
+                    name={pastOpen ? 'expand-less' : 'expand-more'}
+                    size={getScaledFontSize(22)}
+                    color={colors.subtext as string}
+                  />
+                </Pressable>
+                {pastOpen && past.map((med) => (
                   <MedicationCard
                     key={med.id}
                     med={med}
@@ -1039,79 +1067,153 @@ function MedicationCardDescriptive({
   const injectableCadence = med.supply?.cadence ? cadenceLabel(med.supply.cadence) : null;
   const hasClockSchedule = passed.length > 0 || upcoming.length > 0;
 
-  // NO numberOfLines ANYWHERE below. A clamped name hides the drug; a clamped
-  // sig hides the instruction. Both must wrap at large accessibility sizes.
+  // ─── THE A+B CARD ──────────────────────────────────────────────────
+  //
+  // Vishal 2026-08-18: "I asked you to mix both A and B but it doesn't match,
+  // details in cards are not laid out properly."
+  //
+  // Correct on both counts, and they are the same fault. The first pass
+  // shipped A plus the band and dropped everything B contributed, so a card
+  // became FIVE STACKED TEXT LINES with nothing anchoring them and no
+  // structure telling the eye where one kind of information ended and the
+  // next began. B's density was the half he liked.
+  //
+  // So B is back, in the two parts that carry it:
+  //
+  //   THE MONOGRAM ANCHORS THE ROW. Every line of text now starts at the same
+  //   x, against a fixed tile, instead of floating against the card edge.
+  //   ONE TINT, NOT SIX: violet when psychiatric, neutral otherwise. The six
+  //   hash-picked hues of the mockup looked richer but meant nothing —
+  //   Metformin and Metoprolol both draw "M" — and they competed with the two
+  //   colours on this screen that DO mean something.
+  //
+  //   DOSE TIMES BECOME CHIPS. Discrete moments read as discrete objects; a
+  //   run-on "2am · 8am · 2pm · 8pm" reads as one string to parse. Passed
+  //   chips are muted and upcoming ones tinted, which is the same passed/
+  //   upcoming split as before, now legible at a glance.
+  //
+  // A hairline divider separates the row's CONTENT from its FOOTNOTE, so
+  // provenance stops competing with the instruction.
+  //
+  // NO numberOfLines ANYWHERE. A clamped name hides the drug; a clamped sig
+  // hides the instruction.
+  const anchorTint = mark.show ? PSYCH_TINT : (colors.subtext as string);
+
   return (
     <>
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(17),
-          fontWeight: getScaledFontWeight(700) as any,
-        }}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no-hide-descendants"
-      >
-        {med.name}
-      </Text>
-
-      {/* THE INSTRUCTION — the reason the card exists. */}
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(15),
-          lineHeight: getScaledFontSize(22),
-          marginTop: 3,
-        }}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no-hide-descendants"
-      >
-        {doseLine(med.dose, med.frequency)}
-      </Text>
-
-      {hasClockSchedule || injectableCadence ? (
-        <View style={styles.scheduleRow}>
-          <MaterialIcons
-            name="schedule"
-            size={getScaledFontSize(14)}
-            color={colors.subtext as string}
-          />
+      <View style={styles.cardTop}>
+        <View style={[styles.anchor, { backgroundColor: anchorTint + '1F' }]}>
           <Text
-            style={{ fontSize: getScaledFontSize(14), flex: 1, minWidth: 0 }}
+            style={{
+              color: anchorTint,
+              fontSize: getScaledFontSize(16),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
             accessibilityElementsHidden={true}
             importantForAccessibility="no-hide-descendants"
           >
-            {hasClockSchedule ? (
-              <>
-                {passed.length > 0 ? (
-                  <Text style={{ color: colors.subtext }}>
-                    {formatTimes(passed)}
-                    {upcoming.length > 0 ? ' · ' : ''}
-                  </Text>
-                ) : null}
-                {upcoming.length > 0 ? (
-                  <Text style={{ color: colors.text }}>{formatTimes(upcoming)}</Text>
-                ) : null}
-              </>
-            ) : (
-              // An injectable has no clock time and that is CORRECT — saying
-              // "no times set" about one would be wrong, not merely unhelpful.
-              <Text style={{ color: colors.text }}>{injectableCadence}</Text>
-            )}
+            {(med.name ?? '?').trim().charAt(0).toUpperCase() || '?'}
           </Text>
         </View>
-      ) : null}
 
-      {/* The same fact in words. Redundant with the greying above ON PURPOSE. */}
-      {passed.length > 0 ? (
-        <Text
-          style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}
-          accessibilityElementsHidden={true}
-          importantForAccessibility="no-hide-descendants"
-        >
-          {`${formatTimes(passed)} ${passed.length === 1 ? 'was' : 'were'} scheduled earlier today`}
-        </Text>
-      ) : null}
+        <View style={styles.cardTopBody}>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(17),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {med.name}
+          </Text>
+
+          {/* THE INSTRUCTION — the reason the card exists. */}
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(15),
+              lineHeight: getScaledFontSize(22),
+              marginTop: 2,
+            }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {doseLine(med.dose, med.frequency)}
+          </Text>
+
+          {/* Dose times as chips. Passed muted, upcoming tinted. */}
+          {hasClockSchedule ? (
+            <View
+              style={styles.chipRow}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
+              {passed.map((t) => (
+                <View
+                  key={`p-${t}`}
+                  style={[styles.timeChip, { backgroundColor: (colors.border as string) + '99' }]}
+                >
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                    {formatTimeLabel(t)}
+                  </Text>
+                </View>
+              ))}
+              {upcoming.map((t) => (
+                <View
+                  key={`u-${t}`}
+                  style={[styles.timeChip, { backgroundColor: (colors.tint as string) + '1A' }]}
+                >
+                  <Text
+                    style={{
+                      color: colors.tint as string,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {formatTimeLabel(t)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : injectableCadence ? (
+            // An injectable has no clock time and that is CORRECT — saying
+            // "no times set" about one would be wrong, not merely unhelpful.
+            <View
+              style={styles.chipRow}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
+              <View style={[styles.timeChip, { backgroundColor: (colors.tint as string) + '1A' }]}>
+                <Text
+                  style={{
+                    color: colors.tint as string,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {injectableCadence}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* The same fact in words. Redundant with the muted chips ON
+              PURPOSE — the state must not be carried by colour alone. */}
+          {passed.length > 0 ? (
+            <Text
+              style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 6 }}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
+              {`${formatTimes(passed)} ${passed.length === 1 ? 'was' : 'were'} scheduled earlier today`}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={[styles.cardRule, { backgroundColor: colors.border as string }]} />
 
       {/* The footnote line: class (only when detected), form (only when
           notable), provenance. Plain grey, one line, no chrome. */}
@@ -2180,11 +2282,38 @@ const styles = StyleSheet.create({
   // A dot, not a boxed glyph. The class is a footnote-level fact; giving it a
   // filled tile put it at the same weight as the drug name.
   classDot: { width: 6, height: 6, borderRadius: 3 },
+  // Top-aligned, not centred: the text column grows downward as the sig wraps
+  // and the anchor must stay level with the NAME, not drift to the middle.
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  // Fixed 40pt square so every row's text starts at the same x. A tile that
+  // resized with its content would make the list ragged.
+  anchor: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  cardTopBody: { flex: 1, minWidth: 0 },
+  // WRAPS: four dose times fit one line, but not at a large accessibility
+  // text size, and clipping a dose time is not an option.
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  timeChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
+  // Separates what the patient DOES from where the row came from.
+  cardRule: { height: StyleSheet.hairlineWidth, marginTop: 12, opacity: 0.9 },
+  pastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+    minHeight: 44,
+  },
   scheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   // Wraps rather than truncates: at large accessibility text sizes these
   // three fragments will not fit one line, and clipping provenance is worse
   // than letting it run on.
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, flexWrap: 'wrap' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10, flexWrap: 'wrap' },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: 8 },
   emptyRow: {
     marginHorizontal: 20,
