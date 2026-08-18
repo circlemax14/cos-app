@@ -113,8 +113,26 @@ export function DrugLabelFactsBlock({
     </Text>
   )
 
+  // THE LINE HEIGHT MUST SCALE WITH THE FONT.
+  //
+  // This was `fontSize: getScaledFontSize(13), lineHeight: 19` — a scaled size
+  // against a HARD-CODED leading. At a large accessibility text size the glyphs
+  // grow and the line box does not, so the rows of a 600-character FDA
+  // paragraph close up and start colliding. That is the "text is not rendering
+  // in a proper way" on this block, and it got worse the more text the label
+  // returned.
+  //
+  // 1.45× because this is dense clinical prose read by people who did not
+  // choose to read it; it needs more air than UI copy, not less.
   const body = (t: string) => (
-    <Text style={{ color: colors.text, fontSize: getScaledFontSize(13), lineHeight: 19, marginTop: 3 }}>
+    <Text
+      style={{
+        color: colors.text,
+        fontSize: getScaledFontSize(13),
+        lineHeight: Math.round(getScaledFontSize(13) * 1.45),
+        marginTop: 4,
+      }}
+    >
       {t}
     </Text>
   )
