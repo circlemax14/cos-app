@@ -73,7 +73,7 @@ function labelFor(categoryId: string): string {
   return ALL_CATEGORIES.find((c) => c.id === categoryId)?.label ?? 'Connection'
 }
 
-export default function ConnectionsScreen(): React.JSX.Element {
+function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const fs = getScaledFontSize
@@ -300,23 +300,24 @@ export default function ConnectionsScreen(): React.JSX.Element {
     )
   }
 
-  return (
-    <AppWrapper>
+  const body = (
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            hitSlop={12}
-            style={styles.back}
-          >
-            <MaterialIcons name="arrow-back" size={fs(24)} color={colors.text as string} />
-          </Pressable>
-          <Text style={{ flex: 1, color: colors.text, fontSize: fs(22), fontWeight: fw(700) as never }}>
-            People
-          </Text>
-        </View>
+        {embedded ? null : (
+          <View style={styles.headerRow}>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={12}
+              style={styles.back}
+            >
+              <MaterialIcons name="arrow-back" size={fs(24)} color={colors.text as string} />
+            </Pressable>
+            <Text style={{ flex: 1, color: colors.text, fontSize: fs(22), fontWeight: fw(700) as never }}>
+              People
+            </Text>
+          </View>
+        )}
 
         {featureOff ? (
           <Text style={{ color: colors.subtext, fontSize: fs(13), lineHeight: 20, marginTop: 20 }}>
@@ -543,8 +544,21 @@ export default function ConnectionsScreen(): React.JSX.Element {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </AppWrapper>
   )
+  return embedded ? body : <AppWrapper>{body}</AppWrapper>
+}
+
+export default function ConnectionsScreen(): React.JSX.Element {
+  return <ConnectionsInner />
+}
+
+/**
+ * Embeddable version for the Supports modal's Social tab: no AppWrapper, no
+ * back button. Rendered as the TabScreen's SINGLE child so the react-native-
+ * paper-tabs snapshot on iOS 26 doesn't crash (see COS-688).
+ */
+export function ConnectionsPanel(): React.JSX.Element {
+  return <ConnectionsInner embedded />
 }
 
 const styles = StyleSheet.create({

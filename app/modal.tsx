@@ -17,6 +17,7 @@ import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { useSocialConnectFlag } from '@/hooks/use-social-connect-flag';
+import { ConnectionsPanel } from './Home/connections';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   getNonEhrProviders,
@@ -739,7 +740,13 @@ export default function ModalScreen() {
                     key={category.id}
                     label={category.name}
                   >
-                    {showEmptyNonMedical ? (
+                    {/* SCRUM-688: the Social tab renders the connections / People
+                        UI inline (embedded panel) as the TabScreen's SINGLE child —
+                        iOS-26 paper-tabs snapshot safe (the People screen no longer
+                        lives on a separate route). */}
+                    {category.id === 'social' ? (
+                      <ConnectionsPanel />
+                    ) : showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={styles.addMemberContainer}>
                           {openManualFormKey === emptyFormKey ? (
