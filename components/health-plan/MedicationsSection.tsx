@@ -54,6 +54,11 @@ import {
   formatTimes,
   provenanceLabel,
 } from '@/lib/medication-display';
+// cadenceLabel deliberately NOT imported here — lib/med-forms already exports
+// one and it is already in use in this file. Two functions answering the same
+// question is how they drift.
+import { passedTodayTimes, upcomingTodayTimes } from '@/lib/medication-schedule';
+import { NextScheduledBand } from './NextScheduledBand';
 
 import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
 
@@ -236,7 +241,27 @@ function composeMedA11yLabel(med: Medication): string {
     refillPart = 'Refill status unknown';
   }
 
-  return `${namePart}. ${schedulePart}. ${refillPart}.`;
+  // NO REFILL CLAUSE WHEN THERE IS NO SUPPLY RECORD AT ALL.
+  //
+  // `supply` has no backend source — it exists only once a patient types the
+  // quantity into the supply modal — so it is null on essentially every row.
+  // Emitting "Refill status unknown" there made VoiceOver announce a refill
+  // state on every medication in the list while the screen showed none, which
+  // is both noise and a contradiction. Retained when supply EXISTS but nothing
+  // is derivable from it, because then "unknown" is the true answer.
+  const hasSupplyRecord = med.supply != null;
+
+  // What was scheduled earlier today — spoken as well as shown, since the
+  // greyed times in the row carry it visually and a screen-reader user gets
+  // no colour. SCHEDULED, never "missed": there is no dose-taken event.
+  const passedToday = passedTodayTimes(med.times, new Date());
+  const earlierPart =
+    passedToday.length > 0
+      ? ` ${formatTimes(passedToday)} ${passedToday.length === 1 ? 'was' : 'were'} scheduled earlier today.`
+      : '';
+
+  const refillSentence = hasSupplyRecord ? ` ${refillPart}.` : '';
+  return `${namePart}. ${schedulePart}.${earlierPart}${refillSentence}`;
 }
 
 type EditorMode =
@@ -258,6 +283,14 @@ export interface MedicationsSectionProps {
    */
   openAddSignal?: number;
   /**
+   * The "Next scheduled" band. Defaults to `flush`, i.e. ONLY the dedicated
+   * medications screen. On the Plan and Home surfaces MedicationsBanner
+   * already carries upcoming doses, and a second one landing mid-plan would
+   * duplicate it — the same redundancy Ken removed TodaysMedicationsCard for
+   * on 2026-08-06.
+   */
+  showNextDoseBand?: boolean;
+  /**
    * Ken 2026-08-06 — when true, drop the internal 20pt horizontal
    * margin on cards + section headers so the parent screen can supply
    * horizontal padding at its own preferred value (16pt to match
@@ -272,6 +305,10 @@ export function MedicationsSection({
   onLayout,
   openAddSignal = 0,
   flush = false,
+  // Defaults to `flush` — which is true only on app/Home/medications.tsx.
+  // The Plan and Home surfaces already carry upcoming doses in
+  // MedicationsBanner, and a second band landing mid-plan would duplicate it.
+  showNextDoseBand = flush,
 }: MedicationsSectionProps = {}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -670,21 +707,31 @@ export function MedicationsSection({
         }
         return (
           <>
+            {/* THE BAND. Only on the dedicated screen, and only when some
+                medication actually has a computable next dose — it returns
+                null otherwise, so an EHR-only account (no dose times anywhere)
+                sees no shell and no "add your times" nag. */}
+            {showNextDoseBand ? (
+              <NextScheduledBand
+                meds={active}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            ) : null}
+
+            {/* The count states the number next to its noun, so nobody has to
+                count rows to answer "how many am I on". Raised 11 → 13: this
+                screen has a 13pt floor. */}
             <Text
               style={{
                 marginTop: 6,
                 marginBottom: 8,
                 color: colors.subtext,
-                fontSize: getScaledFontSize(11),
-                fontWeight: getScaledFontWeight(700) as any,
-                letterSpacing: 0.5,
-                textTransform: 'uppercase',
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as any,
               }}
             >
-              Active medications
-              <Text style={{ letterSpacing: 0.2, fontWeight: getScaledFontWeight(500) as any }}>
-                {`  ·  ${active.length}`}
-              </Text>
+              {`Active · ${active.length} medication${active.length === 1 ? '' : 's'}`}
             </Text>
             {active.length === 0 ? (
               <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
@@ -972,59 +1019,98 @@ function MedicationCardDescriptive({
   // a claim we cannot support, and takes a mark off most rows as a bonus.
   const medClass = classifyMedication(med);
   const mark = classMark(medClass);
-  const scheduleLine = formatTimes(med.times);
   const notableForm = MED_FORMS_ENABLED ? formTagIfNotable(isInjectable) : null;
 
+  // ─── SCHEDULE, SPLIT INTO PASSED AND UPCOMING ──────────────────────
+  //
+  // The old line printed every time in one colour, so at 10am a four-times-
+  // daily antibiotic read "8am · 2pm · 8pm · 2am" with nothing to say that
+  // 8am had already gone by. Greying the passed ones — and, below, saying so
+  // in words as well, because the state must not be carried by colour alone.
+  //
+  // SCHEDULED, never "missed" and never "taken": there is no dose-taken event
+  // anywhere in the medication contract, so the screen must not imply one in
+  // either direction.
+  const nowAt = new Date();
+  const passed = passedTodayTimes(med.times, nowAt);
+  const upcoming = upcomingTodayTimes(med.times, nowAt);
+  // Guarded on the cadence EXISTING: med-forms' cadenceLabel defaults to
+  // 'Daily' for absent input, which would put a schedule on a row that has none.
+  const injectableCadence = med.supply?.cadence ? cadenceLabel(med.supply.cadence) : null;
+  const hasClockSchedule = passed.length > 0 || upcoming.length > 0;
+
+  // NO numberOfLines ANYWHERE below. A clamped name hides the drug; a clamped
+  // sig hides the instruction. Both must wrap at large accessibility sizes.
   return (
     <>
       <Text
         style={{
           color: colors.text,
-          fontSize: getScaledFontSize(15),
+          fontSize: getScaledFontSize(17),
           fontWeight: getScaledFontWeight(700) as any,
         }}
-        numberOfLines={1}
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
         {med.name}
       </Text>
 
-      {/* THE INSTRUCTION. Primary text colour and a size up from the old 12 —
-          this is what the card is for. Still up to 3 lines: a full sig like
-          "Take 1 capsule by mouth twice daily" truncates on an SE otherwise. */}
+      {/* THE INSTRUCTION — the reason the card exists. */}
       <Text
         style={{
           color: colors.text,
-          fontSize: getScaledFontSize(13),
-          lineHeight: getScaledFontSize(18),
+          fontSize: getScaledFontSize(15),
+          lineHeight: getScaledFontSize(22),
           marginTop: 3,
         }}
-        numberOfLines={3}
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
         {doseLine(med.dose, med.frequency)}
       </Text>
 
-      {/* Times, in a form a person reads rather than decodes — "8am · 2pm"
-          instead of "08:00, 14:00". */}
-      {scheduleLine !== '' ? (
+      {hasClockSchedule || injectableCadence ? (
         <View style={styles.scheduleRow}>
           <MaterialIcons
             name="schedule"
-            size={getScaledFontSize(12)}
+            size={getScaledFontSize(14)}
             color={colors.subtext as string}
           />
           <Text
-            style={{ color: colors.text, fontSize: getScaledFontSize(12), flex: 1, minWidth: 0 }}
-            numberOfLines={2}
+            style={{ fontSize: getScaledFontSize(14), flex: 1, minWidth: 0 }}
             accessibilityElementsHidden={true}
             importantForAccessibility="no-hide-descendants"
           >
-            {scheduleLine}
+            {hasClockSchedule ? (
+              <>
+                {passed.length > 0 ? (
+                  <Text style={{ color: colors.subtext }}>
+                    {formatTimes(passed)}
+                    {upcoming.length > 0 ? ' · ' : ''}
+                  </Text>
+                ) : null}
+                {upcoming.length > 0 ? (
+                  <Text style={{ color: colors.text }}>{formatTimes(upcoming)}</Text>
+                ) : null}
+              </>
+            ) : (
+              // An injectable has no clock time and that is CORRECT — saying
+              // "no times set" about one would be wrong, not merely unhelpful.
+              <Text style={{ color: colors.text }}>{injectableCadence}</Text>
+            )}
           </Text>
         </View>
+      ) : null}
+
+      {/* The same fact in words. Redundant with the greying above ON PURPOSE. */}
+      {passed.length > 0 ? (
+        <Text
+          style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
+        >
+          {`${formatTimes(passed)} ${passed.length === 1 ? 'was' : 'were'} scheduled earlier today`}
+        </Text>
       ) : null}
 
       {/* The footnote line: class (only when detected), form (only when
@@ -1037,19 +1123,21 @@ function MedicationCardDescriptive({
         {mark.show ? (
           <>
             <View style={[styles.classDot, { backgroundColor: PSYCH_TINT }]} />
-            <Text style={{ color: PSYCH_TINT, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }}>
+            <Text style={{ color: PSYCH_TINT, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(600) as any }}>
               {mark.label}
             </Text>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>·</Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>·</Text>
           </>
         ) : null}
         {notableForm ? (
           <>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>{notableForm}</Text>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>·</Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>{notableForm}</Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>·</Text>
           </>
         ) : null}
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }} numberOfLines={1}>
+        {/* No numberOfLines: at large text this wraps rather than clipping
+            the only statement of where the row came from. */}
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
           {provenanceLabel(isEhr)}
         </Text>
       </View>
