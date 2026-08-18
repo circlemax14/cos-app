@@ -47,7 +47,18 @@ import {
   supplyUnitLabel,
 } from '@/lib/med-forms';
 import { classifyMedication, splitByMedicationClass } from '@/lib/medication-classification';
+import {
+  classMark,
+  doseLine,
+  formTagIfNotable,
+  formatTimes,
+  provenanceLabel,
+} from '@/lib/medication-display';
+
 import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
+
+/** The one class we assert. Medical is a default, so it gets no colour. */
+const PSYCH_TINT = '#6B4FA8';
 
 const SAFETY_DISCLAIMER =
   'This updates your tracking only — it does not change your prescription or ' +
@@ -183,8 +194,12 @@ function composeMedA11yLabel(med: Medication): string {
   const namePart = dose.length > 0 ? `${name}, ${dose}` : name;
 
   // Schedule from frequency + times. Either may be missing.
+  //
+  // Times go through the same humaniser the visible row uses. VoiceOver
+  // reading "zero eight colon zero zero" is no better than the screen showing
+  // "08:00" was, and the spoken label should match what is on screen.
   const freq = (med.frequency ?? '').trim();
-  const times = med.times.length > 0 ? med.times.join(', ') : '';
+  const times = formatTimes(med.times);
   let schedulePart: string;
   if (freq && times) {
     schedulePart = `${freq} at ${times}`;
@@ -722,32 +737,21 @@ export function MedicationsSection({
                 const { medical, psychiatric } = splitByMedicationClass(active);
                 const showLegend = medical.length > 0 && psychiatric.length > 0;
 
-                const legendItem = (
-                  icon: React.ComponentProps<typeof MaterialIcons>['name'],
-                  tint: string,
-                  label: string,
-                  n: number,
-                ) => (
-                  <View style={styles.legendItem}>
-                    <View style={[styles.classIconWrap, { backgroundColor: tint + '1A' }]}>
-                      <MaterialIcons name={icon} size={getScaledFontSize(12)} color={tint} />
-                    </View>
-                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
-                      {`${label} · ${n}`}
-                    </Text>
-                  </View>
-                );
-
                 return (
                   <>
+                    {/* One quiet line, not a two-key legend: only psychiatric
+                        rows carry a mark now, so a "Medical" key would explain
+                        a symbol that does not appear anywhere. */}
                     {showLegend ? (
                       <View
                         style={styles.legendRow}
                         accessible
-                        accessibilityLabel={`${medical.length} medical and ${psychiatric.length} psychiatric medications. Each row is marked with its kind.`}
+                        accessibilityLabel={`${psychiatric.length} of your ${active.length} medications are psychiatric and are marked.`}
                       >
-                        {legendItem('medical-services', '#0B6963', 'Medical', medical.length)}
-                        {legendItem('psychology', '#6B4FA8', 'Psychiatric', psychiatric.length)}
+                        <View style={[styles.classDot, { backgroundColor: PSYCH_TINT }]} />
+                        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
+                          {`${psychiatric.length} of ${active.length} are psychiatric`}
+                        </Text>
                       </View>
                     ) : null}
                     {/* ONE list, in the order the patient's medications
@@ -942,108 +946,112 @@ function MedicationCardDescriptive({
   formTag: string;
   discontinuedLabel: string | null;
 }): React.JSX.Element {
-  // Ken's medical/psychiatric split, carried by an ICON on the row rather than
-  // by two headed sections. Vishal 2026-08-18: "it's not like we have 2
-  // sections, it has to be icon based."
+  // ─── HIERARCHY, CORRECTED (Vishal 2026-08-18) ──────────────────────
   //
-  // The headings were doing real damage beyond looking heavy: they FORCED THE
-  // LIST INTO TWO BLOCKS, so a patient's medications no longer appeared in one
-  // place and the order they were added in was lost. A glyph on each row says
-  // the same thing without cutting the list in half.
+  // "UX of this page looks very odd." It did, and the cause was not the
+  // icons — it was that the card ranked its content backwards.
   //
-  // Colour is NOT the carrier — the two glyphs differ in shape as well as
-  // tone, because a colour-only distinction is invisible to a colour-blind
-  // reader, and the accessibility label says the word outright.
+  // The loudest thing after the drug name was a bordered, coloured, bold chip
+  // reading "FROM RECORDS": a fact about our data pipeline. The dose and the
+  // schedule — the only content on this card a patient has to act on — were
+  // the smallest, greyest text on it. A second chip said "ORAL" on every
+  // single row, which is information-free by definition.
+  //
+  // So the weights are swapped. Dose and times move up to body weight in the
+  // primary text colour; provenance becomes a quiet grey footnote with no
+  // border, no fill and no caps; the form tag survives ONLY when it is
+  // injectable, because that is the case where it changes what the patient
+  // does.
+  //
+  // ─── AND ONLY PSYCHIATRIC IS MARKED ────────────────────────────────
+  //
+  // classifyMedication is deliberately one-sided — psychiatric on a confident
+  // match, 'medical' for everything else INCLUDING psychiatric drugs not on
+  // its list. So 'medical' is a default, not a finding, and badging it would
+  // dress a fallback up as a conclusion. Marking only what we detected drops
+  // a claim we cannot support, and takes a mark off most rows as a bonus.
   const medClass = classifyMedication(med);
-  const isPsych = medClass === 'psychiatric';
-  const classIcon = isPsych ? 'psychology' : 'medical-services';
-  const classTint = isPsych ? '#6B4FA8' : '#0B6963';
+  const mark = classMark(medClass);
+  const scheduleLine = formatTimes(med.times);
+  const notableForm = MED_FORMS_ENABLED ? formTagIfNotable(isInjectable) : null;
 
   return (
     <>
-      <View style={styles.titleRow}>
-        <View style={[styles.classIconWrap, { backgroundColor: classTint + '1A' }]}>
-          <MaterialIcons name={classIcon} size={getScaledFontSize(14)} color={classTint} />
-        </View>
-        <Text
-          style={{
-            color: colors.text,
-            fontSize: getScaledFontSize(15),
-            fontWeight: getScaledFontWeight(700) as any,
-            flex: 1,
-            minWidth: 0,
-          }}
-          numberOfLines={1}
-          accessibilityElementsHidden={true}
-          importantForAccessibility="no-hide-descendants"
-        >
-          {med.name}
-        </Text>
-      </View>
       <Text
-        style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
-        // Ken 2026-08-06 — was 1 line: dose + frequency for pill/patch
-        // meds regularly runs "Take 1 capsule by mouth twice daily" which
-        // truncates on iPhone SE width. Allow up to 3 lines so the full
-        // sig always reads clean.
+        style={{
+          color: colors.text,
+          fontSize: getScaledFontSize(15),
+          fontWeight: getScaledFontWeight(700) as any,
+        }}
+        numberOfLines={1}
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+      >
+        {med.name}
+      </Text>
+
+      {/* THE INSTRUCTION. Primary text colour and a size up from the old 12 —
+          this is what the card is for. Still up to 3 lines: a full sig like
+          "Take 1 capsule by mouth twice daily" truncates on an SE otherwise. */}
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: getScaledFontSize(13),
+          lineHeight: getScaledFontSize(18),
+          marginTop: 3,
+        }}
         numberOfLines={3}
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
-        {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose set'}
+        {doseLine(med.dose, med.frequency)}
       </Text>
-      {med.times.length > 0 ? (
-        <Text
-          style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 1 }}
-          numberOfLines={2}
-          accessibilityElementsHidden={true}
-          importantForAccessibility="no-hide-descendants"
-        >
-          {med.times.join(', ')}
-        </Text>
+
+      {/* Times, in a form a person reads rather than decodes — "8am · 2pm"
+          instead of "08:00, 14:00". */}
+      {scheduleLine !== '' ? (
+        <View style={styles.scheduleRow}>
+          <MaterialIcons
+            name="schedule"
+            size={getScaledFontSize(12)}
+            color={colors.subtext as string}
+          />
+          <Text
+            style={{ color: colors.text, fontSize: getScaledFontSize(12), flex: 1, minWidth: 0 }}
+            numberOfLines={2}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {scheduleLine}
+          </Text>
+        </View>
       ) : null}
+
+      {/* The footnote line: class (only when detected), form (only when
+          notable), provenance. Plain grey, one line, no chrome. */}
       <View
-        style={styles.badgeRow}
+        style={styles.metaRow}
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
-        <View style={[styles.badge, { backgroundColor: badgeColor + '1A', borderColor: badgeColor + '40' }]}>
-          <MaterialIcons
-            name={isEhr ? 'verified' : 'edit'}
-            size={getScaledFontSize(11)}
-            color={badgeColor}
-          />
-          <Text
-            style={{
-              color: badgeColor,
-              fontSize: getScaledFontSize(10),
-              fontWeight: getScaledFontWeight(700) as any,
-              marginLeft: 4,
-            }}
-          >
-            {badgeLabel}
-          </Text>
-        </View>
-        {/* COS-372: small Injectable/Oral tag. Dark by default. */}
-        {MED_FORMS_ENABLED ? (
-          <View style={[styles.badge, { backgroundColor: (colors.subtext as string) + '14', borderColor: (colors.subtext as string) + '40' }]}>
-            <MaterialIcons
-              name={isInjectable ? 'vaccines' : 'medication'}
-              size={getScaledFontSize(11)}
-              color={colors.subtext}
-            />
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(10),
-                fontWeight: getScaledFontWeight(700) as any,
-                marginLeft: 4,
-              }}
-            >
-              {formTag}
+        {mark.show ? (
+          <>
+            <View style={[styles.classDot, { backgroundColor: PSYCH_TINT }]} />
+            <Text style={{ color: PSYCH_TINT, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }}>
+              {mark.label}
             </Text>
-          </View>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>·</Text>
+          </>
         ) : null}
+        {notableForm ? (
+          <>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>{notableForm}</Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>·</Text>
+          </>
+        ) : null}
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }} numberOfLines={1}>
+          {provenanceLabel(isEhr)}
+        </Text>
       </View>
       {discontinuedLabel ? (
         <Text
@@ -1204,6 +1212,12 @@ function MedicationCard({
   // supply state, so those visual lines stay silent to AT.
   const composedA11yLabel = composeMedA11yLabel(med);
 
+  // The scannable half of the class mark: a thin edge down the left of
+  // psychiatric rows. The word in the meta row says WHAT it is; this is what
+  // lets someone find them without reading. Medical rows get nothing, because
+  // 'medical' is a default rather than something we detected.
+  const isPsychRow = classifyMedication(med) === 'psychiatric';
+
   return (
     <View
       style={[
@@ -1217,6 +1231,7 @@ function MedicationCard({
           // recede while staying legible for a review.
           opacity: isPast ? 0.72 : 1,
         },
+        isPsychRow ? { borderLeftWidth: 3, borderLeftColor: PSYCH_TINT } : null,
       ]}
     >
       {/*
@@ -2074,18 +2089,15 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  // Fixed square so every row's name starts at the same x — a glyph that
-  // shifts the title left and right down the list is worse than no glyph.
-  classIconWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  legendRow: { flexDirection: 'row', gap: 14, marginTop: 4, marginBottom: 8, flexWrap: 'wrap' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // A dot, not a boxed glyph. The class is a footnote-level fact; giving it a
+  // filled tile put it at the same weight as the drug name.
+  classDot: { width: 6, height: 6, borderRadius: 3 },
+  scheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  // Wraps rather than truncates: at large accessibility text sizes these
+  // three fragments will not fit one line, and clipping provenance is worse
+  // than letting it run on.
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, flexWrap: 'wrap' },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: 8 },
   emptyRow: {
     marginHorizontal: 20,
     marginBottom: 10,
