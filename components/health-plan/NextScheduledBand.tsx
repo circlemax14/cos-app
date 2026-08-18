@@ -105,7 +105,7 @@ export function NextScheduledBand({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        {when && !model.tomorrow ? `NEXT SCHEDULED · ${when.split(' · ')[0].toUpperCase()}` : 'NEXT SCHEDULED'}
+        NEXT SCHEDULED
       </Text>
 
       {/* DIRECTION D'S HERO ROW: a monogram beside the name, matching the
@@ -118,15 +118,21 @@ export function NextScheduledBand({
           nothing is worse than an unbalanced hero. The time takes its place
           on the right, which is the fact the circle was sitting next to. */}
       <View style={styles.heroRow}>
-        <View style={styles.heroMono}>
-          <Text
-            style={{ color: '#FFFFFF', fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never }}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
-            {(model.names[0] ?? '?').trim().charAt(0).toUpperCase() || '?'}
-          </Text>
-        </View>
+        {/* ONLY WHEN ONE MEDICATION IS DUE. With two, the tile showed the
+            first one's initial beside BOTH names — "C" next to "cephalexin,
+            metformin" — which reads as a claim about the pair. A monogram
+            identifies one thing or it identifies nothing. */}
+        {model.names.length === 1 ? (
+          <View style={styles.heroMono}>
+            <Text
+              style={{ color: '#FFFFFF', fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never }}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              {(model.names[0] ?? '?').trim().charAt(0).toUpperCase() || '?'}
+            </Text>
+          </View>
+        ) : null}
         <Text
           style={[styles.name, { fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never, flex: 1, minWidth: 0 }]}
           accessibilityElementsHidden
