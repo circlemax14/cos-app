@@ -60,6 +60,18 @@ export interface MedicationSupply {
   refillWindowStart: string | null;
   /** True once the patient is inside the refill window and not snoozed. */
   needsRefill: boolean;
+  /**
+   * TRUE when the backend DERIVED this from the dispense quantity on the
+   * prescription rather than the patient typing a count.
+   *
+   * It rests on two things we cannot check: that the fill happened on the
+   * date the script was written, and that every dose since was taken. So the
+   * UI must say so — "about 4 left" is honest, "4 left" is a claim. Optional:
+   * absent on older backends, where supply was always hand-entered.
+   */
+  estimated?: boolean;
+  /** The fill-proxy date the estimate counted from, for the UI to cite. */
+  estimatedFrom?: string;
   /** ISO date (YYYY-MM-DD) the refill banner is snoozed until, if any. */
   snoozedUntil: string | null;
   /**

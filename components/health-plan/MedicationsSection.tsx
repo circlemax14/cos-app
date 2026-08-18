@@ -51,14 +51,70 @@ import {
   classMark,
   doseLine,
   formTagIfNotable,
+  formatTimeLabel,
   formatTimes,
   provenanceLabel,
 } from '@/lib/medication-display';
+// cadenceLabel deliberately NOT imported here — lib/med-forms already exports
+// one and it is already in use in this file. Two functions answering the same
+// question is how they drift.
+import {
+  canDrawSupplyBar,
+  passedTodayTimes,
+  supplyProvenance,
+  supplyStatus,
+  upcomingTodayTimes,
+} from '@/lib/medication-schedule';
+import { NextScheduledBand } from './NextScheduledBand';
 
 import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
 
 /** The one class we assert. Medical is a default, so it gets no colour. */
 const PSYCH_TINT = '#6B4FA8';
+
+/**
+ * Direction D's monogram palette. Decorative — it aids recognition and encodes
+ * NOTHING, so nothing on the screen may depend on reading it. Deliberately
+ * dark enough for white text at every entry (all ≥4.5:1 on #FFF).
+ */
+/** Refill amber. #B45309 clears 4.5:1 on white; the lighter #F59E0B never carries text. */
+const REFILL_AMBER = '#B45309';
+const SUPPLY_OK = '#0F7A4A';
+
+/** "17 Aug" — short enough to sit inside a one-line qualifier. */
+function formatShortDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+/** Local YYYY-MM-DD. toISOString would shift the date either side of midnight. */
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const MONOGRAM_HUES = ['#0B6963', '#2C5EA8', '#8A4B7D', '#A8632C', '#3E7A3E'];
+
+/**
+ * Hashes the WHOLE NAME, not its first letter.
+ *
+ * First-char modulo-5 collided constantly on real data — verified against
+ * Vishal's own list on 2026-08-18: cephalexin and metformin both landed on
+ * green, QUVIVIQ and escitalopram both on blue. Adjacent letters map to
+ * adjacent buckets, and a five-bucket palette turns that into a coin flip.
+ *
+ * Hashing every character spreads them, and it also means two medications
+ * starting with the same letter get DIFFERENT colours, which is the case
+ * where a distinct tile actually helps. Case-folded so "QUVIVIQ" and
+ * "Quviviq" are the same medication to the eye.
+ */
+function monogramHue(name: string | null | undefined): string {
+  const n = (name ?? '').trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < n.length; i += 1) h = (h * 31 + n.charCodeAt(i)) >>> 0;
+  return MONOGRAM_HUES[h % MONOGRAM_HUES.length] as string;
+}
 
 const SAFETY_DISCLAIMER =
   'This updates your tracking only — it does not change your prescription or ' +
@@ -236,7 +292,27 @@ function composeMedA11yLabel(med: Medication): string {
     refillPart = 'Refill status unknown';
   }
 
-  return `${namePart}. ${schedulePart}. ${refillPart}.`;
+  // NO REFILL CLAUSE WHEN THERE IS NO SUPPLY RECORD AT ALL.
+  //
+  // `supply` has no backend source — it exists only once a patient types the
+  // quantity into the supply modal — so it is null on essentially every row.
+  // Emitting "Refill status unknown" there made VoiceOver announce a refill
+  // state on every medication in the list while the screen showed none, which
+  // is both noise and a contradiction. Retained when supply EXISTS but nothing
+  // is derivable from it, because then "unknown" is the true answer.
+  const hasSupplyRecord = med.supply != null;
+
+  // What was scheduled earlier today — spoken as well as shown, since the
+  // greyed times in the row carry it visually and a screen-reader user gets
+  // no colour. SCHEDULED, never "missed": there is no dose-taken event.
+  const passedToday = passedTodayTimes(med.times, new Date());
+  const earlierPart =
+    passedToday.length > 0
+      ? ` ${formatTimes(passedToday)} ${passedToday.length === 1 ? 'was' : 'were'} scheduled earlier today.`
+      : '';
+
+  const refillSentence = hasSupplyRecord ? ` ${refillPart}.` : '';
+  return `${namePart}. ${schedulePart}.${earlierPart}${refillSentence}`;
 }
 
 type EditorMode =
@@ -258,6 +334,14 @@ export interface MedicationsSectionProps {
    */
   openAddSignal?: number;
   /**
+   * The "Next scheduled" band. Defaults to `flush`, i.e. ONLY the dedicated
+   * medications screen. On the Plan and Home surfaces MedicationsBanner
+   * already carries upcoming doses, and a second one landing mid-plan would
+   * duplicate it — the same redundancy Ken removed TodaysMedicationsCard for
+   * on 2026-08-06.
+   */
+  showNextDoseBand?: boolean;
+  /**
    * Ken 2026-08-06 — when true, drop the internal 20pt horizontal
    * margin on cards + section headers so the parent screen can supply
    * horizontal padding at its own preferred value (16pt to match
@@ -272,6 +356,10 @@ export function MedicationsSection({
   onLayout,
   openAddSignal = 0,
   flush = false,
+  // Defaults to `flush` — which is true only on app/Home/medications.tsx.
+  // The Plan and Home surfaces already carry upcoming doses in
+  // MedicationsBanner, and a second band landing mid-plan would duplicate it.
+  showNextDoseBand = flush,
 }: MedicationsSectionProps = {}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -670,21 +758,31 @@ export function MedicationsSection({
         }
         return (
           <>
+            {/* THE BAND. Only on the dedicated screen, and only when some
+                medication actually has a computable next dose — it returns
+                null otherwise, so an EHR-only account (no dose times anywhere)
+                sees no shell and no "add your times" nag. */}
+            {showNextDoseBand ? (
+              <NextScheduledBand
+                meds={active}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            ) : null}
+
+            {/* The count states the number next to its noun, so nobody has to
+                count rows to answer "how many am I on". Raised 11 → 13: this
+                screen has a 13pt floor. */}
             <Text
               style={{
                 marginTop: 6,
                 marginBottom: 8,
                 color: colors.subtext,
-                fontSize: getScaledFontSize(11),
-                fontWeight: getScaledFontWeight(700) as any,
-                letterSpacing: 0.5,
-                textTransform: 'uppercase',
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as any,
               }}
             >
-              Active medications
-              <Text style={{ letterSpacing: 0.2, fontWeight: getScaledFontWeight(500) as any }}>
-                {`  ·  ${active.length}`}
-              </Text>
+              {`Active · ${active.length} medication${active.length === 1 ? '' : 's'}`}
             </Text>
             {active.length === 0 ? (
               <View style={[styles.emptyRow, flushOverride, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
@@ -763,21 +861,24 @@ export function MedicationsSection({
             )}
             {past.length > 0 && (
               <>
+                {/* A PLAIN HEADING AGAIN.
+                    I first made this whole section one accordion hanging off
+                    the title. That was a misread: Vishal asked for the
+                    accordion to be PER MEDICATION, so each past row can hide
+                    its own detail. Collapsing the entire section instead hid
+                    the fact that any history existed at all, behind a control
+                    nobody asked for. The per-row collapse lives on
+                    MedicationCard via `collapsible` (see below). */}
                 <Text
                   style={{
                     marginTop: 20,
                     marginBottom: 8,
                     color: colors.subtext,
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    letterSpacing: 0.5,
-                    textTransform: 'uppercase',
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(600) as any,
                   }}
                 >
-                  Past medications
-                  <Text style={{ letterSpacing: 0.2, fontWeight: getScaledFontWeight(500) as any }}>
-                    {`  ·  ${past.length}`}
-                  </Text>
+                  {`Past · ${past.length} medication${past.length === 1 ? '' : 's'}`}
                 </Text>
                 {past.map((med) => (
                   <MedicationCard
@@ -796,6 +897,11 @@ export function MedicationsSection({
                     onConfirmAlertOpen={beginConfirmAlert}
                     onConfirmAlertResolve={endConfirmAlert}
                     isPast
+                    // PER-MEDICATION ACCORDION. A past row now shows its name
+                    // and why it ended, and hides the dose, schedule and
+                    // footnote until tapped — "info which is not required"
+                    // for a medication the patient is no longer taking.
+                    collapsible
                     flush={flush}
                   />
                 ))}
@@ -937,6 +1043,7 @@ function MedicationCardDescriptive({
   isInjectable,
   formTag,
   discontinuedLabel,
+  compact = false,
 }: ThemeProps & {
   med: Medication;
   badgeColor: string;
@@ -945,6 +1052,13 @@ function MedicationCardDescriptive({
   isInjectable: boolean;
   formTag: string;
   discontinuedLabel: string | null;
+  /**
+   * A collapsed PAST row. Shows the name and why it ended, and hides the
+   * dose, schedule and footnote — detail that is not required for a
+   * medication the patient is no longer taking, and which pushed the rows
+   * they ARE taking off the screen.
+   */
+  compact?: boolean;
 }): React.JSX.Element {
   // ─── HIERARCHY, CORRECTED (Vishal 2026-08-18) ──────────────────────
   //
@@ -972,88 +1086,340 @@ function MedicationCardDescriptive({
   // a claim we cannot support, and takes a mark off most rows as a bonus.
   const medClass = classifyMedication(med);
   const mark = classMark(medClass);
-  const scheduleLine = formatTimes(med.times);
   const notableForm = MED_FORMS_ENABLED ? formTagIfNotable(isInjectable) : null;
 
+  // ─── SCHEDULE, SPLIT INTO PASSED AND UPCOMING ──────────────────────
+  //
+  // The old line printed every time in one colour, so at 10am a four-times-
+  // daily antibiotic read "8am · 2pm · 8pm · 2am" with nothing to say that
+  // 8am had already gone by. Greying the passed ones — and, below, saying so
+  // in words as well, because the state must not be carried by colour alone.
+  //
+  // SCHEDULED, never "missed" and never "taken": there is no dose-taken event
+  // anywhere in the medication contract, so the screen must not imply one in
+  // either direction.
+  const nowAt = new Date();
+  const passed = passedTodayTimes(med.times, nowAt);
+  const upcoming = upcomingTodayTimes(med.times, nowAt);
+  // Guarded on the cadence EXISTING: med-forms' cadenceLabel defaults to
+  // 'Daily' for absent input, which would put a schedule on a row that has none.
+  const injectableCadence = med.supply?.cadence ? cadenceLabel(med.supply.cadence) : null;
+  const hasClockSchedule = passed.length > 0 || upcoming.length > 0;
+
+  // ─── THE A+B CARD ──────────────────────────────────────────────────
+  //
+  // Vishal 2026-08-18: "I asked you to mix both A and B but it doesn't match,
+  // details in cards are not laid out properly."
+  //
+  // Correct on both counts, and they are the same fault. The first pass
+  // shipped A plus the band and dropped everything B contributed, so a card
+  // became FIVE STACKED TEXT LINES with nothing anchoring them and no
+  // structure telling the eye where one kind of information ended and the
+  // next began. B's density was the half he liked.
+  //
+  // So B is back, in the two parts that carry it:
+  //
+  //   THE MONOGRAM ANCHORS THE ROW. Every line of text now starts at the same
+  //   x, against a fixed tile, instead of floating against the card edge.
+  //   ONE TINT, NOT SIX: violet when psychiatric, neutral otherwise. The six
+  //   hash-picked hues of the mockup looked richer but meant nothing —
+  //   Metformin and Metoprolol both draw "M" — and they competed with the two
+  //   colours on this screen that DO mean something.
+  //
+  //   DOSE TIMES BECOME CHIPS. Discrete moments read as discrete objects; a
+  //   run-on "2am · 8am · 2pm · 8pm" reads as one string to parse. Passed
+  //   chips are muted and upcoming ones tinted, which is the same passed/
+  //   upcoming split as before, now legible at a glance.
+  //
+  // A hairline divider separates the row's CONTENT from its FOOTNOTE, so
+  // provenance stops competing with the instruction.
+  //
+  // NO numberOfLines ANYWHERE. A clamped name hides the drug; a clamped sig
+  // hides the instruction.
   return (
     <>
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(15),
-          fontWeight: getScaledFontWeight(700) as any,
-        }}
-        numberOfLines={1}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no-hide-descendants"
-      >
-        {med.name}
-      </Text>
-
-      {/* THE INSTRUCTION. Primary text colour and a size up from the old 12 —
-          this is what the card is for. Still up to 3 lines: a full sig like
-          "Take 1 capsule by mouth twice daily" truncates on an SE otherwise. */}
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(13),
-          lineHeight: getScaledFontSize(18),
-          marginTop: 3,
-        }}
-        numberOfLines={3}
-        accessibilityElementsHidden={true}
-        importantForAccessibility="no-hide-descendants"
-      >
-        {doseLine(med.dose, med.frequency)}
-      </Text>
-
-      {/* Times, in a form a person reads rather than decodes — "8am · 2pm"
-          instead of "08:00, 14:00". */}
-      {scheduleLine !== '' ? (
-        <View style={styles.scheduleRow}>
-          <MaterialIcons
-            name="schedule"
-            size={getScaledFontSize(12)}
-            color={colors.subtext as string}
-          />
+      {/* NO TILE HERE. MedicationCard ALREADY renders one — styles.medIcon at
+          the top of cardTopRow — and adding a second put two icon columns side
+          by side on every card, squeezing the text into a strip. That is what
+          "details are not laid out properly" was, and my HTML mock never
+          showed it because the mock did not include the wrapper. The existing
+          tile now carries the class instead; see MedicationCard. */}
+      <>
+        <View style={{ minWidth: 0 }}>
           <Text
-            style={{ color: colors.text, fontSize: getScaledFontSize(12), flex: 1, minWidth: 0 }}
-            numberOfLines={2}
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(17),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
             accessibilityElementsHidden={true}
             importantForAccessibility="no-hide-descendants"
           >
-            {scheduleLine}
+            {med.name}
           </Text>
+
+          {/* A COLLAPSED PAST ROW STOPS HERE — name plus why it ended. The
+              dose, schedule and footnote of a medication the patient is no
+              longer taking is exactly the "info which is not required" that
+              was pushing their CURRENT medications off the screen. */}
+          {compact ? (
+            discontinuedLabel ? (
+              <Text
+                style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}
+                accessibilityElementsHidden={true}
+                importantForAccessibility="no-hide-descendants"
+              >
+                {discontinuedLabel}
+              </Text>
+            ) : null
+          ) : (
+            <>
+          {/* THE INSTRUCTION — the reason the card exists. */}
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(15),
+              lineHeight: getScaledFontSize(22),
+              marginTop: 2,
+            }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {doseLine(med.dose, med.frequency)}
+          </Text>
+
+          {/* Dose times as chips. Passed muted, upcoming tinted. */}
+          {hasClockSchedule ? (
+            <View
+              style={styles.chipRow}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
+              {passed.map((t) => (
+                <View
+                  key={`p-${t}`}
+                  style={[styles.timeChip, { backgroundColor: (colors.border as string) + '99' }]}
+                >
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                    {formatTimeLabel(t)}
+                  </Text>
+                </View>
+              ))}
+              {upcoming.map((t) => (
+                <View
+                  key={`u-${t}`}
+                  style={[styles.timeChip, { backgroundColor: (colors.tint as string) + '1A' }]}
+                >
+                  <Text
+                    style={{
+                      color: colors.tint as string,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {formatTimeLabel(t)}
+                  </Text>
+                </View>
+              ))}
+              {/* D moves the class into the chip row as a LABELLED chip. That
+                  is what frees the monogram to be decorative — the class now
+                  has its own channel, with the word in it, instead of relying
+                  on a tile colour a reader has to decode. */}
+              {mark.show ? (
+                <View style={[styles.timeChip, { backgroundColor: PSYCH_TINT + '1F' }]}>
+                  <Text
+                    style={{
+                      color: PSYCH_TINT,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {mark.label}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : injectableCadence ? (
+            // An injectable has no clock time and that is CORRECT — saying
+            // "no times set" about one would be wrong, not merely unhelpful.
+            <View
+              style={styles.chipRow}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
+              <View style={[styles.timeChip, { backgroundColor: (colors.tint as string) + '1A' }]}>
+                <Text
+                  style={{
+                    color: colors.tint as string,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {injectableCadence}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* The same fact in words. Redundant with the muted chips ON
+              PURPOSE — the state must not be carried by colour alone. */}
+          {passed.length > 0 ? (
+            <Text
+              style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 6 }}
+              accessibilityElementsHidden={true}
+              importantForAccessibility="no-hide-descendants"
+            >
+              {`${formatTimes(passed)} ${passed.length === 1 ? 'was' : 'were'} scheduled earlier today`}
+            </Text>
+          ) : null}
+            </>
+          )}
         </View>
-      ) : null}
+      </>
+
+      {compact ? null : (
+        <View style={[styles.cardRule, { backgroundColor: colors.border as string }]} />
+      )}
+
+      {/* ─── D'S SUPPLY BLOCK ────────────────────────────────────────
+          Direction D shows days-of-supply and a bar under every card. It can
+          only be shown where the data exists, and it mostly does not:
+          `supply` is written ONLY by the hand-entry modal — no EHR or FHIR
+          path populates it — so it is null on essentially every row until a
+          patient types a quantity.
+
+          So this renders NOTHING by default, and the card above it is
+          complete without it. Drawing an empty track on every row would be a
+          gauge of a number we do not have, which is worse than silence.
+
+          The BAR needs both a day count and a quantity. With only one, the
+          length is an invented fraction, so the text is shown alone. */}
+      {(() => {
+        if (compact) return null;
+        const st = supplyStatus(med.supply, todayISO());
+        if (st.kind === 'none') return null;
+        const prov = supplyProvenance(med.supply);
+
+        const urgent =
+          st.kind === 'overdue' || (st.kind === 'reorder' && st.urgent);
+        const amber = st.kind === 'overdue' || st.kind === 'reorder';
+        const tone = amber ? REFILL_AMBER : (colors.subtext as string);
+
+        const label =
+          st.kind === 'overdue'
+            ? `Refill overdue by ${st.days} day${st.days === 1 ? '' : 's'}`
+            : st.kind === 'reorder'
+              ? st.days == null
+                ? 'Time to reorder'
+                : `About ${st.days} day${st.days === 1 ? '' : 's'} left — time to reorder`
+              : st.kind === 'ok'
+                ? `${st.days} day${st.days === 1 ? '' : 's'} of supply`
+                : st.kind === 'snoozed'
+                  ? 'Refill reminder paused'
+                  : `${st.remaining} left`;
+
+        const qty = med.supply?.remainingQuantity;
+        const showBar = canDrawSupplyBar(med.supply);
+        const pct =
+          st.kind === 'ok' || st.kind === 'reorder'
+            ? Math.max(0.04, Math.min(1, (st.kind === 'ok' ? st.days : (st.days ?? 0)) / 30))
+            : 0.04;
+
+        return (
+          <View
+            style={styles.supplyBlock}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            <View style={styles.supplyRow}>
+              <Text
+                style={{
+                  color: tone,
+                  fontSize: getScaledFontSize(13),
+                  fontWeight: urgent ? (getScaledFontWeight(700) as any) : undefined,
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                {label}
+              </Text>
+              {typeof qty === 'number' && Number.isFinite(qty) ? (
+                <Text
+                  style={{
+                    color: tone,
+                    fontSize: getScaledFontSize(13),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {`${qty} left`}
+                </Text>
+              ) : null}
+            </View>
+            {/* SAY THAT IT IS AN ESTIMATE.
+                The backend derives this from the dispense quantity when
+                nobody has typed a count, assuming the fill happened the day
+                the script was written and that every dose since was taken.
+                Neither is observable. Unqualified, "About 4 days left" reads
+                as a measurement — and the bar below it reads as one even
+                harder. The invitation to correct it is the useful half: a
+                patient who has actually counted can replace a guess with a
+                fact in two taps. */}
+            {prov.estimated ? (
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 3 }}>
+                {prov.basedOn
+                  ? `Estimated from your ${formatShortDate(prov.basedOn)} prescription · tap to correct`
+                  : 'Estimated from your prescription · tap to correct'}
+              </Text>
+            ) : null}
+            {showBar ? (
+              <View style={[styles.supplyTrack, { backgroundColor: colors.border as string }]}>
+                <View
+                  style={{
+                    height: 6,
+                    borderRadius: 3,
+                    width: `${Math.round(pct * 100)}%`,
+                    backgroundColor: amber ? REFILL_AMBER : SUPPLY_OK,
+                  }}
+                />
+              </View>
+            ) : null}
+          </View>
+        );
+      })()}
 
       {/* The footnote line: class (only when detected), form (only when
-          notable), provenance. Plain grey, one line, no chrome. */}
+          notable), provenance. Plain grey, one line, no chrome.
+
+          HIDDEN WHEN COLLAPSED. On a past row it was still rendering, so a
+          collapsed card showed the name, the reason it ended, "from your
+          health records", AND the reason again in italic below — four lines
+          for a medication the patient is not taking. That is the opposite of
+          hiding info which is not required. */}
+      {compact ? null : (
       <View
         style={styles.metaRow}
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
-        {mark.show ? (
-          <>
-            <View style={[styles.classDot, { backgroundColor: PSYCH_TINT }]} />
-            <Text style={{ color: PSYCH_TINT, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(600) as any }}>
-              {mark.label}
-            </Text>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>·</Text>
-          </>
-        ) : null}
+        {/* No psychiatric mark here — it is a chip in the row above now.
+            Saying it twice on one card is how a footnote becomes noise. */}
         {notableForm ? (
           <>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>{notableForm}</Text>
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>·</Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>{notableForm}</Text>
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>·</Text>
           </>
         ) : null}
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }} numberOfLines={1}>
+        {/* No numberOfLines: at large text this wraps rather than clipping
+            the only statement of where the row came from. */}
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
           {provenanceLabel(isEhr)}
         </Text>
       </View>
-      {discontinuedLabel ? (
+      )}
+      {/* The reason it ended, ONCE. The collapsed branch above already prints
+          it, so printing it here too gave every past card the same sentence
+          twice — once upright, once italic. */}
+      {!compact && discontinuedLabel ? (
         <Text
           style={{
             color: colors.subtext,
@@ -1246,8 +1612,30 @@ function MedicationCard({
         wrap) since restore is a separate flow.
        */}
       <View style={styles.cardTopRow}>
-        <View style={[styles.medIcon, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
-          <MaterialIcons name="medication" size={getScaledFontSize(20)} color="#8B5CF6" />
+        {/* DIRECTION D'S MONOGRAM. A solid tile carrying the medication's
+            initial, replacing the tinted pill glyph that used to sit here.
+            THE SAME TILE, restyled — not an extra one. Adding a second was
+            what crushed the text last time.
+
+            The hue is decorative and I argued against it earlier, on the
+            grounds that six hash-picked colours compete with the two that
+            carry meaning. D defuses that: psychiatric is now a LABELLED CHIP
+            in the row below, so the class has its own channel and the tile is
+            free to be identity. Two medications starting with the same letter
+            still get the same colour — the tile aids recognition, it does not
+            encode anything, and nothing on this screen depends on reading it. */}
+        <View style={[styles.medIcon, { backgroundColor: monogramHue(med.name) }]}>
+          <Text
+            style={{
+              color: '#FFFFFF',
+              fontSize: getScaledFontSize(19),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+            accessibilityElementsHidden={true}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {(med.name ?? '?').trim().charAt(0).toUpperCase() || '?'}
+          </Text>
         </View>
         {/* CHUNK 99 v2: inner accessibility grouping is the single a11y leaf
             for the passive descriptive text. Wrapping in a Pressable when
@@ -1256,7 +1644,7 @@ function MedicationCard({
             action instead of three separate leaves) — the Edit / Hide
             Pressables remain siblings and stay individually focusable when
             expanded. */}
-        {collapsible && !isPast ? (
+        {collapsible ? (
           <Pressable
             style={{ flex: 1, minWidth: 0 }}
             onPress={() => setExpanded((v) => !v)}
@@ -1276,6 +1664,7 @@ function MedicationCard({
               isInjectable={isInjectable}
               formTag={formTag}
               discontinuedLabel={discontinuedLabel}
+              compact={isPast && !expanded}
             />
           </Pressable>
         ) : (
@@ -1370,7 +1759,7 @@ function MedicationCard({
               <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
             </Pressable>
           </>
-        ) : collapsible && !isPast ? (
+        ) : collapsible ? (
           // Ken 2026-08-07: "When I went to edit it took a few presses for the
           // box to drop down."
           //
@@ -2092,11 +2481,22 @@ const styles = StyleSheet.create({
   // A dot, not a boxed glyph. The class is a footnote-level fact; giving it a
   // filled tile put it at the same weight as the drug name.
   classDot: { width: 6, height: 6, borderRadius: 3 },
+  // WRAPS: four dose times fit one line, but not at a large accessibility
+  // text size, and clipping a dose time is not an option.
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  timeChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
+  // Separates what the patient DOES from where the row came from.
+  cardRule: { height: StyleSheet.hairlineWidth, marginTop: 12, opacity: 0.9 },
+  supplyBlock: { marginTop: 10 },
+  supplyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // Fixed 6pt and never font-scaled: it carries no text, and a bar that grew
+  // with the type size would dominate the card at large accessibility sizes.
+  supplyTrack: { height: 6, borderRadius: 3, marginTop: 6, overflow: 'hidden' },
   scheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   // Wraps rather than truncates: at large accessibility text sizes these
   // three fragments will not fit one line, and clipping provenance is worse
   // than letting it run on.
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, flexWrap: 'wrap' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10, flexWrap: 'wrap' },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: 8 },
   emptyRow: {
     marginHorizontal: 20,
@@ -2114,9 +2514,9 @@ const styles = StyleSheet.create({
   },
   cardTopRow: { flexDirection: 'row', alignItems: 'flex-start' },
   medIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
