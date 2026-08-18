@@ -47,6 +47,12 @@ export interface Connection {
   peerId: string
   status: ConnectionStatus
   category: string
+  /**
+   * Whether I have added this accepted connection to my circle (SCRUM-692).
+   * A per-user inner-circle, separate from the clinical care team. Absent on
+   * rows written before this field existed → treat as "not in circle".
+   */
+  inCircle?: boolean
   requestedBy: string
   createdAt: string
   updatedAt: string
@@ -100,6 +106,24 @@ export async function acceptConnection(peerId: string): Promise<void> {
 /** Decline, revoke or disconnect — one operation on the backend. */
 export async function removeConnection(peerId: string): Promise<void> {
   await apiClient.delete(`${BASE}/${encodeURIComponent(peerId)}`)
+}
+
+/**
+ * Re-file an accepted connection under a different sub-category (SCRUM-691).
+ * Per-user — only my own view of the peer changes.
+ */
+export async function updateCategory(peerId: string, category: string): Promise<void> {
+  await apiClient.put(`${BASE}/${encodeURIComponent(peerId)}/category`, { category })
+}
+
+/** Add an accepted connection to my circle (SCRUM-692). */
+export async function addToCircle(peerId: string): Promise<void> {
+  await apiClient.post(`${BASE}/${encodeURIComponent(peerId)}/circle`)
+}
+
+/** Remove a connection from my circle (SCRUM-692). */
+export async function removeFromCircle(peerId: string): Promise<void> {
+  await apiClient.delete(`${BASE}/${encodeURIComponent(peerId)}/circle`)
 }
 
 export async function blockPeer(peerId: string): Promise<void> {
