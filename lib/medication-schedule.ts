@@ -282,7 +282,14 @@ export function canDrawSupplyBar(supply: ScheduleSupply | null | undefined): boo
   if (!supply) return false
   const d = signedDaysUntil(supply.runOutDate)
   const q = supply.remainingQuantity
-  return d != null && d >= 0 && typeof q === 'number' && Number.isFinite(q)
+  // A PAST run-out date still draws — as an EMPTY bar.
+  //
+  // This used to require d >= 0, so a medication that had run out showed no
+  // bar at all. That is the worst moment to go quiet: a four-capsule
+  // antibiotic is exhausted the day after it is filled, so the row that most
+  // needs "you are out of this" was the one rendering nothing. An empty amber
+  // track says it at a glance; the text beside it says it in words.
+  return d != null && typeof q === 'number' && Number.isFinite(q)
 }
 
 // ─── The "Next scheduled" band ──────────────────────────────────────
