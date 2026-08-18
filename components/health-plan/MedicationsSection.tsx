@@ -87,9 +87,25 @@ function todayISO(): string {
 }
 
 const MONOGRAM_HUES = ['#0B6963', '#2C5EA8', '#8A4B7D', '#A8632C', '#3E7A3E'];
+
+/**
+ * Hashes the WHOLE NAME, not its first letter.
+ *
+ * First-char modulo-5 collided constantly on real data — verified against
+ * Vishal's own list on 2026-08-18: cephalexin and metformin both landed on
+ * green, QUVIVIQ and escitalopram both on blue. Adjacent letters map to
+ * adjacent buckets, and a five-bucket palette turns that into a coin flip.
+ *
+ * Hashing every character spreads them, and it also means two medications
+ * starting with the same letter get DIFFERENT colours, which is the case
+ * where a distinct tile actually helps. Case-folded so "QUVIVIQ" and
+ * "Quviviq" are the same medication to the eye.
+ */
 function monogramHue(name: string | null | undefined): string {
-  const c = (name ?? '?').trim().charCodeAt(0);
-  return MONOGRAM_HUES[(Number.isFinite(c) ? c : 0) % MONOGRAM_HUES.length] as string;
+  const n = (name ?? '').trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < n.length; i += 1) h = (h * 31 + n.charCodeAt(i)) >>> 0;
+  return MONOGRAM_HUES[h % MONOGRAM_HUES.length] as string;
 }
 
 const SAFETY_DISCLAIMER =
@@ -1347,7 +1363,14 @@ function MedicationCardDescriptive({
       })()}
 
       {/* The footnote line: class (only when detected), form (only when
-          notable), provenance. Plain grey, one line, no chrome. */}
+          notable), provenance. Plain grey, one line, no chrome.
+
+          HIDDEN WHEN COLLAPSED. On a past row it was still rendering, so a
+          collapsed card showed the name, the reason it ended, "from your
+          health records", AND the reason again in italic below — four lines
+          for a medication the patient is not taking. That is the opposite of
+          hiding info which is not required. */}
+      {compact ? null : (
       <View
         style={styles.metaRow}
         accessibilityElementsHidden={true}
@@ -1367,7 +1390,11 @@ function MedicationCardDescriptive({
           {provenanceLabel(isEhr)}
         </Text>
       </View>
-      {discontinuedLabel ? (
+      )}
+      {/* The reason it ended, ONCE. The collapsed branch above already prints
+          it, so printing it here too gave every past card the same sentence
+          twice — once upright, once italic. */}
+      {!compact && discontinuedLabel ? (
         <Text
           style={{
             color: colors.subtext,
