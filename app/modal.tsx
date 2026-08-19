@@ -344,6 +344,48 @@ export default function ModalScreen() {
     );
   };
 
+  // SCRUM-688 — while patient↔patient Social (and the parallel Psychological
+  // support space) is still being finished, the Social and Psychological tabs
+  // show a warm "coming soon" placeholder instead of the live feature. Gated by
+  // `socialConnectOn` (backend /v1/feature-flags → social_connect_enabled):
+  // flag OFF (default / fleet) = this placeholder; flag ON (beta) = the real
+  // ConnectionsPanel for Social. Rendered as a single ScrollView so it is the
+  // TabScreen's ONE direct child — iOS-26 paper-tabs snapshot safe
+  // (see feedback: paper-tabs single child rule).
+  const comingSoonPanel = (title: string, subtitle: string): React.JSX.Element => (
+    <ScrollView contentContainerStyle={styles.comingSoonContainer}>
+      <MaterialIcons
+        name="favorite-border"
+        size={getScaledFontSize(46)}
+        color={colors.tint as string}
+      />
+      <Text
+        accessibilityRole="header"
+        style={{
+          color: colors.text,
+          fontSize: getScaledFontSize(19),
+          fontWeight: getScaledFontWeight(700) as any,
+          textAlign: 'center',
+          marginTop: 18,
+        }}
+      >
+        {title}
+      </Text>
+      <Text
+        style={{
+          color: colors.text + '99',
+          fontSize: getScaledFontSize(14),
+          lineHeight: getScaledFontSize(22),
+          textAlign: 'center',
+          marginTop: 10,
+          maxWidth: 320,
+        }}
+      >
+        {subtitle}
+      </Text>
+    </ScrollView>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Portal.Host>
@@ -740,11 +782,22 @@ export default function ModalScreen() {
                     key={category.id}
                     label={category.name}
                   >
-                    {/* SCRUM-688: the Social tab renders the connections / People
-                        UI inline (embedded panel) as the TabScreen's SINGLE child —
-                        iOS-26 paper-tabs snapshot safe (the People screen no longer
-                        lives on a separate route). */}
-                    {category.id === 'social' ? (
+                    {/* SCRUM-688: Social + Psychological are gated by
+                        socialConnectOn. Flag OFF (default/fleet) → a warm
+                        "coming soon" placeholder; flag ON (beta) → the live
+                        ConnectionsPanel (People UI) for Social, inline as the
+                        TabScreen's SINGLE child — iOS-26 paper-tabs snapshot
+                        safe (People no longer lives on a separate route). */}
+                    {(category.id === 'social' || category.id === 'psychological') && !socialConnectOn ? (
+                      comingSoonPanel(
+                        category.id === 'social'
+                          ? 'Social connections are coming soon'
+                          : 'Psychological support is coming soon',
+                        category.id === 'social'
+                          ? "We're building a warm, private way to find and stay close to the people who support you — friends, family, and peers. Thank you for your patience while we get it just right."
+                          : "We're carefully building your space for mental-health and emotional support. Thank you for your patience while we get it just right.",
+                      )
+                    ) : category.id === 'social' ? (
                       <ConnectionsPanel />
                     ) : showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
@@ -1202,6 +1255,13 @@ const styles = StyleSheet.create({
   cardsContainer: {
     padding: 16,
     gap: 12,
+  },
+  comingSoonContainer: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 56,
   },
   loadingContainer: {
     flex: 1,
