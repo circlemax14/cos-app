@@ -196,7 +196,22 @@ function evaluateHealthKitTrends(trends: LongitudinalTrend[]): VitalsCandidate[]
   return out;
 }
 
-export function useVitalsRedFlagNotifications(): void {
+/**
+ * @param enabled Defaults to true, so every existing caller is unchanged.
+ *
+ * Pass `false` when the patient is not entitled to the vitals red-flag
+ * surface. This matters because the observer is INVISIBLE: it fires local
+ * push notifications and POSTs verdicts to
+ * /v1/patients/me/vitals-red-flag-event without rendering anything. Hiding
+ * <VitalsRedFlagSection/> therefore does NOT stop it — the patient would keep
+ * receiving "recheck your blood pressure" alerts for a card that is no longer
+ * on their screen, with nowhere in the app to go and look.
+ *
+ * The gate is applied INSIDE the effect rather than by an early return, so
+ * every hook below still runs unconditionally. A hook after a conditional
+ * return is its own crash class in this codebase.
+ */
+export function useVitalsRedFlagNotifications(enabled: boolean = true): void {
   const { data: trends, disabled } = useHealthKitTrends(90);
   // 2026-08-12 — the "Health alerts" category. Undefined while the prefs
   // query is loading or on error, which the scheduler treats as ENABLED: a
@@ -208,6 +223,10 @@ export function useVitalsRedFlagNotifications(): void {
   const inFlight = useRef(false);
 
   useEffect(() => {
+    // Entitlement gate. First, because the observer's side effects (local
+    // push + PHI-adjacent POST) must not fire for a patient who cannot see
+    // the surface they refer to.
+    if (!enabled) return;
     // Master OFF switch: Apple Health preference (COS-397 / SCRUM-535) or
     // non-iOS platform. `useHealthKitTrends` clamps `data` to [] in either
     // case; the extra `disabled` guard is belt-and-braces.
@@ -279,9 +298,14 @@ export function useVitalsRedFlagNotifications(): void {
         inFlight.current = false;
       }
     })();
+    // `enabled` belongs in the deps: entitlements arrive asynchronously, so it
+    // flips from true (fail-open, unknown) to false once a real deny is known.
+    // Without the dep the effect would keep the stale `true` and the observer
+    // would go on firing for a patient who is not entitled to it.
+    //
     // postMutation identity is stable across renders (React Query memoises
     // the mutation object per QueryClient) — depending on it would just
     // add noise without changing behaviour.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trends, disabled, healthAlertsEnabled]);
+  }, [trends, disabled, healthAlertsEnabled, enabled]);
 }
