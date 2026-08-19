@@ -5,7 +5,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
 import { Button, Menu, Portal, Text, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs, TabScreen, TabsProvider } from 'react-native-paper-tabs';
@@ -16,8 +16,6 @@ import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerA
 import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
-import { useSocialConnectFlag } from '@/hooks/use-social-connect-flag';
-import { ConnectionsPanel } from './Home/connections';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   getNonEhrProviders,
@@ -55,10 +53,6 @@ type ManualMember = {
 export default function ModalScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  // SCRUM-688 — gate the "Find people" banner backend-driven + beta-first.
-  // Default-OFF until /v1/feature-flags says social_connect_enabled is on for
-  // this user, so the fleet never sees the banner while it is dark for them.
-  const socialConnectOn = useSocialConnectFlag();
   const { selectedProviders, selectedCareManager, addProvider, removeProvider, setSelectedCareManager } = useProviderSelection();
   const [categoryGroups, setCategoryGroups] = React.useState<CategoryGroup[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -344,48 +338,6 @@ export default function ModalScreen() {
     );
   };
 
-  // SCRUM-688 — while patient↔patient Social (and the parallel Psychological
-  // support space) is still being finished, the Social and Psychological tabs
-  // show a warm "coming soon" placeholder instead of the live feature. Gated by
-  // `socialConnectOn` (backend /v1/feature-flags → social_connect_enabled):
-  // flag OFF (default / fleet) = this placeholder; flag ON (beta) = the real
-  // ConnectionsPanel for Social. Rendered as a single ScrollView so it is the
-  // TabScreen's ONE direct child — iOS-26 paper-tabs snapshot safe
-  // (see feedback: paper-tabs single child rule).
-  const comingSoonPanel = (title: string, subtitle: string): React.JSX.Element => (
-    <ScrollView contentContainerStyle={styles.comingSoonContainer}>
-      <MaterialIcons
-        name="favorite-border"
-        size={getScaledFontSize(46)}
-        color={colors.tint as string}
-      />
-      <Text
-        accessibilityRole="header"
-        style={{
-          color: colors.text,
-          fontSize: getScaledFontSize(19),
-          fontWeight: getScaledFontWeight(700) as any,
-          textAlign: 'center',
-          marginTop: 18,
-        }}
-      >
-        {title}
-      </Text>
-      <Text
-        style={{
-          color: colors.text + '99',
-          fontSize: getScaledFontSize(14),
-          lineHeight: getScaledFontSize(22),
-          textAlign: 'center',
-          marginTop: 10,
-          maxWidth: 320,
-        }}
-      >
-        {subtitle}
-      </Text>
-    </ScrollView>
-  );
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Portal.Host>
@@ -479,46 +431,6 @@ export default function ModalScreen() {
                 const manualSubCategoryLabel = manualSubCategoryId
                   ? subCategories.find(sub => sub.id === manualSubCategoryId)?.name
                   : undefined;
-
-                // SCRUM-686 — the Social tab gets a way IN to patient-to-patient
-                // connections. Ken's ask was scoped to Social specifically
-                // ("in social i want to give a functionality where we can
-                // search other patients"), so it is not offered on the other
-                // categories, whose members are providers rather than peers.
-                //
-                // A banner rather than a tab: the existing sub-category tabs
-                // list people already in the circle, and "go find someone new"
-                // is a different verb from "browse who I have".
-                const socialConnectBanner =
-                  category.id === 'social' && socialConnectOn ? (
-                    <Pressable
-                      onPress={() => {
-                        closeModal();
-                        router.push('/Home/connections' as never);
-                      }}
-                      style={({ pressed }: { pressed: boolean }) => [
-                        styles.connectBanner,
-                        {
-                          borderColor: colors.tint as string,
-                          backgroundColor: (colors.tint as string) + '12',
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Find and connect with other people"
-                    >
-                      <MaterialIcons name="person-search" size={getScaledFontSize(20)} color={colors.tint as string} />
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
-                          Find people
-                        </Text>
-                        <Text style={{ color: colors.text + '99', fontSize: getScaledFontSize(12), marginTop: 1 }}>
-                          Connect with someone you know
-                        </Text>
-                      </View>
-                      <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.text + '99'} />
-                    </Pressable>
-                  ) : null;
 
                 // Handle Care Manager category specially - show agencies directly
                 if (category.id === 'care-manager') {
@@ -782,24 +694,7 @@ export default function ModalScreen() {
                     key={category.id}
                     label={category.name}
                   >
-                    {/* SCRUM-688: Social + Psychological are gated by
-                        socialConnectOn. Flag OFF (default/fleet) → a warm
-                        "coming soon" placeholder; flag ON (beta) → the live
-                        ConnectionsPanel (People UI) for Social, inline as the
-                        TabScreen's SINGLE child — iOS-26 paper-tabs snapshot
-                        safe (People no longer lives on a separate route). */}
-                    {(category.id === 'social' || category.id === 'psychological') && !socialConnectOn ? (
-                      comingSoonPanel(
-                        category.id === 'social'
-                          ? 'Social connections are coming soon'
-                          : 'Psychological support is coming soon',
-                        category.id === 'social'
-                          ? "We're building a warm, private way to find and stay close to the people who support you — friends, family, and peers. Thank you for your patience while we get it just right."
-                          : "We're carefully building your space for mental-health and emotional support. Thank you for your patience while we get it just right.",
-                      )
-                    ) : category.id === 'social' ? (
-                      <ConnectionsPanel />
-                    ) : showEmptyNonMedical ? (
+                    {showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={styles.addMemberContainer}>
                           {openManualFormKey === emptyFormKey ? (
@@ -892,8 +787,6 @@ export default function ModalScreen() {
                       </ScrollView>
                     ) : category.subCategories && category.subCategories.length > 0 ? (
                       // Category has subcategories: Show nested tabs
-                      <>
-                      {socialConnectBanner}
                       <TabsProvider defaultIndex={0}>
                         <Tabs
                           showLeadingSpace={false}
@@ -1120,7 +1013,6 @@ export default function ModalScreen() {
                           })}
                         </Tabs>
                       </TabsProvider>
-                      </>
                     ) : (
                       // Category has no subcategories: Show all providers directly
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
@@ -1256,13 +1148,6 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-  comingSoonContainer: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 56,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1326,17 +1211,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
-  },
-  connectBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    minHeight: 56,
   },
   listItemRole: {
     fontSize: 14,
