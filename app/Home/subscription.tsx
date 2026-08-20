@@ -44,10 +44,9 @@ import { priceLines } from '@/lib/plan-price';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
 
-// TODO(COS-723): add
-//   export { ErrorBoundary } from '@/components/RouteErrorBoundary'
-// once that branch merges. It is pushed but has no PR yet, so the component
-// does not exist on main and importing it here would not compile.
+// COS-723 has landed, so this screen gets the same boundary as every other
+// route: a render error costs this screen, not the whole app.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 interface PlanCard {
   planKey: string;
