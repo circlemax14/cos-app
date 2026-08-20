@@ -159,3 +159,29 @@ export function useCanRender(dottedKey: string): boolean {
 export function useCanRenderSafetyCritical(dottedKey: string): boolean {
   return useEntitlement(dottedKey, 'safety-critical').allowed;
 }
+
+/**
+ * COS-735 — for surfaces that must appear ONLY on an affirmative, live grant.
+ *
+ * The opposite end of the scale from useCanRenderSafetyCritical, and it exists
+ * for one specific shape: an internal or diagnostic surface that is OFF for
+ * everyone by default and switched on for named individuals.
+ *
+ * `useCanRender` is wrong for those. It is fail-open by design, and it treats
+ * the WILDCARD as a grant — which is exactly what the resolver returns for
+ * every patient on a stage where `plan_tier_enabled` is unset (today: staging
+ * and production). Gating the About screen with it would put build, runtime and
+ * OTA details in front of every patient the moment it shipped.
+ *
+ * So this accepts nothing but a real, populated entitlement array that names
+ * the key. Loading, error, missing field, empty array, cached, wildcard — all
+ * false. Hiding a diagnostic screen from someone who should see it costs a
+ * support message; showing it to everyone is a leak.
+ *
+ * Do NOT reach for this to gate clinical content. The fail-open reasoning in
+ * this file's header applies there and has not changed.
+ */
+export function useHasExplicitGrant(dottedKey: string): boolean {
+  const { source, allowed } = useEntitlement(dottedKey);
+  return source === 'live' && allowed;
+}
