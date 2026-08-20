@@ -17,16 +17,20 @@
  * picking a price, or being charged for choosing more screeners. They stay
  * separate until someone decides a plan should imply an assessment level.
  *
- * ─── DISPLAY-ONLY, ON PURPOSE ────────────────────────────────────────
+ * ─── THE UPGRADE ACTION IS DARK (COS-740) ────────────────────────────
  *
- * There is no "Upgrade" action yet, because there is no payment integration.
- * The alternatives were both worse: a button that does nothing teaches people
- * the app is broken, and a button that self-assigns a paid plan would let any
- * patient grant themselves `advanced` for free.
+ * The button exists and is gated on `subscription_upgrade_enabled`, which is
+ * FALSE on every stage. There is still no payment integration — cos-backend
+ * has Stripe schema fields and nothing else.
  *
- * When payments land, the tap target goes on the card and this comment goes
- * away. Until then the screen answers "what do I have, and what else exists",
- * which is genuinely useful and honest.
+ * Shipping it dark rather than not shipping it means Stripe can be turned on
+ * without another release. Shipping it LIVE would repeat SCRUM-319: a premium
+ * surface that cannot transact is App Store Guideline 2.1 placeholder content,
+ * and a button that self-assigned a paid plan would let any patient grant
+ * themselves `advanced` for free.
+ *
+ * With the flag off the screen answers "what do I have, and what else exists",
+ * which is useful and honest on its own.
  *
  * ─── iOS 26 ENVELOPE ─────────────────────────────────────────────────
  *
@@ -41,6 +45,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
+import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
 
@@ -58,6 +63,17 @@ interface PlanCard {
   isCurrent: boolean;
 }
 
+/**
+ * A plan you can actually buy. Without a price there is nothing to charge, so
+ * an upgrade button would lead to a checkout with no amount — internal and
+ * care-team-assigned plans are exactly this case.
+ */
+function isPurchasable(plan: PlanCard): boolean {
+  const m = plan.pricing?.monthlyPriceCents ?? null;
+  const a = plan.pricing?.annualPriceCents ?? null;
+  return (m !== null && m > 0) || (a !== null && a > 0);
+}
+
 async function fetchPlans(): Promise<PlanCard[]> {
   const res = await apiClient.get('/v1/patients/me/plans');
   const plans = (res.data as { data?: { plans?: unknown } })?.data?.plans;
@@ -66,6 +82,7 @@ async function fetchPlans(): Promise<PlanCard[]> {
 
 export default function SubscriptionScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const upgradeEnabled = useSubscriptionUpgradeFlag();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const { data, isLoading, isError } = useQuery({
@@ -144,6 +161,22 @@ export default function SubscriptionScreen() {
                 {`✓  ${h}`}
               </Text>
             ))}
+
+            {/* Dark until Stripe is wired — see the header. Never shown on the
+                plan the patient already has: "Upgrade" to your own plan is
+                the kind of detail that makes people distrust the whole screen. */}
+            {upgradeEnabled && !plan.isCurrent && isPurchasable(plan) && (
+              <Pressable
+                onPress={() => router.push('/Home/subscription-checkout' as never)}
+                accessibilityRole="button"
+                accessibilityLabel={`Upgrade to ${plan.name}`}
+                style={[styles.upgrade, { backgroundColor: colors.tint }]}
+              >
+                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(15) }]}>
+                  {`Upgrade to ${plan.name}`}
+                </Text>
+              </Pressable>
+            )}
           </View>
         );
       })}
@@ -175,6 +208,8 @@ const styles = StyleSheet.create({
   body: { marginTop: 8, lineHeight: 20 },
   bullet: { marginTop: 6, lineHeight: 20 },
   footnote: { marginTop: 4, marginBottom: 16, opacity: 0.7, textAlign: 'center' },
+  upgrade: { marginTop: 14, borderRadius: 999, paddingVertical: 13, alignItems: 'center' },
+  upgradeText: { color: '#FFFFFF', fontWeight: '700' },
   back: { borderWidth: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   backText: { fontWeight: '600' },
 });

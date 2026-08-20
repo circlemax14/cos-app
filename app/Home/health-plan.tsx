@@ -36,6 +36,7 @@ import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 // pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
 // nested-Modal collision iOS 26.5 crashed on.
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
+import PlanCardsSection from '@/components/plan/PlanCardsSection';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
@@ -845,6 +846,11 @@ export default function HealthPlanScreen() {
             style={[styles.container, { backgroundColor: colors.background }]}
             contentContainerStyle={{ paddingBottom: 32 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+            <PlanCardsSection
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
             <View style={{ paddingTop: 12, paddingHorizontal: 16 }}>
               <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any, textAlign: 'left', marginBottom: 4 }]}>
                 {headline}
@@ -864,6 +870,15 @@ export default function HealthPlanScreen() {
           style={[styles.container, { backgroundColor: colors.background }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+          {/* COS-740 — the plans go ABOVE the generate CTA in this state.
+              Before this, a patient with no health plan hit a terminal
+              early-return here and could not reach their own plan or its
+              price by any route in the app. */}
+          <PlanCardsSection
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.tint + '18' }]}>
               <MaterialIcons name="auto-awesome" size={32} color={colors.tint} />
@@ -1609,6 +1624,17 @@ export default function HealthPlanScreen() {
               })}
           </>
         )}
+
+        {/* COS-740 — plans at the BOTTOM in this state, deliberately.
+            The daily tasks are what a patient opened this tab for; putting
+            pricing above them would have the priorities backwards. In the
+            two empty states the cards sit at the top instead, because there
+            is no plan competing for the space. */}
+        <PlanCardsSection
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
 
         <View style={{ height: 24 }} />
       </ScrollView>
