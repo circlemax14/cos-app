@@ -606,6 +606,38 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
               getScaledFontWeight={getScaledFontWeight}
             />
           ))}
+
+          {/*
+            COS-737 — this screen chooses ASSESSMENT INTENSITY, which is free and
+            clinical. Billing plans are a separate thing with prices, so they get
+            a separate screen rather than being mixed into these cards: nobody
+            should change their screener depth by picking a price, or be charged
+            for choosing more screeners.
+          */}
+          <Pressable
+            onPress={() => router.push('/Home/subscription' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="View your plan and pricing"
+            style={{
+              marginTop: 8,
+              marginBottom: 24,
+              paddingVertical: 14,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: colors.border ?? '#E5E7EB',
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(600) as never,
+              }}
+            >
+              View your plan and pricing
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
     </AppWrapper>
