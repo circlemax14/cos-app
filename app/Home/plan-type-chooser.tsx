@@ -27,7 +27,8 @@ import {
 } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router, Stack } from 'expo-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { fetchPlanTypeCards } from '@/services/plan-type-cards'
 
 import { AppWrapper } from '@/components/app-wrapper'
 import { updatePlanType, type PlanType } from '@/services/api/plan-type'
@@ -179,6 +180,24 @@ const CONSENT_COPY: Record<PlanType, string> = {
 
 export default function PlanTypeChooserRoute(): React.JSX.Element {
   const queryClient = useQueryClient()
+
+  /**
+   * COS-734 — card copy now comes from the backend so an admin can edit it
+   * without an app release. PLAN_CARDS below stays as the LAST-RESORT fallback:
+   * this screen drives assessment intensity, so it has to render even offline.
+   *
+   * `type`, `assessmentLevel` and `icon` still come from the response, but the
+   * fetcher drops any card whose type is not one of ours — the enum is clinical
+   * and the server must not be able to introduce a new one.
+   */
+  const cardsQuery = useQuery({
+    queryKey: ['plan-type-cards'],
+    queryFn: () => fetchPlanTypeCards(PLAN_CARDS),
+    staleTime: 5 * 60 * 1000,
+    // The fallback is already the embedded copy, so a retry buys nothing.
+    retry: false,
+  })
+  const cards = (cardsQuery.data ?? PLAN_CARDS) as typeof PLAN_CARDS
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const planTypeDisplayName = usePlanTypeDisplayName()
@@ -313,7 +332,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
           ) : null}
 
           {/* Selectable tiers first, then coming-soon tiers underneath. */}
-          {PLAN_CARDS.filter((c) => AGENCY_PLANS_ENABLED || !isAgencyType(c.type)).map((card) => {
+          {cards.filter((c) => AGENCY_PLANS_ENABLED || !isAgencyType(c.type)).map((card) => {
             const isCurrent = card.type === currentType
             const isAgencyTier = card.type === 'agency-supported' || card.type === 'agency-managed'
             const isAgencyDisabled = isAgencyTier && !hasAgency

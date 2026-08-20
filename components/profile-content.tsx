@@ -4,6 +4,7 @@ import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useHasExplicitGrant } from '@/hooks/use-entitlement';
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
 import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
 import { useUserPhoto } from '@/stores/user-photo-store';
@@ -77,6 +78,9 @@ export function ProfileContent({
   // if permissions haven't loaded yet, treat as disabled so the button
   // never flashes to a restricted user.
   const { data: permissions } = useFeaturePermissions();
+  // COS-735 — About moved onto the entitlements catalog so it is manageable
+  // from a plan or feature group. Explicit-grant-only: see the note at the row.
+  const canSeeAbout = useHasExplicitGrant('about.view');
   const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
 
   // SCRUM-640: dark-launched habit-journal entry. Default OFF; visible
@@ -586,16 +590,26 @@ export function ProfileContent({
                 getScaledFontWeight={getScaledFontWeight}
               />
               {/*
-                About screen is gated behind the ABOUT_SCREEN feature flag.
-                It exposes internal build / runtime / OTA Update ID details
-                useful for support but not for general patients. Default is
-                OFF server-side; specific support / dev users get the row
-                via a per-user override in the cos-feature-permissions
-                table. While permissions are loading the flag falls back
-                to the conservative default (off), so the row appears only
-                after we've confirmed access.
+                About screen is gated on the entitlement about.view.
+                It exposes internal build / runtime / OTA details useful for
+                support but not for general patients.
+
+                COS-735 — moved from the legacy cos-feature-permissions table
+                (ABOUT_SCREEN) onto the entitlements catalog, so it can be
+                managed from a plan or a feature group like everything else.
+                `about` was also flipped to isPublic:false; public keys
+                short-circuit to granted in the resolver before any plan lookup,
+                which made it impossible to manage.
+
+                NOTE THE HOOK. This uses useHasExplicitGrant, NOT useCanRender.
+                useCanRender is fail-open and treats the WILDCARD as a grant —
+                and the wildcard is exactly what the resolver returns for every
+                patient wherever plan_tier_enabled is unset (today: staging and
+                production). Gating this with useCanRender would put build and
+                OTA details in front of every patient the moment it shipped.
+                Nothing but a live, populated array naming the key will do.
               */}
-              {permissions?.ABOUT_SCREEN?.enabled === true && (
+              {canSeeAbout && (
                 <DrawerRow
                   iconName="info-outline"
                   label="About"
