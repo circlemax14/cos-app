@@ -1,5 +1,21 @@
 /**
- * SCRUM-279 (2026-06-11 build 44): centralised lock-screen gate.
+ * SCRUM-279 (2026-06-11 build 44): deferred sign-in queue for the lock screen.
+ *
+ * ⚠️ NAME CORRECTION (COS-724, 2026-08-19). This file used to call itself a
+ * "centralised lock-screen gate". It is not one, and that wording cost real
+ * time: it reads as though the lock is enforced here, so nobody looked for the
+ * enforcement that was missing. What this module actually holds is one boolean
+ * (`_appLocked`) and one deferred sign-in reason. `_appLocked` is consumed by
+ * exactly two things — `requestSignIn()` below, and `isAppLocked()` in
+ * hooks/use-app-lock.ts. It therefore gates the ORDERING of sign-in redirects
+ * and nothing else: not a single API request, not a single render.
+ *
+ * The claim further down that "PHI is never shown in the gap" was true only of
+ * the specific race it describes. It is NOT a general property, and it was read
+ * as one. As of COS-724 there are four confirmed ways to put PHI on screen while
+ * `_appLocked` is true — iOS swipe-back, Android hardware back, notification
+ * tap, and deep link — because `isLocked` has never been a render gate and
+ * locking is only a `router.replace`. See lib/lock-render-gate.ts.
  *
  * THE BUG THIS REPLACES
  * Two parallel flows could race during the cold-launch PIN entry:
