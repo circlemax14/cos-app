@@ -8,6 +8,11 @@ import { ActivityIndicator, Card, List, Text, Icon } from 'react-native-paper';
 import { fetchAppointments } from '@/services/api/appointments';
 import type { Appointment as FastenAppointment } from '@/services/api/types';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function AppointmentsModalScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];

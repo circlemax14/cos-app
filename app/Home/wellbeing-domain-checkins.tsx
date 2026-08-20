@@ -132,6 +132,11 @@ import {
 } from '@/lib/wellbeing-score'
 import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 type RowStatus = 'not-taken' | 'coming-soon' | 'retake' | 'completed'
 
 interface CheckinRow {

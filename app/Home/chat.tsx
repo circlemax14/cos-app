@@ -4,6 +4,11 @@ import { GiftedChat, IMessage } from 'react-native-gifted-chat'
 import { useGetChatToken, useChatHistory } from '@/hooks/use-chat'
 import { initializeAbly, subscribeToChannel, publishMessage, closeAbly } from '@/services/ably-chat'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function ChatScreen() {
   const getToken = useGetChatToken()
   const [channelId, setChannelId] = useState<string | null>(null)

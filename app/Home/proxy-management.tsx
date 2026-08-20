@@ -7,6 +7,11 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useProxies, useCreateProxy, useUpdateProxy, useRevokeProxy, ProxyScope, Proxy } from '@/hooks/use-proxies';
 import { AppWrapper } from '@/components/app-wrapper';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const SCOPE_LABELS: Record<string, string> = {
   view_appointments: 'View Appointments',
   view_records: 'View Medical Records',

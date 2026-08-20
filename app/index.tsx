@@ -14,6 +14,12 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useSecurity } from '@/stores/security-store';
 import { requestSignIn } from '@/lib/lock-gate';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
+
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 // useAppLock now mounts at the root layout (app/_layout.tsx) so the
 // AppState lock listener stays alive after navigating away from this
 // splash gate (SCRUM-235).

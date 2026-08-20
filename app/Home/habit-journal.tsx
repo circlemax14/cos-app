@@ -51,6 +51,11 @@ import type {
 import { HabitCorrelationStrip } from '@/components/health-plan/HabitCorrelationStrip'
 import { todayLocalIso } from '@/lib/day-key';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 type DraftValue = number | boolean
 
 interface DraftMap {

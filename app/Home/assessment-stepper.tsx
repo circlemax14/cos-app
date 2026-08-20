@@ -37,6 +37,11 @@ import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsent
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
 import { shouldOfferImmediateSupport } from '@/lib/crisis-support'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 type Palette = typeof Colors['light'] | typeof Colors['dark']
 
 /**

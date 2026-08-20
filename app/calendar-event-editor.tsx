@@ -70,6 +70,11 @@ import {
 } from '@/components/calendar/pickers'
 import { hapticSelection, hapticNotify } from '@/utils/haptics'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const HIPAA_ACK_KEY = 'csh-calendar-hipaa-ack-v1'
 
 const ALARM_OPTIONS: { label: string; minutes: number }[] = [

@@ -18,6 +18,11 @@ import {
 } from '@/services/api/badges'
 import { useBadgeCelebrations } from '@/components/celebrations/BadgeCelebrationProvider'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const TIER_COLORS: Record<BadgeTier, string> = {
   bronze: '#CD7F32',
   silver: '#C0C0C0',

@@ -22,6 +22,11 @@ import {
 } from '@/hooks/use-notification-categories'
 import { useProactiveNudgesFlag } from '@/hooks/use-proactive-nudges-flag'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 // Top-30 IANA timezones surfaced in the picker. Anything outside this
 // list falls back to the device-detected default — the picker can't
 // cover the full 600+ IANA registry on a phone-sized screen, but

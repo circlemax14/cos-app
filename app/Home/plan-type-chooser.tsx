@@ -38,6 +38,11 @@ import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 type AssessmentLevel = 'light' | 'standard' | 'clinical'
 
 interface PlanCardSpec {
@@ -723,7 +728,7 @@ function ComingSoonPlanCard({
           fontStyle: 'italic',
         }}
       >
-        We'll let you know when this plan is available.
+        We&apos;ll let you know when this plan is available.
       </Text>
     </View>
   )

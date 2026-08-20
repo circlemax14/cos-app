@@ -6,6 +6,11 @@ import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments
 import React, { useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * Standalone Recommended Appointments screen, kept for legacy deep-links.
  * Renders the shared list component inside the app wrapper. The main

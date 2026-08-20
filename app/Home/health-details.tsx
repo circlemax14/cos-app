@@ -15,6 +15,11 @@ import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthDetails, useUpdateHealthDetails } from '@/hooks/use-health-details';
 import { AppWrapper } from '@/components/app-wrapper';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function HealthDetailsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];

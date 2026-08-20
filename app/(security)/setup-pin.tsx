@@ -8,6 +8,11 @@ import { PinDots } from '@/components/ui/pin-dots';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { getColors, Spacing, Typography } from '@/constants/design-system';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function SetupPinScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = getColors(settings.isDarkTheme);

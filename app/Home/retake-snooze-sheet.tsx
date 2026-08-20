@@ -37,6 +37,11 @@ import {
   useSnoozeRetakeRequest,
 } from '@/hooks/use-retake-requests'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * ISO helper: today + `days` days at same time. Kept pure so a snooze test
  * can pin the output. Uses Date arithmetic (not calendar rollovers) which

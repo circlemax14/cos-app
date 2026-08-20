@@ -21,6 +21,11 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * About screen — exposes the build / runtime / OTA fingerprint of the
  * currently running JS bundle. Mainly for support: when something looks

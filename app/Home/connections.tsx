@@ -67,6 +67,11 @@ import {
   updateCategory,
 } from '@/services/api/connections'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const ALL_CATEGORIES = [...SOCIAL_CATEGORIES, ...PSYCHOLOGICAL_CATEGORIES]
 
 function labelFor(categoryId: string): string {

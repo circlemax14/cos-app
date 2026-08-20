@@ -43,6 +43,11 @@ import { knownSubdomains } from '@/lib/bps-subdomains';
 import type { MeasurableGoal } from '@/services/api/biopsychosocial-plan';
 import type { GoalPatch } from '@/services/api/ai-health-plan';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /** Pure helper — no hooks — mirrors app/Home/health-plan.tsx's version. */
 function firstNameFromPatient(
   patient: { name?: { given?: string[]; family?: string }[] } | undefined,
