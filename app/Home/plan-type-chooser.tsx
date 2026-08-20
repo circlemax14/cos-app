@@ -620,7 +620,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
             for choosing more screeners.
           */}
           <Pressable
-            onPress={() => router.push('/Home/subscription' as never)}
+            onPress={() => router.push('/Home/billing' as never)}
             accessibilityRole="button"
             accessibilityLabel="View your plan and pricing"
             style={{

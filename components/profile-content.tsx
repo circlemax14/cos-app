@@ -571,6 +571,12 @@ export function ProfileContent({
               price. Hiding it behind an entitlement would mean the people most
               likely to want an upgrade are the ones who cannot find the page.
 
+              Labelled "Billing" rather than "Your plan" (COS-742). "Plan"
+              already means two other things in this app — the daily health
+              plan on the Plan tab, and the assessment intensity on the
+              plan-type chooser — so a third sense of the word sent people to
+              the wrong screen looking for their tasks.
+
               Not the SCRUM-319 problem. That entry was pulled for Apple
               Guideline 2.1 because it showed fake "active" status for premium
               features with no IAP wiring. This screen shows the real plans
@@ -580,8 +586,8 @@ export function ProfileContent({
             */}
             <DrawerRow
               iconName="card-membership"
-              label="Your plan"
-              onPress={() => router.push('/Home/subscription' as never)}
+              label="Billing"
+              onPress={() => router.push('/Home/billing' as never)}
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}

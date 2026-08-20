@@ -98,7 +98,7 @@ export default function PlanCardsSection({ colors, getScaledFontSize, getScaledF
         return (
           <Pressable
             key={plan.planKey}
-            onPress={() => router.push('/Home/subscription' as never)}
+            onPress={() => router.push('/Home/billing' as never)}
             accessibilityRole="button"
             accessibilityLabel={`${plan.name}${plan.isCurrent ? ', your current plan' : ''}. Tap to see plan details.`}
             style={[

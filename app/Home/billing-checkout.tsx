@@ -1,5 +1,5 @@
 /**
- * COS-740 — the checkout seam.
+ * COS-742 — the checkout seam (renamed from subscription-checkout).
  *
  * ─── WHY THIS EXISTS AS A REAL SCREEN ────────────────────────────────
  *
@@ -40,7 +40,7 @@ import { Colors } from '@/constants/theme';
 
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
-export default function SubscriptionCheckoutScreen() {
+export default function BillingCheckoutScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
