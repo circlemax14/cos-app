@@ -492,7 +492,7 @@ export default function TabLayout() {
         settled on after the iOS 26.5 crashes.
       */}
       <Tabs.Screen
-        name="subscription"
+        name="billing"
         options={{
           title: 'Your plan',
           href: null,
@@ -507,7 +507,7 @@ export default function TabLayout() {
         the gate would look ready and would not be.
       */}
       <Tabs.Screen
-        name="subscription-checkout"
+        name="billing-checkout"
         options={{
           title: 'Checkout',
           href: null,
