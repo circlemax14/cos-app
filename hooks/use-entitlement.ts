@@ -1,42 +1,55 @@
 /**
  * Entitlement gates for screens and screen PARTS.
  *
- * ─── WHY NOT JUST USE useCan() ───────────────────────────────────────
+ * ─── ONE GATE, NO CHOICE TO MAKE ─────────────────────────────────────
  *
- * `useCan` (hooks/use-user.ts:62) is correct and is the underlying source of
- * truth. What it cannot express is WHY something is false, and at a gate that
- * distinction is the whole safety story:
+ * Pricing lives on the PLAN: a plan carries a price and a set of permission
+ * keys, and a patient holds one plan. So "is this feature paid?" is not a
+ * property of the feature — it is answered by whether the patient's plan
+ * contains the key. A call site therefore never picks between a clinical gate
+ * and a billing gate. Use `useCanRender` everywhere.
  *
- *   const { data } = useUser();
- *   const ents = data?.entitlements;
- *   if (!ents || ents.length === 0) return true;   // ← unknown, or genuinely empty
- *   if (ents.includes('*')) return true;           // ← kill switch / super-admin
- *   return ents.includes(dottedKey);               // ← EXACT MATCH, closed
+ * ─── WHAT CHANGED, AND WHY (COS-727) ─────────────────────────────────
  *
- * The last line is the one to respect. Once a patient has a real, non-empty
- * entitlement array, every key not in it is DENIED. So the day
- * PLAN_TIER_ENABLED flips on, any key a plan does not list disappears — and a
- * plan written before that key existed cannot list it. That is not a bug in
- * useCan; it is what makes back-filling plans a prerequisite for shipping any
- * new gate (see cos-backend/scripts/backfill-split-entitlement-keys.ts).
+ * This gate used to be `decision !== 'denied'` — fail-open on loading, error,
+ * absent field and empty array. The clinical reasoning was sound: hiding a
+ * patient's own medication list because /v1/auth/me timed out on a train is a
+ * safety problem that looks identical to a correct deny, so nobody reports it.
  *
- * ─── THE RULE THIS FILE ENFORCES ─────────────────────────────────────
+ * But that rule cannot carry billing. The profile query is memory-only (gcTime
+ * 10 min, nothing on disk), so a cold offline launch has no entitlements at
+ * all — force-quit, airplane mode, relaunch, and every gate opens.
  *
- * A gate may hide something ONLY on an affirmative deny. Every other state —
- * still loading, request failed, user not hydrated, entitlements absent,
- * wildcard — renders the content.
+ * The rule now REMEMBERS: live answer, else the device's last-known array, else
+ * open. One rule serves both concerns, because an entitled patient's cached
+ * array says granted — their data survives the timeout — while a cached deny
+ * only hides what they genuinely do not have. The clinical worry was never
+ * about hiding what people lack; it was about hiding what they HAVE because we
+ * could not confirm it, and the cache is that confirmation.
  *
- * This is deliberately asymmetric, because the two failure modes are not
- * equally bad. Showing a patient a section they were not meant to see is a
- * billing discrepancy someone reconciles later. HIDING a patient's own
- * medication list or lab results because /v1/auth/me timed out on a train is
- * a clinical-safety problem, and it looks identical to a correct deny, so
- * nobody would ever report it as a bug.
+ * The decision table itself is pure and lives in lib/entitlement-decision.ts,
+ * where every branch is tested without a renderer or a device.
  *
- * Fail open. Always.
+ * ─── STILL TRUE ──────────────────────────────────────────────────────
+ *
+ * Nothing is ever hidden on an unknown. An empty array is a provisioning gap,
+ * not a deny. And once a real, non-empty array arrives, every key not in it is
+ * DENIED — which is what makes back-filling plans a prerequisite for shipping
+ * any new gate (see cos-backend/scripts/backfill-split-entitlement-keys.ts).
  */
 
+import React from 'react';
 import { useUser } from './use-user';
+import {
+  decideEntitlement,
+  type Decision,
+  type GateMode,
+} from '@/lib/entitlement-decision';
+import {
+  hydrateEntitlementCache,
+  persistEntitlements,
+  readCachedEntitlements,
+} from '@/lib/entitlement-cache';
 
 export type EntitlementDecision =
   /** Affirmatively allowed: the key is present, or the wildcard is. */
@@ -77,18 +90,72 @@ export function useEntitlementDecision(dottedKey: string): EntitlementDecision {
   return ents.includes(dottedKey) ? 'granted' : 'denied';
 }
 
+
+
 /**
- * The gate every call site should use. Boolean, and fail-open by construction:
- * it returns false ONLY for an affirmative 'denied'.
+ * COS-727 — the reasoned form of the gate, for callers that want to explain
+ * rather than silently hide.
+ *
+ * `source` says where the answer came from and `provisional` marks a fallback,
+ * so an upgrade surface can prompt to reconnect instead of quietly granting.
+ * An authoritative deny is never provisional, so a prompt cannot fire on a
+ * legitimate denial.
+ */
+export function useEntitlement(dottedKey: string, mode: GateMode = 'standard'): Decision {
+  const { data, isLoading, isError } = useUser();
+  const live = data?.entitlements;
+
+  // Pull the last-known array off disk once per launch. The decision below reads
+  // the synchronous view, which is null until this lands — and null reads as
+  // "unknown", which is the safe state to be in meanwhile.
+  React.useEffect(() => {
+    void hydrateEntitlementCache();
+  }, []);
+
+  // Whenever a real array arrives it becomes the new last-known state. Guarded
+  // inside persistEntitlements: empty arrays are never stored, and an unchanged
+  // array is not rewritten on every five-minute refetch.
+  React.useEffect(() => {
+    persistEntitlements(live);
+  }, [live]);
+
+  return decideEntitlement({
+    mode,
+    key: dottedKey,
+    live,
+    cached: readCachedEntitlements(),
+    isLoading,
+    isError,
+  });
+}
+
+/**
+ * The gate every screen should use.
  *
  *   const canLabs = useCanRender('plan.labs-by-condition');
  *   ...
  *   {canLabs && <LabsByConditionSection />}
  *
  * Call it unconditionally at the TOP of the component, above every early
- * return — it is a hook, and this screen returns early on both loading and
- * error.
+ * return — it is a hook.
+ *
+ * There is deliberately no paid/clinical variant to choose between. Pricing
+ * lives on the plan, so whether this key is billable is already answered by
+ * whether the patient's plan contains it. See lib/entitlement-decision.ts.
  */
 export function useCanRender(dottedKey: string): boolean {
-  return useEntitlementDecision(dottedKey) !== 'denied';
+  return useEntitlement(dottedKey).allowed;
+}
+
+/**
+ * Escape hatch for surfaces where showing something the patient was not granted
+ * is clearly better than hiding it during uncertainty — allergies and emergency
+ * contacts are the shape of it.
+ *
+ * NOT the other half of a pair. Reach for this only with a specific reason;
+ * ordinary clinical screens want `useCanRender`, because an entitled patient's
+ * cached array already says granted and their data survives a timeout anyway.
+ */
+export function useCanRenderSafetyCritical(dottedKey: string): boolean {
+  return useEntitlement(dottedKey, 'safety-critical').allowed;
 }

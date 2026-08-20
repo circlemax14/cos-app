@@ -36,6 +36,7 @@
 // STYLE: reads source as TEXT. No `@/` alias imports — `node --test` has no
 // module resolver for them (see feedback_node_test_no_alias_imports).
 
+import { decideEntitlement } from '../../lib/entitlement-decision.ts'
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -62,26 +63,60 @@ const SECTIONS = [
   ['ShareSummarySection', 'plan.share-summary', 'canShare'],
 ];
 
-// ── 1. the gate is fail-open ───────────────────────────────────────────────
+// ── 1. the gate never hides on nothing-known ──────────────────────────────
 
-test('useCanRender is false ONLY on an affirmative deny', () => {
-  // The literal shape. If this is rewritten, the rewrite must be deliberate.
+test('useCanRender delegates to the tested decision module', () => {
+  // COS-727 deliberately rewrote this gate. It used to be
+  // `useEntitlementDecision(dottedKey) !== 'denied'` — fail-open on every
+  // uncertain state — which made the paywall advisory: force-quit offline and
+  // everything was free, because the profile query is memory-only.
+  //
+  // The rule now REMEMBERS (live > cached > open) and lives in
+  // lib/entitlement-decision.ts, where all 21 branches are tested directly.
+  // What this file still guards is that the gate has not grown its own inline
+  // copy of that logic, which could drift from the tested one.
   assert.match(
     GATE,
-    /useEntitlementDecision\(dottedKey\)\s*!==\s*'denied'/,
-    'useCanRender must be `decision !== \'denied\'` — anything else risks fail-closed',
+    /export function useCanRender\(dottedKey: string\): boolean \{\s*return useEntitlement\(dottedKey\)\.allowed;\s*\}/,
+    'useCanRender must delegate to useEntitlement, not re-implement the decision',
+  );
+  assert.match(GATE, /decideEntitlement\(/, 'the decision must come from the pure, tested module');
+});
+
+test('the gate still opens when nothing is known at all', () => {
+  // The clinical property that must survive the rewrite: a device with no live
+  // answer AND no cache must render, not hide. Asserted against the real
+  // function rather than its source.
+  assert.equal(
+    decideEntitlement({
+      mode: 'standard', key: 'plan.view',
+      live: null, cached: null, isLoading: true, isError: false,
+    }).allowed,
+    true,
+    'a slow or failed /v1/auth/me with no cache must never hide health data',
+  );
+  assert.equal(
+    decideEntitlement({
+      mode: 'standard', key: 'plan.view',
+      live: null, cached: null, isLoading: false, isError: true,
+    }).allowed,
+    true,
   );
 });
 
-test('loading and error both resolve to unknown, never denied', () => {
-  assert.match(
-    GATE,
-    /if\s*\(isLoading\s*\|\|\s*isError\)\s*return\s*'unknown'/,
-    'a slow or failed /v1/auth/me must never hide a patient\'s own health data',
+test('an entitled patient keeps their data when the request fails', () => {
+  // The reason one rule can serve both billing and clinical safety: the cache
+  // says granted, so a timeout does not hide what they actually have.
+  assert.equal(
+    decideEntitlement({
+      mode: 'standard', key: 'plan.view',
+      live: null, cached: ['plan.view'], isLoading: false, isError: true,
+    }).allowed,
+    true,
   );
 });
 
-test('an absent or empty entitlements array is unknown, not denied', () => {
+test('an absent or empty entitlements array is not a deny', () => {
   // The resolver returns [] for a patient with no plan assignment. That is a
   // provisioning gap, not an entitlement decision — treating it as a deny
   // would blank the app for anyone who slipped through onboarding.
