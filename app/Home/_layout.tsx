@@ -486,6 +486,20 @@ export default function TabLayout() {
         }}
       />
       {/*
+        COS-737 — the subscription screen. href:null (pushed, not a tab) for the
+        same reason as plan-type-chooser: a hidden Tabs.Screen keeps the tab bar
+        intact while the route is presented, which is the pattern this app
+        settled on after the iOS 26.5 crashes.
+      */}
+      <Tabs.Screen
+        name="subscription"
+        options={{
+          title: 'Your plan',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
        * COS-482 Phase 1 — "Not now" sheet for a retake request. Full-screen
        * pushed route (not a Modal / bottom-sheet library) so the iOS 26.5
        * SIGABRT-on-Modal class documented in components/unified-plan/v2/net.ts
