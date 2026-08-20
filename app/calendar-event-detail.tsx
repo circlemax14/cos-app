@@ -25,6 +25,11 @@ import { deleteEvent, readEvents, readReminders, type CalendarEvent } from '@/se
 import { listServerCalendarEvents, listHealthPlanTasksAsEvents, type ServerCalendarEvent } from '@/services/api/calendar'
 import { hapticImpact, hapticNotify, hapticSelection } from '@/utils/haptics'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function CalendarEventDetail() {
   const { eventId } = useLocalSearchParams<{ eventId?: string }>()
   const { settings, getScaledFontSize } = useAccessibility()

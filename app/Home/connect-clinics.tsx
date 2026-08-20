@@ -15,6 +15,11 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 
 export default function ConnectClinicsScreen() {

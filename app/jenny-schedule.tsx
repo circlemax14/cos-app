@@ -9,6 +9,11 @@ import { Card, Chip, Divider, Text } from 'react-native-paper';
 import { fetchAppointments } from '@/services/api/appointments';
 import { fetchHealthPlan } from '@/services/api/health-plan';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function JennyScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];

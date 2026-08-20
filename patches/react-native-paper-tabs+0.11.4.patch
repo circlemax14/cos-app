@@ -1,3 +1,37 @@
+diff --git a/node_modules/react-native-paper-tabs/lib/commonjs/TabsHeaderItem.js b/node_modules/react-native-paper-tabs/lib/commonjs/TabsHeaderItem.js
+index 873cd89..8d8aa9f 100644
+--- a/node_modules/react-native-paper-tabs/lib/commonjs/TabsHeaderItem.js
++++ b/node_modules/react-native-paper-tabs/lib/commonjs/TabsHeaderItem.js
+@@ -138,10 +138,9 @@ const styles = _reactNative.StyleSheet.create({
+     flex: 1
+   },
+   touchableRipple: {
+-    height: 48,
++    minHeight: 48,
+     justifyContent: 'center',
+-    alignItems: 'center',
+-    overflow: 'hidden'
++    alignItems: 'center'
+   },
+   touchableRippleTop: {
+     height: 72
+diff --git a/node_modules/react-native-paper-tabs/lib/module/TabsHeaderItem.js b/node_modules/react-native-paper-tabs/lib/module/TabsHeaderItem.js
+index fe948ec..36a0280 100644
+--- a/node_modules/react-native-paper-tabs/lib/module/TabsHeaderItem.js
++++ b/node_modules/react-native-paper-tabs/lib/module/TabsHeaderItem.js
+@@ -131,10 +131,9 @@ const styles = StyleSheet.create({
+     flex: 1
+   },
+   touchableRipple: {
+-    height: 48,
++    minHeight: 48,
+     justifyContent: 'center',
+-    alignItems: 'center',
+-    overflow: 'hidden'
++    alignItems: 'center'
+   },
+   touchableRippleTop: {
+     height: 72
 diff --git a/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx b/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx
 index ce803d7..5aee95f 100644
 --- a/node_modules/react-native-paper-tabs/src/TabsHeaderItem.tsx

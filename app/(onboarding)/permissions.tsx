@@ -15,6 +15,11 @@ import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * Requests essential device permissions sequentially using native OS dialogs.
  * Only asks for notifications and contacts during onboarding.

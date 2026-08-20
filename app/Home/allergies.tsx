@@ -7,6 +7,11 @@ import type { Allergy } from '@/services/api/types';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const CRITICALITY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   high: { bg: '#FFEBEE', text: '#C62828', label: 'High' },
   low: { bg: '#E8F5E9', text: '#2E7D32', label: 'Low' },

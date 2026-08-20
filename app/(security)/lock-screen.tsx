@@ -25,6 +25,11 @@ import { checkSession } from '@/services/auth';
 import { clearTokens } from '@/lib/auth-tokens';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * Resolve the route to land on after a successful unlock. Defaults to
  * /Home, but if useAppLock captured a pre-lock path we restore that so

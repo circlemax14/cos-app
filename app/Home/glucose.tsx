@@ -43,6 +43,11 @@ import type {
   GlucoseTirSummary,
 } from '@/services/api/cgm-glucose'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const WINDOW_DAYS = 14
 
 function toTrendPoints(

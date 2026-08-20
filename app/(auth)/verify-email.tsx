@@ -7,6 +7,11 @@ import { Colors } from '@/constants/theme';
 import { confirmSignUp, resendCode, signIn } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function VerifyEmailScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];

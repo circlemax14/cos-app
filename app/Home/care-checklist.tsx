@@ -14,6 +14,11 @@ import {
   View,
 } from 'react-native';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const PRIORITY_CONFIG: Record<
   CareGap['priority'],
   { label: string; indicator: string; bg: string; text: string; borderColor: string; order: number }

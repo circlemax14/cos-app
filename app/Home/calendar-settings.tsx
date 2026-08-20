@@ -34,6 +34,11 @@ import {
 } from '@/components/calendar/pickers'
 import { hapticSelection } from '@/utils/haptics'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const START_WEEK_OPTIONS: SelectionOption<string>[] = [
   { value: '0', label: 'Sunday' },
   { value: '1', label: 'Monday' },
@@ -195,7 +200,7 @@ export default function CalendarSettingsScreen() {
             Calendar settings
           </Text>
           <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-            Show or hide individual calendars. Hidden calendars won't appear in your views or trigger notifications.
+            Show or hide individual calendars. Hidden calendars won&apos;t appear in your views or trigger notifications.
           </Text>
 
           {/* ── PREFERENCES section (I3/I8/I9/I10/I11/J1) ─────────────── */}
@@ -402,7 +407,7 @@ export default function CalendarSettingsScreen() {
                 No calendars found
               </Text>
               <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-                We can only see calendars from accounts you've added in iOS Settings.
+                We can only see calendars from accounts you&apos;ve added in iOS Settings.
               </Text>
             </View>
           ) : (
@@ -466,13 +471,13 @@ export default function CalendarSettingsScreen() {
               Missing Outlook, Teams, or Google calendars?
             </Text>
             <Text style={[styles.helpBody, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-              iOS Calendar can only see calendars from accounts you've added in iOS Settings. Microsoft Teams meetings
+              iOS Calendar can only see calendars from accounts you&apos;ve added in iOS Settings. Microsoft Teams meetings
               and Outlook events sync through your Exchange or Outlook account.
               {'\n\n'}To add them:
               {'\n\n'}1. Open iOS Settings → Apps → Calendar → Calendar Accounts (or Mail → Accounts)
               {'\n'}2. Add Account → choose your provider (Outlook, Exchange, Google)
               {'\n'}3. Make sure the Calendar toggle is ON for that account
-              {'\n\n'}Once that's done, return here and pull to refresh — your calendars will appear.
+              {'\n\n'}Once that&apos;s done, return here and pull to refresh — your calendars will appear.
             </Text>
             <Pressable
               onPress={() => Linking.openSettings().catch(() => {})}

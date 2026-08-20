@@ -54,6 +54,11 @@ import {
 } from '@/lib/wellbeing-trend'
 import { scoreToBand } from '@/hooks/use-score-catalog'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const RANGE_OPTIONS: Array<{ label: string; days: number }> = [
   { label: '3d', days: 3 },
   { label: '7d', days: 7 },

@@ -15,6 +15,11 @@ import { apiClient } from '@/lib/api-client';
 import { getPresignedUploadUrl, confirmPhotoUpload, getPhotoDownloadUrl } from '@/services/user-photo';
 import { useUserPhoto } from '@/stores/user-photo-store';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function PersonalInfoScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];

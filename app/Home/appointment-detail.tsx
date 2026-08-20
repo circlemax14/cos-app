@@ -9,6 +9,11 @@ import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const RESOURCE_TYPE_STYLES = {
   Appointment: { bg: '#E3F2FD', text: '#1565C0', label: 'Appointment' },
   Encounter: { bg: '#E8F5E9', text: '#2E7D32', label: 'Encounter' },

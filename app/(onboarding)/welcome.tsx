@@ -16,6 +16,11 @@ import { ConfettiBurst } from '@/components/onboarding/ConfettiBurst';
 import { checkSession, markWelcomeSeen } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * One-time welcome screen shown after the user has connected at least one
  * EHR. Waving hand animates on mount; tapping Continue flags

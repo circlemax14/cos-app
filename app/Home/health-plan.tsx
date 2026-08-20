@@ -80,6 +80,11 @@ import { todayLocalIso } from '@/lib/day-key';
 // One definition of today's adherence, shared with app/Home/today-schedule.tsx.
 import { computeAdherence, minutesSinceMidnight } from '@/lib/today-timeline';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * COS-434 experiment #5: dark-launchable local flag around the hoisted bio
  * goal-editor Modal. `true` = ship default. If iOS 26.5 still crashes on
