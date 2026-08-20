@@ -37,6 +37,11 @@ import type {
   DailyReadPillarState,
 } from '@/services/api/daily-read'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const BAND_TOKENS: Record<DailyReadPillarBand, { fg: string; bg: string; label: string }> = {
   good:      { fg: '#0F6B36', bg: '#E6F4EC', label: 'GOOD' },
   fair:      { fg: '#0B6963', bg: '#E0F2F1', label: 'FAIR' },

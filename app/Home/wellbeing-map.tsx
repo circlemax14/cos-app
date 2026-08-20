@@ -43,6 +43,11 @@ import {
   type UnifiedSectionKey,
 } from '@/components/unified-plan/section-labels'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const DOMAIN_COLOR: Record<BpsDomain, string> = {
   biological: '#199C4F',
   psychological: '#7B3FE4',

@@ -17,6 +17,11 @@ import { usePlanType, meetsTier } from '@/hooks/use-plan-type'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 // CHUNK 69: `?focus=bio|psy|soc` deep-link (from BpsWellbeingScoreCard tap,
 // chunks 65/66) scrolls the catalog to the matching domain section on
 // mount. Mirrors chunk-55 poll discipline: 10 attempts × 200ms, mark

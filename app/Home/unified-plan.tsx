@@ -55,6 +55,11 @@ import type {
   UnifiedSectionKey,
 } from '@/services/api/unified-plan';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 function hasAiSourcedItems(view: UnifiedPlanView): boolean {
   return UNIFIED_SECTION_ORDER.some((k) => {
     const s: UnifiedPlanSection = view.sections[k];

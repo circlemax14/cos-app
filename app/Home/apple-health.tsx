@@ -21,6 +21,11 @@ import {
 } from '@/services/apple-health-preference';
 import { APPLE_HEALTH_PREFERENCE_KEY } from '@/hooks/use-apple-health-preference';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * Apple Health connection screen (COS-389 / SCRUM-530).
  *

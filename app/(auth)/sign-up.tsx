@@ -18,6 +18,11 @@ import { Colors } from '@/constants/theme';
 import { signUp } from '@/services/auth';
 import { useAccessibility } from '@/stores/accessibility-store';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const PASSWORD_RULES = [
   { label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
   { label: 'At least 1 number', test: (p: string) => /\d/.test(p) },

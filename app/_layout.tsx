@@ -252,7 +252,24 @@ function RootLayout() {
   );
 }
 
-// Sentry.wrap installs the JS error boundary + perf instrumentation around
-// the root component. Any uncaught error inside the React tree now lands
-// in Sentry with full stack + component breadcrumbs.
+// Sentry.wrap adds perf instrumentation and touch breadcrumbs around the root
+// component. It does NOT install an error boundary.
+//
+// CORRECTED COS-723 (2026-08-19). This comment previously read "Sentry.wrap
+// installs the JS error boundary ... Any uncaught error inside the React tree
+// now lands in Sentry". That is false, and believing it is why 74 of 79 routes
+// sat with no boundary at all. Sentry.wrap renders exactly:
+//
+//     TouchEventBoundary > ReactNativeProfiler > FeedbackWidgetProvider
+//
+// (@sentry/react-native/dist/js/sdk.js, `wrap`) and NONE of the three
+// implements componentDidCatch or getDerivedStateFromError — checked against
+// the SDK source, not the docs. "TouchEventBoundary" is about touch
+// BREADCRUMBS; it catches nothing.
+//
+// An uncaught render error therefore propagates to the root and expo-updates'
+// error recovery aborts the process — which is precisely what happened on
+// 2026-08-15 (Health Summary). Catching is done per-route: each route exports
+// `ErrorBoundary` from components/RouteErrorBoundary.tsx, which expo-router
+// wraps in its `Try` class boundary.
 export default Sentry.wrap(RootLayout);

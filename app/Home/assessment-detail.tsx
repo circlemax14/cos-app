@@ -46,6 +46,11 @@ import {
   type SubscaleScore,
 } from '@/services/api/assessments'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 function formatDate(iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)

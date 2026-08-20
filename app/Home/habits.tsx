@@ -68,6 +68,11 @@ import {
 } from '@/hooks/use-plan-habits'
 import type { PlanHabit } from '@/services/api/types'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 type BpsDomain = PlanHabit['bpsDomain']
 
 interface DraftHabit {

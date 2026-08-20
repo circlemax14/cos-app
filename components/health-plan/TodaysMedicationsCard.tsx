@@ -191,7 +191,7 @@ export function TodaysMedicationsCard(props: TodaysMedicationsCardProps): React.
               textTransform: 'uppercase',
             }}
           >
-            Today's Medications
+            Today&apos;s Medications
           </Text>
         </View>
         <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: '600' }}>

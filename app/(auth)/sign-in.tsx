@@ -28,6 +28,11 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useIsFeatureFlagEnabled } from '@/hooks/use-feature-flags';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {

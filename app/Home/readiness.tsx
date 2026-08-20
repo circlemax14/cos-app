@@ -58,6 +58,11 @@ import {
 import { snapshotBandToLocalBand } from '@/services/api/readiness-history'
 import type { LongitudinalTrend } from '@/services/api/types'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const BAND_TOKENS: Record<ReadinessBand, { fg: string; bg: string; label: string }> = {
   optimal:      { fg: '#0F6B36', bg: '#E6F4EC', label: 'OPTIMAL' },
   developing:   { fg: '#0B6963', bg: '#E0F2F1', label: 'DEVELOPING' },
@@ -545,17 +550,17 @@ export default function ReadinessScreen(): React.JSX.Element {
             Readiness is a daily 0–100 signal that answers one question: <Text style={styles.strong}>how recovered are you today?</Text>
           </Text>
           <Text style={[styles.pText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
-            It's a <Text style={styles.strong}>behavioral cue</Text> — not a diagnosis, not a medical device output. Use it to decide whether today is a good day to push a workout or an easy day to rest.
+            It&apos;s a <Text style={styles.strong}>behavioral cue</Text> — not a diagnosis, not a medical device output. Use it to decide whether today is a good day to push a workout or an easy day to rest.
           </Text>
         </Section>
 
         {/* How it's calculated */}
         <Section title="How it's calculated" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
           <Text style={[styles.pText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
-            Readiness compares <Text style={styles.strong}>today's Apple Health readings against your own last 14 days</Text> — not a population average. Everyone's baseline is personal.
+            Readiness compares <Text style={styles.strong}>today&apos;s Apple Health readings against your own last 14 days</Text> — not a population average. Everyone&apos;s baseline is personal.
           </Text>
           <Text style={[styles.pText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
-            We use whichever of these 10 metrics you've granted access to (2 is enough for a score, more makes it richer):
+            We use whichever of these 10 metrics you&apos;ve granted access to (2 is enough for a score, more makes it richer):
           </Text>
           <View style={styles.metricGrid}>
             {(['hrv','sleep','restingHr','respRate','steps','activeEnergy','exerciseMin','walkingHr','spo2','flights'] as ReadinessDriver['metric'][]).map((m) => {
@@ -636,7 +641,7 @@ export default function ReadinessScreen(): React.JSX.Element {
             <View style={styles.hkCard}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text as string, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
-                  Today's HealthKit sync
+                  Today&apos;s HealthKit sync
                 </Text>
                 <Text style={{ color: colors.subtext as string, fontSize: getScaledFontSize(12), marginTop: 2 }}>
                   {readiness.debug?.todayFound
@@ -660,7 +665,7 @@ export default function ReadinessScreen(): React.JSX.Element {
               </View>
             </View>
             <Text style={{ color: colors.subtext as string, fontSize: getScaledFontSize(11), marginTop: 6, lineHeight: 16 }}>
-              A metric is dropped if its baseline has zero variation (all readings identical — rare for real data) or if today's value hasn't synced yet. Long-press the Readiness tile on Home for the full debug snapshot.
+              A metric is dropped if its baseline has zero variation (all readings identical — rare for real data) or if today&apos;s value hasn&apos;t synced yet. Long-press the Readiness tile on Home for the full debug snapshot.
             </Text>
           </Section>
         )}
@@ -743,10 +748,10 @@ export default function ReadinessScreen(): React.JSX.Element {
         {/* Why it matters */}
         <Section title="Why it matters" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
           <Text style={[styles.pText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
-            Recovery is a leading indicator. A low Readiness day is often the earliest signal that your body is trending toward getting sick, overtraining, or burning out — days before you'd notice on your own.
+            Recovery is a leading indicator. A low Readiness day is often the earliest signal that your body is trending toward getting sick, overtraining, or burning out — days before you&apos;d notice on your own.
           </Text>
           <Text style={[styles.pText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
-            Small responses compound: earlier bedtime on a low day, a lighter workout, extra water, a walk instead of a run. The score isn't a demand — it's information.
+            Small responses compound: earlier bedtime on a low day, a lighter workout, extra water, a walk instead of a run. The score isn&apos;t a demand — it&apos;s information.
           </Text>
         </Section>
 

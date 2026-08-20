@@ -28,6 +28,12 @@ import {
 } from '@/services/non-ehr-processor';
 import { summarizeTreatmentFromFiles, type TreatmentSummaryFile } from '@/services/ai-extractor';
 import * as DocumentPicker from 'expo-document-picker';
+
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────

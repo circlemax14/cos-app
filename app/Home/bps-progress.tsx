@@ -124,6 +124,11 @@ import {
 } from '@/hooks/use-metric-history';
 import { todayLocalIso } from '@/lib/day-key';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /** How many bars ScoreHistorySparkline can actually draw. Mirrored here so
  *  the caption can be truthful about how much of the window is visible. */
 const SPARKLINE_BARS = 7;

@@ -7,6 +7,11 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSendAiMessage, useChatHistory } from '@/hooks/use-chat';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 // AI Bot User Definition
 const AI_USER: User = {
     _id: 'ai-health-coach',

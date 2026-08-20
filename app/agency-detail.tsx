@@ -13,6 +13,11 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AgencyTeamSection } from '@/components/agency/AgencyTeamSection';
 import { AgencyVisitsSection } from '@/components/agency/AgencyVisitsSection';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 /**
  * Dismiss the agency detail modal. Prefer `router.dismiss` (proper modal
  * close — pops the modal off the root Stack) and fall back to `router.back`

@@ -21,6 +21,11 @@ import React from 'react';
 
 import IntakeWizardScreen from '@/components/health-plan/patient-intake/IntakeWizardScreen';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 export default function PatientIntakeRoute(): React.JSX.Element {
   return <IntakeWizardScreen />;
 }

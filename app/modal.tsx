@@ -24,6 +24,11 @@ import {
   type NonEhrProvider,
 } from '@/services/non-ehr-processor';
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 
 interface CategoryGroup {
   id: string;

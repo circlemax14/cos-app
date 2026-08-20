@@ -61,6 +61,11 @@ import type {
   HealthAgeResult,
 } from '@/services/api/health-age'
 
+// COS-723: expo-router renders this in its `Try` boundary if the route throws,
+// so a crash costs this screen instead of the whole app. See
+// components/RouteErrorBoundary.tsx.
+export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
 const DISCLAIMER =
   'Health Age is a wellness estimate derived from your recent labs and vitals compared to population norms. It is not a diagnosis, not a medical device output, and is not intended to detect, treat, cure, or prevent disease.'
 
