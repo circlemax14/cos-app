@@ -177,3 +177,33 @@ test('an authoritative answer is never marked provisional', () => {
     assert.equal(at({ mode, live: OMITS }).provisional, false);
   }
 });
+
+// ─── COS-735: explicit-grant-only surfaces ──────────────────────────────────
+
+test('THE POINT: the WILDCARD must not grant an explicit-only surface', () => {
+  // The resolver returns ['*'] for every patient wherever plan_tier_enabled is
+  // unset — staging and production today. If a diagnostic screen treated that
+  // as a grant, it would ship visible to everyone.
+  const d = at({ mode: 'standard', live: ['*'] });
+  assert.equal(d.allowed, true);          // useCanRender would show it…
+  assert.equal(d.source, 'wildcard');     // …but the source disqualifies it
+  assert.notEqual(d.source, 'live');
+});
+
+test('an explicit-only surface needs a live array naming the key', () => {
+  const granted = at({ mode: 'standard', live: [KEY] });
+  assert.equal(granted.source === 'live' && granted.allowed, true);
+
+  const omitted = at({ mode: 'standard', live: OMITS });
+  assert.equal(omitted.source === 'live' && omitted.allowed, false);
+});
+
+test('cached, unknown and unprovisioned never satisfy an explicit-only surface', () => {
+  for (const d of [
+    at({ mode: 'standard', cached: [KEY], isError: true }),
+    at({ mode: 'standard', isLoading: true }),
+    at({ mode: 'standard', live: [] }),
+  ]) {
+    assert.notEqual(d.source, 'live');
+  }
+});
