@@ -556,6 +556,32 @@ export function ProfileContent({
               iconName="shield"
               label="Security"
               onPress={() => router.push('/Home/security-settings' as never)}
+              divider
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+            {/*
+              COS-740 — the subscription screen had exactly one entry point
+              (the plan-type chooser), which is itself only reachable from a
+              card that renders after a health plan exists. A patient who has
+              not generated one could not reach their own plan at all.
+
+              UNGATED, unlike About above: this is a patient's own plan and
+              price. Hiding it behind an entitlement would mean the people most
+              likely to want an upgrade are the ones who cannot find the page.
+
+              Not the SCRUM-319 problem. That entry was pulled for Apple
+              Guideline 2.1 because it showed fake "active" status for premium
+              features with no IAP wiring. This screen shows the real plans
+              with real prices, marks the one the patient actually has, and
+              offers no purchase — the upgrade action stays behind
+              SUBSCRIPTION_UPGRADE_ENABLED until payments genuinely work.
+            */}
+            <DrawerRow
+              iconName="card-membership"
+              label="Your plan"
+              onPress={() => router.push('/Home/subscription' as never)}
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
