@@ -260,3 +260,34 @@ test('the screen still fetches nothing it does not render', () => {
   const body = features.slice(features.indexOf('export default function PlanFeaturesSection'))
   assert.doesNotMatch(body, /usePlanFeatures\(\)/)
 })
+
+// ── COS-753: prod-style plan cards, coming-soon included ──────────────────
+
+const status = read('components/plan/PlanStatusSection.tsx')
+
+test('THE POINT: a coming-soon plan renders disabled and badged, not hidden', () => {
+  // Family shipped this way on the prod chooser (COS-432). Hiding it defeats
+  // the point of advertising the roadmap.
+  assert.match(status, /COMING SOON/)
+  assert.match(status, /disabled=\{comingSoon\}/)
+  assert.match(status, /borderStyle: 'dashed'/)
+})
+
+test('a coming-soon card is not tappable', () => {
+  assert.match(status, /if \(!comingSoon\) router\.push/)
+})
+
+test('no price is quoted for a coming-soon tier', () => {
+  // Inventing one would be a promise we have not made.
+  assert.match(status, /!comingSoon && monthly/)
+  assert.match(status, /!comingSoon && annual/)
+})
+
+test('coming-soon comes from the dashboard, not a hardcoded list in the app', () => {
+  assert.match(status, /plan\.status === 'coming-soon'/)
+  assert.doesNotMatch(status, /COMING_SOON_CARDS/)
+})
+
+test('the card icon is plan-driven with a fallback, so no plan renders iconless', () => {
+  assert.match(status, /plan\.icon \?\? 'workspace-premium'/)
+})

@@ -33,12 +33,15 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
 
 export interface PatientPlanCard {
+  status: string | null;
+  icon: string | null;
   planKey: string;
   name: string;
   shortDescription: string | null;
@@ -141,46 +144,85 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
 
       {plans.map((plan) => {
         const { monthly, annual, annualSavingPct } = priceLines(plan.pricing);
+        // COS-753 — the prod chooser advertised Family as a disabled card with
+        // a COMING SOON badge (COS-432). Same treatment, driven by the plan's
+        // status from the dashboard rather than a hardcoded list in the app.
+        const comingSoon = plan.status === 'coming-soon';
+
         return (
           <Pressable
             key={plan.planKey}
-            onPress={() => router.push('/Home/billing' as never)}
+            onPress={() => {
+              if (!comingSoon) router.push('/Home/billing' as never);
+            }}
+            disabled={comingSoon}
             accessibilityRole="button"
-            accessibilityLabel={`${plan.name}. Tap to see details and choose.`}
+            accessibilityState={{ disabled: comingSoon }}
+            accessibilityLabel={
+              comingSoon
+                ? `${plan.name} plan — coming soon. ${plan.shortDescription ?? ''}`
+                : `${plan.name}. Tap to see details and choose.`
+            }
             style={[
               styles.card,
-              { backgroundColor: colors.card ?? 'transparent', borderColor: colors.border ?? '#E0E0E0' },
+              {
+                backgroundColor: colors.card ?? 'transparent',
+                borderColor: comingSoon ? (colors.text ?? '#11181C') + '20' : colors.border ?? '#E0E0E0',
+              },
+              comingSoon && styles.cardSoon,
             ]}
           >
-            <Text
-              style={[
-                styles.name,
-                { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as never },
-              ]}
-            >
-              {plan.name}
-            </Text>
-            {monthly ? (
+            <View style={styles.cardHead}>
+              <MaterialIcons
+                name={(plan.icon ?? 'workspace-premium') as never}
+                size={getScaledFontSize(26)}
+                color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+              />
+              <Text
+                style={[
+                  styles.name,
+                  { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never },
+                ]}
+              >
+                {plan.name}
+              </Text>
+              {comingSoon && (
+                <Text style={[styles.soonBadge, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(10) }]}>
+                  COMING SOON
+                </Text>
+              )}
+            </View>
+
+            {/* A coming-soon tier has no price to quote, and inventing one
+                would be a promise we have not made. */}
+            {!comingSoon && monthly ? (
               <Text
                 style={[
                   styles.price,
-                  { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never },
+                  { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never },
                 ]}
               >
                 {monthly}
               </Text>
             ) : null}
-            {annual ? (
+            {!comingSoon && annual ? (
               <Text style={[styles.annual, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
                 {annual}
                 {annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}
               </Text>
             ) : null}
+
             {plan.shortDescription ? (
               <Text style={[styles.body, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
                 {plan.shortDescription}
               </Text>
             ) : null}
+
+            {plan.highlights.map((h) => (
+              <Text key={h} style={[styles.bullet, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
+                {`✓  ${h}`}
+              </Text>
+            ))}
           </Pressable>
         );
       })}
@@ -198,9 +240,14 @@ const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   heading: { marginBottom: 2 },
   sub: { marginBottom: 12, opacity: 0.8 },
-  card: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 10 },
-  name: {},
+  card: { borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },
+  // Dashed + faded, exactly as the prod chooser rendered Family.
+  cardSoon: { borderStyle: 'dashed', opacity: 0.7 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
+  soonBadge: { letterSpacing: 0.8, fontWeight: '700' },
+  name: { flex: 1 },
   price: { marginTop: 6 },
   annual: { marginTop: 2, opacity: 0.75 },
   body: { marginTop: 6, lineHeight: 19 },
+  bullet: { marginTop: 5, lineHeight: 19 },
 });
