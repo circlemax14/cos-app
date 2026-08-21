@@ -47,12 +47,16 @@ export interface PlanFeature {
   description: string;
   route: string;
   surface: string;
+  granted: boolean;
 }
 
-async function fetchPlanFeatures(): Promise<PlanFeature[]> {
+async function fetchPlanFeatures(): Promise<{ features: PlanFeature[]; locked: PlanFeature[] }> {
   const res = await apiClient.get('/v1/patients/me/plans/features');
-  const list = (res.data as { data?: { features?: unknown } })?.data?.features;
-  return Array.isArray(list) ? (list as PlanFeature[]) : [];
+  const body = (res.data as { data?: { features?: unknown; locked?: unknown } })?.data;
+  return {
+    features: Array.isArray(body?.features) ? (body.features as PlanFeature[]) : [],
+    locked: Array.isArray(body?.locked) ? (body.locked as PlanFeature[]) : [],
+  };
 }
 
 export function usePlanFeatures() {
@@ -78,7 +82,8 @@ export default function PlanFeaturesSection({
   hasConnectedRecords,
 }: Props) {
   const { data, isError } = usePlanFeatures();
-  const features = data ?? [];
+  const features = data?.features ?? [];
+  const locked = data?.locked ?? [];
 
   return (
     <View style={styles.wrap}>
@@ -162,6 +167,58 @@ export default function PlanFeaturesSection({
           ))}
         </>
       )}
+
+      {/*
+        COS-750 — what the plan does NOT include, greyed rather than hidden.
+
+        Hiding it would make Basic and Advanced look like different-length
+        lists rather than different products, and leave nothing concrete to
+        upgrade for. Greying it states the difference without pretending the
+        feature is broken.
+
+        Every row still routes — to Billing, not to the feature. A greyed row
+        that does nothing on tap is an advert; one that explains how to get it
+        is an answer.
+      */}
+      {!isError && locked.length > 0 && (
+        <>
+          <Text
+            style={[
+              styles.heading,
+              { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as never },
+            ]}
+          >
+            NOT IN YOUR PLAN
+          </Text>
+
+          {locked.map((f) => (
+            <Pressable
+              key={f.featureKey}
+              onPress={() => router.push('/Home/billing' as never)}
+              accessibilityRole="button"
+              accessibilityLabel={`${f.label}. Not included in your plan. Tap to see plans.`}
+              style={[styles.tile, styles.tileLocked, { borderColor: colors.border ?? '#E0E0E0' }]}
+            >
+              <View style={styles.tileRow}>
+                <Text
+                  style={[
+                    styles.tileLabel,
+                    { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as never },
+                  ]}
+                >
+                  {f.label}
+                </Text>
+                <Text style={[styles.chev, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
+                  {'\u2191'}
+                </Text>
+              </View>
+              <Text style={[styles.tileDesc, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
+                Upgrade to unlock
+              </Text>
+            </Pressable>
+          ))}
+        </>
+      )}
     </View>
   );
 }
@@ -180,4 +237,6 @@ const styles = StyleSheet.create({
   tileLabel: { flex: 1 },
   chev: { marginLeft: 8 },
   tileDesc: { marginTop: 3, lineHeight: 17 },
+  // Dashed + faded so it reads as "not yours yet" rather than "broken".
+  tileLocked: { backgroundColor: 'transparent', borderStyle: 'dashed', opacity: 0.6 },
 });
