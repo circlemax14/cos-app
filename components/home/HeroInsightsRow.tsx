@@ -40,6 +40,7 @@ import { useHealthAge } from '@/hooks/use-health-age'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
 import { useDailyRead } from '@/hooks/use-daily-read'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { useScoreCatalog } from '@/hooks/use-score-catalog'
 import { pickWellbeingDisplayScore } from '@/lib/wellbeing-display-score'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
@@ -87,8 +88,26 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   const healthAgeFlag = useHealthAgeFlag()
   const dailyReadFlag = useDailyReadFlag()
   const readinessPerm = useIsFeatureEnabled('READINESS_SCORE')
-  const healthAgePerm = useIsFeatureEnabled('HEALTH_AGE')
   const dailyReadPerm = useIsFeatureEnabled('DAILY_READ')
+
+  /*
+   * COS-748 — the two tiles Ken asked for are now PLAN-driven.
+   *
+   * They were gated on `cos-feature-permissions` (useIsFeatureEnabled), a
+   * separate system from entitlements with its own table and its own admin
+   * screen. So a plan could tick "Health Age" and nothing happened: the tile
+   * was reading a different source entirely. The swap was always intended —
+   * see the SCRUM-659 note at the top of this file.
+   *
+   * Wellbeing had NO permission layer at all and rendered unconditionally.
+   *
+   * `useCanRender` treats the wildcard as a grant, and the wildcard is exactly
+   * what prod and staging return while plan_tier_enabled is unset there. So
+   * this is inert everywhere enforcement is off and only bites on dev, which
+   * is the point of migrating this way rather than in one cutover.
+   */
+  const healthAgePerm = useCanRender('home.health-age-dial')
+  const wellbeingPerm = useCanRender('home.wellbeing-score')
 
   // Still computed so the two-layer gate stays visible in one place, and so
   // restoring the tile to the row is a one-line change (SCRUM-676).
@@ -127,7 +146,7 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
 
   return (
     <View style={variant === 'large' ? styles.singleColumn : styles.row}>
-      <WellbeingTile variant={variant} />
+      {wellbeingPerm && <WellbeingTile variant={variant} />}
       {healthAgeEnabled && <HealthAgeTile variant={variant} />}
     </View>
   )
