@@ -486,35 +486,6 @@ export default function TabLayout() {
         }}
       />
       {/*
-        COS-737 — the subscription screen. href:null (pushed, not a tab) for the
-        same reason as plan-type-chooser: a hidden Tabs.Screen keeps the tab bar
-        intact while the route is presented, which is the pattern this app
-        settled on after the iOS 26.5 crashes.
-      */}
-      <Tabs.Screen
-        name="billing"
-        options={{
-          title: 'Your plan',
-          href: null,
-          headerShown: false,
-        }}
-      />
-      {/*
-        COS-740 — the checkout seam. Registered even though it is currently
-        unreachable: the Upgrade button that pushes it is gated on
-        subscription_upgrade_enabled, which is false everywhere. Without this
-        registration the flag could not be flipped without crashing the app —
-        the gate would look ready and would not be.
-      */}
-      <Tabs.Screen
-        name="billing-checkout"
-        options={{
-          title: 'Checkout',
-          href: null,
-          headerShown: false,
-        }}
-      />
-      {/*
        * COS-482 Phase 1 — "Not now" sheet for a retake request. Full-screen
        * pushed route (not a Modal / bottom-sheet library) so the iOS 26.5
        * SIGABRT-on-Modal class documented in components/unified-plan/v2/net.ts
