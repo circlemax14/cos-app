@@ -238,3 +238,31 @@ test('Health Age keeps BOTH layers — dark-launch flag AND plan', () => {
   // Losing the flag would make the tile un-killable without a release.
   assert.match(hero, /healthAgeFlag && healthAgePerm/)
 })
+
+// ── COS-750: locked features greyed, not hidden ────────────────────────────
+
+test('THE POINT: what the plan does not grant is shown, not hidden', () => {
+  // Hiding it makes Basic and Advanced look like different-length lists
+  // rather than different products, with nothing concrete to upgrade for.
+  assert.match(features, /NOT IN YOUR PLAN/)
+  assert.match(features, /Upgrade to unlock/)
+})
+
+test('a locked row routes to Billing, not to the feature it cannot open', () => {
+  const lockedBlock = features.slice(features.indexOf('NOT IN YOUR PLAN'))
+  assert.match(lockedBlock, /router\.push\('\/Home\/billing'/)
+  assert.doesNotMatch(lockedBlock, /router\.push\(f\.route/)
+})
+
+test('locked styling reads as "not yours yet", not as broken', () => {
+  assert.match(features, /tileLocked/)
+  assert.match(features, /borderStyle: 'dashed'/)
+})
+
+test('granted rows still route to the feature itself', () => {
+  const grantedBlock = features.slice(
+    features.indexOf('YOUR PLAN INCLUDES'),
+    features.indexOf('NOT IN YOUR PLAN'),
+  )
+  assert.match(grantedBlock, /router\.push\(f\.route/)
+})
