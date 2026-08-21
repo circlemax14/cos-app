@@ -1,5 +1,4 @@
 import * as SecureStore from 'expo-secure-store';
-import { clearEntitlementCache } from './entitlement-cache';
 
 const KEYS = {
   access: 'cos_access_token',
@@ -190,20 +189,6 @@ export async function clearTokens(): Promise<void> {
     SecureStore.deleteItemAsync(KEYS.refresh),
     SecureStore.deleteItemAsync(KEYS.id),
   ]);
-
-  // COS-727 — the paid gate falls back to the device's last-known entitlements
-  // when offline. Those belong to whoever was signed in, so leaving them behind
-  // would hand the NEXT account the previous one's paid features. Cleared here
-  // rather than in signOut() because this is the one function every
-  // credential-clearing path funnels through (sign-out, 401 refresh failure,
-  // the lock screen's five-attempt bailout and Forgot-PIN).
-  //
-  // Best-effort: a storage failure must not turn signing out into an error.
-  try {
-    await clearEntitlementCache();
-  } catch {
-    // The in-memory half is already cleared, which is what protects this session.
-  }
 }
 
 /** Returns true if an access token is stored (does not validate expiry). */

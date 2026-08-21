@@ -31,14 +31,11 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { fetchAssessments } from '@/services/api/assessments';
-import { fetchConnectedClinics } from '@/services/api/clinics';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 // PlanTypeChooser Modal removed in COS-430 — the chooser is now a stack-
 // pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
 // nested-Modal collision iOS 26.5 crashed on.
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
-import PlanStatusSection from '@/components/plan/PlanStatusSection';
-import PlanFeaturesSection from '@/components/plan/PlanFeaturesSection';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
@@ -444,19 +441,6 @@ export default function HealthPlanScreen() {
     : 0;
   const canGeneratePlan = assignments?.canGenerate ?? (currentPlanType === 'basic');
 
-  // COS-745 — drives the no-plan-yet copy. Without records there is nothing to
-  // build a plan FROM, so "we're building it" would be a lie and the patient
-  // would wait forever; with records, generation really is already running.
-  const connectedClinicsQuery = useQuery({
-    queryKey: ['connected-clinics-count'],
-    queryFn: fetchConnectedClinics,
-    staleTime: 5 * 60 * 1000,
-  });
-  // Unknown counts as connected: the alternative shows "connect a clinic" to
-  // someone who already has one, which reads as the app losing their data.
-  const hasConnectedRecords =
-    connectedClinicsQuery.data === undefined || connectedClinicsQuery.data.length > 0;
-
   // SCRUM-535 / COS-397: the reload icon gates on the backend `canGenerate`
   // (SCRUM-526). When it can't generate yet, the user is routed to check-ins;
   // after they complete all of them the assignments query is invalidated from
@@ -861,11 +845,6 @@ export default function HealthPlanScreen() {
             style={[styles.container, { backgroundColor: colors.background }]}
             contentContainerStyle={{ paddingBottom: 32 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
-            <PlanStatusSection
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-            />
             <View style={{ paddingTop: 12, paddingHorizontal: 16 }}>
               <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any, textAlign: 'left', marginBottom: 4 }]}>
                 {headline}
@@ -883,33 +862,32 @@ export default function HealthPlanScreen() {
       <AppWrapper>
         <ScrollView
           style={[styles.container, { backgroundColor: colors.background }]}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
-          {/* COS-744 — one line if they have a plan, the chooser if they do
-              not. COS-740 rendered the full shelf here unconditionally, so
-              someone already on Advanced opened their care plan to a price
-              list and had to scroll past it to reach today's tasks. */}
-          <PlanStatusSection
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
-          {/*
-            COS-745 — the Generate button is gone. It was a MANUAL FALLBACK for
-            something that already happens by itself: cos-webhook step 5 POSTs
-            /v1/internal/health-plan/generate whenever records are ingested.
-
-            What replaces it has to carry the risk of removing it — a patient
-            with no plan and nothing to tap is a dead screen. PlanFeaturesSection
-            leads with WHY there is no plan yet and, when the answer is "no
-            records connected", the screen that fixes it.
-          */}
-          <PlanFeaturesSection
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            hasConnectedRecords={hasConnectedRecords}
-          />
+          <View style={styles.emptyWrap}>
+            <View style={[styles.emptyIcon, { backgroundColor: colors.tint + '18' }]}>
+              <MaterialIcons name="auto-awesome" size={32} color={colors.tint} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
+              Generate your Health Plan
+            </Text>
+            <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+              We’ll analyze your connected health records and build a personalized daily plan with goals and tasks tailored to your care.
+            </Text>
+            <TouchableOpacity
+              style={[styles.generateBtn, { backgroundColor: colors.tint }]}
+              onPress={() => onGenerate(false)}
+              disabled={generating}>
+              {generating ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <MaterialIcons name="auto-awesome" size={16} color="#fff" />
+                  <Text style={[styles.generateBtnText, { fontSize: getScaledFontSize(14) }]}>Generate plan</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </AppWrapper>
     );
@@ -1035,15 +1013,6 @@ export default function HealthPlanScreen() {
         ref={planScrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
-        {/* COS-744 — the plan label sits at the TOP here, consistent with the
-            two empty states. COS-740 had to exile the price shelf to the
-            bottom because it outranked the daily tasks; a one-line chip does
-            not, and hiding it at the very bottom made it unfindable. */}
-        <PlanStatusSection
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
         {/* COS-357: soft, recurring "review your medications" prompt. Self-
             gates on the GET flagEnabled + medsReviewNeeded and the local
             snooze, so it renders nothing when off/snoozed/back-compat. Sits
