@@ -177,13 +177,6 @@ test('the old subscription routes are gone everywhere', () => {
 
 const features = read('components/plan/PlanFeaturesSection.tsx')
 
-test('THE POINT: the Generate CTA is no longer the empty state', () => {
-  // It was a manual fallback for something cos-webhook already does on
-  // ingest. Leaving it made the tab a button instead of a plan.
-  const body = planTab.slice(planTab.indexOf('export default function'))
-  assert.doesNotMatch(body, /Generate your Health Plan/)
-  assert.match(body, /<PlanFeaturesSection/)
-})
 
 test('removing the button did not leave a dead screen', () => {
   // The whole risk of dropping the CTA: a patient with no plan and nothing to
@@ -201,11 +194,6 @@ test('the flexGrow that caused the dead gap is gone from the empty branch', () =
   assert.doesNotMatch(branch, /flexGrow: 1/)
 })
 
-test('tiles come from the backend, not a hardcoded list', () => {
-  // An admin adding a feature to a plan must reach the app with no release.
-  assert.match(features, /\/v1\/patients\/me\/plans\/features/)
-  assert.match(features, /router\.push\(f\.route/)
-})
 
 test('the features list stays inside the iOS 26 primitive envelope', () => {
   const m = features.match(/import \{([^}]+)\} from 'react-native'/)
@@ -241,28 +229,34 @@ test('Health Age keeps BOTH layers — dark-launch flag AND plan', () => {
 
 // ── COS-750: locked features greyed, not hidden ────────────────────────────
 
-test('THE POINT: what the plan does not grant is shown, not hidden', () => {
-  // Hiding it makes Basic and Advanced look like different-length lists
-  // rather than different products, with nothing concrete to upgrade for.
-  assert.match(features, /NOT IN YOUR PLAN/)
-  assert.match(features, /Upgrade to unlock/)
+
+
+
+
+// ── COS-752: the feature list is gone from the patient's screen ───────────
+
+test('THE POINT: the Care Plan tab does not list app sections back at the patient', () => {
+  // "Your care plan / Medications / Appointments" are internal plumbing — the
+  // names the app is built out of, not things a patient thinks of as theirs.
+  assert.doesNotMatch(features, /YOUR PLAN INCLUDES/)
+  assert.doesNotMatch(features, /NOT IN YOUR PLAN/)
 })
 
-test('a locked row routes to Billing, not to the feature it cannot open', () => {
-  const lockedBlock = features.slice(features.indexOf('NOT IN YOUR PLAN'))
-  assert.match(lockedBlock, /router\.push\('\/Home\/billing'/)
-  assert.doesNotMatch(lockedBlock, /router\.push\(f\.route/)
+test('the Generate CTA stays gone', () => {
+  const body = planTab.slice(planTab.indexOf('export default function'))
+  assert.doesNotMatch(body, /Generate your Health Plan/)
 })
 
-test('locked styling reads as "not yours yet", not as broken', () => {
-  assert.match(features, /tileLocked/)
-  assert.match(features, /borderStyle: 'dashed'/)
+test('what remains is the only thing the patient needs here', () => {
+  // Why there is no plan yet, and the one action that fixes it.
+  assert.match(features, /Connect your health records/)
+  assert.match(features, /Building your daily plan/)
+  assert.match(features, /router\.push\('\/Home\/connect-clinics'/)
 })
 
-test('granted rows still route to the feature itself', () => {
-  const grantedBlock = features.slice(
-    features.indexOf('YOUR PLAN INCLUDES'),
-    features.indexOf('NOT IN YOUR PLAN'),
-  )
-  assert.match(grantedBlock, /router\.push\(f\.route/)
+test('the screen still fetches nothing it does not render', () => {
+  // The component stopped calling usePlanFeatures when the list went; leaving
+  // the call would spend a request per open on data nobody sees.
+  const body = features.slice(features.indexOf('export default function PlanFeaturesSection'))
+  assert.doesNotMatch(body, /usePlanFeatures\(\)/)
 })
