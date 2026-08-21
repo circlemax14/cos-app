@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs'
 const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 
 const planTab = read('app/Home/health-plan.tsx')
-const cards = read('components/plan/PlanCardsSection.tsx')
+const cards = read('components/plan/PlanStatusSection.tsx')
 const billing = read('app/Home/billing.tsx')
 const flagHook = read('hooks/use-subscription-upgrade-flag.ts')
 const homeLayout = read('app/Home/_layout.tsx')
@@ -35,8 +35,8 @@ const menu = read('components/profile-content.tsx')
 test('the Plan tab mounts the cards in every branch, including both empty states', () => {
   // Three mounts: the generate-plan empty state, the assessments state, and
   // the main state. Miss one and that state becomes a dead end again.
-  const mounts = planTab.match(/<PlanCardsSection\b/g) ?? []
-  assert.equal(mounts.length, 3, 'expected PlanCardsSection in all three Plan tab branches')
+  const mounts = planTab.match(/<PlanStatusSection\b/g) ?? []
+  assert.equal(mounts.length, 3, 'expected PlanStatusSection in all three Plan tab branches')
 })
 
 test('the cards open the subscription screen', () => {
@@ -51,10 +51,42 @@ test('the side menu reaches the subscription screen without a health plan', () =
 
 // ── failing quietly on the Plan tab ────────────────────────────────────────
 
-test('the cards render nothing on error or when empty', () => {
+test('the plan strip renders nothing on a failed request', () => {
   // The Plan tab's job is the health plan. A patient looking for today's
   // tasks must not meet a red box about billing.
-  assert.match(cards, /if \(isError \|\| plans\.length === 0\) return null/)
+  assert.match(cards, /if \(isError\) return null/)
+})
+
+// ── COS-744: chosen vs not-chosen ──────────────────────────────────────────
+
+test('THE POINT: a patient WITH a plan gets one line, not the price shelf', () => {
+  // COS-740 rendered the shelf unconditionally, so someone already on
+  // Advanced opened their care plan every morning to a four-item price list
+  // and had to scroll past everything they had bought to reach today's tasks.
+  const chosen = cards.indexOf('if (billing?.planName)')
+  const shelf = cards.indexOf('Choose your plan')
+  assert.ok(chosen > -1, 'expected a branch keyed off the current plan')
+  assert.ok(chosen < shelf, 'the chosen-plan branch must return BEFORE the shelf renders')
+})
+
+test('the chip keys off the billing summary, not a card isCurrent flag', () => {
+  // A patient can be on a plan that is not for sale (free, or care-team
+  // assigned); those are filtered out of `plans` entirely, so isCurrent would
+  // be false for everyone and they would be shown a chooser they already used.
+  assert.match(cards, /billing\?\.planName/)
+  const chosenBranch = cards.slice(cards.indexOf('if (billing?.planName)'), cards.indexOf('Choose your plan'))
+  assert.doesNotMatch(chosenBranch, /isCurrent/)
+})
+
+test('the plan strip sits at the TOP in all three branches', () => {
+  // In the main branch it used to be pinned to the very bottom, because a
+  // price shelf outranked the daily tasks. A one-line chip does not, and at
+  // the bottom it was unfindable.
+  const scrollIdx = planTab.indexOf('ref={planScrollRef}')
+  const mountIdx = planTab.indexOf('<PlanStatusSection', scrollIdx)
+  const medsIdx = planTab.indexOf('<MedicationsReviewPrompt', scrollIdx)
+  assert.ok(mountIdx > -1 && medsIdx > -1)
+  assert.ok(mountIdx < medsIdx, 'the plan strip must render first in the main branch')
 })
 
 // ── the Upgrade button is dark ─────────────────────────────────────────────
@@ -102,7 +134,7 @@ test('new plan surfaces stay inside the iOS 26 primitive envelope', () => {
   // This app has crashed in production from cold-mount rendering, and the
   // Plan tab is a cold-mount surface.
   const allowed = new Set(['Pressable', 'StyleSheet', 'Text', 'View'])
-  for (const [file, src] of [['PlanCardsSection', cards], ['billing-checkout', read('app/Home/billing-checkout.tsx')]]) {
+  for (const [file, src] of [['PlanStatusSection', cards], ['billing-checkout', read('app/Home/billing-checkout.tsx')]]) {
     const m = src.match(/import \{([^}]+)\} from 'react-native'/)
     assert.ok(m, `${file}: expected a react-native import`)
     for (const name of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {

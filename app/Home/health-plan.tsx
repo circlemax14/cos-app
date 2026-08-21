@@ -36,7 +36,7 @@ import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 // pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
 // nested-Modal collision iOS 26.5 crashed on.
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
-import PlanCardsSection from '@/components/plan/PlanCardsSection';
+import PlanStatusSection from '@/components/plan/PlanStatusSection';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
@@ -846,7 +846,7 @@ export default function HealthPlanScreen() {
             style={[styles.container, { backgroundColor: colors.background }]}
             contentContainerStyle={{ paddingBottom: 32 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
-            <PlanCardsSection
+            <PlanStatusSection
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
@@ -870,11 +870,11 @@ export default function HealthPlanScreen() {
           style={[styles.container, { backgroundColor: colors.background }]}
           contentContainerStyle={{ flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
-          {/* COS-740 — the plans go ABOVE the generate CTA in this state.
-              Before this, a patient with no health plan hit a terminal
-              early-return here and could not reach their own plan or its
-              price by any route in the app. */}
-          <PlanCardsSection
+          {/* COS-744 — one line if they have a plan, the chooser if they do
+              not. COS-740 rendered the full shelf here unconditionally, so
+              someone already on Advanced opened their care plan to a price
+              list and had to scroll past it to reach today's tasks. */}
+          <PlanStatusSection
             colors={colors}
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
@@ -1028,6 +1028,15 @@ export default function HealthPlanScreen() {
         ref={planScrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+        {/* COS-744 — the plan label sits at the TOP here, consistent with the
+            two empty states. COS-740 had to exile the price shelf to the
+            bottom because it outranked the daily tasks; a one-line chip does
+            not, and hiding it at the very bottom made it unfindable. */}
+        <PlanStatusSection
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
         {/* COS-357: soft, recurring "review your medications" prompt. Self-
             gates on the GET flagEnabled + medsReviewNeeded and the local
             snooze, so it renders nothing when off/snoozed/back-compat. Sits
@@ -1624,17 +1633,6 @@ export default function HealthPlanScreen() {
               })}
           </>
         )}
-
-        {/* COS-740 — plans at the BOTTOM in this state, deliberately.
-            The daily tasks are what a patient opened this tab for; putting
-            pricing above them would have the priorities backwards. In the
-            two empty states the cards sit at the top instead, because there
-            is no plan competing for the space. */}
-        <PlanCardsSection
-          colors={colors}
-          getScaledFontSize={getScaledFontSize}
-          getScaledFontWeight={getScaledFontWeight}
-        />
 
         <View style={{ height: 24 }} />
       </ScrollView>
