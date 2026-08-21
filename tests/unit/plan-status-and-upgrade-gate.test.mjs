@@ -291,3 +291,29 @@ test('coming-soon comes from the dashboard, not a hardcoded list in the app', ()
 test('the card icon is plan-driven with a fallback, so no plan renders iconless', () => {
   assert.match(status, /plan\.icon \?\? 'workspace-premium'/)
 })
+
+// ── COS-754: nothing about the daily plan while still choosing ────────────
+
+test('THE POINT: the daily-plan status is silent until a plan is chosen', () => {
+  // "Building your daily plan" under the chooser answered a question the
+  // patient had not reached, and implied work was under way on a plan they
+  // had not selected.
+  assert.match(features, /if \(!data\?\.billing\?\.planName\) return null/)
+})
+
+test('both sections read the SAME signal, so they cannot disagree on state', () => {
+  // One shows the chooser, the other hides itself. Two sources for "has a
+  // plan?" would eventually render the shelf and the status block together.
+  assert.match(features, /usePatientPlans\(\)/)
+  assert.match(status, /billing\?\.planName/)
+})
+
+test('the removed list took its fetch with it', () => {
+  // Scoped to the code body: the header comment still DESCRIBES the endpoint,
+  // which is worth keeping and is not a call.
+  // `apiClient` is the real signal — a comment further down still explains
+  // where the data lives, which is worth keeping and is not a call.
+  const body = features.slice(features.indexOf('export default function PlanFeaturesSection'))
+  assert.doesNotMatch(body, /apiClient/)
+  assert.doesNotMatch(features, /useQuery\(/)
+})

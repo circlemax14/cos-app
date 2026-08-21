@@ -39,33 +39,14 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { apiClient } from '@/lib/api-client';
+import { usePatientPlans } from '@/components/plan/PlanStatusSection';
 
-export interface PlanFeature {
-  featureKey: string;
-  label: string;
-  description: string;
-  route: string;
-  surface: string;
-  granted: boolean;
-}
-
-async function fetchPlanFeatures(): Promise<{ features: PlanFeature[]; locked: PlanFeature[] }> {
-  const res = await apiClient.get('/v1/patients/me/plans/features');
-  const body = (res.data as { data?: { features?: unknown; locked?: unknown } })?.data;
-  return {
-    features: Array.isArray(body?.features) ? (body.features as PlanFeature[]) : [],
-    locked: Array.isArray(body?.locked) ? (body.locked as PlanFeature[]) : [],
-  };
-}
-
-export function usePlanFeatures() {
-  return useQuery({
-    queryKey: ['patient-plan-features'],
-    queryFn: fetchPlanFeatures,
-    staleTime: 5 * 60 * 1000,
-  });
-}
+/*
+ * COS-754 — the local fetch is gone. The list it fed was removed in COS-752,
+ * and the only thing this component still needs is whether a plan has been
+ * chosen, which usePatientPlans already answers for PlanStatusSection.
+ * Keeping a second query would have meant two sources for one question.
+ */
 
 interface Props {
   colors: { text: string; subtext?: string; tint: string; card?: string; border?: string };
@@ -81,6 +62,21 @@ export default function PlanFeaturesSection({
   getScaledFontWeight,
   hasConnectedRecords,
 }: Props) {
+  const { data } = usePatientPlans();
+
+  /*
+   * COS-754 — say nothing until a plan is chosen.
+   *
+   * This block answers "where is my daily plan?". Somebody still picking a
+   * plan has not asked that yet, so showing "Building your daily plan" under
+   * the chooser answered a question they had not reached, and implied work
+   * was already under way on a plan they had not selected.
+   *
+   * Keyed off the billing summary — the same signal PlanStatusSection uses to
+   * choose between the shelf and the chip — so the two cannot disagree about
+   * which state the screen is in.
+   */
+  if (!data?.billing?.planName) return null;
 
   return (
     <View style={styles.wrap}>
