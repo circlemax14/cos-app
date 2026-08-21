@@ -215,3 +215,26 @@ test('the features list stays inside the iOS 26 primitive envelope', () => {
     assert.ok(allowed.has(n), `unexpected primitive "${n}"`)
   }
 })
+
+// ── COS-748: the hero tiles read PLANS, not the legacy permission table ────
+
+const hero = read('components/home/HeroInsightsRow.tsx')
+
+test('THE POINT: Health Age and Wellbeing gate on entitlements, not cos-feature-permissions', () => {
+  // They were on useIsFeatureEnabled — a separate table with its own admin
+  // screen — so a plan could tick "Health Age" and nothing would happen.
+  assert.match(hero, /useCanRender\('home\.health-age-dial'\)/)
+  assert.match(hero, /useCanRender\('home\.wellbeing-score'\)/)
+  assert.doesNotMatch(hero, /useIsFeatureEnabled\('HEALTH_AGE'\)/)
+})
+
+test('the Wellbeing tile is no longer unconditional', () => {
+  // It previously rendered with no permission layer at all, so no plan could
+  // ever withhold it.
+  assert.match(hero, /\{wellbeingPerm && <WellbeingTile/)
+})
+
+test('Health Age keeps BOTH layers — dark-launch flag AND plan', () => {
+  // Losing the flag would make the tile un-killable without a release.
+  assert.match(hero, /healthAgeFlag && healthAgePerm/)
+})
