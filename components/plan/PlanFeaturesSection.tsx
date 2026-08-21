@@ -81,9 +81,6 @@ export default function PlanFeaturesSection({
   getScaledFontWeight,
   hasConnectedRecords,
 }: Props) {
-  const { data, isError } = usePlanFeatures();
-  const features = data?.features ?? [];
-  const locked = data?.locked ?? [];
 
   return (
     <View style={styles.wrap}>
@@ -118,107 +115,21 @@ export default function PlanFeaturesSection({
         )}
       </View>
 
-      {/* Silent when the request failed or the plan grants nothing routable —
-          an error about entitlements is not what this tab is for. */}
-      {!isError && features.length > 0 && (
-        <>
-          <Text
-            style={[
-              styles.heading,
-              { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as never },
-            ]}
-          >
-            YOUR PLAN INCLUDES
-          </Text>
-
-          {features.map((f) => (
-            <Pressable
-              key={f.featureKey}
-              onPress={() => router.push(f.route as never)}
-              accessibilityRole="button"
-              accessibilityLabel={`${f.label}. ${f.description}`}
-              style={[
-                styles.tile,
-                { backgroundColor: colors.card ?? 'transparent', borderColor: colors.border ?? '#E0E0E0' },
-              ]}
-            >
-              <View style={styles.tileRow}>
-                <Text
-                  style={[
-                    styles.tileLabel,
-                    { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as never },
-                  ]}
-                >
-                  {f.label}
-                </Text>
-                <Text style={[styles.chev, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(16) }]}>
-                  {'›'}
-                </Text>
-              </View>
-              {f.description ? (
-                <Text
-                  numberOfLines={2}
-                  style={[styles.tileDesc, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}
-                >
-                  {f.description}
-                </Text>
-              ) : null}
-            </Pressable>
-          ))}
-        </>
-      )}
-
       {/*
-        COS-750 — what the plan does NOT include, greyed rather than hidden.
+        COS-752 — the feature list is GONE from this screen.
 
-        Hiding it would make Basic and Advanced look like different-length
-        lists rather than different products, and leave nothing concrete to
-        upgrade for. Greying it states the difference without pretending the
-        feature is broken.
+        It listed "Your care plan", "Medications", "Appointments" and the rest.
+        Those are internal plumbing: the names of things the app is built out
+        of, not things a patient thinks of as belonging to them. A patient
+        opening Care Plan wants their day, and reads a list of app sections as
+        either a menu they did not ask for or a bill of materials.
 
-        Every row still routes — to Billing, not to the feature. A greyed row
-        that does nothing on tap is an advert; one that explains how to get it
-        is an answer.
+        The data still exists on /v1/patients/me/plans/features and still
+        drives what a plan grants. It is simply not something to show someone.
+
+        What stays is the one thing they need here: why there is no plan yet,
+        and what to do about it.
       */}
-      {!isError && locked.length > 0 && (
-        <>
-          <Text
-            style={[
-              styles.heading,
-              { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as never },
-            ]}
-          >
-            NOT IN YOUR PLAN
-          </Text>
-
-          {locked.map((f) => (
-            <Pressable
-              key={f.featureKey}
-              onPress={() => router.push('/Home/billing' as never)}
-              accessibilityRole="button"
-              accessibilityLabel={`${f.label}. Not included in your plan. Tap to see plans.`}
-              style={[styles.tile, styles.tileLocked, { borderColor: colors.border ?? '#E0E0E0' }]}
-            >
-              <View style={styles.tileRow}>
-                <Text
-                  style={[
-                    styles.tileLabel,
-                    { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as never },
-                  ]}
-                >
-                  {f.label}
-                </Text>
-                <Text style={[styles.chev, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
-                  {'\u2191'}
-                </Text>
-              </View>
-              <Text style={[styles.tileDesc, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
-                Upgrade to unlock
-              </Text>
-            </Pressable>
-          ))}
-        </>
-      )}
     </View>
   );
 }
