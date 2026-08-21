@@ -172,3 +172,46 @@ test('the old subscription routes are gone everywhere', () => {
     assert.doesNotMatch(src, /Home\/subscription/, `${name} still references the old route`)
   }
 })
+
+// ── COS-745: the Generate button is gone ───────────────────────────────────
+
+const features = read('components/plan/PlanFeaturesSection.tsx')
+
+test('THE POINT: the Generate CTA is no longer the empty state', () => {
+  // It was a manual fallback for something cos-webhook already does on
+  // ingest. Leaving it made the tab a button instead of a plan.
+  const body = planTab.slice(planTab.indexOf('export default function'))
+  assert.doesNotMatch(body, /Generate your Health Plan/)
+  assert.match(body, /<PlanFeaturesSection/)
+})
+
+test('removing the button did not leave a dead screen', () => {
+  // The whole risk of dropping the CTA: a patient with no plan and nothing to
+  // tap. Both no-plan reasons must be explained, and the fixable one must
+  // offer the screen that fixes it.
+  assert.match(features, /Connect your health records/)
+  assert.match(features, /Building your daily plan/)
+  assert.match(features, /router\.push\('\/Home\/connect-clinics'/)
+})
+
+test('the flexGrow that caused the dead gap is gone from the empty branch', () => {
+  // emptyWrap is flex:1 + minHeight:500 + centred; with flexGrow:1 above it
+  // the content floated in the middle of its own empty box.
+  const branch = planTab.slice(planTab.indexOf('<PlanStatusSection'), planTab.indexOf('<PlanFeaturesSection'))
+  assert.doesNotMatch(branch, /flexGrow: 1/)
+})
+
+test('tiles come from the backend, not a hardcoded list', () => {
+  // An admin adding a feature to a plan must reach the app with no release.
+  assert.match(features, /\/v1\/patients\/me\/plans\/features/)
+  assert.match(features, /router\.push\(f\.route/)
+})
+
+test('the features list stays inside the iOS 26 primitive envelope', () => {
+  const m = features.match(/import \{([^}]+)\} from 'react-native'/)
+  assert.ok(m)
+  const allowed = new Set(['Pressable', 'StyleSheet', 'Text', 'View'])
+  for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+    assert.ok(allowed.has(n), `unexpected primitive "${n}"`)
+  }
+})
