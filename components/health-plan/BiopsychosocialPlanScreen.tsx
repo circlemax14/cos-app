@@ -40,6 +40,8 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useCanRender } from '@/hooks/use-entitlement';
+import { usePendingRetakeRequests } from '@/hooks/use-retake-requests';
+import AssessmentGate, { blockingRequests } from '@/components/health-plan/AssessmentGate';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import {
@@ -829,6 +831,17 @@ export function BiopsychosocialPlanScreen({
    * section still renders everywhere enforcement is off, and this only bites
    * where a plan is genuinely in force.
    */
+  /*
+   * COS-761 — what is due and blocking. Declared here with the other hooks:
+   * this screen's early returns come later, and a conditional hook is the
+   * documented SIGABRT on it.
+   */
+  const retakeQuery = usePendingRetakeRequests();
+  const blockingAssessments = React.useMemo(
+    () => blockingRequests(retakeQuery.data, new Date().toISOString()),
+    [retakeQuery.data],
+  );
+
   const canWellbeingMap = useCanRender('biopsychosocial-plan.view-wellbeing-map');
   const canSelfAssessments = useCanRender('biopsychosocial-plan.view-self-assessments');
   const canDailyRoutines = useCanRender('biopsychosocial-plan.view-daily-routines');
@@ -1686,6 +1699,29 @@ export function BiopsychosocialPlanScreen({
             />
           </View>
         </ScrollView>
+      </AppWrapper>
+    );
+  }
+
+  /*
+   * COS-761 — assessments due are taken BEFORE the plan is shown.
+   *
+   * Deliberately the LAST branch: loading, error, no-tier and no-plan all win
+   * over it. Gating someone who has no plan to gate, or swallowing a failed
+   * fetch behind a questionnaire, would strand them with no way forward.
+   *
+   * AppWrapper is kept so the drawer stays reachable — it is the route to
+   * emergency contact and allergies.
+   */
+  if (blockingAssessments.length > 0) {
+    return (
+      <AppWrapper>
+        <AssessmentGate
+          due={blockingAssessments}
+          colors={colors as never}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
       </AppWrapper>
     );
   }
