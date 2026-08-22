@@ -54,6 +54,64 @@ export interface PatientRetakeRequestView {
   agencyName: string | null
   instrumentDisplayName: string
   estMinutes: number
+  /**
+   * COS-763 — the row cannot be snoozed or dismissed.
+   *
+   * The BE has enforced this since #10b: `POST /:id/snooze` and
+   * `POST /:id/dismiss` both refuse a mandatory row. It just never told the
+   * client, so the inbox card kept offering "Not now" and the patient got a
+   * 409 with nothing explaining it. The field is on the wire already
+   * (retake-request.service.ts:fromRow coerces it to a real boolean on every
+   * row, legacy included) — this only stops the app throwing it away.
+   *
+   * Set two ways: by a care manager on a single request, or by the patient's
+   * PLAN when an admin ticks `schedule.mandatoryReassessments` (COS-762), in
+   * which case every request the cadence sweeper creates carries it.
+   *
+   * Optional here rather than required because an older BE that predates the
+   * field returns rows without it, and `undefined` must read as "deferrable"
+   * — the direction that keeps the button rather than removing one the
+   * patient is entitled to.
+   */
+  mandatory?: boolean
+}
+
+/**
+ * Whether the patient may defer this request.
+ *
+ * The single place that decision is made, so the card, the gate and the
+ * snooze sheet cannot drift into disagreeing about it — which is what
+ * produced the 409 in the first place.
+ */
+export function canDeferRetakeRequest(row: Pick<PatientRetakeRequestView, 'mandatory'>): boolean {
+  return row.mandatory !== true
+}
+
+/** BE code for "you own this row, but its state forbids deferring it". */
+const MANDATORY_CODE = 'REQUEST_MANDATORY'
+
+/**
+ * COS-763 — what to tell a patient whose snooze or dismiss was refused.
+ *
+ * The sheet said "Couldn't save — try again." for every failure. On a
+ * mandatory row that is a lie in the one way that matters: trying again will
+ * never work, so the patient retries, fails, and concludes the app is broken.
+ *
+ * A 409 REQUEST_MANDATORY is a permanent, explainable answer and gets its own
+ * sentence. Everything else keeps the retry copy, because everything else
+ * genuinely is worth retrying.
+ *
+ * Matched on the BE `code` first and the 409 status second: the code is the
+ * contract, the status is the fallback for an older BE that shipped the
+ * refusal before the code.
+ */
+export function retakeDeferErrorMessage(err: unknown): string {
+  const e = err as { response?: { status?: number; data?: { code?: string } } } | undefined
+  const code = e?.response?.data?.code
+  if (code === MANDATORY_CODE || (code === undefined && e?.response?.status === 409)) {
+    return "This check-in is part of your plan, so it can't be put off. It'll stay on your home screen until it's done."
+  }
+  return "Couldn't save — try again."
 }
 
 const BASE = '/v1/patients/me/retake-requests'

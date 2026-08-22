@@ -75,3 +75,21 @@ test('the gate stays inside the iOS 26 primitive envelope', () => {
     assert.ok(allowed.has(n), `unexpected primitive "${n}"`)
   }
 })
+
+// ─── COS-763 ────────────────────────────────────────────────────────────
+
+test('THE POINT: only a MANDATORY request holds the care plan', () => {
+  // Pending is not enough. A care manager can raise an ordinary retake at any
+  // time and those are dismissible by design. If they gated too, an ad-hoc
+  // nudge would become a lockout nobody chose — and worse than a real one,
+  // because the gate offers no way out. `mandatory` is the deliberate opt-in,
+  // set per-request by a CM or plan-wide by an admin (COS-762).
+  assert.match(gate, /r\.mandatory === true/)
+})
+
+test('the non-mandatory rows keep their old home rather than vanishing', () => {
+  // They still surface on the dismissible Home inbox card. The gate narrowing
+  // must not be the only thing standing between a patient and a CM's request.
+  const card = read('components/health-plan/retake-request/RetakeRequestInboxCard.tsx')
+  assert.match(card, /usePendingRetakeRequests\(\)/)
+})

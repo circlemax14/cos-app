@@ -134,3 +134,37 @@ test('inbox card does NOT read email or last name from the row shape', () => {
   assert.ok(!/\.email\b/.test(src), 'row.email must never be rendered on this card')
   assert.ok(!/lastName\b/.test(src), 'lastName must never be rendered on this card')
 })
+
+// ─── COS-763 — a mandatory row must not offer a button that 409s ─────────
+
+test('THE POINT: "Not now" is gone on a mandatory row', () => {
+  // The BE has refused snooze and dismiss on mandatory rows since #10b, so the
+  // button was never a real choice: it took the patient into the sheet and
+  // both actions came back 409 with nothing explaining why.
+  assert.match(src, /\{canDefer && \(/)
+  const i = src.indexOf('{canDefer && (')
+  const j = src.indexOf('Not now ▾')
+  assert.ok(i > -1 && j > i, '"Not now" must sit inside the canDefer gate')
+})
+
+test('removing the button is explained, not silent', () => {
+  // A control that just disappears reads as a bug. One sentence turns it into
+  // a plan the patient is on.
+  assert.match(src, /\{!canDefer && \(/)
+  assert.match(src, /part of your plan/)
+})
+
+test('the decision is delegated, not re-derived in the card', () => {
+  // The card, the gate and the sheet disagreeing about what "mandatory" means
+  // is what produced the 409 in the first place.
+  assert.match(src, /canDeferRetakeRequest/)
+})
+
+test('the gate stays a plain && — no new wrappers on an iOS 26 surface', () => {
+  const m = src.match(/import \{([^}]+)\} from 'react-native'/)
+  assert.ok(m)
+  const allowed = new Set(['Pressable', 'StyleSheet', 'Text', 'View'])
+  for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+    assert.ok(allowed.has(n), `unexpected primitive "${n}"`)
+  }
+})

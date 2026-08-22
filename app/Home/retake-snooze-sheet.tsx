@@ -36,6 +36,7 @@ import {
   useDismissRetakeRequest,
   useSnoozeRetakeRequest,
 } from '@/hooks/use-retake-requests'
+import { retakeDeferErrorMessage } from '@/services/api/retake-requests'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -123,7 +124,9 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
         { id: requestId, untilIso: preset.computeIso() },
         {
           onSuccess: () => closeAndReturn(),
-          onError: () => setErrorMsg("Couldn't save — try again."),
+          // COS-763: a 409 REQUEST_MANDATORY is permanent. "Try again" would
+          // send the patient round a loop that cannot succeed.
+          onError: (err) => setErrorMsg(retakeDeferErrorMessage(err)),
         },
       )
     },
@@ -137,7 +140,7 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
       { id: requestId, reason: 'not_applicable' },
       {
         onSuccess: () => closeAndReturn(),
-        onError: () => setErrorMsg("Couldn't save — try again."),
+        onError: (err) => setErrorMsg(retakeDeferErrorMessage(err)),
       },
     )
   }, [busy, closeAndReturn, dismissMutation, requestId])

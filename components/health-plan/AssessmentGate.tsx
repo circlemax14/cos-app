@@ -52,12 +52,27 @@ export interface AssessmentGateProps {
 }
 
 /**
- * A request blocks the plan when it is pending and not snoozed into the future.
+ * Which pending requests actually hold the care plan.
  *
- * Snooze is honoured because it is an existing, deliberate product behaviour:
- * a patient who deferred an hour ago should not hit a wall for that hour. It
- * is the sweeper's `mandatory` flag that decides whether snooze was offered in
- * the first place.
+ * ─── ONLY MANDATORY ROWS GATE (COS-763) ──────────────────────────────
+ *
+ * Pending is not enough. A care manager can raise an ordinary retake request
+ * at any time, and those are dismissible by design — the patient may snooze
+ * them or say "doesn't apply to me". If those held the plan too, the gate
+ * would be strictly worse than a mandatory one: it offers no way out, so an
+ * ad-hoc nudge would silently become a lockout nobody chose.
+ *
+ * `mandatory` is the deliberate opt-in. It is set either by a care manager on
+ * one request, or by the patient's PLAN when an admin ticks
+ * `schedule.mandatoryReassessments` (COS-762) — which is exactly the cadence
+ * loop this gate exists to serve. Rows without it keep their existing home:
+ * the dismissible inbox card on Home.
+ *
+ * Snooze is still honoured on the rows that do gate. It cannot be set on a
+ * mandatory row going forward (the BE refuses), but a row that was snoozed
+ * BEFORE an admin turned the flag on still carries the timestamp, and holding
+ * someone to a wall they were promised a break from is the wrong way to
+ * resolve that.
  */
 export function blockingRequests(
   rows: readonly PatientRetakeRequestView[] | undefined,
@@ -65,7 +80,10 @@ export function blockingRequests(
 ): PatientRetakeRequestView[] {
   if (!rows?.length) return [];
   return rows.filter(
-    (r) => r.status === 'pending' && !(r.snoozeUntil && r.snoozeUntil > nowIso),
+    (r) =>
+      r.mandatory === true &&
+      r.status === 'pending' &&
+      !(r.snoozeUntil && r.snoozeUntil > nowIso),
   );
 }
 

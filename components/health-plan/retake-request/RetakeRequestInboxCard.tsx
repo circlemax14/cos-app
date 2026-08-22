@@ -49,6 +49,7 @@ import { router } from 'expo-router'
 import { getColors, Radii, Spacing } from '@/constants/design-system'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
+import { canDeferRetakeRequest } from '@/services/api/retake-requests'
 import type { PatientRetakeRequestView } from '@/services/api/retake-requests'
 
 /**
@@ -152,6 +153,8 @@ export function RetakeRequestInboxCard({
   // a loading spinner, or an error banner from this surface — a nudge that
   // says "nothing to nudge you about" is anti-value.
   if (!first) return null
+
+  const canDefer = canDeferRetakeRequest(first)
 
   const role = humanRole(first.requesterRole)
   const whoLine = first.agencyName
@@ -309,30 +312,57 @@ export function RetakeRequestInboxCard({
           </Text>
         </Pressable>
 
-        <Pressable
-          onPress={onNotNow}
-          accessibilityRole="button"
-          accessibilityLabel="Not now — choose to snooze or dismiss"
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={({ pressed }) => [
-            styles.secondaryBtn,
-            {
-              borderColor: colors.tint || '#008080',
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <Text
-            style={{
-              color: colors.tint || '#008080',
-              fontSize: getScaledFontSize(14),
-              fontWeight: getScaledFontWeight(600) as any,
-            }}
+        {/*
+          COS-763 — a mandatory row has no "Not now". The BE has refused
+          snooze and dismiss on these since #10b, so the button was never a
+          real choice: tapping it took the patient into the sheet and both
+          actions came back 409 with nothing explaining why. Removing it is
+          the honest version.
+        */}
+        {canDefer && (
+          <Pressable
+            onPress={onNotNow}
+            accessibilityRole="button"
+            accessibilityLabel="Not now — choose to snooze or dismiss"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={({ pressed }) => [
+              styles.secondaryBtn,
+              {
+                borderColor: colors.tint || '#008080',
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
           >
-            {'Not now ▾'}
-          </Text>
-        </Pressable>
+            <Text
+              style={{
+                color: colors.tint || '#008080',
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(600) as any,
+              }}
+            >
+              {'Not now ▾'}
+            </Text>
+          </Pressable>
+        )}
       </View>
+
+      {/*
+        Say why the choice is missing. A button that silently disappears reads
+        as a bug; one sentence turns it into a plan the patient is on. No
+        deadline is quoted — `expiresAt` is a cleanup backstop (COS-758), not
+        a promise we make to the patient.
+      */}
+      {!canDefer && (
+        <Text
+          style={{
+            color: colors.icon || '#6B7280',
+            fontSize: getScaledFontSize(12),
+            lineHeight: getScaledFontSize(12) * 1.4,
+          }}
+        >
+          This check-in is part of your plan, so it stays here until it&apos;s done.
+        </Text>
+      )}
     </View>
   )
 }
