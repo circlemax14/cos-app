@@ -168,3 +168,24 @@ test('the gate stays a plain && — no new wrappers on an iOS 26 surface', () =>
     assert.ok(allowed.has(n), `unexpected primitive "${n}"`)
   }
 })
+
+// ─── COS-765 — the intake route needs ?retake=1 to do anything ───────────
+
+test('THE POINT: the full-intake route carries retake=1', () => {
+  // IntakeWizardScreen reads `?retake=1` and nothing else. Without it, a
+  // patient who has already completed intake — which is EVERY patient a retake
+  // request can target — lands on the finished form with nothing to do.
+  // Vishal 2026-08-15: "when i click on start it took me to health summary
+  // page where is says complete and a button to take me to health summary."
+  assert.match(src, /\/Home\/patient-intake\?retake=1/)
+})
+
+test('the wizard still reads the param this route sends', () => {
+  // A trip wire across the two files: renaming the param on either side would
+  // silently restore the dead end, and nothing else would fail.
+  const wizard = readFileSync(
+    join(REPO_ROOT, 'components', 'health-plan', 'patient-intake', 'IntakeWizardScreen.tsx'),
+    'utf8',
+  )
+  assert.match(wizard, /params\.retake === '1'/)
+})

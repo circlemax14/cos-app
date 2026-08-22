@@ -105,7 +105,20 @@ export function composeRetakeCardAccessibilityLabel(row: PatientRetakeRequestVie
  * already use — see grep for `/Home/assessment-stepper`).
  */
 export function retakeStartRoute(instrumentKey: string): string {
-  if (instrumentKey === 'full-intake') return '/Home/patient-intake?source=retake-request'
+  // COS-765 — `retake=1` is not optional, it is what makes this route work.
+  //
+  // IntakeWizardScreen reads `?retake=1` and nothing else. Without it, a
+  // patient who has already completed intake — which is EVERY patient a retake
+  // request can target — lands on the finished form with a "go to health
+  // summary" button and no way to start. Vishal, 2026-08-15: "when i click on
+  // start it took me to health summary page where is says complete and a
+  // button to take me to health summary."
+  //
+  // That dead end is why the full-intake ask was pulled out of the sweeper's
+  // reassessment track. `source` is telemetry; `retake` is the mechanism.
+  if (instrumentKey === 'full-intake') {
+    return '/Home/patient-intake?retake=1&source=retake-request'
+  }
   const q = encodeURIComponent(instrumentKey)
   return `/Home/assessment-stepper?instrumentId=${q}&source=retake-request`
 }
