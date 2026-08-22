@@ -39,6 +39,7 @@ import { NutritionPlanSection } from '@/components/health-plan/NutritionPlanSect
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import {
@@ -814,6 +815,26 @@ export function BiopsychosocialPlanScreen({
   patientName: string | null;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+
+  /*
+   * COS-755 — the care plan is now COMPOSED, not a fixed tier.
+   *
+   * "Basic" and "Advanced" were hardcoded ladders with a fixed set of things
+   * in each. An admin now builds a plan from these sections and can name the
+   * result whatever they like, so the gate belongs on each section rather
+   * than on the tier — a tier check could not survive being renamed.
+   *
+   * useCanRender treats the wildcard as a grant, and the wildcard is what
+   * prod and staging return while plan_tier_enabled is unset there. So every
+   * section still renders everywhere enforcement is off, and this only bites
+   * where a plan is genuinely in force.
+   */
+  const canWellbeingMap = useCanRender('biopsychosocial-plan.view-wellbeing-map');
+  const canSelfAssessments = useCanRender('biopsychosocial-plan.view-self-assessments');
+  const canDailyRoutines = useCanRender('biopsychosocial-plan.view-daily-routines');
+  const canNutrition = useCanRender('biopsychosocial-plan.view-nutrition-plan');
+  const canMedications = useCanRender('biopsychosocial-plan.view-medications');
+  const canSharePdf = useCanRender('biopsychosocial-plan.share-plan-pdf');
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const planTypeDisplayName = usePlanTypeDisplayName();
 
@@ -1909,7 +1930,7 @@ export function BiopsychosocialPlanScreen({
               focusActionSentence={undefined}
               onCompleted={() => undefined}
             />
-            <WellbeingMapGlimpse />
+            {canWellbeingMap && <WellbeingMapGlimpse />}
           </>
         )}
         {/*
@@ -2185,7 +2206,7 @@ export function BiopsychosocialPlanScreen({
             {/* Ken 2026-08-14: collapse the three domain groups here, like the
                 SECTION_ORDER cards below. Health Trends keeps the open
                 carousels — that screen exists to show these results. */}
-            <SelfAssessmentTrends collapsible />
+            {canSelfAssessments && <SelfAssessmentTrends collapsible />}
           </View>
         )}
 
@@ -2289,11 +2310,13 @@ export function BiopsychosocialPlanScreen({
             wire name; do not "fix" the mismatch. All the copy lives in
             HabitsBanner.tsx — there are no habit/routine strings on this
             screen. */}
+        {canDailyRoutines && (
         <HabitsBanner
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+        )}
 
         {/* Nutrition plan & support — Ken 2026-08-07 asked for this in the
             BIO part of the plan; Vishal 2026-08-10 placed it BETWEEN Routines
@@ -2301,6 +2324,7 @@ export function BiopsychosocialPlanScreen({
             MedicationsBanner's card shape exactly (no horizontal margin, tint
             wash, 48pt icon well) with an amber accent so the three rows read
             as one system without nutrition looking like a meds sub-card. */}
+        {canNutrition && (
         <NutritionPlanSection
           colors={{
             card: colors.card as string,
@@ -2343,6 +2367,7 @@ export function BiopsychosocialPlanScreen({
             )
           }
         />
+        )}
 
         {/*
           Ken 2026-08-05 — Medications banner sits directly beneath
@@ -2352,11 +2377,13 @@ export function BiopsychosocialPlanScreen({
           + title + subtitle shape as HabitsBanner so both banners
           read as one system, colored green #199C4F to match the
           "Medical conditions & medications" report group. */}
+        {canMedications && (
         <MedicationsBanner
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+        )}
 
         {/*
           CHUNK 51: read-only "Here's what you'll be notified about"
@@ -2619,7 +2646,7 @@ export function BiopsychosocialPlanScreen({
           pure `plan-pdf-builder.ts`. Renders null until a plan exists, so
           the empty / skeleton branches above are unaffected.
         */}
-        <SharePlanSection patientName={patientName} />
+        {canSharePdf && <SharePlanSection patientName={patientName} />}
             </>
           );
           if (BPS_HERO_LAYOUT_ENABLED) {
