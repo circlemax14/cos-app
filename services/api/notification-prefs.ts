@@ -104,29 +104,51 @@ export async function fetchNotificationCategories(): Promise<NotificationCategor
       preferences: normalizeCategoryPrefs(data?.preferences),
     }
   } catch {
+    // A READ may fail soft: a stale view is survivable, and rendering nothing
+    // is better than an error screen on a settings page.
     return { flagEnabled: false, preferences: defaultCategoryPrefs() }
   }
 }
 
 /**
  * PUT a partial set of category preferences. Returns the server-recomputed
- * full map so the caller can prime its cache. Defensive: on failure resolves to
- * a disabled, default-prefs result rather than throwing into the UI.
+ * full map so the caller can prime its cache.
+ *
+ * ─── THIS THROWS ON FAILURE, AND MUST (COS-777) ──────────────────────
+ *
+ * It used to swallow every error and RESOLVE with
+ * `{ flagEnabled: false, preferences: defaults }`, described as "defensive".
+ * It was the opposite: because it resolved, React Query treated a failed save
+ * as a SUCCESS, so the onError rollback in useUpdateNotificationCategories was
+ * unreachable dead code and onSuccess ran with the fabricated result.
+ *
+ * That result then did real damage. `flagEnabled: false` makes
+ * buildCategoryGateFromPrefs return `undefined`
+ * (notification-category-gate.ts:47), and plan-task-notifications.ts reads an
+ * undefined gate as "every category enabled"
+ * (`categoryPrefs?.medicationTask !== false`). onSuccess immediately calls
+ * reconcilePlanTaskNotifications with that gate — so a FAILED attempt to turn
+ * a category OFF re-scheduled the entire local notification queue with every
+ * category ON.
+ *
+ * The toggle showed off, nothing was saved, and the device got MORE
+ * notifications than before it was touched.
+ *
+ * A read may fail soft — a stale view is survivable. A write must not: silently
+ * discarding it is how a patient ends up believing they opted out.
  */
 export async function updateNotificationCategories(
   partial: Partial<Record<NotificationCategory, boolean>>,
 ): Promise<NotificationCategoriesResponse> {
-  try {
-    const res = await apiClient.put<{
-      success: boolean
-      data: { flagEnabled?: boolean; preferences?: unknown }
-    }>('/v1/patients/me/notification-prefs/categories', partial)
-    const data = res.data?.data
-    return {
-      flagEnabled: data?.flagEnabled === true,
-      preferences: normalizeCategoryPrefs(data?.preferences),
-    }
-  } catch {
-    return { flagEnabled: false, preferences: defaultCategoryPrefs() }
+  // No try/catch, deliberately. See the note above: swallowing here fabricated
+  // a success that re-enabled every category on the device.
+  const res = await apiClient.put<{
+    success: boolean
+    data: { flagEnabled?: boolean; preferences?: unknown }
+  }>('/v1/patients/me/notification-prefs/categories', partial)
+  const data = res.data?.data
+  return {
+    flagEnabled: data?.flagEnabled === true,
+    preferences: normalizeCategoryPrefs(data?.preferences),
   }
 }

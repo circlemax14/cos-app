@@ -304,6 +304,18 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
               <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginBottom: 12, lineHeight: 18 }}>
                 Choose which kinds of notifications you want to receive. Turn off any you don&apos;t need.
               </Text>
+              {/* COS-777 — a failed save now ROLLS BACK the switch, which
+                  without a word looks like the toggle simply bounced. Before
+                  this, the write swallowed its own error and reported success,
+                  so nothing rolled back and nothing was said — the switch
+                  stayed off while the server still had it on.
+                  iOS 26 envelope: plain Text inside a plain && gate. */}
+              {categoriesMutation.isError && (
+                <Text style={{ color: '#B91C1C', fontSize: getScaledFontSize(12), marginBottom: 12, lineHeight: 18 }}>
+                  That didn&apos;t save — your notification settings are unchanged. Check your
+                  connection and try the switch again.
+                </Text>
+              )}
               {NOTIFICATION_CATEGORY_KEYS.map((key) => {
                 const spec = CATEGORY_SPECS[key]
                 const enabled = categoryPrefs[key]
