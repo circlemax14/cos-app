@@ -6,6 +6,9 @@ import { Platform } from 'react-native';
 import { apiClient } from '@/lib/api-client';
 import { routeForNotificationData } from '@/lib/notification-routing';
 import { queryClient } from '@/providers/QueryProvider';
+// COS-778 — the lock check and the replay queue for inbound navigation.
+import { isAppLocked } from '@/lib/lock-gate';
+import { deferNavigation } from '@/lib/locked-nav-queue';
 
 /**
  * CHUNK 64 (2026-07-22): read the biopsychosocial-plan eligibility off
@@ -206,12 +209,40 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
     // ?focus=medications` (activating the chunk-55 scroll/announce
     // handler). Ineligible / cache-empty → legacy /Home/health-plan.
     const route = routeForNotificationData(data, { bpsEnabled: isBpsEligibleCached() });
+    const target = route ?? '/Home';
+
+    /*
+     * COS-778 / SCRUM-721 — DO NOT NAVIGATE WHILE LOCKED.
+     *
+     * This line used to push unconditionally. Because the PIN "lock" is only a
+     * router.replace onto the stack and not a render gate, that push landed a
+     * PHI route ON TOP of the lock screen — the one bypass of the four that
+     * needs no precondition at all. Nothing but a notification arriving.
+     *
+     * Dropping the navigation outright would fix the leak and produce a
+     * support ticket, so the intent is deferred and replayed by
+     * resumeAfterUnlock() once the user has actually authenticated.
+     *
+     * The invalidateQueries calls above are deliberately left OUTSIDE this
+     * check: refreshing a cache is not a navigation and not a render, and
+     * having fresh data ready the moment they unlock is the behaviour we want.
+     * (Note the separate known limit from SCRUM-721 — React Query keeps
+     * fetching into cache while locked regardless; that is tracked there, not
+     * papered over here.)
+     */
+    if (isAppLocked()) {
+      deferNavigation(target);
+      return;
+    }
     // null → Home default (back-compat for unknown/new/data-ready types).
-    router.push((route ?? '/Home') as never);
+    router.push(target as never);
   } catch {
     // Never let a navigation failure crash the notification pipeline.
     // Fall back to Home so the tap still does something sensible.
     try {
+      // Same rule on the fallback path — a navigation failure must not become
+      // a way past the lock.
+      if (isAppLocked()) return;
       router.push('/Home' as never);
     } catch {
       // Router not ready — nothing more we can do; cold start will retry.

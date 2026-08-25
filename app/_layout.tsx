@@ -112,7 +112,17 @@ function StackWithAppLock() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
-      <Stack.Screen name="(security)" options={{ headerShown: false }} />
+      {/* COS-778 — gestureEnabled:false is NOT cosmetic here.
+          `router.replace` leaves the previous root-level screen mounted
+          underneath the lock screen, and nothing in this repo set
+          gestureEnabled. headerShown:false does NOT disable the iOS
+          left-edge swipe-back, so the gesture walked straight back onto
+          live PHI (bypass #1, SCRUM-721). This closes the gesture; the
+          shield and dismissAll close the rest. */}
+      <Stack.Screen
+        name="(security)"
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
       <Stack.Screen name="Home" options={{ headerShown: false }} />
       {/* Ken 2026-08-07 (#19) — (personal-info) route group removed.
           The screen moved INTO the Tabs navigator at
