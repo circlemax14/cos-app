@@ -5,6 +5,7 @@ import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useHasExplicitGrant } from '@/hooks/use-entitlement';
+import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
 import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
 import { useUserPhoto } from '@/stores/user-photo-store';
@@ -87,6 +88,9 @@ export function ProfileContent({
   // only when backend flag `habit_journal_enabled` (or the per-user
   // beta override) resolves to true.
   const habitJournalEnabled = useHabitJournalFlag();
+  // COS-784 — the plan shelf entry. Default OFF while the flag query loads, so
+  // a pricing row never flashes in on cold start during a dark launch.
+  const planShelfEnabled = usePlanShelfFlag();
   const habitsInPlanFlagEnabled = useHabitsInPlanFlag();
 
   const [patientName, setPatientName] = useState('User');
@@ -556,10 +560,24 @@ export function ProfileContent({
               iconName="shield"
               label="Security"
               onPress={() => router.push('/Home/security-settings' as never)}
+              divider={planShelfEnabled}
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            {/* COS-784 — flag-gated. A plain `{cond && <X />}` rather than a
+                ternary or a wrapper: this file renders on the drawer's cold
+                mount, which is the path with the iOS 26 crash history. */}
+            {planShelfEnabled && (
+              <DrawerRow
+                iconName="card-membership"
+                label="Your plan"
+                onPress={() => router.push('/Home/plans' as never)}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
           </View>
 
           <View style={{ marginTop: 14 }}>

@@ -55,6 +55,7 @@ import { useHealthAge } from '@/hooks/use-health-age';
 // Self-gated: DailyReadCard returns null when flag OFF (defense in depth).
 // Copy is HONEST placeholder pending Ken clinical + design review.
 import { DailyReadCard } from '@/components/home/DailyReadCard';
+import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
 // 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
 import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
@@ -2957,6 +2958,11 @@ function HomeScreenInner() {
   // path; the shared /v1/feature-flags cache is already in memory.
   const dailyReadEnabled = useDailyReadFlag();
 
+  // COS-784 — the plan shelf tile. Reads the shared /v1/feature-flags cache
+  // that is already in memory, so this costs nothing on the flag-off path and
+  // the tile is byte-identical to today's Home when OFF.
+  const planShelfEnabled = usePlanShelfFlag();
+
   // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
   // built from today's driver metrics. Chat route auto-sends the
   // prefill once on mount (see app/Home/health-chat.tsx).
@@ -3964,6 +3970,50 @@ function HomeScreenInner() {
               })}
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* COS-784 — Your plan.
+            Additive and flag-gated: a plain `{cond && <View/>}` using only
+            primitives Home ALREADY imports (View / Text / Pressable /
+            MaterialIcons). No new wrapper component and no new react-native
+            import, because this file is the one with the iOS 26 cold-mount
+            crash history (ADR-0003) and an unfamiliar primitive here is how
+            that happens again.
+
+            The tile deliberately shows no price. It is a signpost, not a
+            second pricing surface to keep in step with the screen it opens. */}
+        {planShelfEnabled && (
+          <Pressable
+            onPress={() => router.push('/Home/plans' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Your plan"
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginHorizontal: 16,
+              marginBottom: 16,
+              padding: 16,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            }}
+          >
+            <MaterialIcons name="card-membership" size={getScaledFontSize(22)} color={colors.tint} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: settings.isBoldTextEnabled ? '700' : '600',
+              }}>
+                Your plan
+              </Text>
+              <Text style={{ color: colors.icon, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+                See what your plan includes
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.icon} />
+          </Pressable>
         )}
 
         {/* SCRUM-279 (2026-06-03): Recommended Appointments section
