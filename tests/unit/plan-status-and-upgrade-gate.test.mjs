@@ -161,9 +161,18 @@ test('THE POINT: Billing has a back affordance at the TOP of the scroll', () => 
   assert.match(body, /router\.back\(\)/)
 })
 
-test('the drawer says Billing, not a third meaning of "plan"', () => {
+// COS-742 banned a drawer row called "Your plan" because "plan" already meant
+// the daily health plan and the assessment intensity. COS-784 then added the
+// read-only plan shelf on a branch where COS-742 did not exist, and Vishal
+// chose on 2026-08-29 to keep both rows rather than block the shelf on a
+// rename. So the ban is lifted DELIBERATELY, not forgotten.
+//
+// What still matters, and is what this now pins: Billing must remain, and it
+// must stay the row that reaches /Home/billing. The shelf is a separate,
+// flag-gated row and must not quietly replace it.
+test('Billing remains the entry point to the patient\'s own plan', () => {
   assert.match(menu, /label="Billing"/)
-  assert.doesNotMatch(menu, /label="Your plan"/)
+  assert.match(menu, /router\.push\('\/Home\/billing' as never\)/)
 })
 
 test('the old subscription routes are gone everywhere', () => {

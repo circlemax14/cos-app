@@ -365,6 +365,15 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* COS-784 — the plan shelf. `href: null` keeps it off the tab bar; it is
+          reached from the Profile drawer and the Home tile, both flag-gated. */}
+      <Tabs.Screen
+        name="plans"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="linked-accounts"
         options={{

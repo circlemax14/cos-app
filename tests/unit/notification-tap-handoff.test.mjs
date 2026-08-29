@@ -174,11 +174,28 @@ test('(c) return value binds to a const/let identifier that is then passed to ro
   )
   const routeIdent = bindMatch[1]
 
-  // Step 2: assert the identifier appears inside a router.push(...) or
-  // router.replace(...) argument list. `\b` around the identifier
-  // prevents `route` from matching a longer name like `routeList`.
+  // Step 2: assert the identifier reaches a router.push/replace call.
+  //
+  // COS-778 widened this by ONE alias hop. The handler now reads:
+  //     const route  = routeForNotificationData(...)
+  //     const target = route ?? '/Home'
+  //     if (isAppLocked()) { deferNavigation(target); return }
+  //     router.push(target as never)
+  // — because the lock check needs the resolved value before deciding whether
+  // to navigate at all (SCRUM-721 bypass #2: a tap used to push a PHI route on
+  // top of the lock screen).
+  //
+  // The ORIGINAL INTENT is unchanged and still enforced: the computed route
+  // must reach the router, so dropping the assignment or hard-coding a literal
+  // still fails. What is now allowed is naming the resolved value once on the
+  // way. Only a direct alias (`const X = route ...`) counts — an unrelated
+  // identifier would not match.
+  const aliasMatch = NAV_FN_BODY.match(
+    new RegExp(`(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${routeIdent}\\b`),
+  )
+  const accepted = [routeIdent, aliasMatch?.[1]].filter(Boolean).join('|')
   const routerCallPattern = new RegExp(
-    `router\\.(?:push|replace)\\(\\s*\\(?[^)]*\\b${routeIdent}\\b`,
+    `router\\.(?:push|replace)\\(\\s*\\(?[^)]*\\b(?:${accepted})\\b`,
   )
   assert.match(
     NAV_FN_BODY,
