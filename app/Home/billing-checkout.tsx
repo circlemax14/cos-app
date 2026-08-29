@@ -32,8 +32,10 @@
  * View / Text / Pressable only.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { usePaymentGateways } from '@/hooks/use-payment-gateways';
+import { launchPurchase, describeOutcome } from '@/lib/launch-purchase';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
@@ -54,8 +56,50 @@ export default function BillingCheckoutScreen() {
    * When the Checkout Session endpoint lands these are exactly the two values
    * it needs, so they are already being carried.
    */
-  const { planName, cycle } = useLocalSearchParams<{ planName?: string; cycle?: string }>();
+  const { planKey, planName, cycle } = useLocalSearchParams<{
+    planKey?: string;
+    planName?: string;
+    cycle?: string;
+  }>();
   const cycleLabel = cycle === 'annual' ? 'annually' : cycle === 'monthly' ? 'monthly' : null;
+
+  /*
+   * COS-791 — the screen now attempts a real purchase when a gateway is live.
+   *
+   * `canPay` is FALSE while the query is loading and false on error, so the
+   * honest "not available yet" copy below is what renders by default. A
+   * Subscribe button that cannot complete is worse than none — and on iOS a
+   * premium surface that cannot transact is exactly what Guideline 2.1 pulled
+   * the Services entry for (SCRUM-319).
+   */
+  const { gateways, isLoading: gatewaysLoading, canPay } = usePaymentGateways();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function onSubscribe() {
+    const gateway = gateways[0];
+    if (!gateway || !planKey || busy) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      const outcome = await launchPurchase({
+        gateway: gateway.id,
+        planKey,
+        cycle: cycle === 'annual' ? 'annual' : 'monthly',
+      });
+      // 'opened-external' means the system browser has taken over; saying
+      // anything here would talk over it. The other two need explaining.
+      if (outcome.status !== 'opened-external') {
+        setProblem(describeOutcome(outcome));
+      }
+    } catch (err) {
+      setProblem(
+        err instanceof Error ? err.message : 'Could not start checkout. Please try again, or ask your care team.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -72,10 +116,42 @@ export default function BillingCheckoutScreen() {
           {cycleLabel ? `${planName} · billed ${cycleLabel}` : planName}
         </Text>
       ) : null}
-      <Text style={[styles.body, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
-        We can&apos;t take payment in the app just yet. To change your plan, talk to your care team — they can move
-        you over straight away.
-      </Text>
+      {canPay && (
+        <Text style={[styles.body, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
+          You&apos;ll finish subscribing securely in your browser, then come straight back here.
+        </Text>
+      )}
+      {canPay && (
+        <Pressable
+          onPress={() => void onSubscribe()}
+          disabled={busy || !planKey}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy || !planKey, busy }}
+          accessibilityLabel={`Subscribe to ${planName ?? 'this plan'}${cycleLabel ? `, billed ${cycleLabel}` : ''}`}
+          style={({ pressed }) => [
+            styles.subscribe,
+            { backgroundColor: colors.tint, opacity: pressed || busy || !planKey ? 0.7 : 1 },
+          ]}
+        >
+          {/* A Text label rather than a spinner: this screen is inside the
+              iOS 26 primitive envelope (View / Text / Pressable only), and
+              the envelope exists because this app has crashed in production
+              from cold-mount rendering. */}
+          <Text style={[styles.subscribeText, { fontSize: getScaledFontSize(15) }]}>
+            {busy ? 'Opening…' : 'Subscribe'}
+          </Text>
+        </Pressable>
+      )}
+      {!canPay && (
+        <Text style={[styles.body, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
+          {gatewaysLoading
+            ? 'Checking payment options…'
+            : "We can't take payment in the app just yet. To change your plan, talk to your care team — they can move you over straight away."}
+        </Text>
+      )}
+      {problem !== null && (
+        <Text style={[styles.problem, { fontSize: getScaledFontSize(13) }]}>{problem}</Text>
+      )}
       <Pressable
         onPress={() => router.back()}
         accessibilityRole="button"
@@ -92,6 +168,9 @@ const styles = StyleSheet.create({
   title: { marginBottom: 10, textAlign: 'center' },
   chosen: { textAlign: 'center', marginBottom: 14, fontWeight: '700' },
   body: { lineHeight: 22, textAlign: 'center', marginBottom: 28 },
+  subscribe: { borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginBottom: 14 },
+  subscribeText: { color: '#FFFFFF', fontWeight: '700' },
+  problem: { color: '#B91C1C', textAlign: 'center', marginBottom: 14, lineHeight: 19 },
   back: { borderWidth: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   backText: { fontWeight: '600' },
 });
