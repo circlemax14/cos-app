@@ -34,7 +34,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
 
@@ -43,6 +43,19 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 export default function BillingCheckoutScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  /*
+   * COS-789 — the shelf now sends WHICH plan and WHICH billing cycle. Nothing
+   * here can act on them yet, but naming them back is the difference between
+   * "this app ignored what I tapped" and "this app understood me and cannot
+   * finish". Subscribe-monthly and subscribe-annually are two different
+   * requests, and a screen that answers both identically reads as broken.
+   *
+   * When the Checkout Session endpoint lands these are exactly the two values
+   * it needs, so they are already being carried.
+   */
+  const { planName, cycle } = useLocalSearchParams<{ planName?: string; cycle?: string }>();
+  const cycleLabel = cycle === 'annual' ? 'annually' : cycle === 'monthly' ? 'monthly' : null;
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -54,6 +67,11 @@ export default function BillingCheckoutScreen() {
       >
         Payments aren&apos;t available yet
       </Text>
+      {planName ? (
+        <Text style={[styles.chosen, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
+          {cycleLabel ? `${planName} · billed ${cycleLabel}` : planName}
+        </Text>
+      ) : null}
       <Text style={[styles.body, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
         We can&apos;t take payment in the app just yet. To change your plan, talk to your care team — they can move
         you over straight away.
@@ -72,6 +90,7 @@ export default function BillingCheckoutScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, padding: 24, justifyContent: 'center' },
   title: { marginBottom: 10, textAlign: 'center' },
+  chosen: { textAlign: 'center', marginBottom: 14, fontWeight: '700' },
   body: { lineHeight: 22, textAlign: 'center', marginBottom: 28 },
   back: { borderWidth: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   backText: { fontWeight: '600' },

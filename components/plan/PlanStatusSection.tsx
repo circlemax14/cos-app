@@ -31,13 +31,14 @@
  * cold-mount rendering, and the Plan tab is a cold-mount surface.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
+import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 
 export interface PatientPlanCard {
   status: string | null;
@@ -102,6 +103,13 @@ interface Props {
 
 export default function PlanStatusSection({ colors, getScaledFontSize, getScaledFontWeight }: Props) {
   const { data, isError } = usePatientPlans();
+  // One open at a time. An accordion rather than per-card flags because the
+  // whole point of collapsing the detail was to stop this section pushing the
+  // daily tasks off the screen — several open at once puts it straight back.
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  // Same gate the Billing screen uses. There is no payment integration, so
+  // the subscribe controls ship dark on prod and live on dev.
+  const subscribeEnabled = useSubscriptionUpgradeFlag();
   const plans = data?.plans ?? [];
   const billing = data?.billing ?? null;
 
@@ -169,6 +177,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         // The plan they are already on. Reads the server's flag rather than
         // comparing keys here — see PlanShelfCard.isCurrent.
         const current = plan.isCurrent === true;
+        const open = openKey === plan.planKey;
 
         return (
           // A View, not a Pressable. Each card now carries its own explicit
@@ -246,28 +255,101 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               </Text>
             ) : null}
 
-            {plan.highlights.map((h) => (
-              <Text key={h} style={[styles.bullet, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
-                {`✓  ${h}`}
-              </Text>
-            ))}
+            {/* Your own plan lists what you get without asking. On the others
+                it is the payload of the expander, so a shelf of four plans is
+                four short cards rather than a wall the daily tasks sit below. */}
+            {(current || open) &&
+              plan.highlights.map((h) => (
+                <Text key={h} style={[styles.bullet, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
+                  {`✓  ${h}`}
+                </Text>
+              ))}
 
             {/* Nothing to upgrade to on the plan you hold, and a coming-soon
                 tier cannot be chosen yet — so neither gets a control. */}
             {!current && !comingSoon && (
               <Pressable
-                onPress={() => router.push('/Home/billing' as never)}
+                onPress={() => setOpenKey(open ? null : plan.planKey)}
                 accessibilityRole="button"
-                accessibilityLabel={`Upgrade to the ${plan.name} plan. Opens billing.`}
+                accessibilityState={{ expanded: open }}
+                accessibilityLabel={
+                  open
+                    ? `Hide details for the ${plan.name} plan.`
+                    : `Upgrade to the ${plan.name} plan. Shows what is included and how to subscribe.`
+                }
                 style={({ pressed }) => [
                   styles.upgradeBtn,
                   { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
                 ]}
               >
                 <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
-                  Upgrade to this plan
+                  {open ? 'Hide details' : 'Upgrade to this plan'}
                 </Text>
               </Pressable>
+            )}
+
+            {/* ── the expanded detail ─────────────────────────────────────
+                Opens in place. It deliberately does NOT navigate: the whole
+                value of the shelf is comparing plans side by side, and pushing
+                a screen to read one of them throws that away. */}
+            {!current && !comingSoon && open && (
+              <View style={[styles.detail, { borderTopColor: colors.border ?? '#E0E0E0' }]}>
+                {subscribeEnabled && monthly ? (
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/Home/billing-checkout',
+                        params: { planKey: plan.planKey, planName: plan.name, cycle: 'monthly' },
+                      } as never)
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Subscribe to ${plan.name} monthly at ${monthly}.`}
+                    style={({ pressed }) => [
+                      styles.subscribeBtn,
+                      { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.subscribeText, { fontSize: getScaledFontSize(14) }]}>
+                      {`Subscribe monthly · ${monthly}`}
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                {/* Only offered when the plan actually has an annual price —
+                    a second button quoting the monthly figure twice would be
+                    a worse lie than having one button. */}
+                {subscribeEnabled && annual ? (
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/Home/billing-checkout',
+                        params: { planKey: plan.planKey, planName: plan.name, cycle: 'annual' },
+                      } as never)
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      `Subscribe to ${plan.name} annually at ${annual}.` +
+                      (annualSavingPct ? ` Saves ${String(annualSavingPct)} percent.` : '')
+                    }
+                    style={({ pressed }) => [
+                      styles.subscribeBtnAlt,
+                      { borderColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.subscribeTextAlt, { color: colors.tint, fontSize: getScaledFontSize(14) }]}>
+                      {`Subscribe annually · ${annual}${annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}`}
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                {/* Flag off: say why there is no button rather than showing a
+                    dead one. Guideline 2.1 pulled a surface for less. */}
+                {!subscribeEnabled && (
+                  <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
+                    Your care team can switch you to this plan — in-app subscribing is not available yet.
+                  </Text>
+                )}
+              </View>
             )}
           </View>
         );
@@ -296,6 +378,12 @@ const styles = StyleSheet.create({
   currentBadgeText: { color: '#FFFFFF', fontWeight: '700', letterSpacing: 0.8 },
   upgradeBtn: { marginTop: 14, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   upgradeText: { color: '#FFFFFF', fontWeight: '700' },
+  detail: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, gap: 10 },
+  subscribeBtn: { borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
+  subscribeText: { color: '#FFFFFF', fontWeight: '700' },
+  subscribeBtnAlt: { borderWidth: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
+  subscribeTextAlt: { fontWeight: '700' },
+  detailNote: { lineHeight: 19 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   soonBadge: { letterSpacing: 0.8, fontWeight: '700' },
   name: { flex: 1 },

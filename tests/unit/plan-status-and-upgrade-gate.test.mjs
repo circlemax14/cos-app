@@ -362,11 +362,14 @@ test('the default plan is marked as theirs and offers nothing to upgrade to', ()
   assert.match(cards, /\{!current && !comingSoon && \(/)
 })
 
-test('every other plan offers an explicit upgrade that reaches billing', () => {
+test('every other plan offers an explicit upgrade control', () => {
+  // COS-789 changed what this control DOES: it used to push /Home/billing,
+  // it now expands the detail in place. The earlier version of this test
+  // searched BACKWARDS from the button and kept finding the chip's push
+  // further up the file, so it passed while asserting nothing about the
+  // button at all. Assert the toggle instead.
   assert.match(cards, /Upgrade to this plan/)
-  const upgradeIdx = cards.indexOf('Upgrade to this plan')
-  const pushIdx = cards.lastIndexOf("router.push('/Home/billing' as never)", upgradeIdx)
-  assert.ok(pushIdx > -1, 'the upgrade control must navigate to billing')
+  assert.match(cards, /setOpenKey\(open \? null : plan\.planKey\)/)
 })
 
 test('isDefaultPlan is optional, so an older backend degrades to the chip', () => {
@@ -403,4 +406,55 @@ test('billing has the same chrome as every other screen', () => {
     /backgroundColor: colors\.background/,
     'billing must not repaint over AppWrapper decoration either',
   )
+})
+
+// ── COS-789: order, and the detail that opens in place ────────────────────
+
+test('THE POINT: the detail opens in place and does not navigate away', () => {
+  // The value of a shelf is comparing plans side by side. Pushing a screen to
+  // read one of them throws that away, which is why the upgrade control is a
+  // toggle and not a router.push.
+  assert.match(cards, /accessibilityState=\{\{ expanded: open \}\}/)
+  assert.match(cards, /open \? 'Hide details' : 'Upgrade to this plan'/)
+})
+
+test('one card open at a time', () => {
+  // Collapsing the detail exists to stop this section pushing the daily tasks
+  // off screen; several open at once puts it straight back.
+  assert.match(cards, /const \[openKey, setOpenKey\] = useState<string \| null>\(null\)/)
+  assert.match(cards, /const open = openKey === plan\.planKey/)
+})
+
+test('your own plan shows what you get without being asked', () => {
+  assert.match(cards, /\{\(current \|\| open\) &&/)
+})
+
+test('subscribing rides the SAME dark-launch gate as the Billing screen', () => {
+  // There is no payment integration. This must not become a second, ungated
+  // way to reach a premium surface — that is what Guideline 2.1 pulled.
+  assert.match(cards, /useSubscriptionUpgradeFlag/)
+  assert.match(cards, /subscribeEnabled && monthly/)
+  assert.match(cards, /subscribeEnabled && annual/)
+})
+
+test('with the gate off it explains itself instead of showing a dead button', () => {
+  assert.match(cards, /\{!subscribeEnabled && \(/)
+  assert.match(cards, /in-app subscribing is not available yet/)
+})
+
+test('annual is offered only when the plan actually has an annual price', () => {
+  // Two buttons both quoting the monthly figure would be a worse lie than one.
+  const annualIdx = cards.indexOf("cycle: 'annual'")
+  assert.ok(annualIdx > -1, 'expected an annual subscribe path')
+  assert.match(cards.slice(0, annualIdx), /subscribeEnabled && annual \? \(/)
+})
+
+test('the checkout seam is told which plan and which cycle', () => {
+  const checkout = read('app/Home/billing-checkout.tsx')
+  assert.match(cards, /params: \{ planKey: plan\.planKey, planName: plan\.name, cycle: 'monthly' \}/)
+  assert.match(cards, /params: \{ planKey: plan\.planKey, planName: plan\.name, cycle: 'annual' \}/)
+  // And it must actually READ them — otherwise the two buttons land on an
+  // identical screen and the app looks like it ignored the tap.
+  assert.match(checkout, /useLocalSearchParams/)
+  assert.match(checkout, /billed \$\{cycleLabel\}/)
 })
