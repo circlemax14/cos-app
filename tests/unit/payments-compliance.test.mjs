@@ -107,3 +107,33 @@ test('no way to pay is the DEFAULT, not an error state', () => {
   assert.match(code, /const gateways = q\.data \?\? \[\]/)
   assert.match(code, /canPay: gateways\.length > 0/)
 })
+
+// ── COS-792: cancellation semantics on the client ─────────────────────────
+
+const billing = read('app/Home/billing.tsx')
+
+test('THE POINT: a cancelling patient is shown the DATE, not just "cancelled"', () => {
+  // They keep everything until the period ends — up to eleven months for an
+  // annual plan. The word "cancelled" alone would alarm someone who has lost
+  // nothing yet, and hide the one fact that matters.
+  assert.match(billing, /cancelAtPeriodEnd === true/)
+  assert.match(billing, /Ends on \$\{endsOn\}/)
+  assert.match(billing, /you keep everything until then/)
+})
+
+test('a pending cancellation can be undone', () => {
+  assert.match(billing, /Keep my plan/)
+  assert.match(billing, /resumeSubscription/)
+})
+
+test('the free default plan offers no cancel control', () => {
+  // Nothing to cancel, and offering it implies there is something to lose.
+  assert.match(billing, /!cancelling && !billing\.isDefaultPlan/)
+})
+
+test('a store cancellation sends the patient to the store, not a dead message', () => {
+  // Apple and Google cannot be cancelled server-side, so a message the patient
+  // has to act on later is a subscription that never actually stops.
+  assert.match(billing, /out\.manageUrl/)
+  assert.match(billing, /Linking\.openURL\(out\.manageUrl\)/)
+})

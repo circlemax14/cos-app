@@ -63,3 +63,47 @@ export async function verifyStorePurchase(
   const res = await apiClient.post('/v1/payments/verify', proof);
   return (res.data as { data: { applied: boolean; planKey: string } }).data;
 }
+
+/* ── COS-792: managing an existing subscription ──────────────────────── */
+
+export interface PaymentHistoryItem {
+  paymentId: string;
+  planName: string;
+  cycle: 'monthly' | 'annual';
+  status: 'succeeded' | 'refunded' | 'failed' | 'pending';
+  amountCents: number | null;
+  currency: string | null;
+  createdAt: string;
+  periodEnd: string | null;
+}
+
+export async function fetchPaymentHistory(): Promise<PaymentHistoryItem[]> {
+  const res = await apiClient.get('/v1/payments/history');
+  const body = (res.data as { data?: { payments?: unknown } })?.data;
+  return Array.isArray(body?.payments) ? (body.payments as PaymentHistoryItem[]) : [];
+}
+
+export interface CancellationOutcome {
+  /** True when the provider has it scheduled. False = finish in the store. */
+  scheduled: boolean;
+  effectiveAt: string | null;
+  /** Apple / Google only — where the patient has to go to finish. */
+  manageUrl?: string;
+  message: string;
+}
+
+export async function cancelSubscription(reason?: string): Promise<CancellationOutcome> {
+  const res = await apiClient.post('/v1/payments/cancel', reason ? { reason } : {});
+  return (res.data as { data: CancellationOutcome }).data;
+}
+
+export async function resumeSubscription(): Promise<void> {
+  await apiClient.post('/v1/payments/resume', {});
+}
+
+/** `$39.99`, or an em dash when the provider never told us the amount. */
+export function formatPaymentAmount(cents: number | null, currency: string | null): string {
+  if (cents === null || cents === undefined) return '—';
+  const symbol = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$';
+  return `${symbol}${(cents / 100).toFixed(2)}`;
+}

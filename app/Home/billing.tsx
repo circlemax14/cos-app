@@ -56,9 +56,17 @@
  * place to introduce a primitive.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppWrapper } from '@/components/app-wrapper';
+import { Linking } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  cancelSubscription,
+  resumeSubscription,
+  fetchPaymentHistory,
+  formatPaymentAmount,
+} from '@/services/api/payments';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
@@ -101,6 +109,18 @@ export interface BillingSummary {
   currentPeriodEnd: string | null;
   pricing: PlanCard['pricing'];
   trial: { endsAt: string | null; daysRemaining: number | null; convertsTo: string | null } | null;
+  /**
+   * COS-792 — they asked to stop renewing, and when it actually ends.
+   *
+   * NOTE: this is the THIRD declaration of this shape in the app —
+   * components/plan/PlanStatusSection.tsx and services/api/patient-plans.ts
+   * have the other two, all describing /v1/patients/me/plans. Every field
+   * added to the endpoint now has to be added in three places, which is
+   * exactly how they drift. Collapsing them is overdue.
+   */
+  cancelAtPeriodEnd?: boolean;
+  cancelEffectiveAt?: string | null;
+  isDefaultPlan?: boolean;
 }
 
 async function fetchBilling(): Promise<{ plans: PlanCard[]; billing: BillingSummary | null }> {
@@ -152,6 +172,62 @@ export default function BillingScreen() {
   const billing = data?.billing ?? null;
   const renewal = formatDate(billing?.currentPeriodEnd ?? null);
   const status = statusLabel(billing?.billingStatus ?? null);
+
+  /*
+   * COS-792 — cancelling ends the plan at the END of the paid period, never
+   * today. So a patient mid-cancellation is still fully entitled, and the only
+   * honest thing to show them is the date. `cancelAtPeriodEnd` without
+   * `cancelEffectiveAt` would read as "cancelled" to someone who has eleven
+   * months left.
+   */
+  const queryClient = useQueryClient();
+  const cancelling = billing?.cancelAtPeriodEnd === true;
+  const endsOn = formatDate(billing?.cancelEffectiveAt ?? null);
+  const [busy, setBusy] = useState<null | 'cancel' | 'resume'>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const history = useQuery({
+    queryKey: ['payment-history'],
+    queryFn: fetchPaymentHistory,
+    staleTime: 60_000,
+  });
+
+  async function onCancel() {
+    if (busy) return;
+    setBusy('cancel');
+    setNotice(null);
+    try {
+      const out = await cancelSubscription();
+      setNotice(out.message);
+      // Apple and Google cannot be cancelled from a server — the patient has
+      // to finish in the store, so send them straight there rather than
+      // leaving a message they have to act on later.
+      if (!out.scheduled && out.manageUrl) {
+        const can = await Linking.canOpenURL(out.manageUrl);
+        if (can) await Linking.openURL(out.manageUrl);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not cancel. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onResume() {
+    if (busy) return;
+    setBusy('resume');
+    setNotice(null);
+    try {
+      await resumeSubscription();
+      setNotice('Your plan will keep renewing.');
+      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not resume. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     // COS-788 — the hamburger / logo / accessibility chrome every other screen
@@ -225,6 +301,52 @@ export default function BillingScreen() {
           {billing.trial?.daysRemaining != null && (
             <Text style={[styles.metaRow, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
               {`Free trial  ·  ${String(billing.trial.daysRemaining)} day${billing.trial.daysRemaining === 1 ? '' : 's'} left`}
+            </Text>
+          )}
+
+          {/* COS-792 — the date is the message. "Cancelled" on its own would
+              alarm someone who still has the whole period left. */}
+          {cancelling && (
+            <Text style={[styles.endsOn, { fontSize: getScaledFontSize(13) }]}>
+              {endsOn
+                ? `Ends on ${endsOn} · you keep everything until then`
+                : 'Your plan will not renew · you keep everything until the end of the period'}
+            </Text>
+          )}
+
+          {cancelling && (
+            <Pressable
+              onPress={() => void onResume()}
+              disabled={busy !== null}
+              accessibilityRole="button"
+              accessibilityLabel="Keep my plan and continue renewing"
+              style={[styles.manageBtn, { borderColor: colors.tint, opacity: busy ? 0.6 : 1 }]}
+            >
+              <Text style={[styles.manageText, { color: colors.tint, fontSize: getScaledFontSize(14) }]}>
+                {busy === 'resume' ? 'Working…' : 'Keep my plan'}
+              </Text>
+            </Pressable>
+          )}
+
+          {/* No cancel control on the free default — there is nothing to
+              cancel, and offering one implies there is something to lose. */}
+          {!cancelling && !billing.isDefaultPlan && (
+            <Pressable
+              onPress={() => void onCancel()}
+              disabled={busy !== null}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel my subscription at the end of the paid period"
+              style={[styles.manageBtn, { borderColor: colors.border ?? '#E5E7EB', opacity: busy ? 0.6 : 1 }]}
+            >
+              <Text style={[styles.manageText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+                {busy === 'cancel' ? 'Working…' : 'Cancel subscription'}
+              </Text>
+            </Pressable>
+          )}
+
+          {notice !== null && (
+            <Text style={[styles.notice, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
+              {notice}
             </Text>
           )}
 
@@ -329,6 +451,37 @@ export default function BillingScreen() {
         </Text>
       )}
 
+      {/* COS-791 — what they have actually been charged. A subscription screen
+          without a receipt list is where "was I charged twice?" becomes a
+          support message. */}
+      {(history.data?.length ?? 0) > 0 && (
+        <View style={{ marginTop: 8, marginBottom: 20 }}>
+          <Text
+            style={[styles.sectionHeading, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(700) as never }]}
+          >
+            Payment history
+          </Text>
+          {history.data?.map((h) => (
+            <View
+              key={h.paymentId}
+              style={[styles.historyRow, { borderBottomColor: colors.border ?? '#E5E7EB' }]}
+            >
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.historyPlan, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+                  {h.planName}
+                </Text>
+                <Text style={[styles.historyMeta, { color: colors.text, fontSize: getScaledFontSize(12) }]}>
+                  {`${formatDate(h.createdAt) ?? ''}  ·  ${h.cycle}${h.status === 'succeeded' ? '' : `  ·  ${h.status}`}`}
+                </Text>
+              </View>
+              <Text style={[styles.historyAmount, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+                {formatPaymentAmount(h.amountCents, h.currency)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       <Pressable onPress={() => router.back()} style={[styles.back, { borderColor: colors.border ?? '#E5E7EB' }]} accessibilityRole="button">
         <Text style={[styles.backText, { color: colors.text, fontSize: getScaledFontSize(15) }]}>Close</Text>
       </Pressable>
@@ -362,6 +515,14 @@ const styles = StyleSheet.create({
   footnote: { marginTop: 4, marginBottom: 16, opacity: 0.7, textAlign: 'center' },
   upgrade: { marginTop: 14, borderRadius: 999, paddingVertical: 13, alignItems: 'center' },
   upgradeText: { color: '#FFFFFF', fontWeight: '700' },
+  endsOn: { marginTop: 10, color: '#B45309', fontWeight: '600', lineHeight: 19 },
+  manageBtn: { marginTop: 12, borderWidth: 1, borderRadius: 999, paddingVertical: 11, alignItems: 'center' },
+  manageText: { fontWeight: '600' },
+  notice: { marginTop: 10, lineHeight: 19, opacity: 0.85 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: 1 },
+  historyPlan: { fontWeight: '600' },
+  historyMeta: { marginTop: 2, opacity: 0.7 },
+  historyAmount: { fontWeight: '700' },
   back: { borderWidth: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   backText: { fontWeight: '600' },
 });
