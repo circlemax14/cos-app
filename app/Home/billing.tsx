@@ -58,6 +58,7 @@
 
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppWrapper } from '@/components/app-wrapper';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
@@ -153,7 +154,15 @@ export default function BillingScreen() {
   const status = statusLabel(billing?.billingStatus ?? null);
 
   return (
-    <ScrollView style={[styles.screen, { backgroundColor: colors.background }]} contentContainerStyle={styles.content}>
+    // COS-788 — the hamburger / logo / accessibility chrome every other screen
+    // has. This was the only plan surface without it: about.tsx and plans.tsx
+    // both wrap, billing did not, so opening it from the Care Plan tab dropped
+    // you somewhere that did not look like the rest of the app.
+    //
+    // No backgroundColor here on purpose — AppWrapper paints it and then draws
+    // the brand circles on top, so an opaque fill below would clip them.
+    <AppWrapper>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {/*
         COS-742 — a back arrow at the TOP.
 
@@ -323,7 +332,8 @@ export default function BillingScreen() {
       <Pressable onPress={() => router.back()} style={[styles.back, { borderColor: colors.border ?? '#E5E7EB' }]} accessibilityRole="button">
         <Text style={[styles.backText, { color: colors.text, fontSize: getScaledFontSize(15) }]}>Close</Text>
       </Pressable>
-    </ScrollView>
+      </ScrollView>
+    </AppWrapper>
   );
 }
 

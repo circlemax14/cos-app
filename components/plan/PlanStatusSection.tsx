@@ -59,6 +59,18 @@ export interface BillingSummary {
   currentPeriodEnd: string | null;
   pricing: PatientPlanCard['pricing'];
   trial: { endsAt: string | null; daysRemaining: number | null; convertsTo: string | null } | null;
+  /**
+   * COS-788 — the patient is parked on the DEFAULT plan, i.e. nobody has
+   * chosen. Optional so an app running against a backend that predates the
+   * field falls back to the chip, which is the safe half: a stale app can
+   * under-offer the chooser, never mis-state which plan someone is on.
+   *
+   * NOTE: this interface duplicates BillingSummary in
+   * services/api/patient-plans.ts — COS-744 declared one here, COS-784 declared
+   * another there, and both describe /v1/patients/me/plans. Worth collapsing
+   * into one; not today.
+   */
+  isDefaultPlan?: boolean;
 }
 
 async function fetchPlans(): Promise<{ plans: PatientPlanCard[]; billing: BillingSummary | null }> {
@@ -103,7 +115,13 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   // patient can be on a plan that is not for sale (free, or care-team
   // assigned), and those are filtered out of `plans` entirely. Reading
   // isCurrent would show such a patient the chooser they already used.
-  if (billing?.planName) {
+  //
+  // COS-788 — keyed off isDefaultPlan, NOT "do they have a plan name".
+  // COS-787 made the backend report the default plan for a patient who had
+  // never chosen one, which is correct, but it meant every patient suddenly
+  // had a planName and the chooser above vanished for first-time users. Being
+  // parked on the default IS the un-chosen state; it just has a name now.
+  if (billing?.planName && billing.isDefaultPlan !== true) {
     return (
       <View style={styles.chipRow}>
         <View style={[styles.chip, { backgroundColor: colors.tint }]}>
@@ -148,27 +166,30 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         // a COMING SOON badge (COS-432). Same treatment, driven by the plan's
         // status from the dashboard rather than a hardcoded list in the app.
         const comingSoon = plan.status === 'coming-soon';
+        // The plan they are already on. Reads the server's flag rather than
+        // comparing keys here — see PlanShelfCard.isCurrent.
+        const current = plan.isCurrent === true;
 
         return (
-          <Pressable
+          // A View, not a Pressable. Each card now carries its own explicit
+          // "Upgrade to this plan" control, and a whole-card tap target on top
+          // of that gives VoiceOver two ways to do one thing, one of them
+          // unlabelled. The current plan has nothing to tap at all.
+          <View
             key={plan.planKey}
-            onPress={() => {
-              if (!comingSoon) router.push('/Home/billing' as never);
-            }}
-            disabled={comingSoon}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: comingSoon }}
-            accessibilityLabel={
-              comingSoon
-                ? `${plan.name} plan — coming soon. ${plan.shortDescription ?? ''}`
-                : `${plan.name}. Tap to see details and choose.`
-            }
             style={[
               styles.card,
               {
-                backgroundColor: colors.card ?? 'transparent',
-                borderColor: comingSoon ? (colors.text ?? '#11181C') + '20' : colors.border ?? '#E0E0E0',
+                // Transparent, so AppWrapper's background circles run behind
+                // the cards instead of being clipped into squares by them.
+                backgroundColor: 'transparent',
+                borderColor: current
+                  ? colors.tint
+                  : comingSoon
+                    ? (colors.text ?? '#11181C') + '20'
+                    : colors.border ?? '#E0E0E0',
               },
+              current && styles.cardCurrent,
               comingSoon && styles.cardSoon,
             ]}
           >
@@ -186,6 +207,13 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               >
                 {plan.name}
               </Text>
+              {current && (
+                <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
+                  <Text style={[styles.currentBadgeText, { fontSize: getScaledFontSize(10) }]}>
+                    YOUR PLAN
+                  </Text>
+                </View>
+              )}
               {comingSoon && (
                 <Text style={[styles.soonBadge, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(10) }]}>
                   COMING SOON
@@ -223,7 +251,25 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 {`✓  ${h}`}
               </Text>
             ))}
-          </Pressable>
+
+            {/* Nothing to upgrade to on the plan you hold, and a coming-soon
+                tier cannot be chosen yet — so neither gets a control. */}
+            {!current && !comingSoon && (
+              <Pressable
+                onPress={() => router.push('/Home/billing' as never)}
+                accessibilityRole="button"
+                accessibilityLabel={`Upgrade to the ${plan.name} plan. Opens billing.`}
+                style={({ pressed }) => [
+                  styles.upgradeBtn,
+                  { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
+                  Upgrade to this plan
+                </Text>
+              </Pressable>
+            )}
+          </View>
         );
       })}
     </View>
@@ -243,6 +289,13 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },
   // Dashed + faded, exactly as the prod chooser rendered Family.
   cardSoon: { borderStyle: 'dashed', opacity: 0.7 },
+  // The plan they are on: a heavier tinted edge, so it reads as selected at a
+  // glance without a fill that would clip the background circles.
+  cardCurrent: { borderWidth: 2 },
+  currentBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  currentBadgeText: { color: '#FFFFFF', fontWeight: '700', letterSpacing: 0.8 },
+  upgradeBtn: { marginTop: 14, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
+  upgradeText: { color: '#FFFFFF', fontWeight: '700' },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   soonBadge: { letterSpacing: 0.8, fontWeight: '700' },
   name: { flex: 1 },

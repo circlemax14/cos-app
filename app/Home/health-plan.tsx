@@ -201,6 +201,20 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
   low: { color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', label: 'Low' },
 };
 
+/*
+ * COS-788 — this screen paints NO background of its own.
+ *
+ * Every container here is already inside <AppWrapper>, which fills the screen
+ * with colors.background and then draws two large, very faint brand circles on
+ * top of it. Anything below that which also sets backgroundColor is painting
+ * the same colour a second time, except now ABOVE the circles — so the circles
+ * were being clipped into hard rectangles wherever a card, a scroll container
+ * or the loading spinner sat. The loader was the most obvious: a plain white
+ * block with two quarter-circles sliced off.
+ *
+ * If you need a surface to stand out here, use a border or a translucent
+ * overlay, not an opaque fill.
+ */
 export default function HealthPlanScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -782,7 +796,7 @@ export default function HealthPlanScreen() {
     if (bioLoading) {
       return (
         <AppWrapper>
-          <View style={[styles.center, { backgroundColor: colors.background }]}>
+          <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.tint} />
             <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
               Loading your plan…
@@ -811,7 +825,7 @@ export default function HealthPlanScreen() {
   if (loading) {
     return (
       <AppWrapper>
-        <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.tint} />
           <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
             Loading your plan…
@@ -858,7 +872,7 @@ export default function HealthPlanScreen() {
       return (
         <AppWrapper>
           <ScrollView
-            style={[styles.container, { backgroundColor: colors.background }]}
+            style={styles.container}
             contentContainerStyle={{ paddingBottom: 32 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
             <PlanStatusSection
@@ -882,7 +896,7 @@ export default function HealthPlanScreen() {
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
+          style={styles.container}
           contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
           {/* COS-744 — one line if they have a plan, the chooser if they do
@@ -1033,7 +1047,7 @@ export default function HealthPlanScreen() {
       ) : (
       <ScrollView
         ref={planScrollRef}
-        style={[styles.container, { backgroundColor: colors.background }]}
+        style={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
         {/* COS-744 — the plan label sits at the TOP here, consistent with the
             two empty states. COS-740 had to exile the price shelf to the

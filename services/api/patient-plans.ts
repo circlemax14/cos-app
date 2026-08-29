@@ -55,6 +55,15 @@ export interface PlanShelfBilling {
   currentPeriodEnd: string | null;
   pricing: PlanShelfPricing | null;
   trial: { endsAt: string | null; daysRemaining: number | null; convertsTo: string | null } | null;
+  /**
+   * COS-788 — the patient is on the DEFAULT plan, i.e. nobody has chosen yet.
+   * Decides the whole shape of the plan strip: shelf, or one-line chip.
+   *
+   * Server-derived on purpose. Do not reimplement it here by comparing against
+   * a hardcoded key — which plan is the default is a backend decision and it
+   * has already changed once.
+   */
+  isDefaultPlan?: boolean;
 }
 
 export interface PlanShelf {

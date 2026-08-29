@@ -63,9 +63,14 @@ test('THE POINT: a patient WITH a plan gets one line, not the price shelf', () =
   // COS-740 rendered the shelf unconditionally, so someone already on
   // Advanced opened their care plan every morning to a four-item price list
   // and had to scroll past everything they had bought to reach today's tasks.
-  const chosen = cards.indexOf('if (billing?.planName)')
+  //
+  // COS-788 narrowed the condition without changing this point: a patient on a
+  // plan they CHOSE still gets the one line. What changed is that sitting on
+  // the default no longer counts as having chosen — see the isDefaultPlan test
+  // below. The ordering assertion is the load-bearing half and is unchanged.
+  const chosen = cards.indexOf('if (billing?.planName && billing.isDefaultPlan !== true)')
   const shelf = cards.indexOf('Choose your plan')
-  assert.ok(chosen > -1, 'expected a branch keyed off the current plan')
+  assert.ok(chosen > -1, 'expected a branch keyed off a CHOSEN plan')
   assert.ok(chosen < shelf, 'the chosen-plan branch must return BEFORE the shelf renders')
 })
 
@@ -278,12 +283,20 @@ test('THE POINT: a coming-soon plan renders disabled and badged, not hidden', ()
   // Family shipped this way on the prod chooser (COS-432). Hiding it defeats
   // the point of advertising the roadmap.
   assert.match(status, /COMING SOON/)
-  assert.match(status, /disabled=\{comingSoon\}/)
   assert.match(status, /borderStyle: 'dashed'/)
 })
 
 test('a coming-soon card is not tappable', () => {
-  assert.match(status, /if \(!comingSoon\) router\.push/)
+  // COS-788 made this stronger rather than weaker. The card used to be a
+  // Pressable with `disabled={comingSoon}`; now the card is a plain View and
+  // the ONLY control on it is the upgrade button, which a coming-soon tier
+  // never renders. There is nothing to disable because there is nothing there.
+  assert.match(status, /\{!current && !comingSoon && \(/)
+  assert.doesNotMatch(
+    status,
+    /<Pressable[\s\S]{0,200}key=\{plan\.planKey\}/,
+    'the whole-card tap target is back — a coming-soon card would be tappable again',
+  )
 })
 
 test('no price is quoted for a coming-soon tier', () => {
@@ -325,4 +338,69 @@ test('the removed list took its fetch with it', () => {
   const body = features.slice(features.indexOf('export default function PlanFeaturesSection'))
   assert.doesNotMatch(body, /apiClient/)
   assert.doesNotMatch(features, /useQuery\(/)
+})
+
+// ── COS-788: the first-time chooser, and the background circles ────────────
+
+test('THE POINT: the chooser is decided by isDefaultPlan, not by having a name', () => {
+  // COS-787 made the backend name the default plan for a patient who had never
+  // chosen one. Correct — but this component switched on `billing?.planName`,
+  // so overnight every patient looked "chosen" and the first-time chooser
+  // disappeared behind a one-line chip. Being parked on the default IS the
+  // un-chosen state; it just has a name now.
+  assert.match(cards, /billing\?\.planName && billing\.isDefaultPlan !== true/)
+  assert.doesNotMatch(
+    cards,
+    /if \(billing\?\.planName\) \{/,
+    'the old name-only condition is back — first-time users lose the chooser',
+  )
+})
+
+test('the default plan is marked as theirs and offers nothing to upgrade to', () => {
+  assert.match(cards, /YOUR PLAN/)
+  // The upgrade control is withheld from the current plan AND from coming-soon.
+  assert.match(cards, /\{!current && !comingSoon && \(/)
+})
+
+test('every other plan offers an explicit upgrade that reaches billing', () => {
+  assert.match(cards, /Upgrade to this plan/)
+  const upgradeIdx = cards.indexOf('Upgrade to this plan')
+  const pushIdx = cards.lastIndexOf("router.push('/Home/billing' as never)", upgradeIdx)
+  assert.ok(pushIdx > -1, 'the upgrade control must navigate to billing')
+})
+
+test('isDefaultPlan is optional, so an older backend degrades to the chip', () => {
+  // A stale app may under-offer the chooser; it must never mis-state which
+  // plan someone is on. `!== true` gives that, `=== false` would not.
+  assert.match(cards, /isDefaultPlan\?: boolean/)
+})
+
+// ── the background circles ─────────────────────────────────────────────────
+
+test('THE POINT: the Plan tab paints no background of its own', () => {
+  // AppWrapper fills the screen and then draws two faint brand circles on top.
+  // Anything below that setting its own backgroundColor repaints the same
+  // colour ABOVE the circles, clipping them into hard rectangles — most
+  // visibly the loading spinner, which showed as a white block with two
+  // quarter-circles sliced off.
+  assert.doesNotMatch(
+    planTab,
+    /backgroundColor: colors\.background/,
+    'health-plan.tsx must not repaint the background over AppWrapper decoration',
+  )
+})
+
+test('the plan cards are transparent, not filled', () => {
+  assert.doesNotMatch(cards, /backgroundColor: colors\.card/)
+  assert.match(cards, /backgroundColor: 'transparent'/)
+})
+
+test('billing has the same chrome as every other screen', () => {
+  assert.match(billing, /<AppWrapper>/)
+  assert.match(billing, /<\/AppWrapper>/)
+  assert.doesNotMatch(
+    billing,
+    /backgroundColor: colors\.background/,
+    'billing must not repaint over AppWrapper decoration either',
+  )
 })
