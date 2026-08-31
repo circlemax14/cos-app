@@ -39,6 +39,9 @@ import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
+import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
+import { switchToPlan } from '@/services/api/patient-plans';
+import { useQueryClient } from '@tanstack/react-query';
 
 export interface PatientPlanCard {
   status: string | null;
@@ -110,6 +113,36 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   // Same gate the Billing screen uses. There is no payment integration, so
   // the subscribe controls ship dark on prod and live on dev.
   const subscribeEnabled = useSubscriptionUpgradeFlag();
+  /*
+   * COS-797 — free switching, offered only while paying is NOT.
+   *
+   * Both flags are independent server-side, so if someone turns payments on
+   * and leaves this one on, the free route still works over the API. Hiding it
+   * here is the safe half of that: the day Subscribe appears, "Switch" stops
+   * being offered, and the flag itself is meant to be turned off in the same
+   * change that enables payments.
+   */
+  const canSwitch = usePlanSelfSwitchFlag() && !subscribeEnabled;
+  const queryClient = useQueryClient();
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  async function onSwitch(planKey: string) {
+    if (switching) return;
+    setSwitching(planKey);
+    setSwitchError(null);
+    try {
+      await switchToPlan(planKey);
+      setOpenKey(null);
+      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+    } catch (err) {
+      setSwitchError(
+        err instanceof Error ? err.message : 'Could not change your plan. Please try again.',
+      );
+    } finally {
+      setSwitching(null);
+    }
+  }
   const plans = data?.plans ?? [];
   const billing = data?.billing ?? null;
 
@@ -342,9 +375,35 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                   </Pressable>
                 ) : null}
 
+                {/* COS-797 — no payment in the loop: the patient just moves.
+                    Offered only when Subscribe is NOT, so enabling payments
+                    takes the free path off the screen. */}
+                {canSwitch && (
+                  <Pressable
+                    onPress={() => void onSwitch(plan.planKey)}
+                    disabled={switching !== null}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Switch to the ${plan.name} plan`}
+                    style={({ pressed }) => [
+                      styles.subscribeBtn,
+                      { backgroundColor: colors.tint, opacity: pressed || switching ? 0.7 : 1 },
+                    ]}
+                  >
+                    <Text style={[styles.subscribeText, { fontSize: getScaledFontSize(14) }]}>
+                      {switching === plan.planKey ? 'Switching…' : 'Switch to this plan'}
+                    </Text>
+                  </Pressable>
+                )}
+
+                {canSwitch && switchError !== null && (
+                  <Text style={[styles.switchError, { fontSize: getScaledFontSize(13) }]}>
+                    {switchError}
+                  </Text>
+                )}
+
                 {/* Flag off: say why there is no button rather than showing a
                     dead one. Guideline 2.1 pulled a surface for less. */}
-                {!subscribeEnabled && (
+                {!subscribeEnabled && !canSwitch && (
                   <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
                     Your care team can switch you to this plan — in-app subscribing is not available yet.
                   </Text>
@@ -384,6 +443,7 @@ const styles = StyleSheet.create({
   subscribeBtnAlt: { borderWidth: 1, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   subscribeTextAlt: { fontWeight: '700' },
   detailNote: { lineHeight: 19 },
+  switchError: { color: '#B91C1C', lineHeight: 19 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   soonBadge: { letterSpacing: 0.8, fontWeight: '700' },
   name: { flex: 1 },

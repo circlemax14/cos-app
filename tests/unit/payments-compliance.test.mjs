@@ -111,6 +111,7 @@ test('no way to pay is the DEFAULT, not an error state', () => {
 // ── COS-792: cancellation semantics on the client ─────────────────────────
 
 const billing = read('app/Home/billing.tsx')
+const cards = read('components/plan/PlanStatusSection.tsx')
 
 test('THE POINT: a cancelling patient is shown the DATE, not just "cancelled"', () => {
   // They keep everything until the period ends — up to eleven months for an
@@ -165,4 +166,33 @@ test('region detection never throws out to the caller', () => {
   const body = api.slice(api.indexOf('export function currentRegion'))
   assert.equal((body.match(/catch/g) ?? []).length >= 2, true)
   assert.match(body, /return undefined/)
+})
+
+// ── COS-797: switching plan with no payment ───────────────────────────────
+
+test('THE POINT: free switching is hidden the moment Subscribe appears', () => {
+  // Both flags are independent server-side, so leaving this on with payments
+  // enabled means the free route still works over the API. Hiding it is the
+  // safe half; the flag itself is meant to go off in the same change.
+  const code = stripComments(cards)
+  assert.match(code, /usePlanSelfSwitchFlag\(\) && !subscribeEnabled/)
+})
+
+test('the switch button is offered, and says which plan', () => {
+  const code = stripComments(cards)
+  assert.match(code, /Switch to this plan/)
+  assert.match(code, /switchToPlan\(planKey\)/)
+})
+
+test('a refused switch is shown, not swallowed', () => {
+  // PLAN_NOT_AVAILABLE and HAS_PAID_SUBSCRIPTION both come back as 409 with a
+  // real message. Dropping it leaves a button that looks broken.
+  const code = stripComments(cards)
+  assert.match(code, /setSwitchError/)
+  assert.match(code, /switchError !== null/)
+})
+
+test('the shelf refetches after a switch, so the badge moves', () => {
+  const code = stripComments(cards)
+  assert.match(code, /invalidateQueries\(\{ queryKey: \['patient-plans'\] \}\)/)
 })

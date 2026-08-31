@@ -117,3 +117,21 @@ export function formatPlanPrice(pricing: PlanShelfPricing | null): string {
   const shown = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
   return `$${shown}/mo`;
 }
+
+/* ── COS-797: changing plan with no payment involved ─────────────────── */
+
+/**
+ * Switch the signed-in patient to another plan.
+ *
+ * The server decides whether this is allowed at all (plan_self_switch_enabled,
+ * 404 when off) and which plans are reachable — the shelf is a suggestion, the
+ * server is the permission. Refusals come back as 409 with a code:
+ *
+ *   PLAN_NOT_AVAILABLE     draft, archived, or restricted to someone else
+ *   HAS_PAID_SUBSCRIPTION  cancel the paid one first
+ *   ALREADY_ON_PLAN        no-op
+ */
+export async function switchToPlan(planKey: string): Promise<{ planKey: string; planName: string | null }> {
+  const res = await apiClient.post('/v1/patients/me/plans/switch', { planKey });
+  return (res.data as { data: { planKey: string; planName: string | null } }).data;
+}

@@ -438,7 +438,10 @@ test('subscribing rides the SAME dark-launch gate as the Billing screen', () => 
 })
 
 test('with the gate off it explains itself instead of showing a dead button', () => {
-  assert.match(cards, /\{!subscribeEnabled && \(/)
+  // COS-797 narrowed the condition: the explanation now shows only when there
+  // is neither a Subscribe button NOR a free Switch one, so it never sits
+  // under a control that works.
+  assert.match(cards, /\{!subscribeEnabled && !canSwitch && \(/)
   assert.match(cards, /in-app subscribing is not available yet/)
 })
 
