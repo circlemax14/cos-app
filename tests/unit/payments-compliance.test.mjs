@@ -137,3 +137,32 @@ test('a store cancellation sends the patient to the store, not a dead message', 
   assert.match(billing, /out\.manageUrl/)
   assert.match(billing, /Linking\.openURL\(out\.manageUrl\)/)
 })
+
+// ── COS-794: the iOS external purchase link ───────────────────────────────
+
+test('THE POINT: the region is sent, and its absence blocks the link-out', () => {
+  // Apple permits an external purchase link in the US storefront ONLY. The
+  // server fails closed on an absent region, so the client must actually send
+  // one — but sending nothing is safe, not broken.
+  const code = stripComments(api)
+  assert.match(code, /region: currentRegion\(\)/)
+  assert.equal((code.match(/region: currentRegion\(\)/g) ?? []).length, 2,
+    'both the gateway list and the start call must carry the region')
+  assert.match(code, /export function currentRegion\(\): string \| undefined/)
+})
+
+test('THE POINT: the region comes from JS, never a native module', () => {
+  // expo-localization is the obvious library and is neither installed nor in
+  // the shipped binary — importing it would break the OTA bundle and crash
+  // every device on load, which this app has already had happen once.
+  const code = stripComments(api)
+  assert.doesNotMatch(code, /['"]expo-localization['"]/)
+  assert.match(code, /Intl\.DateTimeFormat\(\)/)
+})
+
+test('region detection never throws out to the caller', () => {
+  // A locale lookup failing must cost the link-out, not the whole screen.
+  const body = api.slice(api.indexOf('export function currentRegion'))
+  assert.equal((body.match(/catch/g) ?? []).length >= 2, true)
+  assert.match(body, /return undefined/)
+})

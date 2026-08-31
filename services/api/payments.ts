@@ -23,9 +23,51 @@ export function currentPlatform(): 'ios' | 'android' | 'web' {
   return 'web';
 }
 
+/**
+ * COS-794 — the device's ISO country, for the iOS Stripe link-out.
+ *
+ * Apple permits an external purchase link in the UNITED STATES storefront
+ * only, so the server needs to know where we are. Returning undefined means
+ * no link-out — the server fails closed on an absent region.
+ *
+ * PURE JS ON PURPOSE. `expo-localization` is the obvious library and it is
+ * neither installed nor in the shipped binary, so importing it would break the
+ * OTA bundle and crash every device on load — the expo-clipboard failure this
+ * app has already had once. Intl ships with Hermes; NativeModules is core RN.
+ * Both are already there.
+ *
+ * A locale is a proxy for the storefront, not the storefront itself. When
+ * StoreKit lands, send Storefront.countryCode instead — that is the value
+ * Apple's rule actually keys on.
+ */
+export function currentRegion(): string | undefined {
+  try {
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+    const region = locale?.split(/[-_]/)[1];
+    if (region && region.length === 2) return region.toUpperCase();
+  } catch {
+    // Intl missing or throwing — fall through rather than failing the call.
+  }
+  try {
+    const nm = (
+      require('react-native') as { NativeModules?: Record<string, unknown> }
+    ).NativeModules;
+    const raw =
+      Platform.OS === 'ios'
+        ? (nm?.SettingsManager as { settings?: { AppleLocale?: string } } | undefined)?.settings
+            ?.AppleLocale
+        : (nm?.I18nManager as { localeIdentifier?: string } | undefined)?.localeIdentifier;
+    const region = raw?.split(/[-_]/)[1];
+    if (region && region.length === 2) return region.toUpperCase();
+  } catch {
+    // Nothing to read. Undefined = no link-out, which is the safe direction.
+  }
+  return undefined;
+}
+
 export async function fetchAvailableGateways(): Promise<AvailableGateway[]> {
   const res = await apiClient.get('/v1/payments/gateways', {
-    params: { platform: currentPlatform() },
+    params: { platform: currentPlatform(), region: currentRegion() },
   });
   const body = (res.data as { data?: { gateways?: unknown } })?.data;
   return Array.isArray(body?.gateways) ? (body.gateways as AvailableGateway[]) : [];
@@ -43,6 +85,7 @@ export async function startPurchase(input: {
   const res = await apiClient.post('/v1/payments/start', {
     ...input,
     platform: currentPlatform(),
+    region: currentRegion(),
   });
   return (res.data as { data: StartPurchaseResult }).data;
 }
