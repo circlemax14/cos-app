@@ -40,6 +40,7 @@ import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
+import { usePaymentGateways } from '@/hooks/use-payment-gateways';
 import { switchToPlan } from '@/services/api/patient-plans';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -114,15 +115,27 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   // the subscribe controls ship dark on prod and live on dev.
   const subscribeEnabled = useSubscriptionUpgradeFlag();
   /*
-   * COS-797 — free switching, offered only while paying is NOT.
+   * COS-798 — "can they pay" is the SERVER's gateway list, not a flag.
    *
-   * Both flags are independent server-side, so if someone turns payments on
-   * and leaves this one on, the free route still works over the API. Hiding it
-   * here is the safe half of that: the day Subscribe appears, "Switch" stops
-   * being offered, and the flag itself is meant to be turned off in the same
-   * change that enables payments.
+   * My first version keyed both of these off subscription_upgrade_enabled,
+   * which was wrong. That flag means "the upgrade button is un-darked"; it
+   * does not mean a patient can actually pay. On dev it has been true since
+   * COS-740 while every gateway is off, and the result was two dead ends:
+   *
+   *   a PAID plan offered Subscribe, which routed to a screen saying payments
+   *   are not available;
+   *
+   *   a FREE plan showed NOTHING — the Subscribe buttons need a price, Switch
+   *   was suppressed by !subscribeEnabled, and the explanation was gated on
+   *   the same flag.
+   *
+   * canPay comes from GET /v1/payments/gateways, which is the real answer:
+   * a gateway that is enabled, legal for this platform, and configured. Both
+   * controls hang off it, so exactly one of them shows and neither dead-ends.
    */
-  const canSwitch = usePlanSelfSwitchFlag() && !subscribeEnabled;
+  const { canPay } = usePaymentGateways();
+  const canSubscribe = subscribeEnabled && canPay;
+  const canSwitch = usePlanSelfSwitchFlag() && !canPay;
   const queryClient = useQueryClient();
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -327,7 +340,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 a screen to read one of them throws that away. */}
             {!current && !comingSoon && open && (
               <View style={[styles.detail, { borderTopColor: colors.border ?? '#E0E0E0' }]}>
-                {subscribeEnabled && monthly ? (
+                {canSubscribe && monthly ? (
                   <Pressable
                     onPress={() =>
                       router.push({
@@ -351,7 +364,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 {/* Only offered when the plan actually has an annual price —
                     a second button quoting the monthly figure twice would be
                     a worse lie than having one button. */}
-                {subscribeEnabled && annual ? (
+                {canSubscribe && annual ? (
                   <Pressable
                     onPress={() =>
                       router.push({
@@ -403,7 +416,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
 
                 {/* Flag off: say why there is no button rather than showing a
                     dead one. Guideline 2.1 pulled a surface for less. */}
-                {!subscribeEnabled && !canSwitch && (
+                {!canSubscribe && !canSwitch && (
                   <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
                     Your care team can switch you to this plan — in-app subscribing is not available yet.
                   </Text>

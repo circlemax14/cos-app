@@ -432,16 +432,21 @@ test('your own plan shows what you get without being asked', () => {
 test('subscribing rides the SAME dark-launch gate as the Billing screen', () => {
   // There is no payment integration. This must not become a second, ungated
   // way to reach a premium surface — that is what Guideline 2.1 pulled.
+  //
+  // COS-798 tightened it: the flag is now ANDed with the server's real gateway
+  // list, so an un-darked button with no working gateway behind it is no
+  // longer possible.
   assert.match(cards, /useSubscriptionUpgradeFlag/)
-  assert.match(cards, /subscribeEnabled && monthly/)
-  assert.match(cards, /subscribeEnabled && annual/)
+  assert.match(cards, /const canSubscribe = subscribeEnabled && canPay/)
+  assert.match(cards, /canSubscribe && monthly/)
+  assert.match(cards, /canSubscribe && annual/)
 })
 
 test('with the gate off it explains itself instead of showing a dead button', () => {
   // COS-797 narrowed the condition: the explanation now shows only when there
   // is neither a Subscribe button NOR a free Switch one, so it never sits
   // under a control that works.
-  assert.match(cards, /\{!subscribeEnabled && !canSwitch && \(/)
+  assert.match(cards, /\{!canSubscribe && !canSwitch && \(/)
   assert.match(cards, /in-app subscribing is not available yet/)
 })
 
@@ -449,7 +454,7 @@ test('annual is offered only when the plan actually has an annual price', () => 
   // Two buttons both quoting the monthly figure would be a worse lie than one.
   const annualIdx = cards.indexOf("cycle: 'annual'")
   assert.ok(annualIdx > -1, 'expected an annual subscribe path')
-  assert.match(cards.slice(0, annualIdx), /subscribeEnabled && annual \? \(/)
+  assert.match(cards.slice(0, annualIdx), /canSubscribe && annual \? \(/)
 })
 
 test('the checkout seam is told which plan and which cycle', () => {

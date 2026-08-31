@@ -170,12 +170,34 @@ test('region detection never throws out to the caller', () => {
 
 // ── COS-797: switching plan with no payment ───────────────────────────────
 
-test('THE POINT: free switching is hidden the moment Subscribe appears', () => {
-  // Both flags are independent server-side, so leaving this on with payments
-  // enabled means the free route still works over the API. Hiding it is the
-  // safe half; the flag itself is meant to go off in the same change.
+test('THE POINT: both controls hang off the REAL gateway list, not a flag', () => {
+  // COS-798. subscription_upgrade_enabled means "the upgrade button is
+  // un-darked", NOT "a patient can pay". On dev it has been true since COS-740
+  // with every gateway off, and keying off it produced two dead ends: a paid
+  // plan offered Subscribe and landed on "payments aren't available", and a
+  // free plan showed nothing at all.
   const code = stripComments(cards)
-  assert.match(code, /usePlanSelfSwitchFlag\(\) && !subscribeEnabled/)
+  assert.match(code, /const \{ canPay \} = usePaymentGateways\(\)/)
+  assert.match(code, /const canSubscribe = subscribeEnabled && canPay/)
+  assert.match(code, /const canSwitch = usePlanSelfSwitchFlag\(\) && !canPay/)
+})
+
+test('THE POINT: exactly one of Subscribe / Switch can ever be offered', () => {
+  // canSubscribe requires canPay; canSwitch requires !canPay. They cannot both
+  // be true, so a patient is never shown two ways to get the same plan — one
+  // of which charges them.
+  const code = stripComments(cards)
+  assert.match(code, /canSubscribe && monthly/)
+  assert.match(code, /canSubscribe && annual/)
+  assert.match(code, /\{canSwitch && \(/)
+})
+
+test('a free plan is never a dead end', () => {
+  // The Subscribe buttons need a price, so on a free plan they never render.
+  // The fallback explanation must therefore not be gated on the subscribe
+  // flag — it is gated on neither control being available.
+  const code = stripComments(cards)
+  assert.match(code, /\{!canSubscribe && !canSwitch && \(/)
 })
 
 test('the switch button is offered, and says which plan', () => {
