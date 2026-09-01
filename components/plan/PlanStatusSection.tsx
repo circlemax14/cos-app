@@ -42,6 +42,7 @@ import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-fla
 import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
 import { usePaymentGateways } from '@/hooks/use-payment-gateways';
 import { switchToPlan } from '@/services/api/patient-plans';
+import { serverMessage } from '@/lib/server-message';
 import { useQueryClient } from '@tanstack/react-query';
 
 export interface PatientPlanCard {
@@ -149,9 +150,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
       setOpenKey(null);
       await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
     } catch (err) {
-      setSwitchError(
-        err instanceof Error ? err.message : 'Could not change your plan. Please try again.',
-      );
+      setSwitchError(serverMessage(err, 'Could not change your plan. Please try again.'));
     } finally {
       setSwitching(null);
     }

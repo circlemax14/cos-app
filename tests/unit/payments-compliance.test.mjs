@@ -218,3 +218,44 @@ test('the shelf refetches after a switch, so the badge moves', () => {
   const code = stripComments(cards)
   assert.match(code, /invalidateQueries\(\{ queryKey: \['patient-plans'\] \}\)/)
 })
+
+// ── COS-799: switching stays reachable after the first switch ─────────────
+
+test('THE POINT: the Billing screen can switch, not just subscribe', () => {
+  // The Plan tab collapses to a chip once a patient has chosen a plan
+  // (COS-788, still right — that tab is about care, not shopping). Its
+  // "Change plan" lands here. If this screen cannot switch, a patient who
+  // switches once can never switch again.
+  assert.match(billing, /canSwitch && !plan\.isCurrent && isPurchasable\(plan\)/)
+  assert.match(billing, /onSwitchPlan\(plan\.planKey\)/)
+})
+
+test('the Billing screen uses the same canPay rule as the shelf', () => {
+  // COS-798 fixed this in PlanStatusSection only; billing.tsx still had the
+  // un-darkening flag on its own, which is the same dead end.
+  assert.match(billing, /const canSubscribe = upgradeEnabled && canPay/)
+  assert.match(billing, /const canSwitch = usePlanSelfSwitchFlag\(\) && !canPay/)
+})
+
+test('THE POINT: a refusal shows the server\'s sentence, not a status code', () => {
+  // "Request failed with status code 409" is what axios gives you. The server
+  // wrote "You have an active paid subscription. Cancel it first…" for exactly
+  // this moment.
+  const helper = read('lib/server-message.ts')
+  assert.match(helper, /status >= 400 && status < 500/)
+  assert.match(helper, /return fallback/)
+  for (const [name, src] of [['billing', billing], ['cards', cards]]) {
+    assert.match(stripComments(src), /serverMessage\(err,/, `${name} should use serverMessage`)
+    assert.doesNotMatch(
+      stripComments(src),
+      /err instanceof Error \? err\.message :/,
+      `${name} still swallows the server message`,
+    )
+  }
+})
+
+test('a 5xx body is never shown to a patient', () => {
+  // Server error text is for us and may carry internals.
+  const helper = read('lib/server-message.ts')
+  assert.doesNotMatch(helper, /status >= 500/)
+})

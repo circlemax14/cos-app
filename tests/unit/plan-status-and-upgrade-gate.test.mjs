@@ -103,9 +103,14 @@ test('the flag hook demands an exact true', () => {
 })
 
 test('the Upgrade button is gated on the flag, not-current, and purchasable', () => {
+  // COS-798/799 tightened the first condition rather than removing it:
+  // upgradeEnabled is now ANDed with the server's real gateway list, so an
+  // un-darked button with no working gateway behind it cannot be rendered.
+  // The other two are unchanged and still load-bearing.
+  assert.match(billing, /const canSubscribe = upgradeEnabled && canPay/)
   assert.match(
     billing,
-    /upgradeEnabled && !plan\.isCurrent && isPurchasable\(plan\)/,
+    /canSubscribe && !plan\.isCurrent && isPurchasable\(plan\)/,
     'all three conditions must gate the button',
   )
 })

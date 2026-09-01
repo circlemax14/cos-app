@@ -67,6 +67,10 @@ import {
   fetchPaymentHistory,
   formatPaymentAmount,
 } from '@/services/api/payments';
+import { usePaymentGateways } from '@/hooks/use-payment-gateways';
+import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
+import { switchToPlan } from '@/services/api/patient-plans';
+import { serverMessage } from '@/lib/server-message';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
@@ -181,6 +185,39 @@ export default function BillingScreen() {
    * months left.
    */
   const queryClient = useQueryClient();
+
+  /*
+   * COS-799 — this screen is where plan management actually happens.
+   *
+   * The Care Plan tab shows a one-line chip once a patient has chosen a plan
+   * (COS-788, and still right — that tab is about today's care, not shopping).
+   * Its "Change plan" button lands HERE. So if switching is not possible here,
+   * a patient who switches once can never switch again: the chooser is gone
+   * from the Plan tab and this screen only offered a dead Upgrade button.
+   *
+   * Same canPay rule as the shelf (COS-798): the gateway list is the truth
+   * about whether anyone can pay, not the un-darkening flag.
+   */
+  const { canPay } = usePaymentGateways();
+  const canSubscribe = upgradeEnabled && canPay;
+  const canSwitch = usePlanSelfSwitchFlag() && !canPay;
+  const [switching, setSwitching] = useState<string | null>(null);
+
+  async function onSwitchPlan(planKey: string) {
+    if (switching) return;
+    setSwitching(planKey);
+    setNotice(null);
+    try {
+      const r = await switchToPlan(planKey);
+      setNotice(`You are now on ${r.planName ?? r.planKey}.`);
+      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+    } catch (err) {
+      setNotice(serverMessage(err, 'Could not change your plan. Please try again.'));
+    } finally {
+      setSwitching(null);
+    }
+  }
+
   const cancelling = billing?.cancelAtPeriodEnd === true;
   const endsOn = formatDate(billing?.cancelEffectiveAt ?? null);
   const [busy, setBusy] = useState<null | 'cancel' | 'resume'>(null);
@@ -208,7 +245,7 @@ export default function BillingScreen() {
       }
       await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not cancel. Please try again.');
+      setNotice(serverMessage(err, 'Could not cancel. Please try again.'));
     } finally {
       setBusy(null);
     }
@@ -223,7 +260,7 @@ export default function BillingScreen() {
       setNotice('Your plan will keep renewing.');
       await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not resume. Please try again.');
+      setNotice(serverMessage(err, 'Could not resume. Please try again.'));
     } finally {
       setBusy(null);
     }
@@ -429,7 +466,21 @@ export default function BillingScreen() {
             {/* Dark until Stripe is wired — see the header. Never shown on the
                 plan the patient already has: "Upgrade" to your own plan is
                 the kind of detail that makes people distrust the whole screen. */}
-            {upgradeEnabled && !plan.isCurrent && isPurchasable(plan) && (
+            {canSwitch && !plan.isCurrent && isPurchasable(plan) && (
+              <Pressable
+                onPress={() => void onSwitchPlan(plan.planKey)}
+                disabled={switching !== null}
+                accessibilityRole="button"
+                accessibilityLabel={`Switch to ${plan.name}`}
+                style={[styles.upgrade, { backgroundColor: colors.tint, opacity: switching ? 0.6 : 1 }]}
+              >
+                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(15) }]}>
+                  {switching === plan.planKey ? 'Switching…' : `Switch to ${plan.name}`}
+                </Text>
+              </Pressable>
+            )}
+
+            {canSubscribe && !plan.isCurrent && isPurchasable(plan) && (
               <Pressable
                 onPress={() => router.push('/Home/billing-checkout' as never)}
                 accessibilityRole="button"
