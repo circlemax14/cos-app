@@ -307,8 +307,18 @@ const status = read('components/plan/PlanStatusSection.tsx')
 test('THE POINT: a coming-soon plan renders disabled and badged, not hidden', () => {
   // Family shipped this way on the prod chooser (COS-432). Hiding it defeats
   // the point of advertising the roadmap.
+  //
+  // COS-811 dropped the dashes. The card has to look like a CARD first: the
+  // dashed border sat at 12% alpha under opacity 0.7 — roughly 8% against the
+  // background — so it had no visible edge and the content floated on the
+  // page. On the prod chooser the dashes were the only "unavailable" signal;
+  // here the badge already says it, so the outline is free to bound the card.
+  //
+  // What this wire is actually for is unchanged: shown, badged, muted, and
+  // impossible to choose.
   assert.match(status, /COMING SOON/)
-  assert.match(status, /borderStyle: 'dashed'/)
+  assert.match(status, /cardSoon: \{ opacity: 0\.\d+ \}/)
+  assert.match(status, /comingSoon\s*\?\s*\(colors\.text \?\? '#11181C'\) \+ '38'/)
 })
 
 test('a coming-soon card is not tappable', () => {

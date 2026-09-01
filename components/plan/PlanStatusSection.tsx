@@ -395,10 +395,22 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 // Transparent, so AppWrapper's background circles run behind
                 // the cards instead of being clipped into squares by them.
                 backgroundColor: 'transparent',
+                /*
+                 * COS-811 — a coming-soon card still has to look like a card.
+                 *
+                 * It was a DASHED border at 12% alpha under opacity 0.7, which
+                 * multiplies out to roughly 8% against the background: no
+                 * visible edge at all, so the content floated on the page
+                 * instead of sitting in a card. COS-753 chose dashed for
+                 * parity with the prod chooser, but there the border was the
+                 * only "unavailable" signal — here the COMING SOON badge
+                 * already says it, so the dashes were spending the card's
+                 * entire outline on a thing that was already stated.
+                 */
                 borderColor: current
                   ? colors.tint
                   : comingSoon
-                    ? (colors.text ?? '#11181C') + '20'
+                    ? (colors.text ?? '#11181C') + '38'
                     : colors.border ?? '#E0E0E0',
                 // COS-810 — the rail. Four structurally identical cards meant
                 // scanning them was reading them; this is what makes a card
@@ -847,7 +859,9 @@ const styles = StyleSheet.create({
   sub: { marginBottom: 12, opacity: 0.8 },
   card: { borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },
   // Dashed + faded, exactly as the prod chooser rendered Family.
-  cardSoon: { borderStyle: 'dashed', opacity: 0.7 },
+  // Muted, but solid: the badge carries the "not yet" message, so the
+  // outline is free to do its actual job of bounding the card.
+  cardSoon: { opacity: 0.82 },
   // The plan they are on: a heavier tinted edge, so it reads as selected at a
   // glance without a fill that would clip the background circles.
   currentBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },

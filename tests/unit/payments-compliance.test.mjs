@@ -325,11 +325,11 @@ test('nobody is held at the door', () => {
   // YOUR PLAN, so the copy now lives in the shelf component.
   const tab = read('app/Home/care-plan-plus.tsx')
   const cards = read('components/plan/PlanStatusSection.tsx')
-  assert.match(tab, /onGoToPlan=\{\(\) => setPlanGateBypassed\(true\)\}/)
+  assert.match(tab, /onGoToPlan=\{dismissChooser\}/)
   assert.match(cards, /Go to your plan/)
   // Switching closes it too — "once the plan is switched ... show that
   // original screen". Without this the patient picks and stays on the shelf.
-  assert.match(tab, /onSwitched=\{\(\) => setPlanGateBypassed\(true\)\}/)
+  assert.match(tab, /onSwitched=\{dismissChooser\}/)
   assert.match(cards, /onSwitched\?\.\(\)/)
 })
 

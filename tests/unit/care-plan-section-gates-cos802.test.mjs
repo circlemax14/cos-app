@@ -176,7 +176,10 @@ test("THE POINT: Plan+'s switch pill reopens ITS OWN chooser", () => {
   // is the wrong screen, and it is the one place a patient would look to
   // change the plan they had just picked off the shelf.
   const plus = read('app/Home/care-plan-plus.tsx')
-  assert.match(plus, /onChangePlanType=\{\(\) => setPlanGateBypassed\(false\)\}/)
+  // COS-811: reopening is now a VIEW state, deliberately separate from what
+  // is on disk — asking to see the shelf again must not un-remember that the
+  // patient has already been through it once.
+  assert.match(plus, /onChangePlanType=\{\(\) => setReopened\(true\)\}/)
   // Navigation only — the prose above the prop still names the route it used
   // to push, and that comment is the reason the fix is legible.
   assert.doesNotMatch(plus, /router\.push\([^)]*plan-type-chooser/)
@@ -364,4 +367,39 @@ test('a coming-soon card is muted, not accented', () => {
   // Colour on a card you cannot choose is an invitation that goes nowhere.
   const cards = read('components/plan/PlanStatusSection.tsx')
   assert.match(cards, /const accent = comingSoon \? \(colors\.subtext \?\? colors\.text\) : planAccent\(plan\.planKey\)/)
+})
+
+// ── COS-811: the chooser is a first-run door ─────────────────────────────
+
+test('THE POINT: the chooser is shown ONCE, not on every visit', () => {
+  // COS-801 held the bypass in plain component state. This is a TAB — the
+  // route remounts every time you switch to it — so the chooser reappeared in
+  // front of the plan on every single visit, forever.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /care-plan-plus\.chooser\.seen/)
+  assert.match(plus, /AsyncStorage\.setItem\(CHOOSER_SEEN_KEY, '1'\)/)
+  assert.match(plus, /\(reopened \|\| seen === false\)/)
+})
+
+test('the plan never flashes before the chooser takes over', () => {
+  // `seen === null` is "still reading". Rendering the plan during that window
+  // and then yanking to a price list is worse than a beat of loading.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /if \(seen === null \|\| planQuery\.isLoading\)/)
+})
+
+test('storage failing must not trap anyone in the chooser', () => {
+  // Being wrong toward "seen" costs one fewer prompt. Being wrong the other
+  // way is an inescapable screen in front of the care plan.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  const cat = plus.slice(plus.indexOf('const v = await AsyncStorage.getItem'))
+  assert.match(cat.slice(0, 500), /setSeen\(true\)/)
+})
+
+test('reopening the shelf does not un-remember the first run', () => {
+  // The pill sets view state only. Clearing the stored flag would put the
+  // patient back to being prompted on every launch.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /setReopened\(true\)/)
+  assert.doesNotMatch(plus, /removeItem\(CHOOSER_SEEN_KEY/)
 })

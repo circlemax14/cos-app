@@ -30,7 +30,7 @@
  * used by the screens this mirrors. No new primitive is introduced on what is
  * a cold-mount surface.
  */
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -69,22 +69,64 @@ function CarePlanPlusInner(): React.JSX.Element {
   const patientName = firstNameFromPatient(patientQuery.data);
 
   /*
-   * COS-801, moved here from the classic tab.
+   * COS-811 — the chooser is a FIRST-RUN door, and it has to remember.
    *
-   * `canSwitch` is `selfSwitch && !canPay` — payments parked AND free
-   * switching on, which is exactly the window this door is for. Enable a
-   * gateway and it stops appearing on its own, with buying moving to Billing.
+   * COS-801 held the bypass in plain component state, reasoning that
+   * re-offering the chooser on a cold start cost one tap. That was wrong twice
+   * over. It is not per-launch — this is a tab, and the route remounts every
+   * time you switch to it, so the chooser reappeared on EVERY visit, in front
+   * of the plan, forever. And even per-launch was more than anyone asked for.
    *
-   * Bypass is per-launch and deliberately not persisted: while nobody has paid
-   * for anything, re-offering the chooser on a cold start costs one tap and
-   * keeps the door from quietly disappearing again.
+   * The rule now: show it once, ever. After that the tab opens on the plan,
+   * and the only way back to the shelf is asking for it — the "switch plan"
+   * pill, which sets `reopened` without touching what is on disk.
+   *
+   * `seen === null` means the read is still in flight. The gate stays shut
+   * until it resolves, so nobody sees the plan for a frame and then gets
+   * yanked to a price list.
    */
-  const [planGateBypassed, setPlanGateBypassed] = useState(false);
+  const CHOOSER_SEEN_KEY = 'care-plan-plus.chooser.seen';
+  const [seen, setSeen] = useState<boolean | null>(null);
+  const [reopened, setReopened] = useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const v = await AsyncStorage.getItem(CHOOSER_SEEN_KEY);
+        if (alive) setSeen(v === '1');
+      } catch {
+        // Storage failing must not trap anyone in the chooser. Treat it as
+        // seen: the pill still reaches the shelf, and the cost of being wrong
+        // this way is one fewer prompt rather than an inescapable screen.
+        if (alive) setSeen(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const dismissChooser = useCallback(() => {
+    setReopened(false);
+    setSeen(true);
+    void (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem(CHOOSER_SEEN_KEY, '1');
+      } catch {
+        // In-memory state already moved on; the worst case is one more prompt
+        // next launch, which is not worth failing the tap over.
+      }
+    })();
+  }, []);
+
   const patientPlansQuery = usePatientPlans();
   const { canSwitch } = usePlanChoiceControls();
   const showPlanGate =
     canSwitch &&
-    !planGateBypassed &&
+    (reopened || seen === false) &&
     // No cards means nothing to choose between — a door onto a blank wall is
     // worse than no door.
     (patientPlansQuery.data?.plans?.length ?? 0) > 0;
@@ -100,10 +142,10 @@ function CarePlanPlusInner(): React.JSX.Element {
             colors={colors}
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
-            onSwitched={() => setPlanGateBypassed(true)}
+            onSwitched={dismissChooser}
             /* COS-806 — the exit lives on the card that is already yours,
                instead of a pill in the corner. See PlanStatusSection. */
-            onGoToPlan={() => setPlanGateBypassed(true)}
+            onGoToPlan={dismissChooser}
           />
         </ScrollView>
       </AppWrapper>
@@ -112,7 +154,7 @@ function CarePlanPlusInner(): React.JSX.Element {
 
   // Same three sub-branches as the classic tab's tab-swap arm, so the two
   // surfaces resolve an unknown-plan state identically.
-  if (planQuery.isLoading) {
+  if (seen === null || planQuery.isLoading) {
     return (
       <AppWrapper>
         <View style={styles.center}>
@@ -150,7 +192,7 @@ function CarePlanPlusInner(): React.JSX.Element {
        * pill, unchanged. Two tabs, two meanings of "plan", each pill going
        * where its own surface is about.
        */
-      onChangePlanType={() => setPlanGateBypassed(false)}
+      onChangePlanType={() => setReopened(true)}
       /* COS-805 — say what the pill opens. It leads to the entitlement shelf,
          so it names the entitlement plan, not the care plan type. Same query
          the shelf reads, and onSwitch invalidates it before closing the gate,
