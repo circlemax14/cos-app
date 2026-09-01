@@ -259,3 +259,24 @@ test('a 5xx body is never shown to a patient', () => {
   const helper = read('lib/server-message.ts')
   assert.doesNotMatch(helper, /status >= 500/)
 })
+
+// ── COS-800: the shelf stays while switching is the only way to move ──────
+
+test('THE POINT: a chosen plan does not hide the chooser while switching is on', () => {
+  // Collapsing to a chip made leaving the default plan a ONE-WAY DOOR — the
+  // chooser vanished the moment a patient used it, and the only route back was
+  // two taps away on a screen most never open.
+  assert.match(cards, /billing\?\.planName && billing\.isDefaultPlan !== true && !canSwitch/)
+})
+
+test('the chip returns on its own when payments land', () => {
+  // canSwitch is `selfSwitch && !canPay`, so enabling a gateway flips this
+  // back to COS-788's behaviour with no code change. That is the property
+  // worth having — not a flag someone has to remember to unset.
+  const code = stripComments(cards)
+  assert.match(code, /const canSwitch = usePlanSelfSwitchFlag\(\) && !canPay/)
+})
+
+test('the heading says Change, not Choose, once they have a plan', () => {
+  assert.match(cards, /isDefaultPlan === false \? 'Change your plan' : 'Choose your plan'/)
+})

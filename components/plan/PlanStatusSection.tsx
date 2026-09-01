@@ -174,7 +174,21 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   // never chosen one, which is correct, but it meant every patient suddenly
   // had a planName and the chooser above vanished for first-time users. Being
   // parked on the default IS the un-chosen state; it just has a name now.
-  if (billing?.planName && billing.isDefaultPlan !== true) {
+  //
+  // COS-800 — …UNLESS they can switch, which is the whole point right now.
+  //
+  // The chip was right when a plan was something you bought and then lived
+  // with: shopping is not what this tab is for once the shopping is done.
+  // With payments parked and free switching on, "chosen" no longer means
+  // settled — and collapsing to a chip made it a ONE-WAY DOOR. A patient
+  // could leave the default plan exactly once, because the moment they did
+  // the chooser vanished and the only route back was two taps away on a
+  // screen most of them will never open.
+  //
+  // So while canSwitch is true the shelf stays. The day payments land,
+  // canSwitch goes false, and COS-788's chip comes back on its own with no
+  // code change — which is the property worth having here.
+  if (billing?.planName && billing.isDefaultPlan !== true && !canSwitch) {
     return (
       <View style={styles.chipRow}>
         <View style={[styles.chip, { backgroundColor: colors.tint }]}>
@@ -207,7 +221,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
           { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never },
         ]}
       >
-        Choose your plan
+        {billing?.isDefaultPlan === false ? 'Change your plan' : 'Choose your plan'}
       </Text>
       <Text style={[styles.sub, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
         You can change it at any time.

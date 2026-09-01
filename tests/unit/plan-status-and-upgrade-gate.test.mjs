@@ -68,9 +68,20 @@ test('THE POINT: a patient WITH a plan gets one line, not the price shelf', () =
   // plan they CHOSE still gets the one line. What changed is that sitting on
   // the default no longer counts as having chosen — see the isDefaultPlan test
   // below. The ordering assertion is the load-bearing half and is unchanged.
-  const chosen = cards.indexOf('if (billing?.planName && billing.isDefaultPlan !== true)')
+  //
+  // COS-800 added a second condition rather than removing this one. The chip
+  // is still what a patient with a settled plan gets — but only when they
+  // CANNOT switch. With payments parked and free switching on, collapsing to
+  // a chip made leaving the default plan a one-way door: the chooser vanished
+  // the moment they used it.
+  //
+  // The day payments land, canSwitch goes false and this branch takes over
+  // again with no code change. That is the property being pinned here.
+  const chosen = cards.indexOf(
+    'if (billing?.planName && billing.isDefaultPlan !== true && !canSwitch)',
+  )
   const shelf = cards.indexOf('Choose your plan')
-  assert.ok(chosen > -1, 'expected a branch keyed off a CHOSEN plan')
+  assert.ok(chosen > -1, 'expected a branch keyed off a CHOSEN plan that cannot switch')
   assert.ok(chosen < shelf, 'the chosen-plan branch must return BEFORE the shelf renders')
 })
 
