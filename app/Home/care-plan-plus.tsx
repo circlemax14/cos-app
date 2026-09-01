@@ -44,6 +44,8 @@ import PlanStatusSection, {
 } from '@/components/plan/PlanStatusSection';
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { usePlanType } from '@/hooks/use-plan-type';
+import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
+import { PlanAssessmentGate } from '@/components/plan/PlanAssessmentGate';
 import { usePatientInfo } from '@/hooks/use-patient';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
@@ -66,6 +68,7 @@ function CarePlanPlusInner(): React.JSX.Element {
   const planQuery = useBiopsychosocialPlan();
   const patientQuery = usePatientInfo();
   const planTypeQuery = usePlanType();
+  const assignmentsQuery = useHealthPlanAssignments();
   const patientName = firstNameFromPatient(patientQuery.data);
 
   /*
@@ -164,6 +167,36 @@ function CarePlanPlusInner(): React.JSX.Element {
           </Text>
         </View>
       </AppWrapper>
+    );
+  }
+
+  /*
+   * COS-813 — the assessment gate, AFTER the chooser and BEFORE the plan.
+   *
+   * Order is the whole design. The chooser comes first because a patient who
+   * has not picked a plan cannot be gated on that plan's questions. The gate
+   * comes before both the empty state and the plan itself, because the plan is
+   * built FROM these answers — showing "no plan yet, tap to generate" while
+   * refusing to generate would be a dead end wearing a CTA.
+   *
+   * `canGenerate === false` alone is not enough. It is also false for an
+   * advanced-tier patient with nothing assigned, whose answer is "your care
+   * team will assign these" and who has nothing to tap. Requiring a non-empty
+   * `remaining` means the gate only appears when there is actually something
+   * the patient can DO about it.
+   *
+   * Undefined while loading, so a slow query never flashes the gate.
+   */
+  const assignments = assignmentsQuery.data;
+  const remaining = assignments?.remainingInstrumentIds ?? [];
+  if (assignments && assignments.canGenerate === false && remaining.length > 0) {
+    return (
+      <PlanAssessmentGate
+        remaining={remaining}
+        completedCount={assignments.completedInstrumentIds.length}
+        totalCount={assignments.assignedInstrumentIds.length}
+        previousPlanKey={assignments.previousPlanKey ?? null}
+      />
     );
   }
 
