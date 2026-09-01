@@ -177,9 +177,14 @@ test('THE POINT: both controls hang off the REAL gateway list, not a flag', () =
   // plan offered Subscribe and landed on "payments aren't available", and a
   // free plan showed nothing at all.
   const code = stripComments(cards)
+  //
+  // COS-801 moved both expressions into the exported usePlanChoiceControls
+  // hook so the Care Plan tab can ask the same question. Same two rules,
+  // one definition — asserted on the hook rather than on inline consts.
   assert.match(code, /const \{ canPay \} = usePaymentGateways\(\)/)
-  assert.match(code, /const canSubscribe = subscribeEnabled && canPay/)
-  assert.match(code, /const canSwitch = usePlanSelfSwitchFlag\(\) && !canPay/)
+  assert.match(code, /canSubscribe: subscribeEnabled && canPay/)
+  assert.match(code, /canSwitch: selfSwitchEnabled && !canPay/)
+  assert.match(code, /const selfSwitchEnabled = usePlanSelfSwitchFlag\(\)/)
 })
 
 test('THE POINT: exactly one of Subscribe / Switch can ever be offered', () => {
@@ -260,21 +265,68 @@ test('a 5xx body is never shown to a patient', () => {
   assert.doesNotMatch(helper, /status >= 500/)
 })
 
-// ── COS-800: the shelf stays while switching is the only way to move ──────
+// ── COS-801: the chooser is a door, not a header ──────────────────────────
 
 test('THE POINT: a chosen plan does not hide the chooser while switching is on', () => {
   // Collapsing to a chip made leaving the default plan a ONE-WAY DOOR — the
   // chooser vanished the moment a patient used it, and the only route back was
   // two taps away on a screen most never open.
-  assert.match(cards, /billing\?\.planName && billing\.isDefaultPlan !== true && !canSwitch/)
+  //
+  // COS-800 held the door open by never collapsing the strip, which put a
+  // price list back on top of the care plan. COS-801 keeps the door open
+  // somewhere better: the Care Plan tab OPENS on the chooser while switching
+  // is on. Same guarantee — a patient can always reach the other plans from
+  // the tab — without the shelf living on the plan screen.
+  const tab = read('app/Home/health-plan.tsx')
+  assert.match(tab, /const showPlanGate =\s*\n\s*canSwitch &&/)
+  assert.match(tab, /if \(showPlanGate\) \{/)
+  // And the shelf must actually render its cards there, not collapse to the
+  // one-line strip — which is exactly what it would do for a patient who has
+  // already picked.
+  assert.match(tab, /variant="chooser"/)
+  assert.match(cards, /variant === 'strip' && billing\?\.planName && billing\.isDefaultPlan !== true/)
 })
 
-test('the chip returns on its own when payments land', () => {
-  // canSwitch is `selfSwitch && !canPay`, so enabling a gateway flips this
-  // back to COS-788's behaviour with no code change. That is the property
+test('THE POINT: the door is alive in PRODUCTION, not just on dev', () => {
+  // The Care Plan tab has two completely different bodies behind
+  // isTabSwapBpsEnabled() — BPS in production, the legacy screen on dev — and
+  // every PlanStatusSection mount below that branch is dead code in prod.
+  // Two OTAs have already shipped UI into that dead arm. The gate returns
+  // ABOVE the branch so it serves both.
+  const tab = read('app/Home/health-plan.tsx')
+  assert.ok(
+    tab.indexOf('if (showPlanGate)') < tab.indexOf('if (isTabSwapBpsEnabled())'),
+    'the plan gate must return before the tab-swap branch, or it is dead in production',
+  )
+})
+
+test('nobody is held at the door', () => {
+  // A chooser you cannot walk past is worse than no chooser. Two ways out:
+  // pick a plan, or skip.
+  const tab = read('app/Home/health-plan.tsx')
+  assert.match(tab, /Go to your plan/)
+  assert.match(tab, /onPress=\{\(\) => setPlanGateBypassed\(true\)\}/)
+  // Switching closes it too — "once the plan is switched ... show that
+  // original screen". Without this the patient picks and stays on the shelf.
+  assert.match(tab, /onSwitched=\{\(\) => setPlanGateBypassed\(true\)\}/)
+  assert.match(cards, /onSwitched\?\.\(\)/)
+})
+
+test('the door stops appearing on its own when payments land', () => {
+  // canSwitch is `selfSwitch && !canPay`, so enabling a gateway removes the
+  // gate and restores COS-788's chip with no code change. That is the property
   // worth having — not a flag someone has to remember to unset.
   const code = stripComments(cards)
-  assert.match(code, /const canSwitch = usePlanSelfSwitchFlag\(\) && !canPay/)
+  assert.match(code, /canSwitch: selfSwitchEnabled && !canPay/)
+  const tab = stripComments(read('app/Home/health-plan.tsx'))
+  assert.match(tab, /const showPlanGate =\s*\n\s*canSwitch &&/)
+})
+
+test('an empty shelf is not a wall', () => {
+  // No cards means nothing to choose between. Showing the door anyway would
+  // put a blank screen in front of the care plan.
+  const tab = read('app/Home/health-plan.tsx')
+  assert.match(tab, /patientPlansQuery\.data\?\.plans\?\.length \?\? 0\) > 0/)
 })
 
 test('the heading says Change, not Choose, once they have a plan', () => {

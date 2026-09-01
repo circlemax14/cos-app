@@ -100,21 +100,19 @@ export function usePatientPlans() {
   });
 }
 
-interface Props {
-  colors: { text: string; subtext?: string; tint: string; card?: string; border?: string };
-  getScaledFontSize: (n: number) => number;
-  getScaledFontWeight: (n: number) => number | string;
-}
-
-export default function PlanStatusSection({ colors, getScaledFontSize, getScaledFontWeight }: Props) {
-  const { data, isError } = usePatientPlans();
-  // One open at a time. An accordion rather than per-card flags because the
-  // whole point of collapsing the detail was to stop this section pushing the
-  // daily tasks off the screen — several open at once puts it straight back.
-  const [openKey, setOpenKey] = useState<string | null>(null);
+/**
+ * COS-801 — the two gates, in one place.
+ *
+ * The Care Plan tab needs `canSwitch` to decide whether to open on the plan
+ * chooser (see `showPlanGate` in app/Home/health-plan.tsx). It was already
+ * computed here; exporting it beats a second copy of the expressions that
+ * can drift out of step with this one.
+ */
+export function usePlanChoiceControls(): { canSubscribe: boolean; canSwitch: boolean } {
   // Same gate the Billing screen uses. There is no payment integration, so
   // the subscribe controls ship dark on prod and live on dev.
   const subscribeEnabled = useSubscriptionUpgradeFlag();
+  const selfSwitchEnabled = usePlanSelfSwitchFlag();
   /*
    * COS-798 — "can they pay" is the SERVER's gateway list, not a flag.
    *
@@ -135,8 +133,37 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
    * controls hang off it, so exactly one of them shows and neither dead-ends.
    */
   const { canPay } = usePaymentGateways();
-  const canSubscribe = subscribeEnabled && canPay;
-  const canSwitch = usePlanSelfSwitchFlag() && !canPay;
+  return {
+    canSubscribe: subscribeEnabled && canPay,
+    canSwitch: selfSwitchEnabled && !canPay,
+  };
+}
+
+interface Props {
+  colors: { text: string; subtext?: string; tint: string; card?: string; border?: string };
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => number | string;
+  /**
+   * COS-801 — fired after a switch lands, so the Care Plan tab can close the
+   * chooser and show the plan. "Once the plan is switched ... we will show
+   * that original screen."
+   */
+  onSwitched?: () => void;
+  /**
+   * COS-801 — `chooser` keeps the full shelf up even for a patient who has
+   * already picked, because that screen exists to be picked from. The default
+   * `strip` is the COS-744 behaviour: cards until you choose, then one line.
+   */
+  variant?: 'strip' | 'chooser';
+}
+
+export default function PlanStatusSection({ colors, getScaledFontSize, getScaledFontWeight, onSwitched, variant = 'strip' }: Props) {
+  const { data, isError } = usePatientPlans();
+  // One open at a time. An accordion rather than per-card flags because the
+  // whole point of collapsing the detail was to stop this section pushing the
+  // daily tasks off the screen — several open at once puts it straight back.
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const { canSubscribe, canSwitch } = usePlanChoiceControls();
   const queryClient = useQueryClient();
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -149,6 +176,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
       await switchToPlan(planKey);
       setOpenKey(null);
       await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+      onSwitched?.();
     } catch (err) {
       setSwitchError(serverMessage(err, 'Could not change your plan. Please try again.'));
     } finally {
@@ -175,20 +203,16 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   // had a planName and the chooser above vanished for first-time users. Being
   // parked on the default IS the un-chosen state; it just has a name now.
   //
-  // COS-800 — …UNLESS they can switch, which is the whole point right now.
+  // COS-800 hung `&& !canSwitch` here, so that while payments were parked the
+  // shelf never collapsed. That fixed a real ONE-WAY DOOR — leave the default
+  // plan once and the chooser vanished — but it fixed it by parking a price
+  // list on top of the care plan, which is the exact thing COS-744 removed.
   //
-  // The chip was right when a plan was something you bought and then lived
-  // with: shopping is not what this tab is for once the shopping is done.
-  // With payments parked and free switching on, "chosen" no longer means
-  // settled — and collapsing to a chip made it a ONE-WAY DOOR. A patient
-  // could leave the default plan exactly once, because the moment they did
-  // the chooser vanished and the only route back was two taps away on a
-  // screen most of them will never open.
-  //
-  // So while canSwitch is true the shelf stays. The day payments land,
-  // canSwitch goes false, and COS-788's chip comes back on its own with no
-  // code change — which is the property worth having here.
-  if (billing?.planName && billing.isDefaultPlan !== true && !canSwitch) {
+  // COS-801 moves the fix up a level: the Care Plan tab now OPENS on the
+  // chooser whenever canSwitch is true, with "Go to your plan" one tap away.
+  // The door stays open, and this strip goes back to being one line — so the
+  // condition reverts to COS-788's.
+  if (variant === 'strip' && billing?.planName && billing.isDefaultPlan !== true) {
     return (
       <View style={styles.chipRow}>
         <View style={[styles.chip, { backgroundColor: colors.tint }]}>

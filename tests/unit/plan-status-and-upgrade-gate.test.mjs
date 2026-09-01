@@ -35,8 +35,12 @@ const menu = read('components/profile-content.tsx')
 test('the Plan tab mounts the cards in every branch, including both empty states', () => {
   // Three mounts: the generate-plan empty state, the assessments state, and
   // the main state. Miss one and that state becomes a dead end again.
+  //
+  // COS-801 adds a fourth — the plan-choice gate, which returns above all
+  // three (and above the tab-swap branch, so it is the only one of the four
+  // that renders in production).
   const mounts = planTab.match(/<PlanStatusSection\b/g) ?? []
-  assert.equal(mounts.length, 3, 'expected PlanStatusSection in all three Plan tab branches')
+  assert.equal(mounts.length, 4, 'expected PlanStatusSection in the gate plus all three Plan tab branches')
 })
 
 test('the cards open the subscription screen', () => {
@@ -77,8 +81,13 @@ test('THE POINT: a patient WITH a plan gets one line, not the price shelf', () =
   //
   // The day payments land, canSwitch goes false and this branch takes over
   // again with no code change. That is the property being pinned here.
+  //
+  // COS-801 dropped `&& !canSwitch` again — the one-way door it guarded
+  // against is now held open by the Care Plan tab's chooser gate instead of
+  // by refusing to collapse this strip. `variant === 'strip'` replaced it,
+  // which is what lets the gate render the cards while this stays one line.
   const chosen = cards.indexOf(
-    'if (billing?.planName && billing.isDefaultPlan !== true && !canSwitch)',
+    "if (variant === 'strip' && billing?.planName && billing.isDefaultPlan !== true)",
   )
   const shelf = cards.indexOf('Choose your plan')
   assert.ok(chosen > -1, 'expected a branch keyed off a CHOSEN plan that cannot switch')
@@ -452,8 +461,10 @@ test('subscribing rides the SAME dark-launch gate as the Billing screen', () => 
   // COS-798 tightened it: the flag is now ANDed with the server's real gateway
   // list, so an un-darked button with no working gateway behind it is no
   // longer possible.
+  //
+  // COS-801: the expression moved into usePlanChoiceControls, unchanged.
   assert.match(cards, /useSubscriptionUpgradeFlag/)
-  assert.match(cards, /const canSubscribe = subscribeEnabled && canPay/)
+  assert.match(cards, /canSubscribe: subscribeEnabled && canPay/)
   assert.match(cards, /canSubscribe && monthly/)
   assert.match(cards, /canSubscribe && annual/)
 })
