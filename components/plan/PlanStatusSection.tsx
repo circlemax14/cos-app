@@ -52,7 +52,15 @@ export interface PatientPlanCard {
   name: string;
   shortDescription: string | null;
   tier: string | null;
-  pricing: { monthlyPriceCents: number | null; annualPriceCents: number | null; currency: string } | null;
+  pricing: {
+    monthlyPriceCents: number | null;
+    annualPriceCents: number | null;
+    currency: string;
+    /** COS-807 — an admin's own words, e.g. "Free forever". */
+    displayPriceLabel?: string | null;
+  } | null;
+  /** COS-807 — length of the free trial, when the plan has one. */
+  trialDays?: number | null;
   highlights: string[];
   isCurrent: boolean;
 }
@@ -267,7 +275,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
       </Text>
 
       {plans.map((plan) => {
-        const { monthly, annual, annualSavingPct } = priceLines(plan.pricing);
+        const { monthly, annual, annualSavingPct, label: priceLabel } = priceLines(plan.pricing);
         // COS-753 — the prod chooser advertised Family as a disabled card with
         // a COMING SOON badge (COS-432). Same treatment, driven by the plan's
         // status from the dashboard rather than a hardcoded list in the app.
@@ -300,20 +308,59 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               comingSoon && styles.cardSoon,
             ]}
           >
+            {/*
+              COS-807 — the card, rebuilt to carry what the plan actually says.
+
+              It rendered a name, a monthly figure and one line of description.
+              Everything else the API sends — the tier, the admin's own price
+              wording, the trial, the highlights — was either dropped on the
+              floor by the client interface or hidden behind an expander. Four
+              cards that all looked the same and told you almost nothing.
+
+              The old hardcoded plan-type chooser read far better, and the
+              reason is structure rather than content: an icon you can find the
+              card by, a tinted badge, then labelled rows. Same language here,
+              driven by real data.
+            */}
             <View style={styles.cardHead}>
-              <MaterialIcons
-                name={(plan.icon ?? 'workspace-premium') as never}
-                size={getScaledFontSize(26)}
-                color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
-              />
-              <Text
+              <View
                 style={[
-                  styles.name,
-                  { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(700) as never },
+                  styles.iconCircle,
+                  {
+                    backgroundColor:
+                      (comingSoon ? (colors.subtext ?? colors.text) : (colors.tint as string)) + '18',
+                  },
                 ]}
               >
-                {plan.name}
-              </Text>
+                <MaterialIcons
+                  name={(plan.icon ?? 'workspace-premium') as never}
+                  size={getScaledFontSize(22)}
+                  color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+                />
+              </View>
+              <View style={styles.headText}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(18),
+                    fontWeight: getScaledFontWeight(700) as never,
+                  }}
+                >
+                  {plan.name}
+                </Text>
+                {/* The tier is the plan's shape in one word, and the shelf was
+                    throwing it away entirely. */}
+                {plan.tier ? (
+                  <Text
+                    style={[
+                      styles.tier,
+                      { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(10) },
+                    ]}
+                  >
+                    {plan.tier.toUpperCase()}
+                  </Text>
+                ) : null}
+              </View>
               {current && (
                 <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
                   <Text style={[styles.currentBadgeText, { fontSize: getScaledFontSize(10) }]}>
@@ -329,14 +376,25 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
             </View>
 
             {/* A coming-soon tier has no price to quote, and inventing one
-                would be a promise we have not made. */}
-            {!comingSoon && monthly ? (
+                would be a promise we have not made.
+
+                COS-807: `priceLabel` is the admin's own wording and outranks
+                the computed figure. Without it a free plan showed no price at
+                all — the single biggest reason these cards read as empty. */}
+            {!comingSoon && (priceLabel ?? monthly) ? (
               <Text
                 style={[
                   styles.price,
                   { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never },
                 ]}
               >
+                {priceLabel ?? monthly}
+              </Text>
+            ) : null}
+            {/* When the admin wrote a label AND a figure exists, the figure
+                becomes the supporting line rather than being lost. */}
+            {!comingSoon && priceLabel && monthly ? (
+              <Text style={[styles.annual, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
                 {monthly}
               </Text>
             ) : null}
@@ -346,6 +404,19 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 {annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}
               </Text>
             ) : null}
+            {!comingSoon && typeof plan.trialDays === 'number' && plan.trialDays > 0 ? (
+              <View style={[styles.trialPill, { backgroundColor: (colors.tint as string) + '18' }]}>
+                <MaterialIcons name="schedule" size={getScaledFontSize(12)} color={colors.tint} />
+                <Text
+                  style={[
+                    styles.trialText,
+                    { color: colors.tint, fontSize: getScaledFontSize(11) },
+                  ]}
+                >
+                  {`${String(plan.trialDays)}-day free trial`}
+                </Text>
+              </View>
+            ) : null}
 
             {plan.shortDescription ? (
               <Text style={[styles.body, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
@@ -353,15 +424,38 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               </Text>
             ) : null}
 
-            {/* Your own plan lists what you get without asking. On the others
-                it is the payload of the expander, so a shelf of four plans is
-                four short cards rather than a wall the daily tasks sit below. */}
-            {(current || open) &&
-              plan.highlights.map((h) => (
-                <Text key={h} style={[styles.bullet, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
-                  {`✓  ${h}`}
-                </Text>
-              ))}
+            {/*
+              COS-807 — what you get, visible without asking.
+
+              COS-789 hid these behind the expander because the shelf then sat
+              ON the care plan screen, above the daily tasks, and four open
+              cards buried them. It is now its own screen whose entire job is
+              choosing, so the reason is gone — and a card listing nothing is
+              exactly what made these feel empty. The strip variant still
+              collapses, because it is still inline above other content.
+            */}
+            {(variant === 'chooser' || current || open) && plan.highlights.length > 0 ? (
+              <View style={styles.highlights}>
+                {plan.highlights.map((h) => (
+                  <View key={h} style={styles.highlightRow}>
+                    <MaterialIcons
+                      name="check-circle"
+                      size={getScaledFontSize(15)}
+                      color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+                      style={styles.highlightIcon}
+                    />
+                    <Text
+                      style={[
+                        styles.highlightText,
+                        { color: colors.text, fontSize: getScaledFontSize(13) },
+                      ]}
+                    >
+                      {h}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             {/* COS-806 — your own card is where "go to your plan" belongs.
                 It is also the only card with no other control: there is
@@ -609,10 +703,28 @@ const styles = StyleSheet.create({
   detailNote: { lineHeight: 19 },
   switchError: { color: '#B91C1C', lineHeight: 19 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
+  // A findable anchor per card — the old chooser's cards read better largely
+  // because you could tell them apart at a glance.
+  iconCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  headText: { flex: 1 },
+  tier: { fontWeight: '700', letterSpacing: 0.8, marginTop: 2, opacity: 0.8 },
+  trialPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    marginTop: 8,
+    gap: 4,
+  },
+  trialText: { fontWeight: '700' },
+  highlights: { marginTop: 10, gap: 7 },
+  highlightRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  highlightIcon: { marginTop: 1 },
+  highlightText: { flex: 1, marginLeft: 8, lineHeight: 19 },
   soonBadge: { letterSpacing: 0.8, fontWeight: '700' },
-  name: { flex: 1 },
   price: { marginTop: 6 },
   annual: { marginTop: 2, opacity: 0.75 },
   body: { marginTop: 6, lineHeight: 19 },
-  bullet: { marginTop: 5, lineHeight: 19 },
 });

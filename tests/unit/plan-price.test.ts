@@ -55,5 +55,47 @@ test('a monthly-only plan still renders, with no annual line or saving', () => {
 });
 
 test('no pricing at all yields all nulls, so the card can say something else', () => {
-  assert.deepEqual(priceLines(null), { monthly: null, annual: null, annualSavingPct: null });
+  assert.deepEqual(priceLines(null), { monthly: null, annual: null, annualSavingPct: null, label: null });
+});
+
+// ── COS-807: the admin's own words for the price ──────────────────────────
+
+test("THE POINT: a plan priced only by a label is not priceless", () => {
+  // The backend has returned displayPriceLabel since COS-784 and the app threw
+  // it away, so a free plan rendered a name and nothing else. That is most of
+  // why the cards read as empty.
+  const out = priceLines({
+    monthlyPriceCents: null,
+    annualPriceCents: null,
+    currency: 'USD',
+    displayPriceLabel: 'Free forever',
+  });
+  assert.equal(out.label, 'Free forever');
+  assert.equal(out.monthly, null);
+});
+
+test('the label wins over a computed figure', () => {
+  // An admin who typed a price meant it.
+  const out = priceLines({
+    monthlyPriceCents: 3900,
+    annualPriceCents: null,
+    currency: 'USD',
+    displayPriceLabel: 'Included with your care',
+  });
+  assert.equal(out.label, 'Included with your care');
+  // ...and the computed one is still available, so the card can show both.
+  assert.equal(out.monthly, '$39 / mo');
+});
+
+test('a blank label is absent, not a blank price', () => {
+  // displayName had exactly this bug in four places.
+  for (const bad of ['', '   ', undefined, null]) {
+    const out = priceLines({
+      monthlyPriceCents: 1000,
+      annualPriceCents: null,
+      currency: 'USD',
+      displayPriceLabel: bad as string | null | undefined,
+    });
+    assert.equal(out.label, null, `"${String(bad)}" should not render as a price`);
+  }
 });

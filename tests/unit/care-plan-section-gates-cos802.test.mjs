@@ -248,3 +248,43 @@ test('Billing gets no exit button — it has no plan to go to', () => {
   assert.match(cards, /onGoToPlan\?: \(\) => void/)
   assert.doesNotMatch(read('app/Home/billing.tsx'), /onGoToPlan/)
 })
+
+// ── COS-807: the cards carry what the plan actually says ─────────────────
+
+test('THE POINT: fields the API sends are no longer dropped by the client', () => {
+  // displayPriceLabel and trialDays have come back from /v1/patients/me/plans
+  // since COS-784/769 and the card's own interface omitted them, so they could
+  // never render. A free plan showed a name and nothing else.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /displayPriceLabel\?: string \| null/)
+  assert.match(cards, /trialDays\?: number \| null/)
+  assert.match(cards, /label: priceLabel \} = priceLines\(plan\.pricing\)/)
+})
+
+test('a plan priced only by a label still shows a price', () => {
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\{priceLabel \?\? monthly\}/)
+})
+
+test('the tier reaches the card', () => {
+  // One word describing the plan's shape, thrown away entirely before this.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /plan\.tier \? \(/)
+  assert.match(cards, /plan\.tier\.toUpperCase\(\)/)
+})
+
+test('highlights render as rows with a tick, not a text prefix', () => {
+  // They were a "✓  " string glued to the front of a Text, which cannot wrap
+  // or align — a two-line highlight hung under its own tick.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /name="check-circle"/)
+  assert.doesNotMatch(cards, /`✓ {2}\$\{h\}`/)
+  assert.match(cards, /highlightText.*flex: 1/s)
+})
+
+test('the strip variant still collapses its highlights', () => {
+  // It renders inline above other content on the Care Plan tab, which is the
+  // whole reason COS-789 collapsed them. Only the chooser is exempt.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /variant === 'chooser' \|\| current \|\| open/)
+})

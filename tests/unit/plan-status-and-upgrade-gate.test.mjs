@@ -326,8 +326,17 @@ test('a coming-soon card is not tappable', () => {
 
 test('no price is quoted for a coming-soon tier', () => {
   // Inventing one would be a promise we have not made.
-  assert.match(status, /!comingSoon && monthly/)
-  assert.match(status, /!comingSoon && annual/)
+  //
+  // COS-807 added two more price lines (the admin's own label, and the trial
+  // pill). Rather than list them, assert the property: EVERY price render site
+  // is guarded on !comingSoon. A new one added without the guard fails here.
+  const priceTokens = ['priceLabel ?? monthly', 'priceLabel && monthly', 'annual ?', 'plan.trialDays']
+  for (const tok of priceTokens) {
+    const at = status.indexOf(tok)
+    assert.ok(at > -1, `price line "${tok}" not found — did it get renamed?`)
+    const line = status.slice(status.lastIndexOf('{', at), at + tok.length)
+    assert.match(line, /!comingSoon/, `price line "${tok}" is not gated on !comingSoon`)
+  }
 })
 
 test('coming-soon comes from the dashboard, not a hardcoded list in the app', () => {
@@ -462,7 +471,11 @@ test('one card open at a time', () => {
 })
 
 test('your own plan shows what you get without being asked', () => {
-  assert.match(cards, /\{\(current \|\| open\) &&/)
+  // COS-807 widened this: the whole CHOOSER shows highlights now. COS-789 hid
+  // them because the shelf sat above the daily tasks and four open cards
+  // buried them; the chooser is its own screen, so that reason is gone. The
+  // strip variant still collapses, because it is still inline above content.
+  assert.match(cards, /\{\(variant === 'chooser' \|\| current \|\| open\) && plan\.highlights\.length > 0/)
 })
 
 test('subscribing rides the SAME dark-launch gate as the Billing screen', () => {

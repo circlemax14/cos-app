@@ -10,6 +10,15 @@ export interface PlanPricing {
   monthlyPriceCents: number | null;
   annualPriceCents: number | null;
   currency: string;
+  /**
+   * COS-807 — an admin-authored override, e.g. "Free forever".
+   *
+   * The backend has returned this since COS-784 and the app dropped it on the
+   * floor, so a plan priced entirely by this label rendered with NO PRICE AT
+   * ALL — the card showed a name and nothing else. It wins over the computed
+   * figure, because an admin who typed a price meant it.
+   */
+  displayPriceLabel?: string | null;
 }
 
 /**
@@ -34,8 +43,10 @@ export function priceLines(pricing: PlanPricing | null | undefined): {
   annual: string | null;
   /** Percent saved by paying annually, when both prices exist and it is positive. */
   annualSavingPct: number | null;
+  /** The admin's own words for the price, when they wrote any. */
+  label: string | null;
 } {
-  if (!pricing) return { monthly: null, annual: null, annualSavingPct: null };
+  if (!pricing) return { monthly: null, annual: null, annualSavingPct: null, label: null };
   const currency = pricing.currency || 'USD';
   const monthly = formatPrice(pricing.monthlyPriceCents, currency);
   const annual = formatPrice(pricing.annualPriceCents, currency);
@@ -50,5 +61,14 @@ export function priceLines(pricing: PlanPricing | null | undefined): {
     annualSavingPct = pct > 0 ? pct : null;
   }
 
-  return { monthly: monthly ? `${monthly} / mo` : null, annual: annual ? `${annual} / yr` : null, annualSavingPct };
+  // Trimmed, and empty-string-is-absent: displayName had exactly this bug in
+  // four places, and an all-whitespace label would render as a blank price.
+  const label = pricing.displayPriceLabel?.trim() || null;
+
+  return {
+    monthly: monthly ? `${monthly} / mo` : null,
+    annual: annual ? `${annual} / yr` : null,
+    annualSavingPct,
+    label,
+  };
 }
