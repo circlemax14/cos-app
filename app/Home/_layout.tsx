@@ -89,6 +89,29 @@ export default function TabLayout() {
         }
       />
       {/*
+        COS-803 — "Plan+", the entitlement-composed care plan, sitting
+        immediately to the RIGHT of the classic Care Plan tab.
+
+        Deliberately a peer rather than a replacement. Every previous round of
+        entitlement work was built on top of the Care Plan tab itself and kept
+        breaking the screen patients actually use. This way the classic tab
+        stays exactly as production ships it and the two can be compared side
+        by side, one tap apart.
+
+        No `canShow` gate: this is the surface for TESTING entitlements, so
+        hiding it behind one would make it disappear the moment a plan got the
+        answer wrong — precisely when it is needed.
+      */}
+      <Tabs.Screen
+        name="care-plan-plus"
+        options={{
+          title: 'Plan+',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+          ),
+        }}
+      />
+      {/*
         Chunk 29 (2026-07-21) — unified-plan Tabs.Screen moved from the
         end of the file (line ~362 previously) to sit RIGHT AFTER
         health-plan so both share the same Care Plan slot in the tab bar.

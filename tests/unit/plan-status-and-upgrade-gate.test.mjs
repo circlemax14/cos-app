@@ -36,11 +36,11 @@ test('the Plan tab mounts the cards in every branch, including both empty states
   // Three mounts: the generate-plan empty state, the assessments state, and
   // the main state. Miss one and that state becomes a dead end again.
   //
-  // COS-801 adds a fourth — the plan-choice gate, which returns above all
-  // three (and above the tab-swap branch, so it is the only one of the four
-  // that renders in production).
+  // COS-801 added a fourth here; COS-803 moved it to app/Home/care-plan-plus.tsx
+  // so the classic tab is exactly what production ships. Back to three, and
+  // the gate's own mount is pinned by payments-compliance instead.
   const mounts = planTab.match(/<PlanStatusSection\b/g) ?? []
-  assert.equal(mounts.length, 4, 'expected PlanStatusSection in the gate plus all three Plan tab branches')
+  assert.equal(mounts.length, 3, 'expected PlanStatusSection in all three Plan tab branches')
 })
 
 test('the cards open the subscription screen', () => {

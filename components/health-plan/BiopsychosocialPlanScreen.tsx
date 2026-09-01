@@ -765,6 +765,7 @@ export function BiopsychosocialPlanScreen({
   patientName,
   headerRight,
   deepLinkFocus,
+  entitlementGating = false,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
@@ -813,6 +814,18 @@ export function BiopsychosocialPlanScreen({
    * unique structural differences bio had vs. legacy.
    */
   patientName: string | null;
+  /**
+   * COS-803 — apply the per-section entitlement gates.
+   *
+   * Defaults to FALSE, which is the whole point. The Care Plan tab in the
+   * centre of the bottom bar renders this component with the prop absent and
+   * is therefore byte-for-byte the screen that ships in production — no gate
+   * can hide anything there, whatever a plan does or does not grant.
+   *
+   * The new Plan+ tab passes it. Two tabs, one component, and the enhanced
+   * surface is the only one that can be wrong.
+   */
+  entitlementGating?: boolean;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
 
@@ -829,12 +842,21 @@ export function BiopsychosocialPlanScreen({
    * section still renders everywhere enforcement is off, and this only bites
    * where a plan is genuinely in force.
    */
-  const canWellbeingMap = useCanRender('biopsychosocial-plan.view-wellbeing-map');
-  const canSelfAssessments = useCanRender('biopsychosocial-plan.view-self-assessments');
-  const canDailyRoutines = useCanRender('biopsychosocial-plan.view-daily-routines');
-  const canNutrition = useCanRender('biopsychosocial-plan.view-nutrition-plan');
-  const canMedications = useCanRender('biopsychosocial-plan.view-medications');
-  const canSharePdf = useCanRender('biopsychosocial-plan.share-plan-pdf');
+  /*
+   * COS-803 — one place where gating turns on.
+   *
+   * The hooks run unconditionally (rules of hooks) but the ANSWER is forced
+   * open unless this surface opted in. So the classic Care Plan tab keeps
+   * every section regardless of plan, and only Plan+ composes.
+   */
+  const gate = (allowed: boolean): boolean => !entitlementGating || allowed;
+
+  const rawCanWellbeingMap = useCanRender('biopsychosocial-plan.view-wellbeing-map');
+  const rawCanSelfAssessments = useCanRender('biopsychosocial-plan.view-self-assessments');
+  const rawCanDailyRoutines = useCanRender('biopsychosocial-plan.view-daily-routines');
+  const rawCanNutrition = useCanRender('biopsychosocial-plan.view-nutrition-plan');
+  const rawCanMedications = useCanRender('biopsychosocial-plan.view-medications');
+  const rawCanSharePdf = useCanRender('biopsychosocial-plan.share-plan-pdf');
   /*
    * COS-802 — the blocks COS-755 missed.
    *
@@ -847,13 +869,27 @@ export function BiopsychosocialPlanScreen({
    * Every one of these keys is granted by the COS-802 back-fill, so a plan
    * that has been through it renders exactly as it does today.
    */
-  const canWellbeingScore = useCanRender('biopsychosocial-plan.view-wellbeing-score');
-  const canTodaysTasks = useCanRender('biopsychosocial-plan.view-todays-tasks');
-  const canViewProgress = useCanRender('biopsychosocial-plan.view-progress');
-  const canAiSummary = useCanRender('biopsychosocial-plan.view-ai-summary');
-  const canBioSection = useCanRender('biopsychosocial-plan.view-bio-section');
-  const canPsychologicalSection = useCanRender('biopsychosocial-plan.view-psychological-section');
-  const canSocialSection = useCanRender('biopsychosocial-plan.view-social-section');
+  const rawCanWellbeingScore = useCanRender('biopsychosocial-plan.view-wellbeing-score');
+  const rawCanTodaysTasks = useCanRender('biopsychosocial-plan.view-todays-tasks');
+  const rawCanViewProgress = useCanRender('biopsychosocial-plan.view-progress');
+  const rawCanAiSummary = useCanRender('biopsychosocial-plan.view-ai-summary');
+  const rawCanBioSection = useCanRender('biopsychosocial-plan.view-bio-section');
+  const rawCanPsychologicalSection = useCanRender('biopsychosocial-plan.view-psychological-section');
+  const rawCanSocialSection = useCanRender('biopsychosocial-plan.view-social-section');
+
+  const canWellbeingMap = gate(rawCanWellbeingMap);
+  const canSelfAssessments = gate(rawCanSelfAssessments);
+  const canDailyRoutines = gate(rawCanDailyRoutines);
+  const canNutrition = gate(rawCanNutrition);
+  const canMedications = gate(rawCanMedications);
+  const canSharePdf = gate(rawCanSharePdf);
+  const canWellbeingScore = gate(rawCanWellbeingScore);
+  const canTodaysTasks = gate(rawCanTodaysTasks);
+  const canViewProgress = gate(rawCanViewProgress);
+  const canAiSummary = gate(rawCanAiSummary);
+  const canBioSection = gate(rawCanBioSection);
+  const canPsychologicalSection = gate(rawCanPsychologicalSection);
+  const canSocialSection = gate(rawCanSocialSection);
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const planTypeDisplayName = usePlanTypeDisplayName();
 

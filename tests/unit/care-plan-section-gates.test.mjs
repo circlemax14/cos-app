@@ -26,7 +26,12 @@ const SECTIONS = [
 
 for (const [flag, key, component] of SECTIONS) {
   test(`${component} is gated on ${key}`, () => {
-    assert.match(screen, new RegExp(`const ${flag} = useCanRender\\('biopsychosocial-plan\\.${key}'\\)`))
+    // COS-803 renamed the hook result to `raw<Flag>` and derives `<flag>` from
+    // it through gate(), so the classic Care Plan tab can render this same
+    // component with gating OFF. Both halves are asserted: the key is still
+    // read, and the derived flag is still what guards the render site.
+    assert.match(screen, new RegExp(`const raw${flag[0].toUpperCase()}${flag.slice(1)} = useCanRender\\('biopsychosocial-plan\\.${key}'\\)`))
+    assert.match(screen, new RegExp(`const ${flag} = gate\\(raw${flag[0].toUpperCase()}${flag.slice(1)}\\)`))
     assert.match(screen, new RegExp(`\\{${flag} && `), `${component} render site is not gated`)
   })
 }

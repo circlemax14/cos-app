@@ -277,7 +277,9 @@ test('THE POINT: a chosen plan does not hide the chooser while switching is on',
   // somewhere better: the Care Plan tab OPENS on the chooser while switching
   // is on. Same guarantee — a patient can always reach the other plans from
   // the tab — without the shelf living on the plan screen.
-  const tab = read('app/Home/health-plan.tsx')
+  // COS-803 moved the door off the classic Care Plan tab and onto Plan+, so
+  // the tab patients already rely on is untouched while this is figured out.
+  const tab = read('app/Home/care-plan-plus.tsx')
   assert.match(tab, /const showPlanGate =\s*\n\s*canSwitch &&/)
   assert.match(tab, /if \(showPlanGate\) \{/)
   // And the shelf must actually render its cards there, not collapse to the
@@ -293,17 +295,20 @@ test('THE POINT: the door is alive in PRODUCTION, not just on dev', () => {
   // every PlanStatusSection mount below that branch is dead code in prod.
   // Two OTAs have already shipped UI into that dead arm. The gate returns
   // ABOVE the branch so it serves both.
-  const tab = read('app/Home/health-plan.tsx')
-  assert.ok(
-    tab.indexOf('if (showPlanGate)') < tab.indexOf('if (isTabSwapBpsEnabled())'),
-    'the plan gate must return before the tab-swap branch, or it is dead in production',
-  )
+  // COS-803: Plan+ is its own route and always renders the BPS screen, so
+  // there is no tab-swap branch here to get behind. What has to hold now is
+  // that the CLASSIC tab carries no gate at all — that is the guarantee the
+  // second tab exists to provide.
+  const classic = read('app/Home/health-plan.tsx')
+  assert.doesNotMatch(classic, /showPlanGate/)
+  assert.doesNotMatch(classic, /entitlementGating/)
+  assert.match(read('app/Home/care-plan-plus.tsx'), /entitlementGating\s*\/>|entitlementGating$/m)
 })
 
 test('nobody is held at the door', () => {
   // A chooser you cannot walk past is worse than no chooser. Two ways out:
   // pick a plan, or skip.
-  const tab = read('app/Home/health-plan.tsx')
+  const tab = read('app/Home/care-plan-plus.tsx')
   assert.match(tab, /Go to your plan/)
   assert.match(tab, /onPress=\{\(\) => setPlanGateBypassed\(true\)\}/)
   // Switching closes it too — "once the plan is switched ... show that
@@ -318,14 +323,14 @@ test('the door stops appearing on its own when payments land', () => {
   // worth having — not a flag someone has to remember to unset.
   const code = stripComments(cards)
   assert.match(code, /canSwitch: selfSwitchEnabled && !canPay/)
-  const tab = stripComments(read('app/Home/health-plan.tsx'))
+  const tab = stripComments(read('app/Home/care-plan-plus.tsx'))
   assert.match(tab, /const showPlanGate =\s*\n\s*canSwitch &&/)
 })
 
 test('an empty shelf is not a wall', () => {
   // No cards means nothing to choose between. Showing the door anyway would
   // put a blank screen in front of the care plan.
-  const tab = read('app/Home/health-plan.tsx')
+  const tab = read('app/Home/care-plan-plus.tsx')
   assert.match(tab, /patientPlansQuery\.data\?\.plans\?\.length \?\? 0\) > 0/)
 })
 

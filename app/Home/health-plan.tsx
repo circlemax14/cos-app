@@ -37,7 +37,7 @@ import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 // pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
 // nested-Modal collision iOS 26.5 crashed on.
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
-import PlanStatusSection, { usePatientPlans, usePlanChoiceControls } from '@/components/plan/PlanStatusSection';
+import PlanStatusSection from '@/components/plan/PlanStatusSection';
 import PlanFeaturesSection from '@/components/plan/PlanFeaturesSection';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
@@ -267,47 +267,17 @@ export default function HealthPlanScreen() {
     router.push('/Home/plan-type-chooser' as never);
   }, []);
 
-  /**
-   * COS-801 — the Care Plan tab opens on the plan chooser, then gets out of
-   * the way.
+  /*
+   * COS-803 — the plan chooser that used to live here has moved to the Plan+
+   * tab (app/Home/care-plan-plus.tsx).
    *
-   * The flow this restores is the one that existed before billing landed:
-   * choose a plan → the plan builds → the plan screen, with its own Switch
-   * plan / View Progress pills at the top. COS-740 through COS-800 kept
-   * bolting the price shelf ONTO that screen, and every iteration traded one
-   * complaint for its opposite — shelf always up (a price list above your
-   * daily tasks) or shelf collapsed to a chip (a one-way door out of the
-   * default plan).
-   *
-   * A front door solves both. The shelf is a screen you pass THROUGH, not a
-   * header you live with, so:
-   *
-   *   - it is reachable every single time, from the tab itself, so switching
-   *     plans is never more than opening Care Plan;
-   *   - "Go to your plan" skips it in one tap, and switching plans skips it
-   *     automatically, so nobody is held at the door;
-   *   - the plan screen below is untouched — same loader, same components,
-   *     same two pills.
-   *
-   * `canSwitch` is the whole gate. It means "payments are parked AND free
-   * self-switching is on", which is exactly the window this door is for. The
-   * day a gateway is enabled canSwitch goes false, the door stops appearing,
-   * and the tab opens straight onto the plan again with buying moved to
-   * Billing — no code change, same self-unwinding property COS-800 had.
-   *
-   * Bypass is per-launch state, deliberately NOT persisted: while nobody has
-   * paid for anything, re-offering the chooser on a cold start costs one tap
-   * and keeps the door from quietly disappearing again.
+   * COS-801 put it in front of THIS screen, which meant the one tab every
+   * patient already relies on changed shape while the entitlement work was
+   * still being figured out. Keeping the classic Care Plan tab identical to
+   * production, and building the new behaviour on a tab beside it, means the
+   * two can be compared directly and nothing in progress can break the one
+   * that works.
    */
-  const [planGateBypassed, setPlanGateBypassed] = useState(false);
-  const patientPlansQuery = usePatientPlans();
-  const { canSwitch } = usePlanChoiceControls();
-  const showPlanGate =
-    canSwitch &&
-    !planGateBypassed &&
-    // No cards means nothing to choose between — a door onto a blank wall is
-    // worse than no door, so fall straight through to the plan.
-    (patientPlansQuery.data?.plans?.length ?? 0) > 0;
 
   // COS-377: goal editor state (only active when CARE_PLAN_ENABLED)
   const [editGoal, setEditGoal] = useState<AiPlanGoal | null>(null);
@@ -832,79 +802,6 @@ export default function HealthPlanScreen() {
   //
   // Rollback: unset the env (or set it to anything other than `"true"`)
   // and OTA. 30-second revert per feedback_dark_launch_via_ssm_before_code.
-  // COS-801 — the front door. Sits ABOVE the tab-swap branch on purpose: the
-  // Care Plan tab has two completely different bodies behind that flag (BPS in
-  // production, the legacy screen on dev), and the chooser belongs to the tab,
-  // not to either body. Putting it here means one implementation serves both —
-  // and it is the reason this change is visible in production at all, where
-  // `isTabSwapBpsEnabled()` is true and every PlanStatusSection mount below is
-  // dead code.
-  if (showPlanGate) {
-    return (
-      <AppWrapper>
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={{ paddingBottom: 32 }}
-          testID="care-plan-choice-gate"
-        >
-          {/* The skip, first and compact. Below the shelf it would sit under
-              several hundred points of cards, which is where affordances go to
-              die; competing with the heading as a full-width button would make
-              choosing a plan look optional when choosing is the point. */}
-          {/* assessmentBanner already carries marginHorizontal/marginTop, so the
-              wrapper only handles alignment — doubling either would push the
-              pill off its own gutter. */}
-          <View style={{ alignItems: 'flex-end' }}>
-            <Pressable
-              onPress={() => setPlanGateBypassed(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Go to your plan"
-              accessibilityHint="Skips the plan chooser and opens your care plan"
-              style={({ pressed }) => [
-                v2Styles.assessmentBanner,
-                {
-                  backgroundColor: (colors.tint as string) + '14',
-                  borderColor: (colors.tint as string) + '33',
-                  paddingVertical: 8,
-                  paddingHorizontal: 14,
-                  borderRadius: 999,
-                  opacity: pressed ? 0.85 : 1,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: colors.tint as string,
-                  fontSize: getScaledFontSize(13),
-                  fontWeight: getScaledFontWeight(700) as any,
-                }}
-              >
-                Go to your plan
-              </Text>
-              <MaterialIcons
-                name="arrow-forward"
-                size={getScaledFontSize(16)}
-                color={colors.tint as string}
-                style={{ marginLeft: 6 }}
-              />
-            </Pressable>
-          </View>
-
-          {/* `chooser` keeps the cards up even for a patient who already
-              picked — this screen exists to be picked from, so collapsing to
-              the one-line strip here would empty it. */}
-          <PlanStatusSection
-            variant="chooser"
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-            onSwitched={() => setPlanGateBypassed(true)}
-          />
-        </ScrollView>
-      </AppWrapper>
-    );
-  }
-
   if (isTabSwapBpsEnabled()) {
     const hasBioPlan = biopsychosocialPlanQuery.data?.plan != null;
     const bioLoading = biopsychosocialPlanQuery.isLoading;

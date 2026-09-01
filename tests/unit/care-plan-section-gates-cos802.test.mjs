@@ -96,3 +96,53 @@ test('the kill-switch and the entitlement both have to agree', () => {
   assert.match(bps, /BPS_AI_SUMMARY_ENABLED && canAiSummary/)
   assert.match(bps, /BPS_PROGRESS_LINK_ENABLED && canViewProgress/)
 })
+
+// ── COS-803: two tabs, and only one of them can be wrong ──────────────────
+
+test('THE POINT: the classic Care Plan tab cannot be gated', () => {
+  // Every previous round of entitlement work was built on top of the tab
+  // patients already rely on, and every round broke it. The classic tab now
+  // renders the SAME component with `entitlementGating` absent, so no plan —
+  // however badly provisioned — can hide a section there.
+  const classic = read('app/Home/health-plan.tsx')
+  assert.doesNotMatch(classic, /entitlementGating/)
+  assert.doesNotMatch(classic, /showPlanGate/)
+})
+
+test('the gate defaults CLOSED — absent prop means no gating', () => {
+  // If this defaulted true, every existing call site would start composing
+  // silently, which is the failure the second tab exists to prevent.
+  assert.match(bps, /entitlementGating = false/)
+  assert.match(bps, /const gate = \(allowed: boolean\): boolean => !entitlementGating \|\| allowed/)
+})
+
+test('every section flag goes through gate(), none reads the hook directly', () => {
+  // A gate wired straight to useCanRender would still fire on the classic
+  // tab. The raw value must never guard a render site.
+  const raws = [...bps.matchAll(/const (raw\w+) = useCanRender\(/g)].map((m) => m[1])
+  assert.ok(raws.length >= 13, `expected 13+ raw gates, found ${raws.length}`)
+  for (const raw of raws) {
+    const derived = raw.replace(/^raw/, '')
+    const flag = derived[0].toLowerCase() + derived.slice(1)
+    assert.match(bps, new RegExp(`const ${flag} = gate\\(${raw}\\)`), `${raw} is not routed through gate()`)
+    assert.doesNotMatch(bps, new RegExp(`\\{${raw} && `), `${raw} guards a render site directly`)
+  }
+})
+
+test('Plan+ is a real tab with its own error boundary', () => {
+  const layout = read('app/Home/_layout.tsx')
+  const route = read('app/Home/care-plan-plus.tsx')
+  assert.match(layout, /name="care-plan-plus"/)
+  // Visible: no href: null in its block.
+  const at = layout.indexOf('name="care-plan-plus"')
+  const block = layout.slice(at, layout.indexOf('<Tabs.Screen', at))
+  assert.doesNotMatch(block, /href: null/)
+  // It is the tab most likely to throw, and the classic tab must survive it.
+  assert.match(route, /<ScreenErrorBoundary screen="care-plan-plus">/)
+  assert.match(route, /<CarePlanPlusInner \/>/)
+})
+
+test('Plan+ turns gating ON', () => {
+  // Otherwise the two tabs are the same screen twice.
+  assert.match(read('app/Home/care-plan-plus.tsx'), /entitlementGating/)
+})

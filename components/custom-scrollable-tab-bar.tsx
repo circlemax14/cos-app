@@ -24,6 +24,9 @@ function buildTabLabels(): Record<string, string> {
     appointments: 'Calendar',
     'health-plan': isTablet ? 'Care Plan' : 'Plan',
     'unified-plan': isTablet ? 'Care Plan' : 'Plan',
+    // COS-803 — sits beside the classic Care Plan tab. Short on phones so
+    // six tabs still fit an iPhone SE without wrapping.
+    'care-plan-plus': isTablet ? 'Care Plan+' : 'Plan+',
     plan: isTablet ? 'Health Summary' : 'Summary',
     reports: 'Reports',
   };
