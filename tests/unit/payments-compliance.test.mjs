@@ -320,9 +320,12 @@ test('THE POINT: the door is alive in PRODUCTION, not just on dev', () => {
 test('nobody is held at the door', () => {
   // A chooser you cannot walk past is worse than no chooser. Two ways out:
   // pick a plan, or skip.
+  // COS-806 moved the exit out of a corner pill and onto the card badged
+  // YOUR PLAN, so the copy now lives in the shelf component.
   const tab = read('app/Home/care-plan-plus.tsx')
-  assert.match(tab, /Go to your plan/)
-  assert.match(tab, /onPress=\{\(\) => setPlanGateBypassed\(true\)\}/)
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(tab, /onGoToPlan=\{\(\) => setPlanGateBypassed\(true\)\}/)
+  assert.match(cards, /Go to your plan/)
   // Switching closes it too — "once the plan is switched ... show that
   // original screen". Without this the patient picks and stays on the shelf.
   assert.match(tab, /onSwitched=\{\(\) => setPlanGateBypassed\(true\)\}/)

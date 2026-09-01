@@ -219,3 +219,32 @@ test('the label cannot lag a switch', () => {
   assert.ok(inval > -1 && done > -1)
   assert.ok(inval < done, 'the refetch must be awaited before the gate closes')
 })
+
+// ── COS-806: the exit lives on your own card ─────────────────────────────
+
+test('the exit is on the card badged YOUR PLAN', () => {
+  // A pill in the corner put the instruction nowhere near the thing it refers
+  // to. Your plan is one of the cards, and it is the only card with no other
+  // control — you cannot switch to the plan you already hold.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\{current && onGoToPlan && \(/)
+  assert.doesNotMatch(read('app/Home/care-plan-plus.tsx'), /skipPill/)
+})
+
+test('THE POINT: the chooser always has an exit, even with no current card', () => {
+  // The backend exempts the current plan from both shelf filters, so its card
+  // is nearly always present. Retire that plan row and it is not — every card
+  // reads isCurrent false and the button has nowhere to live, leaving someone
+  // in a chooser with no way out. That is the failure this surface has already
+  // produced four times.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /onGoToPlan && !plans\.some\(\(p\) => p\.isCurrent === true\)/)
+})
+
+test('Billing gets no exit button — it has no plan to go to', () => {
+  // The same shelf renders on /Home/billing. onGoToPlan is optional precisely
+  // so a button promising to open a care plan does not appear there.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /onGoToPlan\?: \(\) => void/)
+  assert.doesNotMatch(read('app/Home/billing.tsx'), /onGoToPlan/)
+})

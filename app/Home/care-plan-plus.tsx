@@ -19,8 +19,8 @@
  * ─── WHAT IS DIFFERENT HERE ──────────────────────────────────────────
  *
  *   1. The plan chooser (COS-801) is the front door. First arrival shows every
- *      plan with the current one badged; "Go to your plan" skips it in one tap
- *      and switching a plan closes it automatically.
+ *      plan; the one you hold is badged and carries a "Go to your plan" button,
+ *      and switching to any other closes the chooser automatically.
  *   2. `entitlementGating` is ON, so each section renders only if the plan
  *      grants its key — the composed plan the dashboard is for.
  *
@@ -31,8 +31,7 @@
  * a cold-mount surface.
  */
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -94,42 +93,6 @@ function CarePlanPlusInner(): React.JSX.Element {
     return (
       <AppWrapper>
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }} testID="care-plan-plus-gate">
-          {/* The skip, first and compact. Below the shelf it would sit under
-              several hundred points of cards; as a full-width button it would
-              compete with the heading and make choosing look optional. */}
-          <View style={{ alignItems: 'flex-end' }}>
-            <Pressable
-              onPress={() => setPlanGateBypassed(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Go to your plan"
-              accessibilityHint="Skips the plan chooser and opens your care plan"
-              style={({ pressed }) => [
-                styles.skipPill,
-                {
-                  backgroundColor: (colors.tint as string) + '14',
-                  borderColor: (colors.tint as string) + '33',
-                  opacity: pressed ? 0.85 : 1,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: colors.tint as string,
-                  fontSize: getScaledFontSize(13),
-                  fontWeight: getScaledFontWeight(700) as never,
-                }}
-              >
-                Go to your plan
-              </Text>
-              <MaterialIcons
-                name="arrow-forward"
-                size={getScaledFontSize(16)}
-                color={colors.tint as string}
-                style={{ marginLeft: 6 }}
-              />
-            </Pressable>
-          </View>
-
           {/* `chooser` keeps the cards up even for a patient who already
               picked — this screen exists to be picked from. */}
           <PlanStatusSection
@@ -138,6 +101,9 @@ function CarePlanPlusInner(): React.JSX.Element {
             getScaledFontSize={getScaledFontSize}
             getScaledFontWeight={getScaledFontWeight}
             onSwitched={() => setPlanGateBypassed(true)}
+            /* COS-806 — the exit lives on the card that is already yours,
+               instead of a pill in the corner. See PlanStatusSection. */
+            onGoToPlan={() => setPlanGateBypassed(true)}
           />
         </ScrollView>
       </AppWrapper>
@@ -218,14 +184,4 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { marginTop: 4 },
-  skipPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginHorizontal: 16,
-    marginTop: 12,
-  },
 });

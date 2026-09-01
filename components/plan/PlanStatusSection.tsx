@@ -155,9 +155,24 @@ interface Props {
    * `strip` is the COS-744 behaviour: cards until you choose, then one line.
    */
   variant?: 'strip' | 'chooser';
+  /**
+   * COS-806 — the way OUT of the chooser, rendered on the card that is
+   * already yours.
+   *
+   * It used to be a pill floating in the top-right corner, which put the exit
+   * nowhere near the thing it referred to: your plan is one of the cards, and
+   * "go to your plan" is an instruction about that card. On it, the button
+   * needs no context to make sense, and the card that has nothing else to
+   * offer — you cannot switch to the plan you hold — becomes the one with the
+   * clearest action.
+   *
+   * Omitted = no button. The Billing screen renders this same shelf and has
+   * no plan to go to.
+   */
+  onGoToPlan?: () => void;
 }
 
-export default function PlanStatusSection({ colors, getScaledFontSize, getScaledFontWeight, onSwitched, variant = 'strip' }: Props) {
+export default function PlanStatusSection({ colors, getScaledFontSize, getScaledFontWeight, onSwitched, variant = 'strip', onGoToPlan }: Props) {
   const { data, isError } = usePatientPlans();
   // One open at a time. An accordion rather than per-card flags because the
   // whole point of collapsing the detail was to stop this section pushing the
@@ -348,6 +363,33 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 </Text>
               ))}
 
+            {/* COS-806 — your own card is where "go to your plan" belongs.
+                It is also the only card with no other control: there is
+                nothing to switch to on the plan you already hold. */}
+            {current && onGoToPlan && (
+              <Pressable
+                onPress={onGoToPlan}
+                accessibilityRole="button"
+                accessibilityLabel={`Go to your ${plan.name} plan`}
+                accessibilityHint="Closes the plan chooser and opens your care plan"
+                style={({ pressed }) => [
+                  styles.upgradeBtn,
+                  styles.goRow,
+                  { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
+                  Go to your plan
+                </Text>
+                <MaterialIcons
+                  name="arrow-forward"
+                  size={getScaledFontSize(16)}
+                  color="#FFFFFF"
+                  style={{ marginLeft: 6 }}
+                />
+              </Pressable>
+            )}
+
             {/* Nothing to upgrade to on the plan you hold, and a coming-soon
                 tier cannot be chosen yet — so neither gets a control. */}
             {/*
@@ -493,6 +535,44 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
           </View>
         );
       })}
+
+      {/*
+        COS-806 — the exit, when no card can host it.
+
+        `onGoToPlan` normally rides the card badged YOUR PLAN, and the backend
+        exempts the current plan from BOTH shelf filters (isPurchasable and
+        isVisibleTo) so that card is nearly always there. Nearly: retire the
+        plan row an admin has a patient on and it stops existing, every card
+        reads isCurrent false, and the button has nowhere to live.
+
+        That would leave someone standing in a chooser with no way out — the
+        one failure this surface has produced four times already, and most
+        likely exactly while an admin is editing plans, which is what this tab
+        is for. Ten lines is cheaper than finding out.
+      */}
+      {onGoToPlan && !plans.some((p) => p.isCurrent === true) && (
+        <Pressable
+          onPress={onGoToPlan}
+          accessibilityRole="button"
+          accessibilityLabel="Go to your plan"
+          accessibilityHint="Closes the plan chooser and opens your care plan"
+          style={({ pressed }) => [
+            styles.upgradeBtn,
+            styles.goRow,
+            { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+          ]}
+        >
+          <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
+            Go to your plan
+          </Text>
+          <MaterialIcons
+            name="arrow-forward"
+            size={getScaledFontSize(16)}
+            color="#FFFFFF"
+            style={{ marginLeft: 6 }}
+          />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -518,6 +598,7 @@ const styles = StyleSheet.create({
   upgradeBtn: { marginTop: 14, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   // Quiet by design — it discloses, it does not act.
   detailsBtn: { marginTop: 8, paddingVertical: 8, alignItems: 'center' },
+  goRow: { flexDirection: 'row', justifyContent: 'center' },
   detailsText: { fontWeight: '600' },
   upgradeText: { color: '#FFFFFF', fontWeight: '700' },
   detail: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, gap: 10 },
