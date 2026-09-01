@@ -30,10 +30,9 @@
  * used by the screens this mirrors. No new primitive is introduced on what is
  * a cold-mount surface.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -69,10 +68,6 @@ function CarePlanPlusInner(): React.JSX.Element {
   const patientQuery = usePatientInfo();
   const planTypeQuery = usePlanType();
   const patientName = firstNameFromPatient(patientQuery.data);
-
-  const openPlanTypeChooser = useCallback(() => {
-    router.push('/Home/plan-type-chooser' as never);
-  }, []);
 
   /*
    * COS-801, moved here from the classic tab.
@@ -175,7 +170,21 @@ function CarePlanPlusInner(): React.JSX.Element {
   return (
     <BiopsychosocialPlanScreen
       currentPlanType={planTypeQuery.planType}
-      onChangePlanType={openPlanTypeChooser}
+      /*
+       * COS-804 — on Plan+ the "switch plan" pill reopens THIS tab's chooser.
+       *
+       * It was pushing /Home/plan-type-chooser, which is the OTHER plan
+       * concept entirely: care plan TYPE (basic / advanced / agency), the
+       * thing that decides assessment depth. Tapping "switch plan" on the
+       * entitlement surface and landing on the tier picker is just the wrong
+       * screen — and it is the one place a patient would look to change the
+       * plan they had just chosen from the shelf.
+       *
+       * The classic Care Plan tab still opens the type chooser from its own
+       * pill, unchanged. Two tabs, two meanings of "plan", each pill going
+       * where its own surface is about.
+       */
+      onChangePlanType={() => setPlanGateBypassed(false)}
       /* BPS_MODAL_CONSOLIDATION_ENABLED is on, so the child owns the goal
          editor Modal and this callback is dead state — same as the classic
          tab passes. */

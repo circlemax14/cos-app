@@ -191,10 +191,22 @@ test('THE POINT: exactly one of Subscribe / Switch can ever be offered', () => {
   // canSubscribe requires canPay; canSwitch requires !canPay. They cannot both
   // be true, so a patient is never shown two ways to get the same plan — one
   // of which charges them.
+  //
+  // COS-804 moved the Switch control out of the expander and onto the card,
+  // so the shape changed but the exclusivity did not: Subscribe still lives
+  // behind canSubscribe, Switch behind canSwitch, and the two flags cannot
+  // both be true.
   const code = stripComments(cards)
   assert.match(code, /canSubscribe && monthly/)
   assert.match(code, /canSubscribe && annual/)
-  assert.match(code, /\{canSwitch && \(/)
+  assert.match(code, /!current && !comingSoon && canSwitch && \(/)
+  // ...and exactly ONE control fires the switch. Two would be VoiceOver
+  // reading the same action twice, which is what COS-804 removed.
+  assert.equal(
+    (code.match(/onSwitch\(plan\.planKey\)/g) ?? []).length,
+    1,
+    'expected exactly one Switch control per card',
+  )
 })
 
 test('a free plan is never a dead end', () => {

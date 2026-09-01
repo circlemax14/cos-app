@@ -146,3 +146,45 @@ test('Plan+ turns gating ON', () => {
   // Otherwise the two tabs are the same screen twice.
   assert.match(read('app/Home/care-plan-plus.tsx'), /entitlementGating/)
 })
+
+// ── COS-804: the two dead ends on Plan+ ──────────────────────────────────
+
+test('THE POINT: the primary button on a card DOES the switch', () => {
+  // It read "Upgrade to this plan" and only expanded a panel; the real Switch
+  // was one level down. Tapping it produced no request at all — the backend
+  // logs showed nothing, because nothing had been asked of it.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const btn = cards.slice(cards.indexOf('!current && !comingSoon && canSwitch && ('))
+  assert.match(btn.slice(0, 700), /onPress=\{\(\) => void onSwitch\(plan\.planKey\)\}/)
+  assert.match(btn.slice(0, 700), /'Switch to this plan'/)
+})
+
+test('the failure is shown where the button is, not inside a closed panel', () => {
+  // The error used to live in the expander. A switch that failed from the card
+  // would have reported itself somewhere the patient could not see.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const cardErr = cards.indexOf('canSwitch && switching === null && switchError !== null')
+  const detail = cards.indexOf('the expanded detail')
+  assert.ok(cardErr > -1, 'no switch error beside the card button')
+  assert.ok(cardErr < detail, 'the switch error must render before the expander')
+})
+
+test("THE POINT: Plan+'s switch pill reopens ITS OWN chooser", () => {
+  // It pushed /Home/plan-type-chooser — the OTHER plan concept (care plan
+  // TYPE: basic/advanced/agency, which sets assessment depth). Tapping
+  // "switch plan" on the entitlement surface and landing on the tier picker
+  // is the wrong screen, and it is the one place a patient would look to
+  // change the plan they had just picked off the shelf.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /onChangePlanType=\{\(\) => setPlanGateBypassed\(false\)\}/)
+  // Navigation only — the prose above the prop still names the route it used
+  // to push, and that comment is the reason the fix is legible.
+  assert.doesNotMatch(plus, /router\.push\([^)]*plan-type-chooser/)
+})
+
+test('the CLASSIC tab still opens the plan-type chooser', () => {
+  // Two tabs, two meanings of "plan". Repointing both pills at the shelf
+  // would lose the tier picker entirely.
+  const classic = read('app/Home/health-plan.tsx')
+  assert.match(classic, /router\.push\('\/Home\/plan-type-chooser' as never\)/)
+})

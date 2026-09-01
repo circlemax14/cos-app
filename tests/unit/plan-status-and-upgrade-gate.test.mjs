@@ -439,8 +439,19 @@ test('THE POINT: the detail opens in place and does not navigate away', () => {
   // The value of a shelf is comparing plans side by side. Pushing a screen to
   // read one of them throws that away, which is why the upgrade control is a
   // toggle and not a router.push.
+  //
+  // COS-804: the label is now mode-dependent. When switching is how plans
+  // change, the card's primary button DOES the switch and this one is a quiet
+  // "What's included" toggle — it used to say "Upgrade to this plan" and only
+  // expand, which read as a dead button. Still a toggle, still no navigation,
+  // which is what this wire is for.
   assert.match(cards, /accessibilityState=\{\{ expanded: open \}\}/)
-  assert.match(cards, /open \? 'Hide details' : 'Upgrade to this plan'/)
+  assert.match(cards, /open \? 'Hide details' : canSwitch \? "What's included" : 'Upgrade to this plan'/)
+  // The disclosure control must never navigate.
+  const toggle = cards.slice(
+    cards.indexOf('onPress={() => setOpenKey(open ? null : plan.planKey)}'),
+  ).slice(0, 900)
+  assert.doesNotMatch(toggle, /router\.push/)
 })
 
 test('one card open at a time', () => {

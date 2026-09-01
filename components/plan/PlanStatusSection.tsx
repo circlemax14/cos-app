@@ -350,6 +350,40 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
 
             {/* Nothing to upgrade to on the plan you hold, and a coming-soon
                 tier cannot be chosen yet — so neither gets a control. */}
+            {/*
+              COS-804 — the primary button DOES the thing it is named after.
+
+              It used to read "Upgrade to this plan" and only expand a panel;
+              the actual Switch control was one level down inside it. Vishal
+              tapped it, nothing visible happened, and he went looking for
+              another route out — the button promised an action and delivered
+              a disclosure. The backend never even saw a request.
+
+              When switching is the way plans change, the switch IS the
+              primary action. Details move to a quiet secondary toggle, so
+              COS-789's short shelf survives.
+
+              When payments are on, the expander stays primary: monthly vs
+              annual is a real choice that has to be made before there is
+              anything to press.
+            */}
+            {!current && !comingSoon && canSwitch && (
+              <Pressable
+                onPress={() => void onSwitch(plan.planKey)}
+                disabled={switching !== null}
+                accessibilityRole="button"
+                accessibilityLabel={`Switch to the ${plan.name} plan`}
+                style={({ pressed }) => [
+                  styles.upgradeBtn,
+                  { backgroundColor: colors.tint, opacity: pressed || switching ? 0.7 : 1 },
+                ]}
+              >
+                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
+                  {switching === plan.planKey ? 'Switching…' : 'Switch to this plan'}
+                </Text>
+              </Pressable>
+            )}
+
             {!current && !comingSoon && (
               <Pressable
                 onPress={() => setOpenKey(open ? null : plan.planKey)}
@@ -358,17 +392,35 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 accessibilityLabel={
                   open
                     ? `Hide details for the ${plan.name} plan.`
-                    : `Upgrade to the ${plan.name} plan. Shows what is included and how to subscribe.`
+                    : canSwitch
+                      ? `See what is included in the ${plan.name} plan.`
+                      : `Upgrade to the ${plan.name} plan. Shows what is included and how to subscribe.`
                 }
                 style={({ pressed }) => [
-                  styles.upgradeBtn,
-                  { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                  canSwitch ? styles.detailsBtn : styles.upgradeBtn,
+                  canSwitch
+                    ? { opacity: pressed ? 0.7 : 1 }
+                    : { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
                 ]}
               >
-                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
-                  {open ? 'Hide details' : 'Upgrade to this plan'}
+                <Text
+                  style={
+                    canSwitch
+                      ? [styles.detailsText, { color: colors.tint, fontSize: getScaledFontSize(13) }]
+                      : [styles.upgradeText, { fontSize: getScaledFontSize(14) }]
+                  }
+                >
+                  {open ? 'Hide details' : canSwitch ? "What's included" : 'Upgrade to this plan'}
                 </Text>
               </Pressable>
+            )}
+
+            {/* The error belongs beside the button that failed, not inside a
+                panel the patient may never open. */}
+            {canSwitch && switching === null && switchError !== null && (
+              <Text style={[styles.switchError, { fontSize: getScaledFontSize(13) }]}>
+                {switchError}
+              </Text>
             )}
 
             {/* ── the expanded detail ─────────────────────────────────────
@@ -425,31 +477,9 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                   </Pressable>
                 ) : null}
 
-                {/* COS-797 — no payment in the loop: the patient just moves.
-                    Offered only when Subscribe is NOT, so enabling payments
-                    takes the free path off the screen. */}
-                {canSwitch && (
-                  <Pressable
-                    onPress={() => void onSwitch(plan.planKey)}
-                    disabled={switching !== null}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Switch to the ${plan.name} plan`}
-                    style={({ pressed }) => [
-                      styles.subscribeBtn,
-                      { backgroundColor: colors.tint, opacity: pressed || switching ? 0.7 : 1 },
-                    ]}
-                  >
-                    <Text style={[styles.subscribeText, { fontSize: getScaledFontSize(14) }]}>
-                      {switching === plan.planKey ? 'Switching…' : 'Switch to this plan'}
-                    </Text>
-                  </Pressable>
-                )}
-
-                {canSwitch && switchError !== null && (
-                  <Text style={[styles.switchError, { fontSize: getScaledFontSize(13) }]}>
-                    {switchError}
-                  </Text>
-                )}
+                {/* COS-804 — the Switch control moved OUT of here and onto the
+                    card, where the label already promised it. Two of them
+                    would be VoiceOver reading the same action twice. */}
 
                 {/* Flag off: say why there is no button rather than showing a
                     dead one. Guideline 2.1 pulled a surface for less. */}
@@ -486,6 +516,9 @@ const styles = StyleSheet.create({
   currentBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   currentBadgeText: { color: '#FFFFFF', fontWeight: '700', letterSpacing: 0.8 },
   upgradeBtn: { marginTop: 14, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
+  // Quiet by design — it discloses, it does not act.
+  detailsBtn: { marginTop: 8, paddingVertical: 8, alignItems: 'center' },
+  detailsText: { fontWeight: '600' },
   upgradeText: { color: '#FFFFFF', fontWeight: '700' },
   detail: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, gap: 10 },
   subscribeBtn: { borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
