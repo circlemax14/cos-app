@@ -188,3 +188,34 @@ test('the CLASSIC tab still opens the plan-type chooser', () => {
   const classic = read('app/Home/health-plan.tsx')
   assert.match(classic, /router\.push\('\/Home\/plan-type-chooser' as never\)/)
 })
+
+// ── COS-805: the pill must name what it opens ────────────────────────────
+
+test('THE POINT: on Plan+ the pill names the ENTITLEMENT plan', () => {
+  // The pill has always rendered the care plan TYPE (basic/advanced/agency,
+  // which sets assessment depth). On Plan+ it opens the entitlement shelf, so
+  // the type made the label and the destination disagree: switch to Standard
+  // and a pill still reading "Advanced" opens a shelf where Standard is
+  // badged YOUR PLAN.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /planLabel=\{patientPlansQuery\.data\?\.billing\?\.planName \?\? null\}/)
+})
+
+test('the label falls back to the plan type when not given', () => {
+  // The classic tab passes nothing and must keep the type label, because its
+  // pill still opens the type chooser.
+  const matches = bps.match(/label=\{planLabel \?\? planTypeDisplayName\(/g) ?? []
+  assert.equal(matches.length, 2, 'both pill sites must honour the override AND fall back')
+  assert.doesNotMatch(read('app/Home/health-plan.tsx'), /planLabel/)
+})
+
+test('the label cannot lag a switch', () => {
+  // Same query the shelf reads, and onSwitch invalidates it before closing the
+  // gate — so the pill can never show the plan you just left.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const body = cards.slice(cards.indexOf('async function onSwitch'))
+  const inval = body.indexOf("invalidateQueries({ queryKey: ['patient-plans'] })")
+  const done = body.indexOf('onSwitched?.()')
+  assert.ok(inval > -1 && done > -1)
+  assert.ok(inval < done, 'the refetch must be awaited before the gate closes')
+})

@@ -766,6 +766,7 @@ export function BiopsychosocialPlanScreen({
   headerRight,
   deepLinkFocus,
   entitlementGating = false,
+  planLabel,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
@@ -826,6 +827,22 @@ export function BiopsychosocialPlanScreen({
    * surface is the only one that can be wrong.
    */
   entitlementGating?: boolean;
+  /**
+   * COS-805 — what the plan pill SAYS, when that is not the plan type.
+   *
+   * The pill has always rendered `planTypeDisplayName(currentPlanType)` — the
+   * care plan TYPE (basic / advanced / agency), which decides assessment
+   * depth. That is the right label on the classic tab, where the pill opens
+   * the type chooser.
+   *
+   * On Plan+ the pill opens the ENTITLEMENT shelf, so showing the type there
+   * means the label and the destination disagree: switch to Standard, and a
+   * pill still reading "Advanced" takes you to a shelf where Standard is
+   * badged YOUR PLAN. Two different fields, one control.
+   *
+   * Passed = show this. Omitted = the plan type, exactly as before.
+   */
+  planLabel?: string | null;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
 
@@ -1732,7 +1749,7 @@ export function BiopsychosocialPlanScreen({
               Check back after completing your assessments.
             </Text>
             <PlanTierPill
-              label={planTypeDisplayName(currentPlanType as PlanType)}
+              label={planLabel ?? planTypeDisplayName(currentPlanType as PlanType)}
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
@@ -1906,7 +1923,7 @@ export function BiopsychosocialPlanScreen({
                 otherwise overflow. */}
             <View style={styles.tierRow}>
               <PlanTierPill
-                label={planTypeDisplayName(currentPlanType ?? 'basic')}
+                label={planLabel ?? planTypeDisplayName(currentPlanType ?? 'basic')}
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}

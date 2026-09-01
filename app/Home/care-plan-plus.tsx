@@ -185,6 +185,11 @@ function CarePlanPlusInner(): React.JSX.Element {
        * where its own surface is about.
        */
       onChangePlanType={() => setPlanGateBypassed(false)}
+      /* COS-805 — say what the pill opens. It leads to the entitlement shelf,
+         so it names the entitlement plan, not the care plan type. Same query
+         the shelf reads, and onSwitch invalidates it before closing the gate,
+         so the label is never a switch behind. */
+      planLabel={patientPlansQuery.data?.billing?.planName ?? null}
       /* BPS_MODAL_CONSOLIDATION_ENABLED is on, so the child owns the goal
          editor Modal and this callback is dead state — same as the classic
          tab passes. */
