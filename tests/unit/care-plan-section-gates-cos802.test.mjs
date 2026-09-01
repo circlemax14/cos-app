@@ -266,11 +266,19 @@ test('a plan priced only by a label still shows a price', () => {
   assert.match(cards, /\{priceLabel \?\? monthly\}/)
 })
 
-test('the tier reaches the card', () => {
-  // One word describing the plan's shape, thrown away entirely before this.
+test('THE POINT: the badge says what the plan ASKS OF YOU', () => {
+  // COS-808 showed the raw `tier` string — a database value put in front of a
+  // patient. COS-809 replaced it with the prod chooser's badge, which said
+  // "STANDARD + EHR ASSESSMENT": what the plan will actually ask of you, which
+  // is the thing someone choosing between plans is weighing.
+  //
+  // Derived, so it cannot go stale when an admin renames or recomposes a plan
+  // — which a hardcoded tier label would. Its own boundaries are executed in
+  // tests/unit/plan-assessment-badge.test.ts.
   const cards = read('components/plan/PlanStatusSection.tsx')
-  assert.match(cards, /plan\.tier \? \(/)
-  assert.match(cards, /plan\.tier\.toUpperCase\(\)/)
+  assert.match(cards, /assessmentBadge\(plan\.assessmentCount, plan\.usesEhrRefresh\)/)
+  assert.match(cards, /badge\.label\.toUpperCase\(\)/)
+  assert.doesNotMatch(cards, /plan\.tier\.toUpperCase\(\)/)
 })
 
 test('highlights render as rows with a tick, not a text prefix', () => {

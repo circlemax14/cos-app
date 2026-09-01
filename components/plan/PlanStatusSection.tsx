@@ -39,6 +39,7 @@ import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
 import { parseHighlight } from '@/lib/plan-highlight';
+import { assessmentBadge } from '@/lib/plan-assessment-badge';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
 import { usePaymentGateways } from '@/hooks/use-payment-gateways';
@@ -66,6 +67,8 @@ export interface PatientPlanCard {
   assessmentCount?: number | null;
   /** COS-808 — days between reassessment nudges. 0/absent = no nudging. */
   reassessmentCadenceDays?: number | null;
+  /** COS-809 — does the plan read the patient's health record? */
+  usesEhrRefresh?: boolean | null;
   highlights: string[];
   isCurrent: boolean;
 }
@@ -349,6 +352,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
          * COS-808 — the card's feature table, in the prod chooser's order:
          * real config first, then labelled copy, then anything unlabelled.
          */
+        const badge = assessmentBadge(plan.assessmentCount, plan.usesEhrRefresh);
         const parsed = plan.highlights.map((raw) => ({ raw, ...parseHighlight(raw) }));
         const labelled = parsed.filter((h) => h.label !== null);
         const plain = parsed.filter((h) => h.label === null);
@@ -453,39 +457,39 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               )}
             </View>
 
-            {/* COS-808 — the tier badge, on its own line under the name.
+            {/* COS-809 — the assessment badge, on its own line under the name.
 
-                In the header row it competed with the plan name for width and
-                a long tier would have squeezed it. The prod card put it here
-                for the same reason, and it reads as a label for the card
-                rather than a suffix to the title. */}
-            {plan.tier ? (
+                It replaces the raw tier string, which was a database value
+                shown to a patient. The prod card's badge said what the plan
+                would ASK OF YOU — "STANDARD + EHR ASSESSMENT" — and that is
+                the thing someone choosing a plan is weighing. It is derived
+                from the plan's own config, so it cannot go stale when an admin
+                renames or recomposes a plan. */}
+            {badge ? (
               <View
                 style={[
                   styles.tierBadge,
                   {
-                    backgroundColor:
-                      (comingSoon ? (colors.subtext ?? colors.text) : (colors.tint as string)) + '18',
-                    borderColor:
-                      (comingSoon ? (colors.subtext ?? colors.text) : (colors.tint as string)) + '55',
+                    backgroundColor: (comingSoon ? (colors.subtext ?? colors.text) : badge.color) + '22',
+                    borderColor: comingSoon ? (colors.subtext ?? colors.text) + '55' : badge.color,
                   },
                 ]}
               >
                 <MaterialIcons
                   name="assignment"
                   size={getScaledFontSize(11)}
-                  color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+                  color={comingSoon ? colors.subtext ?? colors.text : badge.color}
                 />
                 <Text
                   style={[
                     styles.tierBadgeText,
                     {
-                      color: comingSoon ? colors.subtext ?? colors.text : colors.tint,
+                      color: comingSoon ? colors.subtext ?? colors.text : badge.color,
                       fontSize: getScaledFontSize(10),
                     },
                   ]}
                 >
-                  {plan.tier.toUpperCase()}
+                  {badge.label.toUpperCase()}
                 </Text>
               </View>
             ) : null}
@@ -665,7 +669,20 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               </Pressable>
             )}
 
-            {!current && !comingSoon && (
+            {/*
+              COS-809 — the "What's included" toggle is gone.
+
+              It survived from when the card hid its highlights: the shelf then
+              sat above the daily tasks and four expanded cards buried them.
+              COS-808 put everything on the face of the card, which left a
+              button that opened a panel containing nothing a patient had not
+              already read.
+
+              It still exists where it still earns its place — with payments
+              on, the panel holds the monthly and annual buttons, and choosing
+              between them is a real decision that needs the space.
+            */}
+            {!current && !comingSoon && canSubscribe && (
               <Pressable
                 onPress={() => setOpenKey(open ? null : plan.planKey)}
                 accessibilityRole="button"
@@ -673,27 +690,26 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 accessibilityLabel={
                   open
                     ? `Hide details for the ${plan.name} plan.`
-                    : canSwitch
-                      ? `See what is included in the ${plan.name} plan.`
-                      : `Upgrade to the ${plan.name} plan. Shows what is included and how to subscribe.`
+                    : `Upgrade to the ${plan.name} plan. Shows how to subscribe.`
                 }
                 style={({ pressed }) => [
-                  canSwitch ? styles.detailsBtn : styles.upgradeBtn,
-                  canSwitch
-                    ? { opacity: pressed ? 0.7 : 1 }
-                    : { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                  styles.upgradeBtn,
+                  { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
                 ]}
               >
-                <Text
-                  style={
-                    canSwitch
-                      ? [styles.detailsText, { color: colors.tint, fontSize: getScaledFontSize(13) }]
-                      : [styles.upgradeText, { fontSize: getScaledFontSize(14) }]
-                  }
-                >
-                  {open ? 'Hide details' : canSwitch ? "What's included" : 'Upgrade to this plan'}
+                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
+                  {open ? 'Hide details' : 'Upgrade to this plan'}
                 </Text>
               </Pressable>
+            )}
+
+            {/* Neither control available: say why, inline. There is no longer
+                an expander to hide it behind, and a card with no action and no
+                explanation reads as broken. */}
+            {!current && !comingSoon && !canSubscribe && !canSwitch && (
+              <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13), marginTop: 12 }]}>
+                Your care team can switch you to this plan — in-app subscribing is not available yet.
+              </Text>
             )}
 
             {/* The error belongs beside the button that failed, not inside a
@@ -708,7 +724,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 Opens in place. It deliberately does NOT navigate: the whole
                 value of the shelf is comparing plans side by side, and pushing
                 a screen to read one of them throws that away. */}
-            {!current && !comingSoon && open && (
+            {!current && !comingSoon && canSubscribe && open && (
               <View style={[styles.detail, { borderTopColor: colors.border ?? '#E0E0E0' }]}>
                 {canSubscribe && monthly ? (
                   <Pressable
@@ -762,13 +778,6 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                     card, where the label already promised it. Two of them
                     would be VoiceOver reading the same action twice. */}
 
-                {/* Flag off: say why there is no button rather than showing a
-                    dead one. Guideline 2.1 pulled a surface for less. */}
-                {!canSubscribe && !canSwitch && (
-                  <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
-                    Your care team can switch you to this plan — in-app subscribing is not available yet.
-                  </Text>
-                )}
               </View>
             )}
           </View>

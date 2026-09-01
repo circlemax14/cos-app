@@ -316,7 +316,12 @@ test('a coming-soon card is not tappable', () => {
   // Pressable with `disabled={comingSoon}`; now the card is a plain View and
   // the ONLY control on it is the upgrade button, which a coming-soon tier
   // never renders. There is nothing to disable because there is nothing there.
-  assert.match(status, /\{!current && !comingSoon && \(/)
+  //
+  // COS-809: the controls are now split by mode (Switch / Upgrade / note), so
+  // assert the PROPERTY instead of one shape — every control on the card is
+  // guarded on !comingSoon. A new one added without the guard fails here.
+  const controls = [...status.matchAll(/\{!current && !comingSoon && ([^\n]*)\(/g)]
+  assert.ok(controls.length >= 3, `expected the card's controls, found ${controls.length}`)
   assert.doesNotMatch(
     status,
     /<Pressable[\s\S]{0,200}key=\{plan\.planKey\}/,
@@ -393,7 +398,9 @@ test('THE POINT: the chooser is decided by isDefaultPlan, not by having a name',
 test('the default plan is marked as theirs and offers nothing to upgrade to', () => {
   assert.match(cards, /YOUR PLAN/)
   // The upgrade control is withheld from the current plan AND from coming-soon.
-  assert.match(cards, /\{!current && !comingSoon && \(/)
+  // COS-809 split it by mode; every branch still carries both guards.
+  assert.match(cards, /\{!current && !comingSoon && canSwitch && \(/)
+  assert.match(cards, /\{!current && !comingSoon && canSubscribe && \(/)
 })
 
 test('every other plan offers an explicit upgrade control', () => {
@@ -454,8 +461,16 @@ test('THE POINT: the detail opens in place and does not navigate away', () => {
   // "What's included" toggle — it used to say "Upgrade to this plan" and only
   // expand, which read as a dead button. Still a toggle, still no navigation,
   // which is what this wire is for.
+  //
+  // COS-809 deleted the switch-mode toggle entirely: COS-808 put everything on
+  // the face of the card, so it opened a panel containing nothing new. It
+  // survives only where it still earns its place — with payments on, the panel
+  // holds the monthly and annual buttons.
   assert.match(cards, /accessibilityState=\{\{ expanded: open \}\}/)
-  assert.match(cards, /open \? 'Hide details' : canSwitch \? "What's included" : 'Upgrade to this plan'/)
+  assert.match(cards, /open \? 'Hide details' : 'Upgrade to this plan'/)
+  // Scoped to the label position: the comment above the toggle still names
+  // what was removed, and that prose is the reason the change is legible.
+  assert.doesNotMatch(cards, /: "What's included"/)
   // The disclosure control must never navigate.
   const toggle = cards.slice(
     cards.indexOf('onPress={() => setOpenKey(open ? null : plan.planKey)}'),
@@ -501,7 +516,9 @@ test('with the gate off it explains itself instead of showing a dead button', ()
   // COS-797 narrowed the condition: the explanation now shows only when there
   // is neither a Subscribe button NOR a free Switch one, so it never sits
   // under a control that works.
-  assert.match(cards, /\{!canSubscribe && !canSwitch && \(/)
+  // COS-809 moved it OUT of the expander — there is no longer one to hide it
+  // behind, and a card with no action and no explanation reads as broken.
+  assert.match(cards, /\{!current && !comingSoon && !canSubscribe && !canSwitch && \(/)
   assert.match(cards, /in-app subscribing is not available yet/)
 })
 

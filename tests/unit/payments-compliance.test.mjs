@@ -213,8 +213,9 @@ test('a free plan is never a dead end', () => {
   // The Subscribe buttons need a price, so on a free plan they never render.
   // The fallback explanation must therefore not be gated on the subscribe
   // flag — it is gated on neither control being available.
+  // COS-809 hoisted it out of the expander, which switch-mode no longer has.
   const code = stripComments(cards)
-  assert.match(code, /\{!canSubscribe && !canSwitch && \(/)
+  assert.match(code, /\{!current && !comingSoon && !canSubscribe && !canSwitch && \(/)
 })
 
 test('the switch button is offered, and says which plan', () => {
