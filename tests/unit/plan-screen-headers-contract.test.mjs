@@ -304,9 +304,16 @@ test('(f) SECTION_ORDER entries end up as `title` props to <SectionCard>', () =>
   //    three titles into the <SectionCard title={...}> call site.
   //    Permissive on the destructure shape: `.map((entry) =>`,
   //    `.map(({ key, title }) =>`, etc.
+  //
+  //    COS-802 allows ONE intervening `.filter(...)`: the three domains are
+  //    now entitlement-gated, so a plan may include Biological and Social
+  //    without Psychological. The wire's purpose is unchanged — SECTION_ORDER
+  //    must still be the thing iterated into SectionCard — and it still fails
+  //    if the map is dropped, replaced by hard-coded JSX, or moved onto some
+  //    other array. Only the direct-adjacency requirement is relaxed.
   assert.match(
     BPS_SCREEN_TSX,
-    /SECTION_ORDER\s*\.\s*map\s*\(/,
+    /SECTION_ORDER\s*\.\s*(?:filter\([\s\S]*?\)\s*\.\s*)?map\s*\(/,
     'BiopsychosocialPlanScreen.tsx must retain `SECTION_ORDER.map(...)` iteration. Without the map, the three verbatim titles are dead literals — no consumer, no <SectionCard title={...}> binding, no rendered header.',
   )
 })

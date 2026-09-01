@@ -54,6 +54,16 @@ export interface BpsHeroTileRowProps {
   derivation: WellbeingDerivation
   isLoading?: boolean
   isEmpty?: boolean
+  /**
+   * COS-802 — per-tile entitlement gates, resolved by the PARENT.
+   *
+   * They default to true so this component renders exactly as before for any
+   * call site that does not pass them, and so the gate lives in one place
+   * (BiopsychosocialPlanScreen) rather than this component growing its own
+   * dependency on the entitlement hook.
+   */
+  showWellbeing?: boolean
+  showToday?: boolean
   /** Today's task occurrences — shared with the expanded card. */
   tasks: TaskOccurrence[]
 }
@@ -67,6 +77,8 @@ export function BpsHeroTileRow({
   isLoading,
   isEmpty,
   tasks,
+  showWellbeing = true,
+  showToday = true,
 }: BpsHeroTileRowProps): React.JSX.Element {
   const [expanded, setExpanded] = useState<'wellbeing' | 'today' | null>(null)
   const fadeAnim = useRef(new Animated.Value(0)).current
@@ -102,11 +114,17 @@ export function BpsHeroTileRow({
   const wellbeingActive = expanded === 'wellbeing'
   const todayActive = expanded === 'today'
 
+  // COS-802 — a plan may grant neither tile. Returning the wrap anyway would
+  // leave an empty row with its own spacing above the map, which reads as a
+  // loading state that never resolves.
+  if (!showWellbeing && !showToday) return <></>
+
   return (
     <View style={styles.wrap}>
-      {/* --- Tile row (always visible) --- */}
+      {/* --- Tile row --- */}
       <View style={styles.row}>
         {/* Wellbeing tile */}
+        {showWellbeing && (
         <Pressable
           onPress={() => toggle('wellbeing')}
           accessibilityRole="button"
@@ -175,8 +193,10 @@ export function BpsHeroTileRow({
             </View>
           </View>
         </Pressable>
+        )}
 
         {/* Today tile */}
+        {showToday && (
         <Pressable
           onPress={() => toggle('today')}
           accessibilityRole="button"
@@ -251,10 +271,11 @@ export function BpsHeroTileRow({
             </Text>
           </View>
         </Pressable>
+        )}
       </View>
 
       {/* --- Expanded card (fade-in via native-driver opacity) --- */}
-      {expanded && (
+      {expanded && (expanded === 'wellbeing' ? showWellbeing : showToday) && (
         <Animated.View style={{ opacity: fadeAnim, marginTop: 12 }}>
           {expanded === 'wellbeing' ? (
             <BpsWellbeingScoreCard

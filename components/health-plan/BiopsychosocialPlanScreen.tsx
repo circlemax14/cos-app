@@ -835,6 +835,25 @@ export function BiopsychosocialPlanScreen({
   const canNutrition = useCanRender('biopsychosocial-plan.view-nutrition-plan');
   const canMedications = useCanRender('biopsychosocial-plan.view-medications');
   const canSharePdf = useCanRender('biopsychosocial-plan.share-plan-pdf');
+  /*
+   * COS-802 — the blocks COS-755 missed.
+   *
+   * view-wellbeing-score, view-ai-summary and the three domain keys were in
+   * the catalog from the start but had no call site, so an admin could untick
+   * them and nothing happened. view-todays-tasks and view-progress did not
+   * exist at all — the Today tile was the one block on this screen a plan
+   * could not be built without.
+   *
+   * Every one of these keys is granted by the COS-802 back-fill, so a plan
+   * that has been through it renders exactly as it does today.
+   */
+  const canWellbeingScore = useCanRender('biopsychosocial-plan.view-wellbeing-score');
+  const canTodaysTasks = useCanRender('biopsychosocial-plan.view-todays-tasks');
+  const canViewProgress = useCanRender('biopsychosocial-plan.view-progress');
+  const canAiSummary = useCanRender('biopsychosocial-plan.view-ai-summary');
+  const canBioSection = useCanRender('biopsychosocial-plan.view-bio-section');
+  const canPsychologicalSection = useCanRender('biopsychosocial-plan.view-psychological-section');
+  const canSocialSection = useCanRender('biopsychosocial-plan.view-social-section');
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const planTypeDisplayName = usePlanTypeDisplayName();
 
@@ -1857,7 +1876,11 @@ export function BiopsychosocialPlanScreen({
                 getScaledFontWeight={getScaledFontWeight}
                 onPress={onChangePlanType}
               />
-              {BPS_PROGRESS_LINK_ENABLED && (
+              {/* COS-802 — the pill is gated; the Switch plan pill beside it
+                  deliberately is NOT. A patient on a thin plan needs the way
+                  OUT of it more than anyone, and gating the escape hatch on
+                  the plan you are trying to escape is a trap. */}
+              {BPS_PROGRESS_LINK_ENABLED && canViewProgress && (
                 <ViewProgressLink
                   colors={colors}
                   getScaledFontSize={getScaledFontSize}
@@ -1996,6 +2019,8 @@ export function BiopsychosocialPlanScreen({
           isLoading={wellbeing.isLoading}
           isEmpty={wellbeing.isEmpty}
           tasks={todayTasks}
+          showWellbeing={canWellbeingScore}
+          showToday={canTodaysTasks}
         />
 
         {/*
@@ -2261,7 +2286,7 @@ export function BiopsychosocialPlanScreen({
             reason — see the card's header. Safe on this surface. */}
         <RetakeRequestInboxCard />
 
-        {BPS_AI_SUMMARY_ENABLED && (
+        {BPS_AI_SUMMARY_ENABLED && canAiSummary && (
           // CHUNK 48 fix (adversarial-verify major): reserve fixed-height
           // slot while ai-health-plan is loading. Cold mount had banner
           // paint null → then mount 120-180pt of card once fetch resolved,
@@ -2513,7 +2538,13 @@ export function BiopsychosocialPlanScreen({
         />
 
         {/* Three section cards */}
-        {SECTION_ORDER.map(({ key, title }) => (
+        {SECTION_ORDER.filter(({ key }) =>
+          key === 'biological'
+            ? canBioSection
+            : key === 'psychological'
+              ? canPsychologicalSection
+              : canSocialSection,
+        ).map(({ key, title }) => (
           // CHUNK 60: wrap SectionCard in an outer <View onLayout> so
           // the banner's tap handler knows where to scroll. onLayout
           // fires against the wrapper (whose parent is the ScrollView
