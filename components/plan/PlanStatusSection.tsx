@@ -38,7 +38,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
-import { parseHighlight } from '@/lib/plan-highlight';
+import { parseHighlight, sortRows } from '@/lib/plan-highlight';
 import { assessmentBadge } from '@/lib/plan-assessment-badge';
 import { planAccent } from '@/lib/plan-accent';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
@@ -271,6 +271,11 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
     }
   }
   const plans = data?.plans ?? [];
+  // Stable sort: only the current plan moves, everything else keeps the order
+  // the backend chose (COS-789 puts the free plans first).
+  const ordered = [...plans].sort(
+    (a, b) => (b.isCurrent === true ? 1 : 0) - (a.isCurrent === true ? 1 : 0),
+  );
   const billing = data?.billing ?? null;
 
   // Silent on failure — the Care Plan tab's job is the health plan, and
@@ -338,7 +343,19 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         You can change it at any time.
       </Text>
 
-      {plans.map((plan) => {
+      {/*
+        COS-812 — your plan leads, then everything else under a heading.
+
+        Eight equal cards made "which one am I on?" a search. Hoisting it out
+        and giving it a heavier treatment answers that before anything is read,
+        and the heading turns the rest into a considered list rather than more
+        of the same.
+
+        This overrides COS-789's free-first server order for the current plan
+        ONLY; the rest keep it. sort() is stable, so their relative order is
+        exactly what the backend sent.
+      */}
+      {ordered.map((plan, index) => {
         const { monthly, annual, annualSavingPct, label: priceLabel } = priceLines(plan.pricing);
         // COS-753 — the prod chooser advertised Family as a disabled card with
         // a COMING SOON badge (COS-432). Same treatment, driven by the plan's
@@ -359,7 +376,10 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         // that changes colour by row is a usability bug, not a style.
         const accent = comingSoon ? (colors.subtext ?? colors.text) : planAccent(plan.planKey);
         const parsed = plan.highlights.map((raw) => ({ raw, ...parseHighlight(raw) }));
-        const labelled = parsed.filter((h) => h.label !== null);
+        const showSectionBreak = index === 1 && ordered[0]?.isCurrent === true;
+        const labelled = sortRows(
+          parsed.filter((h): h is typeof h & { label: string } => h.label !== null),
+        );
         const plain = parsed.filter((h) => h.label === null);
         const derived: { icon: string; label: string; value: string }[] = [];
         if (typeof plan.assessmentCount === 'number' && plan.assessmentCount > 0) {
@@ -383,12 +403,22 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         }
 
         return (
-          // A View, not a Pressable. Each card now carries its own explicit
-          // "Upgrade to this plan" control, and a whole-card tap target on top
-          // of that gives VoiceOver two ways to do one thing, one of them
-          // unlabelled. The current plan has nothing to tap at all.
+          <React.Fragment key={plan.planKey}>
+          {showSectionBreak ? (
+            <Text
+              style={[
+                styles.sectionLabel,
+                { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(11) },
+              ]}
+            >
+              OTHER PLANS
+            </Text>
+          ) : null}
+          {/* A View, not a Pressable. Each card carries its own explicit
+              control, and a whole-card tap target on top of that would give
+              VoiceOver two ways to do one thing, one of them unlabelled. The
+              plan you hold has nothing to tap at all. */}
           <View
-            key={plan.planKey}
             style={[
               styles.card,
               {
@@ -417,8 +447,16 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 // findable before a word of it is read. The plan you hold gets
                 // the brand tint and a heavier one, so "yours" outranks
                 // "which one".
-                borderLeftWidth: current ? 6 : 4,
+                // COS-812 — the card you hold is a HERO, not a wider rail.
+                // It sits alone above the heading, so it needs presence rather
+                // than a stripe distinguishing it from neighbours it no longer
+                // has. Everything below keeps the rail, which is what makes
+                // those tell each other apart.
+                borderLeftWidth: current ? 1 : 4,
                 borderLeftColor: current ? colors.tint : accent,
+                borderWidth: current ? 1.5 : 1,
+                borderRadius: current ? 18 : 14,
+                padding: current ? 20 : 16,
               },
               comingSoon && styles.cardSoon,
             ]}
@@ -453,10 +491,20 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 />
               </View>
               <View style={styles.headText}>
+                {current ? (
+                  <Text
+                    style={[
+                      styles.eyebrow,
+                      { color: colors.tint, fontSize: getScaledFontSize(10) },
+                    ]}
+                  >
+                    YOUR PLAN
+                  </Text>
+                ) : null}
                 <Text
                   style={{
                     color: colors.text,
-                    fontSize: getScaledFontSize(18),
+                    fontSize: getScaledFontSize(current ? 24 : 18),
                     fontWeight: getScaledFontWeight(700) as never,
                   }}
                 >
@@ -491,16 +539,10 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                   {annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}
                 </Text>
               ) : null}
-                {/* The tier is the plan's shape in one word, and the shelf was
-                    throwing it away entirely. */}
               </View>
-              {current && (
-                <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
-                  <Text style={[styles.currentBadgeText, { fontSize: getScaledFontSize(10) }]}>
-                    YOUR PLAN
-                  </Text>
-                </View>
-              )}
+              {/* COS-812 — the pill is gone. The hero's eyebrow already says
+                  YOUR PLAN, and only the current card ever showed the pill, so
+                  keeping both put the same two words on one card twice. */}
               {comingSoon && (
                 <Text style={[styles.soonBadge, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(10) }]}>
                   COMING SOON
@@ -612,12 +654,17 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                     <MaterialIcons
                       name="check-circle"
                       size={getScaledFontSize(15)}
-                      color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+                      color={comingSoon ? colors.subtext ?? colors.text : accent}
                       style={styles.featureIcon}
                     />
+                    {/* COS-812 — an empty label cell, so an unlabelled row's
+                        text starts in the same column as every labelled row's
+                        value. Without it the ticks began ~85pt to the left and
+                        the table stopped being a table. */}
+                    <View style={styles.featureLabel} />
                     <Text
                       style={[
-                        styles.highlightText,
+                        styles.featureValue,
                         { color: colors.text, fontSize: getScaledFontSize(12) },
                       ]}
                     >
@@ -680,12 +727,16 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 disabled={switching !== null}
                 accessibilityRole="button"
                 accessibilityLabel={`Switch to the ${plan.name} plan`}
+                /* COS-812 — outlined, not filled. Six solid buttons down the
+                   page all shouted equally; the one filled control is "Go to
+                   your plan" on the card you hold, which is the action a
+                   patient most often actually wants. */
                 style={({ pressed }) => [
-                  styles.upgradeBtn,
-                  { backgroundColor: colors.tint, opacity: pressed || switching ? 0.7 : 1 },
+                  styles.switchBtn,
+                  { borderColor: colors.tint, opacity: pressed || switching ? 0.7 : 1 },
                 ]}
               >
-                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
+                <Text style={[styles.switchText, { color: colors.tint, fontSize: getScaledFontSize(14) }]}>
                   {switching === plan.planKey ? 'Switching…' : 'Switch to this plan'}
                 </Text>
               </Pressable>
@@ -803,6 +854,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               </View>
             )}
           </View>
+          </React.Fragment>
         );
       })}
 
@@ -864,8 +916,6 @@ const styles = StyleSheet.create({
   cardSoon: { opacity: 0.82 },
   // The plan they are on: a heavier tinted edge, so it reads as selected at a
   // glance without a fill that would clip the background circles.
-  currentBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  currentBadgeText: { color: '#FFFFFF', fontWeight: '700', letterSpacing: 0.8 },
   upgradeBtn: { marginTop: 14, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   // Quiet by design — it discloses, it does not act.
   detailsBtn: { marginTop: 8, paddingVertical: 8, alignItems: 'center' },
@@ -909,6 +959,10 @@ const styles = StyleSheet.create({
   },
   trialText: { fontWeight: '700' },
   features: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, gap: 8 },
+  sectionLabel: { fontWeight: '800', letterSpacing: 1, marginTop: 10, marginBottom: 10 },
+  eyebrow: { fontWeight: '800', letterSpacing: 1.1, marginBottom: 3 },
+  switchBtn: { marginTop: 14, borderWidth: 1.5, borderRadius: 999, paddingVertical: 11, alignItems: 'center' },
+  switchText: { fontWeight: '700' },
   featureRow: { flexDirection: 'row', alignItems: 'flex-start' },
   featureIcon: { marginTop: 1 },
   // Fixed width is the whole point: it is what makes four cards scan as a

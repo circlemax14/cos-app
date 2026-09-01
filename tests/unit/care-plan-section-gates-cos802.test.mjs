@@ -155,8 +155,8 @@ test('THE POINT: the primary button on a card DOES the switch', () => {
   // logs showed nothing, because nothing had been asked of it.
   const cards = read('components/plan/PlanStatusSection.tsx')
   const btn = cards.slice(cards.indexOf('!current && !comingSoon && canSwitch && ('))
-  assert.match(btn.slice(0, 700), /onPress=\{\(\) => void onSwitch\(plan\.planKey\)\}/)
-  assert.match(btn.slice(0, 700), /'Switch to this plan'/)
+  assert.match(btn.slice(0, 1200), /onPress=\{\(\) => void onSwitch\(plan\.planKey\)\}/)
+  assert.match(btn.slice(0, 1200), /'Switch to this plan'/)
 })
 
 test('the failure is shown where the button is, not inside a closed panel', () => {
@@ -350,17 +350,30 @@ test('THE POINT: the accent never reaches the action button', () => {
   // card and violet on the next. A primary action that changes colour by row
   // is a usability bug wearing a style choice's clothes.
   const cards = read('components/plan/PlanStatusSection.tsx')
+  //
+  // COS-812 outlined it: six filled buttons down the page all shouted equally,
+  // so the one FILLED control is now "Go to your plan" on the card you hold.
+  // Either way the accent must not reach it — that was the bug.
   const btn = cards.slice(cards.indexOf('!current && !comingSoon && canSwitch && ('), cards.indexOf("'Switch to this plan'"))
   assert.doesNotMatch(btn, /accent/)
-  assert.match(btn, /backgroundColor: colors\.tint/)
+  assert.match(btn, /borderColor: colors\.tint/)
+  // The filled one belongs to the plan you already have.
+  const go = cards.slice(cards.indexOf('current && onGoToPlan && ('))
+  assert.match(go.slice(0, 700), /backgroundColor: colors\.tint/)
 })
 
 test('the rail identifies the card; the plan you hold outranks it', () => {
   // "Yours" is a stronger signal than "which one", so the current card takes
   // the brand tint and a heavier rail rather than its own accent.
   const cards = read('components/plan/PlanStatusSection.tsx')
-  assert.match(cards, /borderLeftWidth: current \? 6 : 4/)
+  //
+  // COS-812: the plan you hold is now a HERO above an "OTHER PLANS" heading,
+  // so it has no neighbours to be told apart from — presence replaced the
+  // wider rail. Everything below keeps the rail, which is what makes THOSE
+  // distinguishable from each other.
+  assert.match(cards, /borderLeftWidth: current \? 1 : 4/)
   assert.match(cards, /borderLeftColor: current \? colors\.tint : accent/)
+  assert.match(cards, /borderWidth: current \? 1\.5 : 1/)
 })
 
 test('a coming-soon card is muted, not accented', () => {
@@ -402,4 +415,45 @@ test('reopening the shelf does not un-remember the first run', () => {
   const plus = read('app/Home/care-plan-plus.tsx')
   assert.match(plus, /setReopened\(true\)/)
   assert.doesNotMatch(plus, /removeItem\(CHOOSER_SEEN_KEY/)
+})
+
+// ── COS-812: A + B + C ───────────────────────────────────────────────────
+
+test('THE POINT: your plan leads, under its own heading', () => {
+  // Eight equal cards made "which one am I on?" a search. The sort is STABLE,
+  // so only the current plan moves — the rest keep COS-789's free-first server
+  // order rather than being silently re-ranked by the client.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\[\.\.\.plans\]\.sort\(/)
+  assert.match(cards, /\(b\.isCurrent === true \? 1 : 0\) - \(a\.isCurrent === true \? 1 : 0\)/)
+  assert.match(cards, /OTHER PLANS/)
+  assert.match(cards, /index === 1 && ordered\[0\]\?\.isCurrent === true/)
+})
+
+test('the heading only appears when there IS a hero above it', () => {
+  // With no current plan in the shelf, "OTHER PLANS" would be a heading over
+  // the entire list — other than what?
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /const showSectionBreak = index === 1 && ordered\[0\]\?\.isCurrent === true/)
+})
+
+test('YOUR PLAN is said once, not twice', () => {
+  // The hero eyebrow replaced the pill; keeping both put the same two words on
+  // one card twice. Counted in the RENDER, not the file — the prose above the
+  // change still names what was removed, and that is why it is legible.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const code = cards.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '')
+  assert.equal((code.match(/YOUR PLAN/g) ?? []).length, 1)
+  // ...and the pill's styles went with it, so it cannot quietly come back.
+  assert.doesNotMatch(code, /currentBadge/)
+})
+
+test('THE POINT: unlabelled rows align with labelled ones', () => {
+  // This is the whole reason the prod cards were comparable. A tick with no
+  // label cell started ~85pt left of every value above it, and the table
+  // stopped being a table.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const plain = cards.slice(cards.indexOf('{plain.map('))
+  assert.match(plain.slice(0, 900), /<View style=\{styles\.featureLabel\} \/>/)
+  assert.match(plain.slice(0, 900), /styles\.featureValue/)
 })
