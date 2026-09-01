@@ -475,7 +475,11 @@ test('your own plan shows what you get without being asked', () => {
   // them because the shelf sat above the daily tasks and four open cards
   // buried them; the chooser is its own screen, so that reason is gone. The
   // strip variant still collapses, because it is still inline above content.
-  assert.match(cards, /\{\(variant === 'chooser' \|\| current \|\| open\) && plan\.highlights\.length > 0/)
+  // COS-808 replaced the flat list with a feature TABLE, so the guard now
+  // covers all three groups it can render: derived plan config, labelled
+  // highlights, and unlabelled ones.
+  assert.match(cards, /\(variant === 'chooser' \|\| current \|\| open\) &&/)
+  assert.match(cards, /labelled\.length > 0 \|\| plain\.length > 0 \|\| derived\.length > 0/)
 })
 
 test('subscribing rides the SAME dark-launch gate as the Billing screen', () => {

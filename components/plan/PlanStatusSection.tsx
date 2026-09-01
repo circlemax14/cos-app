@@ -38,6 +38,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
+import { parseHighlight } from '@/lib/plan-highlight';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
 import { usePaymentGateways } from '@/hooks/use-payment-gateways';
@@ -61,6 +62,10 @@ export interface PatientPlanCard {
   } | null;
   /** COS-807 — length of the free trial, when the plan has one. */
   trialDays?: number | null;
+  /** COS-808 — how many screeners this plan asks for. */
+  assessmentCount?: number | null;
+  /** COS-808 — days between reassessment nudges. 0/absent = no nudging. */
+  reassessmentCadenceDays?: number | null;
   highlights: string[];
   isCurrent: boolean;
 }
@@ -180,6 +185,61 @@ interface Props {
   onGoToPlan?: () => void;
 }
 
+/**
+ * COS-808 — one row of the card's feature table.
+ *
+ * The prod chooser's cards read well for a structural reason, not a content
+ * one: a fixed-width muted LABEL against a flexible dark VALUE, so four cards
+ * scan as a table and the eye compares like with like down the column. A flat
+ * bullet list cannot do that — nothing lines up, so nothing compares.
+ */
+function FeatureRow({
+  icon,
+  label,
+  value,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  colors: Props['colors'];
+  getScaledFontSize: (n: number) => number;
+  getScaledFontWeight: (n: number) => number | string;
+}) {
+  return (
+    <View style={styles.featureRow}>
+      <MaterialIcons
+        name={icon as never}
+        size={getScaledFontSize(15)}
+        color={colors.subtext ?? colors.text}
+        style={styles.featureIcon}
+      />
+      <Text
+        style={[
+          styles.featureLabel,
+          { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) },
+        ]}
+      >
+        {label}
+      </Text>
+      <Text
+        style={[
+          styles.featureValue,
+          {
+            color: colors.text,
+            fontSize: getScaledFontSize(12),
+            fontWeight: getScaledFontWeight(500) as never,
+          },
+        ]}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 export default function PlanStatusSection({ colors, getScaledFontSize, getScaledFontWeight, onSwitched, variant = 'strip', onGoToPlan }: Props) {
   const { data, isError } = usePatientPlans();
   // One open at a time. An accordion rather than per-card flags because the
@@ -285,6 +345,34 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         const current = plan.isCurrent === true;
         const open = openKey === plan.planKey;
 
+        /*
+         * COS-808 — the card's feature table, in the prod chooser's order:
+         * real config first, then labelled copy, then anything unlabelled.
+         */
+        const parsed = plan.highlights.map((raw) => ({ raw, ...parseHighlight(raw) }));
+        const labelled = parsed.filter((h) => h.label !== null);
+        const plain = parsed.filter((h) => h.label === null);
+        const derived: { icon: string; label: string; value: string }[] = [];
+        if (typeof plan.assessmentCount === 'number' && plan.assessmentCount > 0) {
+          derived.push({
+            icon: 'health-and-safety',
+            label: 'Assessment',
+            value: `${String(plan.assessmentCount)} screener${plan.assessmentCount === 1 ? '' : 's'}`,
+          });
+        }
+        // 0 means the plan deliberately does not nudge, which is not the same
+        // as having no answer — say so rather than omitting the row.
+        if (typeof plan.reassessmentCadenceDays === 'number') {
+          derived.push({
+            icon: 'autorenew',
+            label: 'Updates',
+            value:
+              plan.reassessmentCadenceDays > 0
+                ? `Every ${String(plan.reassessmentCadenceDays)} days`
+                : 'When your records change',
+          });
+        }
+
         return (
           // A View, not a Pressable. Each card now carries its own explicit
           // "Upgrade to this plan" control, and a whole-card tap target on top
@@ -350,16 +438,6 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 </Text>
                 {/* The tier is the plan's shape in one word, and the shelf was
                     throwing it away entirely. */}
-                {plan.tier ? (
-                  <Text
-                    style={[
-                      styles.tier,
-                      { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(10) },
-                    ]}
-                  >
-                    {plan.tier.toUpperCase()}
-                  </Text>
-                ) : null}
               </View>
               {current && (
                 <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
@@ -374,6 +452,43 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 </Text>
               )}
             </View>
+
+            {/* COS-808 — the tier badge, on its own line under the name.
+
+                In the header row it competed with the plan name for width and
+                a long tier would have squeezed it. The prod card put it here
+                for the same reason, and it reads as a label for the card
+                rather than a suffix to the title. */}
+            {plan.tier ? (
+              <View
+                style={[
+                  styles.tierBadge,
+                  {
+                    backgroundColor:
+                      (comingSoon ? (colors.subtext ?? colors.text) : (colors.tint as string)) + '18',
+                    borderColor:
+                      (comingSoon ? (colors.subtext ?? colors.text) : (colors.tint as string)) + '55',
+                  },
+                ]}
+              >
+                <MaterialIcons
+                  name="assignment"
+                  size={getScaledFontSize(11)}
+                  color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+                />
+                <Text
+                  style={[
+                    styles.tierBadgeText,
+                    {
+                      color: comingSoon ? colors.subtext ?? colors.text : colors.tint,
+                      fontSize: getScaledFontSize(10),
+                    },
+                  ]}
+                >
+                  {plan.tier.toUpperCase()}
+                </Text>
+              </View>
+            ) : null}
 
             {/* A coming-soon tier has no price to quote, and inventing one
                 would be a promise we have not made.
@@ -434,23 +549,53 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               exactly what made these feel empty. The strip variant still
               collapses, because it is still inline above other content.
             */}
-            {(variant === 'chooser' || current || open) && plan.highlights.length > 0 ? (
-              <View style={styles.highlights}>
-                {plan.highlights.map((h) => (
-                  <View key={h} style={styles.highlightRow}>
+            {(variant === 'chooser' || current || open) &&
+            (labelled.length > 0 || plain.length > 0 || derived.length > 0) ? (
+              <View style={styles.features}>
+                {/* Real plan configuration first — these are the two rows a
+                    patient is genuinely choosing between, and they are the
+                    same for everyone on the plan. */}
+                {derived.map((row) => (
+                  <FeatureRow
+                    key={row.label}
+                    icon={row.icon}
+                    label={row.label}
+                    value={row.value}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                  />
+                ))}
+                {/* Then whatever the admin labelled — "Support: Self-directed"
+                    and friends, which have no field of their own. */}
+                {labelled.map((h) => (
+                  <FeatureRow
+                    key={h.raw}
+                    icon="check-circle"
+                    label={h.label as string}
+                    value={h.value}
+                    colors={colors}
+                    getScaledFontSize={getScaledFontSize}
+                    getScaledFontWeight={getScaledFontWeight}
+                  />
+                ))}
+                {/* Unlabelled highlights keep the tick they have always had.
+                    A plan authored before COS-808 renders exactly as before. */}
+                {plain.map((h) => (
+                  <View key={h.raw} style={styles.featureRow}>
                     <MaterialIcons
                       name="check-circle"
                       size={getScaledFontSize(15)}
                       color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
-                      style={styles.highlightIcon}
+                      style={styles.featureIcon}
                     />
                     <Text
                       style={[
                         styles.highlightText,
-                        { color: colors.text, fontSize: getScaledFontSize(13) },
+                        { color: colors.text, fontSize: getScaledFontSize(12) },
                       ]}
                     >
-                      {h}
+                      {h.value}
                     </Text>
                   </View>
                 ))}
@@ -707,7 +852,19 @@ const styles = StyleSheet.create({
   // because you could tell them apart at a glance.
   iconCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   headText: { flex: 1 },
-  tier: { fontWeight: '700', letterSpacing: 0.8, marginTop: 2, opacity: 0.8 },
+  tierBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    marginTop: 2,
+    marginBottom: 2,
+    gap: 4,
+  },
+  tierBadgeText: { fontWeight: '700', letterSpacing: 0.6 },
   trialPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -719,10 +876,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   trialText: { fontWeight: '700' },
-  highlights: { marginTop: 10, gap: 7 },
-  highlightRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  highlightIcon: { marginTop: 1 },
-  highlightText: { flex: 1, marginLeft: 8, lineHeight: 19 },
+  features: { marginTop: 12, gap: 7 },
+  featureRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  featureIcon: { marginTop: 1 },
+  // Fixed width is the whole point: it is what makes four cards scan as a
+  // table instead of four unrelated lists.
+  featureLabel: { width: 84, marginLeft: 8 },
+  featureValue: { flex: 1, lineHeight: 18 },
+  highlightText: { flex: 1, marginLeft: 8, lineHeight: 18 },
   soonBadge: { letterSpacing: 0.8, fontWeight: '700' },
   price: { marginTop: 6 },
   annual: { marginTop: 2, opacity: 0.75 },

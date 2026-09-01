@@ -288,3 +288,46 @@ test('the strip variant still collapses its highlights', () => {
   const cards = read('components/plan/PlanStatusSection.tsx')
   assert.match(cards, /variant === 'chooser' \|\| current \|\| open/)
 })
+
+// ── COS-808: the cards are a table, not a bullet list ────────────────────
+
+test('THE POINT: the label column is fixed-width', () => {
+  // This is the whole reason the prod cards read well. A fixed muted label
+  // against a flexible dark value makes four cards scan as a table, so the eye
+  // compares like with like down the column. Let the label size to its text
+  // and nothing lines up, which is what a bullet list already was.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /featureLabel: \{ width: \d+/)
+  assert.match(cards, /featureValue: \{ flex: 1/)
+})
+
+test('real plan config leads the table', () => {
+  // Assessment and Updates come from the plan itself and are the same for
+  // everyone holding it — they are what a patient is actually choosing
+  // between, so they outrank authored copy.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /label: 'Assessment'/)
+  assert.match(cards, /label: 'Updates'/)
+  const derived = cards.indexOf('{derived.map(')
+  const labelled = cards.indexOf('{labelled.map(')
+  const plain = cards.indexOf('{plain.map(')
+  assert.ok(derived > -1 && labelled > derived && plain > labelled, 'table order: derived, labelled, plain')
+})
+
+test('a cadence of zero says so rather than vanishing', () => {
+  // 0 means the plan deliberately does not nudge. Omitting the row would read
+  // as "we do not know", which is a different claim.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /When your records change/)
+  assert.match(cards, /typeof plan\.reassessmentCadenceDays === 'number'/)
+})
+
+test('an unlabelled highlight still renders, exactly as before', () => {
+  // No migration: every plan authored before COS-808 has colon-free
+  // highlights and must look the way it always did. The parser's own edge
+  // cases are executed in tests/unit/plan-highlight.test.ts — it lives in lib/
+  // precisely so it can be RUN rather than grepped.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\{plain\.map\(/)
+  assert.match(cards, /from '@\/lib\/plan-highlight'/)
+})
