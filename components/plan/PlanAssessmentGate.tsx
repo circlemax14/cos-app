@@ -39,13 +39,14 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { switchToPlan } from '@/services/api/patient-plans';
 import { serverMessage } from '@/lib/server-message';
+import { fetchInstruments } from '@/services/api/instruments';
 
 export function PlanAssessmentGate({
   remaining,
@@ -63,6 +64,25 @@ export function PlanAssessmentGate({
   const queryClient = useQueryClient();
   const [reverting, setReverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * COS-814 — show WHAT is left, not just how much.
+   *
+   * The gate listed a count and one button, so "2 of 3 complete" was the only
+   * information about a thing the patient is being asked to sit down and do.
+   * Names make the ask concrete, and seeing three short screeners rather than
+   * an unnamed remainder is the difference between finishing and abandoning.
+   *
+   * Same query key the stepper uses, so this is warm by the time anyone
+   * arrives from it and the list does not flicker between screeners.
+   */
+  const instrumentsQuery = useQuery({
+    queryKey: ['instruments'],
+    queryFn: fetchInstruments,
+    staleTime: 5 * 60 * 1000,
+  });
+  const nameFor = (id: string): string =>
+    (instrumentsQuery.data ?? []).find((i) => i.instrumentId === id)?.name ?? id;
 
   const next = remaining[0] ?? null;
 
@@ -124,7 +144,8 @@ export function PlanAssessmentGate({
             onPress={() =>
               router.push({
                 pathname: '/Home/assessment-stepper',
-                params: { instrumentId: next, returnTo: '/Home/care-plan-plus' },
+                // A TOKEN, not a path — resolveReturnHref matches on these.
+                params: { instrumentId: next, returnTo: 'care-plan-plus' },
               } as never)
             }
             accessibilityRole="button"
@@ -163,6 +184,52 @@ export function PlanAssessmentGate({
           </Pressable>
         ) : null}
 
+        {/* COS-814 — every remaining screener, tappable. The primary button
+            above starts the first; this exists so a patient can see the shape
+            of the ask and pick, rather than being fed an unnamed queue. */}
+        {remaining.length > 0 ? (
+          <View style={styles.list}>
+            <Text
+              style={[
+                styles.listHead,
+                { color: colors.subtext, fontSize: getScaledFontSize(11), fontWeight: getScaledFontWeight(700) as never },
+              ]}
+            >
+              STILL TO DO
+            </Text>
+            {remaining.map((id) => (
+              <Pressable
+                key={id}
+                onPress={() =>
+                  router.push({
+                    pathname: '/Home/assessment-stepper',
+                    params: { instrumentId: id, returnTo: 'care-plan-plus' },
+                  } as never)
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`Start ${nameFor(id)}`}
+                style={({ pressed }) => [
+                  styles.row,
+                  { borderColor: colors.border ?? '#E0E0E0', opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <MaterialIcons
+                  name="radio-button-unchecked"
+                  size={getScaledFontSize(18)}
+                  color={colors.subtext}
+                />
+                <Text
+                  style={[styles.rowText, { color: colors.text, fontSize: getScaledFontSize(14) }]}
+                  numberOfLines={2}
+                >
+                  {nameFor(id)}
+                </Text>
+                <MaterialIcons name="chevron-right" size={getScaledFontSize(20)} color={colors.subtext} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {error !== null ? (
           <Text style={[styles.error, { fontSize: getScaledFontSize(13) }]}>{error}</Text>
         ) : null}
@@ -183,4 +250,17 @@ const styles = StyleSheet.create({
   secondary: { marginTop: 12, borderWidth: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center' },
   secondaryText: { fontWeight: '600' },
   error: { color: '#B91C1C', marginTop: 14, lineHeight: 19 },
+  list: { marginTop: 26 },
+  listHead: { letterSpacing: 1, marginBottom: 10 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  rowText: { flex: 1, fontWeight: '600', lineHeight: 19 },
 });

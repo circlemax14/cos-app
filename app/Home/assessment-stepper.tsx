@@ -68,6 +68,16 @@ function resolveReturnHref(returnTo: string | undefined): string {
     // afterwards instead of back at the plan they were building.
     case 'plan':
       return '/Home/health-plan'
+    // COS-814: the Plan+ assessment gate sends people here to satisfy their
+    // plan's requirements. Without this case they finished a screener and
+    // landed in the catalog — a wall of cards with no relationship to the
+    // plan they were trying to unlock, and no route back to it.
+    //
+    // NOTE this switch matches TOKENS, not paths. Passing '/Home/care-plan-plus'
+    // silently hits `default` and looks like the feature working badly rather
+    // than a routing bug, which is exactly how it presented.
+    case 'care-plan-plus':
+      return '/Home/care-plan-plus'
     default:
       return '/Home/assessments-catalog'
   }
