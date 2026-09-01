@@ -339,3 +339,29 @@ test('an unlabelled highlight still renders, exactly as before', () => {
   assert.match(cards, /\{plain\.map\(/)
   assert.match(cards, /from '@\/lib\/plan-highlight'/)
 })
+
+// ── COS-810: four cards that look like four cards ────────────────────────
+
+test('THE POINT: the accent never reaches the action button', () => {
+  // A first pass tinted the CTA too, so "Switch to this plan" was green on one
+  // card and violet on the next. A primary action that changes colour by row
+  // is a usability bug wearing a style choice's clothes.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const btn = cards.slice(cards.indexOf('!current && !comingSoon && canSwitch && ('), cards.indexOf("'Switch to this plan'"))
+  assert.doesNotMatch(btn, /accent/)
+  assert.match(btn, /backgroundColor: colors\.tint/)
+})
+
+test('the rail identifies the card; the plan you hold outranks it', () => {
+  // "Yours" is a stronger signal than "which one", so the current card takes
+  // the brand tint and a heavier rail rather than its own accent.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /borderLeftWidth: current \? 6 : 4/)
+  assert.match(cards, /borderLeftColor: current \? colors\.tint : accent/)
+})
+
+test('a coming-soon card is muted, not accented', () => {
+  // Colour on a card you cannot choose is an invitation that goes nowhere.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /const accent = comingSoon \? \(colors\.subtext \?\? colors\.text\) : planAccent\(plan\.planKey\)/)
+})

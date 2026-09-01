@@ -40,6 +40,7 @@ import { apiClient } from '@/lib/api-client';
 import { priceLines } from '@/lib/plan-price';
 import { parseHighlight } from '@/lib/plan-highlight';
 import { assessmentBadge } from '@/lib/plan-assessment-badge';
+import { planAccent } from '@/lib/plan-accent';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
 import { usePaymentGateways } from '@/hooks/use-payment-gateways';
@@ -353,6 +354,10 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
          * real config first, then labelled copy, then anything unlabelled.
          */
         const badge = assessmentBadge(plan.assessmentCount, plan.usesEhrRefresh);
+        // COS-810 — the card's own colour. Rail and icon only: the action
+        // button stays the brand tint on every card, because a primary action
+        // that changes colour by row is a usability bug, not a style.
+        const accent = comingSoon ? (colors.subtext ?? colors.text) : planAccent(plan.planKey);
         const parsed = plan.highlights.map((raw) => ({ raw, ...parseHighlight(raw) }));
         const labelled = parsed.filter((h) => h.label !== null);
         const plain = parsed.filter((h) => h.label === null);
@@ -395,8 +400,14 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                   : comingSoon
                     ? (colors.text ?? '#11181C') + '20'
                     : colors.border ?? '#E0E0E0',
+                // COS-810 — the rail. Four structurally identical cards meant
+                // scanning them was reading them; this is what makes a card
+                // findable before a word of it is read. The plan you hold gets
+                // the brand tint and a heavier one, so "yours" outranks
+                // "which one".
+                borderLeftWidth: current ? 6 : 4,
+                borderLeftColor: current ? colors.tint : accent,
               },
-              current && styles.cardCurrent,
               comingSoon && styles.cardSoon,
             ]}
           >
@@ -419,15 +430,14 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 style={[
                   styles.iconCircle,
                   {
-                    backgroundColor:
-                      (comingSoon ? (colors.subtext ?? colors.text) : (colors.tint as string)) + '18',
+                    backgroundColor: accent + '1F',
                   },
                 ]}
               >
                 <MaterialIcons
                   name={(plan.icon ?? 'workspace-premium') as never}
                   size={getScaledFontSize(22)}
-                  color={comingSoon ? colors.subtext ?? colors.text : colors.tint}
+                  color={accent}
                 />
               </View>
               <View style={styles.headText}>
@@ -440,6 +450,35 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 >
                   {plan.name}
                 </Text>
+              {/* A coming-soon tier has no price to quote, and inventing one
+                  would be a promise we have not made.
+
+                  COS-807: `priceLabel` is the admin's own wording and outranks
+                  the computed figure. Without it a free plan showed no price at
+                  all — the single biggest reason these cards read as empty. */}
+              {!comingSoon && (priceLabel ?? monthly) ? (
+                <Text
+                  style={[
+                    styles.price,
+                    { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never },
+                  ]}
+                >
+                  {priceLabel ?? monthly}
+                </Text>
+              ) : null}
+              {/* When the admin wrote a label AND a figure exists, the figure
+                  becomes the supporting line rather than being lost. */}
+              {!comingSoon && priceLabel && monthly ? (
+                <Text style={[styles.annual, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
+                  {monthly}
+                </Text>
+              ) : null}
+              {!comingSoon && annual ? (
+                <Text style={[styles.annual, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
+                  {annual}
+                  {annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}
+                </Text>
+              ) : null}
                 {/* The tier is the plan's shape in one word, and the shelf was
                     throwing it away entirely. */}
               </View>
@@ -494,35 +533,6 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               </View>
             ) : null}
 
-            {/* A coming-soon tier has no price to quote, and inventing one
-                would be a promise we have not made.
-
-                COS-807: `priceLabel` is the admin's own wording and outranks
-                the computed figure. Without it a free plan showed no price at
-                all — the single biggest reason these cards read as empty. */}
-            {!comingSoon && (priceLabel ?? monthly) ? (
-              <Text
-                style={[
-                  styles.price,
-                  { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(700) as never },
-                ]}
-              >
-                {priceLabel ?? monthly}
-              </Text>
-            ) : null}
-            {/* When the admin wrote a label AND a figure exists, the figure
-                becomes the supporting line rather than being lost. */}
-            {!comingSoon && priceLabel && monthly ? (
-              <Text style={[styles.annual, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
-                {monthly}
-              </Text>
-            ) : null}
-            {!comingSoon && annual ? (
-              <Text style={[styles.annual, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(12) }]}>
-                {annual}
-                {annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}
-              </Text>
-            ) : null}
             {!comingSoon && typeof plan.trialDays === 'number' && plan.trialDays > 0 ? (
               <View style={[styles.trialPill, { backgroundColor: (colors.tint as string) + '18' }]}>
                 <MaterialIcons name="schedule" size={getScaledFontSize(12)} color={colors.tint} />
@@ -555,7 +565,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
             */}
             {(variant === 'chooser' || current || open) &&
             (labelled.length > 0 || plain.length > 0 || derived.length > 0) ? (
-              <View style={styles.features}>
+              <View style={[styles.features, { borderTopColor: (colors.border ?? '#E0E0E0') + '99' }]}>
                 {/* Real plan configuration first — these are the two rows a
                     patient is genuinely choosing between, and they are the
                     same for everyone on the plan. */}
@@ -840,7 +850,6 @@ const styles = StyleSheet.create({
   cardSoon: { borderStyle: 'dashed', opacity: 0.7 },
   // The plan they are on: a heavier tinted edge, so it reads as selected at a
   // glance without a fill that would clip the background circles.
-  cardCurrent: { borderWidth: 2 },
   currentBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   currentBadgeText: { color: '#FFFFFF', fontWeight: '700', letterSpacing: 0.8 },
   upgradeBtn: { marginTop: 14, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
@@ -885,7 +894,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   trialText: { fontWeight: '700' },
-  features: { marginTop: 12, gap: 7 },
+  features: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, gap: 8 },
   featureRow: { flexDirection: 'row', alignItems: 'flex-start' },
   featureIcon: { marginTop: 1 },
   // Fixed width is the whole point: it is what makes four cards scan as a
