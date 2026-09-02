@@ -300,10 +300,41 @@ export function AssessmentCatalogContent({
     (typeof phq2?.responses?.q2 === 'number' ? phq2.responses.q2 : 0)
   const phq9Eligible = phq2Sum >= 3
 
+  // COS-828 — declared here rather than beside the build gate below, because
+  // the scoped instrument list now needs it too. Same single query either way.
+  const assignmentsQuery = useHealthPlanAssignments()
+
   const rationaleById = instrumentsQuery.data?.rationale ?? {}
 
+  /*
+   * COS-828 — the catalog is the PLAN's, like the section that links to it.
+   *
+   * COS-822 scoped the Self-Assessments list on the care plan and stopped
+   * there. Its "Take a check-in" button opens this screen, which kept
+   * offering the entire library — Vishal, on a plan that names no assessments,
+   * tapped through and was offered 31.
+   *
+   * That is worse than the original bug: the plan says which assessments it
+   * asks for, the section on the plan honours it, and one tap away the app
+   * offers everything. A patient could complete twenty check-ins their plan
+   * never wanted and none of them would satisfy its gate.
+   *
+   * Assignments come from the same hook the build gate already uses, so this
+   * adds no request.
+   */
+  const assignedIds = React.useMemo(
+    () => new Set(assignmentsQuery.data?.assignedInstrumentIds ?? []),
+    [assignmentsQuery.data?.assignedInstrumentIds],
+  )
+  // Undefined while the query is in flight. Offering the full library for a
+  // beat and then removing most of it reads as a glitch, so wait.
+  const assignmentsKnown = assignmentsQuery.data !== undefined
+
   const visible = React.useMemo<InstrumentSummary[]>(() => {
-    const all = instrumentsQuery.data?.instruments ?? []
+    const raw = instrumentsQuery.data?.instruments ?? []
+    const all = assignmentsKnown
+      ? raw.filter((it) => assignedIds.has(it.instrumentId))
+      : []
     const byId = new Map(all.map((it) => [it.instrumentId, it]))
     const ordered: InstrumentSummary[] = []
     // The backend returns AI-ordered ids; preserve that ordering by
@@ -315,8 +346,10 @@ export function AssessmentCatalogContent({
       if (it.instrumentId === 'phq-9' && !phq9Eligible) continue
       ordered.push(it)
     }
-    // Any in-order ids we haven't already shown — keep them visible
-    // so users with no AI recommendation still get the full library.
+    // Any in-order ids we haven't already shown — keep them visible so a
+    // patient with no AI recommendation still gets everything their plan asks
+    // for. COS-828: `byId` is built from the SCOPED list, so this backfills
+    // ordering without reintroducing the library.
     for (const id of ORDER) {
       if (id === 'phq-9' && !phq9Eligible) continue
       if (!byId.has(id)) continue
@@ -324,7 +357,7 @@ export function AssessmentCatalogContent({
       ordered.push(byId.get(id) as InstrumentSummary)
     }
     return ordered
-  }, [instrumentsQuery.data, phq9Eligible])
+  }, [instrumentsQuery.data, phq9Eligible, assignedIds, assignmentsKnown])
 
   const completedCount = React.useMemo(
     () => visible.filter((it) => completedById.has(it.instrumentId)).length,
@@ -362,7 +395,6 @@ export function AssessmentCatalogContent({
   // falling back to the local heuristic only when assignments aren't loaded
   // yet (offline / pre-load). Basic-tier users always get canGenerate=true
   // from the backend, so they are never newly blocked.
-  const assignmentsQuery = useHealthPlanAssignments()
   const buildGate = resolveBuildGate(assignmentsQuery.data, completedCount, MIN_TO_BUILD_PLAN)
 
   // COS-411: when the biopsychosocial path is active, "Build my plan" only
@@ -417,10 +449,26 @@ export function AssessmentCatalogContent({
   }
 
   if (visible.length === 0) {
+    /*
+     * COS-828 — say WHICH empty this is.
+     *
+     * "Check back later" is right for a library that has not loaded and wrong
+     * for a plan that asks for nothing: there is nothing to come back for, and
+     * a patient refreshing a screen that will never change is worse served
+     * than one told the truth.
+     *
+     * Only when we actually KNOW the plan asks for none — `assignmentsKnown`
+     * with an empty set. A failed assignments read falls through to the
+     * original copy rather than asserting something about a plan we could not
+     * read.
+     */
+    const planAsksForNone = assignmentsKnown && assignedIds.size === 0
     return (
       <View style={[styles.emptyWrap, { borderColor: colors.border }]}>
         <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }}>
-          {emptyMessage ?? 'No check-ins are available right now. Check back later.'}
+          {planAsksForNone
+            ? 'Your plan does not ask for any check-ins right now. If you change plans, the ones it needs will appear here.'
+            : (emptyMessage ?? 'No check-ins are available right now. Check back later.')}
         </Text>
       </View>
     )

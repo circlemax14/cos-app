@@ -62,3 +62,42 @@ test('the banner says WHY the old plan is not shown', () => {
   // deliberate wait.
   assert.match(banner, /built for a different\s*\n?\s*plan/)
 })
+
+// ── COS-828: the catalog is the plan's too ───────────────────────────────
+
+const catalog = read('components/health-plan/AssessmentCatalogContent.tsx')
+
+test('THE POINT: the catalog offers only what the plan asks for', () => {
+  // COS-822 scoped the section on the care plan and stopped there. Its "Take a
+  // check-in" button opens this screen, which kept offering the whole library —
+  // 31 instruments to a patient on a plan that names none. A patient could
+  // complete twenty check-ins their plan never wanted, and none would satisfy
+  // its gate.
+  assert.match(catalog, /raw\.filter\(\(it\) => assignedIds\.has\(it\.instrumentId\)\)/)
+})
+
+test('the ORDER backfill cannot put the library back', () => {
+  // It re-adds ids from a static list to fix ordering. Built from the RAW
+  // list it would undo the scoping one line later.
+  const at = catalog.indexOf('for (const id of ORDER)')
+  const byId = catalog.indexOf('const byId = new Map(all.map(')
+  assert.ok(byId > -1 && at > byId, 'byId must be built from the scoped list before the backfill')
+})
+
+test('it waits for the assignments rather than flashing 31', () => {
+  assert.match(catalog, /const assignmentsKnown = assignmentsQuery\.data !== undefined/)
+  assert.match(catalog, /assignmentsKnown\s*\n?\s*\? raw\.filter/)
+})
+
+test('THE POINT: "asks for none" is a different empty from "not loaded"', () => {
+  // "Check back later" on a plan that asks for nothing sends someone back to a
+  // screen that will never change.
+  assert.match(catalog, /const planAsksForNone = assignmentsKnown && assignedIds\.size === 0/)
+  assert.match(catalog, /does not ask for any check-ins right now/)
+})
+
+test('a FAILED assignments read does not claim the plan asks for none', () => {
+  // Asserting something about a plan we could not read is the one claim worth
+  // avoiding here.
+  assert.match(catalog, /assignmentsKnown && assignedIds\.size === 0/)
+})
