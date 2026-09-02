@@ -118,3 +118,51 @@ test('an unnamed instrument still renders its id', () => {
   // Falling back to the id keeps the row tappable instead of blank.
   assert.match(gate, /\?\.name \?\? id/)
 })
+
+// ── COS-829: no plan without check-ins, and no way out of a required one ──
+
+const stepper = read('app/Home/assessment-stepper.tsx')
+const noCheckIns = read('components/plan/PlanHasNoCheckIns.tsx')
+
+test('THE POINT: a plan asking for NO check-ins shows no care plan', () => {
+  // The plan is generated FROM check-in answers. A plan naming none has no
+  // inputs, so anything on screen came from a previous plan or an old
+  // ingestion — which is what made every plan look alike.
+  assert.match(plus, /assignments\.assignedSource === 'plan' &&\s*\n\s*assignments\.assignedInstrumentIds\.length === 0/)
+  assert.match(plus, /<PlanHasNoCheckIns/)
+})
+
+test('THE POINT: only when the PLAN said so, never the tier', () => {
+  // An empty set on the tier path means "no care team has assigned anything
+  // yet" — wait, not switch. Telling someone to change plans because a
+  // clinician has not acted would be wrong and expensive.
+  assert.match(plus, /assignedSource === 'plan'/)
+})
+
+test('it offers a way forward, not just a dead end', () => {
+  assert.match(noCheckIns, /Choose a different plan/)
+  assert.match(plus, /onChoosePlan=\{\(\) => setReopened\(true\)\}/)
+})
+
+test('THE POINT: a required check-in has no Close and no Cancel', () => {
+  // Leaving mid-questionnaire loses the draft — it is local state — and lands
+  // back on the gate having answered nothing. That is not an exit, it is a
+  // way to lose your work and arrive where you started.
+  assert.match(stepper, /const required = params\.required === '1'/)
+  assert.match(stepper, /\{required \? null : \(/)
+  assert.match(stepper, /if \(required\) return/)
+})
+
+test('Back BETWEEN steps still works', () => {
+  // Reviewing the previous answer is part of answering. Removing that is a
+  // different thing from removing the escape hatch.
+  assert.match(stepper, /setStepIdx\(\(i\) => Math\.max\(i - 1, 0\)\)/)
+})
+
+test('every launcher from the gate marks the run required', () => {
+  // One left unmarked would give a way out from that row only — the worst
+  // kind, because it works most of the time.
+  const launches = [...gate.matchAll(/instrumentId: [^,]+, returnTo: '[^']+'(, required: '1')?/g)]
+  assert.ok(launches.length >= 2, `expected both launchers, found ${launches.length}`)
+  for (const m of launches) assert.ok(m[1], `a launcher is missing required: ${m[0]}`)
+})

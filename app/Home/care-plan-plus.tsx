@@ -47,6 +47,7 @@ import { usePlanType } from '@/hooks/use-plan-type';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { PlanAssessmentGate } from '@/components/plan/PlanAssessmentGate';
 import { PlanBuildingBanner } from '@/components/plan/PlanBuildingBanner';
+import { PlanHasNoCheckIns } from '@/components/plan/PlanHasNoCheckIns';
 import { usePatientInfo } from '@/hooks/use-patient';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
@@ -212,6 +213,31 @@ function CarePlanPlusInner(): React.JSX.Element {
 
   const assignments = assignmentsQuery.data;
   const remaining = assignments?.remainingInstrumentIds ?? [];
+
+  /*
+   * COS-829 — a plan that asks for no check-ins has no care plan.
+   *
+   * The plan is generated FROM check-in answers, so a plan naming none has no
+   * inputs; anything on screen came from a previous plan or an old ingestion,
+   * and showing it as this plan's is what made every plan look alike.
+   *
+   * Gated on `assignedSource === 'plan'`. An empty set also occurs on the tier
+   * path, where it means "no care team has assigned anything yet" — wait, not
+   * switch — and telling someone to change plans because a clinician has not
+   * acted yet would be both wrong and expensive.
+   */
+  if (
+    assignments &&
+    assignments.assignedSource === 'plan' &&
+    assignments.assignedInstrumentIds.length === 0
+  ) {
+    return (
+      <PlanHasNoCheckIns
+        planName={patientPlansQuery.data?.billing?.planName ?? null}
+        onChoosePlan={() => setReopened(true)}
+      />
+    );
+  }
   if (assignments && assignments.canGenerate === false && remaining.length > 0) {
     return (
       <PlanAssessmentGate

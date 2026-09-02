@@ -145,7 +145,8 @@ export function PlanAssessmentGate({
               router.push({
                 pathname: '/Home/assessment-stepper',
                 // A TOKEN, not a path — resolveReturnHref matches on these.
-                params: { instrumentId: next, returnTo: 'care-plan-plus' },
+                // COS-829 — required: the gate sent them, so there is no way out but through.
+                params: { instrumentId: next, returnTo: 'care-plan-plus', required: '1' },
               } as never)
             }
             accessibilityRole="button"
@@ -203,7 +204,7 @@ export function PlanAssessmentGate({
                 onPress={() =>
                   router.push({
                     pathname: '/Home/assessment-stepper',
-                    params: { instrumentId: id, returnTo: 'care-plan-plus' },
+                    params: { instrumentId: id, returnTo: 'care-plan-plus', required: '1' },
                   } as never)
                 }
                 accessibilityRole="button"

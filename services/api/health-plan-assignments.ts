@@ -41,6 +41,14 @@ export interface HealthPlanAssignments {
    * showing their plan and showing somebody else's.
    */
   regenPending?: boolean
+  /**
+   * COS-829 — who decided the assigned set.
+   *
+   * 'plan' with an empty list means the plan asks for nothing, which is a
+   * reason to offer a different plan. Absent with an empty list is the old
+   * tier behaviour, which means wait. The array looks identical either way.
+   */
+  assignedSource?: 'plan' | 'tier' | null
 }
 
 export async function fetchHealthPlanAssignments(): Promise<HealthPlanAssignments> {

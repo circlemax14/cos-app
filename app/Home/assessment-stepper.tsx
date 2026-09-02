@@ -98,7 +98,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
-  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string }>()
+  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string; required?: string }>()
   const instrumentId = typeof params.instrumentId === 'string' ? params.instrumentId : ''
   // CHUNK 67 (2026-07-23): stepper honors an optional `returnTo` param so
   // the four exit paths (celebration timer, Close button, Back-when-first,
@@ -108,6 +108,24 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   // from, forcing an app-kill to escape. Fresh query param on each
   // navigation — no reset-effect needed.
   const returnTo = typeof params.returnTo === 'string' ? params.returnTo : undefined
+  /*
+   * COS-829 — a REQUIRED check-in has no exit.
+   *
+   * Vishal: "there should not be any back button on the health check-ins when
+   * we are taking the check-ins."
+   *
+   * When the plan gate sent someone here, leaving mid-questionnaire drops them
+   * back on the gate having answered nothing — the draft is local state and is
+   * lost. That is not a way out, it is a way to lose your work and arrive
+   * exactly where you started. So the gate passes `required=1` and the two
+   * exits go: no Close in the header, and Back on the first step stops being
+   * Cancel.
+   *
+   * Back BETWEEN steps stays. Reviewing the previous answer is part of
+   * answering, and removing it would be a different thing from removing the
+   * escape hatch.
+   */
+  const required = params.required === '1'
   const returnHref = React.useMemo(() => resolveReturnHref(returnTo), [returnTo])
 
   const instrumentsQuery = useQuery({
@@ -414,7 +432,9 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   }
 
   const goBack = () => {
+    // COS-829 — on a required run the first step has nothing behind it.
     if (isFirst) {
+      if (required) return
       router.replace(returnHref as never)
     } else {
       setStepIdx((i) => Math.max(i - 1, 0))
@@ -425,14 +445,19 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     <AppWrapper>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 32 }}>
         <View style={styles.header}>
-          <Pressable
-            onPress={() => router.replace(returnHref as never)}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Close check-in"
-          >
-            <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
-          </Pressable>
+          {/* COS-829 — no Close on a required check-in. Leaving mid-way loses
+              the draft (it is local state) and lands back on the gate having
+              answered nothing. */}
+          {required ? null : (
+            <Pressable
+              onPress={() => router.replace(returnHref as never)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Close check-in"
+            >
+              <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
+            </Pressable>
+          )}
           <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, marginLeft: 12 }]} numberOfLines={1}>
             {getWarmerInstrumentLabel(instrument.instrumentId, instrument.name)}
           </Text>
@@ -491,7 +516,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
             accessibilityRole="button"
           >
             <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
-              {isFirst ? 'Cancel' : 'Back'}
+              {isFirst ? (required ? 'Start' : 'Cancel') : 'Back'}
             </Text>
           </Pressable>
           <Pressable
