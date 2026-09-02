@@ -765,14 +765,6 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           })}
         </View>
 
-        <Text
-          style={[
-            styles.attribution,
-            { color: colors.subtext, fontSize: getScaledFontSize(10) },
-          ]}
-        >
-          Adapted from the NovoPsych biopsychosocial model
-        </Text>
       </ScrollView>
 
       <WellbeingSubdomainSheet
