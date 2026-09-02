@@ -398,7 +398,27 @@ export interface AiPlanGoal {
     progressPercent?: number;
     lastMeasuredAt?: string;
     dataPoints?: number;
+    /**
+     * COS-820 — how the goal's OWN tasks went this week.
+     *
+     * Most goals have no metric a patient reports, so measurement-based
+     * progress left them permanently blank. This is the other half: did the
+     * work happen. `percent` is null when nothing fell due, which is not the
+     * same as 0% — a weekly task on a day it does not fall would otherwise
+     * read as a failure on a goal being kept perfectly.
+     */
+    adherence?: {
+      linkedTasks: number;
+      scheduled: number;
+      completed: number;
+      percent: number | null;
+      windowDays: number;
+    };
+    /** Negative once overdue, so one number serves "left" and "over". */
+    daysRemaining?: number;
   };
+  /** COS-820 — the deadline `timeframe` describes; absent when it has none. */
+  targetDate?: string;
 }
 
 /**

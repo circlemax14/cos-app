@@ -30,6 +30,7 @@
 import React from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { goalStatusLine } from '@/lib/goal-status';
 
 import { SubdomainChipRow } from './SubdomainChip';
 import { formatGoalMeasure } from '@/lib/care-plan';
@@ -79,6 +80,14 @@ export function BioGoalCard(props: {
   const measure = formatGoalMeasure(g);
   const priorityStyle = g.priority ? PRIORITY_STYLE[g.priority] : null;
 
+  // COS-820 — computed here, rendered below. Null whenever the goal has
+  // nothing measurable to report, which is most of them until a plan carries
+  // task links or a timeframe with an endpoint.
+  const statusLine = goalStatusLine(g);
+  const statusTone = statusLine
+    ? STATUS_TONE[statusLine.tone]
+    : STATUS_TONE.neutral;
+
   return (
     <View
       style={[
@@ -114,6 +123,30 @@ export function BioGoalCard(props: {
           </View>
         )}
       </View>
+
+      {/*
+        COS-820 — the one line that says how this goal is actually going.
+
+        A goal card can now carry a measured metric, how its own tasks went
+        this week, and how long is left. Showing all three turns a card into a
+        dashboard, so goalStatusLine picks the one that is actionable — overdue
+        first, then the work, then the countdown — and returns null when there
+        is nothing true to say. An empty string here reads as a loading state
+        that never resolves.
+      */}
+      {statusLine && (
+        <View style={[styles.statusRow, { borderColor: statusTone.border, backgroundColor: statusTone.bg }]}>
+          <Text
+            style={{
+              color: statusTone.fg,
+              fontSize: getScaledFontSize(12),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+          >
+            {statusLine.text}
+          </Text>
+        </View>
+      )}
 
       {!!g.description && (
         <Text
@@ -173,7 +206,29 @@ export function BioGoalCard(props: {
   );
 }
 
+/**
+ * COS-820 — tones for the status line.
+ *
+ * Deliberately not the wellbeing palette: this says whether the WORK is
+ * happening, not whether the patient is well, and borrowing the clinical
+ * colours would make a missed week look like a health finding.
+ */
+const STATUS_TONE = {
+  good: { fg: '#0E7490', bg: '#ECFEFF', border: '#A5F3FC' },
+  warn: { fg: '#B45309', bg: '#FFFBEB', border: '#FDE68A' },
+  bad: { fg: '#B91C1C', bg: '#FEF2F2', border: '#FECACA' },
+  neutral: { fg: '#475569', bg: '#F8FAFC', border: '#E2E8F0' },
+} as const;
+
 const styles = StyleSheet.create({
+  statusRow: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
   card: {
     borderWidth: 1,
     borderLeftWidth: 4,
