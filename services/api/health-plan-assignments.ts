@@ -32,6 +32,15 @@ export interface HealthPlanAssignments {
    * renders without that button rather than with one that fails when pressed.
    */
   previousPlanKey?: string | null
+  /**
+   * COS-822 — a plan switch is still rebuilding.
+   *
+   * True from the moment someone switches until the new plan is built. The
+   * care plan in the app during that window was generated for the plan they
+   * just LEFT and looks entirely current, so this is the difference between
+   * showing their plan and showing somebody else's.
+   */
+  regenPending?: boolean
 }
 
 export async function fetchHealthPlanAssignments(): Promise<HealthPlanAssignments> {

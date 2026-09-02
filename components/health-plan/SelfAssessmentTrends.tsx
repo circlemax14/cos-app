@@ -18,6 +18,7 @@ import {
 // SCRUM-268; that copy was migrated verbatim into the shared helper.
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { groupAssessmentsByDomain } from '@/lib/assessment-grouping'
+import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
 import { getSubdomain } from '@/lib/bps-subdomains'
 import {
   computeBand,
@@ -212,7 +213,35 @@ export function SelfAssessmentTrends({
     staleTime: 60 * 1000,
   })
 
-  const records = (query.data ?? []).filter((r) => !!r.completedAt)
+  /*
+   * COS-822 — only the assessments THIS plan asks for.
+   *
+   * Vishal: "if we are showing the assessments which are completed, which are
+   * not a part of the plan, we should only show those assessments which are a
+   * part of the plan even if they are completed."
+   *
+   * This listed every assessment a patient had ever completed, so someone who
+   * moved from a plan requiring PHQ-2 to one requiring nothing kept reading
+   * their psychological results under a heading that belongs to the new plan.
+   * The record is theirs and is never deleted — it is simply not part of the
+   * plan they are on, and this section is the plan's.
+   *
+   * Nothing assigned means nothing to show. That is most plans today, and it
+   * is the honest answer rather than falling back to "everything": a plan
+   * asking for no assessments has no assessments section.
+   */
+  const assignments = useHealthPlanAssignments()
+  const inPlan = React.useMemo(
+    () => new Set(assignments.data?.assignedInstrumentIds ?? []),
+    [assignments.data?.assignedInstrumentIds],
+  )
+  // Undefined while the assignment query is in flight — showing everything for
+  // a beat and then removing most of it reads as a glitch, so wait.
+  const scoped = assignments.data === undefined
+    ? []
+    : (query.data ?? []).filter((r) => inPlan.has(r.instrumentId))
+
+  const records = scoped.filter((r) => !!r.completedAt)
   records.sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
 
   // Chunk 58: batch-fetch per-instrument history so we can render the

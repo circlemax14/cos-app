@@ -46,6 +46,7 @@ import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { usePlanType } from '@/hooks/use-plan-type';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { PlanAssessmentGate } from '@/components/plan/PlanAssessmentGate';
+import { PlanBuildingBanner } from '@/components/plan/PlanBuildingBanner';
 import { usePatientInfo } from '@/hooks/use-patient';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
@@ -68,7 +69,20 @@ function CarePlanPlusInner(): React.JSX.Element {
   const planQuery = useBiopsychosocialPlan();
   const patientQuery = usePatientInfo();
   const planTypeQuery = usePlanType();
+  /*
+   * COS-822 — poll while a switch is rebuilding.
+   *
+   * There is no push for this and the window is under a minute, so the screen
+   * asks. A blocked screen that needs a manual refresh to leave is worse than
+   * a few requests; the interval drops back to nothing the moment it clears.
+   */
   const assignmentsQuery = useHealthPlanAssignments();
+  const rebuilding = assignmentsQuery.data?.regenPending === true;
+  React.useEffect(() => {
+    if (!rebuilding) return;
+    const id = setInterval(() => void assignmentsQuery.refetch(), 5000);
+    return () => clearInterval(id);
+  }, [rebuilding, assignmentsQuery]);
   const patientName = firstNameFromPatient(patientQuery.data);
 
   /*
@@ -187,6 +201,15 @@ function CarePlanPlusInner(): React.JSX.Element {
    *
    * Undefined while loading, so a slow query never flashes the gate.
    */
+  /*
+   * COS-822 — the rebuild blocks BEFORE the gate and before the plan.
+   *
+   * It has to outrank both. Behind it sits a complete, confident care plan
+   * built for the plan the patient just left; showing that with a banner over
+   * it would leave the wrong goals and the wrong tasks tappable underneath.
+   */
+  if (rebuilding) return <PlanBuildingBanner />;
+
   const assignments = assignmentsQuery.data;
   const remaining = assignments?.remainingInstrumentIds ?? [];
   if (assignments && assignments.canGenerate === false && remaining.length > 0) {
