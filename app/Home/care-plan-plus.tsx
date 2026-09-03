@@ -202,15 +202,6 @@ function CarePlanPlusInner(): React.JSX.Element {
    *
    * Undefined while loading, so a slow query never flashes the gate.
    */
-  /*
-   * COS-822 — the rebuild blocks BEFORE the gate and before the plan.
-   *
-   * It has to outrank both. Behind it sits a complete, confident care plan
-   * built for the plan the patient just left; showing that with a banner over
-   * it would leave the wrong goals and the wrong tasks tappable underneath.
-   */
-  if (rebuilding) return <PlanBuildingBanner />;
-
   const assignments = assignmentsQuery.data;
   const remaining = assignments?.remainingInstrumentIds ?? [];
 
@@ -248,6 +239,31 @@ function CarePlanPlusInner(): React.JSX.Element {
       />
     );
   }
+
+  /*
+   * COS-846 — the rebuild banner outranks the PLAN, but NOT the gate.
+   *
+   * It used to sit above both, and that was a deadlock. A switch sets
+   * planRegenPending=true and stamps assessmentsRequiredSince=now in the same
+   * breath (plan-self-switch.service.ts:220-242), which makes every prior
+   * answer stale. The one and only place that clears the flag
+   * (assessment-completion-trigger.service.ts:124) is unreachable while
+   * anything is still owed — it returns at :83. So the banner covered the
+   * gate, and the gate was the only thing that could clear the banner.
+   * Every switch, on all six patient-visible plans, ended on
+   * "Building your plan… usually takes under a minute", forever.
+   *
+   * The original reasoning still holds for the PLAN below: behind the banner
+   * sits a complete, confident care plan built for the plan the patient just
+   * LEFT, and showing that with a banner over it would leave the wrong goals
+   * tappable underneath. The gate is not that — it is the list of things to
+   * do, which is exactly what a patient owing assessments should see.
+   *
+   * `canGenerate` is the authoritative rule here, not `remaining`: the two are
+   * computed differently and disagree, and this is the one that decides
+   * whether a build can actually happen.
+   */
+  if (rebuilding) return <PlanBuildingBanner onChoosePlan={() => { setReopened(true); }} />;
 
   if (planQuery.data?.plan == null) {
     return (

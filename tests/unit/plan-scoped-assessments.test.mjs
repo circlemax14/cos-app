@@ -36,18 +36,43 @@ test('it waits for the assignment query rather than flashing everything', () => 
   assert.match(trends, /assignments\.data === undefined/)
 })
 
-test('THE POINT: the rebuild BLOCKS, it does not banner over the old plan', () => {
-  // Behind it sits a complete, confident care plan built for the plan just
-  // left. A banner above it would leave the wrong goals and tasks tappable.
-  assert.match(plus, /if \(rebuilding\) return <PlanBuildingBanner \/>;/)
-  const at = plus.indexOf('if (rebuilding)')
-  // It outranks the ASSESSMENT gate and the plan — but NOT the chooser.
-  // Blocking the chooser mid-rebuild would trap someone who had just switched
-  // with no way to switch again; the chooser is the way out, not the problem.
+test('THE POINT: the rebuild blocks the PLAN but never the assessment gate', () => {
+  /*
+   * COS-846 — this assertion is the inverse of what it used to be, and the
+   * old one encoded a deadlock.
+   *
+   * COS-822 put the rebuild above BOTH the gate and the plan, reasoning that
+   * behind it sits a complete, confident care plan built for the plan just
+   * left. That reasoning is still right about the PLAN and was wrong about
+   * the gate.
+   *
+   * A switch sets planRegenPending=true and stamps assessmentsRequiredSince
+   * =now in the same block, so every prior answer goes stale and something is
+   * always owed. The one and only clearer of the flag is unreachable while
+   * anything is owed. So the banner covered the gate, and the gate was the
+   * only thing that could clear the banner: every switch ended on "Building
+   * your plan" forever, on all six patient-visible plans.
+   *
+   * The gate is not stale content. It is the list of things to do.
+   */
+  const at = plus.indexOf('if (rebuilding) return <PlanBuildingBanner')
   assert.ok(at > -1, 'no rebuild block')
-  assert.ok(at < plus.indexOf('assignments.canGenerate === false'), 'the rebuild must outrank the assessment gate')
+  assert.ok(
+    at > plus.indexOf('assignments.canGenerate === false'),
+    'the assessment gate must outrank the rebuild, or a switch deadlocks',
+  )
   assert.ok(at < plus.indexOf('planQuery.data?.plan == null'), 'the rebuild must outrank the plan')
   assert.ok(at > plus.indexOf('if (showPlanGate)'), 'the chooser stays reachable during a rebuild')
+})
+
+test('THE POINT: the wait is bounded and has an exit', () => {
+  // planRegenPending has one clearer, and it is skipped when the patient has
+  // no FHIR id and when generation throws — both swallowed. A spinner that
+  // cannot end is worse than an honest failure.
+  assert.match(banner, /PATIENCE_MS/)
+  assert.match(banner, /taking longer than it should/)
+  assert.match(banner, /onChoosePlan/)
+  assert.match(plus, /<PlanBuildingBanner onChoosePlan=/)
 })
 
 test('the blocked screen polls its own way out', () => {
