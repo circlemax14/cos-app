@@ -27,6 +27,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { useImmunizations } from '@/hooks/use-immunizations';
 import { immunizationToRow } from '@/services/api/patient-immunizations';
@@ -75,6 +76,12 @@ function pillPalette(
 export default function IntakeReportScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // COS-849 entitlement gates. Hooks, so unconditional and above the early
+  // returns for the loading / not-ready states below.
+  const canView = useCanRender('patient-intake-report.view');
+  const canViewReport = useCanRender('patient-intake-report.view-report');
+  const canShareReport = useCanRender('patient-intake-report.share-report');
 
   const q = usePatientIntake();
   const intake = q.data?.intake ?? null;
@@ -200,6 +207,7 @@ export default function IntakeReportScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -283,7 +291,7 @@ export default function IntakeReportScreen() {
           </View>
         </View>
 
-        {groups.map(group => {
+        {canViewReport && groups.map(group => {
           const scoreBlocks = group.scoreBlocks ?? [];
           const ehrRows = group.ehrRows ?? [];
           // A group is "patient-added visible" only when at least one row
@@ -501,7 +509,7 @@ export default function IntakeReportScreen() {
           </Text>
         </View>
 
-        <ShareIntakeReportSection />
+        {canShareReport && <ShareIntakeReportSection />}
 
         <Pressable
           onPress={() => setRetakeSheetOpen(true)}
@@ -541,6 +549,7 @@ export default function IntakeReportScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

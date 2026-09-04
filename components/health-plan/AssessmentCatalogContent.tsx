@@ -23,6 +23,7 @@ import { resolveBuildGate } from '@/lib/build-plan-gate'
 import { useAssessmentStrategyV2Flag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
@@ -230,6 +231,9 @@ export function AssessmentCatalogContent({
   // COS-360 / SCRUM-518 Phase 2: OFF (default) → flat grid, byte-for-byte
   // today's behavior. ON → instruments group under 3 domain section headers.
   const assessmentStrategyV2Enabled = useAssessmentStrategyV2Flag()
+  // Gates the instrument tile itself — tapping it is the only way to
+  // start a check-in from this surface.
+  const canStartAssessment = useCanRender('assessments-catalog.start-assessment')
   // COS-411: true only when the caller explicitly opted in AND passed a
   // resolved tier state. `hasPlanType === false` (tier confirmed unset,
   // not just omitted) is handled separately below — Build stays disabled
@@ -504,7 +508,7 @@ export function AssessmentCatalogContent({
               {group.label.toUpperCase()}
             </Text>
             <View style={styles.grid}>
-              {group.items.map((it) => (
+              {group.items.map((it) => canStartAssessment && (
                 <CatalogCard
                   key={it.id}
                   item={it}
@@ -521,7 +525,7 @@ export function AssessmentCatalogContent({
       ) : (
         // Flag OFF (default) — today's flat grid, unchanged.
         <View style={styles.grid}>
-          {visible.map((it) => (
+          {visible.map((it) => canStartAssessment && (
             <CatalogCard
               key={it.id}
               item={it}
@@ -612,6 +616,8 @@ function CatalogCard({
 }) {
   const status = statusFor(record)
   const icon = iconFor(item.instrumentId, colors.tint as string)
+  // The status/band badge is this tile's only view onto a past result.
+  const canViewPastResults = useCanRender('assessments-catalog.view-past-results')
   const [showRationale, setShowRationale] = React.useState(false)
   // SCRUM-268: instruments seeded with `comingSoon: true` show in the
   // catalog but aren't tappable until the underlying capability ships
@@ -689,6 +695,7 @@ function CatalogCard({
           </Text>
         </View>
       ) : (
+        canViewPastResults && (
         <View style={[styles.statusBadge, { borderColor: status.color }]}>
           <View style={[styles.statusDot, { backgroundColor: status.color }]} />
           <Text
@@ -703,6 +710,7 @@ function CatalogCard({
             {status.label}
           </Text>
         </View>
+        )
       )}
 
       <Modal

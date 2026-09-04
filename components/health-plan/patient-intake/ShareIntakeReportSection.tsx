@@ -27,6 +27,7 @@ import * as Sharing from 'expo-sharing';
 import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { useImmunizations } from '@/hooks/use-immunizations';
 import { immunizationToRow } from '@/services/api/patient-immunizations';
@@ -192,6 +193,10 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
   // falls back to the Phase-1 single-block card in the PDF too.
   const immunizations = useImmunizations();
 
+  // COS-849 entitlement gate. A hook, so unconditional and above the early
+  // return below. Gates the button only — `onShare` is untouched.
+  const canExportPdf = useCanRender('patient-intake-report.export-pdf');
+
   // Nothing to share until the intake record exists.
   if (!intake) return null;
 
@@ -326,6 +331,7 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
         </View>
       </View>
 
+      {canExportPdf && (
       <Pressable
         onPress={onShare}
         disabled={disabled}
@@ -353,6 +359,7 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
           {sharing ? 'Preparing PDF…' : 'Share as PDF'}
         </Text>
       </Pressable>
+      )}
     </View>
   );
 }

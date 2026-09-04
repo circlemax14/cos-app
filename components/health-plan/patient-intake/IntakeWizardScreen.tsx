@@ -13,6 +13,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { Radii, Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import {
@@ -35,6 +36,7 @@ type ColorPalette = (typeof Colors)['light'];
 export default function IntakeWizardScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canAnswerQuestion = useCanRender('patient-intake.answer-question');
   const params = useLocalSearchParams<{ retake?: string; section?: string; group?: string }>();
   const isRetakeRequest = params.retake === '1';
   // Ken 2026-08-05 — sectioned retake. Two accepted param shapes:
@@ -420,13 +422,15 @@ export default function IntakeWizardScreen() {
             total={total}
             onClose={() => router.replace('/Home/plan' as never)}
           />
-          <IntakeQuestionRenderer
-            question={current}
-            value={currentValue}
-            onChange={onChangeAnswer}
-            invalid={invalidKey === current.key}
-            allAnswers={draft}
-          />
+          {canAnswerQuestion && (
+            <IntakeQuestionRenderer
+              question={current}
+              value={currentValue}
+              onChange={onChangeAnswer}
+              invalid={invalidKey === current.key}
+              allAnswers={draft}
+            />
+          )}
           <View style={styles.actions}>
             <Pressable
               onPress={goBack}
