@@ -3227,6 +3227,19 @@ function HomeScreenInner() {
   }, []);
 
   const onRefresh = useCallback(async () => {
+    /*
+     * COS-875 — pull-to-refresh reloads the CARE CIRCLE too.
+     *
+     * Ken: "I almost always have to go out and sign in again for the circle to
+     * populate." loadFromServer() — which restores the saved provider
+     * selection the ring renders — had exactly ONE trigger: a mount-only
+     * effect whose deps are stable-forever useCallback refs. It fired once per
+     * mount and never again, and this handler, the patient's only manual
+     * recovery gesture, did not call it. A single failed fetch on a cold
+     * launch therefore left the ring empty for the whole process, and
+     * re-signing in was the only cure because it is the one path that both
+     * remounts Home AND supplies a fresh token.
+     */
     setRefreshing(true);
     try {
       const [providers, patient, allAppointments, taskCount, recItems] = await Promise.all([
@@ -3235,6 +3248,7 @@ function HomeScreenInner() {
         fetchAppointments(),
         fetchPendingTaskCount(),
         fetchRecommendedAppointments({ status: 'pending' }),
+        loadFromServer(),
       ]);
       setFastenProviders(providers);
       setPendingTaskCount(taskCount);
@@ -3286,7 +3300,7 @@ function HomeScreenInner() {
     } finally {
       setRefreshing(false);
     }
-  }, [validateAndCleanProviders]);
+  }, [validateAndCleanProviders, loadFromServer]);
 
   // Cycle through views: circle -> circle-providers -> list -> circle
   const toggleViewMode = () => {

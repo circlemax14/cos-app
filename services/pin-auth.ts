@@ -1,6 +1,8 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
+import { readSecureExpectingValue } from '@/lib/auth-tokens';
+
 const PIN_HASH_KEY = 'cos_pin_hash';
 const BIOMETRIC_ENABLED_KEY = 'cos_biometric_enabled';
 const PIN_SETUP_COMPLETE_KEY = 'cos_pin_setup_complete';
@@ -45,7 +47,31 @@ export async function verifyPin(pin: string): Promise<boolean> {
 }
 
 export async function isPinSetup(): Promise<boolean> {
-  const result = await SecureStore.getItemAsync(PIN_SETUP_COMPLETE_KEY);
+  /*
+   * COS-874 — a cold Keychain must not read as "this user has no PIN".
+   *
+   * Ken: "whenever I open the app, I see that the Internet is not available.
+   * When I click retry, the app starts working."
+   *
+   * There is no connectivity check anywhere in this app — that screen is the
+   * splash route's own gate state. The chain: on a cold launch the iOS
+   * Keychain (items default to WHEN_UNLOCKED) is briefly unavailable and
+   * getItemAsync returns null WITHOUT throwing. app/index.tsx then reads that
+   * as `pinConfigured === false` for a user who does have a PIN, while the
+   * cached profile in AsyncStorage still says a session should exist — the two
+   * disagree, and the gate falls through to the error screen. Retry works
+   * because by then the Keychain has settled.
+   *
+   * A single unretried read is the whole defect, and every one of the seven
+   * isPinSetup() callers goes through here, so this is the one place to fix it.
+   *
+   * readSecureExpectingValue retries on NULL as well as on throw, which is the
+   * case readSecureWithRetry misses (see its docstring in lib/auth-tokens.ts).
+   * Its caveat applies: retrying on null costs a genuinely PIN-less launch
+   * ~450ms of backoff. That is the right trade — the alternative is showing a
+   * signed-in patient a false error screen on entry.
+   */
+  const result = await readSecureExpectingValue(PIN_SETUP_COMPLETE_KEY).catch(() => null);
   return result === 'true';
 }
 

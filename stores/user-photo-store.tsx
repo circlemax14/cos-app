@@ -8,7 +8,6 @@ import React, {
   useState,
 } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { fetchPatientInfo } from '@/services/api/patient';
 import {
   fetchPhotoDownloadUrl,
   isSignedPhotoUrl,
@@ -189,26 +188,39 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
   }, [commitUrl]);
 
   const refresh = useCallback(async () => {
+    /*
+     * COS-873 — ask the DOWNLOAD endpoint, not the profile.
+     *
+     * Ken uploaded a photo and it stopped appearing. This used to call
+     * fetchPatientInfo() first and treat a missing photoUrl as "no photo":
+     *
+     *     const patient = await fetchPatientInfo();
+     *     if (!patient?.photoUrl) { setHasPhoto(false); commitUrl(null); return; }
+     *
+     * with a comment claiming that was safe because it only ran "when the
+     * profile call actually succeeded". It cannot be. fetchPatientInfo
+     * (services/api/patient.ts:53-102) never throws and never distinguishes
+     * failure from absence — it swallows a failed /v1/auth/me AND a failed
+     * /v1/patients/me and returns null either way. So EVERY transient failure
+     * arrived as `patient === null`, took the early return, and was cached as
+     * an authoritative "this user has no photo". The catch below was
+     * unreachable for exactly the case it was written to protect.
+     *
+     * That is defect #3 in this file's own header — "NEGATIVE RESULT NEVER
+     * RETRIED" — fixed once for the download call and reintroduced a layer up.
+     *
+     * signFresh already has the right three-way semantics: 'ok' commits the
+     * signed URL, 'none' commits null, and 'error' touches nothing. The
+     * download endpoint is authoritative — it reads photoUrl server-side, HEADs
+     * the object and checks its storage class. Asking the profile first only
+     * added two more ways to get a false negative.
+     */
     try {
-      const patient = await fetchPatientInfo();
-      if (!patient?.photoUrl) {
-        // Only treat this as "no photo" when the profile call actually
-        // succeeded and came back without one.
-        setHasPhoto(false);
-        commitUrl(null);
-        return;
-      }
-      setHasPhoto(true);
-      // We never render `patient.photoUrl` itself — it is the unsigned
-      // canonical S3 URL and the bucket is private, so it always 403s. It is
-      // only a signal that a photo exists; the renderable URL must be signed.
       await signFresh();
-    } catch {
-      // Don't clobber an existing URL on a transient fetch failure.
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [commitUrl, signFresh]);
+  }, [signFresh]);
 
   /**
    * On-demand re-sign for a URL that just failed to load in an <Image>.

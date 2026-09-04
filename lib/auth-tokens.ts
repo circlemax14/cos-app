@@ -80,7 +80,7 @@ async function readSecureWithRetry(key: string, attempts = 3): Promise<string | 
  * session SHOULD exist, otherwise every genuinely signed-out launch pays the
  * backoff for nothing. The caller supplies that evidence.
  */
-async function readSecureExpectingValue(key: string, attempts = 3): Promise<string | null> {
+export async function readSecureExpectingValue(key: string, attempts = 3): Promise<string | null> {
   for (let i = 0; i < attempts; i++) {
     const value = await readSecureWithRetry(key, 1).catch(() => null);
     if (value !== null && value.length > 0) return value;
