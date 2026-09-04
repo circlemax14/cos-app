@@ -26,7 +26,18 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-type GateState = 'loading' | 'no-internet' | 'done';
+/*
+ * COS-890 — 'session-unreadable' is NOT 'no-internet'.
+ *
+ * The splash showed "No Internet Connection" for a condition in which no
+ * network call had been made at all: readSessionPresence came back
+ * 'indeterminate', meaning the iOS Keychain had not woken up yet. Ken:
+ * "internet not available screen on open despite a working connection;
+ * tapping retry fixes it." Retry fixes it because the SECOND Keychain read
+ * succeeds — the network was never the problem, and saying it was sent him
+ * to check his wifi.
+ */
+type GateState = 'loading' | 'no-internet' | 'session-unreadable' | 'done';
 
 /**
  * Determine the correct destination based on user onboarding state.
@@ -201,7 +212,9 @@ export default function SplashGate() {
         if (pinConfigured) {
           router.replace('/(security)/lock-screen' as never);
         } else {
-          setState('no-internet');
+          // Say what actually happened. Retry re-runs run(), which re-reads
+          // the Keychain — by then warm — and routes normally.
+          setState('session-unreadable');
         }
         return;
       }
@@ -281,15 +294,18 @@ export default function SplashGate() {
     run();
   }, [run, retryKey]);
 
-  if (state === 'no-internet') {
+  if (state === 'no-internet' || state === 'session-unreadable') {
+    const unreadable = state === 'session-unreadable';
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.offlineIcon]}>📵</Text>
+        <Text style={[styles.offlineIcon]}>{unreadable ? '🔐' : '📵'}</Text>
         <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20) }]}>
-          No Internet Connection
+          {unreadable ? 'Could not open your session' : 'No Internet Connection'}
         </Text>
         <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-          Check your connection and try again.
+          {unreadable
+            ? 'This usually clears straight away. Tap retry to continue.'
+            : 'Check your connection and try again.'}
         </Text>
         <TouchableOpacity
           style={[styles.retryButton, { backgroundColor: colors.primary }]}

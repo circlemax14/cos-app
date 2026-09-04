@@ -139,12 +139,26 @@ export async function storeTokens(
   ]);
 }
 
+/*
+ * COS-890 — a NULL IS NEVER CACHED, in any of the three readers below.
+ *
+ * These all did `cachedX = value` and then short-circuited on
+ * `!== undefined`. `readSecureWithRetry` returns a plain null when the
+ * Keychain is not yet available on a cold launch — the case its own docstring
+ * describes — so one unlucky read pinned "no token" in memory for the whole
+ * process. Every later call returned that null without touching the Keychain
+ * again, which is why the only cure Ken ever found was signing back in:
+ * storeTokens() is the one thing that overwrites the cache.
+ *
+ * Caching a real token is the optimisation worth having. Caching its absence
+ * is caching a guess.
+ */
 export async function getAccessToken(): Promise<string | null> {
-  if (cachedAccessToken !== undefined) return cachedAccessToken;
+  if (cachedAccessToken) return cachedAccessToken;
   if (inFlightAccessRead) return inFlightAccessRead;
   inFlightAccessRead = readSecureWithRetry(KEYS.access)
     .then((value) => {
-      cachedAccessToken = value;
+      if (value) cachedAccessToken = value;
       return value;
     })
     .finally(() => {
@@ -153,12 +167,37 @@ export async function getAccessToken(): Promise<string | null> {
   return inFlightAccessRead;
 }
 
+/**
+ * COS-890 — THE READ THAT SIGNS PEOPLE OUT, so it retries on null.
+ *
+ * api-client.ts's 401 handler is the only caller:
+ *
+ *     const refreshToken = await getRefreshToken();
+ *     if (!refreshToken) { await forceSignOut('session_expired'); ... }
+ *
+ * and forceSignOut() calls clearTokens(), which DELETES the tokens from
+ * SecureStore. So a refresh-token read that merely had not settled did not
+ * just fail a request — it destroyed a valid session. Ken: "I almost always
+ * have to go out and sign in again." He was not choosing to; the app was
+ * signing him out and he was signing back in.
+ *
+ * BUG #17 attempts 1-3 and COS-353 all hardened the SPLASH read
+ * (readSessionPresence in app/index.tsx). None of them touched this one, and
+ * this is the only read whose null is destructive.
+ *
+ * readSecureExpectingValue retries on NULL as well as on throw — the case
+ * readSecureWithRetry misses by design (see its docstring above). No
+ * corroborating-evidence flag here: unlike the splash, this path is only
+ * reached when a request was already authenticated enough to get a 401 back,
+ * which is the corroboration. The ~450ms of backoff is paid only on the way
+ * to a sign-out that would otherwise have been wrong.
+ */
 export async function getRefreshToken(): Promise<string | null> {
-  if (cachedRefreshToken !== undefined) return cachedRefreshToken;
+  if (cachedRefreshToken) return cachedRefreshToken;
   if (inFlightRefreshRead) return inFlightRefreshRead;
-  inFlightRefreshRead = readSecureWithRetry(KEYS.refresh)
+  inFlightRefreshRead = readSecureExpectingValue(KEYS.refresh)
     .then((value) => {
-      cachedRefreshToken = value;
+      if (value) cachedRefreshToken = value;
       return value;
     })
     .finally(() => {
@@ -168,11 +207,11 @@ export async function getRefreshToken(): Promise<string | null> {
 }
 
 export async function getIdToken(): Promise<string | null> {
-  if (cachedIdToken !== undefined) return cachedIdToken;
+  if (cachedIdToken) return cachedIdToken;
   if (inFlightIdRead) return inFlightIdRead;
   inFlightIdRead = readSecureWithRetry(KEYS.id)
     .then((value) => {
-      cachedIdToken = value;
+      if (value) cachedIdToken = value;
       return value;
     })
     .finally(() => {
