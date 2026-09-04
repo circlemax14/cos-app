@@ -439,14 +439,36 @@ export default function SupportTicketDetailScreen(): React.JSX.Element {
                     accessibilityLabel="Add a message to this request"
                   />
 
-                  {!!replyError && (
+                  {/* COS-889 — the same counter the compose screen shows, for
+                      the same reason: maxLength stops the typing, and on its
+                      own the keyboard just goes dead with no explanation.
+                      Error left, count right, one row. */}
+                  <View style={styles.counterRow}>
                     <Text
-                      style={{ color: '#DC2626', fontSize: fs(12), marginTop: 6, marginLeft: 4 }}
-                      accessibilityRole="alert"
+                      style={{ color: '#DC2626', fontSize: fs(12), flex: 1, marginRight: 8 }}
+                      accessibilityRole={replyError ? 'alert' : undefined}
                     >
                       {replyError}
                     </Text>
-                  )}
+                    <Text
+                      style={{
+                        color:
+                          replyText.length >= MAX_REPLY_LENGTH
+                            ? '#DC2626'
+                            : (colors.subtext as string),
+                        fontSize: fs(12),
+                      }}
+                      accessibilityLabel={
+                        replyText.length >= MAX_REPLY_LENGTH
+                          ? 'Character limit reached'
+                          : `${MAX_REPLY_LENGTH - replyText.length} characters remaining`
+                      }
+                    >
+                      {replyText.length >= MAX_REPLY_LENGTH
+                        ? 'Character limit reached'
+                        : `${(MAX_REPLY_LENGTH - replyText.length).toLocaleString()} characters left`}
+                    </Text>
+                  </View>
 
                   <Pressable
                     onPress={handleSend}
@@ -487,6 +509,12 @@ export default function SupportTicketDetailScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  counterRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 6,
+    marginHorizontal: 4,
+  },
   content: {
     paddingHorizontal: 20,
     paddingTop: 16,

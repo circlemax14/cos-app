@@ -67,6 +67,24 @@ const TONE_COLORS: Record<
   },
 };
 
+/**
+ * COS-889 — the description cap.
+ *
+ * 4000 because that is what the server enforces
+ * (support-tickets.routes.ts: `description: z.string().trim().min(1).max(4000)`),
+ * and support-ticket-detail.tsx already caps a reply at the same number. A
+ * smaller number here would be a limit this app invented; a larger one would
+ * let a patient write a long account of their problem and lose it to a 400.
+ *
+ * Enforced with TextInput's own `maxLength`, so typing simply stops. Vishal:
+ * "once the character limit is over, then nobody should be able to type
+ * anything."
+ */
+const MAX_DESCRIPTION_LENGTH = 4000;
+
+/** Below this, the counter stops being background information. */
+const DESCRIPTION_WARN_AT = 200;
+
 function formatTicketDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -247,6 +265,14 @@ export default function SupportScreen() {
    * disabled until text is not written and if agency and csh option is there
    * and not selected".
    */
+  /*
+   * COS-889 — how much room is left, as a number the patient can see BEFORE
+   * they hit the wall. maxLength alone stops the typing but explains nothing:
+   * the keyboard just goes dead.
+   */
+  const descriptionRemaining = MAX_DESCRIPTION_LENGTH - description.length;
+  const atDescriptionLimit = descriptionRemaining <= 0;
+
   const needsRoutingChoice = hasAgency && routedTo === null;
   const canSubmit =
     description.trim().length >= 10 && !needsRoutingChoice && !createTicket.isPending;
@@ -275,9 +301,24 @@ export default function SupportScreen() {
     }
     setDescriptionError('');
 
+    /*
+     * COS-889 — the subject was the literal string 'Support Request' on every
+     * ticket. So "Your requests" was a column of identical rows, the detail
+     * screen led with it in bold, and the admin queue showed the same words
+     * for every patient — a title that carries no information is worse than
+     * none, because it occupies the one line the reader scans.
+     *
+     * The patient's own first line is the only thing that tells one request
+     * from another. Capped well under the server's 120 so a long first
+     * sentence cannot fail validation on a field the patient never filled in.
+     */
+    const firstLine = description.trim().split('\n')[0].trim();
+    const subject =
+      firstLine.length > 80 ? `${firstLine.slice(0, 79).trimEnd()}…` : firstLine;
+
     createTicket.mutate(
       {
-        subject: 'Support Request',
+        subject,
         description: description.trim(),
         routedTo: effectiveRoutedTo,
         files,
@@ -311,9 +352,7 @@ export default function SupportScreen() {
   const scaledFontTitle = getScaledFontSize(22);
   const scaledFontBody = getScaledFontSize(14);
   const scaledFontInput = getScaledFontSize(16);
-  const scaledFontLabel = getScaledFontSize(14);
   const scaledFontButton = getScaledFontSize(16);
-  const scaledFontSection = getScaledFontSize(18);
   const scaledFontSmall = getScaledFontSize(13);
   const scaledFontMedium = getScaledFontSize(15);
   const scaledLineHeight = Math.round(scaledFontInput * 1.4);
@@ -321,6 +360,54 @@ export default function SupportScreen() {
   const scaledTextAreaMinHeight = Math.max(140, scaledFontInput * 8);
 
   if (!canViewScreen) return <AppWrapper>{null}</AppWrapper>;
+
+  /*
+   * COS-889 — the screen reads as four labelled blocks instead of one column
+   * of loose controls. Vishal: "if you can improve the UI... It looks very
+   * basic."
+   *
+   * What was basic about it was structure, not decoration: a description box,
+   * two attach buttons, a routing panel and a request history all sat directly
+   * on the background at the same visual level, so nothing said where one
+   * concern ended and the next began. Each is now an eyebrow label over its
+   * own card — the same idiom support-ticket-detail.tsx already uses, so the
+   * two screens of one feature stop looking like two different features.
+   *
+   * Still inside the iOS 26 cold-mount envelope: no new react-native import,
+   * no new component, no Animated. Cards are a View with a border and a
+   * radius.
+   */
+  const eyebrow = (text: string) => (
+    <Text
+      style={{
+        color: colors.subtext,
+        fontSize: scaledFontSmall,
+        fontWeight: getScaledFontWeight(700) as any,
+        letterSpacing: 0.7,
+        textTransform: 'uppercase',
+        marginBottom: 8,
+        marginLeft: 2,
+      }}
+    >
+      {text}
+    </Text>
+  );
+
+  const cardTone = { backgroundColor: colors.card, borderColor: colors.border };
+
+  /*
+   * The counter is always on screen, even at zero characters — a count that
+   * appears only once you are near the limit is a rule you meet by breaking
+   * it. Three states: room to spare, running out, full.
+   */
+  const counterColor = atDescriptionLimit
+    ? dangerText
+    : descriptionRemaining <= DESCRIPTION_WARN_AT
+      ? colors.text
+      : colors.subtext;
+  const counterText = atDescriptionLimit
+    ? 'Character limit reached'
+    : `${descriptionRemaining.toLocaleString()} characters left`;
 
   return (
     <AppWrapper>
@@ -333,423 +420,441 @@ export default function SupportScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Form Section */}
-          <View style={styles.formSection}>
-            <Text style={styles.emoji}>💬</Text>
-
+          {/* ── Hero ─────────────────────────────────────────────────────
+              The emoji used to float alone above the title. In a tinted
+              rounded square it reads as an icon someone chose. */}
+          <View style={styles.hero}>
+            <View style={[styles.heroBadge, { backgroundColor: colors.tint + '1A' }]}>
+              <Text style={styles.heroEmoji}>💬</Text>
+            </View>
             <Text
               style={{
                 color: colors.text,
                 fontSize: scaledFontTitle,
                 fontWeight: getScaledFontWeight(700) as any,
                 textAlign: 'center',
-                marginBottom: 8,
+                marginBottom: 6,
               }}
               accessibilityRole="header"
             >
-              Help & Support
+              Help &amp; Support
             </Text>
-
             <Text
               style={{
                 color: colors.subtext,
                 fontSize: scaledFontBody,
                 textAlign: 'center',
                 lineHeight: Math.round(scaledFontBody * 1.5),
-                marginBottom: 28,
-                paddingHorizontal: 10,
+                paddingHorizontal: 8,
               }}
             >
               {canContactSupport
-                ? 'Describe your issue below and our team will get back to you within 24-48 hours.'
+                ? "Tell us what's going on and our team will get back to you within 24-48 hours."
                 : 'Your past requests and their status are below.'}
             </Text>
+          </View>
 
-            {/* Description Input */}
-            {canContactSupport && (
-            <View style={styles.inputContainer}>
-              <Text
-                style={{
-                  color: descriptionError ? dangerText : colors.text,
-                  fontSize: scaledFontLabel,
-                  fontWeight: getScaledFontWeight(600) as any,
-                  marginBottom: 8,
-                  marginLeft: 4,
-                }}
+          {/* ── Describe your issue ──────────────────────────────────── */}
+          {canContactSupport && (
+            <View style={styles.block}>
+              {eyebrow('Describe your issue')}
+              <View
+                style={[
+                  styles.card,
+                  cardTone,
+                  descriptionError
+                    ? { borderColor: dangerBorder, backgroundColor: dangerSurface }
+                    : null,
+                ]}
               >
-                Describe your issue
-              </Text>
-              <TextInput
-                style={{
-                  color: colors.text,
-                  fontSize: scaledFontInput,
-                  lineHeight: scaledLineHeight,
-                  borderWidth: 1.5,
-                  borderRadius: 12,
-                  padding: 14,
-                  minHeight: scaledTextAreaMinHeight,
-                  borderColor: descriptionError ? dangerBorder : colors.border,
-                  backgroundColor: descriptionError
-                    ? dangerSurface
-                    : settings.isDarkTheme
-                      ? colors.card
-                      : '#F9FAFB',
-                }}
-                placeholder="Tell us what's going on..."
-                placeholderTextColor={colors.subtext}
-                value={description}
-                onChangeText={(text) => {
-                  setDescription(text);
-                  if (text.trim().length >= 10) setDescriptionError('');
-                }}
-                multiline
-                textAlignVertical="top"
-                accessibilityLabel="Describe your issue"
-                accessibilityHint="Enter at least 10 characters"
-              />
-              {descriptionError ? (
+                <TextInput
+                  style={{
+                    color: colors.text,
+                    fontSize: scaledFontInput,
+                    lineHeight: scaledLineHeight,
+                    minHeight: scaledTextAreaMinHeight,
+                    padding: 0,
+                  }}
+                  placeholder="Tell us what's going on..."
+                  placeholderTextColor={colors.subtext}
+                  value={description}
+                  onChangeText={(text) => {
+                    setDescription(text);
+                    if (text.trim().length >= 10) setDescriptionError('');
+                  }}
+                  /*
+                   * COS-889 — typing stops here, at the same number the server
+                   * enforces. Not a warning, not a trim on submit: the 4001st
+                   * character is never accepted, so nothing a patient can see
+                   * on screen can be silently discarded later.
+                   */
+                  maxLength={MAX_DESCRIPTION_LENGTH}
+                  multiline
+                  textAlignVertical="top"
+                  editable={!createTicket.isPending}
+                  accessibilityLabel="Describe your issue"
+                  accessibilityHint={`At least 10 characters, up to ${MAX_DESCRIPTION_LENGTH}`}
+                />
+
+                {/* Error on the left, remaining count on the right — one row,
+                    so the field never changes height as either appears. */}
+                <View style={[styles.counterRow, { borderTopColor: colors.border }]}>
+                  <Text
+                    style={{
+                      color: dangerText,
+                      fontSize: scaledFontSmall,
+                      flex: 1,
+                      marginRight: 8,
+                    }}
+                    accessibilityRole={descriptionError ? 'alert' : undefined}
+                  >
+                    {descriptionError}
+                  </Text>
+                  <Text
+                    style={{
+                      color: counterColor,
+                      fontSize: scaledFontSmall,
+                      fontWeight: getScaledFontWeight(
+                        descriptionRemaining <= DESCRIPTION_WARN_AT ? 600 : 400,
+                      ) as any,
+                    }}
+                    accessibilityLabel={
+                      atDescriptionLimit
+                        ? 'Character limit reached'
+                        : `${descriptionRemaining} characters remaining`
+                    }
+                  >
+                    {counterText}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ── Attachments ─────────────────────────────────────────── */}
+          {canContactSupport && (
+            <View style={styles.block}>
+              {eyebrow('Attachments (optional)')}
+              <View style={[styles.card, cardTone]}>
                 <Text
                   style={{
-                    color: dangerText,
+                    color: colors.subtext,
                     fontSize: scaledFontSmall,
-                    marginTop: 6,
-                    marginLeft: 4,
+                    lineHeight: Math.round(scaledFontSmall * 1.4),
+                    marginBottom: 12,
                   }}
-                  accessibilityRole="alert"
                 >
-                  {descriptionError}
+                  PDF, PNG or JPG · up to {MAX_ATTACHMENT_COUNT} files,{' '}
+                  {formatBytes(MAX_ATTACHMENT_TOTAL_BYTES)} in total
                 </Text>
-              ) : null}
-            </View>
-            )}
 
-            {/* Attachments — PDF, PNG, JPG, 10 MB across all files */}
-            {canContactSupport && (
-            <View style={styles.inputContainer}>
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: scaledFontLabel,
-                  fontWeight: getScaledFontWeight(600) as any,
-                  marginBottom: 4,
-                  marginLeft: 4,
-                }}
-              >
-                Attachments (optional)
-              </Text>
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: scaledFontSmall,
-                  marginBottom: 10,
-                  marginLeft: 4,
-                }}
-              >
-                PDF, PNG or JPG · up to {MAX_ATTACHMENT_COUNT} files,{' '}
-                {formatBytes(MAX_ATTACHMENT_TOTAL_BYTES)} in total
-              </Text>
-
-              <View style={styles.attachRow}>
-                <TouchableOpacity
-                  onPress={handlePickDocument}
-                  disabled={createTicket.isPending}
-                  accessibilityRole="button"
-                  accessibilityLabel="Attach a file"
-                  style={[
-                    styles.attachButton,
-                    { borderColor: colors.border, backgroundColor: colors.card },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: scaledFontSmall,
-                      fontWeight: getScaledFontWeight(600) as any,
-                    }}
-                  >
-                    📎 Attach file
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={handlePickPhoto}
-                  disabled={createTicket.isPending}
-                  accessibilityRole="button"
-                  accessibilityLabel="Attach a photo"
-                  style={[
-                    styles.attachButton,
-                    { borderColor: colors.border, backgroundColor: colors.card },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: scaledFontSmall,
-                      fontWeight: getScaledFontWeight(600) as any,
-                    }}
-                  >
-                    🖼️ Attach photo
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {files.map((file) => (
-                <View
-                  key={file.uri}
-                  style={[
-                    styles.fileRow,
-                    { borderColor: colors.border, backgroundColor: colors.card },
-                  ]}
-                  accessibilityLabel={`${file.name}, ${formatBytes(file.size)}`}
-                >
-                  <Text style={{ fontSize: scaledFontBody, marginRight: 8 }}>
-                    {file.name.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️'}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      color: colors.text,
-                      fontSize: scaledFontSmall,
-                      fontWeight: getScaledFontWeight(600) as any,
-                      flex: 1,
-                    }}
-                  >
-                    {file.name}
-                  </Text>
-                  <Text
-                    style={{ color: colors.subtext, fontSize: scaledFontSmall, marginHorizontal: 8 }}
-                  >
-                    {formatBytes(file.size)}
-                  </Text>
+                <View style={styles.attachRow}>
                   <TouchableOpacity
-                    onPress={() => handleRemoveFile(file.uri)}
+                    onPress={handlePickDocument}
                     disabled={createTicket.isPending}
                     accessibilityRole="button"
-                    accessibilityLabel={`Remove ${file.name}`}
-                    accessibilityHint="Removes this file from your request"
-                    style={styles.removeButton}
+                    accessibilityLabel="Attach a file"
+                    style={[
+                      styles.attachButton,
+                      { borderColor: colors.border, backgroundColor: colors.background },
+                    ]}
                   >
                     <Text
                       style={{
-                        color: dangerText,
+                        color: colors.text,
                         fontSize: scaledFontSmall,
                         fontWeight: getScaledFontWeight(600) as any,
                       }}
                     >
-                      Remove
+                      📎 Attach file
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handlePickPhoto}
+                    disabled={createTicket.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel="Attach a photo"
+                    style={[
+                      styles.attachButton,
+                      { borderColor: colors.border, backgroundColor: colors.background },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: scaledFontSmall,
+                        fontWeight: getScaledFontWeight(600) as any,
+                      }}
+                    >
+                      🖼️ Attach photo
                     </Text>
                   </TouchableOpacity>
                 </View>
-              ))}
 
-              {/*
-                The 10 MB cap is a total across every file, which is invisible
-                until the pick that breaks it. The meter makes the budget a
-                thing the patient can watch fill instead of a rule they
-                discover by being refused.
-              */}
-              {files.length > 0 && (
-                <View style={styles.budgetRow}>
-                  <View style={[styles.budgetTrack, { backgroundColor: colors.border }]}>
-                    <View
-                      style={[
-                        styles.budgetFill,
-                        {
-                          width: `${Math.max(4, Math.round(budgetUsed * 100))}%`,
-                          backgroundColor: budgetTight ? dangerBorder : colors.tint,
-                        },
-                      ]}
-                    />
+                {files.map((file) => (
+                  <View
+                    key={file.uri}
+                    style={[
+                      styles.fileRow,
+                      { borderColor: colors.border, backgroundColor: colors.background },
+                    ]}
+                    accessibilityLabel={`${file.name}, ${formatBytes(file.size)}`}
+                  >
+                    <Text style={{ fontSize: scaledFontBody, marginRight: 8 }}>
+                      {file.name.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️'}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          color: colors.text,
+                          fontSize: scaledFontSmall,
+                          fontWeight: getScaledFontWeight(600) as any,
+                        }}
+                      >
+                        {file.name}
+                      </Text>
+                      <Text style={{ color: colors.subtext, fontSize: scaledFontSmall }}>
+                        {formatBytes(file.size)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveFile(file.uri)}
+                      disabled={createTicket.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${file.name}`}
+                      accessibilityHint="Removes this file from your request"
+                      style={styles.removeButton}
+                    >
+                      <Text
+                        style={{
+                          color: dangerText,
+                          fontSize: scaledFontSmall,
+                          fontWeight: getScaledFontWeight(600) as any,
+                        }}
+                      >
+                        Remove
+                      </Text>
+                    </TouchableOpacity>
                   </View>
+                ))}
+
+                {/*
+                  The 10 MB cap is a total across every file, which is invisible
+                  until the pick that breaks it. The meter makes the budget a
+                  thing the patient can watch fill instead of a rule they
+                  discover by being refused.
+                */}
+                {files.length > 0 && (
+                  <View style={styles.budgetRow}>
+                    <View style={[styles.budgetTrack, { backgroundColor: colors.border }]}>
+                      <View
+                        style={[
+                          styles.budgetFill,
+                          {
+                            width: `${Math.max(4, Math.round(budgetUsed * 100))}%`,
+                            backgroundColor: budgetTight ? dangerBorder : colors.tint,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text
+                      style={{
+                        color: budgetTight ? dangerText : colors.subtext,
+                        fontSize: scaledFontSmall,
+                        marginTop: 6,
+                      }}
+                      accessibilityLabel={`${files.length} of ${MAX_ATTACHMENT_COUNT} files attached, ${formatBytes(remainingBytes)} of the 10 megabyte limit remaining`}
+                    >
+                      {files.length} of {MAX_ATTACHMENT_COUNT} files ·{' '}
+                      {formatBytes(attachedBytes)} used, {formatBytes(remainingBytes)} left
+                    </Text>
+                  </View>
+                )}
+
+                {attachmentError ? (
                   <Text
                     style={{
-                      color: budgetTight ? dangerText : colors.subtext,
+                      color: dangerText,
                       fontSize: scaledFontSmall,
-                      marginTop: 6,
-                      marginLeft: 4,
+                      lineHeight: Math.round(scaledFontSmall * 1.4),
+                      marginTop: 10,
                     }}
-                    accessibilityLabel={`${files.length} of ${MAX_ATTACHMENT_COUNT} files attached, ${formatBytes(remainingBytes)} of the 10 megabyte limit remaining`}
+                    accessibilityRole="alert"
                   >
-                    {files.length} of {MAX_ATTACHMENT_COUNT} files ·{' '}
-                    {formatBytes(attachedBytes)} used, {formatBytes(remainingBytes)} left
+                    {attachmentError}
                   </Text>
-                </View>
-              )}
+                ) : null}
+              </View>
+            </View>
+          )}
 
-              {attachmentError ? (
+          {/* ── Routing — only patients WITH an elected agency get a choice ── */}
+          {canContactSupport && hasAgency && (
+            <View style={styles.block}>
+              {eyebrow('Where should this go?')}
+              <View
+                style={[
+                  styles.card,
+                  cardTone,
+                  needsRoutingChoice ? { borderColor: colors.tint, borderWidth: 1.5 } : null,
+                ]}
+              >
                 <Text
                   style={{
-                    color: dangerText,
+                    color: colors.subtext,
                     fontSize: scaledFontSmall,
-                    marginTop: 8,
-                    marginLeft: 4,
+                    lineHeight: Math.round(scaledFontSmall * 1.4),
+                    marginBottom: 12,
                   }}
-                  accessibilityRole="alert"
                 >
-                  {attachmentError}
+                  Your care agency handles visits, staff and scheduling. Circle Support Health
+                  handles the app, your account and billing.
+                </Text>
+                {/*
+                  Stacked full-width rows, not two side-by-side chips.
+                  "Circle Support Health" does not fit on one line in half the
+                  width, so the two options rendered at different heights with
+                  one of them broken across lines — which is also why a radio
+                  group is normally a list. The marker sits on the left where a
+                  radio's would.
+                */}
+                <View style={styles.choiceStack}>
+                  <TouchableOpacity
+                    onPress={() => setRoutedTo('AGENCY')}
+                    disabled={createTicket.isPending}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: routedTo === 'AGENCY' }}
+                    accessibilityLabel="Send to my care agency"
+                    style={[
+                      styles.choiceRow,
+                      {
+                        borderColor: routedTo === 'AGENCY' ? colors.tint : colors.border,
+                        backgroundColor: routedTo === 'AGENCY' ? colors.tint : colors.background,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: routedTo === 'AGENCY' ? '#FFFFFF' : colors.subtext,
+                        fontSize: scaledFontMedium,
+                        marginRight: 10,
+                      }}
+                    >
+                      {routedTo === 'AGENCY' ? '●' : '○'}
+                    </Text>
+                    <Text
+                      style={{
+                        color: routedTo === 'AGENCY' ? '#FFFFFF' : colors.text,
+                        fontSize: scaledFontSmall,
+                        fontWeight: getScaledFontWeight(600) as any,
+                        flex: 1,
+                      }}
+                    >
+                      My care agency
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setRoutedTo('CSH')}
+                    disabled={createTicket.isPending}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: routedTo === 'CSH' }}
+                    accessibilityLabel="Send to Circle Support Health"
+                    style={[
+                      styles.choiceRow,
+                      {
+                        borderColor: routedTo === 'CSH' ? colors.tint : colors.border,
+                        backgroundColor: routedTo === 'CSH' ? colors.tint : colors.background,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: routedTo === 'CSH' ? '#FFFFFF' : colors.subtext,
+                        fontSize: scaledFontMedium,
+                        marginRight: 10,
+                      }}
+                    >
+                      {routedTo === 'CSH' ? '●' : '○'}
+                    </Text>
+                    <Text
+                      style={{
+                        color: routedTo === 'CSH' ? '#FFFFFF' : colors.text,
+                        fontSize: scaledFontSmall,
+                        fontWeight: getScaledFontWeight(600) as any,
+                        flex: 1,
+                      }}
+                    >
+                      Circle Support Health
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ── Submit ──────────────────────────────────────────────── */}
+          {canContactSupport && (
+            <View style={styles.block}>
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={!canSubmit}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Submit support request"
+                accessibilityHint={disabledReason || undefined}
+                accessibilityState={{ disabled: !canSubmit }}
+                style={[
+                  {
+                    /*
+                     * Disabled is an OUTLINE, not a grey fill: white on
+                     * colors.disabled (#9ca3af) is 2.3:1 and unreadable, and a
+                     * grey fill still looks like a button that ought to work.
+                     */
+                    backgroundColor: canSubmit ? colors.tint : colors.card,
+                    borderWidth: canSubmit ? 0 : 1.5,
+                    borderColor: colors.border,
+                    minHeight: scaledButtonHeight,
+                  },
+                  styles.submitButton,
+                  canSubmit ? styles.submitShadow : null,
+                ]}
+              >
+                <Text
+                  style={{
+                    color: canSubmit ? '#FFFFFF' : colors.subtext,
+                    fontSize: scaledFontButton,
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {createTicket.isPending ? 'Submitting…' : 'Submit request'}
+                </Text>
+              </TouchableOpacity>
+
+              {disabledReason ? (
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: scaledFontSmall,
+                    textAlign: 'center',
+                    lineHeight: Math.round(scaledFontSmall * 1.4),
+                    marginTop: 10,
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  {disabledReason}
                 </Text>
               ) : null}
             </View>
-            )}
+          )}
 
-            {/* Routing — only patients WITH an agency get a choice */}
-            {canContactSupport && hasAgency && (
-            <View
-              style={[
-                styles.inputContainer,
-                styles.routingBlock,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: needsRoutingChoice ? colors.tint : colors.border,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: scaledFontLabel,
-                  fontWeight: getScaledFontWeight(700) as any,
-                  marginBottom: 4,
-                }}
-              >
-                Where should this go?
-              </Text>
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: scaledFontSmall,
-                  lineHeight: Math.round(scaledFontSmall * 1.4),
-                  marginBottom: 12,
-                }}
-              >
-                Your care agency handles visits, staff and scheduling. Circle Support Health
-                handles the app, your account and billing.
-              </Text>
-              <View style={styles.attachRow}>
-                <TouchableOpacity
-                  onPress={() => setRoutedTo('AGENCY')}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: routedTo === 'AGENCY' }}
-                  accessibilityLabel="Send to my care agency"
-                  style={[
-                    styles.choiceChip,
-                    {
-                      borderColor: routedTo === 'AGENCY' ? colors.tint : colors.border,
-                      backgroundColor: routedTo === 'AGENCY' ? colors.tint : colors.background,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: routedTo === 'AGENCY' ? '#FFFFFF' : colors.text,
-                      fontSize: scaledFontSmall,
-                      fontWeight: getScaledFontWeight(600) as any,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {routedTo === 'AGENCY' ? '✓ ' : ''}My care agency
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => setRoutedTo('CSH')}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: routedTo === 'CSH' }}
-                  accessibilityLabel="Send to Circle Support Health"
-                  style={[
-                    styles.choiceChip,
-                    {
-                      borderColor: routedTo === 'CSH' ? colors.tint : colors.border,
-                      backgroundColor: routedTo === 'CSH' ? colors.tint : colors.background,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: routedTo === 'CSH' ? '#FFFFFF' : colors.text,
-                      fontSize: scaledFontSmall,
-                      fontWeight: getScaledFontWeight(600) as any,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {routedTo === 'CSH' ? '✓ ' : ''}Circle Support Health
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            )}
-
-            {/* Submit Button */}
-            {canContactSupport && (
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={!canSubmit}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Submit support request"
-              accessibilityHint={disabledReason || undefined}
-              accessibilityState={{ disabled: !canSubmit }}
-              style={{
-                /*
-                 * Disabled is an OUTLINE, not a grey fill: white on
-                 * colors.disabled (#9ca3af) is 2.3:1 and unreadable, and a
-                 * grey fill still looks like a button that ought to work.
-                 */
-                backgroundColor: canSubmit ? colors.tint : colors.card,
-                borderWidth: canSubmit ? 0 : 1.5,
-                borderColor: colors.border,
-                borderRadius: 24,
-                width: '100%',
-                minHeight: scaledButtonHeight,
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 12,
-                paddingHorizontal: 20,
-              }}
-            >
-              <Text
-                style={{
-                  color: canSubmit ? '#FFFFFF' : colors.subtext,
-                  fontSize: scaledFontButton,
-                  fontWeight: getScaledFontWeight(600) as any,
-                }}
-              >
-                {createTicket.isPending ? 'Submitting…' : 'Submit request'}
-              </Text>
-            </TouchableOpacity>
-            )}
-
-            {canContactSupport && disabledReason ? (
-              <Text
-                style={{
-                  color: colors.subtext,
-                  fontSize: scaledFontSmall,
-                  textAlign: 'center',
-                  lineHeight: Math.round(scaledFontSmall * 1.4),
-                  marginTop: 10,
-                  paddingHorizontal: 12,
-                }}
-              >
-                {disabledReason}
-              </Text>
-            ) : null}
-          </View>
-
-          {/* Your Requests Section */}
+          {/* ── Your requests ───────────────────────────────────────── */}
           <View style={[styles.ticketsSection, { borderTopColor: colors.border }]}>
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: scaledFontSection,
-                fontWeight: getScaledFontWeight(700) as any,
-                marginBottom: 4,
-              }}
-              accessibilityRole="header"
-            >
-              Your requests
-              {tickets && tickets.length > 0 ? ` (${tickets.length})` : ''}
-            </Text>
-
+            {eyebrow(
+              `Your requests${tickets && tickets.length > 0 ? ` (${tickets.length})` : ''}`,
+            )}
             <Text
               style={{
                 color: colors.subtext,
@@ -772,7 +877,7 @@ export default function SupportScreen() {
                   paddingVertical: 20,
                 }}
               >
-                Loading your tickets...
+                Loading your requests…
               </Text>
             ) : tickets && tickets.length > 0 ? (
               <View>
@@ -832,7 +937,7 @@ export default function SupportScreen() {
                           fontSize: scaledFontMedium,
                           fontWeight: getScaledFontWeight(600) as any,
                           lineHeight: Math.round(scaledFontMedium * 1.35),
-                          marginBottom: 6,
+                          marginBottom: 8,
                         }}
                         numberOfLines={2}
                       >
@@ -920,7 +1025,7 @@ export default function SupportScreen() {
         A Modal rather than an absolutely-positioned View, because the header
         with the menu button belongs to AppWrapper and sits OUTSIDE this
         screen's tree — an overlay in here would leave it tappable. Text only,
-        no ActivityIndicator: this screen renders inside the iOS 26 cold-mount
+        no spinner primitive: this screen renders inside the iOS 26 cold-mount
         envelope. Attachment uploads are the slow part, so it says so.
       */}
       <Modal
@@ -988,23 +1093,58 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     flexGrow: 1,
   },
-  formSection: {
+  /* ── COS-889 layout primitives ──────────────────────────────────────
+     Four of them, used everywhere, so the spacing rhythm is one decision
+     rather than a marginBottom re-chosen per control. */
+  hero: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
   },
-  emoji: {
-    fontSize: 44,
-    marginBottom: 12,
+  heroBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
   },
-  inputContainer: {
-    width: '100%',
+  heroEmoji: {
+    fontSize: 30,
+  },
+  /* One labelled section: eyebrow + card. */
+  block: {
     marginBottom: 22,
   },
-  /* The routing choice is a decision, not a field — it gets its own surface. */
-  routingBlock: {
-    borderWidth: 1.5,
-    borderRadius: 14,
+  card: {
+    borderWidth: 1,
+    borderRadius: 16,
     padding: 14,
+  },
+  /* Error left, character count right — one row, so the field does not change
+     height as either appears. */
+  counterRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+  },
+  submitButton: {
+    borderRadius: 26,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  /* Only when it can actually be pressed — a shadow under a disabled control
+     is the button promising something it will not do. */
+  submitShadow: {
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   attachRow: {
     flexDirection: 'row',
@@ -1019,15 +1159,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
-  choiceChip: {
-    flex: 1,
+  choiceStack: {
+    gap: 10,
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1.5,
     borderRadius: 12,
     minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   fileRow: {
     flexDirection: 'row',
@@ -1056,13 +1198,13 @@ const styles = StyleSheet.create({
   },
   /* A rule above the history so form / routing / history read as three blocks. */
   ticketsSection: {
-    marginTop: 4,
-    paddingTop: 28,
+    marginTop: 10,
+    paddingTop: 26,
     borderTopWidth: 1,
   },
   ticketCard: {
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 10,
   },
@@ -1088,7 +1230,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 28,
     paddingHorizontal: 20,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
   },
   emptyEmoji: {

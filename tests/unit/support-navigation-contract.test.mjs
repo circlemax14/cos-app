@@ -139,3 +139,53 @@ test('the blocking overlay adds no new react-native primitive beyond Modal', () 
     'StyleSheet', 'Text', 'TextInput', 'TouchableOpacity', 'View',
   ], 'iOS 26 cold-mount envelope: no ActivityIndicator, no Animated')
 })
+
+// ── COS-889: the description cap, and a subject that means something ───────
+
+test('THE POINT: typing stops at the cap the SERVER enforces', () => {
+  // A cap the app invents is a restriction; a cap below the server's lets a
+  // patient write a long account and lose it to a 400. maxLength (not a
+  // validate-on-submit check) is what makes the 4001st character impossible.
+  assert.match(support, /const MAX_DESCRIPTION_LENGTH = 4000/)
+  assert.match(support, /maxLength=\{MAX_DESCRIPTION_LENGTH\}/)
+})
+
+test('the app cap and the server cap are the same number', () => {
+  const server = readFileSync(
+    new URL('../../../cos-backend/src/routes/support-tickets.routes.ts', import.meta.url),
+    'utf8',
+  )
+  const zod = server.match(/description: z\.string\(\)\.trim\(\)\.min\(1\)\.max\((\d+)\)/)
+  assert.ok(zod, 'the server must still cap description')
+  const app = support.match(/const MAX_DESCRIPTION_LENGTH = (\d+)/)
+  assert.equal(app[1], zod[1], 'app cap drifted from the server cap')
+})
+
+test('the count is on screen BEFORE the limit is reached, not only at it', () => {
+  // maxLength alone just makes the keyboard go dead with no explanation.
+  assert.match(support, /characters left/)
+  assert.match(support, /Character limit reached/)
+})
+
+test('the reply box on the ticket screen caps and counts the same way', () => {
+  assert.match(detail, /maxLength=\{MAX_REPLY_LENGTH\}/)
+  assert.match(detail, /characters left/)
+})
+
+test('THE POINT: the subject is the patient\'s own words, not a constant', () => {
+  // It was the literal 'Support Request' on every ticket, so "Your requests"
+  // was a column of identical rows and so was the admin queue.
+  assert.doesNotMatch(support, /subject: 'Support Request'/)
+  assert.match(support, /const firstLine = description\.trim\(\)\.split/)
+  assert.match(support, /subject,/)
+})
+
+test('the derived subject cannot fail the server\'s 120-character limit', () => {
+  const server = readFileSync(
+    new URL('../../../cos-backend/src/routes/support-tickets.routes.ts', import.meta.url),
+    'utf8',
+  )
+  const cap = Number(server.match(/subject: z\.string\(\)\.trim\(\)\.min\(1\)\.max\((\d+)\)/)[1])
+  const truncate = Number(support.match(/firstLine\.length > (\d+)/)[1])
+  assert.ok(truncate < cap, `truncating at ${truncate} must stay under the server's ${cap}`)
+})
