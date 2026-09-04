@@ -15,6 +15,10 @@ import {
   PHOTO_RESIGN_MIN_INTERVAL_MS,
   PHOTO_URL_CLIENT_TTL_MS,
 } from '@/services/user-photo';
+import {
+  getCachedUserSummary,
+  updateCachedUserSummary,
+} from '@/lib/cached-user-summary';
 
 /**
  * Single source of truth for the signed-in user's profile photo.
@@ -113,10 +117,26 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /*
+   * COS-891 — every commit writes through to the device.
+   *
+   * This is the single place a signed URL becomes "the current photo", so it
+   * is the single place the on-device copy has to be kept in step. Before,
+   * the only writer of the cached photo was the drawer's own profile fetch,
+   * so an upload updated memory and the device kept serving the previous
+   * photo until that fetch next ran.
+   *
+   * Fire-and-forget: an AsyncStorage write must never delay the photo
+   * appearing, and its failure is recoverable on the next commit.
+   */
   const commitUrl = useCallback((url: string | null) => {
     photoUrlRef.current = url;
     signedAtRef.current = url ? Date.now() : 0;
     if (mountedRef.current) setPhotoUrlState(url);
+    void updateCachedUserSummary({
+      photoUrl: url ?? undefined,
+      photoSignedAt: url ? Date.now() : undefined,
+    });
   }, []);
 
   /**
@@ -138,6 +158,16 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
         signedAtRef.current = url ? Date.now() : 0;
       }
       if (mountedRef.current) setPhotoUrlState(url);
+      /*
+       * COS-891 — the upload path writes through too. An UNSIGNED url is
+       * cached with no photoSignedAt, so the hydrate below treats it as
+       * already stale and re-signs rather than showing a URL that can only
+       * 403. Same three-way judgement the in-memory clock makes.
+       */
+      void updateCachedUserSummary({
+        photoUrl: url ?? undefined,
+        photoSignedAt: url && isSignedPhotoUrl(url) ? Date.now() : undefined,
+      });
     },
     [],
   );
@@ -235,8 +265,51 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
     return signFresh();
   }, [signFresh]);
 
+  /*
+   * COS-891 — paint from the device first, and skip the network entirely when
+   * what we have is still valid.
+   *
+   * The signature lives an hour server-side and PHOTO_URL_CLIENT_TTL_MS (45m)
+   * is the app's safety margin inside that. A cached URL younger than the
+   * margin is as good as one we would have just fetched, so a cold start
+   * inside that window costs zero requests — and because it is the SAME url
+   * string, expo-image serves the bytes from its own disk cache rather than
+   * re-downloading them.
+   *
+   * Older than the margin, or unsigned, or absent: fall through to refresh()
+   * exactly as before. The cache can only save a request, never cause a
+   * wrong one.
+   */
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    void (async () => {
+      const cached = await getCachedUserSummary();
+      if (cancelled) return;
+
+      const url = cached?.photoUrl;
+      const signedAt = cached?.photoSignedAt ?? 0;
+      const fresh =
+        !!url &&
+        signedAt > 0 &&
+        Date.now() - signedAt < PHOTO_URL_CLIENT_TTL_MS &&
+        isSignedPhotoUrl(url);
+
+      if (fresh && url) {
+        photoUrlRef.current = url;
+        signedAtRef.current = signedAt;
+        if (mountedRef.current) {
+          setPhotoUrlState(url);
+          setHasPhoto(true);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      await refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
   /**

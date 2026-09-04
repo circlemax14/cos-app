@@ -13,7 +13,7 @@ import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
 import {
   getCachedUserSummary,
-  setCachedUserSummary,
+  updateCachedUserSummary,
 } from '@/lib/cached-user-summary';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -179,11 +179,17 @@ export function ProfileContent({
 
         setPatientName(freshName);
         setPatientEmail(freshEmail);
-        await setCachedUserSummary({
-          name: freshName,
-          email: freshEmail,
-          photoUrl: patientPhotoUrl ?? cached?.photoUrl,
-        });
+        /*
+         * COS-891 — write only what this screen owns.
+         *
+         * This used setCachedUserSummary, which REPLACES the record, and
+         * passed `patientPhotoUrl` — a presigned URL — with no note of when it
+         * was signed. So it both clobbered the photo timestamp the photo store
+         * had just written and stored a URL nothing could safely reuse. The
+         * photo belongs to stores/user-photo-store.tsx, which writes through on
+         * every commit; the name and the email belong here.
+         */
+        await updateCachedUserSummary({ name: freshName, email: freshEmail });
       } catch {
         // Network failure — keep whatever (cached or default) values are showing.
       } finally {
