@@ -34,6 +34,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { updatePlanType, type PlanType } from '@/services/api/plan-type'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { usePlanType } from '@/hooks/use-plan-type'
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
@@ -271,6 +272,11 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
     setPendingType(null)
     setConsentAck(false)
   }, [migrating])
+
+  // COS-856 entitlement gate. Hook runs unconditionally, above every return.
+  const canView = useCanRender('plan-type-chooser.view')
+
+  if (!canView) return <AppWrapper><View /></AppWrapper>
 
   return (
     <AppWrapper>

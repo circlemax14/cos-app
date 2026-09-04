@@ -20,6 +20,7 @@ import {
   setAppleHealthEnabled,
 } from '@/services/apple-health-preference';
 import { APPLE_HEALTH_PREFERENCE_KEY } from '@/hooks/use-apple-health-preference';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -45,6 +46,12 @@ export default function AppleHealthScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const queryClient = useQueryClient();
+
+  // Entitlement gates. Hooks, so declared at the top. `grant-healthkit-
+  // permissions` gates the one control that triggers the iOS permission
+  // dialog — the Enable Apple Health switch. useCanRender fails open.
+  const canView = useCanRender('apple-health.view');
+  const canGrantHealthKit = useCanRender('apple-health.grant-healthkit-permissions');
 
   const available = isHealthKitAvailable();
 
@@ -129,6 +136,7 @@ export default function AppleHealthScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.headerSection}>
@@ -205,6 +213,7 @@ export default function AppleHealthScreen() {
                 {isLoading || isConnecting ? (
                   <ActivityIndicator size="small" color={colors.tint} />
                 ) : (
+                  canGrantHealthKit && (
                   <Switch
                     value={enabled}
                     onValueChange={handleToggle}
@@ -213,6 +222,7 @@ export default function AppleHealthScreen() {
                     accessibilityState={{ checked: enabled }}
                     accessibilityLabel="Enable Apple Health"
                   />
+                  )
                 )}
               </View>
             </View>
@@ -249,6 +259,7 @@ export default function AppleHealthScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

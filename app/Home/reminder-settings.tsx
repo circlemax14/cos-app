@@ -21,6 +21,7 @@ import {
   useUpdateNotificationCategories,
 } from '@/hooks/use-notification-categories'
 import { useProactiveNudgesFlag } from '@/hooks/use-proactive-nudges-flag'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -189,6 +190,15 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
 
+  const canView = useCanRender('reminder-settings.view')
+  const canMedicationReminders = useCanRender('reminder-settings.toggle-medication-reminders')
+  const canAppointmentReminders = useCanRender('reminder-settings.toggle-appointment-reminders')
+  // One row per category is gated; every key not listed here stays as it was.
+  const categoryGates: Partial<Record<NotificationCategory, boolean>> = {
+    medicationReminders: canMedicationReminders,
+    appointments: canAppointmentReminders,
+  }
+
   // SCRUM-257: timezone preference for per-user reminder routing.
   const tzQuery = useQuery({
     queryKey: ['timezone-pref'],
@@ -253,6 +263,7 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
             Reminders
           </Text>
         </View>
+        {canView && (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 14 }}>
             Choose what Circle Support Health can notify you about. Reminders arrive at the time each task or routine is scheduled for, and only when something is still pending.
@@ -304,7 +315,7 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
               <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginBottom: 12, lineHeight: 18 }}>
                 Choose which kinds of notifications you want to receive. Turn off any you don&apos;t need.
               </Text>
-              {NOTIFICATION_CATEGORY_KEYS.map((key) => {
+              {NOTIFICATION_CATEGORY_KEYS.filter((key) => categoryGates[key] !== false).map((key) => {
                 const spec = CATEGORY_SPECS[key]
                 const enabled = categoryPrefs[key]
                 return (
@@ -374,6 +385,7 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
             Reminders use device push notifications. Allow notifications in your iOS / Android settings to receive them.
           </Text>
         </ScrollView>
+        )}
 
         {/* Timezone picker modal */}
         <Modal

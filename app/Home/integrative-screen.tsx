@@ -34,6 +34,7 @@ import {
     RefreshControl,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { EntityIcon } from '@/components/icons';
 import {
     getNonEhrProviders,
@@ -266,6 +267,8 @@ export function IntegrativeScreen({
     getScaledFontSize,
     getScaledFontWeight,
 }: IntegrativeScreenProps) {
+    const canView = useCanRender('integrative-screen.view');
+    const canViewIntegrativeContent = useCanRender('integrative-screen.view-integrative-content');
     const [providers, setProviders] = useState<NonEhrProvider[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isUploading, setIsUploading] = useState(false);
@@ -549,6 +552,7 @@ export function IntegrativeScreen({
             )}
 
             {/* Provider list */}
+            {canViewIntegrativeContent && (
             <ScrollView showsVerticalScrollIndicator={false} style={styles.flex} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
                 <Text style={[dataStyles.sectionLabel, { color: colors.text + '70', fontSize: getScaledFontSize(12) }]}>
                     PROVIDERS ({providers.length})
@@ -587,6 +591,7 @@ export function IntegrativeScreen({
                     </TouchableOpacity>
                 ))}
             </ScrollView>
+            )}
         </View>
     );
 
@@ -611,7 +616,7 @@ export function IntegrativeScreen({
                 </Text>
             </View>
 
-            {isLoading ? (
+            {canView && (isLoading ? (
                 <View style={styles.centered}>
                     <ActivityIndicator size="large" color={colors.tint || '#008080'} />
                 </View>
@@ -619,7 +624,7 @@ export function IntegrativeScreen({
                 renderEmptyState()
             ) : (
                 renderHasDataState()
-            )}
+            ))}
 
             {/* Manual Entry Modal — shown when PDF/unreadable file is uploaded */}
             <ManualEntryModal

@@ -3,6 +3,7 @@ import { View, ActivityIndicator, Text, StyleSheet } from 'react-native'
 import { GiftedChat, IMessage } from 'react-native-gifted-chat'
 import { useGetChatToken, useChatHistory } from '@/hooks/use-chat'
 import { initializeAbly, subscribeToChannel, publishMessage, closeAbly } from '@/services/ably-chat'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -18,6 +19,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<IMessage[]>([])
   // Track whether we've kicked off the init so StrictMode double-fire doesn't double-init
   const initStarted = useRef(false)
+  const canView = useCanRender('chat.view')
 
   useEffect(() => {
     if (initStarted.current) return
@@ -95,6 +97,8 @@ export default function ChatScreen() {
       // Silently swallow publish errors — the message is already shown optimistically
     })
   }
+
+  if (!canView) return null
 
   if (tokenLoading || historyLoading) return <ActivityIndicator style={styles.center} />
 

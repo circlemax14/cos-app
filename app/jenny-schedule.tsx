@@ -1,4 +1,5 @@
 import { AppWrapper } from '@/components/app-wrapper';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -16,6 +17,7 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 export default function JennyScheduleScreen() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
+  const canView = useCanRender('jenny-schedule.view');
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   // Get today's date
@@ -94,6 +96,7 @@ export default function JennyScheduleScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
+      {canView && (
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -214,6 +217,7 @@ export default function JennyScheduleScreen() {
         </View>
         )}
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

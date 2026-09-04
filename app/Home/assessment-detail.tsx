@@ -34,6 +34,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { AppWrapper } from '@/components/app-wrapper'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
@@ -59,6 +60,7 @@ function formatDate(iso?: string): string {
 }
 
 export default function AssessmentDetailScreen(): React.JSX.Element {
+  const canView = useCanRender('assessment-detail.view')
   const params = useLocalSearchParams<{ instrumentId?: string }>()
   const instrumentId = String(params.instrumentId ?? '')
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
@@ -136,7 +138,7 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
           </Text>
         </View>
 
-        {isLoading ? (
+        {canView && (isLoading ? (
           <Text style={{ color: colors.subtext, fontSize: fs(13), marginTop: 20 }}>
             Loading your results…
           </Text>
@@ -236,7 +238,7 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
               </>
             ) : null}
           </>
-        )}
+        ))}
 
         <View style={{ height: 32 }} />
       </ScrollView>

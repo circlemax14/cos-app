@@ -47,6 +47,7 @@ import { router } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { AppWrapper } from '@/components/app-wrapper'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
@@ -554,7 +555,13 @@ function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.J
 }
 
 export default function ConnectionsScreen(): React.JSX.Element {
-  return <ConnectionsInner />
+  // COS-849 — connections.view gates the screen BODY. The AppWrapper chrome
+  // stays so a denied patient can still navigate out (headerShown is false for
+  // this route, so returning nothing would strand them on a blank screen).
+  // Gated here rather than inside ConnectionsInner so the embedded Social-tab
+  // panel below keeps its own gate.
+  const canView = useCanRender('connections.view')
+  return canView ? <ConnectionsInner /> : <AppWrapper>{null}</AppWrapper>
 }
 
 /**

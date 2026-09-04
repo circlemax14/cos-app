@@ -12,6 +12,7 @@ import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AgencyTeamSection } from '@/components/agency/AgencyTeamSection';
 import { AgencyVisitsSection } from '@/components/agency/AgencyVisitsSection';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -42,6 +43,13 @@ export default function AgencyDetailScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   // COS-360 / SCRUM-577 — flag-gated "Family Support" rename.
   const planTypeDisplayName = usePlanTypeDisplayName();
+
+  // COS-849 entitlement gates. Hooks, so unconditional and above the early
+  // return for the loading state below.
+  const canView = useCanRender('agency-detail.view');
+  const canViewAgency = useCanRender('agency-detail.view-agency');
+  const canContactAgency = useCanRender('agency-detail.contact-agency');
+  const canConnectAgency = useCanRender('agency-detail.connect-agency');
 
   const [agency, setAgency] = useState<CareManagerAgency | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
@@ -191,6 +199,7 @@ export default function AgencyDetailScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* No RefreshControl — pulling the sheet down triggers the native
           modal dismiss gesture (iOS) or no-op (Android). */}
+      {canView && (
       <ScrollView style={{ flex: 1 }}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.background }]}>
@@ -204,6 +213,7 @@ export default function AgencyDetailScreen() {
         </View>
 
       {/* Agency Info Card */}
+      {canViewAgency && (
       <Card style={[styles.agencyCard, { backgroundColor: colors.background }]}>
         <Card.Content>
           <View style={styles.agencyHeader}>
@@ -266,6 +276,7 @@ export default function AgencyDetailScreen() {
           )}
 
           {/* Contact Information */}
+          {canContactAgency && (
           <View style={styles.contactContainer}>
             {agency.phone && (
               <TouchableOpacity
@@ -297,8 +308,10 @@ export default function AgencyDetailScreen() {
               </TouchableOpacity>
             )}
           </View>
+          )}
         </Card.Content>
       </Card>
+      )}
 
       {/* Specialties */}
       {agency.specialties && agency.specialties.length > 0 && (
@@ -375,7 +388,7 @@ export default function AgencyDetailScreen() {
             </Text>
           </View>
         ) : (
-          <Button
+          canConnectAgency && <Button
             mode="contained"
             onPress={handleRequestCareManager}
             loading={isRequesting}
@@ -541,6 +554,7 @@ export default function AgencyDetailScreen() {
           </View>
         </Modal>
       </ScrollView>
+      )}
     </View>
   );
 }

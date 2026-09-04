@@ -78,6 +78,7 @@ import { priceLines } from '@/lib/plan-price';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723 has landed, so this screen gets the same boundary as every other
 // route: a render error costs this screen, not the whole app.
@@ -165,6 +166,9 @@ export default function BillingScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const upgradeEnabled = useSubscriptionUpgradeFlag();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canView = useCanRender('billing.view');
+  const canCheckout = useCanRender('billing.checkout');
+  const canCancel = useCanRender('billing.cancel');
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['patient-plans'],
@@ -275,6 +279,7 @@ export default function BillingScreen() {
     // No backgroundColor here on purpose — AppWrapper paints it and then draws
     // the brand circles on top, so an opaque fill below would clip them.
     <AppWrapper>
+      {canView && (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {/*
         COS-742 — a back arrow at the TOP.
@@ -367,7 +372,7 @@ export default function BillingScreen() {
 
           {/* No cancel control on the free default — there is nothing to
               cancel, and offering one implies there is something to lose. */}
-          {!cancelling && !billing.isDefaultPlan && (
+          {canCancel && !cancelling && !billing.isDefaultPlan && (
             <Pressable
               onPress={() => void onCancel()}
               disabled={busy !== null}
@@ -480,7 +485,7 @@ export default function BillingScreen() {
               </Pressable>
             )}
 
-            {canSubscribe && !plan.isCurrent && isPurchasable(plan) && (
+            {canCheckout && canSubscribe && !plan.isCurrent && isPurchasable(plan) && (
               <Pressable
                 onPress={() => router.push('/Home/billing-checkout' as never)}
                 accessibilityRole="button"
@@ -537,6 +542,7 @@ export default function BillingScreen() {
         <Text style={[styles.backText, { color: colors.text, fontSize: getScaledFontSize(15) }]}>Close</Text>
       </Pressable>
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

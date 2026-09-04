@@ -4,6 +4,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useAppointment } from '@/hooks/use-appointments';
+import { useCanRender } from '@/hooks/use-entitlement';
 import type { Appointment } from '@/services/api/types';
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -221,6 +222,7 @@ function DetailRow({ icon, label, value, colors: themeColors }: { icon: string; 
 export default function AppointmentDetailScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canView = useCanRender('appointment-detail.view');
   const params = useLocalSearchParams<{ id: string; data: string }>();
 
   // First try the `data` param (callers that have the full appointment
@@ -272,6 +274,7 @@ export default function AppointmentDetailScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         {/* Header card */}
         <View style={[styles.headerCard, { backgroundColor: resStyle.bg + '40' }]}>
@@ -331,6 +334,7 @@ export default function AppointmentDetailScreen() {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

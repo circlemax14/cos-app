@@ -38,6 +38,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useProactiveNudgesFlag } from '@/hooks/use-proactive-nudges-flag'
+import { useCanRender } from '@/hooks/use-entitlement'
 import {
   fetchNudgePrefs,
   fetchNudgeRules,
@@ -80,6 +81,12 @@ export default function NudgesScreen(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
   const flagEnabled = useProactiveNudgesFlag()
+
+  // Entitlement gate for the screen body. A hook, so it is declared above the
+  // flag-off early return below. useCanRender fails open — false only on an
+  // affirmative deny. The ScreenHeader (and its Back control) stays outside
+  // the gate so a denied patient is never stranded here.
+  const canView = useCanRender('nudges.view')
 
   const [permissionStatus, setPermissionStatus] =
     React.useState<Notifications.PermissionStatus | null>(null)
@@ -194,6 +201,7 @@ export default function NudgesScreen(): React.JSX.Element {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+        {canView && (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 14, lineHeight: 19 }}>
             AI check-ins based on your recent trends. We only send a nudge when
@@ -372,6 +380,7 @@ export default function NudgesScreen(): React.JSX.Element {
             </>
           )}
         </ScrollView>
+        )}
       </View>
     </AppWrapper>
   )

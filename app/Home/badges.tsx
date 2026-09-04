@@ -17,6 +17,7 @@ import {
   type BadgeDefinition,
 } from '@/services/api/badges'
 import { useBadgeCelebrations } from '@/components/celebrations/BadgeCelebrationProvider'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -54,6 +55,9 @@ export default function BadgesScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const { enqueue } = useBadgeCelebrations()
+  // Entitlement gates — hooks, so unconditional and at the top.
+  const canView = useCanRender('badges.view')
+  const canViewBadgeDetail = useCanRender('badges.view-badge-detail')
   const [selectedLocked, setSelectedLocked] = React.useState<LockedBadge | null>(null)
 
   const progressQuery = useQuery({
@@ -94,7 +98,7 @@ export default function BadgesScreen(): React.JSX.Element {
 
   return (
     <AppWrapper>
-      <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 40 }}>
+      {canView && <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
             <MaterialIcons name="arrow-back" size={getScaledFontSize(24)} color={colors.text} />
@@ -153,9 +157,9 @@ export default function BadgesScreen(): React.JSX.Element {
             </View>
           )
         })}
-      </ScrollView>
+      </ScrollView>}
 
-      {selectedLocked ? (
+      {canViewBadgeDetail && selectedLocked ? (
         <LockedDetailSheet
           badge={selectedLocked}
           catalog={catalogQuery.data ?? []}

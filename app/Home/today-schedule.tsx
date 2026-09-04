@@ -110,6 +110,7 @@ import {
 import { TodayTimeline, TodayLegend } from '@/components/today/TodayTimeline';
 import { AdherenceScore } from '@/components/today/AdherenceScore';
 import { useCalendar } from '@/hooks/use-calendar';
+import { useCanRender } from '@/hooks/use-entitlement';
 import {
   useHabitRemindersFlag,
   useHabitsInPlanFlag,
@@ -199,6 +200,7 @@ function toIso(date: string, time?: string): string {
 function TodayScheduleScreenInner(): React.JSX.Element {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canView = useCanRender('today-schedule.view');
   const queryClient = useQueryClient();
 
   const [patientName, setPatientName] = useState('');
@@ -741,6 +743,7 @@ function TodayScheduleScreenInner(): React.JSX.Element {
   //
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView
         refreshControl={
           <RefreshControl
@@ -975,6 +978,7 @@ function TodayScheduleScreenInner(): React.JSX.Element {
           </View>
         )}
       </ScrollView>
+      )}
 
       {/* SCRUM-279 (build 45): smart-task value capture. Modal opens
           when the user taps a recordable task (blood glucose / weight /

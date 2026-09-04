@@ -32,6 +32,7 @@ import {
 } from 'react-native'
 import { todayLocalIso } from '@/lib/day-key';
 import { groupTrendsByBodySystem } from '@/lib/body-system-grouping';
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -71,6 +72,10 @@ export default function HealthTrendsScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('most-recent')
   const [activeTrend, setActiveTrend] = useState<LongitudinalTrend | null>(null)
+  const canView = useCanRender('health-trends.view')
+  const canViewTrendChart = useCanRender('health-trends.view-trend-chart')
+  const canFilterMetric = useCanRender('health-trends.filter-metric')
+  const canShareTrend = useCanRender('health-trends.share-trend')
 
   const { data, isLoading, isError, refetch } = useTrends()
   const { data: healthKitTrends, refetch: refetchHealthKit, disabled: appleHealthDisabled } = useHealthKitTrends()
@@ -223,6 +228,7 @@ export default function HealthTrendsScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={{ paddingBottom: 32 }}
@@ -251,6 +257,7 @@ export default function HealthTrendsScreen() {
         <SummarizeCard />
 
         {/* Time period filter chips */}
+        {canFilterMetric && (
         <View style={[styles.filterCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
           <View style={styles.filterRow}>
             {TIME_FILTERS.map((f) => {
@@ -280,6 +287,7 @@ export default function HealthTrendsScreen() {
             {filterSubtitle(timeFilter)}
           </Text>
         </View>
+        )}
 
         {/* COS-397 / SCRUM-535: Apple Health is turned off in the app
             preference. Show a clear "turned off" card (instead of any stale
@@ -483,6 +491,7 @@ export default function HealthTrendsScreen() {
         ) : null}
 
         {/* Download results footer */}
+        {canShareTrend && (
         <View style={[styles.downloadCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={styles.downloadHeaderRow}>
@@ -507,7 +516,9 @@ export default function HealthTrendsScreen() {
             </Text>
           </Pressable>
         </View>
+        )}
       </ScrollView>
+      )}
 
       {/* Apple Health card detail modal — slide-up sheet hosting the full
           TrendCard (line chart + data-table disclosure). Tapping a card
@@ -565,6 +576,7 @@ export default function HealthTrendsScreen() {
                 </Pressable>
               </View>
               <ScrollView contentContainerStyle={styles.modalContent}>
+                {canViewTrendChart && (
                 <TrendCard
                   trend={activeTrend}
                   chartWidth={chartWidth}
@@ -572,6 +584,7 @@ export default function HealthTrendsScreen() {
                   fontSize={getScaledFontSize}
                   fontWeight={getScaledFontWeight}
                 />
+                )}
               </ScrollView>
             </>
           ) : null}

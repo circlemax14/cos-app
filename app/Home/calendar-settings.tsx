@@ -21,6 +21,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCalendar } from '@/hooks/use-calendar'
 import { useCalendarPermissions } from '@/hooks/use-calendar-permissions'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { CalendarPermissionGate } from '@/components/calendar/CalendarPermissionGate'
 import {
   getCalendarPreferences,
@@ -133,6 +134,9 @@ export default function CalendarSettingsScreen() {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const permissions = useCalendarPermissions()
+  // Entitlement gates — hooks, so unconditional and at the top.
+  const canView = useCanRender('calendar-settings.view')
+  const canSelectDefaultCalendar = useCanRender('calendar-settings.select-default-calendar')
   const {
     calendars,
     hiddenCalendarIds,
@@ -184,7 +188,7 @@ export default function CalendarSettingsScreen() {
   return (
     <AppWrapper showFooter showHamburgerIcon>
       <CalendarPermissionGate permissions={permissions}>
-        <ScrollView
+        {canView && <ScrollView
           style={[styles.root, { backgroundColor: colors.background }]}
           contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
         >
@@ -319,7 +323,7 @@ export default function CalendarSettingsScreen() {
               </Pressable>
 
               {/* I8: Default Calendar */}
-              <Pressable
+              {canSelectDefaultCalendar && <Pressable
                 onPress={() => { hapticSelection(); setShowDefaultCalPicker(true) }}
                 style={[styles.prefRow, { borderBottomColor: colors.border }]}
                 accessibilityRole="button"
@@ -331,7 +335,7 @@ export default function CalendarSettingsScreen() {
                 <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }} numberOfLines={1}>
                   {defaultCalLabel} ›
                 </Text>
-              </Pressable>
+              </Pressable>}
 
               {/* I11: Time Zone Override */}
               {/* 2026-08-14 — "Time Zone Override" REMOVED.
@@ -491,7 +495,7 @@ export default function CalendarSettingsScreen() {
               <Text style={[styles.helpBtnText, { fontSize: getScaledFontSize(14) }]}>Open iOS Settings</Text>
             </Pressable>
           </View>
-        </ScrollView>
+        </ScrollView>}
 
         {/* Picker modals (rendered outside the ScrollView so they
             present full-screen). */}

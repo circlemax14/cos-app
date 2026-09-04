@@ -32,6 +32,7 @@ import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { fetchAssessments } from '@/services/api/assessments';
 import { fetchConnectedClinics } from '@/services/api/clinics';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 // PlanTypeChooser Modal removed in COS-430 — the chooser is now a stack-
 // pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
@@ -216,6 +217,10 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
  * overlay, not an opaque fill.
  */
 export default function HealthPlanScreen() {
+  const canViewScreen = useCanRender('health-plan.view');
+  const canViewGoals = useCanRender('health-plan.view-goals');
+  const canEditGoal = useCanRender('health-plan.edit-goal');
+  const canRegeneratePlan = useCanRender('health-plan.regenerate-plan');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const queryClient = useQueryClient();
@@ -957,6 +962,7 @@ export default function HealthPlanScreen() {
           push v2. Import left in place for a fast revert if the decision
           reverses. */}
       {/* Tab bar */}
+      {canViewScreen && (
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {
           const active = activeTab === tab;
@@ -985,8 +991,9 @@ export default function HealthPlanScreen() {
           );
         })}
       </View>
+      )}
 
-      {activeTab === 'progress' ? (
+      {canViewScreen && (activeTab === 'progress' ? (
         <ProgressTab
           streakDays={0 /* TODO: surface from /v1/.../analytics in a follow-up */}
           adherencePercent={adherencePercent}
@@ -1112,6 +1119,7 @@ export default function HealthPlanScreen() {
                 Self-gated on the default flag being ON, so pre-flip users see
                 no dead affordance. */}
             <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
+            {canRegeneratePlan && (
             <TouchableOpacity
               style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}
               onPress={() => onGenerate(true)}
@@ -1122,6 +1130,7 @@ export default function HealthPlanScreen() {
                 <MaterialIcons name="refresh" size={18} color={colors.subtext} />
               )}
             </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -1393,7 +1402,7 @@ export default function HealthPlanScreen() {
         </View>
 
         {/* Goals — COS-377: flag-gated category-grouped editable view vs. original flat list */}
-        {plan.goals.length > 0 && (
+        {canViewGoals && plan.goals.length > 0 && (
           CARE_PLAN_ENABLED ? (
             /* NEW: category-grouped, editable — only when CARE_PLAN_ENABLED=true */
             <>
@@ -1401,6 +1410,7 @@ export default function HealthPlanScreen() {
                   (title, description, target & metrics) but the affordance was
                   invisible — testers found it by accident. This one-liner + the
                   per-card pencil below signpost that goals are tappable to edit. */}
+              {canEditGoal && (
               <View
                 style={styles.goalEditHint}
                 accessibilityRole="text"
@@ -1413,6 +1423,7 @@ export default function HealthPlanScreen() {
                   Tap a goal to edit its target &amp; metrics
                 </Text>
               </View>
+              )}
               {groupGoalsByCategory(plan.goals).map((group) => (
                 <View key={group.key}>
                   <View style={styles.secHead}>
@@ -1496,12 +1507,14 @@ export default function HealthPlanScreen() {
                           {/* COS-401 / SCRUM-537: visible per-card "Edit" affordance.
                               Decorative (the whole card is the button + is labeled),
                               so it's hidden from screen readers to avoid a double read. */}
+                          {canEditGoal && (
                           <View style={styles.goalEditCue} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
                             <MaterialIcons name="edit" size={12} color={colors.tint} />
                             <Text style={[styles.goalEditCueText, { color: colors.tint, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(600) as any }]}>
                               Edit
                             </Text>
                           </View>
+                          )}
                         </View>
                       </TouchableOpacity>
                     );
@@ -1669,10 +1682,10 @@ export default function HealthPlanScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
-      )}
+      ))}
 
       {/* COS-377: Goal editor modal — only rendered when CARE_PLAN_ENABLED=true and a goal is selected */}
-      {CARE_PLAN_ENABLED && (
+      {CARE_PLAN_ENABLED && canEditGoal && (
         <Modal
           visible={editGoal !== null}
           animationType="slide"

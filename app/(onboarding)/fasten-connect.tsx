@@ -19,6 +19,7 @@ import { signOut } from '@/services/auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -54,6 +55,10 @@ export default function FastenConnectScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showWidget, setShowWidget] = useState(true);
   const [widgetDismissed, setWidgetDismissed] = useState(false);
+
+  // Entitlement gate for the screen body. A hook, so it sits above every
+  // early return below. useCanRender fails open — false only on a deny.
+  const canView = useCanRender('onboarding-fasten-connect.view');
 
   // Guard: if the reviewer / any user has CONNECT_CLINIC disabled by an
   // admin, never show the Fasten widget. 4 separate routes can land here
@@ -219,27 +224,29 @@ export default function FastenConnectScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {connectedCount > 0 && (
+      {canView && connectedCount > 0 && (
         <View style={styles.successBanner}>
           <Text style={[styles.successBannerText, { fontSize: getScaledFontSize(14) }]}>
             ✓ {connectedCount} provider{connectedCount > 1 ? 's' : ''} connected — you can add more
           </Text>
         </View>
       )}
-      {error && (
+      {canView && error && (
         <View style={[styles.errorBanner, { backgroundColor: colors.card }]}>
           <Text style={{ color: '#D32F2F', fontSize: getScaledFontSize(14), textAlign: 'center' }}>
             {error}
           </Text>
         </View>
       )}
+      {canView && (
       <View style={styles.widgetContainer}>
         <FastenStitchElement
           publicId={FASTEN_PUBLIC_ID}
           onEventBus={handleEvent}
         />
       </View>
-      <WidgetMountMarker connectedCount={connectedCount} />
+      )}
+      {canView && <WidgetMountMarker connectedCount={connectedCount} />}
     </SafeAreaView>
   );
 }
@@ -271,6 +278,11 @@ interface ConnectClinicPromptProps {
 function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // The CTA that reopens the Fasten widget is the EHR-connect control on this
+  // screen. Hook, so it is declared at the top of the component. Sign Out is
+  // deliberately left ungated so a denied patient is never trapped here.
+  const canConnectEhr = useCanRender('onboarding-fasten-connect.connect-ehr-fasten');
 
   const contentOpacity = useSharedValue(0);
   const contentTranslate = useSharedValue(18);
@@ -395,6 +407,7 @@ function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
       </Animated.View>
 
       <Animated.View style={[connectStyles.footer, contentStyle]}>
+        {canConnectEhr && (
         <Pressable
           onPress={onConnect}
           style={({ pressed }) => [
@@ -417,6 +430,7 @@ function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
             Connect a Clinic
           </Text>
         </Pressable>
+        )}
 
         <View style={connectStyles.privacyRow}>
           <MaterialIcons name="lock" size={getScaledFontSize(12)} color={colors.subtext} />

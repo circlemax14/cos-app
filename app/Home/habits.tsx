@@ -57,6 +57,7 @@ import { router } from 'expo-router'
 
 import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
   useAddHabit,
@@ -252,6 +253,11 @@ export default function HabitsScreen(): React.JSX.Element {
     },
     [deleteMutation],
   )
+
+  // COS-856 entitlement gate. Hook runs unconditionally, above every return.
+  const canView = useCanRender('habits.view')
+
+  if (!canView) return <AppWrapper><View /></AppWrapper>
 
   return (
     <AppWrapper>

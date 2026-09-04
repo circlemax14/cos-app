@@ -6,6 +6,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSendAiMessage, useChatHistory } from '@/hooks/use-chat';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -27,6 +28,10 @@ const CURRENT_USER: User = {
 export default function HealthChatScreen() {
     const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
     const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+    // Entitlement gate. Declared here, above every early return, because it is
+    // a hook. useCanRender fails open — false only on an affirmative deny.
+    const canView = useCanRender('health-chat.view');
 
     const { data: historyMessages, isLoading: isHistoryLoading, isError: isHistoryError, refetch } = useChatHistory('ai');
     const sendAiMessage = useSendAiMessage();
@@ -117,6 +122,7 @@ export default function HealthChatScreen() {
 
     return (
         <AppWrapper>
+            {canView && (
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={[styles.header, { borderBottomColor: colors.text + '20' }]}>
                     <Text style={[
@@ -151,6 +157,7 @@ export default function HealthChatScreen() {
                     />
                 </View>
             </View>
+            )}
         </AppWrapper>
     );
 }

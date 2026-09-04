@@ -13,6 +13,7 @@ import {
 import { AppWrapper } from '@/components/app-wrapper';
 import { SupportTicketCard } from '@/components/ui/support-ticket-card';
 import { Colors } from '@/constants/theme';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSupportTickets, useCreateSupportTicket } from '@/hooks/use-support-tickets';
 
@@ -24,6 +25,8 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 export default function SupportScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canViewScreen = useCanRender('support.view');
+  const canContactSupport = useCanRender('support.contact-support');
 
   const [description, setDescription] = useState('');
   const [descriptionError, setDescriptionError] = useState('');
@@ -68,6 +71,8 @@ export default function SupportScreen() {
   const scaledButtonHeight = Math.max(48, scaledFontButton + 28);
   const scaledTextAreaMinHeight = Math.max(140, scaledFontInput * 8);
 
+  if (!canViewScreen) return <AppWrapper>{null}</AppWrapper>;
+
   return (
     <AppWrapper>
       <KeyboardAvoidingView
@@ -110,6 +115,7 @@ export default function SupportScreen() {
             </Text>
 
             {/* Description Input */}
+            {canContactSupport && (
             <View style={styles.inputContainer}>
               <Text
                 style={{
@@ -164,8 +170,10 @@ export default function SupportScreen() {
                 </Text>
               ) : null}
             </View>
+            )}
 
             {/* Submit Button */}
+            {canContactSupport && (
             <TouchableOpacity
               onPress={handleSubmit}
               disabled={createTicket.isPending}
@@ -192,6 +200,7 @@ export default function SupportScreen() {
                 {createTicket.isPending ? 'Submitting...' : 'Submit Request'}
               </Text>
             </TouchableOpacity>
+            )}
           </View>
 
           {/* Your Requests Section */}

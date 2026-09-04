@@ -1,6 +1,7 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
+import { useCanRenderSafetyCritical } from '@/hooks/use-entitlement';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { fetchProviderAllergies } from '@/services/api/providers';
 import type { Allergy } from '@/services/api/types';
@@ -21,6 +22,9 @@ const CRITICALITY_STYLES: Record<string, { bg: string; text: string; label: stri
 export default function AllergiesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // Safety-critical: showing an allergy we are unsure about beats hiding it.
+  const canViewScreen = useCanRenderSafetyCritical('allergies.view');
+  const canViewAllergy = useCanRenderSafetyCritical('allergies.view-allergy');
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,6 +49,8 @@ export default function AllergiesScreen() {
     await loadAllergies();
     setRefreshing(false);
   }, [loadAllergies]);
+
+  if (!canViewScreen) return <AppWrapper>{null}</AppWrapper>;
 
   if (isLoading) {
     return (
@@ -84,7 +90,7 @@ export default function AllergiesScreen() {
           allergies.map((allergy) => {
             const critStyle = CRITICALITY_STYLES[allergy.criticality ?? ''] ?? CRITICALITY_STYLES['unable-to-assess'];
 
-            return (
+            return canViewAllergy && (
               <View key={allergy.id} style={[styles.card, { backgroundColor: colors.card }]}>
                 {/* Header: name + badges */}
                 <Text style={[styles.allergyName, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>

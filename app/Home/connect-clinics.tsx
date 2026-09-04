@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -25,6 +26,10 @@ const FASTEN_PUBLIC_ID = process.env.EXPO_PUBLIC_FASTEN_PUBLIC_ID ?? '';
 export default function ConnectClinicsScreen() {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // Entitlement gates. Hooks — declared unconditionally, above the
+  // permissions-loading, feature-disabled and missing-config early returns.
+  const canView = useCanRender('connect-clinics.view');
+  const canConnectClinic = useCanRender('connect-clinics.connect-clinic');
   // Wait for permissions to load before deciding — if CONNECT_CLINIC is
   // disabled we must NOT briefly mount the Fasten widget while the check
   // is in flight.
@@ -150,9 +155,13 @@ export default function ConnectClinicsScreen() {
         </View>
       )}
 
-      <View style={styles.widgetContainer}>
-        <FastenStitchElement publicId={FASTEN_PUBLIC_ID} onEventBus={handleEvent} />
-      </View>
+      {canView && (
+        <View style={styles.widgetContainer}>
+          {canConnectClinic && (
+            <FastenStitchElement publicId={FASTEN_PUBLIC_ID} onEventBus={handleEvent} />
+          )}
+        </View>
+      )}
 
       {/* Processing Modal for existing users adding more clinics */}
       <Modal

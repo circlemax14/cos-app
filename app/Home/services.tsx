@@ -5,6 +5,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useCanShowScreen } from '@/hooks/use-feature-permissions';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchAvailableServices } from '@/services/api/services';
 import type { ServiceDefinition } from '@/services/api/types';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -20,6 +21,9 @@ export default function ServicesScreen() {
   const { settings: appSettings, toggleHealthChat } = useSettings();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const canShowScreen = useCanShowScreen();
+  const canViewScreen = useCanRender('services.view');
+  const canViewService = useCanRender('services.view-service');
+  const canBookService = useCanRender('services.book-service');
 
   const [services, setServices] = useState<ServiceDefinition[]>([]);
   const [, setIsLoading] = useState(true);
@@ -69,6 +73,8 @@ export default function ServicesScreen() {
     // For now this is just a placeholder so the UI is wired up.
     console.log('[Services] Purchase requested for', service.id);
   };
+
+  if (!canViewScreen) return <AppWrapper>{null}</AppWrapper>;
 
   return (
     <AppWrapper>
@@ -136,7 +142,7 @@ export default function ServicesScreen() {
           else if (status === 'purchasable') statusLabel = 'Available to purchase';
           else if (status === 'disabled') statusLabel = 'Unavailable';
 
-          return (
+          return canViewService && (
             <View
               key={service.id}
               style={[
@@ -221,7 +227,7 @@ export default function ServicesScreen() {
                 {service.description}
               </Text>
 
-              {purchasable && (
+              {purchasable && canBookService && (
                 <TouchableOpacity
                   style={[
                     styles.ctaButton,

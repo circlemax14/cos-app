@@ -49,6 +49,7 @@ import { PlanAssessmentGate } from '@/components/plan/PlanAssessmentGate';
 import { PlanBuildingBanner } from '@/components/plan/PlanBuildingBanner';
 import { PlanHasNoCheckIns } from '@/components/plan/PlanHasNoCheckIns';
 import { usePatientInfo } from '@/hooks/use-patient';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -66,6 +67,9 @@ function firstNameFromPatient(
 function CarePlanPlusInner(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // Screen-body gate. A hook, so it sits above every early return below.
+  const canViewScreen = useCanRender('care-plan-plus.view');
 
   const planQuery = useBiopsychosocialPlan();
   const patientQuery = usePatientInfo();
@@ -148,6 +152,8 @@ function CarePlanPlusInner(): React.JSX.Element {
     // No cards means nothing to choose between — a door onto a blank wall is
     // worse than no door.
     (patientPlansQuery.data?.plans?.length ?? 0) > 0;
+
+  if (!canViewScreen) return <AppWrapper>{null}</AppWrapper>;
 
   if (showPlanGate) {
     return (

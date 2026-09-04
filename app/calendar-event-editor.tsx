@@ -68,6 +68,7 @@ import {
   type RepeatValue,
   type TravelTimeValue,
 } from '@/components/calendar/pickers'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { hapticSelection, hapticNotify } from '@/utils/haptics'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -159,6 +160,11 @@ function repeatToRrule(v: RepeatValue): string | undefined {
 }
 
 export default function CalendarEventEditor() {
+  const canView = useCanRender('calendar-event-editor.view')
+  const canCreateEvent = useCanRender('calendar-event-editor.create-event')
+  const canEditEvent = useCanRender('calendar-event-editor.edit-event')
+  const canSetReminder = useCanRender('calendar-event-editor.set-reminder')
+  const canRecurringEvent = useCanRender('calendar-event-editor.recurring-event')
   const { day, eventId } = useLocalSearchParams<{ day?: string; eventId?: string }>()
   const isEditMode = !!eventId && !eventId.startsWith('app:') && !eventId.startsWith('reminder:')
   const { settings, getScaledFontSize } = useAccessibility()
@@ -392,6 +398,7 @@ export default function CalendarEventEditor() {
         >
           {isEditMode ? 'Edit Event' : 'New Event'}
         </Text>
+        {(isEditMode ? canEditEvent : canCreateEvent) && (
         <Pressable
           onPress={handleSave}
           disabled={!canSave}
@@ -414,8 +421,10 @@ export default function CalendarEventEditor() {
             {isSaving ? 'Saving…' : isEditMode ? 'Save' : 'Add'}
           </Text>
         </Pressable>
+        )}
       </View>
 
+      {canView && (
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
         {/* H1: Combined Title + Location field — Apple's signature
             first-card pattern. Title on top, hairline, location below. */}
@@ -506,6 +515,7 @@ export default function CalendarEventEditor() {
 
         {/* H5/H6: Repeat + Travel Time — full pickers */}
         <Field colors={colors}>
+          {canRecurringEvent && (
           <Pressable onPress={() => { hapticSelection(); setShowRepeatPicker(true) }}>
             <Row colors={colors} label="Repeat" labelSize={getScaledFontSize(15)}>
               <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
@@ -513,7 +523,8 @@ export default function CalendarEventEditor() {
               </Text>
             </Row>
           </Pressable>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          )}
+          {canRecurringEvent && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
           <Pressable onPress={() => { hapticSelection(); setShowTravelPicker(true) }}>
             <Row colors={colors} label="Travel Time" labelSize={getScaledFontSize(15)}>
               <Text style={{ color: colors.tint, fontSize: getScaledFontSize(15) }}>
@@ -634,6 +645,7 @@ export default function CalendarEventEditor() {
         </Field>
 
         {/* Alert (first) */}
+        {canSetReminder && (
         <Field colors={colors}>
           <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
             ALERT — minutes before
@@ -668,8 +680,11 @@ export default function CalendarEventEditor() {
           </View>
         </Field>
 
+        )}
+
         {/* H10: Second Alert — single-select picker (None + the same
             ALARM_OPTIONS). Apple's "Second Alert" pattern. */}
+        {canSetReminder && (
         <Field colors={colors}>
           <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
             SECOND ALERT
@@ -726,7 +741,9 @@ export default function CalendarEventEditor() {
             })}
           </View>
         </Field>
+        )}
       </ScrollView>
+      )}
 
       <HipaaDisclosureModal
         visible={showHipaa}

@@ -30,6 +30,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
 import { useDailyRead } from '@/hooks/use-daily-read'
+import { useCanRender } from '@/hooks/use-entitlement'
 import type {
   DailyReadPillar,
   DailyReadPillarBand,
@@ -78,9 +79,11 @@ export default function DailyReadScreen(): React.JSX.Element {
   const { data, isLoading, isError } = useDailyRead(flagEnabled)
   const { getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors.light
+  const canView = useCanRender('daily-read.view')
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Pressable
@@ -143,6 +146,7 @@ export default function DailyReadScreen(): React.JSX.Element {
           {DISCLAIMER}
         </Text>
       </ScrollView>
+      )}
     </AppWrapper>
   )
 }

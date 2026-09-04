@@ -64,6 +64,7 @@ import { addRecentSearch } from '@/services/calendar-recents'
 import { getCalendarPreferences } from '@/services/calendar-preferences'
 import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useNotificationCategories } from '@/hooks/use-notification-categories'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // Year / Month / Week / Day / List — Week was added in v7 at Ken's
@@ -207,6 +208,10 @@ function CalendarScreenInner() {
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const permissions = useCalendarPermissions()
+  // Entitlement gates. Unconditional, at the top — see hooks/use-entitlement.ts.
+  const canView = useCanRender('appointments.view')
+  const canViewCalendar = useCanRender('appointments.view-calendar')
+  const canBookAppointment = useCanRender('appointments.book-appointment')
   const [activeView, setActiveView] = useState<CalendarViewMode>('month')
   const [selectedDay, setSelectedDay] = useState<string>(todayIso())
   const [searchQuery, setSearchQuery] = useState('')
@@ -407,7 +412,7 @@ function CalendarScreenInner() {
 
   return (
     <AppWrapper showFooter showHamburgerIcon showBellIcon>
-      <CalendarPermissionGate permissions={permissions}>
+      {canView && <CalendarPermissionGate permissions={permissions}>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <CalendarHeader
             activeView={activeView}
@@ -479,7 +484,7 @@ function CalendarScreenInner() {
               ) : null}
             </View>
           ) : null}
-          {isLoading ? (
+          {canViewCalendar && (isLoading ? (
             <View style={styles.center}>
               <ActivityIndicator color={colors.tint} />
             </View>
@@ -653,16 +658,16 @@ function CalendarScreenInner() {
                 />
               )
             })()
-          )}
+          ))}
 
-          <Pressable
+          {canBookAppointment && <Pressable
             onPress={() => openEditor(selectedDay)}
             style={({ pressed }) => [styles.fab, { backgroundColor: colors.tint, opacity: pressed ? 0.7 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel="Create new calendar event"
           >
             <Text style={styles.fabPlus}>+</Text>
-          </Pressable>
+          </Pressable>}
 
           {/* Density dropdown — FLOATING overlay over content (was
               previously inline in the header which pushed the grid
@@ -705,7 +710,7 @@ function CalendarScreenInner() {
             </View>
           </Modal>
         </View>
-      </CalendarPermissionGate>
+      </CalendarPermissionGate>}
     </AppWrapper>
   )
 }
@@ -836,6 +841,11 @@ function CalendarHeader({
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const densityTriggerRef = useRef<View>(null)
+  // Entitlement gates for the two header actions that are their own feature:
+  // search/filter, and the settings sheet that manages external (Outlook /
+  // Google / Teams) calendar visibility + sync.
+  const canFilterEvents = useCanRender('appointments.filter-events')
+  const canSyncExternalCalendar = useCanRender('appointments.sync-external-calendar')
   // intentionally read these to silence unused-arg lints when the
   // dropdown is rendered by the parent — the props are still needed
   // for the trigger button's accessibility state.
@@ -875,7 +885,7 @@ function CalendarHeader({
           )}
         </View>
         <View style={styles.headerActions}>
-          <Pressable
+          {canFilterEvents && <Pressable
             onPress={() => { hapticSelection(); onToggleSearch() }}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
@@ -884,7 +894,7 @@ function CalendarHeader({
             accessibilityState={{ selected: showSearch }}
           >
             <IconSymbol name="magnifyingglass" size={getScaledFontSize(22)} color={colors.tint} />
-          </Pressable>
+          </Pressable>}
           {showDensityToggle && (
             <Pressable
               ref={densityTriggerRef}
@@ -932,7 +942,7 @@ function CalendarHeader({
               <Text style={[styles.todayText, { color: colors.tint, fontSize: getScaledFontSize(13) }]}>Today</Text>
             </Pressable>
           )}
-          <Pressable
+          {canSyncExternalCalendar && <Pressable
             onPress={() => { hapticSelection(); onOpenSettings() }}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
@@ -940,7 +950,7 @@ function CalendarHeader({
             accessibilityLabel="Calendar settings"
           >
             <IconSymbol name="gear" size={getScaledFontSize(22)} color={colors.tint} />
-          </Pressable>
+          </Pressable>}
         </View>
       </View>
 

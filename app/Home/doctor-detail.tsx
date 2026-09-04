@@ -19,6 +19,7 @@ import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { AppWrapper } from '@/components/app-wrapper';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api/data-sharing';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -30,6 +31,10 @@ export default function DoctorDetailScreen() {
   const params = useLocalSearchParams();
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canViewScreen = useCanRender('doctor-detail.view');
+  const canViewDoctor = useCanRender('doctor-detail.view-doctor');
+  const canCallDoctor = useCanRender('doctor-detail.call-doctor');
+  const canMessageDoctor = useCanRender('doctor-detail.message-doctor');
   
   const [provider, setProvider] = useState<Provider | null>(null);
   const [, setIsLoadingProvider] = useState(false);
@@ -1416,6 +1421,8 @@ export default function DoctorDetailScreen() {
     </ScrollView>
   );
 
+  if (!canViewScreen) return <AppWrapper>{null}</AppWrapper>;
+
   return (
     <AppWrapper>
       {/*
@@ -1430,6 +1437,7 @@ export default function DoctorDetailScreen() {
       <Portal.Host>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Doctor Header */}
+        {canViewDoctor && (
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
             <EntityIcon
@@ -1458,6 +1466,7 @@ export default function DoctorDetailScreen() {
         
         {/* Communication Options */}
         <View style={styles.communicationContainer}>
+          {canCallDoctor && (
           <TouchableOpacity
             style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
             onPress={handleCall}
@@ -1468,7 +1477,9 @@ export default function DoctorDetailScreen() {
             <MaterialIcons name="phone" size={getScaledFontSize(24)} color="#008080" />
             <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Call</Text>
           </TouchableOpacity>
+          )}
 
+          {canMessageDoctor && (
           <TouchableOpacity
             style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
             onPress={handleMessage}
@@ -1479,6 +1490,7 @@ export default function DoctorDetailScreen() {
             <MaterialIcons name="message" size={getScaledFontSize(24)} color="#008080" />
             <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Message</Text>
           </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
@@ -1503,6 +1515,7 @@ export default function DoctorDetailScreen() {
           </TouchableOpacity>
         </View>
       </View>
+        )}
 
       {/* Tabs */}
       <ScrollView 

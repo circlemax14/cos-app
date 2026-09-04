@@ -13,6 +13,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -22,6 +23,10 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 export default function MedicationsScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // Entitlement gates. Unconditional, above every branch — see hooks/use-entitlement.ts.
+  // The back header stays ungated so a denied screen is never a dead end.
+  const canView = useCanRender('medications.view');
+  const canAddMedication = useCanRender('medications.add-medication');
 
   // Ken 2026-08-06 — screen simplified to a single Active/Past view
   // owned by MedicationsSection (which now consumes the plan-medications
@@ -93,7 +98,7 @@ export default function MedicationsScreen() {
                   600 with a little letter-spacing reads as considered.
                 - RHYTHM: icon 17pt and 6pt from the label, so the glyph and the
                   word look like one object rather than two things side by side. */}
-          <Pressable
+          {canAddMedication && <Pressable
             onPress={() => setAddNonce((n) => n + 1)}
             style={({ pressed }) => [
               styles.addPill,
@@ -122,13 +127,13 @@ export default function MedicationsScreen() {
             >
               Add
             </Text>
-          </Pressable>
+          </Pressable>}
         </View>
         {/* Ken 2026-08-06 — removed TodaysMedicationsCard. Its purpose
             (surface upcoming doses at a glance) now lives folded into
             the MedicationsBanner on the Plan/Home surfaces, so having
             it here as well was redundant. */}
-        <MedicationsReviewPrompt onReviewNow={() => undefined} />
+        {canView && <MedicationsReviewPrompt onReviewNow={() => undefined} />}
         {/* Owns the full Active / Past render + tap-to-expand active rows.
             When PLAN_MEDICATIONS_ENABLED is off on the server the section
             returns null and this screen renders only the header + today's
@@ -138,7 +143,7 @@ export default function MedicationsScreen() {
             20pt horizontal margin so its cards align to the screen's
             16pt ScrollView padding (which itself matches the Health
             Trends banner margin on Home). */}
-        <MedicationsSection openAddSignal={addNonce} flush />
+        {canView && <MedicationsSection openAddSignal={addNonce} flush />}
       </ScrollView>
     </AppWrapper>
   );
