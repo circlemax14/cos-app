@@ -43,7 +43,6 @@ import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { useAiHealthPlan } from '@/hooks/use-plan-tasks';
 import { usePlanMedications } from '@/hooks/use-plan-medications';
 import { usePlanHabits } from '@/hooks/use-plan-habits';
-import { useCanRender } from '@/hooks/use-entitlement';
 import type { BiopsychosocialSectionKey } from './SectionCard';
 import type { PlanTask } from '@/services/api/types';
 import { buildPlanHtml, planHtmlToText } from './plan-pdf-builder';
@@ -104,7 +103,6 @@ export function SharePlanSection({
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [sharing, setSharing] = useState(false);
-  const canSharePlan = useCanRender('health-plan.share-with-care-circle');
 
   // Every one of these rides a query key the plan screen ALREADY observes
   // (['biopsychosocial-plan'], ['ai-health-plan'], ['plan-medications'],
@@ -128,7 +126,6 @@ export function SharePlanSection({
   // copy…" advertising a feature with no way to use it. Same early-return
   // idiom as the `!plan` guard above — no new JSX, nothing added to the
   // cold-mount tree.
-  if (!canSharePlan) return null;
 
   const disabled = sharing;
 
