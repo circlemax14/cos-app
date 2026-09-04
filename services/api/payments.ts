@@ -14,6 +14,13 @@ export interface AvailableGateway {
   id: PaymentGatewayId;
   /** redirect = open a URL out of process. native = hand to the store SDK. */
   kind: 'redirect' | 'native';
+  /**
+   * COS-793 — optional, and optional on purpose. The server may start naming
+   * the methods itself (an operator renaming "Card" is a dashboard change, not
+   * a release); until it does, services/payments-provider.ts supplies the
+   * label. Reading it as optional means neither side has to ship first.
+   */
+  label?: string;
 }
 
 /** What this binary reports itself as. `web` covers Expo web builds. */
