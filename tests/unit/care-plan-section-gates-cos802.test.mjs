@@ -457,3 +457,37 @@ test('THE POINT: unlabelled rows align with labelled ones', () => {
   assert.match(plain.slice(0, 900), /<View style=\{styles\.featureLabel\} \/>/)
   assert.match(plain.slice(0, 900), /styles\.featureValue/)
 })
+
+/**
+ * COS-869 — a component that mounts from BiopsychosocialPlanScreen must not
+ * call useCanRender itself.
+ *
+ * The screen's own flags all route through gate(), which is inert on the frozen
+ * classic tab. A gate placed INSIDE a child component skips that entirely and
+ * fires on classic, where nothing may be hidden.
+ *
+ * It happened twice. SharePlanSection (COS-866) gated the share card on a
+ * second key, so removing it hid the card on classic AND on Plan+ — Vishal
+ * found that one. TaskDetailModal (COS-866) did the same with
+ * health-plan.delete-task. Both now take the decision as a prop.
+ */
+test('COS-869: children of the BPS screen take gates as props, never read them', () => {
+  const bpsSrc = read('components/health-plan/BiopsychosocialPlanScreen.tsx')
+  const imported = [...bpsSrc.matchAll(/from '\.\/([A-Za-z/]+)'/g)].map((m) => m[1])
+
+  const offenders = []
+  for (const rel of imported) {
+    for (const p of [`components/health-plan/${rel}.tsx`, `components/health-plan/${rel}/index.tsx`]) {
+      let src
+      try { src = read(p) } catch { continue }
+      // strip comments so a mention in prose does not count
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      if (/useCanRender\s*\(/.test(code)) offenders.push(p)
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these mount from the BPS screen and gate themselves, bypassing gate() on the frozen classic tab:\n  ${offenders.join('\n  ')}`,
+  )
+})

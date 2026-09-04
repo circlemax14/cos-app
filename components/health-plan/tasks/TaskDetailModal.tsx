@@ -30,7 +30,6 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { Radii, Spacing } from '@/constants/design-system';
 import { fireAndForgetDelete } from '@/components/unified-plan/v2/net';
-import { useCanRender } from '@/hooks/use-entitlement';
 import type { AiHealthPlan, PlanTask } from '@/services/api/types';
 
 import { MeasurementLogInput } from './MeasurementLogInput';
@@ -51,6 +50,15 @@ export interface TaskDetailModalProps {
   /** Parent swaps in TaskEditorModal with initialTask=task. */
   onEdit: (task: PlanTask) => void;
   onDeleted?: (task: PlanTask) => void;
+  /*
+   * COS-869 — passed IN, never read here.
+   *
+   * This mounts from BiopsychosocialPlanScreen, which BOTH the frozen classic
+   * tab and Plan+ render. A useCanRender called here bypasses that screen's
+   * gate() and fires on classic, where nothing may be hidden
+   * (care-plan-section-gates-cos802). The parent routes it through gate().
+   */
+  canDeleteTask: boolean;
 }
 
 /**
@@ -79,6 +87,7 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
  * Alert.alert, fire-and-forget delete via v2/net.
  */
 export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | null {
+  const { canDeleteTask } = props;
   const {
     onClose,
     task,
@@ -124,7 +133,6 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
   }, [confirming]);
 
   const qc = useQueryClient();
-  const canDeleteTask = useCanRender('health-plan.delete-task');
 
   if (!localTask) return null;
 

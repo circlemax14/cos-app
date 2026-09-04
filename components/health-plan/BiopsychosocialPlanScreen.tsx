@@ -874,6 +874,7 @@ export function BiopsychosocialPlanScreen({
   const rawCanNutrition = useCanRender('biopsychosocial-plan.view-nutrition-plan');
   const rawCanMedications = useCanRender('biopsychosocial-plan.view-medications');
   const rawCanSharePdf = useCanRender('biopsychosocial-plan.share-plan-pdf');
+  const rawCanDeleteTask = useCanRender('health-plan.delete-task');
   /*
    * COS-802 — the blocks COS-755 missed.
    *
@@ -900,6 +901,14 @@ export function BiopsychosocialPlanScreen({
   const canNutrition = gate(rawCanNutrition);
   const canMedications = gate(rawCanMedications);
   const canSharePdf = gate(rawCanSharePdf);
+  /*
+   * COS-869 — routed through gate() like every other section flag.
+   *
+   * The gate used to live inside TaskDetailModal, which mounts from here — so
+   * it bypassed gate() and fired on the frozen classic tab. Same shape as the
+   * SharePlanSection double gate (COS-868).
+   */
+  const canDeleteTask = gate(rawCanDeleteTask);
   const canWellbeingScore = gate(rawCanWellbeingScore);
   const canTodaysTasks = gate(rawCanTodaysTasks);
   const canViewProgress = gate(rawCanViewProgress);
@@ -2825,6 +2834,7 @@ export function BiopsychosocialPlanScreen({
           ) : bodyEditor?.kind === 'task-detail' ? (
             <TaskDetailBody
               key={`task-detail:${bodyEditor.task.id}:${bodyKeySuffix}`}
+              canDeleteTask={canDeleteTask}
               task={bodyEditor.task}
               accentColor={SECTION_STYLE[sectionForCategory(bodyEditor.task.category)].color}
               colors={colors}
@@ -2879,6 +2889,7 @@ export function BiopsychosocialPlanScreen({
             onSaved={() => setTaskModal(null)}
           />
           <TaskDetailModal
+            canDeleteTask={canDeleteTask}
             visible={taskModal?.mode === 'detail'}
             task={taskModal?.mode === 'detail' ? taskModal.task ?? null : null}
             accentColor={
