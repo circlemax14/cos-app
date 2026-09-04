@@ -8,6 +8,13 @@ export interface HealthSummary {
   recentLabs: string;
   recommendations: string;
   generatedAt: string;
+  /**
+   * COS-855 — a rebuild is in flight, so this content is about to be replaced.
+   *
+   * Optional: the field is additive on the backend, and a bundle running
+   * against an older API simply never sees it and behaves as before.
+   */
+  rebuilding?: boolean;
 }
 
 async function fetchHealthSummary(): Promise<HealthSummary> {
@@ -29,5 +36,19 @@ export function useHealthSummary(enabled = true) {
     enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes
     retry: 1,
+    /*
+     * COS-855 — poll only while a rebuild is in flight.
+     *
+     * A summary rebuild is 5.5-9.5s, so 5s picks the new content up on the
+     * first or second tick and the "updating" strip disappears on its own
+     * rather than waiting for the 10-minute staleTime or a manual pull.
+     *
+     * Returning false the rest of the time matters: this hook is mounted on
+     * the Plan screen, and an unconditional interval would poll an endpoint
+     * that can cost a Bedrock call for the entire time the screen is open.
+     * The backend's pending marker carries a 15-minute TTL, so this cannot
+     * poll forever even if a rebuild is lost.
+     */
+    refetchInterval: (query) => (query.state.data?.rebuilding === true ? 5000 : false),
   });
 }
