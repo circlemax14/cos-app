@@ -272,7 +272,7 @@ export default function ConnectedEhrsScreen() {
 
   const { connectedHospitals, isLoadingClinics, refreshConnectedEhrs } = useConnectedEhrs();
   const { data: permissions } = useFeaturePermissions();
-  const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
+  const canConnectClinic = permissions?.permissions?.CONNECT_CLINIC?.enabled === true;
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = React.useCallback(async () => {

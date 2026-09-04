@@ -4,7 +4,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, S
 import { AppWrapper } from '@/components/app-wrapper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
-import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanShowScreen } from '@/hooks/use-feature-permissions';
 import { fetchAvailableServices } from '@/services/api/services';
 import type { ServiceDefinition } from '@/services/api/types';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -19,7 +19,7 @@ export default function ServicesScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const { settings: appSettings, toggleHealthChat } = useSettings();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const { data: permissionsData } = useFeaturePermissions();
+  const canShowScreen = useCanShowScreen();
 
   const [services, setServices] = useState<ServiceDefinition[]>([]);
   const [, setIsLoading] = useState(true);
@@ -50,7 +50,14 @@ export default function ServicesScreen() {
   }, [loadServices]);
 
   // Default to visible/enabled while permissions are loading
-  const isVisible = (featureKey: string) => permissionsData?.[featureKey as keyof typeof permissionsData]?.enabled ?? true
+  /*
+   * COS-856 — was `permissionsData?.[featureKey as keyof typeof permissionsData]`,
+   * the same cast that hid the navigator's key mismatch: it silenced the type
+   * error, every lookup missed, and `?? true` showed everything. Now asks the
+   * entitlement-backed screen map, which is keyed by catalog featureKey and by
+   * app route, and still defaults to visible for anything it does not know.
+   */
+  const isVisible = canShowScreen
   const isUnlocked = (_featureKey: string) => true // TODO: wire to purchase/subscription status
   const isPurchasable = (_featureKey: string) => true // TODO: wire to purchase/subscription status
   const getStatus = (_featureKey: string) => 'active' // TODO: wire to subscription status

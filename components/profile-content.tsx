@@ -82,7 +82,7 @@ export function ProfileContent({
   // COS-735 — About moved onto the entitlements catalog so it is manageable
   // from a plan or feature group. Explicit-grant-only: see the note at the row.
   const canSeeAbout = useHasExplicitGrant('about.view');
-  const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
+  const canConnectClinic = permissions?.permissions?.CONNECT_CLINIC?.enabled === true;
 
   // SCRUM-640: dark-launched habit-journal entry. Default OFF; visible
   // only when backend flag `habit_journal_enabled` (or the per-user

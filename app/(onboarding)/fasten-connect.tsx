@@ -62,7 +62,7 @@ export default function FastenConnectScreen() {
   // default-true would flash the widget to a disabled user.
   const { data: permissions, isLoading: permissionsLoading } = useFeaturePermissions();
   const connectClinicDisabled =
-    permissions !== undefined && permissions.CONNECT_CLINIC?.enabled === false;
+    permissions !== undefined && permissions.permissions?.CONNECT_CLINIC?.enabled === false;
 
   useEffect(() => {
     sendFastenDebug(

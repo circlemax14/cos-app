@@ -7,13 +7,13 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AiClipboardIcon } from '@/components/ui/ai-clipboard-icon';
 import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanShowScreen } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
-  const { data: permissions } = useFeaturePermissions();
+  const canShowScreen = useCanShowScreen();
   const { panHandlers } = useInactivityTimeout();
   /*
    * COS-469 / Phase 4 — when the default-flip flag is ON, the visible
@@ -33,8 +33,25 @@ export default function TabLayout() {
     ),
   };
 
-  // Default to true (visible) while permissions are loading
-  const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
+  /*
+   * COS-856 — entitlement-driven, and actually working.
+   *
+   * This was:
+   *   permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true
+   *
+   * called with lowercase 'home' / 'appointments' / 'reports' against a map
+   * keyed by UPPERCASE Feature names. Every lookup missed, `?? true` caught
+   * it, and every tab was shown on every plan — the gating had never worked.
+   * The `as keyof typeof` cast is what silenced the type error that would
+   * have said so.
+   *
+   * `canShowScreen` asks the backend's screen map, which is keyed by app route
+   * name and by catalog featureKey, and is derived from the PLAN (plus
+   * per-user grants, minus revokes, minus care-manager off-switches). It still
+   * defaults to visible for an unknown route or an in-flight query, so a slow
+   * network never blanks the navigation.
+   */
+  const canShow = canShowScreen;
 
   return (
     <View style={{ flex: 1 }} {...panHandlers}>
@@ -102,15 +119,17 @@ export default function TabLayout() {
         hiding it behind one would make it disappear the moment a plan got the
         answer wrong — precisely when it is needed.
       */}
-      <Tabs.Screen
-        name="care-plan-plus"
-        options={{
-          title: 'Plan+',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
-          ),
-        }}
-      />
+      {canShow('care-plan-plus') && (
+        <Tabs.Screen
+          name="care-plan-plus"
+          options={{
+            title: 'Plan+',
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+            ),
+          }}
+        />
+      )}
       {/*
         Chunk 29 (2026-07-21) — unified-plan Tabs.Screen moved from the
         end of the file (line ~362 previously) to sit RIGHT AFTER
@@ -139,15 +158,17 @@ export default function TabLayout() {
             : { title: 'Unified plan', href: null, headerShown: false }
         }
       />
-      <Tabs.Screen
-        name="plan"
-        options={{
-          title: 'Health Summary',
-          tabBarIcon: ({ color }) => (
-            <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
-          ),
-        }}
-      />
+      {canShow('plan') && (
+        <Tabs.Screen
+          name="plan"
+          options={{
+            title: 'Health Summary',
+            tabBarIcon: ({ color }) => (
+              <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
         name="health-chat"
         options={{
@@ -232,16 +253,18 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
-      <Tabs.Screen
-        name="today-schedule"
-        options={{
-          title: "Today's Schedule",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
-          ),
-          href: null,
-        }}
-      />
+      {canShow('today-schedule') && (
+        <Tabs.Screen
+          name="today-schedule"
+          options={{
+            title: "Today's Schedule",
+            tabBarIcon: ({ color }) => (
+              <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+            ),
+            href: null,
+          }}
+        />
+      )}
       <Tabs.Screen
         name="profile"
         options={{

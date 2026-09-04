@@ -29,7 +29,7 @@ export default function ConnectClinicsScreen() {
   // disabled we must NOT briefly mount the Fasten widget while the check
   // is in flight.
   const { data: permissions, isLoading: permissionsLoading } = useFeaturePermissions();
-  const isConnectClinicEnabled = permissions?.CONNECT_CLINIC?.enabled ?? false;
+  const isConnectClinicEnabled = permissions?.permissions?.CONNECT_CLINIC?.enabled ?? false;
   const navigating = useRef(false);
   const [connectedCount, setConnectedCount] = useState(0);
   const [showProcessingModal, setShowProcessingModal] = useState(false);
