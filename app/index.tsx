@@ -3,8 +3,9 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import ConnectionErrorScreen from '@/components/ConnectionErrorScreen';
 import { checkSession, UserProfile } from '@/services/auth';
 import { readSessionPresence } from '@/lib/auth-tokens';
 import { getCachedProfile } from '@/lib/cached-profile';
@@ -294,27 +295,11 @@ export default function SplashGate() {
     run();
   }, [run, retryKey]);
 
+  // COS-C6: this block moved to components/ConnectionErrorScreen.tsx so the
+  // social sign-in path can show the same screen. Both variants render exactly
+  // what they rendered here — see COS-890 above for why the copy differs.
   if (state === 'no-internet' || state === 'session-unreadable') {
-    const unreadable = state === 'session-unreadable';
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.offlineIcon]}>{unreadable ? '🔐' : '📵'}</Text>
-        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20) }]}>
-          {unreadable ? 'Could not open your session' : 'No Internet Connection'}
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-          {unreadable
-            ? 'This usually clears straight away. Tap retry to continue.'
-            : 'Check your connection and try again.'}
-        </Text>
-        <TouchableOpacity
-          style={[styles.retryButton, { backgroundColor: colors.primary }]}
-          onPress={() => setRetryKey((k) => k + 1)}
-        >
-          <Text style={[styles.retryText, { fontSize: getScaledFontSize(16) }]}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    return <ConnectionErrorScreen variant={state} onRetry={() => setRetryKey((k) => k + 1)} />;
   }
 
   return (
@@ -330,6 +315,7 @@ export default function SplashGate() {
 }
 
 const styles = StyleSheet.create({
+  // The error-state styles moved with the markup to ConnectionErrorScreen.
   container: {
     flex: 1,
     alignItems: 'center',
@@ -337,14 +323,4 @@ const styles = StyleSheet.create({
     gap: 24,
     paddingHorizontal: 24,
   },
-  offlineIcon: { fontSize: 56 },
-  title: { fontWeight: '700', textAlign: 'center' },
-  subtitle: { textAlign: 'center', marginTop: -12 },
-  retryButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  retryText: { color: '#fff', fontWeight: '600' },
 });

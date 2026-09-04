@@ -269,8 +269,9 @@ export function useCancelBiopsychosocialRegeneration() {
  * from `v2/net.ts`).
  *
  * The service export (`updatePlanGoal`) stays in place so tests continue
- * to import it and a one-line mutationFn restore is the calm-window
- * revert path.
+ * to import it — but it is NO LONGER a revert path for this hook: it
+ * targets the legacy AI-plan row, which is the COS-C4 404 (see the
+ * mutationFn comment). Restoring it here would re-break bio goal edits.
  *
  * Two callers today: `app/Home/biopsychosocial-plan.tsx` (Modal closes
  * same-tick, so `mutation.isPending` is presentational dead code there)
@@ -319,8 +320,19 @@ export function useUpdateBioGoal() {
   return useMutation({
     mutationFn: ({ goalId, patch }: { goalId: string; patch: GoalPatch }) => {
       // Fire the actual PUT immediately — no await (chunk 9.5 rule).
+      //
+      // COS-C4: this used to PUT the BPS goal id to the LEGACY AI-plan
+      // endpoint (`/v1/patients/me/health-plan/ai/goals/:id`). The two plans
+      // are separate DynamoDB rows with independently minted uuids, so a BPS
+      // goal id is never found in the AI plan and every edit 404'd. Silent
+      // twice over: fireAndForgetPut swallows the error and onMutate has
+      // already painted the change optimistically, so the card "saved".
+      // The BPS route (cos-backend biopsychosocial-plan.routes.ts, mounted at
+      // /health-plan/biopsychosocial) also accepts `subdomains`, which the AI
+      // schema does not — so the chip edits BioGoalEditorModal sends were
+      // being dropped too. Do not point this back at the /ai/ path.
       void fireAndForgetPut(
-        `/v1/patients/me/health-plan/ai/goals/${encodeURIComponent(goalId)}`,
+        `/v1/health-plan/biopsychosocial/goals/${encodeURIComponent(goalId)}`,
         patch as unknown as Record<string, unknown>,
       )
       // Latch mutation.isPending for the pending window so onSuccess

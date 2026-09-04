@@ -285,7 +285,20 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     return () => { cancelled = true }
   }, [consentState, instrumentDomain])
 
-  if (instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)) {
+  // COS-C1: this used to read
+  //   `instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)`
+  // which spun FOREVER on a 200 that simply doesn't contain `instrumentId`
+  // (dietary screener): isLoading false, error null, instrument undefined —
+  // every leg keeps you in the spinner and the "Check-in not found" screen
+  // below is unreachable dead code on any successful response.
+  //
+  // `isPending` is true exactly while `data` is undefined, which still covers
+  // the paused/offline case the `!instrument && !error` clause was really
+  // there for (a paused query is pending, not loading). Once the query has
+  // settled, a missing id falls through to the not-found screen, whose button
+  // routes out via `returnHref`. Do not reintroduce an `!instrument` term
+  // here — that is what made the exit unreachable.
+  if (instrumentsQuery.isPending) {
     return (
       <AppWrapper>
         <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>

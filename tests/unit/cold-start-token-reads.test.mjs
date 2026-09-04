@@ -29,6 +29,11 @@ const code = (p) =>
 const tokens = code('lib/auth-tokens.ts')
 const client = code('lib/api-client.ts')
 const splash = code('app/index.tsx')
+// COS-C6: the splash's two error states now render
+// components/ConnectionErrorScreen.tsx (the social sign-in path needed the
+// same screen). The COS-890 copy split moved with the markup — it is still
+// pinned, just in its new home.
+const errorScreen = code('components/ConnectionErrorScreen.tsx')
 
 // ── the destructive read ──────────────────────────────────────────────────
 
@@ -90,7 +95,11 @@ test('a REAL network failure still says so', () => {
   // Two other sites set no-internet from an actual failed request; those are
   // honest and must not be swept into the new state.
   assert.match(splash, /setState\('no-internet'\)/)
-  assert.match(splash, /No Internet Connection/)
+  // The splash hands its GateState straight to the shared screen, which owns
+  // the copy. Both halves are asserted so the wire cannot pass on a splash
+  // that renders nothing, or a screen nobody renders.
+  assert.match(splash, /<ConnectionErrorScreen\s+variant=\{state\}/)
+  assert.match(errorScreen, /No Internet Connection/)
 })
 
 test('retry is still offered — it is what made this survivable', () => {
