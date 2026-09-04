@@ -62,3 +62,35 @@ test('the banner uses primitives this file already imports (iOS 26 envelope)', (
     assert.ok(imports.includes(prim), `${prim} should already be imported`);
   }
 });
+
+/**
+ * COS-859 — a screen the plan does not include must be unreachable, not just
+ * absent from the tab bar.
+ *
+ * The navigator gates <Tabs.Screen> entries, which covers the FIVE screens in
+ * the tab bar. The other 55 carry href:null and are reached with router.push()
+ * from inside the app. Vishal removed calendar-settings from his plan and
+ * could still open it — the backend correctly reported it hidden, and nothing
+ * on the client acted on that.
+ */
+test('COS-859: one guard enforces access for every route', () => {
+  const LAYOUT = read('app/Home/_layout.tsx');
+  const HOOK = read('hooks/use-feature-permissions.ts');
+
+  assert.match(LAYOUT, /useEnforceScreenAccess\(\)/, 'the guard must be mounted in the Home layout');
+  assert.match(HOOK, /export function useEnforceScreenAccess/);
+  assert.match(HOOK, /router\.replace\('\/Home'\)/, 'a blocked route must send the patient somewhere');
+});
+
+test('COS-859: it waits for a real answer before blocking anyone', () => {
+  // canShow() defaults to TRUE while the query is in flight, so acting before
+  // `screens` exists would be acting on a default rather than an answer —
+  // and would bounce a patient off a screen they are entitled to.
+  const HOOK = read('hooks/use-feature-permissions.ts');
+  assert.match(HOOK, /if \(!data\?\.screens\) return/);
+});
+
+test('COS-859: the tab root is never blocked, or the redirect would loop', () => {
+  const HOOK = read('hooks/use-feature-permissions.ts');
+  assert.match(HOOK, /route === 'Home' \|\| route === 'index'/);
+});

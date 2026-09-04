@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { usePathname, useRouter } from 'expo-router'
 import { apiClient } from '@/lib/api-client'
 
 export type Feature =
@@ -91,4 +93,46 @@ export function useIsFeatureEnabled(feature: Feature): boolean {
   // default for diagnostic surfaces (false) and the open default for
   // everything else (true) so core flows keep working under flaky network.
   return !FEATURE_DEFAULT_FALSE.has(feature)
+}
+
+/**
+ * COS-859 — block ACCESS to a screen the plan does not include, not just its
+ * tab.
+ *
+ * The navigator gates `<Tabs.Screen>` entries, which covers the five screens
+ * actually in the tab bar. The other 55 carry `href: null` — they are reached
+ * with router.push() from inside the app, so removing one from a plan hid
+ * nothing and it stayed fully reachable. Vishal removed calendar-settings and
+ * could still open it.
+ *
+ * One guard for every route, mounted once in app/Home/_layout.tsx, rather than
+ * a check pasted into sixty screens — the pasted version is the one that is
+ * missing from the sixty-first.
+ *
+ * Redirects rather than rendering a locked page: the route sits inside the tab
+ * navigator, so leaving it mounted keeps its data hooks running and its
+ * queries firing for a screen the patient may not have. Sending them home is
+ * unambiguous and cheap. A "not part of your plan" upsell screen is a
+ * deliberate design decision, not a default.
+ */
+export function useEnforceScreenAccess(): void {
+  const canShow = useCanShowScreen()
+  const { data } = useFeaturePermissions()
+  const pathname = usePathname()
+  const router = useRouter()
+
+  useEffect(() => {
+    // Nothing to enforce until the map has actually loaded. `canShow` defaults
+    // to true while in flight, so acting early would be acting on a default
+    // rather than on an answer.
+    if (!data?.screens) return
+
+    const route = pathname.split('/').filter(Boolean).pop()
+    if (!route) return
+    // The tab root itself is never blocked — bouncing off Home would loop.
+    if (route === 'Home' || route === 'index') return
+    if (canShow(route)) return
+
+    router.replace('/Home')
+  }, [pathname, data, canShow, router])
 }

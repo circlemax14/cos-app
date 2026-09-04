@@ -7,13 +7,20 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AiClipboardIcon } from '@/components/ui/ai-clipboard-icon';
 import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useCanShowScreen } from '@/hooks/use-feature-permissions';
+import { useCanShowScreen, useEnforceScreenAccess } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
   const canShowScreen = useCanShowScreen();
+  /*
+   * COS-859 — the tab gates below only cover the five screens in the tab bar.
+   * The other 55 are href:null routes reached with router.push(), so gating
+   * their <Tabs.Screen> hid nothing and they stayed reachable. This enforces
+   * the same entitlement on whichever route is actually open.
+   */
+  useEnforceScreenAccess();
   const { panHandlers } = useInactivityTimeout();
   /*
    * COS-469 / Phase 4 — when the default-flip flag is ON, the visible
