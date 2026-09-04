@@ -256,6 +256,14 @@ export default function HabitsScreen(): React.JSX.Element {
 
   // COS-856 entitlement gate. Hook runs unconditionally, above every return.
   const canView = useCanRender('habits.view')
+  // Per-control gates. Same rule: unconditional, above every return.
+  // Each hides only its own CONTROL — the draft field it edits keeps its
+  // prefilled value and is still sent on save, so gating one off never
+  // silently clears a routine the patient already has.
+  const canAddRoutine = useCanRender('habits.add-routine')
+  const canSetTime = useCanRender('habits.set-time')
+  const canSetCadence = useCanRender('habits.set-cadence')
+  const canChooseDomain = useCanRender('habits.choose-domain')
 
   if (!canView) return <AppWrapper><View /></AppWrapper>
 
@@ -290,7 +298,7 @@ export default function HabitsScreen(): React.JSX.Element {
           >
             Routines
           </Text>
-          {flag && (
+          {flag && canAddRoutine && (
             <Pressable
               onPress={openAdd}
               accessibilityRole="button"
@@ -496,7 +504,7 @@ export default function HabitsScreen(): React.JSX.Element {
                 already tight, and the value is two numbers. Empty is a real
                 answer — "stretch sometime today" is a legitimate routine — so
                 the hint says so instead of treating blank as an error. */}
-            <Text style={styles.label}>Time of day</Text>
+            {canSetTime && <Text style={styles.label}>Time of day</Text>}
             {/* Ken 2026-08-14: "very difficult to add time manually like 08:30
                 — can we use some meters for selection". Typing HH:MM on a
                 numeric keypad is a poor ask of anyone, and worse for this
@@ -507,6 +515,7 @@ export default function HabitsScreen(): React.JSX.Element {
                 keyboard to trap, and every value it can produce is already
                 valid, so the format hint and its error state are gone too.
                 Same picker the calendar event editor already uses. */}
+            {canSetTime && (
             <Pressable
               onPress={() => { setShowTimePicker((v) => !v) }}
               style={[styles.timeField, { borderColor: colors.subtext as string }]}
@@ -551,8 +560,9 @@ export default function HabitsScreen(): React.JSX.Element {
                 </Pressable>
               ) : null}
             </Pressable>
+            )}
 
-            {showTimePicker ? (
+            {canSetTime && showTimePicker ? (
               <View style={styles.pickerBlock}>
                 {/* Ken 2026-08-14, second pass: "done button is only partially
                     visible".
@@ -612,6 +622,7 @@ export default function HabitsScreen(): React.JSX.Element {
               </View>
             ) : null}
 
+            {canSetTime && (
             <Text
               style={{
                 color: colors.subtext as string,
@@ -622,6 +633,7 @@ export default function HabitsScreen(): React.JSX.Element {
             >
               Appears at this hour on Today\u2019s Schedule. Anytime means no set hour.
             </Text>
+            )}
 
             {/* SCRUM-666 r2 \u2014 a time and a reminder are different questions.
                 Only offered once a time exists: there is no hour to remind at
@@ -684,7 +696,8 @@ export default function HabitsScreen(): React.JSX.Element {
               </Pressable>
             ) : null}
 
-            <Text style={styles.label}>Cadence</Text>
+            {canSetCadence && <Text style={styles.label}>Cadence</Text>}
+            {canSetCadence && (
             <View style={styles.pillRow}>
               {CADENCE_OPTIONS.map((opt) => {
                 const active = editing.cadence === opt.key
@@ -701,8 +714,10 @@ export default function HabitsScreen(): React.JSX.Element {
                 )
               })}
             </View>
+            )}
 
-            <Text style={styles.label}>Domain</Text>
+            {canChooseDomain && <Text style={styles.label}>Domain</Text>}
+            {canChooseDomain && (
             <View style={styles.pillRow}>
               {BPS_OPTIONS.map((opt) => {
                 const active = editing.bpsDomain === opt.key
@@ -719,6 +734,7 @@ export default function HabitsScreen(): React.JSX.Element {
                 )
               })}
             </View>
+            )}
 
             <Text style={styles.label}>Target (optional)</Text>
             {/* Ken 2026-08-14: "what is use of target". Fair — it was two

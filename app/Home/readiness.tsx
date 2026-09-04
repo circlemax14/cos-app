@@ -171,6 +171,7 @@ export default function ReadinessScreen(): React.JSX.Element {
   // Entitlement gate. Hook, so it lives at the top of the component,
   // above every early return. Fail-open — see hooks/use-entitlement.ts.
   const canView = useCanRender('readiness.view')
+  const canViewMetrics = useCanRender('readiness.view-metrics')
 
   const composite = readiness.score?.composite
   const band = readiness.score?.band
@@ -594,7 +595,7 @@ export default function ReadinessScreen(): React.JSX.Element {
         </Section>
 
         {/* Per-metric breakdown */}
-        {drivers.length > 0 && (
+        {canViewMetrics && drivers.length > 0 && (
           <Section title="Today's contribution" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
             {drivers.map((d) => {
               const label = METRIC_LABEL[d.metric] ?? d.metric

@@ -93,6 +93,7 @@ import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
 import { useHomeV2InjectionsEnabled } from '@/hooks/use-home-v2-injections-flag';
 import { useTodayWindow } from '@/hooks/use-local-day';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2738,6 +2739,12 @@ function HomeV2Layout(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const catalog = useScoreCatalog();
   const wellbeing = useWellbeingDerivation();
+  // Entitlement gates. Unconditional, top of component — the v2 surface is
+  // behind EXPO_PUBLIC_HOME_V2_ENABLED today, so these are inert until that
+  // flips, but the gate has to exist before the flag does.
+  const canHome = useCanRender('home.view');
+  const canBannerCta = useCanRender('home.banner-cta');
+  const canWellbeingMapCta = useCanRender('home.wellbeing-map-cta');
   const [patientName, setPatientName] = useState<string>('');
   const [isLoadingPatient, setIsLoadingPatient] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -2809,6 +2816,7 @@ function HomeV2Layout(): React.JSX.Element {
   return (
     <AppWrapper notificationCount={3}>
       <HomeResponsiveProvider>
+        {canHome && (
         <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
@@ -2873,6 +2881,7 @@ function HomeV2Layout(): React.JSX.Element {
             />
           </View>
 
+          {canBannerCta && (
           <View style={{ paddingHorizontal: 16 }}>
             <BpsPlanFocusBanner
               enabled
@@ -2890,8 +2899,9 @@ function HomeV2Layout(): React.JSX.Element {
               getScaledFontWeight={getScaledFontWeight}
             />
           </View>
+          )}
 
-          <WellbeingMapPreview />
+          {canWellbeingMapCta && <WellbeingMapPreview />}
 
           {/* Placeholder shelf — QA-only surfaces for Sleep + Wheel-8D.
               Gated hard on the placeholder flag so production users
@@ -2925,6 +2935,7 @@ function HomeV2Layout(): React.JSX.Element {
             />
           ) : null}
         </ScrollView>
+        )}
       </HomeResponsiveProvider>
     </AppWrapper>
   );
@@ -2932,6 +2943,11 @@ function HomeV2Layout(): React.JSX.Element {
 
 function HomeScreenInner() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
+  // Entitlement gates. Unconditional, above every early return (the
+  // isHomeV2Enabled() bail-out further down is one).
+  const canHome = useCanRender('home.view');
+  const canQuickActions = useCanRender('home.quick-actions');
+  const canTodayWidget = useCanRender('home.today-widget');
   const userImg = undefined;
   const isTabletDevice = isTablet();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -3377,7 +3393,7 @@ function HomeScreenInner() {
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), marginTop: 12 }}>Loading your health data...</Text>
         </View>
       ) : null}
-      {!(isLoadingPatient || isLoadingAppointments) && <ScrollView
+      {canHome && !(isLoadingPatient || isLoadingAppointments) && <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -3479,13 +3495,13 @@ function HomeScreenInner() {
          *         paddingHorizontal on the ON branch — the pills row
          *         supplies its own marginHorizontal:16 internally.
          */}
-        {injectionsEnabled ? (
+        {canQuickActions && (injectionsEnabled ? (
           <HomeQuickActionPills />
         ) : (
           <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
             <QuickActionButtons />
           </View>
-        )}
+        ))}
 
         {/* SCRUM-279 (build 45): iPad-only — kill all extra vertical
             padding around the circle. Ken still saw space on build 44.
@@ -3665,6 +3681,7 @@ function HomeScreenInner() {
             length > 0 gate hiding the whole section when his iPad
             had no events for today. Empty state now surfaces an
             explicit "No appointments today" CTA. */}
+        {canTodayWidget && (
         <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
@@ -3790,6 +3807,7 @@ function HomeScreenInner() {
             </TouchableOpacity>
             )}
           </View>
+        )}
 
         {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
             an accent gradient overlay, four illustrative metric icons,

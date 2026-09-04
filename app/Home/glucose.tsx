@@ -84,6 +84,7 @@ export default function GlucoseTirScreen(): React.JSX.Element {
   const flagEnabled = useCgmGlucoseFlag()
   const { data, isLoading } = useGlucoseTrend(WINDOW_DAYS)
   const canView = useCanRender('glucose.view')
+  const canTirSummary = useCanRender('glucose.view-tir-summary')
 
   if (!flagEnabled) {
     return (
@@ -129,13 +130,13 @@ export default function GlucoseTirScreen(): React.JSX.Element {
             />
           ) : (
             <>
-              <TirSummaryTile
+              {canTirSummary && <TirSummaryTile
                 tir={data.tir}
                 sampleCount={data.tir?.sampleCount ?? data.series.length}
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
-              />
+              />}
 
               <Card style={[styles.chartCard, { backgroundColor: colors.card }]}>
                 <Card.Content>

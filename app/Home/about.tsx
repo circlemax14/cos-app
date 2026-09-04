@@ -1,6 +1,7 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -37,6 +38,13 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 export default function AboutScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // The SCREEN itself is gated upstream on `about.view` via
+  // useHasExplicitGrant, on the drawer row in components/profile-content.tsx —
+  // deliberately NOT useCanRender, because the wildcard the resolver returns
+  // wherever plan_tier_enabled is unset would open it to every patient. Do not
+  // re-gate the screen from in here. This gate is the Version ROW only.
+  const canViewVersion = useCanRender('about.view-version');
 
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -262,7 +270,7 @@ export default function AboutScreen() {
           >
             Build
           </Text>
-          <Row label="Version" value={`${appVersion} (${buildNumber})`} />
+          {canViewVersion && <Row label="Version" value={`${appVersion} (${buildNumber})`} />}
           <Row label="Runtime" value={runtimeVersion} />
           <Row label="Channel" value={channel} />
           <Row label="Platform" value={platform} />

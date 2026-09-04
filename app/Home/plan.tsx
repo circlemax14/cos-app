@@ -49,6 +49,12 @@ function HealthSummaryScreenInner() {
   // while loading, on a failed /v1/auth/me, or when entitlements are absent.
   // Hiding a patient's own labs because a request timed out would be
   // indistinguishable from a correct deny, and nobody would report it.
+  //
+  // COS-856 — `plan.view` is the screen-level sibling of the section keys
+  // below. The tab entry is already denied by `canShow('plan')` in
+  // app/Home/_layout.tsx:185; without this, a deep link still lands on the
+  // screen the layout has already hidden.
+  const canView = useCanRender('plan.view');
   const canIntakeCta = useCanRender('plan.intake-cta');
   const canBpsHistory = useCanRender('plan.bps-history');
   const canConditions = useCanRender('plan.current-conditions');
@@ -86,6 +92,11 @@ function HealthSummaryScreenInner() {
   const intakeQuery = usePatientIntake();
   const intakeComplete = intakeQuery.data?.intake?.status === 'complete';
   const intakeGateOpen = intakeComplete === true;
+
+  // Applied below every hook above — useHealthSummary, the red-flag observer
+  // and usePatientIntake all still run on a denied render, same as the other
+  // `.view` screens.
+  if (!canView) return <AppWrapper><View /></AppWrapper>;
 
   if (isLoading) {
     return (

@@ -61,6 +61,7 @@ function formatDate(iso?: string): string {
 
 export default function AssessmentDetailScreen(): React.JSX.Element {
   const canView = useCanRender('assessment-detail.view')
+  const canViewHistory = useCanRender('assessment-detail.view-history')
   const params = useLocalSearchParams<{ instrumentId?: string }>()
   const instrumentId = String(params.instrumentId ?? '')
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
@@ -214,7 +215,7 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
               </>
             ) : null}
 
-            {records.length > 1 ? (
+            {canViewHistory && records.length > 1 ? (
               <>
                 {sectionLabel('Previous results')}
                 <View style={[styles.card, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
