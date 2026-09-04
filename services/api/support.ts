@@ -53,6 +53,13 @@ export interface SupportTicket {
   status: string;
   routedTo?: SupportRoutedTo;
   attachments?: SupportAttachment[];
+  /**
+   * The reply thread. Only GET /:id and the reply route carry it — the LIST
+   * route spreads the same row, so it is present there too, but a list row is
+   * not a promise of one: a ticket nobody has replied to has no `messages`
+   * attribute at all. Always read it as `?? []`.
+   */
+  messages?: SupportTicketMessage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -185,4 +192,64 @@ export async function uploadSupportAttachment(file: PickedFile): Promise<Support
   }
 
   return { name: file.name, contentType: file.contentType, size: file.size, key: signed.key, url };
+}
+
+/* ─────────────────────────── one ticket, with its thread ───────────────────
+ *
+ * COS-882 — Vishal: "i can see my request in app but i am not able to click on
+ * it to see replies or functionality to send new messages."
+ *
+ * Both routes below already exist on the backend
+ * (cos-backend/src/routes/support-tickets.routes.ts) and both send the WHOLE
+ * ticket through forWire(), so a reply needs no follow-up GET.
+ */
+
+/** One entry in the ticket thread. `staff` covers CSH and agency alike — the
+ *  backend writes only 'patient' | 'staff' (ticket.service.ts TicketMessage). */
+export interface SupportTicketMessage {
+  id: string;
+  authorKind: 'patient' | 'staff';
+  /** Present only when the dashboard supplied a name. */
+  authorLabel?: string;
+  text: string;
+  createdAt: string;
+}
+
+/**
+ * GET /v1/support/tickets/:id — 404s unless the ticket is the caller's own
+ * (the route compares `createdBy` to the token sub), so no client-side
+ * ownership check is needed or wanted here.
+ *
+ * Same double unwrap as everything above, and the same normalise: this route
+ * spreads the stored row, whose key is `id`, not `ticketId`.
+ */
+export async function getSupportTicket(ticketId: string): Promise<SupportTicket> {
+  const response = await apiClient.get<{ success: boolean; data: RawTicket }>(
+    `/v1/support/tickets/${encodeURIComponent(ticketId)}`,
+  );
+  return normalizeTicket(response.data.data);
+}
+
+/**
+ * POST /v1/support/tickets/:id/messages — appends a patient reply and returns
+ * the ticket with the new message already in `messages`, so the caller can
+ * seed the cache instead of refetching.
+ *
+ * The server caps `text` at 4000 characters and rejects an empty string; the
+ * screen enforces the same two rules so a patient learns about it before the
+ * round trip rather than after.
+ *
+ * NOTE: appendTicketMessage applies NO status guard — a reply on a resolved,
+ * rejected or closed ticket is stored exactly like any other. The screen says
+ * so out loud rather than pretending otherwise; see support-ticket-detail.tsx.
+ */
+export async function replyToSupportTicket(
+  ticketId: string,
+  text: string,
+): Promise<SupportTicket> {
+  const response = await apiClient.post<{ success: boolean; data: RawTicket }>(
+    `/v1/support/tickets/${encodeURIComponent(ticketId)}/messages`,
+    { text },
+  );
+  return normalizeTicket(response.data.data);
 }

@@ -421,6 +421,16 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* COS-882 — one request and its thread. Push-only, reached from a row in
+          "Your requests" on support.tsx. Without this declaration expo-router
+          auto-registers the file as a TAB. */}
+      <Tabs.Screen
+        name="support-ticket-detail"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="security-settings"
         options={{
