@@ -18,6 +18,7 @@ import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 // hook on EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED — default OFF so this ships
 // dark and inert until Ken flips the env var + cuts a new bundle.
 import { useEntitlementsSync } from '@/hooks/use-entitlements-sync';
+import { useTimezoneSync } from '@/hooks/use-timezone-sync';
 // ADR-0004 P1 — health-data-changed WSS sync + long-poll fallback. Mirrors
 // the entitlements-sync contract for lab/vaccine/summary/plan invalidation.
 // Renders nothing; flag-gated inside the hook on
@@ -101,6 +102,13 @@ function StackWithAppLock() {
   // Runs iff EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise.
   useEntitlementsSync();
+  /*
+   * COS-871 — send the device's IANA timezone so reminders arrive in the
+   * patient's own morning. The per-user-TZ sweeper (SCRUM-256/259) has been
+   * deployed all along; nothing ever set the field, so every user fell back to
+   * the three fixed UTC crons and a US patient got a 4am "morning" reminder.
+   */
+  useTimezoneSync();
   // ADR-0004 P1: health-data-changed WSS sync + long-poll fallback.
   // Runs iff EXPO_PUBLIC_LABS_REALTIME_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise. Independent WebSocket lifecycle
