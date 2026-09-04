@@ -124,8 +124,17 @@ export function healthSourceLabel(id: string): string {
  * `needs-native-build` — belongs on this device, but its native module is not
  *                        in this build. Render it with `note` as the reason
  *                        and NO control; never a switch that does nothing.
+ * `wrong-platform`     — COS-892. Exists, but not for this operating system.
+ * `wrong-device`       — COS-892. Right OS, wrong handset (Samsung Health).
+ *
+ * Only `connectable` gets a working control. Everything else renders as a row
+ * with its reason — which is the whole point of the last two.
  */
-export type HealthSourceStatus = 'connectable' | 'needs-native-build';
+export type HealthSourceStatus =
+  | 'connectable'
+  | 'needs-native-build'
+  | 'wrong-platform'
+  | 'wrong-device';
 
 export interface HealthSourceOffer {
   source: HealthSource;
@@ -135,14 +144,25 @@ export interface HealthSourceOffer {
 }
 
 /**
- * Which sources may be OFFERED, given the platform and the device
- * manufacturer. Pure — callers pass `Platform.OS` and `deviceManufacturer()`
- * in, so this is testable without a device.
+ * EVERY source, every time — with the reason it can or cannot be used here.
  *
- * A source that does not belong on this device (Apple Health on Android,
- * Samsung Health on a Pixel) is not returned in any form. A source that
- * belongs but has no native module IS returned as `needs-native-build` — the
- * user should know it exists and why it is off.
+ * COS-892. This used to FILTER: Apple Health was not returned at all on
+ * Android, Samsung Health not on a Pixel. Vishal, after seeing the mockups:
+ * "I don't want to remove that card only which is available according to
+ * device. We just need to show these options."
+ *
+ * He is right, and it is the same rule this file already applied to a missing
+ * native module: a row that silently vanishes tells the user nothing, and
+ * tells whoever is supporting them less. The platform rule has not gone
+ * anywhere — it now decides the STATUS rather than membership of the list, and
+ * only `connectable` is ever given a working control, so a Pixel still cannot
+ * connect Apple Health.
+ *
+ * Order is stable (catalogue order), so the list does not reshuffle between
+ * devices or renders.
+ *
+ * Pure — callers pass `Platform.OS` and `deviceManufacturer()` in, so this is
+ * testable without a device.
  */
 export function availability(
   os: string,
@@ -150,25 +170,44 @@ export function availability(
 ): HealthSourceOffer[] {
   const brand = (manufacturer ?? '').trim().toLowerCase();
 
-  return HEALTH_SOURCES.filter((source) => {
-    // Platform gate FIRST. This is what keeps Apple Health off Android.
-    if (source.platform !== 'both' && source.platform !== os) return false;
-    // Manufacturer gate: Samsung Health only on a Samsung device. Substring,
-    // because the constant reads "samsung" on most handsets and "Samsung
-    // Electronics" on some.
-    if (source.requiresManufacturer && !brand.includes(source.requiresManufacturer)) {
-      return false;
+  return HEALTH_SOURCES.map((source) => {
+    const osLabel = source.platform === 'ios' ? 'iPhone' : 'Android';
+
+    // Platform first. This is what still keeps Apple Health unusable on
+    // Android — it is now a reason on the row instead of a missing row.
+    if (source.platform !== 'both' && source.platform !== os) {
+      return {
+        source,
+        status: 'wrong-platform' as const,
+        note: `${source.label} is only available on ${osLabel}.`,
+      };
     }
-    return true;
-  }).map((source) => ({
-    source,
-    status: source.requires.bundled
-      ? ('connectable' as const)
-      : ('needs-native-build' as const),
-    note: source.requires.bundled
-      ? `Includes ${source.aggregates.slice(0, 3).join(', ')} and other devices that sync to ${source.label}.`
-      : `${source.label} isn't in this version of the app. It needs an app update from the store — it can't be switched on from here.`,
-  }));
+
+    // Manufacturer gate: Samsung Health only on a Samsung handset. Substring,
+    // because the constant reads "samsung" on most and "Samsung Electronics"
+    // on some.
+    if (source.requiresManufacturer && !brand.includes(source.requiresManufacturer)) {
+      return {
+        source,
+        status: 'wrong-device' as const,
+        note: `${source.label} only works on a Samsung phone or tablet.`,
+      };
+    }
+
+    if (!source.requires.bundled) {
+      return {
+        source,
+        status: 'needs-native-build' as const,
+        note: `${source.label} isn't in this version of the app. It needs an app update from the store — it can't be switched on from here.`,
+      };
+    }
+
+    return {
+      source,
+      status: 'connectable' as const,
+      note: `Includes ${source.aggregates.slice(0, 3).join(', ')} and other devices that sync to ${source.label}.`,
+    };
+  });
 }
 
 /**
@@ -316,6 +355,20 @@ async function runDisconnect(id: HealthSourceId): Promise<void> {
 export async function connectHealthSource(id: string): Promise<HealthSourceResult> {
   const source = findHealthSource(id);
   if (!source) return { ok: false, message: 'That health source is not available.' };
+
+  /*
+   * COS-892 — the platform rule is enforced HERE, not only in the screen.
+   *
+   * Now that every source is listed on every device, `findHealthSource` will
+   * happily return Apple Health on a Pixel. The screen does not offer a
+   * control for a non-connectable row, but the screen is not the guard: this
+   * function is the one path every connect goes through, and the rule belongs
+   * where it cannot be skipped by a future caller or a deep link.
+   */
+  const offer = availableHealthSources().find((o) => o.source.id === source.id);
+  if (!offer || offer.status !== 'connectable') {
+    return { ok: false, message: offer?.note ?? 'That health source is not available.' };
+  }
 
   try {
     const granted = await runConnect(source);

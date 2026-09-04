@@ -41,6 +41,23 @@ import { FeatureFlagBridge } from '@/components/FeatureFlagBridge';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
+
+import { registerStoreBilling } from '@/services/payments-provider';
+import { isStoreBillingLinked, purchaseThroughStore } from '@/services/native-store-billing';
+
+/*
+ * COS-893 — hand the payment providers their store binding.
+ *
+ * services/payments-provider.ts must not import react-native (a unit test
+ * loads it directly under `node --test`), so the native half is registered
+ * here, at the one place that only ever runs inside the app. Registering is
+ * cheap and touches no native code: isStoreBillingLinked() only reads
+ * NativeModules, and the SDK itself is required lazily at purchase time.
+ */
+registerStoreBilling({
+  isLinked: isStoreBillingLinked,
+  purchase: purchaseThroughStore,
+});
 import { shouldPreventScreenCapture } from '@/lib/screenshot-policy';
 
 // Initialize Sentry as early as possible — before any other imports run side

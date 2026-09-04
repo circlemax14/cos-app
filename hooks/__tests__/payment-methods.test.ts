@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import {
   decidePaymentChoice,
   getPaymentProvider,
+  registerStoreBilling,
   type PaymentChoice,
 } from '../../services/payments-provider.ts';
 
@@ -49,12 +50,20 @@ test('server offers only a method this build cannot finish → none, never a dea
   assert.equal(choice.methods[0]?.usable, false);
 });
 
-test('the drop-in: implementing StoreKit flips the screen to a real choice', () => {
-  const provider = getPaymentProvider('apple-iap');
-  assert.ok(provider);
-  const before = provider.unavailableReason;
-  provider.unavailableReason = null; // what shipping the native module looks like
+test('the drop-in: a linked StoreKit flips the screen to a real choice', () => {
+  /*
+   * COS-893 — this used to assign `provider.unavailableReason = null` to
+   * simulate the drop-in. That field is now a GETTER over the registered store
+   * binding, so the assignment stopped meaning anything. Registering a binding
+   * that reports itself linked is the same simulation done through the seam
+   * the app actually uses — a closer test than the one it replaces.
+   */
+  registerStoreBilling({
+    isLinked: () => true,
+    purchase: () => Promise.resolve({ status: 'cancelled' as const }),
+  });
   try {
+    assert.equal(getPaymentProvider('apple-iap')?.unavailableReason, null);
     const choice: PaymentChoice = decidePaymentChoice([apple, stripe]);
     assert.equal(choice.mode, 'choose');
     // registry.ts: the server's order is a preference contract, not a set.
@@ -63,8 +72,22 @@ test('the drop-in: implementing StoreKit flips the screen to a real choice', () 
       ['apple-iap', 'stripe'],
     );
   } finally {
-    provider.unavailableReason = before;
+    registerStoreBilling(null);
   }
+});
+
+test('with NO binding registered the store methods stay unavailable, with a reason', () => {
+  // This is every unit test, and every binary built before the SDK landed.
+  registerStoreBilling(null);
+  const provider = getPaymentProvider('apple-iap');
+  assert.ok(provider?.unavailableReason);
+  assert.match(provider.unavailableReason, /App Store update/);
+});
+
+test('an unregistered provider still refuses to purchase rather than throwing', async () => {
+  registerStoreBilling(null);
+  const result = await getPaymentProvider('apple-iap')?.purchase('advanced-monthly');
+  assert.equal(result?.status, 'unavailable');
 });
 
 test('a gateway id this build has never heard of is dropped, not rendered nameless', () => {

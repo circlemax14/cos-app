@@ -33,14 +33,53 @@
  * — an available provider with a stub purchase() is the silent dead button
  * this whole file exists to prevent.
  *
+ * COS-893 — the drop-in happened, and it is INJECTED, not imported.
+ *
+ * react-native-iap is now a dependency and services/native-store-billing.ts
+ * knows how to drive it. Importing that here would have imported `react-native`
+ * here, which breaks the property the line below promises — and it did: the
+ * existing hooks/__tests__/payment-methods.test.ts stopped loading the moment
+ * the import was added.
+ *
+ * So the binding is registered at app start instead, the same way
+ * services/user-photo.ts takes its re-signer. Unregistered — every unit test,
+ * and any build where the native half is absent — behaves exactly as it did
+ * before this existed: unavailable, with a reason.
+ *
  * NO IMPORTS AT RUNTIME. Type-only, so `node --test` can load it.
  */
+
+/** What the app registers at start-up. Shaped so this file never names the SDK. */
+export interface StoreBilling {
+  /** Is the native half in THIS binary? */
+  isLinked(): boolean;
+  purchase(productId: string, unavailableReason: string): Promise<PurchaseResult>;
+}
+
+let storeBilling: StoreBilling | null = null;
+
+/** Called once from the app root. Absent in tests, and that is the point. */
+export function registerStoreBilling(impl: StoreBilling | null): void {
+  storeBilling = impl;
+}
 
 import type { AvailableGateway, PaymentGatewayId } from './api/payments';
 
 export type PurchaseResult =
-  /** The store took it. The receipt still has to go to /v1/payments/verify. */
-  | { status: 'purchased'; productId: string }
+  /*
+   * The store took it. COS-893 — it now carries the RECEIPT, because the
+   * receipt is the only record that the purchase happened and dropping it here
+   * meant /v1/payments/verify could never be called: the patient would have
+   * been charged and granted nothing. `transactionId` is Apple's; Google
+   * identifies a purchase by its token plus the product.
+   */
+  | {
+      status: 'purchased';
+      productId: string;
+      receipt: string;
+      platform: 'ios' | 'android';
+      transactionId?: string;
+    }
   | { status: 'cancelled' }
   | { status: 'unavailable'; reason: string };
 
@@ -81,19 +120,38 @@ const PROVIDERS: Record<PaymentGatewayId, PaymentProvider> = {
         reason: 'Card payments open in your browser rather than through the app.',
       }),
   },
+  /*
+   * COS-893 — unavailableReason is now DERIVED from the binary, not asserted.
+   *
+   * It was a constant, so it stayed set after the SDK shipped and the button
+   * would have kept explaining itself while being perfectly able to work. It
+   * is a getter over isStoreBillingLinked() instead: one fact, read at the
+   * moment it is needed, and it flips with the binary rather than with an edit
+   * somebody has to remember.
+   */
   'apple-iap': {
     id: 'apple-iap',
     label: 'Apple',
     detail: 'Charged to your Apple ID, managed in your Apple subscriptions.',
-    unavailableReason: NO_STOREKIT,
-    purchase: () => Promise.resolve({ status: 'unavailable', reason: NO_STOREKIT }),
+    get unavailableReason() {
+      return storeBilling?.isLinked() ? null : NO_STOREKIT;
+    },
+    purchase: (productId: string) =>
+      storeBilling
+        ? storeBilling.purchase(productId, NO_STOREKIT)
+        : Promise.resolve({ status: 'unavailable' as const, reason: NO_STOREKIT }),
   },
   'google-play': {
     id: 'google-play',
     label: 'Google Play',
     detail: 'Charged to your Google Play account, managed in Play subscriptions.',
-    unavailableReason: NO_PLAY_BILLING,
-    purchase: () => Promise.resolve({ status: 'unavailable', reason: NO_PLAY_BILLING }),
+    get unavailableReason() {
+      return storeBilling?.isLinked() ? null : NO_PLAY_BILLING;
+    },
+    purchase: (productId: string) =>
+      storeBilling
+        ? storeBilling.purchase(productId, NO_PLAY_BILLING)
+        : Promise.resolve({ status: 'unavailable' as const, reason: NO_PLAY_BILLING }),
   },
 };
 

@@ -26,6 +26,7 @@ import {
   type PaymentMethod,
 } from '@/services/payments-provider';
 import { launchPurchase, describeOutcome } from '@/lib/launch-purchase';
+import { verifyStorePurchase } from '@/services/api/payments';
 
 export type { PaymentMethod, PaymentChoice };
 
@@ -72,9 +73,39 @@ export function usePaymentMethods(): UsePaymentMethods {
           return result?.reason ?? 'That payment method isn’t available in this version of the app.';
         }
         if (result.status === 'cancelled') return null;
-        // ponytail: the receipt POST to /v1/payments/verify belongs with the
-        // SDK that produces the receipt, so it lands in the same drop-in.
-        return 'Thanks — checking your purchase with the store.';
+
+        /*
+         * COS-893 — the drop-in landed, so the receipt is posted here.
+         *
+         * The store charging the card grants NOTHING on its own. Entitlement
+         * follows only after the server has checked the receipt with Apple or
+         * Google, which is also what stops a client simply claiming it paid.
+         *
+         * A verify failure is reported as "paid, not applied yet" rather than
+         * as a failed purchase, because the money HAS moved. The server is
+         * idempotent on the provider's transaction id, so a later retry — on
+         * the next cold start, say — settles it without double-charging.
+         */
+        try {
+          const applied = await verifyStorePurchase(
+            result.platform === 'ios'
+              ? {
+                  gateway: 'apple-iap',
+                  transactionId: result.transactionId ?? result.productId,
+                  signedPayload: result.receipt,
+                }
+              : {
+                  gateway: 'google-play',
+                  purchaseToken: result.receipt,
+                  productId: result.productId,
+                },
+          );
+          return applied.applied
+            ? null
+            : 'Payment received. Your plan will update shortly.';
+        } catch {
+          return 'Payment received, but we could not confirm it yet. It will apply automatically — no need to pay again.';
+        }
       }
 
       // Redirect. launchPurchase owns the Apple compliance guard (out of
