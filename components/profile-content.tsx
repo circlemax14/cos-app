@@ -49,6 +49,22 @@ interface ProfileContentProps {
   onHealthDetailsPress?: () => void;
   onServicesPress?: () => void;
   onAllergiesPress?: () => void;
+  /**
+   * COS-885 — called immediately BEFORE this list navigates anywhere.
+   *
+   * The drawer in app-wrapper.tsx is `{isDrawerMenuVisible && <View>...}`
+   * inside the SCREEN that opened it. Every row below used to call
+   * router.push() on its own, so that flag stayed true: react-native-screens
+   * detached the departing screen (drawer looked closed), and re-attached it
+   * still open when the patient came back. Vishal, on Help & Support: "when I
+   * click on the home, the left drawer navigation is visible. It should not be
+   * visible to me."
+   *
+   * AppWrapper's OWN row callbacks — onServicesPress, onAllergiesPress and the
+   * rest — already close first. This is the same contract for the rows that
+   * navigate from inside this file.
+   */
+  onNavigate?: () => void;
   showEhrTitle?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
 }
@@ -68,11 +84,27 @@ export function ProfileContent({
   onHealthDetailsPress,
   onServicesPress,
   onAllergiesPress,
+  onNavigate,
   showEhrTitle = true,
   containerStyle,
 }: ProfileContentProps) {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  /**
+   * COS-885 — the one place this file navigates from.
+   *
+   * Thirteen rows called router.push() directly, so "close the drawer first"
+   * had to be remembered thirteen times and was remembered zero times. One
+   * helper is the whole fix: a row added later cannot forget.
+   *
+   * Sign-out is deliberately NOT routed through here — router.replace() to
+   * /(auth) unmounts the tab navigator and the drawer's state with it.
+   */
+  const go = (path: string): void => {
+    onNavigate?.();
+    router.push(path as never);
+  };
 
   // Hide the "Connect Another EHR" card for users with CONNECT_CLINIC
   // disabled by an admin (e.g. the App Store reviewer). Fail closed —
@@ -262,7 +294,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="person"
                 label="Personal Information"
-                onPress={() => router.push('/Home/personal-info' as never)}
+                onPress={() => go('/Home/personal-info')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -279,7 +311,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="emoji-events"
               label="Badges"
-              onPress={() => router.push('/Home/badges' as never)}
+              onPress={() => go('/Home/badges')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -288,7 +320,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="notifications-active"
               label="Reminders"
-              onPress={() => router.push('/Home/reminder-settings' as never)}
+              onPress={() => go('/Home/reminder-settings')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -309,7 +341,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="check-circle-outline"
                 label="Daily habits"
-                onPress={() => router.push('/Home/habit-journal' as never)}
+                onPress={() => go('/Home/habit-journal')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -327,7 +359,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="favorite-border"
                 label="Apple Health"
-                onPress={() => router.push('/Home/apple-health' as never)}
+                onPress={() => go('/Home/apple-health')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -387,7 +419,7 @@ export function ProfileContent({
               description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Update your profile details</Text>}
               left={(props) => <Icon {...props} source="account" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/personal-info' as never)}
+              onPress={() => go('/Home/personal-info')}
             />
           </Card>
 
@@ -417,7 +449,7 @@ export function ProfileContent({
               description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Manage your proxy access</Text>}
               left={(props) => <Icon {...props} source="account-supervisor" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/proxy-management')}
+              onPress={() => go('/Home/proxy-management')}
             />
           </Card>
 
@@ -560,7 +592,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="link"
               label="Linked Accounts"
-              onPress={() => router.push('/Home/linked-accounts' as never)}
+              onPress={() => go('/Home/linked-accounts')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -569,7 +601,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="shield"
               label="Security"
-              onPress={() => router.push('/Home/security-settings' as never)}
+              onPress={() => go('/Home/security-settings')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -601,7 +633,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="card-membership"
               label="Billing"
-              onPress={() => router.push('/Home/billing' as never)}
+              onPress={() => go('/Home/billing')}
               divider={planShelfEnabled}
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -614,7 +646,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="card-membership"
                 label="Your plan"
-                onPress={() => router.push('/Home/plans' as never)}
+                onPress={() => go('/Home/plans')}
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
@@ -628,7 +660,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="help-outline"
                 label="Help & Support"
-                onPress={() => router.push('/Home/support')}
+                onPress={() => go('/Home/support')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -673,7 +705,7 @@ export function ProfileContent({
                 <DrawerRow
                   iconName="info-outline"
                   label="About"
-                  onPress={() => router.push('/Home/about' as never)}
+                  onPress={() => go('/Home/about')}
                   colors={colors}
                   getScaledFontSize={getScaledFontSize}
                   getScaledFontWeight={getScaledFontWeight}

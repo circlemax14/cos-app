@@ -95,8 +95,12 @@ function routedToLabel(routedTo?: string): string {
 }
 
 export default function SupportTicketDetailScreen(): React.JSX.Element {
-  const params = useLocalSearchParams<{ ticketId?: string }>();
-  const ticketId = String(params.ticketId ?? '');
+  // `id` is accepted too. It is what the caller sent for COS-886 and it is the
+  // spelling any older deep link or dashboard-issued URL will carry; reading
+  // both costs nothing and the alternative is this screen's blank "could not
+  // open this request" a second time.
+  const params = useLocalSearchParams<{ ticketId?: string; id?: string }>();
+  const ticketId = String(params.ticketId ?? params.id ?? '');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const fs = getScaledFontSize;
@@ -185,7 +189,21 @@ export default function SupportTicketDetailScreen(): React.JSX.Element {
         >
           <View style={styles.headerRow}>
             <Pressable
-              onPress={() => router.back()}
+              /*
+               * COS-886 — back goes to Help & Support, not Home.
+               *
+               * These screens live in a Tabs navigator, and TabRouter defaults
+               * to `backBehavior: 'firstRoute'` (@react-navigation/routers).
+               * GO_BACK there does not mean "the screen I came from" — it means
+               * the navigator's FIRST route, which is `index`. So router.back()
+               * landed on Home. Vishal: "when I click on the back icon on the
+               * your request, it is taking me to home screen. Ideally, it
+               * should take me to the help and support screen."
+               *
+               * navigate(), not push(): support.tsx is already mounted behind
+               * this screen, so pushing it again would stack a second copy.
+               */
+              onPress={() => router.navigate('/Home/support' as never)}
               accessibilityRole="button"
               accessibilityLabel="Go back to your requests"
               hitSlop={12}

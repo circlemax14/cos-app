@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -115,11 +116,24 @@ export default function SupportScreen() {
   const { data: tickets, isLoading: isLoadingTickets } = useSupportTickets();
   const createTicket = useCreateSupportTicket();
 
-  // /v1/auth/me already sits in the query cache (useUser), so the agency check
-  // costs no extra request. The type on useUser predates agencyId; the server
-  // has returned it since COS-421 (auth.routes.ts → sendSuccess).
+  /*
+   * COS-887 — `agencyId` is NOT the question. `hasElectedAgency` is.
+   *
+   * This read `Boolean(user.agencyId)`, and ensureUserProfile stamps every new
+   * PATIENT with the agency flagged `isDefault: true`. So the id was truthy for
+   * patients who have no agency, and they were asked to choose between "my care
+   * agency" and "Circle Support Health" — which in production are the same
+   * desk. Vishal, testing on an account carrying the default stamp: "where
+   * should this go option should only be visible when the patient opted for
+   * agency."
+   *
+   * The server now answers it directly (auth.routes.ts → isElectedAgency),
+   * because only the server can see the agency row's isDefault flag. Strict
+   * `=== true`: an older backend omits the field, and undefined must read as
+   * "no choice", never as one.
+   */
   const { data: user } = useUser();
-  const hasAgency = Boolean((user as { agencyId?: string | null } | undefined)?.agencyId);
+  const hasAgency = user?.hasElectedAgency === true;
   // No agency → no choice, and CSH regardless of what the toggle last held.
   // The server re-derives this from the profile; this only keeps the UI honest.
   const effectiveRoutedTo: SupportRoutedTo = hasAgency ? (routedTo ?? 'CSH') : 'CSH';
@@ -198,13 +212,25 @@ export default function SupportScreen() {
 
   /*
    * COS-880 — a request row opens its own screen. It looked inert, so nobody
-   * knew: same reason Vishal never opened one. `id` is what the detail screen
-   * reads; a ticket with no id is not pushed at all rather than pushing a
-   * screen that can only say "not found".
+   * knew: same reason Vishal never opened one. A ticket with no id is not
+   * pushed at all, rather than pushing a screen that can only say "not found".
    */
   const handleOpenTicket = useCallback((ticketId?: string | null) => {
     if (!ticketId) return;
-    router.push({ pathname: '/Home/support-ticket-detail', params: { id: ticketId } } as never);
+    /*
+     * COS-886 — the param is `ticketId`, NOT `id`.
+     *
+     * This pushed `{ id: ticketId }`. The detail screen reads
+     * `params.ticketId`, so it resolved to '' — and useSupportTicket is
+     * `enabled: ticketId !== ''`, so the query never ran, `isLoading` stayed
+     * false and `!ticket` was true. Every row landed on "We could not open
+     * this request. Go back and try again." Vishal: "when I click on the view
+     * details, it is showing that we cannot open this request."
+     *
+     * Nothing threw, nothing 404'd, no request was ever made. The screen's own
+     * header comment had the correct call all along.
+     */
+    router.push({ pathname: '/Home/support-ticket-detail', params: { ticketId } } as never);
   }, []);
 
   const budgetUsed = Math.min(1, attachedBytes / MAX_ATTACHMENT_TOTAL_BYTES);
@@ -879,11 +905,83 @@ export default function SupportScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/*
+        COS-888 — the whole screen is blocked while the request is in flight.
+
+        The submit button disabled itself and said "Submitting…", but nothing
+        else did: the destination chips, the attachment pickers and the text
+        box all stayed live, so the form could be edited underneath a request
+        that had already left. Vishal: "once I start submitting, there was a
+        loader. But I was again able to click on the my agency or support help.
+        Ideally, there should be a whole screen loader for this entire support
+        screen, so I should not be able to click on anything."
+
+        A Modal rather than an absolutely-positioned View, because the header
+        with the menu button belongs to AppWrapper and sits OUTSIDE this
+        screen's tree — an overlay in here would leave it tappable. Text only,
+        no ActivityIndicator: this screen renders inside the iOS 26 cold-mount
+        envelope. Attachment uploads are the slow part, so it says so.
+      */}
+      <Modal
+        visible={createTicket.isPending}
+        transparent
+        animationType="fade"
+        // Android's hardware back must not dismiss this — the request is
+        // already on its way and there is nothing to cancel.
+        onRequestClose={() => {}}
+      >
+        <View
+          style={styles.blockingOverlay}
+          accessibilityLabel="Sending your request"
+          accessibilityLiveRegion="polite"
+        >
+          <View style={[styles.blockingCard, { backgroundColor: colors.card }]}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: scaledFontMedium,
+                fontWeight: getScaledFontWeight(600) as any,
+                textAlign: 'center',
+              }}
+            >
+              Sending your request…
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: scaledFontSmall,
+                textAlign: 'center',
+                marginTop: 8,
+                lineHeight: Math.round(scaledFontSmall * 1.4),
+              }}
+            >
+              {files.length > 0
+                ? `Uploading ${files.length} file${files.length > 1 ? 's' : ''}. Please keep the app open.`
+                : 'Please keep the app open.'}
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </AppWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  blockingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  blockingCard: {
+    borderRadius: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 32,
+    maxWidth: 320,
+    width: '100%',
+  },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 24,

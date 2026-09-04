@@ -50,7 +50,10 @@ test('the cards open the subscription screen', () => {
 test('the side menu reaches the subscription screen without a health plan', () => {
   // The menu is the one route that works in every state, so it is the real
   // fix for the dead end. Losing it would put patients back where they were.
-  assert.match(menu, /router\.push\(['"]\/Home\/billing['"]/)
+  // COS-885 moved these rows onto go(), which closes the drawer before it
+  // pushes. Accept either spelling: what this test is about is that the route
+  // is still REACHED from the menu, not which helper reaches it.
+  assert.match(menu, /(?:router\.push|go)\(['"]\/Home\/billing['"]\)/)
 })
 
 // ── failing quietly on the Plan tab ────────────────────────────────────────
@@ -202,7 +205,7 @@ test('THE POINT: Billing has a back affordance at the TOP of the scroll', () => 
 // flag-gated row and must not quietly replace it.
 test('Billing remains the entry point to the patient\'s own plan', () => {
   assert.match(menu, /label="Billing"/)
-  assert.match(menu, /router\.push\('\/Home\/billing' as never\)/)
+  assert.match(menu, /(?:router\.push|go)\('\/Home\/billing'(?: as never)?\)/)
 })
 
 test('the old subscription routes are gone everywhere', () => {
