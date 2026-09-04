@@ -30,6 +30,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { Radii, Spacing } from '@/constants/design-system';
 import { fireAndForgetDelete } from '@/components/unified-plan/v2/net';
+import { useCanRender } from '@/hooks/use-entitlement';
 import type { AiHealthPlan, PlanTask } from '@/services/api/types';
 
 import { MeasurementLogInput } from './MeasurementLogInput';
@@ -123,6 +124,7 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
   }, [confirming]);
 
   const qc = useQueryClient();
+  const canDeleteTask = useCanRender('health-plan.delete-task');
 
   if (!localTask) return null;
 
@@ -342,7 +344,7 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
               </>
             ) : (
               <>
-                <Pressable
+                {canDeleteTask && <Pressable
                   onPress={handleDeletePress}
                   accessibilityRole="button"
                   accessibilityLabel="Delete this task"
@@ -357,7 +359,7 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
                   >
                     Delete
                   </Text>
-                </Pressable>
+                </Pressable>}
                 <TouchableOpacity
                   onPress={() => {
                     // Close this modal first; parent re-opens the edit modal on

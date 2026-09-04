@@ -82,6 +82,7 @@ export default function IntakeReportScreen() {
   const canView = useCanRender('patient-intake-report.view');
   const canViewReport = useCanRender('patient-intake-report.view-report');
   const canShareReport = useCanRender('patient-intake-report.share-report');
+  const canRegenerateReport = useCanRender('patient-intake-report.regenerate-report');
 
   const q = usePatientIntake();
   const intake = q.data?.intake ?? null;
@@ -511,6 +512,7 @@ export default function IntakeReportScreen() {
 
         {canShareReport && <ShareIntakeReportSection />}
 
+        {canRegenerateReport && (
         <Pressable
           onPress={() => setRetakeSheetOpen(true)}
           accessibilityRole="button"
@@ -537,6 +539,7 @@ export default function IntakeReportScreen() {
             Update my answers
           </Text>
         </Pressable>
+        )}
 
         <RetakeSectionSheet
           visible={retakeSheetOpen}

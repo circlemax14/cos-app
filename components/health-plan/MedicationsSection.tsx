@@ -68,6 +68,7 @@ import {
 import { NextScheduledBand } from './NextScheduledBand';
 
 import { DrugLabelFactsBlock } from '@/components/health-plan/DrugLabelFacts';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 /** The one class we assert. Medical is a default, so it gets no colour. */
 const PSYCH_TINT = '#6B4FA8';
@@ -1492,6 +1493,13 @@ function MedicationCard({
    *  match Health Trends banner). */
   flush?: boolean;
 }): React.JSX.Element {
+  // Entitlement gates. Unconditional, at the very top of the component and
+  // above every branch — see hooks/use-entitlement.ts. Only the CONTROLS are
+  // gated; the card's own descriptive block always renders, because the
+  // screen already gates the whole list on `medications.view`.
+  const canEditMedication = useCanRender('medications.edit-medication');
+  const canDeleteMedication = useCanRender('medications.delete-medication');
+  const canSetReminder = useCanRender('medications.set-reminder');
   const [expanded, setExpanded] = React.useState(!collapsible);
   React.useEffect(() => {
     // Reset expanded state if the collapsible prop changes (e.g. row
@@ -1736,7 +1744,7 @@ function MedicationCard({
         ) : null}
         {showControls ? (
           <>
-            <Pressable
+            {canEditMedication && <Pressable
               onPress={onEdit}
               disabled={busy}
               hitSlop={8}
@@ -1745,13 +1753,13 @@ function MedicationCard({
               style={styles.iconBtn}
             >
               <MaterialIcons name="edit" size={getScaledFontSize(18)} color={colors.subtext} />
-            </Pressable>
+            </Pressable>}
             {/* CHUNK 52.1 (Concerns 1 + 3): destructive Hide is now confirm-
                 gated via Alert.alert and spatially separated from Edit with
                 iconBtnDestructive (marginLeft: 12) + asymmetric hitSlop (smaller
                 on the left) so a stray finger between Edit and Hide falls on
                 Edit — the non-destructive side. */}
-            <Pressable
+            {canDeleteMedication && <Pressable
               onPress={confirmRemove}
               disabled={busy}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
@@ -1761,7 +1769,7 @@ function MedicationCard({
               style={styles.iconBtnDestructive}
             >
               <MaterialIcons name="visibility-off" size={getScaledFontSize(18)} color={colors.subtext} />
-            </Pressable>
+            </Pressable>}
           </>
         ) : collapsible ? (
           // Ken 2026-08-07: "When I went to edit it took a few presses for the
@@ -1898,7 +1906,7 @@ function MedicationCard({
             {med.supply?.remainingQuantity != null ? 'I refilled / update quantity' : 'Add supply'}
           </Text>
         </Pressable>
-        {needsRefill ? (
+        {needsRefill && canSetReminder ? (
           <Pressable
             onPress={onSnooze}
             disabled={busy}

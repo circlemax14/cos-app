@@ -58,6 +58,7 @@ export default function BadgesScreen(): React.JSX.Element {
   // Entitlement gates — hooks, so unconditional and at the top.
   const canView = useCanRender('badges.view')
   const canViewBadgeDetail = useCanRender('badges.view-badge-detail')
+  const canViewEarnedBadges = useCanRender('badges.view-earned-badges')
   const [selectedLocked, setSelectedLocked] = React.useState<LockedBadge | null>(null)
 
   const progressQuery = useQuery({
@@ -139,7 +140,11 @@ export default function BadgesScreen(): React.JSX.Element {
                 {defs.map((def) => {
                   const earned = grouped[category].earned.find((e) => e.id === def.id)
                   const locked = grouped[category].locked.find((l) => l.id === def.id)
-                  return (
+                  // The earned tile IS the earned-badge control: its own
+                  // a11y label and the celebration replay hang off `earned`.
+                  // Locked tiles are unaffected — nothing is stranded, this
+                  // screen is read-only.
+                  return (!earned || canViewEarnedBadges) && (
                     <BadgeTile
                       key={def.id}
                       def={def}

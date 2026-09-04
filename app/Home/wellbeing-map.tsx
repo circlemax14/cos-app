@@ -217,6 +217,10 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const canView = useCanRender('wellbeing-map.view')
   const canViewDomain = useCanRender('wellbeing-map.view-domain')
   const canTapSubdomain = useCanRender('wellbeing-map.tap-subdomain')
+  // The sheet already renders its check-in CTA only when onTakeAssessment is
+  // present (WellbeingSubdomainSheet.tsx:374), so withholding the prop hides
+  // the control itself — the sheet still opens, nothing is stranded.
+  const canCheckinSubdomain = useCanRender('wellbeing-map.checkin-subdomain')
 
   // Chunk 28 (2026-07-21): domain-preselect deep-link from PlanScreenV2's
   // "View in wellbeing map" footer. Coerce params.section (string |
@@ -787,7 +791,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         onClose={closeSheet}
         onAddGoal={handleAddGoal}
         onAiSuggest={handleAiSuggest}
-        onTakeAssessment={handleTakeAssessment}
+        onTakeAssessment={canCheckinSubdomain ? handleTakeAssessment : undefined}
       />
     </AppWrapper>
   )

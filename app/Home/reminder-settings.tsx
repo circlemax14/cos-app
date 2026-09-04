@@ -193,10 +193,16 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
   const canView = useCanRender('reminder-settings.view')
   const canMedicationReminders = useCanRender('reminder-settings.toggle-medication-reminders')
   const canAppointmentReminders = useCanRender('reminder-settings.toggle-appointment-reminders')
+  // The two categories whose own shipped copy calls them check-ins:
+  // otherTask ("...exercise, check-ins") and nudges (rendered below under the
+  // "Proactive check-ins" heading). Both ride the one check-in key.
+  const canCheckinReminders = useCanRender('reminder-settings.toggle-checkin-reminders')
   // One row per category is gated; every key not listed here stays as it was.
   const categoryGates: Partial<Record<NotificationCategory, boolean>> = {
     medicationReminders: canMedicationReminders,
     appointments: canAppointmentReminders,
+    otherTask: canCheckinReminders,
+    nudges: canCheckinReminders,
   }
 
   // SCRUM-257: timezone preference for per-user reminder routing.

@@ -36,6 +36,7 @@ export default function HealthDetailsScreen() {
   const canEditWeight = useCanRender('health-details.edit-weight');
   const canEditBloodType = useCanRender('health-details.edit-blood-type');
   const canEditConditions = useCanRender('health-details.edit-conditions');
+  const canDeleteAllergy = useCanRender('allergies.delete-allergy');
 
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState({
@@ -471,9 +472,11 @@ export default function HealthDetailsScreen() {
                     >
                       {allergy}
                     </Text>
+                    {canDeleteAllergy && (
                     <TouchableOpacity onPress={() => removeAllergy(index)}>
                       <Icon source="close" size={getScaledFontSize(18)} color={colors.text} />
                     </TouchableOpacity>
+                    )}
                   </View>
                 ))}
               </View>

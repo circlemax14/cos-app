@@ -137,6 +137,7 @@ export default function CalendarSettingsScreen() {
   // Entitlement gates — hooks, so unconditional and at the top.
   const canView = useCanRender('calendar-settings.view')
   const canSelectDefaultCalendar = useCanRender('calendar-settings.select-default-calendar')
+  const canConnectGoogleCalendar = useCanRender('calendar-settings.connect-google-calendar')
   const {
     calendars,
     hiddenCalendarIds,
@@ -483,7 +484,10 @@ export default function CalendarSettingsScreen() {
               {'\n'}3. Make sure the Calendar toggle is ON for that account
               {'\n\n'}Once that&apos;s done, return here and pull to refresh — your calendars will appear.
             </Text>
-            <Pressable
+            {/* Gate the shortcut only, not the copy above it — the numbered
+                steps still tell an ungated user how to add the account by
+                hand, so nobody is stranded with no calendars and no way in. */}
+            {canConnectGoogleCalendar && <Pressable
               onPress={() => Linking.openSettings().catch(() => {})}
               style={({ pressed }) => [
                 styles.helpBtn,
@@ -493,7 +497,7 @@ export default function CalendarSettingsScreen() {
               accessibilityLabel="Open iOS Settings"
             >
               <Text style={[styles.helpBtnText, { fontSize: getScaledFontSize(14) }]}>Open iOS Settings</Text>
-            </Pressable>
+            </Pressable>}
           </View>
         </ScrollView>}
 

@@ -275,6 +275,10 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
 
   // COS-856 entitlement gate. Hook runs unconditionally, above every return.
   const canView = useCanRender('plan-type-chooser.view')
+  // Gates the selectable tier card itself (the entry control). Not the inline
+  // consent or the Confirm button — those are only reachable by pressing a
+  // card, so hiding the card cannot strand anyone mid-switch.
+  const canChooseBpsPlan = useCanRender('plan-type-chooser.choose-bps-plan')
 
   if (!canView) return <AppWrapper><View /></AppWrapper>
 
@@ -349,6 +353,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
 
             return (
               <View key={card.type}>
+                {canChooseBpsPlan && (
                 <Pressable
                   onPress={() => {
                     if (!disabled) {
@@ -484,6 +489,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
                     </Text>
                   ) : null}
                 </Pressable>
+                )}
 
                 {isExpanded ? (
                   <View
