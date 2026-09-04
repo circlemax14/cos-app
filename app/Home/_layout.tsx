@@ -11,6 +11,23 @@ import { useCanShowScreen, useEnforceScreenAccess } from '@/hooks/use-feature-pe
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 
+/*
+ * COS-860 — how a tab is hidden here, and why it is not a conditional render.
+ *
+ * Expo Router discovers routes from the FILESYSTEM. A <Tabs.Screen> entry only
+ * supplies OPTIONS for a route that already exists, so omitting the entry does
+ * not remove the tab — the route falls back to default options and renders a
+ * bare filename label appended to the end of the bar.
+ *
+ * COS-856 gated tabs as `{canShow('x') && <Tabs.Screen .../>}` and Vishal saw
+ * exactly that: the calendar tab moved to the end of the navigation, became
+ * plain text, and tapping it hit the COS-859 access guard and bounced him
+ * Home. The 51 push-only screens in this file had it right all along — every
+ * one of them hides with an href of null.
+ *
+ * So an entitlement gate drives `href` instead: undefined to show the tab,
+ * null to hide it. The <Tabs.Screen> is always rendered.
+ */
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
   const canShowScreen = useCanShowScreen();
@@ -67,17 +84,16 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
       }}>
-      {canShow('home') && (
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Home',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />
-            ),
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="index"
+        options={{
+          href: canShow('home') ? undefined : null,
+          title: 'Home',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="inbox"
         options={{
@@ -85,17 +101,16 @@ export default function TabLayout() {
           href: null,
         }}
       />
-      {canShow('appointments') && (
-        <Tabs.Screen
-          name="appointments"
-          options={{
-            title: 'Calendar',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
-            ),
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="appointments"
+        options={{
+          href: canShow('appointments') ? undefined : null,
+          title: 'Calendar',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+          ),
+        }}
+      />
       {/*
         COS-469 / Phase 4 — Care Plan tab default swap.
         `unifiedDefault` OFF: legacy `health-plan` remains the visible
@@ -126,17 +141,16 @@ export default function TabLayout() {
         hiding it behind one would make it disappear the moment a plan got the
         answer wrong — precisely when it is needed.
       */}
-      {canShow('care-plan-plus') && (
-        <Tabs.Screen
-          name="care-plan-plus"
-          options={{
-            title: 'Plan+',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
-            ),
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="care-plan-plus"
+        options={{
+          href: canShow('care-plan-plus') ? undefined : null,
+          title: 'Plan+',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
+          ),
+        }}
+      />
       {/*
         Chunk 29 (2026-07-21) — unified-plan Tabs.Screen moved from the
         end of the file (line ~362 previously) to sit RIGHT AFTER
@@ -165,17 +179,16 @@ export default function TabLayout() {
             : { title: 'Unified plan', href: null, headerShown: false }
         }
       />
-      {canShow('plan') && (
-        <Tabs.Screen
-          name="plan"
-          options={{
-            title: 'Health Summary',
-            tabBarIcon: ({ color }) => (
-              <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
-            ),
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="plan"
+        options={{
+          href: canShow('plan') ? undefined : null,
+          title: 'Health Summary',
+          tabBarIcon: ({ color }) => (
+            <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="health-chat"
         options={{
@@ -184,17 +197,16 @@ export default function TabLayout() {
           tabBarItemStyle: { display: 'none' },
         }}
       />
-      {canShow('reports') && (
-        <Tabs.Screen
-          name="reports"
-          options={{
-            title: 'Reports',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
-            ),
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="reports"
+        options={{
+          href: canShow('reports') ? undefined : null,
+          title: 'Reports',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="medications"
         options={{
@@ -260,18 +272,16 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
-      {canShow('today-schedule') && (
-        <Tabs.Screen
-          name="today-schedule"
-          options={{
-            title: "Today's Schedule",
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
-            ),
-            href: null,
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="today-schedule"
+        options={{
+          title: "Today's Schedule",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+          ),
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="profile"
         options={{

@@ -94,3 +94,34 @@ test('COS-859: the tab root is never blocked, or the redirect would loop', () =>
   const HOOK = read('hooks/use-feature-permissions.ts');
   assert.match(HOOK, /route === 'Home' \|\| route === 'index'/);
 });
+
+/**
+ * COS-860 — hide a tab with `href: null`, never by omitting its <Tabs.Screen>.
+ *
+ * COS-856 gated tabs as `{canShow('x') && <Tabs.Screen .../>}`. In Expo Router
+ * routes are auto-discovered from the FILESYSTEM, so omitting the entry does
+ * not remove the tab — it falls back to DEFAULT options and renders a bare
+ * filename label appended to the end of the bar. Vishal saw exactly that: the
+ * calendar tab moved to the end and became plain text, and tapping it hit the
+ * COS-859 guard and bounced him Home.
+ *
+ * The file already knew this: 51 hidden screens, every one using `href: null`.
+ */
+test('COS-860: no tab is gated by omitting its <Tabs.Screen>', () => {
+  const LAYOUT = read('app/Home/_layout.tsx');
+  const conditional = LAYOUT.match(/\{canShow\('[a-z0-9-]+'\) && \(/g) ?? [];
+  assert.deepEqual(
+    conditional,
+    [],
+    'omitting a Tabs.Screen makes Expo Router render a default filename tab; use href instead',
+  );
+});
+
+test('COS-860: every gated tab drives `href`, and the idiom matches the file', () => {
+  const LAYOUT = read('app/Home/_layout.tsx');
+  const gates = LAYOUT.match(/href: canShow\('[a-z0-9-]+'\) \? undefined : null/g) ?? [];
+  assert.ok(gates.length >= 5, `expected the tab-bar screens to gate via href, saw ${gates.length}`);
+  // and the static hides are untouched
+  const statics = LAYOUT.match(/^\s*href: null,$/gm) ?? [];
+  assert.ok(statics.length > 40, 'the push-only routes must keep their href: null');
+});
