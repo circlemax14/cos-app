@@ -152,7 +152,8 @@ test('it offers a way forward, not just a dead end', () => {
    */
   assert.match(noCheckIns, /Choose a different plan/)
   assert.match(plus, /canSwitch\s*\?\s*\(\)\s*=>\s*setReopened\(true\)/)
-  assert.match(plus, /canSubscribe\s*\n?\s*\?\s*\(\)\s*=>\s*router\.push\('\/Home\/plans'/)
+  assert.match(plus, /canSubscribe && canShowScreen\('plans'\)/)
+  assert.match(plus, /router\.push\('\/Home\/plans'/)
   // Neither mode available: render no button rather than an inert one.
   assert.match(noCheckIns, /\{onChoosePlan \? \(/)
 })

@@ -470,6 +470,18 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/*
+        COS-917 — where a plan-blocked route sends the patient.
+        Push-only, and deliberately NOT in the entitlements catalog: gating the
+        screen that explains a gate is a redirect loop.
+      */}
+      <Tabs.Screen
+        name="plan-feature-unavailable"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="linked-accounts"
         options={{

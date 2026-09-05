@@ -131,8 +131,33 @@ export function useEnforceScreenAccess(): void {
     if (!route) return
     // The tab root itself is never blocked — bouncing off Home would loop.
     if (route === 'Home' || route === 'index') return
+    /*
+     * COS-917 — and neither is the screen that EXPLAINS the block, for the
+     * same reason. Its route name is deliberately absent from the catalog and
+     * from ROUTE_ALIASES so canShow() falls through to true, but skipping it
+     * by name means a catalog entry added later cannot create the loop.
+     */
+    if (route === 'plan-feature-unavailable') return
     if (canShow(route)) return
 
-    router.replace('/Home')
+    /*
+     * COS-917 — say why, instead of teleporting them Home.
+     *
+     * This was `router.replace('/Home')`. The guard is right and stays; where
+     * it sent people was not. From the patient's side a redirect with no
+     * message is a button that does nothing — Vishal hit it three times in one
+     * session (the plan pill, "view progress", "Choose a different plan") and
+     * reported it three times as "nothing is happening" and "it is taking me
+     * to the home screen, I don't know what is happening".
+     *
+     * A scan found 33 navigation targets this can bounce. Patching 33 call
+     * sites would be the wrong altitude and would miss the 34th; one
+     * destination that explains itself covers every one, including those added
+     * later. The route name rides along so the screen can name the feature.
+     */
+    router.replace({
+      pathname: '/Home/plan-feature-unavailable',
+      params: { route },
+    } as never)
   }, [pathname, data, canShow, router])
 }

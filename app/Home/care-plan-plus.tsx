@@ -51,6 +51,7 @@ import { PlanBuildingBanner } from '@/components/plan/PlanBuildingBanner';
 import { PlanHasNoCheckIns } from '@/components/plan/PlanHasNoCheckIns';
 import { usePatientInfo } from '@/hooks/use-patient';
 import { useCanRender } from '@/hooks/use-entitlement';
+import { useCanShowScreen } from '@/hooks/use-feature-permissions';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -147,6 +148,9 @@ function CarePlanPlusInner(): React.JSX.Element {
 
   const patientPlansQuery = usePatientPlans();
   const { canSwitch, canSubscribe } = usePlanChoiceControls();
+  // COS-917 — the same map useEnforceScreenAccess redirects on, asked BEFORE
+  // we offer the door rather than after the patient has walked into it.
+  const canShowScreen = useCanShowScreen();
   const showPlanGate =
     canSwitch &&
     (reopened || seen === false) &&
@@ -244,14 +248,25 @@ function CarePlanPlusInner(): React.JSX.Element {
          *
          * The two modes are deliberate and mutually exclusive: free-switch
          * when nobody can pay, subscribe when they can. The bug was that only
-         * one of them had a route out of this screen. Now both do, and when
-         * neither is available the button is not rendered at all — the rule
-         * this screen already applies to a plan list with no cards.
+         * one of them had a route out of this screen.
+         *
+         * COS-917 — AND THE PAID ROUTE HAS TO BE REACHABLE.
+         *
+         * COS-916 sent a paying patient to /Home/plans without asking whether
+         * they may open it. screen-access.service.ts aliases `plans` to the
+         * `billing` feature, billing is deliberately NOT public, and a plan
+         * granting no features therefore fails the check — so
+         * useEnforceScreenAccess redirected straight back to Home. Vishal:
+         * "when I click on it, it is taking me to the home screen."
+         *
+         * That is the drawer bug again (COS-897): a control must obey the same
+         * entitlement the route enforcer does, or it is a door onto a bounce.
+         * Offering nothing is honest; offering a trapdoor is not.
          */
         onChoosePlan={
           canSwitch
             ? () => setReopened(true)
-            : canSubscribe
+            : canSubscribe && canShowScreen('plans')
               ? () => router.push('/Home/plans' as never)
               : null
         }

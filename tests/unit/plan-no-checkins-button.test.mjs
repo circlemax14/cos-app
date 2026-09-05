@@ -31,7 +31,11 @@ const status = code('components/plan/PlanStatusSection.tsx')
 
 test('THE POINT: the handler branches on which mode is actually available', () => {
   assert.match(screen, /canSwitch\s*\?\s*\(\)\s*=>\s*setReopened\(true\)/)
-  assert.match(screen, /canSubscribe\s*\n?\s*\?\s*\(\)\s*=>\s*router\.push\('\/Home\/plans'/)
+  // COS-917 added the reachability check: `plans` aliases to the non-public
+  // `billing` feature, so offering it unconditionally sent a patient whose
+  // plan lacks billing.view straight into an enforcer bounce.
+  assert.match(screen, /canSubscribe && canShowScreen\('plans'\)/)
+  assert.match(screen, /router\.push\('\/Home\/plans'/)
 })
 
 test('and is NULL when neither mode is available — no button at all', () => {
