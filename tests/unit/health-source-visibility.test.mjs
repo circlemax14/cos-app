@@ -24,17 +24,18 @@ const code = (p) =>
 const src = code('services/health-sources.ts')
 const screen = code('app/Home/apple-health.tsx')
 
-test('THE POINT: a source this device can never use is not listed at all', () => {
+test('THE POINT: a source this device can never use is never offered', () => {
+  // COS-899 replaced the filter with one explicit branch per platform, so this
+  // now asserts the OUTCOME rather than the mechanism: no branch can hand an
+  // iPhone a Samsung row, because the iOS branch returns before Android is
+  // considered and names its single source outright.
   const fn = src.match(/export function availability\([\s\S]*?\n\}/)
   assert.ok(fn, 'availability() must exist')
-  assert.match(fn[0], /HEALTH_SOURCES\.filter\(/, 'the platform gate is a filter again')
-  assert.match(fn[0], /source\.platform !== 'both' && source\.platform !== os/)
-  assert.match(fn[0], /return false/, 'and it genuinely excludes')
-})
-
-test('the Samsung handset rule excludes too — not an iPhone row with an excuse', () => {
-  const fn = src.match(/export function availability\([\s\S]*?\n\}/)
-  assert.match(fn[0], /requiresManufacturer && !brand\.includes\(source\.requiresManufacturer\)/)
+  const ios = fn[0].slice(fn[0].indexOf("os === 'ios'"))
+  const iosReturn = ios.slice(0, ios.indexOf(';') + 1)
+  assert.match(iosReturn, /apple-health/)
+  assert.doesNotMatch(iosReturn, /samsung|health-connect/)
+  assert.match(fn[0], /if \(os !== 'android'\) return \[\];/, 'an unknown platform is offered nothing')
 })
 
 test('THE POINT: a source that BELONGS here but is not in this build still shows', () => {
@@ -99,38 +100,56 @@ test('the ROUTE keeps its filename — renaming it would break every deep link',
   assert.match(drawer, /go\('\/Home\/apple-health'\)/)
 })
 
-// ── COS-898: Apple Watch is a row, not a second integration ────────────────
+// ── COS-899: exactly ONE source is offered per device ─────────────────────
 
-test('THE POINT: the app catalogue now matches the server catalogue', () => {
-  // The server has carried five sources all along, with a note saying the
-  // Watch is listed separately because Vishal asked for it. The app offered
-  // three, so the two rows he asked for never existed.
-  for (const id of ['apple-health', 'apple-watch', 'samsung-health', 'health-connect', 'other-wearable']) {
-    assert.match(src, new RegExp(`id: '${id}'`), `${id} missing from the app catalogue`)
+test('THE POINT: iOS is offered Apple Health and nothing else', () => {
+  const fn = src.match(/export function availability\([\s\S]*?\n\}/)
+  assert.ok(fn)
+  assert.match(fn[0], /if \(os === 'ios'\) return \[offerFor\(byId\('apple-health'\)\)\];/)
+})
+
+test('the Watch and the other-wearable rows are gone', () => {
+  // Apple exposes no direct Watch connection, so that row was a data-provenance
+  // choice dressed up as a device. Per-vendor OAuth is weeks of partner
+  // approval per brand, so that row advertised something code cannot deliver.
+  assert.doesNotMatch(src, /id: 'apple-watch'/)
+  assert.doesNotMatch(src, /id: 'other-wearable'/)
+  assert.match(src, /export type HealthSourceId = 'apple-health' \| 'samsung-health' \| 'health-connect';/)
+})
+
+test('THE POINT: a Samsung handset gets Samsung Health, everyone else Health Connect', () => {
+  const fn = src.match(/export function availability\([\s\S]*?\n\}/)
+  assert.match(fn[0], /const isSamsung = brand\.includes\(/)
+  assert.match(fn[0], /if \(!isSamsung\) return \[offerFor\(healthConnect\)\];/)
+})
+
+test('"and Samsung Health is available" is honoured, not ignored', () => {
+  // If Health Connect ships first, a Galaxy owner should get the thing that
+  // works rather than the thing that is merely more specific.
+  const fn = src.match(/export function availability\([\s\S]*?\n\}/)
+  assert.match(fn[0], /if \(samsung\.requires\.bundled\) return \[offerFor\(samsung\)\];/)
+  assert.match(fn[0], /if \(healthConnect\.requires\.bundled\) return \[offerFor\(healthConnect\)\];/)
+})
+
+test('one source is offered, never two', () => {
+  const fn = src.match(/export function availability\([\s\S]*?\n\}/)
+  // Every return is a single-element array.
+  const returns = fn[0].match(/return \[[^\]]*\];/g) ?? []
+  assert.ok(returns.length >= 4, 'every branch returns a list')
+  for (const r of returns) {
+    assert.equal((r.match(/offerFor\(/g) ?? []).length <= 1, true, `more than one source offered: ${r}`)
   }
 })
 
-test('Apple Watch asks for the SAME HealthKit permission, not a second prompt', () => {
-  const fn = src.match(/async function runConnect\([\s\S]*?\n\}/)
-  assert.ok(fn)
-  assert.match(fn[0], /case 'apple-health':\s*\n\s*case 'apple-watch': \{/)
+test('the shared-path helper went with the row that needed it', () => {
+  // sharesDataPath existed only because apple-health and apple-watch were one
+  // grant under two labels. A helper that can never return true is a decision
+  // nobody can read.
+  assert.doesNotMatch(src, /sharesDataPath/)
 })
 
-test('THE POINT: switching between them does NOT tear down the shared path', () => {
-  // setAppleHealthEnabled(false) is the data-path switch both read. Running
-  // the teardown on the outgoing row would turn off the path the incoming row
-  // needs — pick Apple Watch, receive nothing.
-  assert.match(src, /function sharesDataPath/)
-  assert.match(src, /if \(replaced && !sharesDataPath\(replaced, source\.id\)\)/)
-})
-
-test('the Watch row says plainly that Apple allows no direct connection', () => {
-  assert.match(src, /Apple gives apps no direct Watch connection/)
-})
-
-test('other wearables are listed as not-yet rather than omitted', () => {
-  assert.match(src, /id: 'other-wearable'/)
-  assert.match(src, /Oura, Whoop, Fitbit or Garmin account directly/)
-  // Not connectable: there is no vendor OAuth in this build.
-  assert.match(src, /module: 'direct-vendor-oauth', bundled: false/)
+test('a source that belongs here but is not in this build still explains itself', () => {
+  const fn = src.match(/export function availability\([\s\S]*?\n\}/)
+  assert.match(fn[0], /'needs-native-build'/)
+  assert.match(fn[0], /isn't in this version of the app/)
 })

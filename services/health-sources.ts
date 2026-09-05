@@ -52,20 +52,28 @@ import { initializeHealthKit } from '@/services/health';
 // ─── Catalogue ───────────────────────────────────────────────────────────────
 
 /*
- * COS-898 — the app catalogue now matches the server's.
+ * COS-899 — THREE sources, and exactly ONE is offered per device.
  *
- * cos-backend/src/services/health-source.service.ts has carried five sources
- * since it was written — apple-health, apple-watch, samsung-health,
- * health-connect, other-wearable — with a note saying the Watch is listed
- * separately "because Vishal wants them listed separately in the UI". The app
- * only ever offered three, so the two rows he asked for never appeared.
+ * COS-898 briefly added apple-watch and other-wearable, matching the server's
+ * five-row catalogue. Vishal, after we established that Apple exposes no
+ * direct Watch connection and that per-vendor OAuth is weeks of work per
+ * brand: "I think we should go with three rows only... for Apple we will show
+ * just Apple Health... and for Android, if the device is Samsung and Samsung
+ * Health is available then we will show Samsung Health, otherwise the general
+ * Health Connect feature any Android device have."
+ *
+ * He is right on both counts. An Apple Watch row cannot be a second
+ * connection — it is the same HealthKit grant — so it was a choice about data
+ * provenance dressed up as a device, and that is a harder thing to explain
+ * than it is worth. And "Other wearable" advertised something no amount of
+ * app code delivers: Oura, Whoop, Fitbit and Garmin each need their own
+ * developer account and partner approval before a line of it can work.
+ *
+ * The server still lists five. That is fine and deliberate: the server's list
+ * is an allowlist of ids it will ACCEPT, and it is correct for it to be wider
+ * than what the client offers. Nothing breaks by offering fewer.
  */
-export type HealthSourceId =
-  | 'apple-health'
-  | 'apple-watch'
-  | 'samsung-health'
-  | 'health-connect'
-  | 'other-wearable';
+export type HealthSourceId = 'apple-health' | 'samsung-health' | 'health-connect';
 
 export interface HealthSource {
   id: HealthSourceId;
@@ -114,21 +122,6 @@ export const HEALTH_SOURCES: readonly HealthSource[] = [
     note: 'Everything your iPhone already collects, plus any app or band that writes into Apple Health.',
   },
   {
-    /*
-     * Same HealthKit permission as apple-health — deliberately. Apple exposes
-     * no direct Watch connection to third-party apps, so this row is not a
-     * second integration; it is a preference for WHERE the numbers come from.
-     * Picking it says "use what the Watch recorded" rather than what the phone
-     * counted, which is a real difference in heart rate, workouts and sleep.
-     */
-    id: 'apple-watch',
-    label: 'Apple Watch',
-    platform: 'ios',
-    aggregates: ['Apple Watch'],
-    requires: { module: 'react-native-health', bundled: true },
-    note: 'Reads through Apple Health — Apple gives apps no direct Watch connection. Choosing this prefers what the Watch recorded over what the phone counted.',
-  },
-  {
     id: 'samsung-health',
     label: 'Samsung Health',
     platform: 'android',
@@ -146,22 +139,6 @@ export const HEALTH_SOURCES: readonly HealthSource[] = [
     // ponytail: same — Android's aggregator, i.e. how "connect any other
     // wearable" gets answered on Android once the module is in the binary.
     requires: { module: 'react-native-health-connect', bundled: false },
-  },
-  {
-    /*
-     * Oura, Whoop, Fitbit and Garmin each have their own cloud API, so they
-     * CAN be connected directly, without Apple Health or Health Connect in the
-     * middle. That is a real integration per vendor — OAuth, a registered
-     * developer account, a redirect URI and a token store — and none of it
-     * exists yet. Listed so the answer to "can I connect my Oura?" is on the
-     * screen instead of being absent.
-     */
-    id: 'other-wearable',
-    label: 'Other wearable',
-    platform: 'both',
-    aggregates: ['Oura', 'Whoop', 'Fitbit', 'Garmin'],
-    requires: { module: 'direct-vendor-oauth', bundled: false },
-    note: 'Connect an Oura, Whoop, Fitbit or Garmin account directly. Not available yet — each one needs its own account link.',
   },
 ];
 
@@ -226,37 +203,57 @@ export function availability(
 ): HealthSourceOffer[] {
   const brand = (manufacturer ?? '').trim().toLowerCase();
 
-  return HEALTH_SOURCES.filter((source) => {
-    // Platform gate FIRST. This is what keeps Apple Health off Android and
-    // Samsung Health off an iPhone — neither can ever be acted on there, so
-    // neither is a choice.
-    if (source.platform !== 'both' && source.platform !== os) return false;
-    // Manufacturer gate: Samsung Health only on a Samsung handset. Substring,
-    // because the constant reads "samsung" on most and "Samsung Electronics"
-    // on some.
-    if (source.requiresManufacturer && !brand.includes(source.requiresManufacturer)) {
-      return false;
-    }
-    return true;
-  }).map((source) => {
-    if (!source.requires.bundled) {
-      return {
-        source,
-        status: 'needs-native-build' as const,
-        note:
-          source.note ??
-          `${source.label} isn't in this version of the app. It needs an app update from the store — it can't be switched on from here.`,
-      };
-    }
+  const offerFor = (source: HealthSource): HealthSourceOffer =>
+    source.requires.bundled
+      ? {
+          source,
+          status: 'connectable' as const,
+          note:
+            source.note ??
+            `Includes ${source.aggregates.slice(0, 3).join(', ')} and other devices that sync to ${source.label}.`,
+        }
+      : {
+          source,
+          status: 'needs-native-build' as const,
+          note: `${source.label} isn't in this version of the app. It needs an app update from the store — it can't be switched on from here.`,
+        };
 
-    return {
-      source,
-      status: 'connectable' as const,
-      note:
-        source.note ??
-        `Includes ${source.aggregates.slice(0, 3).join(', ')} and other devices that sync to ${source.label}.`,
-    };
-  });
+  const byId = (id: HealthSourceId): HealthSource =>
+    HEALTH_SOURCES.find((s) => s.id === id) as HealthSource;
+
+  // ── iOS: Apple Health, and nothing else. ──────────────────────────────
+  //
+  // The Watch, and every band that writes into Apple Health, arrives through
+  // this one permission. There is no second thing to offer.
+  if (os === 'ios') return [offerFor(byId('apple-health'))];
+
+  if (os !== 'android') return [];
+
+  // ── Android: Samsung Health on a Samsung, Health Connect otherwise. ───
+  //
+  // Substring match, because the manufacturer constant reads "samsung" on
+  // most handsets and "Samsung Electronics" on some.
+  const samsung = byId('samsung-health');
+  const healthConnect = byId('health-connect');
+  const isSamsung = brand.includes(samsung.requiresManufacturer ?? 'samsung');
+
+  if (!isSamsung) return [offerFor(healthConnect)];
+
+  /*
+   * "if the device is Samsung and Samsung Health is available, then we will
+   * show Samsung Health — otherwise the general Health Connect."
+   *
+   * The `available` half of that matters, and it is not hypothetical: neither
+   * Android module is in a build today, and if Health Connect ships first a
+   * Galaxy owner should be given the thing that works rather than the thing
+   * that is merely more specific. So Samsung Health wins when it can actually
+   * be connected, and loses to a Health Connect that can. When NEITHER can,
+   * the Samsung row is the more useful of the two dead ends — it names the app
+   * that phone actually has.
+   */
+  if (samsung.requires.bundled) return [offerFor(samsung)];
+  if (healthConnect.requires.bundled) return [offerFor(healthConnect)];
+  return [offerFor(samsung)];
 }
 
 /**
@@ -366,11 +363,7 @@ async function runConnect(source: HealthSource): Promise<boolean> {
   }
 
   switch (source.id) {
-    // COS-898 — one case, two rows. The Watch writes into HealthKit, so there
-    // is exactly one permission to ask for and asking twice would prompt the
-    // patient twice for the same thing.
-    case 'apple-health':
-    case 'apple-watch': {
+    case 'apple-health': {
       const granted = await initializeHealthKit();
       // Keep the legacy boolean in step — lib/apple-health-gate.ts and
       // useHealthKitTrends still read it as the data-path switch.
@@ -385,23 +378,16 @@ async function runConnect(source: HealthSource): Promise<boolean> {
 }
 
 /** Per-source teardown. Best-effort; must never block a switch. */
-/**
- * COS-898 — sources that read through the SAME underlying permission.
+/*
+ * COS-899 — sharesDataPath() is gone with the apple-watch row.
  *
- * apple-health and apple-watch are one HealthKit grant wearing two labels.
- * Switching between them must not run the teardown: setAppleHealthEnabled(false)
- * is the data-path switch that lib/apple-health-gate.ts and useHealthKitTrends
- * both read, so tearing down the outgoing row would turn off the very path the
- * incoming row needs — the patient would pick Apple Watch and receive nothing.
+ * It existed because apple-health and apple-watch were one HealthKit grant
+ * under two labels, and switching between them had to skip the teardown.
+ * With one HealthKit row there is no pair to compare, and a helper that can
+ * never return true is a decision nobody can read.
  */
-const HEALTHKIT_SOURCES: readonly HealthSourceId[] = ['apple-health', 'apple-watch'];
-
-function sharesDataPath(a: HealthSourceId, b: HealthSourceId): boolean {
-  return HEALTHKIT_SOURCES.includes(a) && HEALTHKIT_SOURCES.includes(b);
-}
-
 async function runDisconnect(id: HealthSourceId): Promise<void> {
-  if (HEALTHKIT_SOURCES.includes(id)) {
+  if (id === 'apple-health') {
     // iOS does not let an app revoke its own HealthKit read access — that
     // lives in Settings > Privacy & Security > Health. Dropping the local
     // preference is the honest maximum, and it does stop the data path.
@@ -446,9 +432,7 @@ export async function connectHealthSource(id: string): Promise<HealthSourceResul
 
     const previous = await getConnectedHealthSource();
     const replaced = previous && previous.id !== source.id ? previous.id : null;
-    // Only tear the old one down when it does not share a permission with the
-    // new one — see sharesDataPath.
-    if (replaced && !sharesDataPath(replaced, source.id)) await runDisconnect(replaced);
+    if (replaced) await runDisconnect(replaced);
     await writeConnectedHealthSource({ id: source.id, connectedAt: new Date().toISOString() });
 
     return {
