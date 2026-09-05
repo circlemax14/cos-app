@@ -94,13 +94,15 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="inbox"
-        options={{
-          title: 'Inbox',
-          href: null,
-        }}
-      />
+      {/*
+        COS-906 — the `inbox` entry is gone with its screen.
+        app/Home/inbox.tsx no longer exists, so this declared options for a
+        route expo-router cannot resolve. Harmless only because href was null;
+        a future reader would have gone looking for the screen. Every other
+        Tabs.Screen here still has a file, and every file here still has an
+        entry — checked, because a file WITHOUT an entry is the COS-860 bug
+        that renders a stray text tab at the end of the bar.
+      */}
             <Tabs.Screen
         name="appointments"
         options={{
