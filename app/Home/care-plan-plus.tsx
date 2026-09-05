@@ -31,6 +31,7 @@
  * a cold-mount surface.
  */
 import React, { useCallback, useState } from 'react';
+import { router } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -145,7 +146,7 @@ function CarePlanPlusInner(): React.JSX.Element {
   }, []);
 
   const patientPlansQuery = usePatientPlans();
-  const { canSwitch } = usePlanChoiceControls();
+  const { canSwitch, canSubscribe } = usePlanChoiceControls();
   const showPlanGate =
     canSwitch &&
     (reopened || seen === false) &&
@@ -231,7 +232,29 @@ function CarePlanPlusInner(): React.JSX.Element {
     return (
       <PlanHasNoCheckIns
         planName={patientPlansQuery.data?.billing?.planName ?? null}
-        onChoosePlan={() => setReopened(true)}
+        /*
+         * COS-916 — send them where they can actually act.
+         *
+         * This passed `() => setReopened(true)` unconditionally. `reopened`
+         * only drives `showPlanGate`, which is gated on `canSwitch` —
+         * and canSwitch is `selfSwitchEnabled && !canPay`. So the moment
+         * Stripe was enabled, canPay went true, canSwitch went false, and the
+         * button set a flag nothing read. Vishal: "when I click on it, nothing
+         * is happening."
+         *
+         * The two modes are deliberate and mutually exclusive: free-switch
+         * when nobody can pay, subscribe when they can. The bug was that only
+         * one of them had a route out of this screen. Now both do, and when
+         * neither is available the button is not rendered at all — the rule
+         * this screen already applies to a plan list with no cards.
+         */
+        onChoosePlan={
+          canSwitch
+            ? () => setReopened(true)
+            : canSubscribe
+              ? () => router.push('/Home/plans' as never)
+              : null
+        }
       />
     );
   }

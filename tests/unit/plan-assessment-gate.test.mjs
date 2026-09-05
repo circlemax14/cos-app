@@ -140,8 +140,21 @@ test('THE POINT: only when the PLAN said so, never the tier', () => {
 })
 
 test('it offers a way forward, not just a dead end', () => {
+  /*
+   * COS-916 — this asserted the exact handler `() => setReopened(true)`, and
+   * that handler WAS the dead end it was written to prevent. `reopened` only
+   * drives showPlanGate, which is gated on canSwitch — `selfSwitchEnabled &&
+   * !canPay` — so enabling Stripe made canPay true, canSwitch false, and the
+   * button set a flag nothing read. The test passed the whole time.
+   *
+   * It now asserts the INTENT: there is a way forward in whichever mode is
+   * available, and no button at all when there is none.
+   */
   assert.match(noCheckIns, /Choose a different plan/)
-  assert.match(plus, /onChoosePlan=\{\(\) => setReopened\(true\)\}/)
+  assert.match(plus, /canSwitch\s*\?\s*\(\)\s*=>\s*setReopened\(true\)/)
+  assert.match(plus, /canSubscribe\s*\n?\s*\?\s*\(\)\s*=>\s*router\.push\('\/Home\/plans'/)
+  // Neither mode available: render no button rather than an inert one.
+  assert.match(noCheckIns, /\{onChoosePlan \? \(/)
 })
 
 test('THE POINT: a required check-in has no Close and no Cancel', () => {

@@ -32,7 +32,18 @@ export function PlanHasNoCheckIns({
   onChoosePlan,
 }: {
   planName: string | null;
-  onChoosePlan: () => void;
+  /**
+   * COS-916 — NULL when there is nowhere to send them, and the button is then
+   * not rendered at all.
+   *
+   * It used to be a required callback, and the screen passed one that set a
+   * flag only the free-switch chooser reads. Enabling Stripe turns that
+   * chooser off (`canSwitch: selfSwitchEnabled && !canPay`), so the button
+   * kept rendering and did nothing — Vishal: "when I click on it, nothing is
+   * happening." A button with no destination is worse than no button, which
+   * is the rule this file already applies to a plan list with no cards.
+   */
+  onChoosePlan: (() => void) | null;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -57,19 +68,28 @@ export function PlanHasNoCheckIns({
           build one from yet. Choosing a plan that includes check-ins will start it.
         </Text>
 
-        <Pressable
-          onPress={onChoosePlan}
-          accessibilityRole="button"
-          accessibilityLabel="Choose a different plan"
-          style={({ pressed }) => [
-            styles.primary,
-            { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
-          ]}
-        >
-          <Text style={[styles.primaryText, { fontSize: getScaledFontSize(15) }]}>
-            Choose a different plan
+        {onChoosePlan ? (
+          <Pressable
+            onPress={onChoosePlan}
+            accessibilityRole="button"
+            accessibilityLabel="Choose a different plan"
+            style={({ pressed }) => [
+              styles.primary,
+              { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Text style={[styles.primaryText, { fontSize: getScaledFontSize(15) }]}>
+              Choose a different plan
+            </Text>
+          </Pressable>
+        ) : (
+          <Text
+            style={[styles.body, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}
+          >
+            Changing plans is not available on this account right now — your care
+            team can move you to one that includes check-ins.
           </Text>
-        </Pressable>
+        )}
       </ScrollView>
     </AppWrapper>
   );
