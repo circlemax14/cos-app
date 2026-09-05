@@ -157,12 +157,12 @@ test('a source that belongs here but is not in this build still explains itself'
 // ── COS-900: telling someone to open Settings, and then opening it ────────
 
 test('THE POINT: the screen can actually open Settings', () => {
-  // Vishal: "initially I was able to open the settings directly from the app."
-  // He is describing calendar-settings / appointments / doctor-detail, which
-  // all call Linking.openSettings(). This screen — the one whose entire
-  // message is "go to Settings" — never did.
+  // COS-901 moved the destination into lib/open-health-settings.ts, because
+  // Linking.openSettings() lands on this app's page and HealthKit permissions
+  // are deliberately not listed there. The button is still here; where it goes
+  // is tested in open-health-settings.test.mjs.
   const screen = code('app/Home/apple-health.tsx')
-  assert.match(screen, /Linking\.openSettings\(\)/)
+  assert.match(screen, /openHealthSettings\(\)/)
   assert.match(screen, /accessibilityLabel="Open Settings"/)
 })
 
@@ -175,8 +175,10 @@ test('the button is driven by a FIELD, not by sniffing the message text', () => 
 })
 
 test('and a failure to open Settings says what to do by hand', () => {
-  const screen = code('app/Home/apple-health.tsx')
-  assert.match(screen, /Could not open Settings/)
+  // Moved to the lib with the destination it describes — the message has to
+  // match the rung that was actually reached.
+  const lib = code('lib/open-health-settings.ts')
+  assert.match(lib, /Could not open Settings/)
 })
 
 test('THE POINT: connecting explains why iOS showed no dialog', () => {

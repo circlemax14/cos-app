@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import {
   type HealthSourceOffer,
 } from '@/services/health-sources';
 import { useHealthSource } from '@/hooks/use-health-source';
+import { openHealthSettings, healthSettingsFollowUp } from '@/lib/open-health-settings';
 import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -369,17 +369,29 @@ export default function AppleHealthScreen() {
           {statusMessage?.settings ? (
             <Pressable
               onPress={() => {
-                void Linking.openSettings().catch(() => {
-                  setStatusMessage({
-                    text: 'Could not open Settings. Open it from your home screen, then Privacy & Security > Health.',
-                    isError: true,
-                    settings: false,
-                  });
-                });
+                void (async () => {
+                  /*
+                   * COS-901 — Settings > Privacy & Security > Health, not this
+                   * app's own Settings page. HealthKit permissions are
+                   * deliberately not listed on the app page; Apple keeps them
+                   * under Privacy. openHealthSettings walks a ladder and tells
+                   * us which rung it reached, so the follow-up line is true
+                   * for the screen the patient is actually looking at.
+                   */
+                  const target = await openHealthSettings();
+                  const followUp = healthSettingsFollowUp(target);
+                  if (followUp) {
+                    setStatusMessage({
+                      text: followUp,
+                      isError: target === 'failed',
+                      settings: false,
+                    });
+                  }
+                })();
               }}
               accessibilityRole="button"
               accessibilityLabel="Open Settings"
-              accessibilityHint="Opens this app's page in iOS Settings"
+              accessibilityHint="Opens the Health permissions page in Settings"
               style={({ pressed }) => [
                 styles.settingsButton,
                 { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 },
