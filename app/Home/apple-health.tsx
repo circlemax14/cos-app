@@ -1,7 +1,7 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -9,16 +9,17 @@ import {
   View,
 } from 'react-native';
 
+import { useQueryClient } from '@tanstack/react-query';
+
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { initializeHealthKit, isHealthKitAvailable } from '@/services/health';
 import {
-  healthSourceLabel,
-  type HealthSourceId,
-  type HealthSourceOffer,
-} from '@/services/health-sources';
-import { useHealthSource } from '@/hooks/use-health-source';
-import { openHealthSettings, healthSettingsFollowUp } from '@/lib/open-health-settings';
+  getAppleHealthEnabled,
+  setAppleHealthEnabled,
+} from '@/services/apple-health-preference';
+import { APPLE_HEALTH_PREFERENCE_KEY } from '@/hooks/use-apple-health-preference';
 import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -27,141 +28,129 @@ import { useCanRender } from '@/hooks/use-entitlement';
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 /**
- * Health Sync — the one place a patient connects a device or app as their
- * health data source. Extends the single "Enable Apple Health" toggle
- * (COS-389 / SCRUM-530) into a list of connectable sources.
+ * Health Sync — the Apple Health connection screen (COS-389 / SCRUM-530).
  *
- * Ken's original feedback still holds and is why this screen exists at all:
- * the HealthKit permission prompt must only ever fire from a deliberate,
- * easy-to-find control. It still does — that control is now one row in a list
- * instead of the only row on the screen.
+ * ─── COS-902: THIS IS THE ORIGINAL SCREEN, DELIBERATELY ──────────────
  *
- * ─── THIS SCREEN DECIDES ALMOST NOTHING ──────────────────────────────
+ * COS-878 rebuilt it as a multi-source picker (Apple Health / Samsung Health /
+ * Health Connect, one connected at a time) and a week of iteration followed:
+ * which rows to show, an Apple Watch row that could not be a second
+ * connection, a Settings link that went to the wrong page. Vishal: "let's go
+ * back to the original code that we have for the Apple health. Just rename the
+ * naming from Apple health to health sync."
  *
- * Which sources exist, which may be offered on this platform and device, which
- * can actually connect in this build, and every user-facing sentence about
- * them all live in services/health-sources.ts. The screen renders `available`
- * in order and shows `offer.note` verbatim. It does NOT know that Apple Health
- * is iOS-only or that Samsung Health needs a Samsung handset — if it did,
- * those rules would have two homes and one of them would rot. A device with no
- * offerable source gets an honest empty state, not a blank card.
+ * So this is `8d534dd^` restored whole — the version with the COS-863
+ * entitlement gates and nothing after them. Only the SCREEN's own name
+ * changed. Every other mention of "Apple Health" below is Apple's product and
+ * stays: renaming those would be renaming something we do not own.
  *
- * The one rule that IS a UI concern lives here: connecting Apple Health opens
- * the iOS permission dialog, so that row — and only that row — is gated on
- * `apple-health.grant-healthkit-permissions`. `apple-health.view` still gates
- * the whole body.
+ * services/health-sources.ts, hooks/use-health-source.ts and
+ * lib/open-health-settings.ts were deleted with it — nothing else imported
+ * them. They are recoverable whole from d62171c if the multi-source model or
+ * the Privacy > Health deep link is ever wanted again.
  *
- * ─── ONE SOURCE AT A TIME ────────────────────────────────────────────
+ * Ken's feedback: the HealthKit permission prompt was firing accidentally on
+ * mount of the Personal Information screen. It now lives here as a deliberate,
+ * easy-to-find opt-in control reached from the profile drawer → "Health Sync".
  *
- * Vishal's rule: "at a time, they can only connect one thing ... We will fetch
- * the data from only one device." The model enforces it structurally — ONE
- * stored value, and `connectHealthSource` disconnects the incumbent in the
- * same call — so this screen's only job is to never let it happen silently.
- * Turning on a second source does NOT connect it: the row expands into
- * `willReplace(id)`, a sentence naming both sources, and waits for an explicit
- * Replace. Cancel leaves the current source untouched, and the switch stays
- * visibly off throughout, because nothing has changed yet.
+ * iOS only. On Android (or any device without HealthKit) we show a graceful
+ * "not available on this device" state and never call into HealthKit.
  *
- * ─── HONEST UNAVAILABILITY ───────────────────────────────────────────
- *
- * `react-native-health` (HealthKit) is the only health native module in this
- * binary. Samsung Health and Health Connect are native SDKs: they cannot
- * arrive over OTA, only in a new build. Those rows come back
- * `needs-native-build` and are rendered with their reason and NO CONTROL AT
- * ALL — never a switch that silently does nothing. When an SDK lands, the
- * model flips `bundled` and the row goes live with no change here.
- *
- * Connection state is local (AsyncStorage) — iOS does not reliably expose
- * prior read-permission status. The data path (daily summary /
- * useHealthKitTrends) is unchanged; we only changed WHERE it is chosen. The
- * hook invalidates that path's queries itself, so this screen holds no cache
- * concerns of its own.
+ * Connection state is a locally persisted hint of the user's choice — iOS does
+ * not reliably expose prior read-permission status. The actual data path
+ * (daily health summary / useHealthKitTrends) is unchanged; we only moved
+ * WHERE the permission is requested.
  */
 export default function AppleHealthScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const queryClient = useQueryClient();
 
   // Entitlement gates. Hooks, so declared at the top. `grant-healthkit-
   // permissions` gates the one control that triggers the iOS permission
-  // dialog — the Apple Health switch. useCanRender fails open.
+  // dialog — the Enable Apple Health switch. useCanRender fails open.
   const canView = useCanRender('apple-health.view');
   const canGrantHealthKit = useCanRender('apple-health.grant-healthkit-permissions');
 
-  const { current, available, connect, disconnect, isConnecting, willReplace, isLoading } =
-    useHealthSource();
+  const available = isHealthKitAvailable();
 
-  // The source waiting on an explicit "yes, replace what I have connected".
-  const [pendingId, setPendingId] = useState<HealthSourceId | null>(null);
-  // Which row the in-flight connect/disconnect belongs to, so the spinner
-  // lands on that row instead of on all of them. Only ever read alongside
-  // `isConnecting`, so a stale value cannot strand a row in a spinner.
-  const [actingId, setActingId] = useState<HealthSourceId | null>(null);
-  /*
-   * COS-900 — `settings` carries whether this outcome can only be finished in
-   * iOS Settings, so the screen can offer to open it. Vishal: "initially I was
-   * able to open the settings directly from the app."
-   *
-   * He is describing calendar-settings / appointments / doctor-detail, which
-   * all call Linking.openSettings() — this screen never did, and it is the one
-   * screen whose whole message is "go to Settings".
-   */
-  const [statusMessage, setStatusMessage] = useState<
-    { text: string; isError: boolean; settings: boolean } | null
-  >(null);
+  // COS-397 / SCRUM-535: after the user changes their Apple Health choice,
+  // invalidate the reactive preference query + the HealthKit trends so every
+  // surface (Health Trends) reflects the new state without a manual refresh.
+  const invalidateAppleHealth = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: APPLE_HEALTH_PREFERENCE_KEY });
+    void queryClient.invalidateQueries({ queryKey: ['healthkit-trends'] });
+  }, [queryClient]);
 
-  const runConnect = useCallback(
-    async (id: HealthSourceId) => {
-      setPendingId(null);
-      setStatusMessage(null);
-      setActingId(id);
-      // The single, deliberate place a source's permission dialog fires.
-      // `connect` never throws — it reports through `{ ok, message }`, and the
-      // message already names what was replaced.
-      const result = await connect(id);
-      setActingId(null);
-      setStatusMessage({
-        text: result.message,
-        isError: !result.ok,
-        settings: result.settingsHint === true,
-      });
-    },
-    [connect],
-  );
+  const [enabled, setEnabled] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; isError: boolean } | null>(null);
+
+  // Hydrate the toggle from the user's last recorded choice so it reflects
+  // their decision when they come back to this screen.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const stored = await getAppleHealthEnabled();
+      if (!cancelled) {
+        setEnabled(stored);
+        setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleToggle = useCallback(
-    async (offer: HealthSourceOffer, next: boolean) => {
-      // Defensive: a `needs-native-build` row renders no control, so this is
-      // unreachable — but it guarantees we never call into a missing module.
-      if (offer.status !== 'connectable') return;
-      const id = offer.source.id;
+    async (next: boolean) => {
+      if (!available) return;
 
       if (!next) {
-        // Opting out. For Apple Health, iOS won't let the app revoke its own
-        // read access — the model's message says where the user has to go.
-        setPendingId(null);
-        setActingId(id);
-        const result = await disconnect();
-        setActingId(null);
+        // The user is opting out. iOS doesn't let an app revoke its own
+        // HealthKit access — that lives in Settings > Privacy & Security >
+        // Health. All we can honestly do is forget the local "enabled" hint
+        // so the daily summary stops being presented as connected.
+        setEnabled(false);
+        await setAppleHealthEnabled(false);
+        invalidateAppleHealth();
         setStatusMessage({
-          text: result.message,
-          isError: !result.ok,
-          settings: result.settingsHint === true,
+          text:
+            'Apple Health turned off. To fully revoke access, open Settings > Privacy & Security > Health.',
+          isError: false,
         });
         return;
       }
 
-      // Only one source may be connected, so turning this one on switches the
-      // data path away from another. Say which, in the model's words, and wait
-      // for a yes. `willReplace` is null when nothing is being replaced.
-      if (willReplace(id)) {
-        setStatusMessage(null);
-        setPendingId(id);
-        return;
+      // Opting in — request HealthKit read permissions. This is the single,
+      // deliberate place the iOS permission dialog is triggered.
+      setIsConnecting(true);
+      setStatusMessage(null);
+      try {
+        const granted = await initializeHealthKit();
+        setEnabled(granted);
+        await setAppleHealthEnabled(granted);
+        invalidateAppleHealth();
+        setStatusMessage(
+          granted
+            ? { text: 'Apple Health connected. Your daily summary will use Health data.', isError: false }
+            : { text: 'Apple Health access was not granted.', isError: true },
+        );
+      } catch (err) {
+        setEnabled(false);
+        await setAppleHealthEnabled(false);
+        invalidateAppleHealth();
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Could not connect to Apple Health. Please try again.';
+        setStatusMessage({ text: message, isError: true });
+      } finally {
+        setIsConnecting(false);
       }
-
-      await runConnect(id);
     },
-    [disconnect, runConnect, willReplace],
+    [available, invalidateAppleHealth],
   );
 
   return (
@@ -190,240 +179,102 @@ export default function AppleHealthScreen() {
               textAlign: 'center',
             }}
           >
-            Connect a device or app to enrich your daily summary and health
-            trends with steps, heart rate, sleep, and more. One source can be
-            connected at a time.
+            Connect Apple Health to enrich your daily summary and health trends
+            with steps, heart rate, sleep, and more from your iPhone and Apple
+            Watch.
           </Text>
         </View>
 
-        <View style={styles.section}>
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(13),
-              fontWeight: getScaledFontWeight(600) as any,
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-              marginBottom: 12,
-              marginLeft: 4,
-            }}
-          >
-            Connection
-          </Text>
-
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {isLoading && (
-              <View style={[styles.row, styles.rowCentered]}>
-                <ActivityIndicator size="small" color={colors.tint} />
-              </View>
-            )}
-
-            {/* The model returns nothing at all for a device none of the
-                sources belong to. Say so plainly rather than show a blank card. */}
-            {!isLoading && available.length === 0 && (
-              <View style={styles.row}>
+        {!available ? (
+          /* Graceful "not available on this device" state */
+          <View style={styles.section}>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
                 <View style={styles.rowLeft}>
                   <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}>
-                    No sources for this device
+                    Not available on this device
                   </Text>
                   <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
-                    There isn&apos;t a health app or device we can connect to on
-                    this device yet.
+                    {Platform.OS === 'ios'
+                      ? 'Apple Health is unavailable. Make sure the Health app is installed and try again.'
+                      : 'Apple Health is only available on iPhone.'}
                   </Text>
                 </View>
               </View>
-            )}
-
-            {!isLoading && available.map((offer, index) => {
-              const { id, label } = offer.source;
-              const isConnected = current?.id === id;
-              const isConnectable = offer.status === 'connectable';
-              // Apple Health is the HealthKit-backed row, so it is the only one
-              // whose control opens the iOS permission dialog — and the only
-              // one carrying the grant gate. Typed as HealthSourceId, so
-              // renaming the source breaks this build rather than the gate.
-              const controlAllowed = id !== 'apple-health' || canGrantHealthKit;
-              const isActing = isConnecting && actingId === id;
-              const showConfirm = pendingId === id && isConnectable && controlAllowed;
-
-              return (
-                <View
-                  key={id}
-                  style={{
-                    borderBottomWidth: index === available.length - 1 ? 0 : 1,
-                    borderBottomColor: colors.border,
-                  }}
-                >
-                  <View style={styles.row}>
-                    <View style={styles.rowLeft}>
-                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}>
-                        {label}
-                      </Text>
-                      <Text
-                        style={{
-                          color: isConnected ? '#059669' : colors.subtext,
-                          fontSize: getScaledFontSize(13),
-                          fontWeight: isConnected ? (getScaledFontWeight(600) as any) : undefined,
-                          marginTop: 2,
-                        }}
-                      >
-                        {isConnected ? 'Connected' : isConnectable ? 'Not connected' : 'Unavailable'}
-                      </Text>
-                      {/* Either what this source brings with it, or the honest
-                          reason it can't be switched on. The model writes both
-                          to be shown verbatim. */}
-                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 4, lineHeight: getScaledFontSize(17) }}>
-                        {offer.note}
-                      </Text>
-                    </View>
-
-                    {isActing && <ActivityIndicator size="small" color={colors.tint} />}
-
-                    {/* A source whose native module isn't in this build gets NO
-                        control — the reason above is the whole story, and a
-                        switch here could only lie. */}
-                    {!isActing && isConnectable && controlAllowed && (
-                      <Switch
-                        value={isConnected}
-                        onValueChange={(next) => void handleToggle(offer, next)}
-                        disabled={isConnecting}
-                        trackColor={{ false: '#E0E0E0', true: colors.tint }}
-                        accessibilityRole="switch"
-                        accessibilityState={{ checked: isConnected, disabled: isConnecting }}
-                        accessibilityLabel={`Connect ${label}`}
-                      />
-                    )}
-                  </View>
-
-                  {showConfirm && (
-                    <View style={styles.confirm}>
-                      <Text
-                        style={{
-                          color: colors.text,
-                          fontSize: getScaledFontSize(13),
-                          lineHeight: getScaledFontSize(19),
-                        }}
-                        accessibilityRole="alert"
-                      >
-                        {willReplace(id)}
-                      </Text>
-                      <View style={styles.confirmActions}>
-                        <Text
-                          onPress={() => void runConnect(id)}
-                          style={{
-                            color: colors.tint,
-                            fontSize: getScaledFontSize(14),
-                            fontWeight: getScaledFontWeight(600) as any,
-                            paddingVertical: 12,
-                            paddingRight: 24,
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Connect ${label} and disconnect ${current ? healthSourceLabel(current.id) : 'the current source'}`}
-                        >
-                          Replace
-                        </Text>
-                        <Text
-                          onPress={() => setPendingId(null)}
-                          style={{
-                            color: colors.subtext,
-                            fontSize: getScaledFontSize(14),
-                            paddingVertical: 12,
-                            paddingRight: 8,
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Keep ${current ? healthSourceLabel(current.id) : 'the current source'} connected`}
-                        >
-                          Cancel
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
+            </View>
           </View>
-
-          {statusMessage ? (
+        ) : (
+          <View style={styles.section}>
             <Text
               style={{
-                color: statusMessage.isError ? '#DC2626' : '#059669',
+                color: colors.subtext,
                 fontSize: getScaledFontSize(13),
-                marginTop: 12,
+                fontWeight: getScaledFontWeight(600) as any,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                marginBottom: 12,
                 marginLeft: 4,
               }}
-              accessibilityRole="alert"
             >
-              {statusMessage.text}
+              Connection
             </Text>
-          ) : null}
 
-          {/*
-            COS-900 — telling someone to go to Settings and not taking them
-            there is the whole complaint. openSettings() lands on THIS app's
-            page; iOS gives no deep link further in, so Privacy & Security >
-            Health is still named in the message above.
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                <View style={styles.rowLeft}>
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}>
+                    Enable Apple Health
+                  </Text>
+                  <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+                    {enabled ? 'Connected' : 'Not connected'}
+                  </Text>
+                </View>
+                {isLoading || isConnecting ? (
+                  <ActivityIndicator size="small" color={colors.tint} />
+                ) : (
+                  canGrantHealthKit && (
+                  <Switch
+                    value={enabled}
+                    onValueChange={handleToggle}
+                    trackColor={{ false: '#E0E0E0', true: colors.tint }}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: enabled }}
+                    accessibilityLabel="Enable Apple Health"
+                  />
+                  )
+                )}
+              </View>
+            </View>
 
-            Pressable, not a new component: this screen renders inside the
-            iOS 26 cold-mount envelope.
-          */}
-          {statusMessage?.settings ? (
-            <Pressable
-              onPress={() => {
-                void (async () => {
-                  /*
-                   * COS-901 — Settings > Privacy & Security > Health, not this
-                   * app's own Settings page. HealthKit permissions are
-                   * deliberately not listed on the app page; Apple keeps them
-                   * under Privacy. openHealthSettings walks a ladder and tells
-                   * us which rung it reached, so the follow-up line is true
-                   * for the screen the patient is actually looking at.
-                   */
-                  const target = await openHealthSettings();
-                  const followUp = healthSettingsFollowUp(target);
-                  if (followUp) {
-                    setStatusMessage({
-                      text: followUp,
-                      isError: target === 'failed',
-                      settings: false,
-                    });
-                  }
-                })();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Open Settings"
-              accessibilityHint="Opens the Health permissions page in Settings"
-              style={({ pressed }) => [
-                styles.settingsButton,
-                { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
+            {statusMessage ? (
               <Text
                 style={{
-                  color: colors.tint,
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(600) as never,
+                  color: statusMessage.isError ? '#DC2626' : '#059669',
+                  fontSize: getScaledFontSize(13),
+                  marginTop: 12,
+                  marginLeft: 4,
                 }}
+                accessibilityRole="alert"
               >
-                Open Settings
+                {statusMessage.text}
               </Text>
-            </Pressable>
-          ) : null}
+            ) : null}
 
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(12),
-              marginTop: 16,
-              marginLeft: 4,
-              lineHeight: getScaledFontSize(18),
-            }}
-          >
-            We only read health data — we never write to it. Connecting a source
-            replaces the one before it, and we read from that one only. For
-            Apple Health you can change or revoke access at any time in Settings
-            &gt; Privacy &amp; Security &gt; Health.
-          </Text>
-        </View>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(12),
+                marginTop: 16,
+                marginLeft: 4,
+                lineHeight: getScaledFontSize(18),
+              }}
+            >
+              We only read health data — we never write to Apple Health. You can
+              change or revoke access at any time in Settings &gt; Privacy &amp;
+              Security &gt; Health.
+            </Text>
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -433,18 +284,6 @@ export default function AppleHealthScreen() {
 }
 
 const styles = StyleSheet.create({
-  settingsButton: {
-    alignSelf: 'flex-start',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginLeft: 4,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 24,
@@ -473,19 +312,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     minHeight: 54,
   },
-  rowCentered: {
-    justifyContent: 'center',
-  },
   rowLeft: {
     flex: 1,
     marginRight: 12,
-  },
-  confirm: {
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
 });
