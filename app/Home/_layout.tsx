@@ -124,9 +124,17 @@ export default function TabLayout() {
       <Tabs.Screen
         name="health-plan"
         options={
-          unifiedDefault
-            ? { title: 'Classic care plan', href: null, headerShown: false }
-            : carePlanTabOptions
+          /*
+           * COS-915 — RETIRED. Never in the tab bar again, on either flag.
+           *
+           * `href: null` rather than deleting the entry: the route file still
+           * exists, ClassicViewLink still points here, and expo-router
+           * discovers screens from the FILESYSTEM — removing the <Tabs.Screen>
+           * would not remove the tab, it would render a bare filename label at
+           * the end of the bar (COS-860). Hidden, still deep-linkable, no
+           * longer a second front door onto a different plan model.
+           */
+          { title: 'Classic care plan', href: null, headerShown: false }
         }
       />
       {/*
@@ -146,11 +154,24 @@ export default function TabLayout() {
             <Tabs.Screen
         name="care-plan-plus"
         options={{
+          /*
+           * COS-915 — Plan+ became THE plan tab.
+           *
+           * Vishal: "let's retire the care plan classic screen and work on the
+           * plan plus screen, but change the plan plus to the plan and icon to
+           * the old icon."
+           *
+           * Two tabs both called a variant of "Plan" is how he ended up in a
+           * gate loop he could not leave: the classic screen let him switch to
+           * a tier whose required check-ins the same tier refuses to show. One
+           * plan tab, one plan.
+           *
+           * carePlanTabOptions carries the classic title and the BeatingHeart
+           * icon — reused rather than re-spelled, so the retired tab and this
+           * one cannot drift apart while both still exist.
+           */
+          ...carePlanTabOptions,
           href: canShow('care-plan-plus') ? undefined : null,
-          title: 'Plan+',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={getScaledFontSize(24)} name="sparkles" color={color} />
-          ),
         }}
       />
       {/*
