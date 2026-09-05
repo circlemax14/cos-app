@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -94,7 +96,18 @@ export default function AppleHealthScreen() {
   // lands on that row instead of on all of them. Only ever read alongside
   // `isConnecting`, so a stale value cannot strand a row in a spinner.
   const [actingId, setActingId] = useState<HealthSourceId | null>(null);
-  const [statusMessage, setStatusMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  /*
+   * COS-900 — `settings` carries whether this outcome can only be finished in
+   * iOS Settings, so the screen can offer to open it. Vishal: "initially I was
+   * able to open the settings directly from the app."
+   *
+   * He is describing calendar-settings / appointments / doctor-detail, which
+   * all call Linking.openSettings() — this screen never did, and it is the one
+   * screen whose whole message is "go to Settings".
+   */
+  const [statusMessage, setStatusMessage] = useState<
+    { text: string; isError: boolean; settings: boolean } | null
+  >(null);
 
   const runConnect = useCallback(
     async (id: HealthSourceId) => {
@@ -106,7 +119,11 @@ export default function AppleHealthScreen() {
       // message already names what was replaced.
       const result = await connect(id);
       setActingId(null);
-      setStatusMessage({ text: result.message, isError: !result.ok });
+      setStatusMessage({
+        text: result.message,
+        isError: !result.ok,
+        settings: result.settingsHint === true,
+      });
     },
     [connect],
   );
@@ -125,7 +142,11 @@ export default function AppleHealthScreen() {
         setActingId(id);
         const result = await disconnect();
         setActingId(null);
-        setStatusMessage({ text: result.message, isError: !result.ok });
+        setStatusMessage({
+          text: result.message,
+          isError: !result.ok,
+          settings: result.settingsHint === true,
+        });
         return;
       }
 
@@ -336,6 +357,46 @@ export default function AppleHealthScreen() {
             </Text>
           ) : null}
 
+          {/*
+            COS-900 — telling someone to go to Settings and not taking them
+            there is the whole complaint. openSettings() lands on THIS app's
+            page; iOS gives no deep link further in, so Privacy & Security >
+            Health is still named in the message above.
+
+            Pressable, not a new component: this screen renders inside the
+            iOS 26 cold-mount envelope.
+          */}
+          {statusMessage?.settings ? (
+            <Pressable
+              onPress={() => {
+                void Linking.openSettings().catch(() => {
+                  setStatusMessage({
+                    text: 'Could not open Settings. Open it from your home screen, then Privacy & Security > Health.',
+                    isError: true,
+                    settings: false,
+                  });
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open Settings"
+              accessibilityHint="Opens this app's page in iOS Settings"
+              style={({ pressed }) => [
+                styles.settingsButton,
+                { borderColor: colors.tint, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text
+                style={{
+                  color: colors.tint,
+                  fontSize: getScaledFontSize(14),
+                  fontWeight: getScaledFontWeight(600) as never,
+                }}
+              >
+                Open Settings
+              </Text>
+            </Pressable>
+          ) : null}
+
           <Text
             style={{
               color: colors.subtext,
@@ -360,6 +421,18 @@ export default function AppleHealthScreen() {
 }
 
 const styles = StyleSheet.create({
+  settingsButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginLeft: 4,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 24,

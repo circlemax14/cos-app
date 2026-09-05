@@ -153,3 +153,40 @@ test('a source that belongs here but is not in this build still explains itself'
   assert.match(fn[0], /'needs-native-build'/)
   assert.match(fn[0], /isn't in this version of the app/)
 })
+
+// ── COS-900: telling someone to open Settings, and then opening it ────────
+
+test('THE POINT: the screen can actually open Settings', () => {
+  // Vishal: "initially I was able to open the settings directly from the app."
+  // He is describing calendar-settings / appointments / doctor-detail, which
+  // all call Linking.openSettings(). This screen — the one whose entire
+  // message is "go to Settings" — never did.
+  const screen = code('app/Home/apple-health.tsx')
+  assert.match(screen, /Linking\.openSettings\(\)/)
+  assert.match(screen, /accessibilityLabel="Open Settings"/)
+})
+
+test('the button is driven by a FIELD, not by sniffing the message text', () => {
+  // A copy edit must not be able to silently remove the button.
+  assert.match(src, /settingsHint\?: boolean/)
+  const screen = code('app/Home/apple-health.tsx')
+  assert.match(screen, /statusMessage\?\.settings \? \(/)
+  assert.match(screen, /settings: result\.settingsHint === true/)
+})
+
+test('and a failure to open Settings says what to do by hand', () => {
+  const screen = code('app/Home/apple-health.tsx')
+  assert.match(screen, /Could not open Settings/)
+})
+
+test('THE POINT: connecting explains why iOS showed no dialog', () => {
+  // HealthKit shows its sheet once per install, and never reports READ
+  // authorisation at all — by design, so an app cannot infer a condition from
+  // a refusal. "Nothing happened" is the expected outcome, so say so.
+  assert.match(src, /only shows its permission sheet once/)
+})
+
+test('disconnect stops the data path and says what it cannot do', () => {
+  assert.match(src, /we have stopped reading it/)
+  assert.match(src, /does not let an app take back its own Health permission/)
+})

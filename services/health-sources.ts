@@ -349,6 +349,14 @@ export interface HealthSourceResult {
   ok: boolean;
   /** User-facing. Safe to render verbatim; contains no health data. */
   message: string;
+  /**
+   * COS-900 — this outcome can only be finished in iOS Settings, so the screen
+   * should offer to open it.
+   *
+   * Set as a FIELD rather than left for the screen to sniff out of `message`,
+   * because a copy edit would silently take the button away.
+   */
+  settingsHint?: boolean;
 }
 
 /**
@@ -427,7 +435,11 @@ export async function connectHealthSource(id: string): Promise<HealthSourceResul
   try {
     const granted = await runConnect(source);
     if (!granted) {
-      return { ok: false, message: `${source.label} access was not granted.` };
+      return {
+        ok: false,
+        message: `${source.label} access was not granted.`,
+        settingsHint: source.id === 'apple-health',
+      };
     }
 
     const previous = await getConnectedHealthSource();
@@ -435,11 +447,31 @@ export async function connectHealthSource(id: string): Promise<HealthSourceResul
     if (replaced) await runDisconnect(replaced);
     await writeConnectedHealthSource({ id: source.id, connectedAt: new Date().toISOString() });
 
+    /*
+     * COS-900 — say why nothing appeared to happen.
+     *
+     * Vishal: "when I'm enabling and disabling, nothing is happening. I'm only
+     * just getting some message." That is iOS, not us: the HealthKit
+     * permission sheet is shown ONCE per install. Every connect after the
+     * first returns immediately with no dialog, so the only evidence anything
+     * occurred is this line.
+     *
+     * Worse, HealthKit deliberately never reports READ authorisation — an app
+     * cannot tell "granted" from "denied", by design, so that it cannot infer
+     * a condition from a refusal. `granted` above only means the request was
+     * accepted. So the honest message points at the one place the patient can
+     * actually see and change the answer, and settingsHint puts a button
+     * there.
+     */
+    const isHealthKit = source.id === 'apple-health';
     return {
       ok: true,
       message: replaced
         ? `${source.label} connected. ${healthSourceLabel(replaced)} was disconnected.`
-        : `${source.label} connected. Your daily summary will use ${source.label} data.`,
+        : isHealthKit
+          ? `${source.label} connected. iOS only shows its permission sheet once, so you may not have seen one — check which categories are on in Settings if your summary looks empty.`
+          : `${source.label} connected. Your daily summary will use ${source.label} data.`,
+      settingsHint: isHealthKit,
     };
   } catch (error) {
     // No PHI — a source id and a connection error.
@@ -463,7 +495,8 @@ export async function disconnectHealthSource(): Promise<HealthSourceResult> {
   return {
     ok: true,
     message: current.id === 'apple-health'
-      ? `${label} turned off. To fully revoke access, open Settings > Privacy & Security > Health.`
+      ? `${label} turned off — we have stopped reading it. iOS does not let an app take back its own Health permission, so to revoke it completely you have to do it in Settings.`
       : `${label} disconnected.`,
+    settingsHint: current.id === 'apple-health',
   };
 }
