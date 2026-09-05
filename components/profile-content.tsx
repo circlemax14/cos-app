@@ -123,6 +123,18 @@ export function ProfileContent({
   const canEditPersonalInfo = useCanRender('profile.edit-personal-info');
   const canSignOut = useCanRender('profile.sign-out');
   const canDeleteAccount = useCanRender('profile.delete-account');
+  /*
+   * COS-897 — the drawer row must obey the SAME entitlement the route enforcer
+   * does. `apple-health.view` is what patient-capabilities maps to
+   * /Home/apple-health, and useEnforceScreenAccess redirects to Home when the
+   * plan does not include it. So with the feature off, this row rendered, was
+   * tappable, and dumped the patient on Home with no explanation — which is
+   * exactly what Vishal hit: "when I click on the Apple Health, it is not
+   * taking me to any screen. It is taking me to the home screen."
+   *
+   * The bounce is correct. Offering the door is not.
+   */
+  const canOpenHealthSync = useCanRender('apple-health.view');
 
   // SCRUM-640: dark-launched habit-journal entry. Default OFF; visible
   // only when backend flag `habit_journal_enabled` (or the per-user
@@ -355,16 +367,25 @@ export function ProfileContent({
               />
             )}
             {/*
-              Apple Health (COS-389 / SCRUM-530): deliberate, easy-to-find
-              opt-in control. The HealthKit permission prompt used to fire
-              accidentally on mount of the Personal Information screen; it now
-              lives behind this row → app/Home/apple-health.tsx. iOS only —
-              HealthKit doesn't exist on Android.
+              Health Sync (COS-389 / SCRUM-530, renamed COS-897): deliberate,
+              easy-to-find opt-in control. The HealthKit permission prompt used
+              to fire accidentally on mount of the Personal Information screen;
+              it now lives behind this row → app/Home/apple-health.tsx.
+
+              The LABEL is "Health Sync" because that is what the screen it
+              opens is called, and because the screen is no longer only about
+              Apple Health. The ROUTE keeps its old filename — renaming an
+              expo-router file changes every deep link that points at it, and
+              the name of a file is not worth that.
+
+              iOS only: HealthKit does not exist on Android, and there is no
+              Android build yet. When there is, drop the Platform check — the
+              screen already handles every platform on its own.
             */}
-            {Platform.OS === 'ios' && (
+            {Platform.OS === 'ios' && canOpenHealthSync && (
               <DrawerRow
                 iconName="favorite-border"
-                label="Apple Health"
+                label="Health Sync"
                 onPress={() => go('/Home/apple-health')}
                 divider
                 colors={colors}

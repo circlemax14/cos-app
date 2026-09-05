@@ -124,17 +124,13 @@ export function healthSourceLabel(id: string): string {
  * `needs-native-build` — belongs on this device, but its native module is not
  *                        in this build. Render it with `note` as the reason
  *                        and NO control; never a switch that does nothing.
- * `wrong-platform`     — COS-892. Exists, but not for this operating system.
- * `wrong-device`       — COS-892. Right OS, wrong handset (Samsung Health).
  *
- * Only `connectable` gets a working control. Everything else renders as a row
- * with its reason — which is the whole point of the last two.
+ * COS-897 removed 'wrong-platform' and 'wrong-device'. They existed to render
+ * a source this device can never use as a row with an excuse; a source this
+ * device can never use is not shown at all now, so nothing can carry them.
+ * Only `connectable` gets a working control.
  */
-export type HealthSourceStatus =
-  | 'connectable'
-  | 'needs-native-build'
-  | 'wrong-platform'
-  | 'wrong-device';
+export type HealthSourceStatus = 'connectable' | 'needs-native-build';
 
 export interface HealthSourceOffer {
   source: HealthSource;
@@ -144,22 +140,26 @@ export interface HealthSourceOffer {
 }
 
 /**
- * EVERY source, every time — with the reason it can or cannot be used here.
+ * The sources that belong on THIS device — each with the reason it can or
+ * cannot be used right now.
  *
- * COS-892. This used to FILTER: Apple Health was not returned at all on
- * Android, Samsung Health not on a Pixel. Vishal, after seeing the mockups:
- * "I don't want to remove that card only which is available according to
- * device. We just need to show these options."
+ * ─── COS-897: THIS FILTERS AGAIN, AND THAT WAS THE RIGHT ANSWER ──────
  *
- * He is right, and it is the same rule this file already applied to a missing
- * native module: a row that silently vanishes tells the user nothing, and
- * tells whoever is supporting them less. The platform rule has not gone
- * anywhere — it now decides the STATUS rather than membership of the list, and
- * only `connectable` is ever given a working control, so a Pixel still cannot
- * connect Apple Health.
+ * COS-892 removed the filter and listed all three on every device. That
+ * over-read the instruction. Vishal on seeing the result: "why am I able to
+ * see Apple Health, Samsung, and Health Connect on my iPhone?" — and he is
+ * right: Samsung Health on an iPhone is not an option the patient can act on,
+ * ever, on any build. It is noise in a list of two real choices.
  *
- * Order is stable (catalogue order), so the list does not reshuffle between
- * devices or renders.
+ * What he actually asked for is preserved, and it is the narrower rule: a
+ * source that BELONGS on this device but is not in this binary stays visible
+ * with its reason, instead of vanishing. That was already this file's
+ * behaviour and it is what `needs-native-build` is for. A Galaxy owner still
+ * sees Samsung Health and reads why it is off; an iPhone owner is not offered
+ * a phone they do not have.
+ *
+ * The distinction worth keeping: HIDE what this device could never use, SHOW
+ * with a reason what it could use but cannot yet.
  *
  * Pure — callers pass `Platform.OS` and `deviceManufacturer()` in, so this is
  * testable without a device.
@@ -170,30 +170,19 @@ export function availability(
 ): HealthSourceOffer[] {
   const brand = (manufacturer ?? '').trim().toLowerCase();
 
-  return HEALTH_SOURCES.map((source) => {
-    const osLabel = source.platform === 'ios' ? 'iPhone' : 'Android';
-
-    // Platform first. This is what still keeps Apple Health unusable on
-    // Android — it is now a reason on the row instead of a missing row.
-    if (source.platform !== 'both' && source.platform !== os) {
-      return {
-        source,
-        status: 'wrong-platform' as const,
-        note: `${source.label} is only available on ${osLabel}.`,
-      };
-    }
-
+  return HEALTH_SOURCES.filter((source) => {
+    // Platform gate FIRST. This is what keeps Apple Health off Android and
+    // Samsung Health off an iPhone — neither can ever be acted on there, so
+    // neither is a choice.
+    if (source.platform !== 'both' && source.platform !== os) return false;
     // Manufacturer gate: Samsung Health only on a Samsung handset. Substring,
     // because the constant reads "samsung" on most and "Samsung Electronics"
     // on some.
     if (source.requiresManufacturer && !brand.includes(source.requiresManufacturer)) {
-      return {
-        source,
-        status: 'wrong-device' as const,
-        note: `${source.label} only works on a Samsung phone or tablet.`,
-      };
+      return false;
     }
-
+    return true;
+  }).map((source) => {
     if (!source.requires.bundled) {
       return {
         source,
