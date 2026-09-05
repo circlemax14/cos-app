@@ -98,3 +98,39 @@ test('the ROUTE keeps its filename — renaming it would break every deep link',
   const drawer = code('components/profile-content.tsx')
   assert.match(drawer, /go\('\/Home\/apple-health'\)/)
 })
+
+// ── COS-898: Apple Watch is a row, not a second integration ────────────────
+
+test('THE POINT: the app catalogue now matches the server catalogue', () => {
+  // The server has carried five sources all along, with a note saying the
+  // Watch is listed separately because Vishal asked for it. The app offered
+  // three, so the two rows he asked for never existed.
+  for (const id of ['apple-health', 'apple-watch', 'samsung-health', 'health-connect', 'other-wearable']) {
+    assert.match(src, new RegExp(`id: '${id}'`), `${id} missing from the app catalogue`)
+  }
+})
+
+test('Apple Watch asks for the SAME HealthKit permission, not a second prompt', () => {
+  const fn = src.match(/async function runConnect\([\s\S]*?\n\}/)
+  assert.ok(fn)
+  assert.match(fn[0], /case 'apple-health':\s*\n\s*case 'apple-watch': \{/)
+})
+
+test('THE POINT: switching between them does NOT tear down the shared path', () => {
+  // setAppleHealthEnabled(false) is the data-path switch both read. Running
+  // the teardown on the outgoing row would turn off the path the incoming row
+  // needs — pick Apple Watch, receive nothing.
+  assert.match(src, /function sharesDataPath/)
+  assert.match(src, /if \(replaced && !sharesDataPath\(replaced, source\.id\)\)/)
+})
+
+test('the Watch row says plainly that Apple allows no direct connection', () => {
+  assert.match(src, /Apple gives apps no direct Watch connection/)
+})
+
+test('other wearables are listed as not-yet rather than omitted', () => {
+  assert.match(src, /id: 'other-wearable'/)
+  assert.match(src, /Oura, Whoop, Fitbit or Garmin account directly/)
+  // Not connectable: there is no vendor OAuth in this build.
+  assert.match(src, /module: 'direct-vendor-oauth', bundled: false/)
+})
