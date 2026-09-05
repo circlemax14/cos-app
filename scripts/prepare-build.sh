@@ -98,6 +98,29 @@ echo "  env file    : $ENV_FILE"
 echo "════════════════════════════════════════════════════════════"
 echo
 
+# ── 0. PHI safeguard, checked BEFORE anything is written ────────────────────
+#
+# COS-905. SCREENSHOTS_BLOCKED was left false for ten weeks after a round of
+# screenshot testing, so every build and OTA in that window shipped without
+# capture protection while PHI renders on nearly every authenticated screen.
+# The unit test was edited to agree with it, so nothing objected.
+#
+# A PROD build refuses outright. A dev/staging build warns, because allowing
+# capture for a tester on a non-prod build is the legitimate use of the toggle
+# — the failure was never the flip, it was the flip that never came back.
+POLICY_FILE="lib/screenshot-policy.ts"
+if grep -q '^export const SCREENSHOTS_BLOCKED = false;' "$POLICY_FILE" 2>/dev/null; then
+  if [ "$ENVIRONMENT" = "prod" ]; then
+    echo "!! $POLICY_FILE has SCREENSHOTS_BLOCKED = false."
+    echo "   A production build must not ship with screen capture allowed —"
+    echo "   PHI is on nearly every authenticated screen and an iOS screenshot"
+    echo "   syncs to iCloud Photos. Set it to true and re-run."
+    exit 1
+  fi
+  echo "   WARNING  SCREENSHOTS_BLOCKED = false — capture is ALLOWED on this build."
+  echo "            Fine for a tester; flip it back and OTA before prod."
+fi
+
 # ── 1. dotenv ───────────────────────────────────────────────────────────────
 cp "$ENV_FILE" .env
 echo "[1/6] .env <- $ENV_FILE"

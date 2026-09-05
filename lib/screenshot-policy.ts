@@ -21,10 +21,24 @@
  * BEFORE the build reaches real (PHI-bearing) users. Never ship a binary or a
  * lasting OTA with this set to false.
  */
-// ⚠️ TEMPORARILY false for Ken's screenshot testing (2026-06-26, SCRUM-537).
-// The SECURE default is `true`. FLIP BACK TO true + OTA the moment testing is
-// done — never leave this false for real PHI-bearing users (see warning above).
-export const SCREENSHOTS_BLOCKED = false;
+/*
+ * COS-905 — restored to the secure default.
+ *
+ * This was flipped to false on 2026-06-26 for a round of screenshot testing
+ * and never flipped back. Ten weeks, on main, through every build and OTA in
+ * between — so every patient has had capture protection off while PHI renders
+ * on virtually every authenticated screen, and on iOS a screenshot syncs to
+ * iCloud Photos, which is not a BAA'd third party.
+ *
+ * The 2026-08-21 audit flagged it at ~8 weeks. It was still false today. That
+ * is what a temporary toggle with no guard costs.
+ *
+ * If a tester needs screenshots again: flip it, OTA, collect, flip back, OTA —
+ * and the test in tests/unit/screenshot-policy.test.ts must be edited in the
+ * same commit, which is the point of it. It is not there to be annoying; it is
+ * there so "temporary" leaves a trace someone has to answer for.
+ */
+export const SCREENSHOTS_BLOCKED = true;
 
 /**
  * Pure decision helper: should the app actively prevent screen capture?
