@@ -63,8 +63,10 @@ test('and always offers a way out, even with nowhere else to go', () => {
   assert.match(screen, /accessibilityLabel="Back to home"/)
 })
 
-test('the care-plan-plus button checks reachability before offering it', () => {
-  // COS-916 sent a paying patient to /Home/plans without asking whether they
-  // may open it; `plans` aliases to the non-public `billing` feature.
-  assert.match(plus, /canSubscribe && canShowScreen\('plans'\)/)
+test('COS-918 — care-plan-plus reopens its own chooser rather than navigating', () => {
+  // COS-916 sent a paying patient to /Home/plans, which his plan could not
+  // open. COS-918 removed the hop entirely: the inline chooser handles both
+  // modes, so there is no cross-screen navigation left to gate.
+  assert.match(plus, /canSwitch \|\| canSubscribe \? \(\) => setReopened\(true\) : null/)
+  assert.doesNotMatch(plus, /router\.push\('\/Home\/plans'/)
 })

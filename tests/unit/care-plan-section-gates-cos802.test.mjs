@@ -391,7 +391,11 @@ test('THE POINT: the chooser is shown ONCE, not on every visit', () => {
   const plus = read('app/Home/care-plan-plus.tsx')
   assert.match(plus, /care-plan-plus\.chooser\.seen/)
   assert.match(plus, /AsyncStorage\.setItem\(CHOOSER_SEEN_KEY, '1'\)/)
-  assert.match(plus, /\(reopened \|\| seen === false\)/)
+  // COS-918 split the one expression into the two doors it was conflating.
+  // The property is unchanged: the AUTOMATIC door is once-ever (`seen ===
+  // false`, persisted), and `reopened` is the patient asking again.
+  assert.match(plus, /const firstRunDoor = canSwitch && seen === false;/)
+  assert.match(plus, /&& reopened;/)
 })
 
 test('the plan never flashes before the chooser takes over', () => {

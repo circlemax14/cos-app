@@ -30,12 +30,13 @@ const comp = code('components/plan/PlanHasNoCheckIns.tsx')
 const status = code('components/plan/PlanStatusSection.tsx')
 
 test('THE POINT: the handler branches on which mode is actually available', () => {
-  assert.match(screen, /canSwitch\s*\?\s*\(\)\s*=>\s*setReopened\(true\)/)
-  // COS-917 added the reachability check: `plans` aliases to the non-public
-  // `billing` feature, so offering it unconditionally sent a patient whose
-  // plan lacks billing.view straight into an enforcer bounce.
-  assert.match(screen, /canSubscribe && canShowScreen\('plans'\)/)
-  assert.match(screen, /router\.push\('\/Home\/plans'/)
+  assert.match(screen, /canSwitch \|\| canSubscribe/)
+  // COS-918: it does NOT navigate anywhere. The inline chooser handles both
+  // modes (PlanStatusSection renders Switch or Subscribe), so sending a paying
+  // patient to a different screen was the wrong fix — Vishal spotted it at
+  // once: "it doesn't look like the plan screen I was actually using."
+  assert.match(screen, /canSwitch \|\| canSubscribe \? \(\) => setReopened\(true\) : null/)
+  assert.doesNotMatch(screen, /router\.push\('\/Home\/plans'/)
 })
 
 test('and is NULL when neither mode is available — no button at all', () => {
@@ -59,7 +60,9 @@ test('the screen reads BOTH controls, not just canSwitch', () => {
   assert.match(screen, /const \{ canSwitch, canSubscribe \} = usePlanChoiceControls\(\)/)
 })
 
-test('router is imported — the paid path would otherwise throw at runtime', () => {
-  // tsc caught this once already; the test keeps it caught.
-  assert.match(screen, /import \{[^}]*\brouter\b[^}]*\} from 'expo-router'/)
+test('COS-918 — it navigates nowhere at all now', () => {
+  // The paid path used to push /Home/plans. It reopens the inline chooser
+  // instead, so care-plan-plus needs no router import and cannot send anyone
+  // to a screen they did not ask for.
+  assert.doesNotMatch(screen, /router\.push/)
 })

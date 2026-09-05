@@ -31,7 +31,6 @@
  * a cold-mount surface.
  */
 import React, { useCallback, useState } from 'react';
-import { router } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
@@ -51,7 +50,6 @@ import { PlanBuildingBanner } from '@/components/plan/PlanBuildingBanner';
 import { PlanHasNoCheckIns } from '@/components/plan/PlanHasNoCheckIns';
 import { usePatientInfo } from '@/hooks/use-patient';
 import { useCanRender } from '@/hooks/use-entitlement';
-import { useCanShowScreen } from '@/hooks/use-feature-permissions';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -148,12 +146,31 @@ function CarePlanPlusInner(): React.JSX.Element {
 
   const patientPlansQuery = usePatientPlans();
   const { canSwitch, canSubscribe } = usePlanChoiceControls();
-  // COS-917 — the same map useEnforceScreenAccess redirects on, asked BEFORE
-  // we offer the door rather than after the patient has walked into it.
-  const canShowScreen = useCanShowScreen();
+  /*
+   * COS-918 — two different doors, and only one of them was meant to close.
+   *
+   * COS-800 deliberately made the FIRST-RUN chooser disappear once payments
+   * land: canSwitch is `selfSwitchEnabled && !canPay`, so enabling a gateway
+   * removes the gate and restores the plan chip "with no code change. That is
+   * the property worth having — not a flag someone has to remember to unset."
+   * payments-compliance.test.mjs asserts it. It stands.
+   *
+   * But that is the door that opens ITSELF. It says nothing about a patient
+   * who taps "Choose a different plan" and asks for it — and gating both on
+   * canSwitch meant the chooser Vishal built became unreachable the moment
+   * Stripe was enabled. COS-916 then papered over that by navigating to
+   * /Home/plans, a screen he had never asked for: "it doesn't look like the
+   * plan screen I was actually using."
+   *
+   * So the two are separated. The automatic door keeps its rule exactly.
+   * The explicit ask works in either mode, because PlanStatusSection has
+   * handled both since COS-812 — Switch when canSwitch, Subscribe when
+   * canSubscribe, an explanation when neither.
+   */
+  const firstRunDoor = canSwitch && seen === false;
+  const askedForIt = (canSwitch || canSubscribe) && reopened;
   const showPlanGate =
-    canSwitch &&
-    (reopened || seen === false) &&
+    (firstRunDoor || askedForIt) &&
     // No cards means nothing to choose between — a door onto a blank wall is
     // worse than no door.
     (patientPlansQuery.data?.plans?.length ?? 0) > 0;
@@ -263,13 +280,16 @@ function CarePlanPlusInner(): React.JSX.Element {
          * entitlement the route enforcer does, or it is a door onto a bounce.
          * Offering nothing is honest; offering a trapdoor is not.
          */
-        onChoosePlan={
-          canSwitch
-            ? () => setReopened(true)
-            : canSubscribe && canShowScreen('plans')
-              ? () => router.push('/Home/plans' as never)
-              : null
-        }
+        /*
+         * COS-918 — always the SAME chooser, never a different screen.
+         *
+         * COS-916 sent a paying patient to /Home/plans because the inline
+         * chooser was gated on canSwitch. That was the wrong fix twice over:
+         * it swapped in a screen Vishal had not built for this, and it aimed
+         * at a route his plan could not open. showPlanGate now covers both
+         * modes, so this only ever reopens the chooser above.
+         */
+        onChoosePlan={canSwitch || canSubscribe ? () => setReopened(true) : null}
       />
     );
   }

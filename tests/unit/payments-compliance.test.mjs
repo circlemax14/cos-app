@@ -293,7 +293,11 @@ test('THE POINT: a chosen plan does not hide the chooser while switching is on',
   // COS-803 moved the door off the classic Care Plan tab and onto Plan+, so
   // the tab patients already rely on is untouched while this is figured out.
   const tab = read('app/Home/care-plan-plus.tsx')
-  assert.match(tab, /const showPlanGate =\s*\n\s*canSwitch &&/)
+  // COS-918: the guarantee this defends — while switching is on, the tab opens
+  // on the chooser — is carried by firstRunDoor, which still requires
+  // canSwitch. The expression was split so that a patient who ASKS for the
+  // chooser is not also gated on canSwitch; see the COS-918 test below.
+  assert.match(tab, /const firstRunDoor = canSwitch && seen === false;/)
   assert.match(tab, /if \(showPlanGate\) \{/)
   // And the shelf must actually render its cards there, not collapse to the
   // one-line strip — which is exactly what it would do for a patient who has
@@ -337,10 +341,27 @@ test('the door stops appearing on its own when payments land', () => {
   // canSwitch is `selfSwitch && !canPay`, so enabling a gateway removes the
   // gate and restores COS-788's chip with no code change. That is the property
   // worth having — not a flag someone has to remember to unset.
+  //
+  // COS-918 kept this EXACTLY, and separated it from a second thing that was
+  // riding on the same expression. The door that opens ITSELF still requires
+  // canSwitch. What changed is the patient explicitly tapping "Choose a
+  // different plan": gating that on canSwitch too made the chooser unreachable
+  // the moment Stripe was enabled, which is a different bug wearing this
+  // property as cover.
   const code = stripComments(cards)
   assert.match(code, /canSwitch: selfSwitchEnabled && !canPay/)
   const tab = stripComments(read('app/Home/care-plan-plus.tsx'))
-  assert.match(tab, /const showPlanGate =\s*\n\s*canSwitch &&/)
+  assert.match(tab, /const firstRunDoor = canSwitch && seen === false;/)
+})
+
+test('COS-918 — asking for the chooser still works once payments are on', () => {
+  // The other half of the split. PlanStatusSection has rendered both modes
+  // since COS-812 (Switch at :724, Subscribe at :758), so the chooser is
+  // correct for a paying patient — it was simply never shown to one.
+  const tab = stripComments(read('app/Home/care-plan-plus.tsx'))
+  assert.match(tab, /const askedForIt = \(canSwitch \|\| canSubscribe\) && reopened;/)
+  // And it reopens the SAME chooser rather than navigating to another screen.
+  assert.doesNotMatch(tab, /router\.push\('\/Home\/plans'/)
 })
 
 test('an empty shelf is not a wall', () => {

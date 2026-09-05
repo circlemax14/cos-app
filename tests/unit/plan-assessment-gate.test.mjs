@@ -151,9 +151,9 @@ test('it offers a way forward, not just a dead end', () => {
    * available, and no button at all when there is none.
    */
   assert.match(noCheckIns, /Choose a different plan/)
-  assert.match(plus, /canSwitch\s*\?\s*\(\)\s*=>\s*setReopened\(true\)/)
-  assert.match(plus, /canSubscribe && canShowScreen\('plans'\)/)
-  assert.match(plus, /router\.push\('\/Home\/plans'/)
+  assert.match(plus, /canSwitch \|\| canSubscribe/)
+  assert.match(plus, /canSwitch \|\| canSubscribe \? \(\) => setReopened\(true\) : null/)
+  assert.doesNotMatch(plus, /router\.push\('\/Home\/plans'/)
   // Neither mode available: render no button rather than an inert one.
   assert.match(noCheckIns, /\{onChoosePlan \? \(/)
 })
