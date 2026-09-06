@@ -26,7 +26,7 @@ import {
   type PaymentMethod,
 } from '@/services/payments-provider';
 import { launchPurchase, describeOutcome } from '@/lib/launch-purchase';
-import { verifyStorePurchase } from '@/services/api/payments';
+import { startPurchase, verifyStorePurchase } from '@/services/api/payments';
 
 export type { PaymentMethod, PaymentChoice };
 
@@ -65,10 +65,49 @@ export function usePaymentMethods(): UsePaymentMethods {
       if (!method.usable) return method.reason;
 
       if (method.kind === 'native') {
-        // The store SDK seam. Today every implementation reports itself
-        // unavailable; when one lands, nothing here changes.
+        /*
+         * COS-920 — ASK THE SERVER FOR THE PRODUCT ID FIRST.
+         *
+         * This passed `order.planKey` straight to StoreKit. A plan key is
+         * `advanced`; an App Store Connect product id is reverse-DNS, e.g.
+         * `ai.circlesupporthealth.advanced.monthly`. They are different
+         * namespaces and only the server knows the mapping — it lives on
+         * plan.pricing.appleProductIdMonthly / …Annual.
+         *
+         * So StoreKit would have been asked for a product that does not exist,
+         * getSubscriptions would return [], and every Apple purchase would
+         * have failed with "That plan is not available in the store yet" — no
+         * matter how correctly the products were set up in App Store Connect.
+         *
+         * POST /v1/payments/start already returns exactly this:
+         * `{ kind: 'native', productId, reference }` (apple-iap.gateway.ts:131,
+         * google-play.gateway.ts). The endpoint was built for it and nothing
+         * called it. It also re-checks the gateway is enabled, legal for this
+         * platform and configured, so a stale screen cannot start a purchase
+         * through a gateway that has since been switched off.
+         */
+        let productId: string;
+        try {
+          const started = await startPurchase({
+            gateway: method.id,
+            planKey: order.planKey,
+            cycle: order.cycle,
+          });
+          if (started.kind !== 'native') {
+            // The server changed its mind about how this gateway works. Do not
+            // guess — a redirect handled as a native purchase charges nothing
+            // and reports success.
+            return 'That payment method is not available right now.';
+          }
+          productId = started.productId;
+        } catch {
+          // Deliberately not surfacing the server's message: it can name SSM
+          // parameter paths (payments.routes.ts says so where it builds them).
+          return 'We could not start that purchase. Please try again.';
+        }
+
         const provider = getPaymentProvider(method.id);
-        const result = await provider?.purchase(order.planKey);
+        const result = await provider?.purchase(productId);
         if (!result || result.status === 'unavailable') {
           return result?.reason ?? 'That payment method isn’t available in this version of the app.';
         }
