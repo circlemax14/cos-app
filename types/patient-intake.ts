@@ -59,6 +59,19 @@ export interface IntakeQuestion {
   // Bounds for `number` type inputs.
   min?: number;
   max?: number;
+  /**
+   * COS-927 — a richer INPUT for a question whose stored answer is unchanged.
+   *
+   * 'height': still a `number` of INCHES, still the same min/max, but rendered
+   * as feet+inches or centimetres instead of an unlabelled box.
+   *
+   * A HINT rather than a new `type` on purpose: the renderer's switch has a
+   * `default` arm that returns null, so a new type would show the prompt with
+   * NO INPUT on any build that predates the component. An unknown optional
+   * field is simply ignored, so an older build keeps the number box it has
+   * always shown. Backward compatible by construction, no flag to sequence.
+   */
+  inputHint?: 'height';
   // Max character length for `text` type inputs.
   maxLength?: number;
   // `add_list`-only: contextual placeholder copy for the per-row label + optional

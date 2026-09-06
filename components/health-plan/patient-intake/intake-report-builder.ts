@@ -1,3 +1,4 @@
+
 /**
  * intake-report-builder — pure helper that shapes a PatientIntakeRecord +
  * IntakeQuestion[] into the six clinical Groups the redesigned
@@ -7,6 +8,15 @@
  * serializer in ShareIntakeReportSection so both surfaces agree on the
  * clinical structure.
  */
+/*
+ * COS-927 — RELATIVE, not '@/lib/...', and the distinction is load-bearing.
+ *
+ * A `node --test` file in tests/unit imports this module, and node cannot
+ * resolve the '@/' alias. The '@/types/patient-intake' import below looks like
+ * a counter-example but is `import type`, which TypeScript erases before it
+ * ever reaches node. This one is a VALUE import and has to resolve at runtime.
+ */
+import { formatHeight } from '../../../lib/height-units.ts';
 import type {
   IntakeAnswerValue,
   IntakeQuestion,
@@ -271,6 +281,21 @@ export function formatAnswer(
   if (q.key === 'vaccines' && q.type === 'add_list') {
     return formatVaccinesAnswer(v);
   }
+  /*
+   * COS-927 — this report is shared with clinicians, and a bare "71" is
+   * ambiguous in a document that also carries centimetre-scaled values. BOTH
+   * units, always, whichever the patient typed: the reader should never have
+   * to know which box was used.
+   *
+   * Keyed on the hint rather than the type, for the same reason the renderer
+   * is — the question is still a `number` on the wire.
+   */
+  if (q.inputHint === 'height' && typeof v === 'number' && Number.isFinite(v) && v > 0) {
+    const imperial = formatHeight(v, 'ftin');
+    const metric = formatHeight(v, 'cm');
+    if (imperial && metric) return `${imperial} (${metric})`;
+  }
+
   switch (q.type) {
     case 'text':
     case 'number':

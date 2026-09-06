@@ -8,6 +8,7 @@ import type { IntakeAddListItem, IntakeAnswerValue, IntakeQuestion } from '@/typ
 import { SECTION_COLOR } from './IntakeProgressHeader';
 import AddListQuestion from './questions/AddListQuestion';
 import MultiChoiceQuestion from './questions/MultiChoiceQuestion';
+import HeightQuestion from './questions/HeightQuestion';
 import NumberQuestion from './questions/NumberQuestion';
 import ScaleQuestion, { SCREENER_SCALES } from './questions/ScaleQuestion';
 import SingleChoiceQuestion from './questions/SingleChoiceQuestion';
@@ -90,6 +91,18 @@ function renderLeaf(
         sectionColor={sectionColor}
       />
     );
+  }
+
+  /*
+   * COS-927 — the hint is checked BEFORE the type switch.
+   *
+   * `height_in` is still `type: 'number'` on the wire, precisely so an app
+   * build without this component keeps rendering the plain box rather than
+   * falling through the switch's `default` arm to null. So the hint has to win
+   * here, not be a case below.
+   */
+  if (q.inputHint === 'height' && q.type === 'number') {
+    return <HeightQuestion value={typeof v === 'number' ? v : null} onChange={onChange} />;
   }
 
   switch (q.type) {

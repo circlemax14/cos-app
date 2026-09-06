@@ -2,6 +2,14 @@
   "extends": "expo/tsconfig.base.json",
   "compilerOptions": {
     "strict": true,
+    // COS-927 — lets a source file use an explicit '.ts' extension on a
+    // relative import. Needed because `node --test` loads several source
+    // modules directly (see package.json's test glob) and node's ESM resolver
+    // requires the extension, while tsc rejects it without this. Safe here and
+    // nowhere near a risk: moduleResolution is "bundler" and noEmit is true,
+    // which is exactly the combination this option is documented for — Metro
+    // resolves the extension and nothing is ever emitted from these paths.
+    "allowImportingTsExtensions": true,
     "strictPropertyInitialization": false,
     "baseUrl": ".",
     "paths": {
