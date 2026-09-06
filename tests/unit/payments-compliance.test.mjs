@@ -181,10 +181,31 @@ test('THE POINT: both controls hang off the REAL gateway list, not a flag', () =
   // COS-801 moved both expressions into the exported usePlanChoiceControls
   // hook so the Care Plan tab can ask the same question. Same two rules,
   // one definition — asserted on the hook rather than on inline consts.
+  //
+  // COS-924 — the flag this test is about is subscription_upgrade_enabled,
+  // and the PAID control still hangs off the real gateway list: canSubscribe
+  // is still `subscribeEnabled && canPay`, so the first dead end (Subscribe
+  // offered, then "payments aren't available") still cannot happen.
+  //
+  // canSwitch dropped `&& !canPay` because switching costs nothing, so no
+  // gateway has to exist for it — see the exclusivity test below, where the
+  // card's own price now decides which control it gets. The second dead end
+  // (a free plan showing nothing at all) is therefore further away than
+  // before, not closer: a free card offers Switch whether or not a gateway is
+  // live. The gateway list still drives the automatic chooser, which keeps
+  // the old expression under its own name.
   assert.match(code, /const \{ canPay \} = usePaymentGateways\(\)/)
   assert.match(code, /canSubscribe: subscribeEnabled && canPay/)
-  assert.match(code, /canSwitch: selfSwitchEnabled && !canPay/)
+  assert.match(code, /canSwitch: selfSwitchEnabled,/)
+  assert.match(code, /autoOpenChooser: selfSwitchEnabled && !canPay/)
   assert.match(code, /const selfSwitchEnabled = usePlanSelfSwitchFlag\(\)/)
+  // The regression this test exists to catch: the paid control keyed off the
+  // un-darkening flag alone, with no gateway behind it.
+  assert.doesNotMatch(
+    code,
+    /canSubscribe: subscribeEnabled[,\n]/,
+    'canSubscribe must require canPay, not just subscription_upgrade_enabled',
+  )
 })
 
 test('THE POINT: exactly one of Subscribe / Switch can ever be offered', () => {
@@ -196,10 +217,36 @@ test('THE POINT: exactly one of Subscribe / Switch can ever be offered', () => {
   // so the shape changed but the exclusivity did not: Subscribe still lives
   // behind canSubscribe, Switch behind canSwitch, and the two flags cannot
   // both be true.
+  //
+  // COS-924 moved the exclusivity from the PLATFORM to the CARD, because the
+  // platform-wide version could only ever say "nobody switches" or "nobody
+  // buys" — turning on Apple IAP took Switch off the free plans too. The
+  // property is unchanged and now holds by construction: one boolean per
+  // card, `costsMoney`, and the two controls read opposite sides of it. No
+  // combination of flags can put both on one card.
   const code = stripComments(cards)
-  assert.match(code, /canSubscribe && monthly/)
-  assert.match(code, /canSubscribe && annual/)
-  assert.match(code, /!current && !comingSoon && canSwitch && \(/)
+  // Derived from the PRICE, not the formatted price line: trial-30d carries
+  // monthlyPriceCents 0 and formats as "$0", so a truthiness test on the
+  // label would call a free plan paid and offer to charge for it.
+  assert.match(code, /const \{ monthlyPaid, annualPaid, costsMoney, isFree \} = planChoice\(plan\.pricing\)/)
+  // COS-925 — the money rule moved into planChoice() in lib/plan-price.ts so
+  // the shelf and the Billing screen stop keeping separate copies of it.
+  assert.match(stripComments(read('lib/plan-price.ts')), /\(pricing\?\.monthlyPriceCents \?\? 0\) > 0/)
+  assert.match(stripComments(read('lib/plan-price.ts')), /\(pricing\?\.annualPriceCents \?\? 0\) > 0/)
+  assert.match(code, /monthlyPaid && monthly/)
+  // Each button is gated on ITS OWN cycle now: a plan free monthly and priced
+  // annually rendered "Subscribe monthly · $0" and started a real charge.
+  assert.match(code, /annualPaid && annual/)
+  assert.match(code, /!current && !comingSoon && isFree && canSwitch && \(/)
+  assert.match(code, /!current && !comingSoon && costsMoney && canSubscribe && \(/)
+  // The rot guard for the property: a Switch control not gated on the card's
+  // own price would render alongside Subscribe on a paid plan, which is the
+  // exact "two ways to get one plan, one of them paid" this test forbids.
+  assert.doesNotMatch(
+    code,
+    /!current && !comingSoon && canSwitch && \(/,
+    'the Switch control must be gated on !costsMoney, or a paid card offers both',
+  )
   // ...and exactly ONE control fires the switch. Two would be VoiceOver
   // reading the same action twice, which is what COS-804 removed.
   assert.equal(
@@ -214,8 +261,21 @@ test('a free plan is never a dead end', () => {
   // The fallback explanation must therefore not be gated on the subscribe
   // flag — it is gated on neither control being available.
   // COS-809 hoisted it out of the expander, which switch-mode no longer has.
+  //
+  // COS-924 — same rule, asked per card instead of for the whole shelf. A
+  // card only ever has ONE control now (its price picks it), so "neither
+  // control is available" is "the one control this card would get is not
+  // available": !canSubscribe for a paid card, !canSwitch for a free one.
+  // The old `!canSubscribe && !canSwitch` would leave a free card silent
+  // whenever a gateway happened to be live, which is the dead end itself.
   const code = stripComments(cards)
-  assert.match(code, /\{!current && !comingSoon && !canSubscribe && !canSwitch && \(/)
+  assert.match(
+    code,
+    /\{!current && !comingSoon && \(costsMoney \? !canSubscribe : !\(isFree && canSwitch\)\) && \(/,
+  )
+  // And it still says something. Both branches, so neither price shape is mute.
+  assert.match(code, /Your care team can move you to this plan — in-app subscribing is not available yet\./)
+  assert.match(code, /'Your care team can move you to this plan\.'/)
 })
 
 test('the switch button is offered, and says which plan', () => {
@@ -244,15 +304,45 @@ test('THE POINT: the Billing screen can switch, not just subscribe', () => {
   // (COS-788, still right — that tab is about care, not shopping). Its
   // "Change plan" lands here. If this screen cannot switch, a patient who
   // switches once can never switch again.
-  assert.match(billing, /canSwitch && !plan\.isCurrent && isPurchasable\(plan\)/)
-  assert.match(billing, /onSwitchPlan\(plan\.planKey\)/)
+  //
+  // COS-924 — the control is still here; it moved to the OTHER side of the
+  // price test. It was gated on isPurchasable(plan), i.e. offered only on
+  // plans that cost money and hidden on the free ones — the only plans a
+  // patient can actually move themselves onto. Combined with the `&& !canPay`
+  // this screen also carried, a free plan here had no control at all, which
+  // is the dead end this test was written to prevent. Reachability is what
+  // the property is, and it is greater now, not smaller.
+  const code = stripComments(billing)
+  assert.match(code, /canSwitch && !plan\.isCurrent && planChoice\(plan\.pricing\)\.isFree/)
+  assert.match(code, /onSwitchPlan\(plan\.planKey\)/)
+  // Same per-card exclusivity as the shelf: price picks the control, so the
+  // two can never both appear on one plan.
+  assert.match(code, /canSubscribe && !plan\.isCurrent && planChoice\(plan\.pricing\)\.costsMoney/)
+  assert.doesNotMatch(
+    code,
+    /canSwitch && !plan\.isCurrent && isPurchasable\(plan\)/,
+    'Switch gated on isPurchasable hides it from exactly the free plans it is for',
+  )
 })
 
 test('the Billing screen uses the same canPay rule as the shelf', () => {
   // COS-798 fixed this in PlanStatusSection only; billing.tsx still had the
   // un-darkening flag on its own, which is the same dead end.
-  assert.match(billing, /const canSubscribe = upgradeEnabled && canPay/)
-  assert.match(billing, /const canSwitch = usePlanSelfSwitchFlag\(\) && !canPay/)
+  //
+  // COS-924 — the shelf's rule changed and this screen followed it, which is
+  // the property: the two surfaces render the same cards and must not drift.
+  // So assert them against EACH OTHER rather than freezing one spelling. The
+  // paid control still requires the real gateway list on both; the free
+  // control requires only the self-switch flag on both, because switching
+  // costs nothing and needs no gateway.
+  const shelf = stripComments(cards)
+  const screen = stripComments(billing)
+  assert.match(screen, /const canSubscribe = upgradeEnabled && canPay/)
+  assert.match(shelf, /canSubscribe: subscribeEnabled && canPay/)
+  assert.match(screen, /const canSwitch = usePlanSelfSwitchFlag\(\);/)
+  assert.match(shelf, /canSwitch: selfSwitchEnabled,/)
+  // Neither surface may key a paid control off the un-darkening flag alone.
+  assert.doesNotMatch(screen, /const canSubscribe = upgradeEnabled;/)
 })
 
 test('THE POINT: a refusal shows the server\'s sentence, not a status code', () => {
@@ -292,12 +382,18 @@ test('THE POINT: a chosen plan does not hide the chooser while switching is on',
   // the tab — without the shelf living on the plan screen.
   // COS-803 moved the door off the classic Care Plan tab and onto Plan+, so
   // the tab patients already rely on is untouched while this is figured out.
-  const tab = read('app/Home/care-plan-plus.tsx')
+  const tab = stripComments(read('app/Home/care-plan-plus.tsx'))
   // COS-918: the guarantee this defends — while switching is on, the tab opens
   // on the chooser — is carried by firstRunDoor, which still requires
   // canSwitch. The expression was split so that a patient who ASKS for the
   // chooser is not also gated on canSwitch; see the COS-918 test below.
-  assert.match(tab, /const firstRunDoor = canSwitch && seen === false;/)
+  //
+  // COS-924 renamed what firstRunDoor reads, and nothing else. `canSwitch`
+  // stopped meaning "switching is on AND nobody can pay" when exclusivity
+  // went per-card, so the hook now exports that exact expression separately
+  // as autoOpenChooser and the door reads THAT. Same operands, same door —
+  // the split test below pins the expression itself.
+  assert.match(tab, /const firstRunDoor = autoOpenChooser && seen === false;/)
   assert.match(tab, /if \(showPlanGate\) \{/)
   // And the shelf must actually render its cards there, not collapse to the
   // one-line strip — which is exactly what it would do for a patient who has
@@ -348,10 +444,24 @@ test('the door stops appearing on its own when payments land', () => {
   // different plan": gating that on canSwitch too made the chooser unreachable
   // the moment Stripe was enabled, which is a different bug wearing this
   // property as cover.
+  //
+  // COS-924 kept it EXACTLY again, and had to give it a name to do so. The
+  // expression `selfSwitchEnabled && !canPay` is unchanged; it just is not
+  // called canSwitch any more, because per-card exclusivity needed canSwitch
+  // to mean "self-switching is on" and nothing else. The door is the ONLY
+  // reader of autoOpenChooser, so this is still one rule with one owner —
+  // and enabling a gateway still closes it with no flag to unset.
   const code = stripComments(cards)
-  assert.match(code, /canSwitch: selfSwitchEnabled && !canPay/)
+  assert.match(code, /autoOpenChooser: selfSwitchEnabled && !canPay/)
   const tab = stripComments(read('app/Home/care-plan-plus.tsx'))
-  assert.match(tab, /const firstRunDoor = canSwitch && seen === false;/)
+  assert.match(tab, /const firstRunDoor = autoOpenChooser && seen === false;/)
+  // The rot guard: canSwitch no longer carries !canPay, so a door pointed
+  // back at it would keep opening itself forever after a gateway went live.
+  assert.doesNotMatch(
+    tab,
+    /const firstRunDoor = canSwitch &&/,
+    'firstRunDoor must read autoOpenChooser — canSwitch no longer implies !canPay',
+  )
 })
 
 test('COS-918 — asking for the chooser still works once payments are on', () => {

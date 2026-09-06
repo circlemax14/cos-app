@@ -53,8 +53,28 @@
 export interface StoreBilling {
   /** Is the native half in THIS binary? */
   isLinked(): boolean;
-  purchase(productId: string, unavailableReason: string): Promise<PurchaseResult>;
+  /**
+   * COS-925 — `verify` is threaded through, not called afterwards.
+   *
+   * The store connection has to be open for finishTransaction, and
+   * finishTransaction has to follow the server's verification. Only the store
+   * layer knows when the connection is open, so it owns the whole sequence and
+   * the caller hands it the one step it cannot do itself.
+   */
+  purchase(
+    productId: string,
+    unavailableReason: string,
+    verify: VerifyStoreReceipt,
+  ): Promise<PurchaseResult>;
 }
+
+/** The server round-trip, injected so this file never imports the API client. */
+export type VerifyStoreReceipt = (proof: {
+  productId: string;
+  receipt: string;
+  platform: 'ios' | 'android';
+  transactionId?: string;
+}) => Promise<{ applied: boolean }>;
 
 let storeBilling: StoreBilling | null = null;
 
@@ -76,9 +96,17 @@ export type PurchaseResult =
   | {
       status: 'purchased';
       productId: string;
-      receipt: string;
-      platform: 'ios' | 'android';
-      transactionId?: string;
+      /**
+       * COS-925 — the RECEIPT no longer travels back out here.
+       *
+       * COS-893 added it so the caller could verify. Verification now happens
+       * inside the store layer, because finishTransaction has to follow it
+       * while the connection is still open. Carrying the receipt out as well
+       * would be a second copy of a payment credential in a second place, for
+       * a step nobody performs any more. `applied` is what the caller needs:
+       * false means the money moved and the plan has not landed yet.
+       */
+      applied: boolean;
     }
   | { status: 'cancelled' }
   | { status: 'unavailable'; reason: string };
@@ -92,7 +120,7 @@ export interface PaymentProvider {
   /** Null when purchase() can genuinely complete. Set with the SDK, never before. */
   unavailableReason: string | null;
   /** The SDK call. Real StoreKit / Play Billing implementation replaces this body. */
-  purchase(productId: string): Promise<PurchaseResult>;
+  purchase(productId: string, verify: VerifyStoreReceipt): Promise<PurchaseResult>;
 }
 
 const NO_STOREKIT =
@@ -136,9 +164,9 @@ const PROVIDERS: Record<PaymentGatewayId, PaymentProvider> = {
     get unavailableReason() {
       return storeBilling?.isLinked() ? null : NO_STOREKIT;
     },
-    purchase: (productId: string) =>
+    purchase: (productId: string, verify: VerifyStoreReceipt) =>
       storeBilling
-        ? storeBilling.purchase(productId, NO_STOREKIT)
+        ? storeBilling.purchase(productId, NO_STOREKIT, verify)
         : Promise.resolve({ status: 'unavailable' as const, reason: NO_STOREKIT }),
   },
   'google-play': {
@@ -148,9 +176,9 @@ const PROVIDERS: Record<PaymentGatewayId, PaymentProvider> = {
     get unavailableReason() {
       return storeBilling?.isLinked() ? null : NO_PLAY_BILLING;
     },
-    purchase: (productId: string) =>
+    purchase: (productId: string, verify: VerifyStoreReceipt) =>
       storeBilling
-        ? storeBilling.purchase(productId, NO_PLAY_BILLING)
+        ? storeBilling.purchase(productId, NO_PLAY_BILLING, verify)
         : Promise.resolve({ status: 'unavailable' as const, reason: NO_PLAY_BILLING }),
   },
 };

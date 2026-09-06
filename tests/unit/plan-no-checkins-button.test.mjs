@@ -52,12 +52,53 @@ test('a patient with nowhere to go is told so, not shown a dead button', () => {
 test('the two modes are still mutually exclusive — this is not a bypass', () => {
   // If both could be true the button would silently prefer switching, which
   // would be wrong for a paying patient.
+  //
+  // COS-924 kept that property and moved WHERE it is enforced. It used to be
+  // `canSwitch: selfSwitchEnabled && !canPay` — exclusivity across the whole
+  // shelf, so turning on Apple IAP took Switch away from the FREE plans too.
+  // Now a card picks its control from its own price, and the two gates below
+  // are the same `costsMoney` boolean read in opposite senses, so exactly one
+  // of them can ever be true for a given plan. That is stronger than the old
+  // version, which could only say "nobody switches" or "nobody buys".
   assert.match(status, /canSubscribe: subscribeEnabled && canPay/)
-  assert.match(status, /canSwitch: selfSwitchEnabled && !canPay/)
+  assert.match(status, /canSwitch: selfSwitchEnabled,/)
+
+  // The one boolean, derived from the plan's own price — not from the platform.
+  assert.match(status, /const \{ monthlyPaid, annualPaid, costsMoney, isFree \} = planChoice\(plan\.pricing\)/)
+  // COS-925 — one definition, in lib/plan-price.ts. See planChoice().
+  assert.match(
+    code('lib/plan-price.ts'),
+    /\(pricing\?\.monthlyPriceCents \?\? 0\) > 0/,
+  )
+  assert.match(
+    code('lib/plan-price.ts'),
+    /\(pricing\?\.annualPriceCents \?\? 0\) > 0/,
+  )
+
+  // Exclusivity by construction: free card -> Switch, paid card -> Subscribe.
+  assert.match(status, /!current && !comingSoon && isFree && canSwitch &&/)
+  assert.match(status, /!current && !comingSoon && costsMoney && canSubscribe &&/)
+  // ...and the "neither" explanation branches on the same boolean, so a card
+  // can never fall through with no action and no reason.
+  assert.match(status, /!current && !comingSoon && \(costsMoney \? !canSubscribe : !\(isFree && canSwitch\)\)/)
+
+  // COS-918's first-run door kept the OLD expression under its own name rather
+  // than silently inheriting canSwitch's new meaning. The chooser that opens
+  // ITSELF still stops opening the moment a gateway goes live.
+  assert.match(status, /autoOpenChooser: selfSwitchEnabled && !canPay/)
 })
 
 test('the screen reads BOTH controls, not just canSwitch', () => {
-  assert.match(screen, /const \{ canSwitch, canSubscribe \} = usePlanChoiceControls\(\)/)
+  // COS-924 added a third member, autoOpenChooser, so the destructure is no
+  // longer an exact two-name literal. The property is unchanged: the screen
+  // reads BOTH controls, and the button branches on both (asserted above).
+  assert.match(screen, /const \{ canSwitch, canSubscribe(?:, \w+)* \} = usePlanChoiceControls\(\)/)
+
+  // And the two readers stayed separate: the door the patient opens reads the
+  // controls, the door that opens ITSELF reads autoOpenChooser. Swapping either
+  // back would re-break one of COS-916 or COS-918.
+  assert.match(screen, /const firstRunDoor = autoOpenChooser && seen === false/)
+  assert.match(screen, /const askedForIt = \(canSwitch \|\| canSubscribe\) && reopened/)
 })
 
 test('COS-918 — it navigates nowhere at all now', () => {

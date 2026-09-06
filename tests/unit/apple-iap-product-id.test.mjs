@@ -29,7 +29,11 @@ const hook = code('hooks/use-payment-methods.ts')
 
 test('THE POINT: the plan key never reaches the store', () => {
   assert.doesNotMatch(hook, /purchase\(order\.planKey\)/)
-  assert.match(hook, /provider\?\.purchase\(productId\)/)
+  // COS-925 — purchase() gained a second argument (the server verify step,
+  // which must run while the store connection is open). The property is
+  // unchanged and is what this asserts: the SERVER's product id is what
+  // reaches the store, never `order.planKey`.
+  assert.match(hook, /provider\?\.purchase\(productId,/)
 })
 
 test('the product id comes from the server, per plan AND cycle', () => {

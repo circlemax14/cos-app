@@ -149,12 +149,38 @@ test('Plan+ turns gating ON', () => {
 
 // ── COS-804: the two dead ends on Plan+ ──────────────────────────────────
 
+/**
+ * The render condition for the free-plan Switch control, shared by the two
+ * tests below so a move updates one literal instead of two.
+ *
+ * COS-924 added `!costsMoney` to it: exclusivity between Switch and Subscribe
+ * used to be platform-wide (`canSwitch = selfSwitchEnabled && !canPay`, so one
+ * live gateway removed Switch from FREE plans too) and is now decided per card
+ * by that plan's own price. Same property, stronger — one boolean per card.
+ */
+const SWITCH_CTA = '!current && !comingSoon && isFree && canSwitch && ('
+
+/**
+ * indexOf that cannot rot silently. A moved anchor returns -1, `slice(-1)`
+ * yields the last character, and a doesNotMatch against that PASSES for the
+ * wrong reason. Fail loudly on the anchor instead.
+ */
+const anchor = (src, lit) => {
+  const i = src.indexOf(lit)
+  assert.ok(i >= 0, `anchor moved, test cannot be trusted: ${lit}`)
+  return i
+}
+
 test('THE POINT: the primary button on a card DOES the switch', () => {
   // It read "Upgrade to this plan" and only expanded a panel; the real Switch
   // was one level down. Tapping it produced no request at all — the backend
   // logs showed nothing, because nothing had been asked of it.
+  //
+  // COS-924 narrowed WHICH cards carry this control — the condition gained
+  // `!costsMoney`, so a paid card offers Subscribe instead. What the button
+  // DOES when it renders is untouched, and that is what this test is about.
   const cards = read('components/plan/PlanStatusSection.tsx')
-  const btn = cards.slice(cards.indexOf('!current && !comingSoon && canSwitch && ('))
+  const btn = cards.slice(anchor(cards, SWITCH_CTA))
   assert.match(btn.slice(0, 1200), /onPress=\{\(\) => void onSwitch\(plan\.planKey\)\}/)
   assert.match(btn.slice(0, 1200), /'Switch to this plan'/)
 })
@@ -357,7 +383,12 @@ test('THE POINT: the accent never reaches the action button', () => {
   // COS-812 outlined it: six filled buttons down the page all shouted equally,
   // so the one FILLED control is now "Go to your plan" on the card you hold.
   // Either way the accent must not reach it — that was the bug.
-  const btn = cards.slice(cards.indexOf('!current && !comingSoon && canSwitch && ('), cards.indexOf("'Switch to this plan'"))
+  //
+  // COS-924 moved the anchor (`!costsMoney` joined the condition) and nothing
+  // else: the switch CTA is still outlined in the brand tint, and the accent
+  // still stops at the rail. anchor() is what keeps the doesNotMatch below
+  // honest — a -1 here would have sliced an empty string and passed blind.
+  const btn = cards.slice(anchor(cards, SWITCH_CTA), anchor(cards, "'Switch to this plan'"))
   assert.doesNotMatch(btn, /accent/)
   assert.match(btn, /borderColor: colors\.tint/)
   // The filled one belongs to the plan you already have.
@@ -397,7 +428,18 @@ test('THE POINT: the chooser is shown ONCE, not on every visit', () => {
   // COS-918 split the one expression into the two doors it was conflating.
   // The property is unchanged: the AUTOMATIC door is once-ever (`seen ===
   // false`, persisted), and `reopened` is the patient asking again.
-  assert.match(plus, /const firstRunDoor = canSwitch && seen === false;/)
+  //
+  // COS-924 changed what `canSwitch` MEANS (per-plan, not per-platform), so
+  // the door's own rule was lifted into `autoOpenChooser` rather than left to
+  // inherit the new meaning silently. Assert both halves, because the name
+  // alone is not the property: the door reads autoOpenChooser, and
+  // autoOpenChooser is still "self-switch on, no gateway live" — so it still
+  // closes itself the moment payments land, with no flag anyone must unset.
+  assert.match(plus, /const firstRunDoor = autoOpenChooser && seen === false;/)
+  assert.match(
+    read('components/plan/PlanStatusSection.tsx'),
+    /autoOpenChooser: selfSwitchEnabled && !canPay,/,
+  )
   assert.match(plus, /&& reopened;/)
 })
 

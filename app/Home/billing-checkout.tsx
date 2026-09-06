@@ -40,6 +40,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePaymentMethods, type PaymentMethod } from '@/hooks/use-payment-methods';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
@@ -75,14 +76,38 @@ export default function BillingCheckoutScreen() {
   // with. Both halves have to be true or there is nothing to press.
   const canPay = hasPlan && !isLoading && (mode === 'single' || mode === 'choose');
 
+  const queryClient = useQueryClient();
+
   async function onPay(method: PaymentMethod) {
     if (!hasPlan || busyId !== null) return;
     setBusyId(method.id);
     setProblem(null);
     try {
-      // null = the system browser has taken over, and saying anything here
-      // would talk over it.
-      setProblem(await pay(method, { planKey, cycle: billingCycle }));
+      /*
+       * COS-924 — 'cancelled' and 'handed-off' both say nothing. The first is
+       * the patient's own decision and does not need a message; the second
+       * means the system browser owns the screen and anything here talks over
+       * it. Only a real failure, or money that moved without landing, speaks.
+       */
+      const outcome = await pay(method, { planKey, cycle: billingCycle });
+      setProblem(
+        outcome.status === 'failed' || outcome.status === 'pending' ? outcome.message : null,
+      );
+      /*
+       * COS-925 — 'applied' has to DO something here too.
+       *
+       * This screen collapsed applied / cancelled / handed-off to "clear the
+       * message", so a patient who successfully paid sat on the checkout
+       * screen with nothing changed and no confirmation — every other purchase
+       * and switch site in the app invalidates. Sending them back to the plans
+       * is what makes the purchase visible: the shelf re-reads and shows the
+       * plan as theirs.
+       */
+      if (outcome.status === 'applied') {
+        await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+        await queryClient.invalidateQueries({ queryKey: ['billing'] });
+        router.replace('/Home/care-plan-plus' as never);
+      }
     } catch (err) {
       setProblem(
         err instanceof Error
@@ -220,13 +245,29 @@ export default function BillingCheckoutScreen() {
         <Text style={[styles.problem, { fontSize: getScaledFontSize(13) }]}>{problem}</Text>
       )}
 
+      {/*
+        COS-924 — NAMES ITS DESTINATION. router.back() sent the patient Home.
+
+        Vishal: "when I click on the go back, I was taken to the home screen,
+        which is wrong."
+
+        Not a stack bug — @react-navigation/routers' TabRouter defaults
+        backBehavior to 'firstRoute', so back() from ANY screen under app/Home
+        pops to the navigator's FIRST route, which is Home. It is wrong here
+        specifically because the patient arrived from the plan shelf and every
+        other exit from this screen returns them to it.
+
+        replace(), not push(): the checkout should not stay on the stack behind
+        the plans, or backing out of the shelf lands on an abandoned checkout.
+      */}
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => router.replace('/Home/care-plan-plus' as never)}
         accessibilityRole="button"
+        accessibilityLabel="Go back to plans"
         style={[styles.back, { borderColor: colors.border ?? '#E5E7EB' }]}
       >
         <Text style={[styles.backText, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
-          Go back
+          Go back to plans
         </Text>
       </Pressable>
     </View>

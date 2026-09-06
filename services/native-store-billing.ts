@@ -62,24 +62,54 @@ export function isStoreBillingLinked(): boolean {
   }
 }
 
+/**
+ * COS-925 — the server verifies the receipt WHILE the store connection is open.
+ *
+ * Passed in rather than done by the caller afterwards, because finishTransaction
+ * has to be called after verification and before the connection closes. Doing
+ * it in two places meant it was done in neither: nothing in the app called
+ * finishTransaction at all, so on Google every purchase would be auto-refunded
+ * after three days while our backend went on honouring the plan, and on Apple
+ * the transaction replays on every launch forever.
+ */
+export type VerifyReceipt = (proof: {
+  productId: string;
+  receipt: string;
+  platform: 'ios' | 'android';
+  transactionId?: string;
+}) => Promise<{ applied: boolean }>;
+
 export type StorePurchase =
   | {
       status: 'purchased';
       productId: string;
-      receipt: string;
-      platform: 'ios' | 'android';
-      transactionId?: string;
+      /** The server confirmed it. False means the money moved but the plan has not landed. */
+      applied: boolean;
     }
   | { status: 'cancelled' }
   | { status: 'unavailable'; reason: string };
 
 /** Shape of the bits of react-native-iap this file uses. Kept local so the
  *  package's own types are never imported at module scope. */
+interface IapSubscription {
+  remove(): void;
+}
 interface IapLike {
   initConnection(): Promise<unknown>;
   endConnection(): Promise<unknown>;
-  requestSubscription(args: { sku: string }): Promise<unknown>;
-  getSubscriptions(args: { skus: string[] }): Promise<unknown[]>;
+  /**
+   * COS-925 — 16.5's ACTUAL names. `getSubscriptions` and `requestSubscription`
+   * were removed; calling them got `undefined is not a function` before the
+   * sheet could open. See the header.
+   */
+  fetchProducts(args: { skus: string[]; type: 'subs' | 'in-app' }): Promise<unknown[]>;
+  requestPurchase(args: {
+    request: { apple?: { sku: string }; google?: { skus: string[] } };
+    type: 'subs' | 'in-app';
+  }): Promise<unknown>;
+  /** The purchase arrives HERE, not from requestPurchase's promise. */
+  purchaseUpdatedListener(cb: (purchase: unknown) => void): IapSubscription;
+  purchaseErrorListener(cb: (err: unknown) => void): IapSubscription;
   finishTransaction(args: { purchase: unknown; isConsumable: boolean }): Promise<unknown>;
 }
 
@@ -112,6 +142,7 @@ function isUserCancelled(err: unknown): boolean {
 export async function purchaseThroughStore(
   productId: string,
   unavailableReason: string,
+  verify: VerifyReceipt,
 ): Promise<StorePurchase> {
   if (!isStoreBillingLinked()) {
     return { status: 'unavailable', reason: unavailableReason };
@@ -125,58 +156,124 @@ export async function purchaseThroughStore(
     return { status: 'unavailable', reason: unavailableReason };
   }
 
+  let updated: IapSubscription | null = null;
+  let failed: IapSubscription | null = null;
+
   try {
     await iap.initConnection();
 
     // Ask the store for the product first. A sku that is not configured comes
     // back as an empty list, and saying so beats a purchase dialog that fails
     // with a store error the patient cannot act on.
-    const products = await iap.getSubscriptions({ skus: [productId] });
+    const products = await iap.fetchProducts({ skus: [productId], type: 'subs' });
     if (!products || products.length === 0) {
       /*
        * COS-923 — naming the id is the whole diagnostic.
        *
        * An empty result means the store has never heard of this product, and
-       * the three causes look identical from here: the product does not exist
-       * in App Store Connect, it exists under a DIFFERENT id than the plan
-       * carries, or it is not yet "Ready to Submit". Printing the id we asked
-       * for is what tells those apart without another build.
+       * the causes look identical from here: the product does not exist in App
+       * Store Connect, it exists under a DIFFERENT id than the plan carries,
+       * it is not yet "Ready to Submit", or the Paid Applications Agreement is
+       * not active. Printing the id we asked for is what tells those apart
+       * without another build.
        */
       return {
         status: 'unavailable',
-        reason: `The store has no product called "${productId}". Check it exists in App Store Connect, is Ready to Submit, and that the id on the plan matches exactly.`,
+        reason: `The store has no product called "${productId}". Check it exists in App Store Connect, is Ready to Submit, that the Paid Applications Agreement is active, and that the id on the plan matches exactly.`,
       };
     }
 
-    const result = (await iap.requestSubscription({ sku: productId })) as
-      | RawPurchase
-      | RawPurchase[]
-      | null;
-    const purchase = Array.isArray(result) ? result[0] : result;
+    /*
+     * COS-925 — THE PURCHASE ARRIVES ON A LISTENER, NOT FROM THE PROMISE.
+     *
+     * react-native-iap 16.5 documents requestPurchase as event-based, and says
+     * of its return value: "Do not rely on it for the actual outcome." The old
+     * code awaited it and read a receipt off the result, so even once the
+     * function names were right it would have reported "the store did not
+     * return a receipt" while StoreKit went on to charge the card — the worst
+     * possible split between what we tell the patient and what their bank does.
+     *
+     * So the promise is used only to DISPATCH, and the outcome is whichever of
+     * the two listeners fires first.
+     */
+    const outcome = await new Promise<
+      { kind: 'ok'; purchase: RawPurchase } | { kind: 'err'; err: unknown }
+    >((resolve) => {
+      let settled = false;
+      const once = (v: { kind: 'ok'; purchase: RawPurchase } | { kind: 'err'; err: unknown }) => {
+        if (settled) return;
+        settled = true;
+        resolve(v);
+      };
 
+      updated = iap!.purchaseUpdatedListener((p) => once({ kind: 'ok', purchase: p as RawPurchase }));
+      failed = iap!.purchaseErrorListener((e) => once({ kind: 'err', err: e }));
+
+      /*
+       * A dispatch failure is delivered by throwing here on some paths and
+       * through purchaseErrorListener on others (the docs call out Android's
+       * `not-prepared`). Routing both into the same resolve means neither can
+       * leave this promise hanging with the sheet already dismissed.
+       */
+      iap!
+        .requestPurchase({
+          request: { apple: { sku: productId }, google: { skus: [productId] } },
+          type: 'subs',
+        })
+        .catch((err: unknown) => once({ kind: 'err', err }));
+    });
+
+    if (outcome.kind === 'err') {
+      if (isUserCancelled(outcome.err)) return { status: 'cancelled' };
+      throw outcome.err;
+    }
+
+    const purchase = outcome.purchase;
     // iOS hands back a base64 app receipt; Android a purchase token. The
     // server knows which it is from `platform` and verifies accordingly.
-    const receipt = purchase?.transactionReceipt ?? purchase?.purchaseToken ?? '';
-    if (!purchase || !receipt) {
+    const receipt = purchase.transactionReceipt ?? purchase.purchaseToken ?? '';
+    if (!receipt) {
       return {
         status: 'unavailable',
         reason: 'The store did not return a receipt. Nothing has been charged.',
       };
     }
 
-    /*
-     * finishTransaction is NOT called here. The receipt has to be verified by
-     * the server first — finishing before that means a purchase Apple considers
-     * settled and our backend never saw, which is an entitlement the patient
-     * paid for and did not get. The verify path finishes it.
-     */
-    return {
-      status: 'purchased',
-      productId: purchase.productId ?? productId,
-      receipt,
-      platform: Platform.OS === 'ios' ? 'ios' : 'android',
-      transactionId: purchase.transactionId,
-    };
+    const platform = Platform.OS === 'ios' ? ('ios' as const) : ('android' as const);
+    let applied = false;
+    try {
+      const res = await verify({
+        productId: purchase.productId ?? productId,
+        receipt,
+        platform,
+        transactionId: purchase.transactionId,
+      });
+      applied = res.applied;
+    } catch {
+      /*
+       * The money moved and we could not confirm it. Deliberately NOT finished:
+       * an unfinished transaction is replayed by the store, which is the only
+       * mechanism that can still settle this without charging again. Finishing
+       * here to tidy up would throw away the patient's money.
+       */
+      return { status: 'purchased', productId: purchase.productId ?? productId, applied: false };
+    }
+
+    if (applied) {
+      /*
+       * Only now. finishTransaction tells the store we have delivered what was
+       * bought, so it must follow the server's confirmation and never precede
+       * it. Its failure does not change the outcome — the plan is already
+       * granted — so it must not turn a completed purchase into an error.
+       */
+      try {
+        await iap.finishTransaction({ purchase, isConsumable: false });
+      } catch {
+        /* the store will replay it; the verify endpoint is idempotent */
+      }
+    }
+
+    return { status: 'purchased', productId: purchase.productId ?? productId, applied };
   } catch (err) {
     if (isUserCancelled(err)) return { status: 'cancelled' };
     /*
@@ -207,6 +304,14 @@ export async function purchaseThroughStore(
         : 'The store could not complete that purchase. Nothing has been charged.',
     };
   } finally {
+    // Listeners first: an endConnection that throws must not leave two live
+    // subscriptions behind for the next attempt to double-fire on.
+    try {
+      (updated as IapSubscription | null)?.remove();
+      (failed as IapSubscription | null)?.remove();
+    } catch {
+      /* best effort */
+    }
     // Never let a teardown failure turn a completed purchase into an error.
     try {
       await iap?.endConnection();

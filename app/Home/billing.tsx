@@ -74,7 +74,7 @@ import { serverMessage } from '@/lib/server-message';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
-import { priceLines } from '@/lib/plan-price';
+import { planChoice, priceLines } from '@/lib/plan-price';
 import { useSubscriptionUpgradeFlag } from '@/hooks/use-subscription-upgrade-flag';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
@@ -89,9 +89,23 @@ interface PlanCard {
   name: string;
   shortDescription: string | null;
   tier: string | null;
-  pricing: { monthlyPriceCents: number | null; annualPriceCents: number | null; currency: string } | null;
+  pricing: {
+    monthlyPriceCents: number | null;
+    annualPriceCents: number | null;
+    currency: string;
+    /** COS-925 — needed by planChoice; a plan priced in words is not free. */
+    displayPriceLabel?: string | null;
+  } | null;
   highlights: string[];
   isCurrent: boolean;
+  /**
+   * COS-925 — this card type had NO status, so the screen could not tell a
+   * coming-soon plan from any other. It did not matter while Switch was gated
+   * on `isPurchasable` (coming-soon plans are unpriced, so they fell out by
+   * accident); the moment COS-924 inverted that predicate, "Switch to this
+   * plan" appeared on plans that are not yet available. The server sends it.
+   */
+  status?: string | null;
 }
 
 /**
@@ -204,7 +218,16 @@ export default function BillingScreen() {
    */
   const { canPay } = usePaymentGateways();
   const canSubscribe = upgradeEnabled && canPay;
-  const canSwitch = usePlanSelfSwitchFlag() && !canPay;
+  /*
+   * COS-924 — `&& !canPay` dropped, exactly as on the shelf.
+   *
+   * This screen renders the same cards as PlanStatusSection, and had the same
+   * platform-wide exclusivity: switching on a gateway set canPay, which
+   * silenced Switch on EVERY card including the free ones. Which control a
+   * card gets is a question about that PLAN's price, not about whether the
+   * platform can take money at all — see isPurchasable below.
+   */
+  const canSwitch = usePlanSelfSwitchFlag();
   const [switching, setSwitching] = useState<string | null>(null);
 
   async function onSwitchPlan(planKey: string) {
@@ -468,10 +491,19 @@ export default function BillingScreen() {
               </Text>
             ))}
 
-            {/* Dark until Stripe is wired — see the header. Never shown on the
-                plan the patient already has: "Upgrade" to your own plan is
-                the kind of detail that makes people distrust the whole screen. */}
-            {canSwitch && !plan.isCurrent && isPurchasable(plan) && (
+            {/* Never shown on the plan the patient already has: "Upgrade" to
+                your own plan is the kind of detail that makes people distrust
+                the whole screen.
+
+                COS-924 — `isPurchasable` was INVERTED here. Switch was offered
+                only on plans that COST MONEY, and the free plans — the only
+                ones a patient can actually move themselves onto without paying
+                — were the ones it hid. Combined with the `!canPay` above, a
+                free plan on this screen had no control at all. Vishal:
+                "the plans where we have not configured any payment ... I can
+                directly switch to those plans. So there should not be any
+                restrictions." */}
+            {canSwitch && !plan.isCurrent && planChoice(plan.pricing).isFree && plan.status !== 'coming-soon' && (
               <Pressable
                 onPress={() => void onSwitchPlan(plan.planKey)}
                 disabled={switching !== null}
@@ -485,9 +517,18 @@ export default function BillingScreen() {
               </Pressable>
             )}
 
-            {canCheckout && canSubscribe && !plan.isCurrent && isPurchasable(plan) && (
+            {canCheckout && canSubscribe && !plan.isCurrent && planChoice(plan.pricing).costsMoney && plan.status !== 'coming-soon' && (
               <Pressable
-                onPress={() => router.push('/Home/billing-checkout' as never)}
+                /* COS-924 — carries the plan and the cycle. It pushed the
+                   checkout with NO params at all, so the screen it landed on
+                   could not name the plan being bought, let alone charge for
+                   it. Monthly is the cycle this button's own label implies. */
+                onPress={() =>
+                  router.push({
+                    pathname: '/Home/billing-checkout',
+                    params: { planKey: plan.planKey, planName: plan.name, cycle: 'monthly' },
+                  } as never)
+                }
                 accessibilityRole="button"
                 accessibilityLabel={`Upgrade to ${plan.name}`}
                 style={[styles.upgrade, { backgroundColor: colors.tint }]}

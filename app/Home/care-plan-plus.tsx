@@ -145,7 +145,7 @@ function CarePlanPlusInner(): React.JSX.Element {
   }, []);
 
   const patientPlansQuery = usePatientPlans();
-  const { canSwitch, canSubscribe } = usePlanChoiceControls();
+  const { canSwitch, canSubscribe, autoOpenChooser } = usePlanChoiceControls();
   /*
    * COS-918 — two different doors, and only one of them was meant to close.
    *
@@ -167,7 +167,7 @@ function CarePlanPlusInner(): React.JSX.Element {
    * handled both since COS-812 — Switch when canSwitch, Subscribe when
    * canSubscribe, an explanation when neither.
    */
-  const firstRunDoor = canSwitch && seen === false;
+  const firstRunDoor = autoOpenChooser && seen === false;
   const askedForIt = (canSwitch || canSubscribe) && reopened;
   const showPlanGate =
     (firstRunDoor || askedForIt) &&

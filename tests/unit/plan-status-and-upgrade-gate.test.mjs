@@ -145,7 +145,7 @@ test('the Upgrade button is gated on the flag, not-current, and purchasable', ()
   assert.match(billing, /const canSubscribe = upgradeEnabled && canPay/)
   assert.match(
     billing,
-    /canSubscribe && !plan\.isCurrent && isPurchasable\(plan\)/,
+    /canSubscribe && !plan\.isCurrent && planChoice\(plan\.pricing\)\.costsMoney/,
     'all three conditions must gate the button',
   )
 })
@@ -160,7 +160,17 @@ test('a plan with no price is not purchasable', () => {
 test('THE POINT: the flag is flippable — the checkout route exists and is registered', () => {
   // A dark button pointing at a missing route means the flag can never be
   // turned on without crashing. The gate would look ready and would not be.
-  assert.match(billing, /router\.push\(['"]\/Home\/billing-checkout['"]/)
+  //
+  // COS-924 — accept either spelling of the push. Billing's Upgrade button now
+  // uses the object form because it has to CARRY something: it pushed the
+  // checkout with no params at all, so the screen could not name the plan being
+  // bought. What this wire is about is that the route is still reached and
+  // still registered, not which overload reaches it — the same allowance the
+  // side-menu test above already makes for go() vs router.push().
+  assert.match(
+    billing,
+    /router\.push\((?:['"]\/Home\/billing-checkout['"]|\{[^}]*pathname: ['"]\/Home\/billing-checkout['"])/,
+  )
   assert.match(homeLayout, /name="billing-checkout"/)
   assert.doesNotThrow(() => read('app/Home/billing-checkout.tsx'))
 })
@@ -424,8 +434,38 @@ test('the default plan is marked as theirs and offers nothing to upgrade to', ()
   assert.match(cards, /YOUR PLAN/)
   // The upgrade control is withheld from the current plan AND from coming-soon.
   // COS-809 split it by mode; every branch still carries both guards.
-  assert.match(cards, /\{!current && !comingSoon && canSwitch && \(/)
-  assert.match(cards, /\{!current && !comingSoon && canSubscribe && \(/)
+  /*
+   * COS-924 inserted a third conjunct — `costsMoney` — into both guards, so the
+   * two sentences this used to grep for no longer exist anywhere. Both
+   * withholdings survive verbatim inside the new guards, and the exclusivity
+   * they sit next to got STRONGER rather than weaker: it used to be
+   * platform-wide (`canSwitch` was `selfSwitchEnabled && !canPay`, so turning
+   * on Apple IAP took Switch off the FREE cards too) and is now per card,
+   * decided by that card's own price.
+   *
+   * So stop pinning the sentence and pin the property: every branch that
+   * renders a control still withholds it from the current plan and from
+   * coming-soon, and the two branches are mutually exclusive by price. Written
+   * as a scan so the next conjunct someone adds does not break it again.
+   */
+  const guards = cardsCode
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /can(?:Switch|Subscribe) && \($/.test(l))
+  assert.equal(guards.length, 2, `expected exactly two control branches, got ${guards.length}`)
+  for (const g of guards) {
+    assert.match(g, /!current/, `control branch does not withhold from the current plan: ${g}`)
+    assert.match(g, /!comingSoon/, `control branch does not withhold from coming-soon: ${g}`)
+  }
+  // One control per card, never both: Switch on the plans that cost nothing,
+  // Subscribe on the priced ones. A patient is never shown two ways to get one
+  // plan, one of which charges them — which is the property the old
+  // shelf-wide `!canPay` bought, now falling out of a single boolean per card.
+  const switchGuard = guards.find((g) => /canSwitch/.test(g))
+  const subscribeGuard = guards.find((g) => /canSubscribe/.test(g))
+  assert.ok(switchGuard && subscribeGuard, 'expected one Switch branch and one Subscribe branch')
+  assert.match(switchGuard, /isFree/, 'Switch must be offered only on a plan that costs nothing')
+  assert.match(subscribeGuard, /[^!]costsMoney/, 'Subscribe must be offered only on a plan that costs something')
 })
 
 test('every other plan offers an explicit upgrade control', () => {
@@ -556,8 +596,10 @@ test('subscribing rides the SAME dark-launch gate as the Billing screen', () => 
   // COS-801: the expression moved into usePlanChoiceControls, unchanged.
   assert.match(cards, /useSubscriptionUpgradeFlag/)
   assert.match(cards, /canSubscribe: subscribeEnabled && canPay/)
-  assert.match(cards, /canSubscribe && monthly/)
-  assert.match(cards, /canSubscribe && annual/)
+  assert.match(cards, /monthlyPaid && monthly/)
+  // COS-925 — gated on the ANNUAL price specifically. A plan free monthly and
+  // priced annually used to render "Subscribe monthly · $0" and charge.
+  assert.match(cards, /annualPaid && annual/)
 })
 
 test('with the gate off it explains itself instead of showing a dead button', () => {
@@ -566,21 +608,61 @@ test('with the gate off it explains itself instead of showing a dead button', ()
   // under a control that works.
   // COS-809 moved it OUT of the expander — there is no longer one to hide it
   // behind, and a card with no action and no explanation reads as broken.
-  assert.match(cards, /\{!current && !comingSoon && !canSubscribe && !canSwitch && \(/)
+  /*
+   * COS-924 asks the same question per card instead of per shelf. The AND form
+   * was correct only while the two flags were mutually exclusive platform-wide;
+   * now that a free card can offer Switch at the same moment a paid card's
+   * gateway is off, `!canSubscribe && !canSwitch` goes FALSE on that paid card
+   * — no button, no explanation, exactly the broken card this test exists to
+   * stop. The ternary asks the only question that matters: does THIS card's own
+   * control exist?
+   */
+  assert.match(cardsCode, /!current && !comingSoon && \(costsMoney \? !canSubscribe : !\(isFree && canSwitch\)\) && \(/)
+  assert.doesNotMatch(
+    cardsCode,
+    /!canSubscribe && !canSwitch/,
+    'the shelf-wide AND is back — a paid card with its gateway off goes silent',
+  )
   assert.match(cards, /in-app subscribing is not available yet/)
 })
 
 test('annual is offered only when the plan actually has an annual price', () => {
   // Two buttons both quoting the monthly figure would be a worse lie than one.
-  const annualIdx = cards.indexOf("cycle: 'annual'")
-  assert.ok(annualIdx > -1, 'expected an annual subscribe path')
-  assert.match(cards.slice(0, annualIdx), /canSubscribe && annual \? \(/)
+  /*
+   * COS-924 runs the purchase in place, so the annual button calls
+   * onSubscribe(plan, 'annual') instead of pushing a route with `cycle:
+   * 'annual'` baked into its params. Re-anchored on the new call. The guard it
+   * has to sit behind is unchanged, and so is the property — the annual button
+   * renders only when there is an annual price to quote.
+   *
+   * Sliced against comment-stripped source, and the anchor is asserted BEFORE
+   * the slice: indexOf(-1) + slice would otherwise hand the match a single
+   * character and pass on nothing.
+   */
+  const annualIdx = cardsCode.indexOf("onSubscribe(plan, 'annual')")
+  assert.ok(annualIdx > -1, 'anchor moved: expected an annual subscribe path')
+  assert.match(cardsCode.slice(0, annualIdx), /annualPaid && annual \? \(/)
 })
 
 test('the checkout seam is told which plan and which cycle', () => {
   const checkout = read('app/Home/billing-checkout.tsx')
-  assert.match(cards, /params: \{ planKey: plan\.planKey, planName: plan\.name, cycle: 'monthly' \}/)
-  assert.match(cards, /params: \{ planKey: plan\.planKey, planName: plan\.name, cycle: 'annual' \}/)
+  /*
+   * COS-924 moved the purchase onto the card: the subscribe buttons call pay()
+   * directly and only fall through to the checkout screen when there is a
+   * genuine multi-method choice with no native store. So there are two seams to
+   * feed now, not one, and the cycle reaches both as a variable rather than as
+   * a literal baked into two near-identical router.push calls.
+   *
+   * The property is why this test exists and is unchanged: the two buttons must
+   * not end up in the same place. Assert they pass DIFFERENT cycles, and that
+   * every seam downstream carries the plan and the cycle through.
+   */
+  assert.match(cardsCode, /onSubscribe\(plan, 'monthly'\)/)
+  assert.match(cardsCode, /onSubscribe\(plan, 'annual'\)/)
+  // The in-place purchase seam.
+  assert.match(cardsCode, /pay\(chosen, \{ planKey: plan\.planKey, cycle \}\)/)
+  // The fallback-screen seam, still carrying everything that screen renders.
+  assert.match(cardsCode, /params: \{ planKey: plan\.planKey, planName: plan\.name, cycle \}/)
   // And it must actually READ them — otherwise the two buttons land on an
   // identical screen and the app looks like it ignored the tap.
   assert.match(checkout, /useLocalSearchParams/)

@@ -37,7 +37,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
-import { priceLines } from '@/lib/plan-price';
+import { planChoice, priceLines } from '@/lib/plan-price';
+import { usePaymentMethods } from '@/hooks/use-payment-methods';
 import { parseHighlight, sortRows } from '@/lib/plan-highlight';
 import { assessmentBadge } from '@/lib/plan-assessment-badge';
 import { planAccent } from '@/lib/plan-accent';
@@ -125,7 +126,20 @@ export function usePatientPlans() {
  * computed here; exporting it beats a second copy of the expressions that
  * can drift out of step with this one.
  */
-export function usePlanChoiceControls(): { canSubscribe: boolean; canSwitch: boolean } {
+export function usePlanChoiceControls(): {
+  canSubscribe: boolean;
+  canSwitch: boolean;
+  /**
+   * COS-918's first-run door, kept EXACTLY as it was.
+   *
+   * It used to read `canSwitch`, and COS-924 changed what that word means, so
+   * it gets its own expression rather than silently inheriting a new one. The
+   * property it defends is unchanged and still worth having: the chooser that
+   * opens ITSELF stops opening the moment a gateway goes live, with no flag
+   * anyone has to remember to unset. Only the door reads this.
+   */
+  autoOpenChooser: boolean;
+} {
   // Same gate the Billing screen uses. There is no payment integration, so
   // the subscribe controls ship dark on prod and live on dev.
   const subscribeEnabled = useSubscriptionUpgradeFlag();
@@ -150,9 +164,29 @@ export function usePlanChoiceControls(): { canSubscribe: boolean; canSwitch: boo
    * controls hang off it, so exactly one of them shows and neither dead-ends.
    */
   const { canPay } = usePaymentGateways();
+  /*
+   * COS-924 — EXCLUSIVITY IS PER PLAN, NOT PER PLATFORM.
+   *
+   * `canSwitch` was `selfSwitchEnabled && !canPay`, which made the two
+   * controls mutually exclusive across the WHOLE SHELF. The property that
+   * bought — a patient is never shown two ways to get one plan, one of them
+   * paid — is real and is kept. The mechanism was wrong.
+   *
+   * Turning on Apple IAP set canPay, which set canSwitch false for every card
+   * at once, including the plans that cost nothing. Vishal: "the plans where
+   * we have not configured any payment... will be considered as a free plan,
+   * and I can directly switch to those plans. So there should not be any
+   * restrictions."
+   *
+   * A plan's price already decides which control it gets — `costsMoney` below
+   * — so exclusivity now falls out of a single boolean per card and cannot be
+   * violated by construction. That is strictly stronger than the platform-wide
+   * version, which could only ever say "nobody switches" or "nobody buys".
+   */
   return {
     canSubscribe: subscribeEnabled && canPay,
-    canSwitch: selfSwitchEnabled && !canPay,
+    canSwitch: selfSwitchEnabled,
+    autoOpenChooser: selfSwitchEnabled && !canPay,
   };
 }
 
@@ -253,6 +287,38 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   const queryClient = useQueryClient();
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  /*
+   * COS-924 — the purchase runs HERE, not on a screen of its own.
+   *
+   * Vishal: "when I click on the subscribe, it is taking me to another screen
+   * just giving me that option pay with Apple or pay with card or go back. So
+   * first of all, I don't need this new screen. I just need a modal which will
+   * be taking me to the Apple subscription process."
+   *
+   * He is right, and the reason is structural rather than taste. On iOS the
+   * store's own sheet IS the modal — StoreKit presents it, we cannot draw it,
+   * and nothing we put in front of it adds a decision. billing-checkout was
+   * built (COS-793) to render a CHOICE between gateways, and on iOS there
+   * effectively is none: Apple's own billing is the compliant way to sell
+   * digital content in-app, so the screen was staging a decision with one real
+   * answer and a tap in front of the sheet.
+   *
+   * `pay()` is reused unchanged — it is the same hook billing-checkout calls,
+   * so the receipt still goes to /v1/payments/verify and entitlement still
+   * follows the SERVER's verification and never the client's word.
+   */
+  const { methods, only, pay } = usePaymentMethods();
+  const [paying, setPaying] = useState<string | null>(null);
+  /*
+   * COS-925 — keyed by plan, exactly as `paying` already was.
+   *
+   * It was one string for the whole section, rendered inside the per-card map,
+   * so a failure on one plan printed its message under EVERY paid card — four
+   * cards all saying "Payment received" when one purchase had been attempted.
+   */
+  const [payError, setPayError] = useState<{ planKey: string; message: string } | null>(null);
+  /** The browser has a checkout open. See 'handed-off' in onSubscribe. */
+  const [handedOff, setHandedOff] = useState(false);
 
   async function onSwitch(planKey: string) {
     if (switching) return;
@@ -266,6 +332,91 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
       setSwitchError(serverMessage(err, 'Could not change your plan. Please try again.'));
     } finally {
       setSwitching(null);
+    }
+  }
+
+  /**
+   * Start a purchase from the card, with no screen in between.
+   *
+   * WHICH METHOD: the platform's own store wins whenever it can be used. On
+   * iOS that is Apple, which is both what Vishal asked for and the only
+   * compliant way to take payment for digital content inside the app. Stripe
+   * stays as the fallback for a build or platform with no native store — that
+   * is COS-794's external-link path and this does not change it, it just stops
+   * offering a US-only link as a peer of the sheet.
+   *
+   * A genuine choice — two usable methods, neither of them the native store —
+   * still goes to billing-checkout. That screen keeps earning its place for
+   * exactly the case it was built for.
+   */
+  async function onSubscribe(plan: { planKey: string; name: string }, cycle: 'monthly' | 'annual') {
+    if (paying || handedOff) return;
+    const native = methods.find((m) => m.usable && m.kind === 'native');
+    const chosen = native ?? only;
+    if (!chosen) {
+      router.push({
+        pathname: '/Home/billing-checkout',
+        params: { planKey: plan.planKey, planName: plan.name, cycle },
+      } as never);
+      return;
+    }
+    setPaying(`${plan.planKey}:${cycle}`);
+    setPayError(null);
+    try {
+      const outcome = await pay(chosen, { planKey: plan.planKey, cycle });
+
+      // Backed out of the store sheet: nothing was charged and nothing should
+      // be said — least of all closing the chooser as though the plan changed.
+      if (outcome.status === 'cancelled') return;
+
+      /*
+       * COS-925 — 'handed-off' does NOT re-arm the button.
+       *
+       * The system browser now owns the screen with a live Stripe Checkout
+       * Session in it. Clearing `paying` in the finally put the button back to
+       * "Subscribe monthly" underneath, so coming back to the app and tapping
+       * again opened a SECOND session for the same plan — two subscriptions,
+       * two charges, and only one of them cancellable from our side.
+       *
+       * The screen the patient returns to is refreshed by the redirect's own
+       * return URL, so leaving the button parked costs nothing.
+       */
+      if (outcome.status === 'handed-off') {
+        setHandedOff(true);
+        return;
+      }
+
+      if (outcome.status === 'failed') {
+        setPayError({ planKey: plan.planKey, message: outcome.message });
+        return;
+      }
+
+      /*
+       * Refresh both, in this order. The plan shelf is what the patient is
+       * looking at; billing is what the next screen reads. Awaiting the
+       * invalidation before onSwitched() means the tab does not close onto a
+       * card still showing the old plan.
+       *
+       * 'pending' refreshes TOO: the money has moved and the server is
+       * idempotent on the provider's transaction id, so the plan may well have
+       * landed between the verify call and this refetch. It keeps the chooser
+       * open and says so, because the one thing that must not happen is
+       * telling someone their plan changed when it has not.
+       */
+      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+      await queryClient.invalidateQueries({ queryKey: ['billing'] });
+      if (outcome.status === 'pending') {
+        setPayError({ planKey: plan.planKey, message: outcome.message });
+        return;
+      }
+      onSwitched?.();
+    } catch (err) {
+      setPayError({
+        planKey: plan.planKey,
+        message: serverMessage(err, 'That purchase could not be completed. You have not been charged.'),
+      });
+    } finally {
+      setPaying(null);
     }
   }
   const plans = data?.plans ?? [];
@@ -359,6 +510,8 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         // a COMING SOON badge (COS-432). Same treatment, driven by the plan's
         // status from the dashboard rather than a hardcoded list in the app.
         const comingSoon = plan.status === 'coming-soon';
+        // COS-925 — one definition, shared with the billing screen. See planChoice.
+        const { monthlyPaid, annualPaid, costsMoney, isFree } = planChoice(plan.pricing);
         // The plan they are already on. Reads the server's flag rather than
         // comparing keys here — see PlanShelfCard.isCurrent.
         const current = plan.isCurrent === true;
@@ -722,7 +875,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               annual is a real choice that has to be made before there is
               anything to press.
             */}
-            {!current && !comingSoon && canSwitch && (
+            {!current && !comingSoon && isFree && canSwitch && (
               <Pressable
                 onPress={() => void onSwitch(plan.planKey)}
                 disabled={switching !== null}
@@ -769,9 +922,11 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
             {/* Neither control available: say why, inline. There is no longer
                 an expander to hide it behind, and a card with no action and no
                 explanation reads as broken. */}
-            {!current && !comingSoon && !canSubscribe && !canSwitch && (
+            {!current && !comingSoon && (costsMoney ? !canSubscribe : !(isFree && canSwitch)) && (
               <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13), marginTop: 12 }]}>
-                Your care team can switch you to this plan — in-app subscribing is not available yet.
+                {costsMoney
+                  ? 'Your care team can move you to this plan — in-app subscribing is not available yet.'
+                  : 'Your care team can move you to this plan.'}
               </Text>
             )}
 
@@ -787,25 +942,25 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 Opens in place. It deliberately does NOT navigate: the whole
                 value of the shelf is comparing plans side by side, and pushing
                 a screen to read one of them throws that away. */}
-            {!current && !comingSoon && canSubscribe && (
+            {!current && !comingSoon && costsMoney && canSubscribe && (
               <View style={[styles.detail, { borderTopColor: colors.border ?? '#E0E0E0' }]}>
-                {canSubscribe && monthly ? (
+                {monthlyPaid && monthly ? (
                   <Pressable
                     onPress={() =>
-                      router.push({
-                        pathname: '/Home/billing-checkout',
-                        params: { planKey: plan.planKey, planName: plan.name, cycle: 'monthly' },
-                      } as never)
+                      void onSubscribe(plan, 'monthly')
                     }
                     accessibilityRole="button"
                     accessibilityLabel={`Subscribe to ${plan.name} monthly at ${monthly}.`}
+                    disabled={paying !== null || handedOff}
                     style={({ pressed }) => [
                       styles.subscribeBtn,
-                      { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                      { backgroundColor: colors.tint, opacity: pressed || paying || handedOff ? 0.85 : 1 },
                     ]}
                   >
                     <Text style={[styles.subscribeText, { fontSize: getScaledFontSize(14) }]}>
-                      {`Subscribe monthly · ${monthly}`}
+                      {paying === `${plan.planKey}:monthly`
+                        ? 'Opening the store…'
+                        : `Subscribe monthly · ${monthly}`}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -813,33 +968,50 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 {/* Only offered when the plan actually has an annual price —
                     a second button quoting the monthly figure twice would be
                     a worse lie than having one button. */}
-                {canSubscribe && annual ? (
+                {annualPaid && annual ? (
                   <Pressable
                     onPress={() =>
-                      router.push({
-                        pathname: '/Home/billing-checkout',
-                        params: { planKey: plan.planKey, planName: plan.name, cycle: 'annual' },
-                      } as never)
+                      void onSubscribe(plan, 'annual')
                     }
                     accessibilityRole="button"
                     accessibilityLabel={
                       `Subscribe to ${plan.name} annually at ${annual}.` +
                       (annualSavingPct ? ` Saves ${String(annualSavingPct)} percent.` : '')
                     }
+                    disabled={paying !== null || handedOff}
                     style={({ pressed }) => [
                       styles.subscribeBtnAlt,
-                      { borderColor: colors.tint, opacity: pressed ? 0.85 : 1 },
+                      { borderColor: colors.tint, opacity: pressed || paying || handedOff ? 0.85 : 1 },
                     ]}
                   >
                     <Text style={[styles.subscribeTextAlt, { color: colors.tint, fontSize: getScaledFontSize(14) }]}>
-                      {`Subscribe annually · ${annual}${annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}`}
+                      {paying === `${plan.planKey}:annual`
+                        ? 'Opening the store…'
+                        : `Subscribe annually · ${annual}${annualSavingPct ? `  ·  save ${String(annualSavingPct)}%` : ''}`}
                     </Text>
                   </Pressable>
                 ) : null}
 
-                {/* COS-804 — the Switch control moved OUT of here and onto the
-                    card, where the label already promised it. Two of them
-                    would be VoiceOver reading the same action twice. */}
+                {/* The store's own words, on the card. COS-923 made these
+                    name the product id and Apple's message rather than one
+                    fixed sentence for four different failures; putting them
+                    here rather than on a screen the patient has left means
+                    they are read next to the button that produced them. */}
+                {/* Parked, not broken. Without this the disabled button is
+                    just a dead control and the patient taps it again. */}
+                {handedOff ? (
+                  <Text style={[styles.detailNote, { color: colors.subtext ?? colors.text, fontSize: getScaledFontSize(13) }]}>
+                    Finish checkout in your browser, then come back — your plan
+                    updates here automatically.
+                  </Text>
+                ) : null}
+
+                {payError?.planKey === plan.planKey && paying === null ? (
+                  <Text style={[styles.switchError, { fontSize: getScaledFontSize(13) }]}>
+                    {payError.message}
+                  </Text>
+                ) : null}
+
 
               </View>
             )}

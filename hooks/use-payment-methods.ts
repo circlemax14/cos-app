@@ -30,6 +30,36 @@ import { startPurchase, verifyStorePurchase } from '@/services/api/payments';
 
 export type { PaymentMethod, PaymentChoice };
 
+/**
+ * COS-924 — what actually happened, instead of a message-or-null.
+ *
+ * `pay()` used to return `string | null`, and null meant THREE different
+ * things: the patient cancelled the store sheet, the purchase was verified and
+ * the plan is live, and the system browser has taken over. billing-checkout
+ * never had to tell them apart — it only ever rendered the message — so the
+ * ambiguity was invisible.
+ *
+ * The plan shelf is the first caller that ACTS on success: it refreshes the
+ * plan and closes the chooser. Reading null as success there would have closed
+ * the chooser and shown the new plan when the patient had cancelled Apple's
+ * sheet and paid nothing.
+ *
+ * Fixed here rather than at the call site, because a caller cannot recover a
+ * distinction the contract threw away, and the next caller would get it wrong
+ * the same way.
+ */
+export type PayOutcome =
+  /** Verified by the server. The plan is live — safe to refresh and move on. */
+  | { status: 'applied' }
+  /** The money moved but the plan has not landed yet. Say so; do NOT retry. */
+  | { status: 'pending'; message: string }
+  /** The patient backed out. Nothing was charged and nothing should be said. */
+  | { status: 'cancelled' }
+  /** The system browser owns the screen now. Anything we say talks over it. */
+  | { status: 'handed-off' }
+  /** It did not happen. `message` is safe to show. */
+  | { status: 'failed'; message: string };
+
 export interface UsePaymentMethods {
   isLoading: boolean;
   /** Every method the server offered, usable or not, in the server's order. */
@@ -38,14 +68,11 @@ export interface UsePaymentMethods {
   mode: PaymentChoice['mode'];
   /** The only way to pay, when there is exactly one. Null otherwise. */
   only: PaymentMethod | null;
-  /**
-   * Run a purchase. Resolves to a message to show the patient, or null when
-   * the system browser has taken over and anything we said would talk over it.
-   */
+  /** Run a purchase. See PayOutcome — the caller must not treat these alike. */
   pay: (
     method: PaymentMethod,
     order: { planKey: string; cycle: 'monthly' | 'annual' },
-  ) => Promise<string | null>;
+  ) => Promise<PayOutcome>;
 }
 
 export function usePaymentMethods(): UsePaymentMethods {
@@ -59,10 +86,12 @@ export function usePaymentMethods(): UsePaymentMethods {
     async (
       method: PaymentMethod,
       order: { planKey: string; cycle: 'monthly' | 'annual' },
-    ): Promise<string | null> => {
+    ): Promise<PayOutcome> => {
       // Belt to the UI's braces: an unusable method is not rendered as a
       // button, and if that ever slips it still cannot reach the network.
-      if (!method.usable) return method.reason;
+      if (!method.usable) {
+        return { status: 'failed', message: method.reason ?? 'That payment method is not available.' };
+      }
 
       if (method.kind === 'native') {
         /*
@@ -97,54 +126,74 @@ export function usePaymentMethods(): UsePaymentMethods {
             // The server changed its mind about how this gateway works. Do not
             // guess — a redirect handled as a native purchase charges nothing
             // and reports success.
-            return 'That payment method is not available right now.';
+            return { status: 'failed', message: 'That payment method is not available right now.' };
           }
           productId = started.productId;
         } catch {
           // Deliberately not surfacing the server's message: it can name SSM
           // parameter paths (payments.routes.ts says so where it builds them).
-          return 'We could not start that purchase. Please try again.';
+          return { status: 'failed', message: 'We could not start that purchase. Please try again.' };
         }
-
-        const provider = getPaymentProvider(method.id);
-        const result = await provider?.purchase(productId);
-        if (!result || result.status === 'unavailable') {
-          return result?.reason ?? 'That payment method isn’t available in this version of the app.';
-        }
-        if (result.status === 'cancelled') return null;
 
         /*
-         * COS-893 — the drop-in landed, so the receipt is posted here.
+         * COS-925 — verification is handed TO the store layer, not run after it.
          *
-         * The store charging the card grants NOTHING on its own. Entitlement
-         * follows only after the server has checked the receipt with Apple or
-         * Google, which is also what stops a client simply claiming it paid.
+         * finishTransaction has to follow the server's confirmation and has to
+         * happen while the store connection is open. Splitting those across two
+         * files meant neither did it: nothing in the app called
+         * finishTransaction at all. On Google that is an automatic refund after
+         * three days on a plan we go on honouring; on Apple the transaction
+         * replays on every launch forever.
          *
-         * A verify failure is reported as "paid, not applied yet" rather than
-         * as a failed purchase, because the money HAS moved. The server is
-         * idempotent on the provider's transaction id, so a later retry — on
-         * the next cold start, say — settles it without double-charging.
+         * Entitlement still follows the SERVER and never the client's word —
+         * that is the whole reason this callback exists rather than the store
+         * layer deciding for itself.
          */
-        try {
-          const applied = await verifyStorePurchase(
-            result.platform === 'ios'
+        const provider = getPaymentProvider(method.id);
+        const result = await provider?.purchase(productId, async (proof) =>
+          verifyStorePurchase(
+            proof.platform === 'ios'
               ? {
                   gateway: 'apple-iap',
-                  transactionId: result.transactionId ?? result.productId,
-                  signedPayload: result.receipt,
+                  transactionId: proof.transactionId ?? proof.productId,
+                  signedPayload: proof.receipt,
                 }
               : {
                   gateway: 'google-play',
-                  purchaseToken: result.receipt,
-                  productId: result.productId,
+                  purchaseToken: proof.receipt,
+                  productId: proof.productId,
                 },
-          );
-          return applied.applied
-            ? null
-            : 'Payment received. Your plan will update shortly.';
-        } catch {
-          return 'Payment received, but we could not confirm it yet. It will apply automatically — no need to pay again.';
+          ),
+        );
+
+        if (!result || result.status === 'unavailable') {
+          return {
+            status: 'failed',
+            message:
+              result?.reason ?? 'That payment method isn\u2019t available in this version of the app.',
+          };
         }
+        // Distinct from success. The shelf must not refresh or close on this.
+        if (result.status === 'cancelled') return { status: 'cancelled' };
+
+        /*
+         * COS-925 — 'pending' no longer promises a retry nobody performs.
+         *
+         * It used to end "It will apply automatically \u2014 no need to pay again",
+         * which was false in both directions: nothing in the app retries a
+         * failed verify, and the sentence talks the patient out of the one
+         * action that WOULD recover it. The transaction is deliberately left
+         * unfinished, so the store replays it and the next purchase attempt
+         * settles it \u2014 and /v1/payments/verify is idempotent on the
+         * provider's transaction id, so that costs nothing.
+         */
+        return result.applied
+          ? { status: 'applied' }
+          : {
+              status: 'pending',
+              message:
+                'Payment received, but your plan has not updated yet. Reopen this screen in a minute \u2014 you will not be charged again.',
+            };
       }
 
       // Redirect. launchPurchase owns the Apple compliance guard (out of
@@ -154,7 +203,9 @@ export function usePaymentMethods(): UsePaymentMethods {
         planKey: order.planKey,
         cycle: order.cycle,
       });
-      return outcome.status === 'opened-external' ? null : describeOutcome(outcome);
+      return outcome.status === 'opened-external'
+        ? { status: 'handed-off' }
+        : { status: 'failed', message: describeOutcome(outcome) };
     },
     [],
   );

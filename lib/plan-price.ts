@@ -72,3 +72,45 @@ export function priceLines(pricing: PlanPricing | null | undefined): {
     label,
   };
 }
+
+/**
+ * COS-925 — which control a plan card offers, defined ONCE.
+ *
+ * The shelf (components/plan/PlanStatusSection.tsx) and the billing screen
+ * (app/Home/billing.tsx) render the same plans and each had its own answer.
+ * Billing's was `isPurchasable(plan)`, which COS-924 had to invert, and the
+ * inversion silently offered a free one-tap Switch on COMING-SOON plans —
+ * because billing's card type carries no status and could not tell. Two copies
+ * of one rule is how that happened, so there is one copy now.
+ *
+ * Money rule, stated once: a plan is only FREE if it has no positive price on
+ * either cycle AND the admin did not write a price in words. A plan priced
+ * "Contact us" with no figure is neither chargeable (there is no amount to
+ * send, and no store product) nor giveable — so it is offered as neither.
+ */
+export function planChoice(pricing: PlanPricing | null | undefined): {
+  /** Has a real monthly amount. Gate the monthly Subscribe button on THIS. */
+  monthlyPaid: boolean;
+  /** Has a real annual amount. Gate the annual Subscribe button on THIS. */
+  annualPaid: boolean;
+  /** Either cycle costs something. */
+  costsMoney: boolean;
+  /** An admin priced it in words and gave no figure. Not free, not sellable. */
+  pricedInWordsOnly: boolean;
+  /** Safe to hand over for nothing. */
+  isFree: boolean;
+} {
+  // `> 0`, not "is a number": a 0 renders as "$0" rather than null, so a
+  // truthiness test on the formatted line calls a free plan paid.
+  const monthlyPaid = (pricing?.monthlyPriceCents ?? 0) > 0;
+  const annualPaid = (pricing?.annualPriceCents ?? 0) > 0;
+  const costsMoney = monthlyPaid || annualPaid;
+  const pricedInWordsOnly = !costsMoney && Boolean(pricing?.displayPriceLabel?.trim());
+  return {
+    monthlyPaid,
+    annualPaid,
+    costsMoney,
+    pricedInWordsOnly,
+    isFree: !costsMoney && !pricedInWordsOnly,
+  };
+}
