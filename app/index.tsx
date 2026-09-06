@@ -3,8 +3,9 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import ConnectionErrorScreen from '@/components/ConnectionErrorScreen';
 import { checkSession, UserProfile } from '@/services/auth';
 import { readSessionPresence } from '@/lib/auth-tokens';
 import { getCachedProfile } from '@/lib/cached-profile';
@@ -26,7 +27,18 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-type GateState = 'loading' | 'no-internet' | 'done';
+/*
+ * COS-890 — 'session-unreadable' is NOT 'no-internet'.
+ *
+ * The splash showed "No Internet Connection" for a condition in which no
+ * network call had been made at all: readSessionPresence came back
+ * 'indeterminate', meaning the iOS Keychain had not woken up yet. Ken:
+ * "internet not available screen on open despite a working connection;
+ * tapping retry fixes it." Retry fixes it because the SECOND Keychain read
+ * succeeds — the network was never the problem, and saying it was sent him
+ * to check his wifi.
+ */
+type GateState = 'loading' | 'no-internet' | 'session-unreadable' | 'done';
 
 /**
  * Determine the correct destination based on user onboarding state.
@@ -201,7 +213,9 @@ export default function SplashGate() {
         if (pinConfigured) {
           router.replace('/(security)/lock-screen' as never);
         } else {
-          setState('no-internet');
+          // Say what actually happened. Retry re-runs run(), which re-reads
+          // the Keychain — by then warm — and routes normally.
+          setState('session-unreadable');
         }
         return;
       }
@@ -281,24 +295,11 @@ export default function SplashGate() {
     run();
   }, [run, retryKey]);
 
-  if (state === 'no-internet') {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.offlineIcon]}>📵</Text>
-        <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(20) }]}>
-          No Internet Connection
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-          Check your connection and try again.
-        </Text>
-        <TouchableOpacity
-          style={[styles.retryButton, { backgroundColor: colors.primary }]}
-          onPress={() => setRetryKey((k) => k + 1)}
-        >
-          <Text style={[styles.retryText, { fontSize: getScaledFontSize(16) }]}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
+  // COS-C6: this block moved to components/ConnectionErrorScreen.tsx so the
+  // social sign-in path can show the same screen. Both variants render exactly
+  // what they rendered here — see COS-890 above for why the copy differs.
+  if (state === 'no-internet' || state === 'session-unreadable') {
+    return <ConnectionErrorScreen variant={state} onRetry={() => setRetryKey((k) => k + 1)} />;
   }
 
   return (
@@ -314,6 +315,7 @@ export default function SplashGate() {
 }
 
 const styles = StyleSheet.create({
+  // The error-state styles moved with the markup to ConnectionErrorScreen.
   container: {
     flex: 1,
     alignItems: 'center',
@@ -321,14 +323,4 @@ const styles = StyleSheet.create({
     gap: 24,
     paddingHorizontal: 24,
   },
-  offlineIcon: { fontSize: 56 },
-  title: { fontWeight: '700', textAlign: 'center' },
-  subtitle: { textAlign: 'center', marginTop: -12 },
-  retryButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  retryText: { color: '#fff', fontWeight: '600' },
 });

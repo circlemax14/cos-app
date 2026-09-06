@@ -27,12 +27,14 @@ import {
 } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router, Stack } from 'expo-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { fetchPlanTypeCards } from '@/services/plan-type-cards'
 
 import { AppWrapper } from '@/components/app-wrapper'
 import { updatePlanType, type PlanType } from '@/services/api/plan-type'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { usePlanType } from '@/hooks/use-plan-type'
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
@@ -179,6 +181,24 @@ const CONSENT_COPY: Record<PlanType, string> = {
 
 export default function PlanTypeChooserRoute(): React.JSX.Element {
   const queryClient = useQueryClient()
+
+  /**
+   * COS-734 — card copy now comes from the backend so an admin can edit it
+   * without an app release. PLAN_CARDS below stays as the LAST-RESORT fallback:
+   * this screen drives assessment intensity, so it has to render even offline.
+   *
+   * `type`, `assessmentLevel` and `icon` still come from the response, but the
+   * fetcher drops any card whose type is not one of ours — the enum is clinical
+   * and the server must not be able to introduce a new one.
+   */
+  const cardsQuery = useQuery({
+    queryKey: ['plan-type-cards'],
+    queryFn: () => fetchPlanTypeCards(PLAN_CARDS),
+    staleTime: 5 * 60 * 1000,
+    // The fallback is already the embedded copy, so a retry buys nothing.
+    retry: false,
+  })
+  const cards = (cardsQuery.data ?? PLAN_CARDS) as typeof PLAN_CARDS
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const planTypeDisplayName = usePlanTypeDisplayName()
@@ -253,6 +273,15 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
     setConsentAck(false)
   }, [migrating])
 
+  // COS-856 entitlement gate. Hook runs unconditionally, above every return.
+  const canView = useCanRender('plan-type-chooser.view')
+  // Gates the selectable tier card itself (the entry control). Not the inline
+  // consent or the Confirm button — those are only reachable by pressing a
+  // card, so hiding the card cannot strand anyone mid-switch.
+  const canChooseBpsPlan = useCanRender('plan-type-chooser.choose-bps-plan')
+
+  if (!canView) return <AppWrapper><View /></AppWrapper>
+
   return (
     <AppWrapper>
       <Stack.Screen options={{ title: 'Plan type', headerBackTitle: 'Care Plan' }} />
@@ -313,7 +342,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
           ) : null}
 
           {/* Selectable tiers first, then coming-soon tiers underneath. */}
-          {PLAN_CARDS.filter((c) => AGENCY_PLANS_ENABLED || !isAgencyType(c.type)).map((card) => {
+          {cards.filter((c) => AGENCY_PLANS_ENABLED || !isAgencyType(c.type)).map((card) => {
             const isCurrent = card.type === currentType
             const isAgencyTier = card.type === 'agency-supported' || card.type === 'agency-managed'
             const isAgencyDisabled = isAgencyTier && !hasAgency
@@ -324,6 +353,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
 
             return (
               <View key={card.type}>
+                {canChooseBpsPlan && (
                 <Pressable
                   onPress={() => {
                     if (!disabled) {
@@ -459,6 +489,7 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
                     </Text>
                   ) : null}
                 </Pressable>
+                )}
 
                 {isExpanded ? (
                   <View
@@ -592,6 +623,38 @@ export default function PlanTypeChooserRoute(): React.JSX.Element {
               getScaledFontWeight={getScaledFontWeight}
             />
           ))}
+
+          {/*
+            COS-737 — this screen chooses ASSESSMENT INTENSITY, which is free and
+            clinical. Billing plans are a separate thing with prices, so they get
+            a separate screen rather than being mixed into these cards: nobody
+            should change their screener depth by picking a price, or be charged
+            for choosing more screeners.
+          */}
+          <Pressable
+            onPress={() => router.push('/Home/billing' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="View your plan and pricing"
+            style={{
+              marginTop: 8,
+              marginBottom: 24,
+              paddingVertical: 14,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: colors.border ?? '#E5E7EB',
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: getScaledFontWeight(600) as never,
+              }}
+            >
+              View your plan and pricing
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
     </AppWrapper>

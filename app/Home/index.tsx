@@ -55,6 +55,7 @@ import { useHealthAge } from '@/hooks/use-health-age';
 // Self-gated: DailyReadCard returns null when flag OFF (defense in depth).
 // Copy is HONEST placeholder pending Ken clinical + design review.
 import { DailyReadCard } from '@/components/home/DailyReadCard';
+import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
 // 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
 import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
@@ -92,6 +93,7 @@ import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation';
 import { useHomeV2InjectionsEnabled } from '@/hooks/use-home-v2-injections-flag';
 import { useTodayWindow } from '@/hooks/use-local-day';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // Helper function to detect if device is a tablet
 const isTablet = () => {
@@ -2737,6 +2739,12 @@ function HomeV2Layout(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const catalog = useScoreCatalog();
   const wellbeing = useWellbeingDerivation();
+  // Entitlement gates. Unconditional, top of component — the v2 surface is
+  // behind EXPO_PUBLIC_HOME_V2_ENABLED today, so these are inert until that
+  // flips, but the gate has to exist before the flag does.
+  const canHome = useCanRender('home.view');
+  const canBannerCta = useCanRender('home.banner-cta');
+  const canWellbeingMapCta = useCanRender('home.wellbeing-map-cta');
   const [patientName, setPatientName] = useState<string>('');
   const [isLoadingPatient, setIsLoadingPatient] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -2808,6 +2816,7 @@ function HomeV2Layout(): React.JSX.Element {
   return (
     <AppWrapper notificationCount={3}>
       <HomeResponsiveProvider>
+        {canHome && (
         <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
@@ -2872,6 +2881,7 @@ function HomeV2Layout(): React.JSX.Element {
             />
           </View>
 
+          {canBannerCta && (
           <View style={{ paddingHorizontal: 16 }}>
             <BpsPlanFocusBanner
               enabled
@@ -2889,8 +2899,9 @@ function HomeV2Layout(): React.JSX.Element {
               getScaledFontWeight={getScaledFontWeight}
             />
           </View>
+          )}
 
-          <WellbeingMapPreview />
+          {canWellbeingMapCta && <WellbeingMapPreview />}
 
           {/* Placeholder shelf — QA-only surfaces for Sleep + Wheel-8D.
               Gated hard on the placeholder flag so production users
@@ -2924,6 +2935,7 @@ function HomeV2Layout(): React.JSX.Element {
             />
           ) : null}
         </ScrollView>
+        )}
       </HomeResponsiveProvider>
     </AppWrapper>
   );
@@ -2931,6 +2943,11 @@ function HomeV2Layout(): React.JSX.Element {
 
 function HomeScreenInner() {
   const { getScaledFontSize, settings, getScaledFontWeight } = useAccessibility();
+  // Entitlement gates. Unconditional, above every early return (the
+  // isHomeV2Enabled() bail-out further down is one).
+  const canHome = useCanRender('home.view');
+  const canQuickActions = useCanRender('home.quick-actions');
+  const canTodayWidget = useCanRender('home.today-widget');
   const userImg = undefined;
   const isTabletDevice = isTablet();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -2956,6 +2973,11 @@ function HomeScreenInner() {
   // (byte-identical to today when OFF). No compute on the flag-off
   // path; the shared /v1/feature-flags cache is already in memory.
   const dailyReadEnabled = useDailyReadFlag();
+
+  // COS-784 — the plan shelf tile. Reads the shared /v1/feature-flags cache
+  // that is already in memory, so this costs nothing on the flag-off path and
+  // the tile is byte-identical to today's Home when OFF.
+  const planShelfEnabled = usePlanShelfFlag();
 
   // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
   // built from today's driver metrics. Chat route auto-sends the
@@ -3205,6 +3227,19 @@ function HomeScreenInner() {
   }, []);
 
   const onRefresh = useCallback(async () => {
+    /*
+     * COS-875 — pull-to-refresh reloads the CARE CIRCLE too.
+     *
+     * Ken: "I almost always have to go out and sign in again for the circle to
+     * populate." loadFromServer() — which restores the saved provider
+     * selection the ring renders — had exactly ONE trigger: a mount-only
+     * effect whose deps are stable-forever useCallback refs. It fired once per
+     * mount and never again, and this handler, the patient's only manual
+     * recovery gesture, did not call it. A single failed fetch on a cold
+     * launch therefore left the ring empty for the whole process, and
+     * re-signing in was the only cure because it is the one path that both
+     * remounts Home AND supplies a fresh token.
+     */
     setRefreshing(true);
     try {
       const [providers, patient, allAppointments, taskCount, recItems] = await Promise.all([
@@ -3213,6 +3248,7 @@ function HomeScreenInner() {
         fetchAppointments(),
         fetchPendingTaskCount(),
         fetchRecommendedAppointments({ status: 'pending' }),
+        loadFromServer(),
       ]);
       setFastenProviders(providers);
       setPendingTaskCount(taskCount);
@@ -3264,7 +3300,7 @@ function HomeScreenInner() {
     } finally {
       setRefreshing(false);
     }
-  }, [validateAndCleanProviders]);
+  }, [validateAndCleanProviders, loadFromServer]);
 
   // Cycle through views: circle -> circle-providers -> list -> circle
   const toggleViewMode = () => {
@@ -3371,7 +3407,7 @@ function HomeScreenInner() {
           <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), marginTop: 12 }}>Loading your health data...</Text>
         </View>
       ) : null}
-      {!(isLoadingPatient || isLoadingAppointments) && <ScrollView
+      {canHome && !(isLoadingPatient || isLoadingAppointments) && <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -3473,13 +3509,13 @@ function HomeScreenInner() {
          *         paddingHorizontal on the ON branch — the pills row
          *         supplies its own marginHorizontal:16 internally.
          */}
-        {injectionsEnabled ? (
+        {canQuickActions && (injectionsEnabled ? (
           <HomeQuickActionPills />
         ) : (
           <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 6 }}>
             <QuickActionButtons />
           </View>
-        )}
+        ))}
 
         {/* SCRUM-279 (build 45): iPad-only — kill all extra vertical
             padding around the circle. Ken still saw space on build 44.
@@ -3659,6 +3695,7 @@ function HomeScreenInner() {
             length > 0 gate hiding the whole section when his iPad
             had no events for today. Empty state now surfaces an
             explicit "No appointments today" CTA. */}
+        {canTodayWidget && (
         <View style={styles.appointmentsSection}>
             <Text style={[
               styles.sectionTitle,
@@ -3784,6 +3821,7 @@ function HomeScreenInner() {
             </TouchableOpacity>
             )}
           </View>
+        )}
 
         {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
             an accent gradient overlay, four illustrative metric icons,
@@ -3964,6 +4002,50 @@ function HomeScreenInner() {
               })}
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* COS-784 — Your plan.
+            Additive and flag-gated: a plain `{cond && <View/>}` using only
+            primitives Home ALREADY imports (View / Text / Pressable /
+            MaterialIcons). No new wrapper component and no new react-native
+            import, because this file is the one with the iOS 26 cold-mount
+            crash history (ADR-0003) and an unfamiliar primitive here is how
+            that happens again.
+
+            The tile deliberately shows no price. It is a signpost, not a
+            second pricing surface to keep in step with the screen it opens. */}
+        {planShelfEnabled && (
+          <Pressable
+            onPress={() => router.push('/Home/plans' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Your plan"
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginHorizontal: 16,
+              marginBottom: 16,
+              padding: 16,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            }}
+          >
+            <MaterialIcons name="card-membership" size={getScaledFontSize(22)} color={colors.tint} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(15),
+                fontWeight: settings.isBoldTextEnabled ? '700' : '600',
+              }}>
+                Your plan
+              </Text>
+              <Text style={{ color: colors.icon, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+                See what your plan includes
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.icon} />
+          </Pressable>
         )}
 
         {/* SCRUM-279 (2026-06-03): Recommended Appointments section

@@ -38,6 +38,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useProactiveNudgesFlag } from '@/hooks/use-proactive-nudges-flag'
+import { useCanRender } from '@/hooks/use-entitlement'
 import {
   fetchNudgePrefs,
   fetchNudgeRules,
@@ -80,6 +81,19 @@ export default function NudgesScreen(): React.JSX.Element {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const queryClient = useQueryClient()
   const flagEnabled = useProactiveNudgesFlag()
+
+  // Entitlement gate for the screen body. A hook, so it is declared above the
+  // flag-off early return below. useCanRender fails open — false only on an
+  // affirmative deny. The ScreenHeader (and its Back control) stays outside
+  // the gate so a denied patient is never stranded here.
+  const canView = useCanRender('nudges.view')
+
+  // Per-control gates. Same placement rule as canView: hooks, so they are
+  // declared above the flag-off early return below.
+  const canQuietHours = useCanRender('nudges.set-quiet-hours')
+  const canDailyCap = useCanRender('nudges.set-daily-cap')
+  const canWeeklyCap = useCanRender('nudges.set-weekly-cap')
+  const canMuteRule = useCanRender('nudges.mute-rule')
 
   const [permissionStatus, setPermissionStatus] =
     React.useState<Notifications.PermissionStatus | null>(null)
@@ -194,6 +208,7 @@ export default function NudgesScreen(): React.JSX.Element {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+        {canView && (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 14, lineHeight: 19 }}>
             AI check-ins based on your recent trends. We only send a nudge when
@@ -260,12 +275,17 @@ export default function NudgesScreen(): React.JSX.Element {
               </Card>
 
               {/* Quiet hours */}
+              {canQuietHours && (
               <SectionLabel colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight}>
                 Quiet hours
               </SectionLabel>
+              )}
+              {canQuietHours && (
               <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginBottom: 10, lineHeight: 18 }}>
                 We won&apos;t send nudges between these times (local: {prefs.timezoneIana || deviceTimezone()}).
               </Text>
+              )}
+              {canQuietHours && (
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <TimeStepper
                   label="Start"
@@ -296,11 +316,15 @@ export default function NudgesScreen(): React.JSX.Element {
                   getScaledFontWeight={getScaledFontWeight}
                 />
               </View>
+              )}
 
               {/* Frequency caps */}
+              {(canDailyCap || canWeeklyCap) && (
               <SectionLabel colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight}>
                 Frequency limits
               </SectionLabel>
+              )}
+              {canDailyCap && (
               <CapStepper
                 title="Daily max"
                 subtitle={`Between ${DAILY_CAP_MIN} and ${DAILY_CAP_MAX} nudges per day`}
@@ -318,6 +342,8 @@ export default function NudgesScreen(): React.JSX.Element {
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
               />
+              )}
+              {canWeeklyCap && (
               <CapStepper
                 title="Weekly max"
                 subtitle={`Between ${WEEKLY_CAP_MIN} and ${WEEKLY_CAP_MAX} nudges per week`}
@@ -335,9 +361,10 @@ export default function NudgesScreen(): React.JSX.Element {
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
               />
+              )}
 
               {/* Per-rule mute list */}
-              {rules.length > 0 ? (
+              {canMuteRule && rules.length > 0 ? (
                 <>
                   <SectionLabel colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight}>
                     Which nudges
@@ -372,6 +399,7 @@ export default function NudgesScreen(): React.JSX.Element {
             </>
           )}
         </ScrollView>
+        )}
       </View>
     </AppWrapper>
   )

@@ -222,6 +222,10 @@ export function AppWrapper({
               </View>
               <ProfileContent
                 showConnectedEhrButton
+                // COS-885 — every row inside ProfileContent closes the drawer
+                // before it navigates. Without this the flag stayed true and
+                // the drawer was still open when the patient came back.
+                onNavigate={closeDrawerMenu}
                 onConnectedEhrPress={() => {
                   closeDrawerMenu();
                   router.push('/Home/connected-ehrs');

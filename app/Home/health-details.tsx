@@ -14,6 +14,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthDetails, useUpdateHealthDetails } from '@/hooks/use-health-details';
 import { AppWrapper } from '@/components/app-wrapper';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -25,6 +26,17 @@ export default function HealthDetailsScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const { data: healthDetails, isLoading, isError, refetch } = useHealthDetails();
   const updateMutation = useUpdateHealthDetails();
+
+  // Entitlement gates. Hooks, so declared above every early return. The
+  // `edit-*` keys gate the EDIT affordance only — a denied field still shows
+  // its recorded value read-only, which is what a patient's own record should
+  // do. useCanRender fails open on loading/error.
+  const canView = useCanRender('health-details.view');
+  const canEditHeight = useCanRender('health-details.edit-height');
+  const canEditWeight = useCanRender('health-details.edit-weight');
+  const canEditBloodType = useCanRender('health-details.edit-blood-type');
+  const canEditConditions = useCanRender('health-details.edit-conditions');
+  const canDeleteAllergy = useCanRender('allergies.delete-allergy');
 
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState({
@@ -178,6 +190,7 @@ export default function HealthDetailsScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Title Section */}
         <View style={styles.titleSection}>
@@ -207,7 +220,7 @@ export default function HealthDetailsScreen() {
             >
               Height
             </Text>
-            {isEditing ? (
+            {isEditing && canEditHeight ? (
               <TextInput
                 style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
                 value={editedData.height}
@@ -239,7 +252,7 @@ export default function HealthDetailsScreen() {
             >
               Weight
             </Text>
-            {isEditing ? (
+            {isEditing && canEditWeight ? (
               <TextInput
                 style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
                 value={editedData.weight}
@@ -271,7 +284,7 @@ export default function HealthDetailsScreen() {
             >
               Blood Type
             </Text>
-            {isEditing ? (
+            {isEditing && canEditBloodType ? (
               <TextInput
                 style={[styles.input, { color: colors.text, borderColor: colors.border, fontSize: getScaledFontSize(16) }]}
                 value={editedData.bloodType}
@@ -340,7 +353,7 @@ export default function HealthDetailsScreen() {
             >
               Chronic Medical Conditions
             </Text>
-            {isEditing ? (
+            {isEditing && canEditConditions ? (
               <View style={styles.conditionsContainer}>
                 <View style={styles.addConditionContainer}>
                   <TextInput
@@ -459,9 +472,11 @@ export default function HealthDetailsScreen() {
                     >
                       {allergy}
                     </Text>
+                    {canDeleteAllergy && (
                     <TouchableOpacity onPress={() => removeAllergy(index)}>
                       <Icon source="close" size={getScaledFontSize(18)} color={colors.text} />
                     </TouchableOpacity>
+                    )}
                   </View>
                 ))}
               </View>
@@ -566,6 +581,7 @@ export default function HealthDetailsScreen() {
           </View>
         )}
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

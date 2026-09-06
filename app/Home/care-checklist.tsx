@@ -1,6 +1,7 @@
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useCareGaps, useCareGapExplanation, useUpdateCareGapStatus } from '@/hooks/use-care-gaps';
 import type { CareGap } from '@/services/api/types';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -42,6 +43,7 @@ function CareGapCard({
   getScaledFontWeight: (weight: number) => string;
   onAddressed: (item: CareGap) => void;
 }) {
+  const canMarkComplete = useCanRender('care-checklist.mark-item-complete');
   const [expanded, setExpanded] = useState(false);
   const priorityConfig = PRIORITY_CONFIG[item.priority];
 
@@ -195,6 +197,7 @@ function CareGapCard({
           </Text>
         </TouchableOpacity>
 
+        {canMarkComplete && (
         <TouchableOpacity
           onPress={() => onAddressed(item)}
           style={[styles.actionButton, { backgroundColor: colors.tint }]}
@@ -205,12 +208,15 @@ function CareGapCard({
             {"I've Scheduled This"}
           </Text>
         </TouchableOpacity>
+        )}
       </View>
     </View>
   );
 }
 
 export default function CareChecklistScreen() {
+  const canView = useCanRender('care-checklist.view');
+  const canViewChecklist = useCanRender('care-checklist.view-checklist');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [refreshing, setRefreshing] = useState(false);
@@ -286,6 +292,7 @@ export default function CareChecklistScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView
         style={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
@@ -310,7 +317,7 @@ export default function CareChecklistScreen() {
           </Text>
         </View>
 
-        {grouped.length === 0 ? (
+        {canViewChecklist && (grouped.length === 0 ? (
           <View style={[styles.emptyContainer, { backgroundColor: colors.card }]}>
             <Text style={{ fontSize: 48, marginBottom: 16 }}>✅</Text>
             <Text
@@ -371,10 +378,11 @@ export default function CareChecklistScreen() {
               </View>
             );
           })
-        )}
+        ))}
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

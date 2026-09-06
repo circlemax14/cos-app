@@ -102,6 +102,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan';
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchTasksForDate } from '@/services/api/ai-health-plan';
 import type { TaskOccurrence } from '@/services/api/types';
 import {
@@ -160,6 +161,10 @@ export default function BpsProgressRoute(): React.JSX.Element | null {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const biopsychosocialPlanEnabled = useBiopsychosocialPlanFlag();
   const planQuery = useBiopsychosocialPlan();
+  // Entitlement gates. Unconditional, above the `hasBioPlanDataReady` early
+  // return. The back header stays ungated so a denied screen is never a trap.
+  const canView = useCanRender('bps-progress.view');
+  const canViewProgressCharts = useCanRender('bps-progress.view-progress-charts');
 
   // Default to READINGS: the charts are the reason this redesign exists.
   // The default is FIXED rather than auto-selected from data, because a
@@ -310,7 +315,7 @@ export default function BpsProgressRoute(): React.JSX.Element | null {
         </Text>
       </View>
 
-      {showPlaceholder ? (
+      {canView && (showPlaceholder ? (
         <View
           style={styles.placeholder}
           accessible
@@ -330,7 +335,7 @@ export default function BpsProgressRoute(): React.JSX.Element | null {
           />
 
           {segment === 'readings' ? (
-            <ReadingsPane
+            canViewProgressCharts && <ReadingsPane
               cards={cards}
               byType={byType}
               isLoading={historiesLoading && cards.length > 0}
@@ -348,7 +353,7 @@ export default function BpsProgressRoute(): React.JSX.Element | null {
             />
           )}
         </>
-      )}
+      ))}
     </AppWrapper>
   );
 }

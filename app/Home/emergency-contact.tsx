@@ -13,6 +13,7 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, Alert, Act
 import { Card, Button } from 'react-native-paper';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useCanRenderSafetyCritical } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -31,6 +32,14 @@ const EMPTY_FORM: ContactFormValues = { name: '', relationship: '', phone: '', e
 export default function EmergencyContactScreen() {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  // Entitlement gates. Safety-critical variant: an emergency contact shown to
+  // someone who was not granted it is far cheaper than one hidden from someone
+  // who needs it. Hooks — unconditional, at the top of the component.
+  const canView = useCanRenderSafetyCritical('emergency-contact.view');
+  const canAddContact = useCanRenderSafetyCritical('emergency-contact.add-contact');
+  const canEditContact = useCanRenderSafetyCritical('emergency-contact.edit-contact');
+  const canDeleteContact = useCanRenderSafetyCritical('emergency-contact.delete-contact');
 
   const { data: emergencyContacts = [], isLoading, isError, refetch } = useEmergencyContacts();
   const createContact = useCreateEmergencyContact();
@@ -136,7 +145,7 @@ export default function EmergencyContactScreen() {
 
   return (
     <AppWrapper>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
+      {canView && <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Title Section */}
         <View style={styles.titleSection}>
           <Text style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(24), fontWeight: getScaledFontWeight(600) as any }]}>
@@ -253,24 +262,24 @@ export default function EmergencyContactScreen() {
                 {/* Edit/Delete only for user-created contacts */}
                 {contact.source === 'user' && (
                   <View style={styles.contactActions}>
-                    <TouchableOpacity onPress={() => openEditModal(contact)} style={styles.actionButton}>
+                    {canEditContact && <TouchableOpacity onPress={() => openEditModal(contact)} style={styles.actionButton}>
                       <MaterialIcons name="edit" size={getScaledFontSize(20)} color={colors.tint} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(contact)} style={styles.actionButton}>
+                    </TouchableOpacity>}
+                    {canDeleteContact && <TouchableOpacity onPress={() => handleDelete(contact)} style={styles.actionButton}>
                       <MaterialIcons name="delete-outline" size={getScaledFontSize(22)} color="#F44336" />
-                    </TouchableOpacity>
+                    </TouchableOpacity>}
                   </View>
                 )}
               </Card.Content>
             </Card>
           ))
         )}
-      </ScrollView>
+      </ScrollView>}
 
       {/* FAB — Add Contact */}
-      <TouchableOpacity style={[styles.fab, { backgroundColor: colors.tint }]} onPress={openAddModal}>
+      {canAddContact && <TouchableOpacity style={[styles.fab, { backgroundColor: colors.tint }]} onPress={openAddModal}>
         <MaterialIcons name="person-add" size={24} color="#fff" />
-      </TouchableOpacity>
+      </TouchableOpacity>}
 
       {/* Add/Edit Modal */}
       <Modal

@@ -95,6 +95,38 @@ export function HealthSummaryCard() {
       >
         Health Summary
       </Text>
+
+      {/*
+        COS-855 — say that a refresh is in flight, WITHOUT hiding the summary.
+
+        The care-plan flow replaces its whole screen with a banner, because
+        behind it sits a plan built for the tier the patient just left and its
+        goals are tappable — acting on the wrong ones is a real harm. A health
+        summary is read-only prose: the copy on screen is still true, just
+        about to be superseded. Hiding it would take away something useful to
+        say nothing new.
+
+        Plain `{cond && <View/>}` with primitives already imported by this
+        file, per the iOS 26 rendering envelope in cos-app/CLAUDE.md.
+      */}
+      {summary.rebuilding === true && (
+        <View
+          style={[
+            styles.rebuildingBanner,
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}
+        >
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text
+            style={[
+              styles.rebuildingText,
+              { color: colors.subtext, fontSize: getScaledFontSize(12) },
+            ]}
+          >
+            Updating your health summary — we&apos;ll let you know when it&apos;s ready.
+          </Text>
+        </View>
+      )}
       <Text
         style={[
           styles.overview,
@@ -255,6 +287,22 @@ export function HealthSummaryCard() {
 }
 
 const styles = StyleSheet.create({
+  rebuildingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  rebuildingText: {
+    // `flex: 1` so the sentence wraps beside the spinner instead of pushing
+    // it off the card on a narrow device or at a large accessibility size.
+    flex: 1,
+  },
   card: {
     borderRadius: 12,
     borderWidth: 1,

@@ -39,6 +39,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
 import { DialGauge } from '@/components/health/DialGauge'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
 import {
   useWellbeingHistory,
@@ -85,6 +86,8 @@ const COMPONENT_HINT: Record<WellbeingComponent['name'], string> = {
 }
 
 export default function WellbeingScoreDetailScreen(): React.JSX.Element {
+  const canView = useCanRender('wellbeing-score.view')
+  const canViewDomainBreakdown = useCanRender('wellbeing-score.view-domain-breakdown')
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
@@ -199,6 +202,7 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
           <Pressable
@@ -341,7 +345,7 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
         </View>
 
         {/* What's driving this */}
-        {endpoint?.components && endpoint.components.length > 0 ? (
+        {canViewDomainBreakdown && endpoint?.components && endpoint.components.length > 0 ? (
           <View style={[styles.card, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>
             <Text
               style={[
@@ -460,6 +464,7 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   )
 }

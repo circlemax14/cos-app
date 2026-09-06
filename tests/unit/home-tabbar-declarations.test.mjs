@@ -42,7 +42,11 @@ const LAYOUT = readFileSync(join(ROOT, 'app/Home/_layout.tsx'), 'utf8')
  * here — which costs nothing, since the check below only asserts that
  * non-tabs ARE hidden.
  */
-const REAL_TABS = new Set(['index', 'appointments', 'plan', 'reports']);
+// COS-803 — `care-plan-plus` is unconditionally visible: it is the surface
+// for testing entitlements, so a `canShow` gate would hide it exactly when a
+// plan got the answer wrong. `health-plan` stays out of this set because it
+// flips to href: null under unifiedDefault.
+const REAL_TABS = new Set(['index', 'appointments', 'plan', 'reports', 'care-plan-plus']);
 
 const screens = readdirSync(join(ROOT, 'app/Home'))
   .filter((f) => /\.tsx$/.test(f))

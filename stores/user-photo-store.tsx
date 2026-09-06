@@ -8,7 +8,6 @@ import React, {
   useState,
 } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { fetchPatientInfo } from '@/services/api/patient';
 import {
   fetchPhotoDownloadUrl,
   isSignedPhotoUrl,
@@ -16,6 +15,10 @@ import {
   PHOTO_RESIGN_MIN_INTERVAL_MS,
   PHOTO_URL_CLIENT_TTL_MS,
 } from '@/services/user-photo';
+import {
+  getCachedUserSummary,
+  updateCachedUserSummary,
+} from '@/lib/cached-user-summary';
 
 /**
  * Single source of truth for the signed-in user's profile photo.
@@ -114,10 +117,26 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /*
+   * COS-891 — every commit writes through to the device.
+   *
+   * This is the single place a signed URL becomes "the current photo", so it
+   * is the single place the on-device copy has to be kept in step. Before,
+   * the only writer of the cached photo was the drawer's own profile fetch,
+   * so an upload updated memory and the device kept serving the previous
+   * photo until that fetch next ran.
+   *
+   * Fire-and-forget: an AsyncStorage write must never delay the photo
+   * appearing, and its failure is recoverable on the next commit.
+   */
   const commitUrl = useCallback((url: string | null) => {
     photoUrlRef.current = url;
     signedAtRef.current = url ? Date.now() : 0;
     if (mountedRef.current) setPhotoUrlState(url);
+    void updateCachedUserSummary({
+      photoUrl: url ?? undefined,
+      photoSignedAt: url ? Date.now() : undefined,
+    });
   }, []);
 
   /**
@@ -139,6 +158,16 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
         signedAtRef.current = url ? Date.now() : 0;
       }
       if (mountedRef.current) setPhotoUrlState(url);
+      /*
+       * COS-891 — the upload path writes through too. An UNSIGNED url is
+       * cached with no photoSignedAt, so the hydrate below treats it as
+       * already stale and re-signs rather than showing a URL that can only
+       * 403. Same three-way judgement the in-memory clock makes.
+       */
+      void updateCachedUserSummary({
+        photoUrl: url ?? undefined,
+        photoSignedAt: url && isSignedPhotoUrl(url) ? Date.now() : undefined,
+      });
     },
     [],
   );
@@ -189,26 +218,39 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
   }, [commitUrl]);
 
   const refresh = useCallback(async () => {
+    /*
+     * COS-873 — ask the DOWNLOAD endpoint, not the profile.
+     *
+     * Ken uploaded a photo and it stopped appearing. This used to call
+     * fetchPatientInfo() first and treat a missing photoUrl as "no photo":
+     *
+     *     const patient = await fetchPatientInfo();
+     *     if (!patient?.photoUrl) { setHasPhoto(false); commitUrl(null); return; }
+     *
+     * with a comment claiming that was safe because it only ran "when the
+     * profile call actually succeeded". It cannot be. fetchPatientInfo
+     * (services/api/patient.ts:53-102) never throws and never distinguishes
+     * failure from absence — it swallows a failed /v1/auth/me AND a failed
+     * /v1/patients/me and returns null either way. So EVERY transient failure
+     * arrived as `patient === null`, took the early return, and was cached as
+     * an authoritative "this user has no photo". The catch below was
+     * unreachable for exactly the case it was written to protect.
+     *
+     * That is defect #3 in this file's own header — "NEGATIVE RESULT NEVER
+     * RETRIED" — fixed once for the download call and reintroduced a layer up.
+     *
+     * signFresh already has the right three-way semantics: 'ok' commits the
+     * signed URL, 'none' commits null, and 'error' touches nothing. The
+     * download endpoint is authoritative — it reads photoUrl server-side, HEADs
+     * the object and checks its storage class. Asking the profile first only
+     * added two more ways to get a false negative.
+     */
     try {
-      const patient = await fetchPatientInfo();
-      if (!patient?.photoUrl) {
-        // Only treat this as "no photo" when the profile call actually
-        // succeeded and came back without one.
-        setHasPhoto(false);
-        commitUrl(null);
-        return;
-      }
-      setHasPhoto(true);
-      // We never render `patient.photoUrl` itself — it is the unsigned
-      // canonical S3 URL and the bucket is private, so it always 403s. It is
-      // only a signal that a photo exists; the renderable URL must be signed.
       await signFresh();
-    } catch {
-      // Don't clobber an existing URL on a transient fetch failure.
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [commitUrl, signFresh]);
+  }, [signFresh]);
 
   /**
    * On-demand re-sign for a URL that just failed to load in an <Image>.
@@ -223,8 +265,51 @@ export function UserPhotoProvider({ children }: { children: ReactNode }) {
     return signFresh();
   }, [signFresh]);
 
+  /*
+   * COS-891 — paint from the device first, and skip the network entirely when
+   * what we have is still valid.
+   *
+   * The signature lives an hour server-side and PHOTO_URL_CLIENT_TTL_MS (45m)
+   * is the app's safety margin inside that. A cached URL younger than the
+   * margin is as good as one we would have just fetched, so a cold start
+   * inside that window costs zero requests — and because it is the SAME url
+   * string, expo-image serves the bytes from its own disk cache rather than
+   * re-downloading them.
+   *
+   * Older than the margin, or unsigned, or absent: fall through to refresh()
+   * exactly as before. The cache can only save a request, never cause a
+   * wrong one.
+   */
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    void (async () => {
+      const cached = await getCachedUserSummary();
+      if (cancelled) return;
+
+      const url = cached?.photoUrl;
+      const signedAt = cached?.photoSignedAt ?? 0;
+      const fresh =
+        !!url &&
+        signedAt > 0 &&
+        Date.now() - signedAt < PHOTO_URL_CLIENT_TTL_MS &&
+        isSignedPhotoUrl(url);
+
+      if (fresh && url) {
+        photoUrlRef.current = url;
+        signedAtRef.current = signedAt;
+        if (mountedRef.current) {
+          setPhotoUrlState(url);
+          setHasPhoto(true);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      await refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
   /**

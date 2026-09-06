@@ -31,11 +31,15 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { fetchPlanType, type PlanType } from '@/services/api/plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { fetchAssessments } from '@/services/api/assessments';
+import { fetchConnectedClinics } from '@/services/api/clinics';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 // PlanTypeChooser Modal removed in COS-430 — the chooser is now a stack-
 // pushed route at `app/Home/plan-type-chooser.tsx` to eliminate the
 // nested-Modal collision iOS 26.5 crashed on.
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent';
+import PlanStatusSection from '@/components/plan/PlanStatusSection';
+import PlanFeaturesSection from '@/components/plan/PlanFeaturesSection';
 import { ProgressTab } from '@/components/health-plan/ProgressTab';
 import { MedicationsSection } from '@/components/health-plan/MedicationsSection';
 import { MedicationsReviewPrompt } from '@/components/health-plan/MedicationsReviewPrompt';
@@ -198,7 +202,25 @@ const PRIORITY_STYLE: Record<'high' | 'medium' | 'low', { color: string; bg: str
   low: { color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', label: 'Low' },
 };
 
+/*
+ * COS-788 — this screen paints NO background of its own.
+ *
+ * Every container here is already inside <AppWrapper>, which fills the screen
+ * with colors.background and then draws two large, very faint brand circles on
+ * top of it. Anything below that which also sets backgroundColor is painting
+ * the same colour a second time, except now ABOVE the circles — so the circles
+ * were being clipped into hard rectangles wherever a card, a scroll container
+ * or the loading spinner sat. The loader was the most obvious: a plain white
+ * block with two quarter-circles sliced off.
+ *
+ * If you need a surface to stand out here, use a border or a translucent
+ * overlay, not an opaque fill.
+ */
 export default function HealthPlanScreen() {
+  const canViewScreen = useCanRender('health-plan.view');
+  const canViewGoals = useCanRender('health-plan.view-goals');
+  const canEditGoal = useCanRender('health-plan.edit-goal');
+  const canRegeneratePlan = useCanRender('health-plan.regenerate-plan');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const queryClient = useQueryClient();
@@ -249,6 +271,18 @@ export default function HealthPlanScreen() {
   const openPlanTypeChooser = useCallback(() => {
     router.push('/Home/plan-type-chooser' as never);
   }, []);
+
+  /*
+   * COS-803 — the plan chooser that used to live here has moved to the Plan+
+   * tab (app/Home/care-plan-plus.tsx).
+   *
+   * COS-801 put it in front of THIS screen, which meant the one tab every
+   * patient already relies on changed shape while the entitlement work was
+   * still being figured out. Keeping the classic Care Plan tab identical to
+   * production, and building the new behaviour on a tab beside it, means the
+   * two can be compared directly and nothing in progress can break the one
+   * that works.
+   */
 
   // COS-377: goal editor state (only active when CARE_PLAN_ENABLED)
   const [editGoal, setEditGoal] = useState<AiPlanGoal | null>(null);
@@ -440,6 +474,19 @@ export default function HealthPlanScreen() {
     ? assignments.assignedInstrumentIds.length - assignments.remainingInstrumentIds.length
     : 0;
   const canGeneratePlan = assignments?.canGenerate ?? (currentPlanType === 'basic');
+
+  // COS-745 — drives the no-plan-yet copy. Without records there is nothing to
+  // build a plan FROM, so "we're building it" would be a lie and the patient
+  // would wait forever; with records, generation really is already running.
+  const connectedClinicsQuery = useQuery({
+    queryKey: ['connected-clinics-count'],
+    queryFn: fetchConnectedClinics,
+    staleTime: 5 * 60 * 1000,
+  });
+  // Unknown counts as connected: the alternative shows "connect a clinic" to
+  // someone who already has one, which reads as the app losing their data.
+  const hasConnectedRecords =
+    connectedClinicsQuery.data === undefined || connectedClinicsQuery.data.length > 0;
 
   // SCRUM-535 / COS-397: the reload icon gates on the backend `canGenerate`
   // (SCRUM-526). When it can't generate yet, the user is routed to check-ins;
@@ -766,7 +813,7 @@ export default function HealthPlanScreen() {
     if (bioLoading) {
       return (
         <AppWrapper>
-          <View style={[styles.center, { backgroundColor: colors.background }]}>
+          <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.tint} />
             <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
               Loading your plan…
@@ -795,7 +842,7 @@ export default function HealthPlanScreen() {
   if (loading) {
     return (
       <AppWrapper>
-        <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.tint} />
           <Text style={[styles.loadingText, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
             Loading your plan…
@@ -842,9 +889,14 @@ export default function HealthPlanScreen() {
       return (
         <AppWrapper>
           <ScrollView
-            style={[styles.container, { backgroundColor: colors.background }]}
+            style={styles.container}
             contentContainerStyle={{ paddingBottom: 32 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+            <PlanStatusSection
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
             <View style={{ paddingTop: 12, paddingHorizontal: 16 }}>
               <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any, textAlign: 'left', marginBottom: 4 }]}>
                 {headline}
@@ -861,33 +913,34 @@ export default function HealthPlanScreen() {
     return (
       <AppWrapper>
         <ScrollView
-          style={[styles.container, { backgroundColor: colors.background }]}
-          contentContainerStyle={{ flexGrow: 1 }}
+          style={styles.container}
+          contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
-          <View style={styles.emptyWrap}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.tint + '18' }]}>
-              <MaterialIcons name="auto-awesome" size={32} color={colors.tint} />
-            </View>
-            <Text style={[styles.emptyTitle, { color: colors.text, fontSize: getScaledFontSize(22), fontWeight: getScaledFontWeight(700) as any }]}>
-              Generate your Health Plan
-            </Text>
-            <Text style={[styles.emptyBody, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-              We’ll analyze your connected health records and build a personalized daily plan with goals and tasks tailored to your care.
-            </Text>
-            <TouchableOpacity
-              style={[styles.generateBtn, { backgroundColor: colors.tint }]}
-              onPress={() => onGenerate(false)}
-              disabled={generating}>
-              {generating ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <MaterialIcons name="auto-awesome" size={16} color="#fff" />
-                  <Text style={[styles.generateBtnText, { fontSize: getScaledFontSize(14) }]}>Generate plan</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
+          {/* COS-744 — one line if they have a plan, the chooser if they do
+              not. COS-740 rendered the full shelf here unconditionally, so
+              someone already on Advanced opened their care plan to a price
+              list and had to scroll past it to reach today's tasks. */}
+          <PlanStatusSection
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+          />
+          {/*
+            COS-745 — the Generate button is gone. It was a MANUAL FALLBACK for
+            something that already happens by itself: cos-webhook step 5 POSTs
+            /v1/internal/health-plan/generate whenever records are ingested.
+
+            What replaces it has to carry the risk of removing it — a patient
+            with no plan and nothing to tap is a dead screen. PlanFeaturesSection
+            leads with WHY there is no plan yet and, when the answer is "no
+            records connected", the screen that fixes it.
+          */}
+          <PlanFeaturesSection
+            colors={colors}
+            getScaledFontSize={getScaledFontSize}
+            getScaledFontWeight={getScaledFontWeight}
+            hasConnectedRecords={hasConnectedRecords}
+          />
         </ScrollView>
       </AppWrapper>
     );
@@ -909,6 +962,7 @@ export default function HealthPlanScreen() {
           push v2. Import left in place for a fast revert if the decision
           reverses. */}
       {/* Tab bar */}
+      {canViewScreen && (
       <View style={[v2Styles.tabBar, { borderBottomColor: colors.text + '20' }]}>
         {(['plan', 'progress'] as const).map((tab) => {
           const active = activeTab === tab;
@@ -937,8 +991,9 @@ export default function HealthPlanScreen() {
           );
         })}
       </View>
+      )}
 
-      {activeTab === 'progress' ? (
+      {canViewScreen && (activeTab === 'progress' ? (
         <ProgressTab
           streakDays={0 /* TODO: surface from /v1/.../analytics in a follow-up */}
           adherencePercent={adherencePercent}
@@ -1011,8 +1066,17 @@ export default function HealthPlanScreen() {
       ) : (
       <ScrollView
         ref={planScrollRef}
-        style={[styles.container, { backgroundColor: colors.background }]}
+        style={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.tint} />}>
+        {/* COS-744 — the plan label sits at the TOP here, consistent with the
+            two empty states. COS-740 had to exile the price shelf to the
+            bottom because it outranked the daily tasks; a one-line chip does
+            not, and hiding it at the very bottom made it unfindable. */}
+        <PlanStatusSection
+          colors={colors}
+          getScaledFontSize={getScaledFontSize}
+          getScaledFontWeight={getScaledFontWeight}
+        />
         {/* COS-357: soft, recurring "review your medications" prompt. Self-
             gates on the GET flagEnabled + medsReviewNeeded and the local
             snooze, so it renders nothing when off/snoozed/back-compat. Sits
@@ -1055,6 +1119,7 @@ export default function HealthPlanScreen() {
                 Self-gated on the default flag being ON, so pre-flip users see
                 no dead affordance. */}
             <TryUnifiedViewLink color={colors.tint as string} size={getScaledFontSize(22)} />
+            {canRegeneratePlan && (
             <TouchableOpacity
               style={[styles.refreshBtn, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}
               onPress={() => onGenerate(true)}
@@ -1065,6 +1130,7 @@ export default function HealthPlanScreen() {
                 <MaterialIcons name="refresh" size={18} color={colors.subtext} />
               )}
             </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -1336,7 +1402,7 @@ export default function HealthPlanScreen() {
         </View>
 
         {/* Goals — COS-377: flag-gated category-grouped editable view vs. original flat list */}
-        {plan.goals.length > 0 && (
+        {canViewGoals && plan.goals.length > 0 && (
           CARE_PLAN_ENABLED ? (
             /* NEW: category-grouped, editable — only when CARE_PLAN_ENABLED=true */
             <>
@@ -1344,6 +1410,7 @@ export default function HealthPlanScreen() {
                   (title, description, target & metrics) but the affordance was
                   invisible — testers found it by accident. This one-liner + the
                   per-card pencil below signpost that goals are tappable to edit. */}
+              {canEditGoal && (
               <View
                 style={styles.goalEditHint}
                 accessibilityRole="text"
@@ -1356,6 +1423,7 @@ export default function HealthPlanScreen() {
                   Tap a goal to edit its target &amp; metrics
                 </Text>
               </View>
+              )}
               {groupGoalsByCategory(plan.goals).map((group) => (
                 <View key={group.key}>
                   <View style={styles.secHead}>
@@ -1439,12 +1507,14 @@ export default function HealthPlanScreen() {
                           {/* COS-401 / SCRUM-537: visible per-card "Edit" affordance.
                               Decorative (the whole card is the button + is labeled),
                               so it's hidden from screen readers to avoid a double read. */}
+                          {canEditGoal && (
                           <View style={styles.goalEditCue} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
                             <MaterialIcons name="edit" size={12} color={colors.tint} />
                             <Text style={[styles.goalEditCueText, { color: colors.tint, fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(600) as any }]}>
                               Edit
                             </Text>
                           </View>
+                          )}
                         </View>
                       </TouchableOpacity>
                     );
@@ -1612,10 +1682,10 @@ export default function HealthPlanScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
-      )}
+      ))}
 
       {/* COS-377: Goal editor modal — only rendered when CARE_PLAN_ENABLED=true and a goal is selected */}
-      {CARE_PLAN_ENABLED && (
+      {CARE_PLAN_ENABLED && canEditGoal && (
         <Modal
           visible={editGoal !== null}
           animationType="slide"

@@ -20,6 +20,7 @@ import {
   setAppleHealthEnabled,
 } from '@/services/apple-health-preference';
 import { APPLE_HEALTH_PREFERENCE_KEY } from '@/hooks/use-apple-health-preference';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -27,11 +28,30 @@ import { APPLE_HEALTH_PREFERENCE_KEY } from '@/hooks/use-apple-health-preference
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 /**
- * Apple Health connection screen (COS-389 / SCRUM-530).
+ * Health Sync — the Apple Health connection screen (COS-389 / SCRUM-530).
+ *
+ * ─── COS-902: THIS IS THE ORIGINAL SCREEN, DELIBERATELY ──────────────
+ *
+ * COS-878 rebuilt it as a multi-source picker (Apple Health / Samsung Health /
+ * Health Connect, one connected at a time) and a week of iteration followed:
+ * which rows to show, an Apple Watch row that could not be a second
+ * connection, a Settings link that went to the wrong page. Vishal: "let's go
+ * back to the original code that we have for the Apple health. Just rename the
+ * naming from Apple health to health sync."
+ *
+ * So this is `8d534dd^` restored whole — the version with the COS-863
+ * entitlement gates and nothing after them. Only the SCREEN's own name
+ * changed. Every other mention of "Apple Health" below is Apple's product and
+ * stays: renaming those would be renaming something we do not own.
+ *
+ * services/health-sources.ts, hooks/use-health-source.ts and
+ * lib/open-health-settings.ts were deleted with it — nothing else imported
+ * them. They are recoverable whole from d62171c if the multi-source model or
+ * the Privacy > Health deep link is ever wanted again.
  *
  * Ken's feedback: the HealthKit permission prompt was firing accidentally on
  * mount of the Personal Information screen. It now lives here as a deliberate,
- * easy-to-find opt-in control reached from the profile drawer → "Apple Health".
+ * easy-to-find opt-in control reached from the profile drawer → "Health Sync".
  *
  * iOS only. On Android (or any device without HealthKit) we show a graceful
  * "not available on this device" state and never call into HealthKit.
@@ -45,6 +65,12 @@ export default function AppleHealthScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const queryClient = useQueryClient();
+
+  // Entitlement gates. Hooks, so declared at the top. `grant-healthkit-
+  // permissions` gates the one control that triggers the iOS permission
+  // dialog — the Enable Apple Health switch. useCanRender fails open.
+  const canView = useCanRender('apple-health.view');
+  const canGrantHealthKit = useCanRender('apple-health.grant-healthkit-permissions');
 
   const available = isHealthKitAvailable();
 
@@ -129,6 +155,7 @@ export default function AppleHealthScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.headerSection}>
@@ -143,7 +170,7 @@ export default function AppleHealthScreen() {
             }}
             accessibilityRole="header"
           >
-            Apple Health
+            Health Sync
           </Text>
           <Text
             style={{
@@ -205,6 +232,7 @@ export default function AppleHealthScreen() {
                 {isLoading || isConnecting ? (
                   <ActivityIndicator size="small" color={colors.tint} />
                 ) : (
+                  canGrantHealthKit && (
                   <Switch
                     value={enabled}
                     onValueChange={handleToggle}
@@ -213,6 +241,7 @@ export default function AppleHealthScreen() {
                     accessibilityState={{ checked: enabled }}
                     accessibilityLabel="Enable Apple Health"
                   />
+                  )
                 )}
               </View>
             </View>
@@ -249,6 +278,7 @@ export default function AppleHealthScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

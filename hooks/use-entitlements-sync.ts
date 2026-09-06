@@ -56,6 +56,31 @@ function isEntitlementsChanged(
  * Mount once at the app root. Wires the WSS + long-poll lifecycle to
  * AppState + auth state. Renders nothing.
  */
+/*
+ * COS-857 — every query whose answer an entitlement change can alter.
+ *
+ * This used to invalidate only ['user','me']. That refreshes /v1/auth/me, but
+ * the NAVIGATION reads ['feature-permissions'] — so an admin removing a screen
+ * from a plan pushed ENTITLEMENTS_CHANGED, the app dutifully refetched the
+ * wrong query, and the tab stayed exactly where it was.
+ *
+ * Listed explicitly rather than clearing the whole cache: invalidateQueries()
+ * with no key would refetch every screen's data on a socket message, which on
+ * a plan edit affecting many patients is a thundering herd against endpoints
+ * that can each cost a Bedrock call.
+ */
+const ENTITLEMENT_SENSITIVE_KEYS: readonly (readonly string[])[] = [
+  ['user', 'me'],
+  ['feature-permissions'],
+  ['patient-plans'],
+]
+
+function invalidateEntitlementQueries(qc: { invalidateQueries: (o: { queryKey: readonly string[] }) => unknown }): void {
+  for (const queryKey of ENTITLEMENT_SENSITIVE_KEYS) {
+    void qc.invalidateQueries({ queryKey })
+  }
+}
+
 export function useEntitlementsSync(): void {
   const qc = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
@@ -128,7 +153,7 @@ export function useEntitlementsSync(): void {
             // Invalidate the user cache so useUser() refetches /v1/auth/me
             // → new permissions propagate. Any downstream can() consumer
             // re-renders on the fresh data.
-            void qc.invalidateQueries({ queryKey: ['user', 'me'] });
+            invalidateEntitlementQueries(qc);
           }
         } catch {
           // Non-JSON or unexpected shape — ignore (never throw from the
@@ -164,7 +189,7 @@ export function useEntitlementsSync(): void {
     // Long-poll fallback — safety net for dropped pushes and for users
     // who lose WSS entirely (bad network, misconfigured endpoint).
     pollTimerRef.current = setInterval(() => {
-      void qc.invalidateQueries({ queryKey: ['user', 'me'] });
+      invalidateEntitlementQueries(qc);
     }, POLL_INTERVAL_MS);
 
     // AppState — close socket in background, reopen on active. Also reopen
@@ -172,7 +197,7 @@ export function useEntitlementsSync(): void {
     const onAppStateChange = (next: AppStateStatus) => {
       if (next === 'active') {
         // Refetch immediately + kick a fresh WSS connect if we don't have one.
-        void qc.invalidateQueries({ queryKey: ['user', 'me'] });
+        invalidateEntitlementQueries(qc);
         if (!socketRef.current) void connect();
       } else if (next === 'background' || next === 'inactive') {
         // Politely close the socket so we don't hold a connection while

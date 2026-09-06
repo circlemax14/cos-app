@@ -131,6 +131,7 @@ import {
   type BpsDomain,
 } from '@/lib/wellbeing-score'
 import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -231,6 +232,11 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
   })
 
   const regen = useRegenerateBiopsychosocialPlan()
+
+  // Entitlement gates. Hooks — declared unconditionally, above the
+  // invalid-domain early return at the bottom of this component.
+  const canView = useCanRender('wellbeing-domain-checkins.view')
+  const canStartNewCheckin = useCanRender('wellbeing-domain-checkins.start-new-checkin')
 
   // Chunk 76 polish: land VoiceOver rotor on the header title after the
   // screen has actually laid out, instead of wherever iOS decides
@@ -450,171 +456,174 @@ export default function WellbeingDomainCheckinsScreen(): React.JSX.Element | nul
         </View>
       </View>
 
-      <ScrollView
-        style={{ flex: 1, backgroundColor: bg }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
-      >
-        <Text
-          style={{
-            color: subtext,
-            fontSize: getScaledFontSize(13),
-            marginBottom: 12,
-            lineHeight: getScaledFontSize(18),
-          }}
+      {canView && (
+        <ScrollView
+          style={{ flex: 1, backgroundColor: bg }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
         >
-          {allDone
-            ? 'You have completed every check-in in this area. Refresh your plan to see the updates.'
-            : 'Pick a check-in to complete. Your plan updates once you have finished this area.'}
-        </Text>
+          <Text
+            style={{
+              color: subtext,
+              fontSize: getScaledFontSize(13),
+              marginBottom: 12,
+              lineHeight: getScaledFontSize(18),
+            }}
+          >
+            {allDone
+              ? 'You have completed every check-in in this area. Refresh your plan to see the updates.'
+              : 'Pick a check-in to complete. Your plan updates once you have finished this area.'}
+          </Text>
 
-        {/* Loading / error / list share a min-height sentinel so the
-            initial paint doesn't jump when rows arrive. */}
-        <View style={{ minHeight: 220 }}>
-          {isLoading ? (
-            <View style={styles.loadingBlock} />
-          ) : isError ? (
-            <Text
-              style={{
-                color: '#DC2626',
-                fontSize: getScaledFontSize(13),
-                textAlign: 'center',
-                marginTop: 24,
-              }}
-            >
-              We couldn&apos;t load check-ins. Please try again.
-            </Text>
-          ) : rows.length === 0 ? (
-            /* Chunk 76: friendlier empty state. Extreme edge — hit only
-               when every member of the domain is coming-soon OR unknown
-               to the instrument catalog. Icon + two-line copy, all
-               inside a single accessible group so VoiceOver reads it as
-               one utterance instead of icon-then-text-then-text. */
-            <View
-              accessible
-              accessibilityRole="text"
-              accessibilityLabel="Nothing to take here yet. Come back soon."
-              style={styles.emptyBlock}
-            >
-              <MaterialIcons
-                name="hourglass-empty"
-                size={getScaledFontSize(36)}
-                color={subtext}
-                style={{ marginBottom: 10 }}
-              />
+          {/* Loading / error / list share a min-height sentinel so the
+              initial paint doesn't jump when rows arrive. */}
+          <View style={{ minHeight: 220 }}>
+            {isLoading ? (
+              <View style={styles.loadingBlock} />
+            ) : isError ? (
               <Text
                 style={{
-                  color: text,
-                  fontSize: getScaledFontSize(15),
-                  fontWeight: getScaledFontWeight(600) as any,
-                  textAlign: 'center',
-                  marginBottom: 4,
-                }}
-              >
-                Nothing to take here yet
-              </Text>
-              <Text
-                style={{
-                  color: subtext,
+                  color: '#DC2626',
                   fontSize: getScaledFontSize(13),
                   textAlign: 'center',
-                  lineHeight: getScaledFontSize(18),
+                  marginTop: 24,
                 }}
               >
-                Come back soon — we&apos;re still building out check-ins for this area.
+                We couldn&apos;t load check-ins. Please try again.
               </Text>
-            </View>
-          ) : (
-            rows.map((row) => {
-              const pillStyle = PILL_STYLE_FOR_STATUS[row.status]
-              return (
-                <Pressable
-                  key={row.id}
-                  onPress={() => onPressRow(row)}
-                  disabled={!row.tappable}
-                  /* Chunk 108: explicit `accessible` groups descendants so
-                     VoiceOver reads the composed a11yLabel once instead of
-                     name + pillLabel as two utterances. */
-                  accessible
-                  accessibilityRole="button"
-                  accessibilityLabel={row.a11yLabel}
-                  /* accessibilityHint intentionally omitted — the composed
-                     label already includes the "Tap to start / Tap to
-                     retake" trailer, so a duplicate hint would double the
-                     announcement. Coming-soon rows announce as disabled
-                     via accessibilityState below, which is the
-                     recommended VoiceOver signal for "not yet
-                     available". */
-                  accessibilityState={{ disabled: !row.tappable }}
-                  style={({ pressed }) => [
-                    styles.row,
-                    {
-                      backgroundColor: (colors.card as string) + 'D9',
-                      borderColor: border,
-                      opacity: !row.tappable ? 0.6 : pressed ? 0.85 : 1,
-                    },
-                  ]}
+            ) : rows.length === 0 ? (
+              /* Chunk 76: friendlier empty state. Extreme edge — hit only
+                 when every member of the domain is coming-soon OR unknown
+                 to the instrument catalog. Icon + two-line copy, all
+                 inside a single accessible group so VoiceOver reads it as
+                 one utterance instead of icon-then-text-then-text. */
+              <View
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel="Nothing to take here yet. Come back soon."
+                style={styles.emptyBlock}
+              >
+                <MaterialIcons
+                  name="hourglass-empty"
+                  size={getScaledFontSize(36)}
+                  color={subtext}
+                  style={{ marginBottom: 10 }}
+                />
+                <Text
+                  style={{
+                    color: text,
+                    fontSize: getScaledFontSize(15),
+                    fontWeight: getScaledFontWeight(600) as any,
+                    textAlign: 'center',
+                    marginBottom: 4,
+                  }}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      /* Chunk 108: name + pill Text nodes hidden from AT
-                         so the parent Pressable's composed label is the
-                         only utterance. iOS uses
-                         accessibilityElementsHidden, Android uses
-                         importantForAccessibility. */
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                      style={{
-                        color: text,
-                        fontSize: getScaledFontSize(15),
-                        fontWeight: getScaledFontWeight(600) as any,
-                        marginBottom: 6,
-                      }}
-                      numberOfLines={2}
-                    >
-                      {row.name}
-                    </Text>
-                    <View
-                      style={[
-                        styles.pill,
-                        {
-                          backgroundColor: pillStyle.bg,
-                          borderColor: pillStyle.border,
-                        },
-                      ]}
-                    >
+                  Nothing to take here yet
+                </Text>
+                <Text
+                  style={{
+                    color: subtext,
+                    fontSize: getScaledFontSize(13),
+                    textAlign: 'center',
+                    lineHeight: getScaledFontSize(18),
+                  }}
+                >
+                  Come back soon — we&apos;re still building out check-ins for this area.
+                </Text>
+              </View>
+            ) : (
+              rows.map((row) => {
+                if (!canStartNewCheckin) return null
+                const pillStyle = PILL_STYLE_FOR_STATUS[row.status]
+                return (
+                  <Pressable
+                    key={row.id}
+                    onPress={() => onPressRow(row)}
+                    disabled={!row.tappable}
+                    /* Chunk 108: explicit `accessible` groups descendants so
+                       VoiceOver reads the composed a11yLabel once instead of
+                       name + pillLabel as two utterances. */
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel={row.a11yLabel}
+                    /* accessibilityHint intentionally omitted — the composed
+                       label already includes the "Tap to start / Tap to
+                       retake" trailer, so a duplicate hint would double the
+                       announcement. Coming-soon rows announce as disabled
+                       via accessibilityState below, which is the
+                       recommended VoiceOver signal for "not yet
+                       available". */
+                    accessibilityState={{ disabled: !row.tappable }}
+                    style={({ pressed }) => [
+                      styles.row,
+                      {
+                        backgroundColor: (colors.card as string) + 'D9',
+                        borderColor: border,
+                        opacity: !row.tappable ? 0.6 : pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
                       <Text
+                        /* Chunk 108: name + pill Text nodes hidden from AT
+                           so the parent Pressable's composed label is the
+                           only utterance. iOS uses
+                           accessibilityElementsHidden, Android uses
+                           importantForAccessibility. */
                         accessibilityElementsHidden
                         importantForAccessibility="no-hide-descendants"
                         style={{
-                          color: pillStyle.fg,
-                          fontSize: getScaledFontSize(11),
-                          fontWeight: getScaledFontWeight(700) as any,
-                          letterSpacing: 0.3,
+                          color: text,
+                          fontSize: getScaledFontSize(15),
+                          fontWeight: getScaledFontWeight(600) as any,
+                          marginBottom: 6,
                         }}
+                        numberOfLines={2}
                       >
-                        {row.pillLabel}
+                        {row.name}
                       </Text>
+                      <View
+                        style={[
+                          styles.pill,
+                          {
+                            backgroundColor: pillStyle.bg,
+                            borderColor: pillStyle.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          accessibilityElementsHidden
+                          importantForAccessibility="no-hide-descendants"
+                          style={{
+                            color: pillStyle.fg,
+                            fontSize: getScaledFontSize(11),
+                            fontWeight: getScaledFontWeight(700) as any,
+                            letterSpacing: 0.3,
+                          }}
+                        >
+                          {row.pillLabel}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                  {row.tappable ? (
-                    <MaterialIcons
-                      name="chevron-right"
-                      size={getScaledFontSize(22)}
-                      color={subtext}
-                      style={{ marginLeft: 8 }}
-                    />
-                  ) : null}
-                </Pressable>
-              )
-            })
-          )}
-        </View>
-      </ScrollView>
+                    {row.tappable ? (
+                      <MaterialIcons
+                        name="chevron-right"
+                        size={getScaledFontSize(22)}
+                        color={subtext}
+                        style={{ marginLeft: 8 }}
+                      />
+                    ) : null}
+                  </Pressable>
+                )
+              })
+            )}
+          </View>
+        </ScrollView>
+      )}
 
       {/* "Refresh my plan" footer only mounts when every non-coming-soon
           member is fresh-completed. Conditional-null so it doesn't eat
           layout on the take-a-check-in state. */}
-      {allDone ? (
+      {canView && allDone ? (
         <View style={[styles.footer, { borderTopColor: border, backgroundColor: bg }]}>
           <Pressable
             onPress={onPressRefreshPlan}

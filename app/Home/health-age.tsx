@@ -36,6 +36,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useHealthAgeFlag } from '@/hooks/use-health-age-flag'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { DialGauge } from '@/components/health/DialGauge'
 import { MarkerRing } from '@/components/health/MarkerRing'
 import {
@@ -423,6 +424,11 @@ export default function HealthAgeScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
+  // Entitlement gates. Hooks — declared unconditionally, above the
+  // flag-off early return below.
+  const canView = useCanRender('health-age.view')
+  const canViewBreakdown = useCanRender('health-age.view-breakdown')
+
   const flagEnabled = useHealthAgeFlag()
   const { data, isLoading } = useHealthAge()
 
@@ -461,81 +467,85 @@ export default function HealthAgeScreen(): React.JSX.Element {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
-          <HeroTile
-            result={data}
-            isLoading={isLoading}
-            buckets={history?.buckets ?? []}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+        {canView && (
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
+            <HeroTile
+              result={data}
+              isLoading={isLoading}
+              buckets={history?.buckets ?? []}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
 
-          {/* Directly under the hero, as in the reference: how much to trust
-              the number comes before how the number has moved. */}
-          <CoverageCard
-            result={data}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+            {/* Directly under the hero, as in the reference: how much to trust
+                the number comes before how the number has moved. */}
+            <CoverageCard
+              result={data}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
 
-          {/* The week-change pill used to render here, a full section below
-              the number it qualifies. It now lives INSIDE the dial, directly
-              under the gap phrase, which is where the reference puts it and
-              where it reads as part of the reading rather than a new topic. */}
+            {/* The week-change pill used to render here, a full section below
+                the number it qualifies. It now lives INSIDE the dial, directly
+                under the gap phrase, which is where the reference puts it and
+                where it reads as part of the reading rather than a new topic. */}
 
-          <TrendCard
-            buckets={history?.buckets ?? []}
-            rangeDays={rangeDays}
-            onSelectRange={setRangeDays}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+            <TrendCard
+              buckets={history?.buckets ?? []}
+              rangeDays={rangeDays}
+              onSelectRange={setRangeDays}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
 
-          {/* Reading order: what it is → how it has moved → WHAT IS DRIVING IT
-              → what to do → how it is calculated. The driving factors were
-              previously collapsed, which put the answer to the screen's
-              obvious question behind a tap. */}
-          <ContributorCards
-            result={data}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+            {/* Reading order: what it is → how it has moved → WHAT IS DRIVING IT
+                → what to do → how it is calculated. The driving factors were
+                previously collapsed, which put the answer to the screen's
+                obvious question behind a tap. */}
+            <ContributorCards
+              result={data}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
 
-          <ImprovementSection
-            result={data}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+            <ImprovementSection
+              result={data}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
 
-          <ContributorsAccordion
-            result={data}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+            {canViewBreakdown && (
+              <ContributorsAccordion
+                result={data}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
 
-          <MethodologyAccordion
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
+            <MethodologyAccordion
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
 
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(11),
-              lineHeight: 16,
-              marginTop: 16,
-            }}
-          >
-            {DISCLAIMER}
-          </Text>
-        </ScrollView>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: getScaledFontSize(11),
+                lineHeight: 16,
+                marginTop: 16,
+              }}
+            >
+              {DISCLAIMER}
+            </Text>
+          </ScrollView>
+        )}
       </View>
     </AppWrapper>
   )

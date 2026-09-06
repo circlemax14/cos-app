@@ -20,6 +20,7 @@
 import React from 'react';
 
 import IntakeWizardScreen from '@/components/health-plan/patient-intake/IntakeWizardScreen';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -27,5 +28,8 @@ import IntakeWizardScreen from '@/components/health-plan/patient-intake/IntakeWi
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 export default function PatientIntakeRoute(): React.JSX.Element {
-  return <IntakeWizardScreen />;
+  // COS-856 entitlement gate on the screen body.
+  const canView = useCanRender('patient-intake.view');
+
+  return canView ? <IntakeWizardScreen /> : <></>;
 }

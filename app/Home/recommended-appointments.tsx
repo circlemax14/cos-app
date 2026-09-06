@@ -2,6 +2,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { RecommendedAppointmentsList } from '@/components/recommended-appointments-list';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import React, { useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -18,6 +19,8 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
  * Appointments screen, which shows the same list inline.
  */
 export default function RecommendedAppointmentsScreen() {
+  const canView = useCanRender('recommended-appointments.view');
+  const canViewRecommendations = useCanRender('recommended-appointments.view-recommendations');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [refreshing, setRefreshing] = useState(false);
@@ -31,6 +34,7 @@ export default function RecommendedAppointmentsScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView
         style={styles.container}
         refreshControl={
@@ -57,9 +61,10 @@ export default function RecommendedAppointmentsScreen() {
             Based on your health records and care plan
           </Text>
         </View>
-        <RecommendedAppointmentsList />
+        {canViewRecommendations && <RecommendedAppointmentsList />}
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

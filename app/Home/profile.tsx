@@ -1,4 +1,5 @@
 import { ProfileContent } from '@/components/profile-content';
+import { useCanRender } from '@/hooks/use-entitlement';
 import React from 'react';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -7,5 +8,6 @@ import React from 'react';
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 export default function ProfileScreen() {
-  return <ProfileContent />;
+  const canView = useCanRender('profile.view');
+  return canView ? <ProfileContent /> : null;
 }

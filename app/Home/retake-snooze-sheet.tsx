@@ -36,6 +36,7 @@ import {
   useDismissRetakeRequest,
   useSnoozeRetakeRequest,
 } from '@/hooks/use-retake-requests'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -103,6 +104,10 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
 
   const snoozeMutation = useSnoozeRetakeRequest()
   const dismissMutation = useDismissRetakeRequest()
+
+  const canView = useCanRender('retake-snooze-sheet.view')
+  const canSnooze = useCanRender('retake-snooze-sheet.snooze-retake')
+  const canDismiss = useCanRender('retake-snooze-sheet.dismiss-retake')
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const busy = snoozeMutation.isPending || dismissMutation.isPending
@@ -176,6 +181,7 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
   return (
     <AppWrapper>
       <Stack.Screen options={{ title: 'Not now', headerBackTitle: 'Home' }} />
+      {canView && (
       <View style={styles.container}>
         <Text
           style={{
@@ -199,6 +205,7 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
           We&apos;ll show the request again then.
         </Text>
 
+        {canSnooze && (
         <View style={styles.presetList}>
           {PRESETS.map((p) => (
             <Pressable
@@ -241,9 +248,11 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
             </Pressable>
           ))}
         </View>
+        )}
 
         <View style={styles.divider} />
 
+        {canDismiss && (
         <Pressable
           disabled={busy}
           onPress={onDismiss}
@@ -270,6 +279,7 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
             This doesn&apos;t apply to me
           </Text>
         </Pressable>
+        )}
 
         {errorMsg ? (
           <View
@@ -291,6 +301,7 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
           </View>
         ) : null}
       </View>
+      )}
     </AppWrapper>
   )
 }

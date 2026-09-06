@@ -16,6 +16,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { usePlanType, meetsTier } from '@/hooks/use-plan-type'
 import { useBiopsychosocialPlanFlag } from '@/hooks/use-assessment-strategy-v2-flag'
 import { AssessmentCatalogContent } from '@/components/health-plan/AssessmentCatalogContent'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -49,6 +50,8 @@ function normalizeFocus(v: unknown): CatalogFocusToken | null {
 }
 
 export default function AssessmentsCatalogScreen(): React.JSX.Element {
+  const canViewCatalog = useCanRender('assessments-catalog.view')
+  const canBrowseAssessments = useCanRender('assessments-catalog.browse-assessments')
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const params = useLocalSearchParams<{ source?: string; focus?: string }>()
@@ -180,6 +183,7 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
 
   return (
     <AppWrapper>
+      {canViewCatalog && (
       <ScrollView
         ref={scrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -208,6 +212,7 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
             contentBaseYRef.current = e.nativeEvent.layout.y
           }}
         >
+          {canBrowseAssessments && (
           <AssessmentCatalogContent
             intro={
               fromPlanUpgrade
@@ -225,8 +230,10 @@ export default function AssessmentsCatalogScreen(): React.JSX.Element {
             // filtering, byte-for-byte today's behavior.
             focusedDomain={deepLinkFocus ? FOCUS_TO_DOMAIN[deepLinkFocus] : undefined}
           />
+          )}
         </View>
       </ScrollView>
+      )}
     </AppWrapper>
   )
 }

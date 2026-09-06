@@ -7,13 +7,37 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AiClipboardIcon } from '@/components/ui/ai-clipboard-icon';
 import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanShowScreen, useEnforceScreenAccess } from '@/hooks/use-feature-permissions';
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 
+/*
+ * COS-860 — how a tab is hidden here, and why it is not a conditional render.
+ *
+ * Expo Router discovers routes from the FILESYSTEM. A <Tabs.Screen> entry only
+ * supplies OPTIONS for a route that already exists, so omitting the entry does
+ * not remove the tab — the route falls back to default options and renders a
+ * bare filename label appended to the end of the bar.
+ *
+ * COS-856 gated tabs as `{canShow('x') && <Tabs.Screen .../>}` and Vishal saw
+ * exactly that: the calendar tab moved to the end of the navigation, became
+ * plain text, and tapping it hit the COS-859 access guard and bounced him
+ * Home. The 51 push-only screens in this file had it right all along — every
+ * one of them hides with an href of null.
+ *
+ * So an entitlement gate drives `href` instead: undefined to show the tab,
+ * null to hide it. The <Tabs.Screen> is always rendered.
+ */
 export default function TabLayout() {
   const { getScaledFontSize } = useAccessibility();
-  const { data: permissions } = useFeaturePermissions();
+  const canShowScreen = useCanShowScreen();
+  /*
+   * COS-859 — the tab gates below only cover the five screens in the tab bar.
+   * The other 55 are href:null routes reached with router.push(), so gating
+   * their <Tabs.Screen> hid nothing and they stayed reachable. This enforces
+   * the same entitlement on whichever route is actually open.
+   */
+  useEnforceScreenAccess();
   const { panHandlers } = useInactivityTimeout();
   /*
    * COS-469 / Phase 4 — when the default-flip flag is ON, the visible
@@ -33,8 +57,25 @@ export default function TabLayout() {
     ),
   };
 
-  // Default to true (visible) while permissions are loading
-  const canShow = (featureKey: string) => permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true;
+  /*
+   * COS-856 — entitlement-driven, and actually working.
+   *
+   * This was:
+   *   permissions?.[featureKey as keyof typeof permissions]?.enabled ?? true
+   *
+   * called with lowercase 'home' / 'appointments' / 'reports' against a map
+   * keyed by UPPERCASE Feature names. Every lookup missed, `?? true` caught
+   * it, and every tab was shown on every plan — the gating had never worked.
+   * The `as keyof typeof` cast is what silenced the type error that would
+   * have said so.
+   *
+   * `canShowScreen` asks the backend's screen map, which is keyed by app route
+   * name and by catalog featureKey, and is derived from the PLAN (plus
+   * per-user grants, minus revokes, minus care-manager off-switches). It still
+   * defaults to visible for an unknown route or an in-flight query, so a slow
+   * network never blanks the navigation.
+   */
+  const canShow = canShowScreen;
 
   return (
     <View style={{ flex: 1 }} {...panHandlers}>
@@ -43,35 +84,35 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
       }}>
-      {canShow('home') && (
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Home',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />
-            ),
-          }}
-        />
-      )}
-      <Tabs.Screen
-        name="inbox"
+            <Tabs.Screen
+        name="index"
         options={{
-          title: 'Inbox',
-          href: null,
+          href: canShow('home') ? undefined : null,
+          title: 'Home',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="house.fill" color={color} />
+          ),
         }}
       />
-      {canShow('appointments') && (
-        <Tabs.Screen
-          name="appointments"
-          options={{
-            title: 'Calendar',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
-            ),
-          }}
-        />
-      )}
+      {/*
+        COS-906 — the `inbox` entry is gone with its screen.
+        app/Home/inbox.tsx no longer exists, so this declared options for a
+        route expo-router cannot resolve. Harmless only because href was null;
+        a future reader would have gone looking for the screen. Every other
+        Tabs.Screen here still has a file, and every file here still has an
+        entry — checked, because a file WITHOUT an entry is the COS-860 bug
+        that renders a stray text tab at the end of the bar.
+      */}
+            <Tabs.Screen
+        name="appointments"
+        options={{
+          href: canShow('appointments') ? undefined : null,
+          title: 'Calendar',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="calendar" color={color} />
+          ),
+        }}
+      />
       {/*
         COS-469 / Phase 4 — Care Plan tab default swap.
         `unifiedDefault` OFF: legacy `health-plan` remains the visible
@@ -83,10 +124,55 @@ export default function TabLayout() {
       <Tabs.Screen
         name="health-plan"
         options={
-          unifiedDefault
-            ? { title: 'Classic care plan', href: null, headerShown: false }
-            : carePlanTabOptions
+          /*
+           * COS-915 — RETIRED. Never in the tab bar again, on either flag.
+           *
+           * `href: null` rather than deleting the entry: the route file still
+           * exists, ClassicViewLink still points here, and expo-router
+           * discovers screens from the FILESYSTEM — removing the <Tabs.Screen>
+           * would not remove the tab, it would render a bare filename label at
+           * the end of the bar (COS-860). Hidden, still deep-linkable, no
+           * longer a second front door onto a different plan model.
+           */
+          { title: 'Classic care plan', href: null, headerShown: false }
         }
+      />
+      {/*
+        COS-803 — "Plan+", the entitlement-composed care plan, sitting
+        immediately to the RIGHT of the classic Care Plan tab.
+
+        Deliberately a peer rather than a replacement. Every previous round of
+        entitlement work was built on top of the Care Plan tab itself and kept
+        breaking the screen patients actually use. This way the classic tab
+        stays exactly as production ships it and the two can be compared side
+        by side, one tap apart.
+
+        No `canShow` gate: this is the surface for TESTING entitlements, so
+        hiding it behind one would make it disappear the moment a plan got the
+        answer wrong — precisely when it is needed.
+      */}
+            <Tabs.Screen
+        name="care-plan-plus"
+        options={{
+          /*
+           * COS-915 — Plan+ became THE plan tab.
+           *
+           * Vishal: "let's retire the care plan classic screen and work on the
+           * plan plus screen, but change the plan plus to the plan and icon to
+           * the old icon."
+           *
+           * Two tabs both called a variant of "Plan" is how he ended up in a
+           * gate loop he could not leave: the classic screen let him switch to
+           * a tier whose required check-ins the same tier refuses to show. One
+           * plan tab, one plan.
+           *
+           * carePlanTabOptions carries the classic title and the BeatingHeart
+           * icon — reused rather than re-spelled, so the retired tab and this
+           * one cannot drift apart while both still exist.
+           */
+          ...carePlanTabOptions,
+          href: canShow('care-plan-plus') ? undefined : null,
+        }}
       />
       {/*
         Chunk 29 (2026-07-21) — unified-plan Tabs.Screen moved from the
@@ -116,9 +202,10 @@ export default function TabLayout() {
             : { title: 'Unified plan', href: null, headerShown: false }
         }
       />
-      <Tabs.Screen
+            <Tabs.Screen
         name="plan"
         options={{
+          href: canShow('plan') ? undefined : null,
           title: 'Health Summary',
           tabBarIcon: ({ color }) => (
             <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
@@ -133,17 +220,16 @@ export default function TabLayout() {
           tabBarItemStyle: { display: 'none' },
         }}
       />
-      {canShow('reports') && (
-        <Tabs.Screen
-          name="reports"
-          options={{
-            title: 'Reports',
-            tabBarIcon: ({ color }) => (
-              <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
-            ),
-          }}
-        />
-      )}
+            <Tabs.Screen
+        name="reports"
+        options={{
+          href: canShow('reports') ? undefined : null,
+          title: 'Reports',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="doc.text" color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="medications"
         options={{
@@ -209,7 +295,7 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
-      <Tabs.Screen
+            <Tabs.Screen
         name="today-schedule"
         options={{
           title: "Today's Schedule",
@@ -358,8 +444,39 @@ export default function TabLayout() {
           headerShown: false,
         }}
       />
+      {/* COS-882 — one request and its thread. Push-only, reached from a row in
+          "Your requests" on support.tsx. Without this declaration expo-router
+          auto-registers the file as a TAB. */}
+      <Tabs.Screen
+        name="support-ticket-detail"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen
         name="security-settings"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/* COS-784 — the plan shelf. `href: null` keeps it off the tab bar; it is
+          reached from the Profile drawer and the Home tile, both flag-gated. */}
+      <Tabs.Screen
+        name="plans"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        COS-917 — where a plan-blocked route sends the patient.
+        Push-only, and deliberately NOT in the entitlements catalog: gating the
+        screen that explains a gate is a redirect loop.
+      */}
+      <Tabs.Screen
+        name="plan-feature-unavailable"
         options={{
           href: null,
           headerShown: false,
@@ -481,6 +598,35 @@ export default function TabLayout() {
         name="plan-type-chooser"
         options={{
           title: 'Plan type',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        COS-737 — the subscription screen. href:null (pushed, not a tab) for the
+        same reason as plan-type-chooser: a hidden Tabs.Screen keeps the tab bar
+        intact while the route is presented, which is the pattern this app
+        settled on after the iOS 26.5 crashes.
+      */}
+      <Tabs.Screen
+        name="billing"
+        options={{
+          title: 'Your plan',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
+        COS-740 — the checkout seam. Registered even though it is currently
+        unreachable: the Upgrade button that pushes it is gated on
+        subscription_upgrade_enabled, which is false everywhere. Without this
+        registration the flag could not be flipped without crashing the app —
+        the gate would look ready and would not be.
+      */}
+      <Tabs.Screen
+        name="billing-checkout"
+        options={{
+          title: 'Checkout',
           href: null,
           headerShown: false,
         }}

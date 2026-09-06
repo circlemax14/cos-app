@@ -1,4 +1,5 @@
 import { Colors } from '@/constants/theme';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useAccessibility } from '@/stores/accessibility-store';
 import {
   useRecommendedAppointments,
@@ -54,6 +55,8 @@ function formatDate(dateStr: string | null | undefined): string {
  */
 export function RecommendedAppointmentsList() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+  const canBook = useCanRender('recommended-appointments.book-recommended');
+  const canDismiss = useCanRender('recommended-appointments.dismiss-recommendation');
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
   const { data, isLoading, isError, refetch } = useRecommendedAppointments({ status: 'pending' });
@@ -283,7 +286,7 @@ export function RecommendedAppointmentsList() {
                 ) : null}
 
                 <View style={styles.actionRow}>
-                  <TouchableOpacity
+                  {canBook && <TouchableOpacity
                     onPress={() => handleScheduled(item)}
                     style={[styles.actionButton, { backgroundColor: colors.tint }]}
                     accessibilityRole="button"
@@ -294,8 +297,8 @@ export function RecommendedAppointmentsList() {
                     >
                       I Scheduled This
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </TouchableOpacity>}
+                  {canDismiss && <TouchableOpacity
                     onPress={() => handleDismiss(item)}
                     style={[
                       styles.actionButton,
@@ -307,7 +310,7 @@ export function RecommendedAppointmentsList() {
                     <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
                       Dismiss
                     </Text>
-                  </TouchableOpacity>
+                  </TouchableOpacity>}
                 </View>
               </View>
             ))}

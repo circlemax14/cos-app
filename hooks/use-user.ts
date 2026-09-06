@@ -23,6 +23,18 @@ export interface UserProfile {
    * on the FE type to mirror the wire shape.
    */
   entitlements?: string[];
+  /**
+   * COS-887 — does this patient belong to an agency they actually chose?
+   *
+   * NOT the same question as "is agencyId set". `ensureUserProfile` stamps
+   * every new PATIENT with whichever agency is flagged `isDefault: true`, so
+   * the id is populated for patients who have no agency at all. Only the
+   * server can see that flag, so only the server can answer this.
+   *
+   * Optional because an older backend does not send it; treat undefined as
+   * false at every call site.
+   */
+  hasElectedAgency?: boolean;
 }
 
 export function useUser() {

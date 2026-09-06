@@ -87,7 +87,32 @@ test('the backend still joins subdomains onto the assessments list', () => {
   assert.match(code, /subdomainsById/);
   assert.match(
     code,
-    /\{ \.\.\.r, subdomains: subs \}/,
+    /\.\.\.\(meta\.subdomains \? \{ subdomains: meta\.subdomains \} : \{\}\)/,
     'each record must be enriched with its instrument subdomains',
   );
+});
+
+/**
+ * COS-850 — the backend must send `domain`, not just `subdomains`.
+ *
+ * The client used to infer a card's domain from `subdomains[0]`. `subdomains`
+ * lists what an instrument TOUCHES; `domain` says where it BELONGS, and for 3
+ * of the 31 active instruments they disagree — all three landing in Biological:
+ *
+ *   alcohol-3  psychological, subdomains[0]=substance_use
+ *   pss-4      psychological, subdomains[0]=immune_stress_response
+ *   iadl       social,        subdomains[0]=physical_health
+ *
+ * Vishal found the first on his Advanced plan, which never assigned it:
+ * "under the biological assessments, it mentioned alcohol use".
+ */
+test('COS-850: the assessments list joins `domain` onto every record', () => {
+  const ROUTE = read('../cos-backend/src/routes/assessments.routes.ts');
+  assert.match(
+    ROUTE,
+    /\.\.\.\(meta\.domain \? \{ domain: meta\.domain \} : \{\}\)/,
+    'without this join the client is back to guessing from subdomains[0]',
+  );
+  assert.match(ROUTE, /rollUpDomain/,
+    'spiritual must roll up to social — the client has no spiritual bucket');
 });

@@ -1,0 +1,545 @@
+/**
+ * COS-802 — every block on the care plan is composable.
+ *
+ * COS-755 gave the care plan per-section gates and missed four of them. Two
+ * keys (view-wellbeing-score, view-ai-summary) and the three domain keys sat
+ * in the catalog with NO call site, so an admin could untick them and nothing
+ * happened — the worst kind of control, one that looks like it works. Today's
+ * Tasks and View Progress had no key at all.
+ *
+ * Source-text assertions rather than renders: `node --test` cannot resolve the
+ * `@/` alias, and these are structural facts about which gate guards which
+ * block. See feedback_node_test_no_alias_imports.
+ */
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const read = (p) => readFileSync(join(root, p), 'utf8')
+
+const bps = read('components/health-plan/BiopsychosocialPlanScreen.tsx')
+const tiles = read('components/health-plan/BpsHeroTileRow.tsx')
+
+/** Every section key the screen is expected to gate on. */
+const SECTION_KEYS = [
+  'view-wellbeing-score',
+  'view-todays-tasks',
+  'view-progress',
+  'view-wellbeing-map',
+  'view-self-assessments',
+  'view-ai-summary',
+  'view-daily-routines',
+  'view-nutrition-plan',
+  'view-medications',
+  'share-plan-pdf',
+  'view-bio-section',
+  'view-psychological-section',
+  'view-social-section',
+]
+
+test('THE POINT: every catalogued section key has a call site', () => {
+  // A key with no call site is a switch wired to nothing. An admin unticks it,
+  // saves, sees the audit row, and the patient's screen is unchanged.
+  const missing = SECTION_KEYS.filter(
+    (k) => !bps.includes(`useCanRender('biopsychosocial-plan.${k}')`),
+  )
+  assert.deepEqual(missing, [], `keys in the catalog with no gate: ${missing.join(', ')}`)
+})
+
+test('the two hero tiles are gated INDEPENDENTLY', () => {
+  // They are one component but two blocks. Ken's example was a plan with
+  // Today's Tasks and no Wellbeing score, which a single gate cannot express.
+  assert.match(bps, /showWellbeing=\{canWellbeingScore\}/)
+  assert.match(bps, /showToday=\{canTodaysTasks\}/)
+  assert.match(tiles, /showWellbeing = true/)
+  assert.match(tiles, /showToday = true/)
+})
+
+test('a row with neither tile renders nothing, not an empty strip', () => {
+  // styles.wrap carries its own spacing, so returning it with no children
+  // leaves a gap above the map that reads as a stuck loading state.
+  assert.match(tiles, /if \(!showWellbeing && !showToday\) return <><\/>/)
+})
+
+test('an expanded tile cannot outlive its own gate', () => {
+  // `expanded` is local state. Switch to a plan without Today's Tasks while
+  // that tile is open and the card would stay mounted under a tile that is
+  // now denied.
+  assert.match(tiles, /expanded === 'wellbeing' \? showWellbeing : showToday/)
+})
+
+test('the domain sections are FILTERED, not blanked', () => {
+  // Gating inside the map would leave the wrapper, its divider and its
+  // spacing behind — a labelled gap where a card used to be.
+  assert.match(bps, /SECTION_ORDER\.filter\(/)
+  assert.match(bps, /canBioSection/)
+  assert.match(bps, /canPsychologicalSection/)
+  assert.match(bps, /canSocialSection/)
+})
+
+test('THE POINT: Switch plan is never gated', () => {
+  // A patient on a thin plan needs the way out of it more than anyone.
+  // Gating the escape hatch on the plan being escaped is a trap.
+  const pill = bps.slice(bps.indexOf('<PlanTierPill', bps.indexOf('<GreetingHeader')))
+  // Stop at the progress pill's own gate, not at its tag — the gate line sits
+  // above the tag, so slicing to the tag would swallow it and pass trivially.
+  const uptoProgress = pill.slice(0, pill.indexOf('BPS_PROGRESS_LINK_ENABLED'))
+  assert.doesNotMatch(uptoProgress, /canViewProgress|useCanRender/)
+})
+
+test('the kill-switch and the entitlement both have to agree', () => {
+  // The BPS_* consts are the global kill-switches and the entitlement is the
+  // per-plan answer. Replacing one with the other would lose a control.
+  assert.match(bps, /BPS_AI_SUMMARY_ENABLED && canAiSummary/)
+  assert.match(bps, /BPS_PROGRESS_LINK_ENABLED && canViewProgress/)
+})
+
+// ── COS-803: two tabs, and only one of them can be wrong ──────────────────
+
+test('THE POINT: the classic Care Plan tab cannot be gated', () => {
+  // Every previous round of entitlement work was built on top of the tab
+  // patients already rely on, and every round broke it. The classic tab now
+  // renders the SAME component with `entitlementGating` absent, so no plan —
+  // however badly provisioned — can hide a section there.
+  const classic = read('app/Home/health-plan.tsx')
+  assert.doesNotMatch(classic, /entitlementGating/)
+  assert.doesNotMatch(classic, /showPlanGate/)
+})
+
+test('the gate defaults CLOSED — absent prop means no gating', () => {
+  // If this defaulted true, every existing call site would start composing
+  // silently, which is the failure the second tab exists to prevent.
+  assert.match(bps, /entitlementGating = false/)
+  assert.match(bps, /const gate = \(allowed: boolean\): boolean => !entitlementGating \|\| allowed/)
+})
+
+test('every section flag goes through gate(), none reads the hook directly', () => {
+  // A gate wired straight to useCanRender would still fire on the classic
+  // tab. The raw value must never guard a render site.
+  const raws = [...bps.matchAll(/const (raw\w+) = useCanRender\(/g)].map((m) => m[1])
+  assert.ok(raws.length >= 13, `expected 13+ raw gates, found ${raws.length}`)
+  for (const raw of raws) {
+    const derived = raw.replace(/^raw/, '')
+    const flag = derived[0].toLowerCase() + derived.slice(1)
+    assert.match(bps, new RegExp(`const ${flag} = gate\\(${raw}\\)`), `${raw} is not routed through gate()`)
+    assert.doesNotMatch(bps, new RegExp(`\\{${raw} && `), `${raw} guards a render site directly`)
+  }
+})
+
+test('Plan+ is a real tab with its own error boundary', () => {
+  const layout = read('app/Home/_layout.tsx')
+  const route = read('app/Home/care-plan-plus.tsx')
+  assert.match(layout, /name="care-plan-plus"/)
+  // Visible: no href: null in its block.
+  const at = layout.indexOf('name="care-plan-plus"')
+  const block = layout.slice(at, layout.indexOf('<Tabs.Screen', at))
+  assert.doesNotMatch(block, /href: null/)
+  // It is the tab most likely to throw, and the classic tab must survive it.
+  assert.match(route, /<ScreenErrorBoundary screen="care-plan-plus">/)
+  assert.match(route, /<CarePlanPlusInner \/>/)
+})
+
+test('Plan+ turns gating ON', () => {
+  // Otherwise the two tabs are the same screen twice.
+  assert.match(read('app/Home/care-plan-plus.tsx'), /entitlementGating/)
+})
+
+// ── COS-804: the two dead ends on Plan+ ──────────────────────────────────
+
+/**
+ * The render condition for the free-plan Switch control, shared by the two
+ * tests below so a move updates one literal instead of two.
+ *
+ * COS-924 added `!costsMoney` to it: exclusivity between Switch and Subscribe
+ * used to be platform-wide (`canSwitch = selfSwitchEnabled && !canPay`, so one
+ * live gateway removed Switch from FREE plans too) and is now decided per card
+ * by that plan's own price. Same property, stronger — one boolean per card.
+ */
+const SWITCH_CTA = '!current && !comingSoon && isFree && canSwitch && ('
+
+/**
+ * indexOf that cannot rot silently. A moved anchor returns -1, `slice(-1)`
+ * yields the last character, and a doesNotMatch against that PASSES for the
+ * wrong reason. Fail loudly on the anchor instead.
+ */
+const anchor = (src, lit) => {
+  const i = src.indexOf(lit)
+  assert.ok(i >= 0, `anchor moved, test cannot be trusted: ${lit}`)
+  return i
+}
+
+test('THE POINT: the primary button on a card DOES the switch', () => {
+  // It read "Upgrade to this plan" and only expanded a panel; the real Switch
+  // was one level down. Tapping it produced no request at all — the backend
+  // logs showed nothing, because nothing had been asked of it.
+  //
+  // COS-924 narrowed WHICH cards carry this control — the condition gained
+  // `!costsMoney`, so a paid card offers Subscribe instead. What the button
+  // DOES when it renders is untouched, and that is what this test is about.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const btn = cards.slice(anchor(cards, SWITCH_CTA))
+  assert.match(btn.slice(0, 1200), /onPress=\{\(\) => void onSwitch\(plan\.planKey\)\}/)
+  assert.match(btn.slice(0, 1200), /'Switch to this plan'/)
+})
+
+test('the failure is shown where the button is, not inside a closed panel', () => {
+  // The error used to live in the expander. A switch that failed from the card
+  // would have reported itself somewhere the patient could not see.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const cardErr = cards.indexOf('canSwitch && switching === null && switchError !== null')
+  const detail = cards.indexOf('the expanded detail')
+  assert.ok(cardErr > -1, 'no switch error beside the card button')
+  assert.ok(cardErr < detail, 'the switch error must render before the expander')
+})
+
+test("THE POINT: Plan+'s switch pill reopens ITS OWN chooser", () => {
+  // It pushed /Home/plan-type-chooser — the OTHER plan concept (care plan
+  // TYPE: basic/advanced/agency, which sets assessment depth). Tapping
+  // "switch plan" on the entitlement surface and landing on the tier picker
+  // is the wrong screen, and it is the one place a patient would look to
+  // change the plan they had just picked off the shelf.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  // COS-811: reopening is now a VIEW state, deliberately separate from what
+  // is on disk — asking to see the shelf again must not un-remember that the
+  // patient has already been through it once.
+  assert.match(plus, /onChangePlanType=\{\(\) => setReopened\(true\)\}/)
+  // Navigation only — the prose above the prop still names the route it used
+  // to push, and that comment is the reason the fix is legible.
+  assert.doesNotMatch(plus, /router\.push\([^)]*plan-type-chooser/)
+})
+
+test('the CLASSIC tab still opens the plan-type chooser', () => {
+  // Two tabs, two meanings of "plan". Repointing both pills at the shelf
+  // would lose the tier picker entirely.
+  const classic = read('app/Home/health-plan.tsx')
+  assert.match(classic, /router\.push\('\/Home\/plan-type-chooser' as never\)/)
+})
+
+// ── COS-805: the pill must name what it opens ────────────────────────────
+
+test('THE POINT: on Plan+ the pill names the ENTITLEMENT plan', () => {
+  // The pill has always rendered the care plan TYPE (basic/advanced/agency,
+  // which sets assessment depth). On Plan+ it opens the entitlement shelf, so
+  // the type made the label and the destination disagree: switch to Standard
+  // and a pill still reading "Advanced" opens a shelf where Standard is
+  // badged YOUR PLAN.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /planLabel=\{patientPlansQuery\.data\?\.billing\?\.planName \?\? null\}/)
+})
+
+test('the label falls back to the plan type when not given', () => {
+  // The classic tab passes nothing and must keep the type label, because its
+  // pill still opens the type chooser.
+  const matches = bps.match(/label=\{planLabel \?\? planTypeDisplayName\(/g) ?? []
+  assert.equal(matches.length, 2, 'both pill sites must honour the override AND fall back')
+  assert.doesNotMatch(read('app/Home/health-plan.tsx'), /planLabel/)
+})
+
+test('the label cannot lag a switch', () => {
+  // Same query the shelf reads, and onSwitch invalidates it before closing the
+  // gate — so the pill can never show the plan you just left.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const body = cards.slice(cards.indexOf('async function onSwitch'))
+  // COS-926 — one shared refresh instead of a per-site list of keys. Five
+  // sites had five different sets and only one named the key the assessment
+  // gate reads, which is how a switch waved the patient straight through.
+  const inval = body.indexOf('refreshAfterPlanChange(queryClient)')
+  const done = body.indexOf('onSwitched?.()')
+  assert.ok(inval > -1 && done > -1)
+  assert.ok(inval < done, 'the refetch must be awaited before the gate closes')
+})
+
+// ── COS-806: the exit lives on your own card ─────────────────────────────
+
+test('the exit is on the card badged YOUR PLAN', () => {
+  // A pill in the corner put the instruction nowhere near the thing it refers
+  // to. Your plan is one of the cards, and it is the only card with no other
+  // control — you cannot switch to the plan you already hold.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\{current && onGoToPlan && \(/)
+  assert.doesNotMatch(read('app/Home/care-plan-plus.tsx'), /skipPill/)
+})
+
+test('THE POINT: the chooser always has an exit, even with no current card', () => {
+  // The backend exempts the current plan from both shelf filters, so its card
+  // is nearly always present. Retire that plan row and it is not — every card
+  // reads isCurrent false and the button has nowhere to live, leaving someone
+  // in a chooser with no way out. That is the failure this surface has already
+  // produced four times.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /onGoToPlan && !plans\.some\(\(p\) => p\.isCurrent === true\)/)
+})
+
+test('Billing gets no exit button — it has no plan to go to', () => {
+  // The same shelf renders on /Home/billing. onGoToPlan is optional precisely
+  // so a button promising to open a care plan does not appear there.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /onGoToPlan\?: \(\) => void/)
+  assert.doesNotMatch(read('app/Home/billing.tsx'), /onGoToPlan/)
+})
+
+// ── COS-807: the cards carry what the plan actually says ─────────────────
+
+test('THE POINT: fields the API sends are no longer dropped by the client', () => {
+  // displayPriceLabel and trialDays have come back from /v1/patients/me/plans
+  // since COS-784/769 and the card's own interface omitted them, so they could
+  // never render. A free plan showed a name and nothing else.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /displayPriceLabel\?: string \| null/)
+  assert.match(cards, /trialDays\?: number \| null/)
+  assert.match(cards, /label: priceLabel \} = priceLines\(plan\.pricing\)/)
+})
+
+test('a plan priced only by a label still shows a price', () => {
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\{priceLabel \?\? monthly\}/)
+})
+
+test('THE POINT: the badge says what the plan ASKS OF YOU', () => {
+  // COS-808 showed the raw `tier` string — a database value put in front of a
+  // patient. COS-809 replaced it with the prod chooser's badge, which said
+  // "STANDARD + EHR ASSESSMENT": what the plan will actually ask of you, which
+  // is the thing someone choosing between plans is weighing.
+  //
+  // Derived, so it cannot go stale when an admin renames or recomposes a plan
+  // — which a hardcoded tier label would. Its own boundaries are executed in
+  // tests/unit/plan-assessment-badge.test.ts.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /assessmentBadge\(plan\.assessmentCount, plan\.usesEhrRefresh\)/)
+  assert.match(cards, /badge\.label\.toUpperCase\(\)/)
+  assert.doesNotMatch(cards, /plan\.tier\.toUpperCase\(\)/)
+})
+
+test('highlights render as rows with a tick, not a text prefix', () => {
+  // They were a "✓  " string glued to the front of a Text, which cannot wrap
+  // or align — a two-line highlight hung under its own tick.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /name="check-circle"/)
+  assert.doesNotMatch(cards, /`✓ {2}\$\{h\}`/)
+  assert.match(cards, /highlightText.*flex: 1/s)
+})
+
+test('the strip variant still collapses its highlights', () => {
+  // It renders inline above other content on the Care Plan tab, which is the
+  // whole reason COS-789 collapsed them. Only the chooser is exempt.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  // COS-922 dropped `|| open` with the expander that set it. The property this
+  // defends is untouched: the strip variant still collapses, because it is
+  // still neither the chooser nor the card you are on.
+  assert.match(cards, /variant === 'chooser' \|\| current/)
+})
+
+// ── COS-808: the cards are a table, not a bullet list ────────────────────
+
+test('THE POINT: the label column is fixed-width', () => {
+  // This is the whole reason the prod cards read well. A fixed muted label
+  // against a flexible dark value makes four cards scan as a table, so the eye
+  // compares like with like down the column. Let the label size to its text
+  // and nothing lines up, which is what a bullet list already was.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /featureLabel: \{ width: \d+/)
+  assert.match(cards, /featureValue: \{ flex: 1/)
+})
+
+test('real plan config leads the table', () => {
+  // Assessment and Updates come from the plan itself and are the same for
+  // everyone holding it — they are what a patient is actually choosing
+  // between, so they outrank authored copy.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /label: 'Assessment'/)
+  assert.match(cards, /label: 'Updates'/)
+  const derived = cards.indexOf('{derived.map(')
+  const labelled = cards.indexOf('{labelled.map(')
+  const plain = cards.indexOf('{plain.map(')
+  assert.ok(derived > -1 && labelled > derived && plain > labelled, 'table order: derived, labelled, plain')
+})
+
+test('a cadence of zero says so rather than vanishing', () => {
+  // 0 means the plan deliberately does not nudge. Omitting the row would read
+  // as "we do not know", which is a different claim.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /When your records change/)
+  assert.match(cards, /typeof plan\.reassessmentCadenceDays === 'number'/)
+})
+
+test('an unlabelled highlight still renders, exactly as before', () => {
+  // No migration: every plan authored before COS-808 has colon-free
+  // highlights and must look the way it always did. The parser's own edge
+  // cases are executed in tests/unit/plan-highlight.test.ts — it lives in lib/
+  // precisely so it can be RUN rather than grepped.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\{plain\.map\(/)
+  assert.match(cards, /from '@\/lib\/plan-highlight'/)
+})
+
+// ── COS-810: four cards that look like four cards ────────────────────────
+
+test('THE POINT: the accent never reaches the action button', () => {
+  // A first pass tinted the CTA too, so "Switch to this plan" was green on one
+  // card and violet on the next. A primary action that changes colour by row
+  // is a usability bug wearing a style choice's clothes.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  //
+  // COS-812 outlined it: six filled buttons down the page all shouted equally,
+  // so the one FILLED control is now "Go to your plan" on the card you hold.
+  // Either way the accent must not reach it — that was the bug.
+  //
+  // COS-924 moved the anchor (`!costsMoney` joined the condition) and nothing
+  // else: the switch CTA is still outlined in the brand tint, and the accent
+  // still stops at the rail. anchor() is what keeps the doesNotMatch below
+  // honest — a -1 here would have sliced an empty string and passed blind.
+  const btn = cards.slice(anchor(cards, SWITCH_CTA), anchor(cards, "'Switch to this plan'"))
+  assert.doesNotMatch(btn, /accent/)
+  assert.match(btn, /borderColor: colors\.tint/)
+  // The filled one belongs to the plan you already have.
+  const go = cards.slice(cards.indexOf('current && onGoToPlan && ('))
+  assert.match(go.slice(0, 700), /backgroundColor: colors\.tint/)
+})
+
+test('the rail identifies the card; the plan you hold outranks it', () => {
+  // "Yours" is a stronger signal than "which one", so the current card takes
+  // the brand tint and a heavier rail rather than its own accent.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  //
+  // COS-812: the plan you hold is now a HERO above an "OTHER PLANS" heading,
+  // so it has no neighbours to be told apart from — presence replaced the
+  // wider rail. Everything below keeps the rail, which is what makes THOSE
+  // distinguishable from each other.
+  assert.match(cards, /borderLeftWidth: current \? 1 : 4/)
+  assert.match(cards, /borderLeftColor: current \? colors\.tint : accent/)
+  assert.match(cards, /borderWidth: current \? 1\.5 : 1/)
+})
+
+test('a coming-soon card is muted, not accented', () => {
+  // Colour on a card you cannot choose is an invitation that goes nowhere.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /const accent = comingSoon \? \(colors\.subtext \?\? colors\.text\) : planAccent\(plan\.planKey\)/)
+})
+
+// ── COS-811: the chooser is a first-run door ─────────────────────────────
+
+test('THE POINT: the chooser is shown ONCE, not on every visit', () => {
+  // COS-801 held the bypass in plain component state. This is a TAB — the
+  // route remounts every time you switch to it — so the chooser reappeared in
+  // front of the plan on every single visit, forever.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /care-plan-plus\.chooser\.seen/)
+  assert.match(plus, /AsyncStorage\.setItem\(CHOOSER_SEEN_KEY, '1'\)/)
+  // COS-918 split the one expression into the two doors it was conflating.
+  // The property is unchanged: the AUTOMATIC door is once-ever (`seen ===
+  // false`, persisted), and `reopened` is the patient asking again.
+  //
+  // COS-924 changed what `canSwitch` MEANS (per-plan, not per-platform), so
+  // the door's own rule was lifted into `autoOpenChooser` rather than left to
+  // inherit the new meaning silently. Assert both halves, because the name
+  // alone is not the property: the door reads autoOpenChooser, and
+  // autoOpenChooser is still "self-switch on, no gateway live" — so it still
+  // closes itself the moment payments land, with no flag anyone must unset.
+  assert.match(plus, /const firstRunDoor = autoOpenChooser && seen === false;/)
+  assert.match(
+    read('components/plan/PlanStatusSection.tsx'),
+    /autoOpenChooser: selfSwitchEnabled && !canPay,/,
+  )
+  assert.match(plus, /&& reopened;/)
+})
+
+test('the plan never flashes before the chooser takes over', () => {
+  // `seen === null` is "still reading". Rendering the plan during that window
+  // and then yanking to a price list is worse than a beat of loading.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /if \(seen === null \|\| planQuery\.isLoading\)/)
+})
+
+test('storage failing must not trap anyone in the chooser', () => {
+  // Being wrong toward "seen" costs one fewer prompt. Being wrong the other
+  // way is an inescapable screen in front of the care plan.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  const cat = plus.slice(plus.indexOf('const v = await AsyncStorage.getItem'))
+  assert.match(cat.slice(0, 500), /setSeen\(true\)/)
+})
+
+test('reopening the shelf does not un-remember the first run', () => {
+  // The pill sets view state only. Clearing the stored flag would put the
+  // patient back to being prompted on every launch.
+  const plus = read('app/Home/care-plan-plus.tsx')
+  assert.match(plus, /setReopened\(true\)/)
+  assert.doesNotMatch(plus, /removeItem\(CHOOSER_SEEN_KEY/)
+})
+
+// ── COS-812: A + B + C ───────────────────────────────────────────────────
+
+test('THE POINT: your plan leads, under its own heading', () => {
+  // Eight equal cards made "which one am I on?" a search. The sort is STABLE,
+  // so only the current plan moves — the rest keep COS-789's free-first server
+  // order rather than being silently re-ranked by the client.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /\[\.\.\.plans\]\.sort\(/)
+  assert.match(cards, /\(b\.isCurrent === true \? 1 : 0\) - \(a\.isCurrent === true \? 1 : 0\)/)
+  assert.match(cards, /OTHER PLANS/)
+  assert.match(cards, /index === 1 && ordered\[0\]\?\.isCurrent === true/)
+})
+
+test('the heading only appears when there IS a hero above it', () => {
+  // With no current plan in the shelf, "OTHER PLANS" would be a heading over
+  // the entire list — other than what?
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  assert.match(cards, /const showSectionBreak = index === 1 && ordered\[0\]\?\.isCurrent === true/)
+})
+
+test('YOUR PLAN is said once, not twice', () => {
+  // The hero eyebrow replaced the pill; keeping both put the same two words on
+  // one card twice. Counted in the RENDER, not the file — the prose above the
+  // change still names what was removed, and that is why it is legible.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const code = cards.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '')
+  assert.equal((code.match(/YOUR PLAN/g) ?? []).length, 1)
+  // ...and the pill's styles went with it, so it cannot quietly come back.
+  assert.doesNotMatch(code, /currentBadge/)
+})
+
+test('THE POINT: unlabelled rows align with labelled ones', () => {
+  // This is the whole reason the prod cards were comparable. A tick with no
+  // label cell started ~85pt left of every value above it, and the table
+  // stopped being a table.
+  const cards = read('components/plan/PlanStatusSection.tsx')
+  const plain = cards.slice(cards.indexOf('{plain.map('))
+  assert.match(plain.slice(0, 900), /<View style=\{styles\.featureLabel\} \/>/)
+  assert.match(plain.slice(0, 900), /styles\.featureValue/)
+})
+
+/**
+ * COS-869 — a component that mounts from BiopsychosocialPlanScreen must not
+ * call useCanRender itself.
+ *
+ * The screen's own flags all route through gate(), which is inert on the frozen
+ * classic tab. A gate placed INSIDE a child component skips that entirely and
+ * fires on classic, where nothing may be hidden.
+ *
+ * It happened twice. SharePlanSection (COS-866) gated the share card on a
+ * second key, so removing it hid the card on classic AND on Plan+ — Vishal
+ * found that one. TaskDetailModal (COS-866) did the same with
+ * health-plan.delete-task. Both now take the decision as a prop.
+ */
+test('COS-869: children of the BPS screen take gates as props, never read them', () => {
+  const bpsSrc = read('components/health-plan/BiopsychosocialPlanScreen.tsx')
+  const imported = [...bpsSrc.matchAll(/from '\.\/([A-Za-z/]+)'/g)].map((m) => m[1])
+
+  const offenders = []
+  for (const rel of imported) {
+    for (const p of [`components/health-plan/${rel}.tsx`, `components/health-plan/${rel}/index.tsx`]) {
+      let src
+      try { src = read(p) } catch { continue }
+      // strip comments so a mention in prose does not count
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      if (/useCanRender\s*\(/.test(code)) offenders.push(p)
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these mount from the BPS screen and gate themselves, bypassing gate() on the frozen classic tab:\n  ${offenders.join('\n  ')}`,
+  )
+})

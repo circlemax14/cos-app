@@ -19,6 +19,7 @@ import { useSecurity } from '@/stores/security-store';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { getColors, Spacing, Typography } from '@/constants/design-system';
 import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
+import { consumeDeferredNavigation } from '@/lib/locked-nav-queue';
 import { consumePendingSignIn, SignInReason, setAppLocked } from '@/lib/lock-gate';
 import { resolveUnlockAction, LOCAL_FIRST_UNLOCK } from '@/lib/unlock-decision';
 import { checkSession } from '@/services/auth';
@@ -45,6 +46,21 @@ async function resumeAfterUnlock() {
   } catch {
     // Best-effort; fall through to /Home.
   }
+
+  /*
+   * COS-778 — a notification tapped WHILE LOCKED wins over the pre-lock route.
+   *
+   * The tap is the more recent expression of intent: they were looking at
+   * something, a notification arrived, they chose it, and the PIN screen stood
+   * between them and it. Landing them back on the old screen instead would
+   * make the notification look broken, which is exactly the support ticket
+   * that deferring rather than dropping was meant to avoid.
+   *
+   * Consuming clears the queue, so a replay cannot fire twice.
+   */
+  const deferredRoute = consumeDeferredNavigation();
+  if (deferredRoute) target = deferredRoute;
+
   router.replace(target as never);
 }
 

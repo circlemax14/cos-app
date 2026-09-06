@@ -18,6 +18,7 @@ import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 // hook on EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED — default OFF so this ships
 // dark and inert until Ken flips the env var + cuts a new bundle.
 import { useEntitlementsSync } from '@/hooks/use-entitlements-sync';
+import { useTimezoneSync } from '@/hooks/use-timezone-sync';
 // ADR-0004 P1 — health-data-changed WSS sync + long-poll fallback. Mirrors
 // the entitlements-sync contract for lab/vaccine/summary/plan invalidation.
 // Renders nothing; flag-gated inside the hook on
@@ -40,6 +41,23 @@ import { FeatureFlagBridge } from '@/components/FeatureFlagBridge';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
+
+import { registerStoreBilling } from '@/services/payments-provider';
+import { isStoreBillingLinked, purchaseThroughStore } from '@/services/native-store-billing';
+
+/*
+ * COS-893 — hand the payment providers their store binding.
+ *
+ * services/payments-provider.ts must not import react-native (a unit test
+ * loads it directly under `node --test`), so the native half is registered
+ * here, at the one place that only ever runs inside the app. Registering is
+ * cheap and touches no native code: isStoreBillingLinked() only reads
+ * NativeModules, and the SDK itself is required lazily at purchase time.
+ */
+registerStoreBilling({
+  isLinked: isStoreBillingLinked,
+  purchase: purchaseThroughStore,
+});
 import { shouldPreventScreenCapture } from '@/lib/screenshot-policy';
 
 // Initialize Sentry as early as possible — before any other imports run side
@@ -101,6 +119,13 @@ function StackWithAppLock() {
   // Runs iff EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise.
   useEntitlementsSync();
+  /*
+   * COS-871 — send the device's IANA timezone so reminders arrive in the
+   * patient's own morning. The per-user-TZ sweeper (SCRUM-256/259) has been
+   * deployed all along; nothing ever set the field, so every user fell back to
+   * the three fixed UTC crons and a US patient got a 4am "morning" reminder.
+   */
+  useTimezoneSync();
   // ADR-0004 P1: health-data-changed WSS sync + long-poll fallback.
   // Runs iff EXPO_PUBLIC_LABS_REALTIME_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise. Independent WebSocket lifecycle
@@ -112,7 +137,17 @@ function StackWithAppLock() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
-      <Stack.Screen name="(security)" options={{ headerShown: false }} />
+      {/* COS-778 — gestureEnabled:false is NOT cosmetic here.
+          `router.replace` leaves the previous root-level screen mounted
+          underneath the lock screen, and nothing in this repo set
+          gestureEnabled. headerShown:false does NOT disable the iOS
+          left-edge swipe-back, so the gesture walked straight back onto
+          live PHI (bypass #1, SCRUM-721). This closes the gesture; the
+          shield and dismissAll close the rest. */}
+      <Stack.Screen
+        name="(security)"
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
       <Stack.Screen name="Home" options={{ headerShown: false }} />
       {/* Ken 2026-08-07 (#19) — (personal-info) route group removed.
           The screen moved INTO the Tabs navigator at

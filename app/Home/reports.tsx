@@ -17,8 +17,12 @@ import { LabResultsTable } from '@/components/reports/lab-results-table';
 import { DocumentViewer, type DocumentViewerSource } from '@/components/reports/document-viewer';
 import { InlineVisitSummary } from '@/components/reports/inline-visit-summary';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 function ReportsInner() {
+  const canViewReports = useCanRender('reports.view');
+  const canViewReport = useCanRender('reports.view-report');
+  const canFilterReports = useCanRender('reports.filter-reports');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const insets = useSafeAreaInsets();
@@ -602,6 +606,7 @@ function ReportsInner() {
                   </Text>
                 )}
 
+                {canViewReport && (
                 <TouchableOpacity
                   style={styles.viewButton}
                   onPress={() => {
@@ -614,6 +619,7 @@ function ReportsInner() {
                   </Text>
                   <MaterialIcons name="arrow-forward" size={getScaledFontSize(18)} color="#008080" />
                 </TouchableOpacity>
+                )}
               </Card.Content>
             </Card>
           );
@@ -682,6 +688,7 @@ function ReportsInner() {
 
   return (
     <AppWrapper>
+      {canViewReports && (
       <ScrollView
         style={[styles.container, { backgroundColor: colors.background }]}
         refreshControl={
@@ -737,6 +744,7 @@ function ReportsInner() {
       {mainTab === 'reports' ? (
         <>
           {/* Filters */}
+          {canFilterReports && (
           <View style={[styles.filtersContainer, { backgroundColor: colors.background }]}>
         <View style={styles.filterButtonsRow}>
           <TouchableOpacity
@@ -770,6 +778,7 @@ function ReportsInner() {
           </TouchableOpacity>
         </View>
       </View>
+          )}
 
       {/* Provider Filter Modal */}
       {renderFilterModal(
@@ -1152,6 +1161,7 @@ function ReportsInner() {
         </>
       )}
       </ScrollView>
+      )}
 
       {/* In-app Document Viewer (shared between Documents tab + Report attachments) */}
       <DocumentViewer

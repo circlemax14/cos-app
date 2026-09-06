@@ -7,6 +7,7 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Card, List, Text, Icon } from 'react-native-paper';
 import { fetchAppointments } from '@/services/api/appointments';
 import type { Appointment as FastenAppointment } from '@/services/api/types';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -18,6 +19,7 @@ export default function AppointmentsModalScreen() {
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [appointments, setAppointments] = React.useState<FastenAppointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = React.useState(false);
+  const canView = useCanRender('appointments-modal.view');
 
   React.useEffect(() => {
     const loadUpcomingAppointments = async () => {
@@ -66,6 +68,7 @@ export default function AppointmentsModalScreen() {
         </TouchableOpacity>
       </View>
       
+      {canView && (
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {isLoadingAppointments ? (
           <View style={styles.loadingContainer}>
@@ -114,6 +117,7 @@ export default function AppointmentsModalScreen() {
           </View>
         )}
       </ScrollView>
+      )}
     </View>
   );
 }

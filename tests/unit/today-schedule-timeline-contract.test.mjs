@@ -441,7 +441,13 @@ test('Done sits ABOVE the wheel, or it falls off the bottom of the card', () => 
   // rather than merely awkward.
   const HABITS = readFileSync(join(ROOT, 'app/Home/habits.tsx'), 'utf8');
   const code = codeOnly(HABITS);
-  const block = code.slice(code.indexOf('{showTimePicker ? ('));
+  // COS-867 — locate the block by its CONDITION, not by an exact string.
+  // habits.set-time now gates it (`{canSetTime && showTimePicker ? (`), and an
+  // indexOf on the old literal silently returned -1, collapsing the slice and
+  // failing on ordering that is in fact still correct.
+  const at = code.search(/\{[^}]*showTimePicker \? \(/);
+  assert.ok(at > -1, 'time-picker block not found');
+  const block = code.slice(at);
   const body = block.slice(0, block.indexOf(') : null}'));
   assert.ok(
     body.indexOf('Done choosing the time') < body.indexOf('<DateTimePicker'),

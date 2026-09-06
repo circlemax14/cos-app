@@ -28,6 +28,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
+import { useCanRender } from '@/hooks/use-entitlement'
 import {
   BPS_SUBDOMAINS,
   knownSubdomains,
@@ -211,6 +212,15 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const planQuery = useBiopsychosocialPlan()
+  // Entitlement gates. Hooks, so they sit with the others at the TOP of the
+  // component, above every effect and any future early return.
+  const canView = useCanRender('wellbeing-map.view')
+  const canViewDomain = useCanRender('wellbeing-map.view-domain')
+  const canTapSubdomain = useCanRender('wellbeing-map.tap-subdomain')
+  // The sheet already renders its check-in CTA only when onTakeAssessment is
+  // present (WellbeingSubdomainSheet.tsx:374), so withholding the prop hides
+  // the control itself — the sheet still opens, nothing is stranded.
+  const canCheckinSubdomain = useCanRender('wellbeing-map.checkin-subdomain')
 
   // Chunk 28 (2026-07-21): domain-preselect deep-link from PlanScreenV2's
   // "View in wellbeing map" footer. Coerce params.section (string |
@@ -363,7 +373,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
   return (
     <AppWrapper>
       <Stack.Screen options={{ title: 'Wellbeing map', headerBackTitle: 'Care Plan' }} />
-      <ScrollView
+      {canView && <ScrollView
         ref={scrollRef}
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={{ paddingBottom: 32 }}
@@ -429,7 +439,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         </View>
 
         {/* Coverage summary — three tinted cards, one per domain */}
-        <View
+        {canViewDomain && <View
           style={styles.coverageRow}
           onLayout={(e) => setCoverageRowY(e.nativeEvent.layout.y)}
         >
@@ -490,7 +500,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
               </View>
             )
           })}
-        </View>
+        </View>}
 
         <View style={[styles.card, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>
           <Svg viewBox={`0 0 ${VBW} ${VBH}`} width="100%" height={340}>
@@ -567,7 +577,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
             </Defs>
 
             {/* Subdomain markers + labels — whole group is tappable, opens the drilldown sheet */}
-            {coverage.map((c) => {
+            {canTapSubdomain && coverage.map((c) => {
               const pos = SUBDOMAIN_POS[c.key]
               if (!pos) return null
               const isFull = c.fillLevel === 'full'
@@ -765,15 +775,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
           })}
         </View>
 
-        <Text
-          style={[
-            styles.attribution,
-            { color: colors.subtext, fontSize: getScaledFontSize(10) },
-          ]}
-        >
-          Adapted from the NovoPsych biopsychosocial model
-        </Text>
-      </ScrollView>
+      </ScrollView>}
 
       <WellbeingSubdomainSheet
         visible={sheetKey !== null && activeSubdomain !== null}
@@ -789,7 +791,7 @@ export default function WellbeingMapRoute(): React.JSX.Element {
         onClose={closeSheet}
         onAddGoal={handleAddGoal}
         onAiSuggest={handleAiSuggest}
-        onTakeAssessment={handleTakeAssessment}
+        onTakeAssessment={canCheckinSubdomain ? handleTakeAssessment : undefined}
       />
     </AppWrapper>
   )

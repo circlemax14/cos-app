@@ -2,6 +2,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useConnectedEhrs, type ConnectedHospital } from '@/hooks/use-connected-ehrs';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
@@ -272,7 +273,13 @@ export default function ConnectedEhrsScreen() {
 
   const { connectedHospitals, isLoadingClinics, refreshConnectedEhrs } = useConnectedEhrs();
   const { data: permissions } = useFeaturePermissions();
-  const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
+  const canConnectClinic = permissions?.permissions?.CONNECT_CLINIC?.enabled === true;
+
+  // COS-849 entitlement gates. Hooks, so unconditional and above every branch.
+  const canView = useCanRender('connected-ehrs.view');
+  const canViewEhr = useCanRender('connected-ehrs.view-ehr');
+  const canAddEhr = useCanRender('connected-ehrs.add-ehr');
+  const canRefreshEhr = useCanRender('connected-ehrs.refresh-ehr');
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = React.useCallback(async () => {
@@ -283,11 +290,14 @@ export default function ConnectedEhrsScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
+          canRefreshEhr ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
+          ) : undefined
         }
       >
         {/* Header */}
@@ -353,7 +363,7 @@ export default function ConnectedEhrsScreen() {
         ) : null}
 
         {/* Clinic cards */}
-        {connectedHospitals.map((hospital) => (
+        {canViewEhr && connectedHospitals.map((hospital) => (
           <ClinicHeroCard
             key={hospital.id}
             hospital={hospital}
@@ -364,7 +374,7 @@ export default function ConnectedEhrsScreen() {
         ))}
 
         {/* Connect another EHR — hidden for users with the feature flag off */}
-        {canConnectClinic && (
+        {canConnectClinic && canAddEhr && (
           <ConnectAnotherCard
             colors={colors}
             scale={scale}
@@ -375,6 +385,7 @@ export default function ConnectedEhrsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

@@ -5,6 +5,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, Alert, Act
 import { Card, Button, TextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useProxies, useCreateProxy, useUpdateProxy, useRevokeProxy, ProxyScope, Proxy } from '@/hooks/use-proxies';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { AppWrapper } from '@/components/app-wrapper';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -26,6 +27,10 @@ const ALL_SCOPES = Object.keys(SCOPE_LABELS) as ProxyScope[];
 export default function ProxyManagementScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  const canView = useCanRender('proxy-management.view');
+  const canAddProxy = useCanRender('proxy-management.add-proxy');
+  const canRevokeProxy = useCanRender('proxy-management.revoke-proxy');
 
   const { data: proxies = [], isLoading, isError, refetch } = useProxies();
   const createProxy = useCreateProxy();
@@ -204,6 +209,7 @@ export default function ProxyManagementScreen() {
 
   return (
     <AppWrapper>
+      {canView && (
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
         {/* Description */}
         <Card style={[styles.infoCard, { backgroundColor: colors.background }]}>
@@ -215,6 +221,7 @@ export default function ProxyManagementScreen() {
         </Card>
 
         {/* Add Proxy Button */}
+        {canAddProxy && (
         <Button
           mode="contained"
           onPress={() => {
@@ -230,6 +237,7 @@ export default function ProxyManagementScreen() {
         >
           Add Proxy
         </Button>
+        )}
 
         {/* Proxies List */}
         {isLoading ? (
@@ -318,12 +326,14 @@ export default function ProxyManagementScreen() {
                       >
                         <MaterialIcons name="edit" size={getScaledFontSize(22)} color={colors.tint} />
                       </TouchableOpacity>
+                      {canRevokeProxy && (
                       <TouchableOpacity
                         onPress={() => handleRevokeProxy(proxy.id, proxy.email)}
                         style={styles.removeButton}
                       >
                         <MaterialIcons name="delete-outline" size={getScaledFontSize(24)} color="#F44336" />
                       </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                 </Card.Content>
@@ -332,6 +342,7 @@ export default function ProxyManagementScreen() {
           </View>
         )}
       </ScrollView>
+      )}
 
       {/* Add Proxy Modal */}
       <Modal

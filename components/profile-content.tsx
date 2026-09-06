@@ -4,6 +4,8 @@ import { signOut } from '@/services/auth';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import { useCanRender, useHasExplicitGrant } from '@/hooks/use-entitlement';
+import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
 import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
 import { useUserPhoto } from '@/stores/user-photo-store';
@@ -11,7 +13,7 @@ import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
 import {
   getCachedUserSummary,
-  setCachedUserSummary,
+  updateCachedUserSummary,
 } from '@/lib/cached-user-summary';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -47,6 +49,22 @@ interface ProfileContentProps {
   onHealthDetailsPress?: () => void;
   onServicesPress?: () => void;
   onAllergiesPress?: () => void;
+  /**
+   * COS-885 — called immediately BEFORE this list navigates anywhere.
+   *
+   * The drawer in app-wrapper.tsx is `{isDrawerMenuVisible && <View>...}`
+   * inside the SCREEN that opened it. Every row below used to call
+   * router.push() on its own, so that flag stayed true: react-native-screens
+   * detached the departing screen (drawer looked closed), and re-attached it
+   * still open when the patient came back. Vishal, on Help & Support: "when I
+   * click on the home, the left drawer navigation is visible. It should not be
+   * visible to me."
+   *
+   * AppWrapper's OWN row callbacks — onServicesPress, onAllergiesPress and the
+   * rest — already close first. This is the same contract for the rows that
+   * navigate from inside this file.
+   */
+  onNavigate?: () => void;
   showEhrTitle?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
 }
@@ -66,23 +84,65 @@ export function ProfileContent({
   onHealthDetailsPress,
   onServicesPress,
   onAllergiesPress,
+  onNavigate,
   showEhrTitle = true,
   containerStyle,
 }: ProfileContentProps) {
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
+  /**
+   * COS-885 — the one place this file navigates from.
+   *
+   * Thirteen rows called router.push() directly, so "close the drawer first"
+   * had to be remembered thirteen times and was remembered zero times. One
+   * helper is the whole fix: a row added later cannot forget.
+   *
+   * Sign-out is deliberately NOT routed through here — router.replace() to
+   * /(auth) unmounts the tab navigator and the drawer's state with it.
+   */
+  const go = (path: string): void => {
+    onNavigate?.();
+    router.push(path as never);
+  };
+
   // Hide the "Connect Another EHR" card for users with CONNECT_CLINIC
   // disabled by an admin (e.g. the App Store reviewer). Fail closed —
   // if permissions haven't loaded yet, treat as disabled so the button
   // never flashes to a restricted user.
   const { data: permissions } = useFeaturePermissions();
-  const canConnectClinic = permissions?.CONNECT_CLINIC?.enabled === true;
+  // COS-735 — About moved onto the entitlements catalog so it is manageable
+  // from a plan or feature group. Explicit-grant-only: see the note at the row.
+  const canSeeAbout = useHasExplicitGrant('about.view');
+  const canConnectClinic = permissions?.permissions?.CONNECT_CLINIC?.enabled === true;
+
+  // Fine-grained entitlement gates. Hooks are unconditional and live here at
+  // the top of the component; each one gates exactly one control below with a
+  // plain `{cond && <X />}` — no wrappers, this file mounts on the drawer's
+  // cold path (iOS 26 crash history).
+  const canEditPersonalInfo = useCanRender('profile.edit-personal-info');
+  const canSignOut = useCanRender('profile.sign-out');
+  const canDeleteAccount = useCanRender('profile.delete-account');
+  /*
+   * COS-897 — the drawer row must obey the SAME entitlement the route enforcer
+   * does. `apple-health.view` is what patient-capabilities maps to
+   * /Home/apple-health, and useEnforceScreenAccess redirects to Home when the
+   * plan does not include it. So with the feature off, this row rendered, was
+   * tappable, and dumped the patient on Home with no explanation — which is
+   * exactly what Vishal hit: "when I click on the Apple Health, it is not
+   * taking me to any screen. It is taking me to the home screen."
+   *
+   * The bounce is correct. Offering the door is not.
+   */
+  const canOpenHealthSync = useCanRender('apple-health.view');
 
   // SCRUM-640: dark-launched habit-journal entry. Default OFF; visible
   // only when backend flag `habit_journal_enabled` (or the per-user
   // beta override) resolves to true.
   const habitJournalEnabled = useHabitJournalFlag();
+  // COS-784 — the plan shelf entry. Default OFF while the flag query loads, so
+  // a pricing row never flashes in on cold start during a dark launch.
+  const planShelfEnabled = usePlanShelfFlag();
   const habitsInPlanFlagEnabled = useHabitsInPlanFlag();
 
   const [patientName, setPatientName] = useState('User');
@@ -131,11 +191,17 @@ export function ProfileContent({
 
         setPatientName(freshName);
         setPatientEmail(freshEmail);
-        await setCachedUserSummary({
-          name: freshName,
-          email: freshEmail,
-          photoUrl: patientPhotoUrl ?? cached?.photoUrl,
-        });
+        /*
+         * COS-891 — write only what this screen owns.
+         *
+         * This used setCachedUserSummary, which REPLACES the record, and
+         * passed `patientPhotoUrl` — a presigned URL — with no note of when it
+         * was signed. So it both clobbered the photo timestamp the photo store
+         * had just written and stored a URL nothing could safely reuse. The
+         * photo belongs to stores/user-photo-store.tsx, which writes through on
+         * every commit; the name and the email belong here.
+         */
+        await updateCachedUserSummary({ name: freshName, email: freshEmail });
       } catch {
         // Network failure — keep whatever (cached or default) values are showing.
       } finally {
@@ -242,15 +308,17 @@ export function ProfileContent({
         <View style={styles.menuSection}>
           <SectionLabel label="My Health" colors={colors} getScaledFontSize={getScaledFontSize} getScaledFontWeight={getScaledFontWeight} />
           <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <DrawerRow
-              iconName="person"
-              label="Personal Information"
-              onPress={() => router.push('/Home/personal-info' as never)}
-              divider
-              colors={colors}
-              getScaledFontSize={getScaledFontSize}
-              getScaledFontWeight={getScaledFontWeight}
-            />
+            {canEditPersonalInfo && (
+              <DrawerRow
+                iconName="person"
+                label="Personal Information"
+                onPress={() => go('/Home/personal-info')}
+                divider
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
             {/* Ken 2026-08-07 (#15) — "Medications" drawer row REMOVED.
                 The Plan surface now carries a full-width MedicationsBanner
                 (green, with today's dose preview) as the canonical entry
@@ -261,7 +329,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="emoji-events"
               label="Badges"
-              onPress={() => router.push('/Home/badges' as never)}
+              onPress={() => go('/Home/badges')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -270,7 +338,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="notifications-active"
               label="Reminders"
-              onPress={() => router.push('/Home/reminder-settings' as never)}
+              onPress={() => go('/Home/reminder-settings')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -291,7 +359,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="check-circle-outline"
                 label="Daily habits"
-                onPress={() => router.push('/Home/habit-journal' as never)}
+                onPress={() => go('/Home/habit-journal')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -299,17 +367,26 @@ export function ProfileContent({
               />
             )}
             {/*
-              Apple Health (COS-389 / SCRUM-530): deliberate, easy-to-find
-              opt-in control. The HealthKit permission prompt used to fire
-              accidentally on mount of the Personal Information screen; it now
-              lives behind this row → app/Home/apple-health.tsx. iOS only —
-              HealthKit doesn't exist on Android.
+              Health Sync (COS-389 / SCRUM-530, renamed COS-897): deliberate,
+              easy-to-find opt-in control. The HealthKit permission prompt used
+              to fire accidentally on mount of the Personal Information screen;
+              it now lives behind this row → app/Home/apple-health.tsx.
+
+              The LABEL is "Health Sync" because that is what the screen it
+              opens is called, and because the screen is no longer only about
+              Apple Health. The ROUTE keeps its old filename — renaming an
+              expo-router file changes every deep link that points at it, and
+              the name of a file is not worth that.
+
+              iOS only: HealthKit does not exist on Android, and there is no
+              Android build yet. When there is, drop the Platform check — the
+              screen already handles every platform on its own.
             */}
-            {Platform.OS === 'ios' && (
+            {Platform.OS === 'ios' && canOpenHealthSync && (
               <DrawerRow
                 iconName="favorite-border"
-                label="Apple Health"
-                onPress={() => router.push('/Home/apple-health' as never)}
+                label="Health Sync"
+                onPress={() => go('/Home/apple-health')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -369,7 +446,7 @@ export function ProfileContent({
               description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Update your profile details</Text>}
               left={(props) => <Icon {...props} source="account" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/personal-info' as never)}
+              onPress={() => go('/Home/personal-info')}
             />
           </Card>
 
@@ -399,7 +476,7 @@ export function ProfileContent({
               description={<Text style={[{ fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Manage your proxy access</Text>}
               left={(props) => <Icon {...props} source="account-supervisor" size={getScaledFontSize(40)} />}
               right={(props) => <Icon {...props} source="chevron-right" size={getScaledFontSize(40)} />}
-              onPress={() => router.push('/Home/proxy-management')}
+              onPress={() => go('/Home/proxy-management')}
             />
           </Card>
 
@@ -542,7 +619,7 @@ export function ProfileContent({
             <DrawerRow
               iconName="link"
               label="Linked Accounts"
-              onPress={() => router.push('/Home/linked-accounts' as never)}
+              onPress={() => go('/Home/linked-accounts')}
               divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
@@ -551,11 +628,57 @@ export function ProfileContent({
             <DrawerRow
               iconName="shield"
               label="Security"
-              onPress={() => router.push('/Home/security-settings' as never)}
+              onPress={() => go('/Home/security-settings')}
+              divider
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
             />
+            {/*
+              COS-740 — the subscription screen had exactly one entry point
+              (the plan-type chooser), which is itself only reachable from a
+              card that renders after a health plan exists. A patient who has
+              not generated one could not reach their own plan at all.
+
+              UNGATED, unlike About above: this is a patient's own plan and
+              price. Hiding it behind an entitlement would mean the people most
+              likely to want an upgrade are the ones who cannot find the page.
+
+              Labelled "Billing" rather than "Your plan" (COS-742). "Plan"
+              already means two other things in this app — the daily health
+              plan on the Plan tab, and the assessment intensity on the
+              plan-type chooser — so a third sense of the word sent people to
+              the wrong screen looking for their tasks.
+
+              Not the SCRUM-319 problem. That entry was pulled for Apple
+              Guideline 2.1 because it showed fake "active" status for premium
+              features with no IAP wiring. This screen shows the real plans
+              with real prices, marks the one the patient actually has, and
+              offers no purchase — the upgrade action stays behind
+              SUBSCRIPTION_UPGRADE_ENABLED until payments genuinely work.
+            */}
+            <DrawerRow
+              iconName="card-membership"
+              label="Billing"
+              onPress={() => go('/Home/billing')}
+              divider={planShelfEnabled}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+            {/* COS-784 — flag-gated. A plain `{cond && <X />}` rather than a
+                ternary or a wrapper: this file renders on the drawer's cold
+                mount, which is the path with the iOS 26 crash history. */}
+            {planShelfEnabled && (
+              <DrawerRow
+                iconName="card-membership"
+                label="Your plan"
+                onPress={() => go('/Home/plans')}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+              />
+            )}
           </View>
 
           <View style={{ marginTop: 14 }}>
@@ -564,7 +687,7 @@ export function ProfileContent({
               <DrawerRow
                 iconName="help-outline"
                 label="Help & Support"
-                onPress={() => router.push('/Home/support')}
+                onPress={() => go('/Home/support')}
                 divider
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -586,20 +709,30 @@ export function ProfileContent({
                 getScaledFontWeight={getScaledFontWeight}
               />
               {/*
-                About screen is gated behind the ABOUT_SCREEN feature flag.
-                It exposes internal build / runtime / OTA Update ID details
-                useful for support but not for general patients. Default is
-                OFF server-side; specific support / dev users get the row
-                via a per-user override in the cos-feature-permissions
-                table. While permissions are loading the flag falls back
-                to the conservative default (off), so the row appears only
-                after we've confirmed access.
+                About screen is gated on the entitlement about.view.
+                It exposes internal build / runtime / OTA details useful for
+                support but not for general patients.
+
+                COS-735 — moved from the legacy cos-feature-permissions table
+                (ABOUT_SCREEN) onto the entitlements catalog, so it can be
+                managed from a plan or a feature group like everything else.
+                `about` was also flipped to isPublic:false; public keys
+                short-circuit to granted in the resolver before any plan lookup,
+                which made it impossible to manage.
+
+                NOTE THE HOOK. This uses useHasExplicitGrant, NOT useCanRender.
+                useCanRender is fail-open and treats the WILDCARD as a grant —
+                and the wildcard is exactly what the resolver returns for every
+                patient wherever plan_tier_enabled is unset (today: staging and
+                production). Gating this with useCanRender would put build and
+                OTA details in front of every patient the moment it shipped.
+                Nothing but a live, populated array naming the key will do.
               */}
-              {permissions?.ABOUT_SCREEN?.enabled === true && (
+              {canSeeAbout && (
                 <DrawerRow
                   iconName="info-outline"
                   label="About"
-                  onPress={() => router.push('/Home/about' as never)}
+                  onPress={() => go('/Home/about')}
                   colors={colors}
                   getScaledFontSize={getScaledFontSize}
                   getScaledFontWeight={getScaledFontWeight}
@@ -612,136 +745,142 @@ export function ProfileContent({
 
       {showSignOut && (
         <View style={styles.footer}>
-          <Button
-            mode="outlined"
-            disabled={authBusy !== null}
-            onPress={() => {
-              if (authBusy !== null) return;
-              Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Sign Out',
-                  style: 'destructive',
-                  onPress: async () => {
-                    // Ken 2026-08-07 (#20) — flip to the busy state BEFORE
-                    // awaiting so the spinner paints immediately. We
-                    // deliberately do NOT reset authBusy in a finally:
-                    // the happy path unmounts this screen via the
-                    // redirect, and leaving it latched prevents a
-                    // double-fire during the navigation frame.
-                    setAuthBusy('signout');
-                    try {
-                      await signOut();
-                    } catch {
-                      // Local sign-out is best-effort — even if the
-                      // Cognito call fails (offline, token already
-                      // dead), we still clear cached PHI and route to
-                      // sign-in. Leaving the user on an authed screen
-                      // with a dead session is the worse outcome.
-                    }
-                    // Clear all cached PHI from React Query memory
-                    queryClient.clear();
-                    router.replace('/(auth)/sign-in' as never);
+          {/* profile.sign-out gates the BUTTON only — the confirm alert and signOut() handler are untouched. */}
+          {canSignOut && (
+            <Button
+              mode="outlined"
+              disabled={authBusy !== null}
+              onPress={() => {
+                if (authBusy !== null) return;
+                Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Sign Out',
+                    style: 'destructive',
+                    onPress: async () => {
+                      // Ken 2026-08-07 (#20) — flip to the busy state BEFORE
+                      // awaiting so the spinner paints immediately. We
+                      // deliberately do NOT reset authBusy in a finally:
+                      // the happy path unmounts this screen via the
+                      // redirect, and leaving it latched prevents a
+                      // double-fire during the navigation frame.
+                      setAuthBusy('signout');
+                      try {
+                        await signOut();
+                      } catch {
+                        // Local sign-out is best-effort — even if the
+                        // Cognito call fails (offline, token already
+                        // dead), we still clear cached PHI and route to
+                        // sign-in. Leaving the user on an authed screen
+                        // with a dead session is the worse outcome.
+                      }
+                      // Clear all cached PHI from React Query memory
+                      queryClient.clear();
+                      router.replace('/(auth)/sign-in' as never);
+                    },
                   },
-                },
-              ]);
-            }}
-            style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12) }]}
-            accessibilityLabel={authBusy === 'signout' ? 'Signing out' : 'Sign out of your account'}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'signout' }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-              {authBusy === 'signout' ? (
-                <ActivityIndicator
-                  size="small"
-                  color={colors.text}
-                  style={{ marginRight: 8 }}
-                />
-              ) : null}
-              <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
-                {authBusy === 'signout' ? 'Signing out…' : 'Sign Out'}
-              </Text>
-            </View>
-          </Button>
+                ]);
+              }}
+              style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12) }]}
+              accessibilityLabel={authBusy === 'signout' ? 'Signing out' : 'Sign out of your account'}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'signout' }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                {authBusy === 'signout' ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.text}
+                    style={{ marginRight: 8 }}
+                  />
+                ) : null}
+                <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
+                  {authBusy === 'signout' ? 'Signing out…' : 'Sign Out'}
+                </Text>
+              </View>
+            </Button>
+          )}
 
           {/* SCRUM-319 — Apple Review 5.1.1(v): in-app account
               deletion. Two-step confirm (alert → confirm modal)
               prevents accidental taps. Backend call wipes Cognito +
               all DynamoDB rows + queues FHIR purge; mobile clears
               local state and routes to sign-in. */}
-          <Button
-            mode="text"
-            disabled={authBusy !== null}
-            onPress={() => {
-              if (authBusy !== null) return;
-              Alert.alert(
-                'Delete account?',
-                "This permanently deletes your Circle Support Health account and all your data, including your records, plans, and trends. This cannot be undone. Are you absolutely sure?",
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete forever',
-                    style: 'destructive',
-                    onPress: () => {
-                      Alert.alert(
-                        'Last chance',
-                        "Tap Delete to permanently erase your account. You will be signed out immediately.",
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: async () => {
-                              // Ken 2026-08-07 (#20) — same dead-air fix as
-                              // sign-out, and more important here: this
-                              // path makes a network round-trip first, so
-                              // the silent window was longer.
-                              setAuthBusy('delete');
-                              try {
-                                await apiClient.delete('/v1/auth/account');
-                              } catch {
-                                // Even if the network call fails (token
-                                // expired, offline), continue with the
-                                // local wipe — better to leave the user
-                                // signed out than to keep PHI accessible.
-                              }
-                              try {
-                                await signOut();
-                              } catch {
-                                // Best-effort; proceed to local wipe.
-                              }
-                              queryClient.clear();
-                              router.replace('/(auth)/sign-in' as never);
-                              setTimeout(() => {
-                                Alert.alert(
-                                  'Account deleted',
-                                  "Your account and data have been deleted. We're sorry to see you go.",
-                                );
-                              }, 400);
+          {/* profile.delete-account gates the BUTTON only — the two-step confirm and the delete handler are untouched, so a gate flip mid-flow cannot strand a half-deleted account. */}
+          {canDeleteAccount && (
+            <Button
+              mode="text"
+              disabled={authBusy !== null}
+              onPress={() => {
+                if (authBusy !== null) return;
+                Alert.alert(
+                  'Delete account?',
+                  "This permanently deletes your Circle Support Health account and all your data, including your records, plans, and trends. This cannot be undone. Are you absolutely sure?",
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete forever',
+                      style: 'destructive',
+                      onPress: () => {
+                        Alert.alert(
+                          'Last chance',
+                          "Tap Delete to permanently erase your account. You will be signed out immediately.",
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                // Ken 2026-08-07 (#20) — same dead-air fix as
+                                // sign-out, and more important here: this
+                                // path makes a network round-trip first, so
+                                // the silent window was longer.
+                                setAuthBusy('delete');
+                                try {
+                                  await apiClient.delete('/v1/auth/account');
+                                } catch {
+                                  // Even if the network call fails (token
+                                  // expired, offline), continue with the
+                                  // local wipe — better to leave the user
+                                  // signed out than to keep PHI accessible.
+                                }
+                                try {
+                                  await signOut();
+                                } catch {
+                                  // Best-effort; proceed to local wipe.
+                                }
+                                queryClient.clear();
+                                router.replace('/(auth)/sign-in' as never);
+                                setTimeout(() => {
+                                  Alert.alert(
+                                    'Account deleted',
+                                    "Your account and data have been deleted. We're sorry to see you go.",
+                                  );
+                                }, 400);
+                              },
                             },
-                          },
-                        ],
-                      );
+                          ],
+                        );
+                      },
                     },
-                  },
-                ],
-              );
-            }}
-            style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12), marginTop: 8 }]}
-            accessibilityLabel={authBusy === 'delete' ? 'Deleting account' : 'Permanently delete my account and all my data'}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'delete' }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-              {authBusy === 'delete' ? (
-                <ActivityIndicator size="small" color="#DC2626" style={{ marginRight: 6 }} />
-              ) : null}
-              <Text style={[{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }]}>
-                {authBusy === 'delete' ? 'Deleting…' : 'Delete Account'}
-              </Text>
-            </View>
-          </Button>
+                  ],
+                );
+              }}
+              style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12), marginTop: 8 }]}
+              accessibilityLabel={authBusy === 'delete' ? 'Deleting account' : 'Permanently delete my account and all my data'}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'delete' }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                {authBusy === 'delete' ? (
+                  <ActivityIndicator size="small" color="#DC2626" style={{ marginRight: 6 }} />
+                ) : null}
+                <Text style={[{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }]}>
+                  {authBusy === 'delete' ? 'Deleting…' : 'Delete Account'}
+                </Text>
+              </View>
+            </Button>
+          )}
         </View>
       )}
     </ScrollView>

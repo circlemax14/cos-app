@@ -60,6 +60,7 @@ import {
 } from '@/services/api/nutrition-plan'
 import { createPlanTask } from '@/services/api/plan-tasks'
 import { todayLocalIso } from '@/lib/day-key';
+import { useCanRender } from '@/hooks/use-entitlement'
 
 /** Fallback only — every real caller passes the theme tint. Amber rather
  *  than a teal/green guess so an unstyled render is obvious in review. */
@@ -126,6 +127,8 @@ export function NutritionPlanSection({
   existingTaskTitles,
   onTaskAdded,
 }: NutritionPlanSectionProps): React.ReactElement | null {
+  const canViewNutritionPlan = useCanRender('nutrition-plan.view')
+  const canGenerateNutritionPlan = useCanRender('nutrition-plan.generate')
   const [status, setStatus] = React.useState<Status>({ kind: 'idle' })
   /**
    * Vishal 2026-08-11: "this card needs to be an accordion".
@@ -298,6 +301,7 @@ export function NutritionPlanSection({
     }, []),
   )
 
+  if (!canViewNutritionPlan) return null
   if (status.kind === 'hidden') return null
 
   const tint = colors?.tint ?? DEFAULT_TINT
@@ -387,7 +391,7 @@ export function NutritionPlanSection({
             {subtitle}
           </Text>
 
-          {status.kind !== 'loading' && status.kind !== 'ready' && (
+          {canGenerateNutritionPlan && status.kind !== 'loading' && status.kind !== 'ready' && (
             <Pressable
               onPress={onPress}
               accessibilityRole="button"
@@ -479,6 +483,7 @@ export function NutritionPlanSection({
               {/* Rebuild lives here, as words, instead of the header icon
                   Vishal asked to remove. It is a deliberate action, not
                   something to hit while reaching for the chevron. */}
+              {canGenerateNutritionPlan && (
               <Pressable
                 onPress={() => void onGenerate()}
                 accessibilityRole="button"
@@ -490,6 +495,7 @@ export function NutritionPlanSection({
                   Rebuild my plan
                 </Text>
               </Pressable>
+              )}
             </View>
           )}
         </View>

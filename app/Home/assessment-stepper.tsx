@@ -36,6 +36,7 @@ import {
 import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsentModal'
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
 import { shouldOfferImmediateSupport } from '@/lib/crisis-support'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -68,6 +69,16 @@ function resolveReturnHref(returnTo: string | undefined): string {
     // afterwards instead of back at the plan they were building.
     case 'plan':
       return '/Home/health-plan'
+    // COS-814: the Plan+ assessment gate sends people here to satisfy their
+    // plan's requirements. Without this case they finished a screener and
+    // landed in the catalog — a wall of cards with no relationship to the
+    // plan they were trying to unlock, and no route back to it.
+    //
+    // NOTE this switch matches TOKENS, not paths. Passing '/Home/care-plan-plus'
+    // silently hits `default` and looks like the feature working badly rather
+    // than a routing bug, which is exactly how it presented.
+    case 'care-plan-plus':
+      return '/Home/care-plan-plus'
     default:
       return '/Home/assessments-catalog'
   }
@@ -87,8 +98,13 @@ function resolveReturnHref(returnTo: string | undefined): string {
 export default function AssessmentStepperScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  // Entitlement gates. Hooks — declared unconditionally, above the loading,
+  // not-found, consent, celebration and grouped-instrument early returns.
+  const canView = useCanRender('assessment-stepper.view')
+  const canAnswerQuestion = useCanRender('assessment-stepper.answer-question')
+  const canGoBack = useCanRender('assessment-stepper.go-back')
   const queryClient = useQueryClient()
-  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string }>()
+  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string; required?: string }>()
   const instrumentId = typeof params.instrumentId === 'string' ? params.instrumentId : ''
   // CHUNK 67 (2026-07-23): stepper honors an optional `returnTo` param so
   // the four exit paths (celebration timer, Close button, Back-when-first,
@@ -98,6 +114,24 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   // from, forcing an app-kill to escape. Fresh query param on each
   // navigation — no reset-effect needed.
   const returnTo = typeof params.returnTo === 'string' ? params.returnTo : undefined
+  /*
+   * COS-829 — a REQUIRED check-in has no exit.
+   *
+   * Vishal: "there should not be any back button on the health check-ins when
+   * we are taking the check-ins."
+   *
+   * When the plan gate sent someone here, leaving mid-questionnaire drops them
+   * back on the gate having answered nothing — the draft is local state and is
+   * lost. That is not a way out, it is a way to lose your work and arrive
+   * exactly where you started. So the gate passes `required=1` and the two
+   * exits go: no Close in the header, and Back on the first step stops being
+   * Cancel.
+   *
+   * Back BETWEEN steps stays. Reviewing the previous answer is part of
+   * answering, and removing it would be a different thing from removing the
+   * escape hatch.
+   */
+  const required = params.required === '1'
   const returnHref = React.useMemo(() => resolveReturnHref(returnTo), [returnTo])
 
   const instrumentsQuery = useQuery({
@@ -251,7 +285,20 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     return () => { cancelled = true }
   }, [consentState, instrumentDomain])
 
-  if (instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)) {
+  // COS-C1: this used to read
+  //   `instrumentsQuery.isLoading || (!instrument && !instrumentsQuery.error)`
+  // which spun FOREVER on a 200 that simply doesn't contain `instrumentId`
+  // (dietary screener): isLoading false, error null, instrument undefined —
+  // every leg keeps you in the spinner and the "Check-in not found" screen
+  // below is unreachable dead code on any successful response.
+  //
+  // `isPending` is true exactly while `data` is undefined, which still covers
+  // the paused/offline case the `!instrument && !error` clause was really
+  // there for (a paused query is pending, not loading). Once the query has
+  // settled, a missing id falls through to the not-found screen, whose button
+  // routes out via `returnHref`. Do not reintroduce an `!instrument` term
+  // here — that is what made the exit unreachable.
+  if (instrumentsQuery.isPending) {
     return (
       <AppWrapper>
         <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
@@ -337,17 +384,19 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   if (isGroupedInstrument(instrument.items)) {
     return (
       <AppWrapper>
-        <GroupedInstrumentStepper
-          instrument={instrument}
-          answers={answers}
-          setAnswers={setAnswers}
-          onSubmit={() => submit.mutate()}
-          onCancel={() => router.replace('/Home/assessments-catalog' as never)}
-          isSubmitting={submit.isPending}
-          colors={colors}
-          fontSize={getScaledFontSize}
-          fontWeight={getScaledFontWeight}
-        />
+        {canView && (
+          <GroupedInstrumentStepper
+            instrument={instrument}
+            answers={answers}
+            setAnswers={setAnswers}
+            onSubmit={() => submit.mutate()}
+            onCancel={() => router.replace('/Home/assessments-catalog' as never)}
+            isSubmitting={submit.isPending}
+            colors={colors}
+            fontSize={getScaledFontSize}
+            fontWeight={getScaledFontWeight}
+          />
+        )}
       </AppWrapper>
     )
   }
@@ -404,7 +453,9 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   }
 
   const goBack = () => {
+    // COS-829 — on a required run the first step has nothing behind it.
     if (isFirst) {
+      if (required) return
       router.replace(returnHref as never)
     } else {
       setStepIdx((i) => Math.max(i - 1, 0))
@@ -413,105 +464,116 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
 
   return (
     <AppWrapper>
-      <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 32 }}>
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.replace(returnHref as never)}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Close check-in"
-          >
-            <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
-          </Pressable>
-          <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, marginLeft: 12 }]} numberOfLines={1}>
-            {getWarmerInstrumentLabel(instrument.instrumentId, instrument.name)}
+      {canView && (
+        <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 32 }}>
+          <View style={styles.header}>
+            {/* COS-829 — no Close on a required check-in. Leaving mid-way loses
+                the draft (it is local state) and lands back on the gate having
+                answered nothing. */}
+            {required ? null : (
+              <Pressable
+                onPress={() => router.replace(returnHref as never)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Close check-in"
+              >
+                <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
+              </Pressable>
+            )}
+            <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, marginLeft: 12 }]} numberOfLines={1}>
+              {getWarmerInstrumentLabel(instrument.instrumentId, instrument.name)}
+            </Text>
+          </View>
+
+          <ProgressBar current={stepIdx + 1} total={total} colors={colors} />
+
+          <Text style={[styles.stepLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
+            Question {stepIdx + 1} of {total}
           </Text>
-        </View>
 
-        <ProgressBar current={stepIdx + 1} total={total} colors={colors} />
+          <View style={[styles.questionCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(18),
+                fontWeight: getScaledFontWeight(600) as any,
+                lineHeight: getScaledFontSize(26),
+              }}
+            >
+              {item.text}
+            </Text>
+            {item.help ? (
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}>
+                {item.help}
+              </Text>
+            ) : null}
+            <View style={{ marginTop: 20 }}>
+              {canAnswerQuestion && (
+                <ItemControl
+                  item={item}
+                  value={currentValue}
+                  onChange={setAnswer}
+                  colors={colors}
+                  fontSize={getScaledFontSize}
+                  fontWeight={getScaledFontWeight}
+                />
+              )}
+            </View>
+          </View>
 
-        <Text style={[styles.stepLabel, { color: colors.subtext, fontSize: getScaledFontSize(12) }]}>
-          Question {stepIdx + 1} of {total}
-        </Text>
+          {/* Appears the instant the item is endorsed, under the question that
+              asked it — not on the results screen. Question nine of nine is a
+              plausible place to stop, and a design that waits for submission
+              reaches nobody who stops there.
 
-        <View style={[styles.questionCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(18),
-              fontWeight: getScaledFontWeight(600) as any,
-              lineHeight: getScaledFontSize(26),
-            }}
-          >
-            {item.text}
-          </Text>
-          {item.help ? (
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }}>
-              {item.help}
+              It does not block, and there is no dismiss control: it sits in the
+              flow and scrolls past. A patient who learns that honest answers
+              trap them in a dialog learns to answer dishonestly, and then the
+              instrument measures nothing. */}
+          {showCrisisSupport ? <CrisisSupportCard /> : null}
+
+          <View style={styles.actions}>
+            {canGoBack && (
+              <Pressable
+                onPress={goBack}
+                disabled={submit.isPending}
+                style={[styles.secondaryBtn, { borderColor: colors.border }]}
+                accessibilityRole="button"
+              >
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                  {isFirst ? (required ? 'Start' : 'Cancel') : 'Back'}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              onPress={advance}
+              disabled={!currentAnswered || submit.isPending}
+              style={[
+                styles.primaryBtnInline,
+                {
+                  backgroundColor: currentAnswered ? (colors.tint as string) : (colors.subtext + '60'),
+                  opacity: submit.isPending ? 0.6 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+            >
+              {submit.isPending ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
+                  {isLast ? 'Submit' : 'Next'}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+
+          {submit.error ? (
+            <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), textAlign: 'center', marginTop: 10 }}>
+              Couldn&apos;t save. Tap Submit again.
             </Text>
           ) : null}
-          <View style={{ marginTop: 20 }}>
-            <ItemControl
-              item={item}
-              value={currentValue}
-              onChange={setAnswer}
-              colors={colors}
-              fontSize={getScaledFontSize}
-              fontWeight={getScaledFontWeight}
-            />
-          </View>
-        </View>
-
-        {/* Appears the instant the item is endorsed, under the question that
-            asked it — not on the results screen. Question nine of nine is a
-            plausible place to stop, and a design that waits for submission
-            reaches nobody who stops there.
-
-            It does not block, and there is no dismiss control: it sits in the
-            flow and scrolls past. A patient who learns that honest answers
-            trap them in a dialog learns to answer dishonestly, and then the
-            instrument measures nothing. */}
-        {showCrisisSupport ? <CrisisSupportCard /> : null}
-
-        <View style={styles.actions}>
-          <Pressable
-            onPress={goBack}
-            disabled={submit.isPending}
-            style={[styles.secondaryBtn, { borderColor: colors.border }]}
-            accessibilityRole="button"
-          >
-            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
-              {isFirst ? 'Cancel' : 'Back'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={advance}
-            disabled={!currentAnswered || submit.isPending}
-            style={[
-              styles.primaryBtnInline,
-              {
-                backgroundColor: currentAnswered ? (colors.tint as string) : (colors.subtext + '60'),
-                opacity: submit.isPending ? 0.6 : 1,
-              },
-            ]}
-            accessibilityRole="button"
-          >
-            {submit.isPending ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={{ color: '#fff', fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(700) as any }}>
-                {isLast ? 'Submit' : 'Next'}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-
-        {submit.error ? (
-          <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(12), textAlign: 'center', marginTop: 10 }}>
-            Couldn&apos;t save. Tap Submit again.
-          </Text>
-        ) : null}
-      </ScrollView>
+        </ScrollView>
+      )}
     </AppWrapper>
   )
 }

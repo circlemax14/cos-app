@@ -19,9 +19,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import ConnectionErrorScreen from '@/components/ConnectionErrorScreen';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signIn, UserProfile } from '@/services/auth';
-import { signInWithApple, socialSignInWithBackend } from '@/services/social-auth';
+import {
+  fetchSocialSignInUser,
+  signInWithApple,
+  socialSignInWithBackend,
+} from '@/services/social-auth';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
 
 import { Colors } from '@/constants/theme';
@@ -44,6 +49,11 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // COS-C6: set when the social token exchange succeeded but /v1/auth/me still
+  // failed after its retries. Distinct from `error` (an inline red string next
+  // to the form) because the user is already signed in at that point — the
+  // only useful action is retrying the load, not re-entering credentials.
+  const [dataLoadError, setDataLoadError] = useState(false);
   const isAppleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_apple');
   const isGoogleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_google');
 
@@ -160,6 +170,8 @@ export default function SignInScreen() {
     setGoogleLoading(false);
     if (res.success && res.user) {
       await handleRoute(res.user as unknown as UserProfile);
+    } else if (res.retryableDataLoad) {
+      setDataLoadError(true);
     } else {
       setError(res.message ?? 'Google sign-in failed. Please try again.');
     }
@@ -191,6 +203,8 @@ export default function SignInScreen() {
       setLoading(false);
       if (res.success && res.user) {
         await handleRoute(res.user as unknown as UserProfile);
+      } else if (res.retryableDataLoad) {
+        setDataLoadError(true);
       } else {
         setError(res.message ?? 'Apple sign-in failed. Please try again.');
       }
@@ -203,7 +217,29 @@ export default function SignInScreen() {
     }
   };
 
+  // COS-C6: retry the DATA LOAD only. The tokens are already in the Keychain,
+  // so re-running the whole social handshake (or bouncing the user back
+  // through Google/Apple, or relaunching the app) would be strictly worse —
+  // it can fail on an expired provider token that has nothing to do with the
+  // throttle that got us here.
+  const retrySocialDataLoad = async () => {
+    setDataLoadError(false);
+    setLoading(true);
+    try {
+      const user = await fetchSocialSignInUser();
+      setLoading(false);
+      await handleRoute(user as unknown as UserProfile);
+    } catch {
+      setLoading(false);
+      setDataLoadError(true);
+    }
+  };
+
   const disabled = loading || googleLoading;
+
+  if (dataLoadError) {
+    return <ConnectionErrorScreen variant="error" onRetry={retrySocialDataLoad} />;
+  }
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>

@@ -17,6 +17,7 @@ import {
 import { Button, Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { EntityIcon } from '@/components/icons';
+import { useCanRender } from '@/hooks/use-entitlement';
 import {
     getNonEhrProviders,
     getFilesForProvider,
@@ -65,6 +66,12 @@ export default function NonEhrProviderDetailScreen() {
     const params = useLocalSearchParams<{ id: string }>();
     const { settings, getScaledFontSize } = useAccessibility();
     const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+    // COS-849 entitlement gates. Hooks, so unconditional and above the early
+    // returns for the loading / not-found states below.
+    const canView = useCanRender('non-ehr-provider-detail.view');
+    const canViewProvider = useCanRender('non-ehr-provider-detail.view-provider');
+    const canMessageProvider = useCanRender('non-ehr-provider-detail.message-provider');
 
     const [provider, setProvider] = useState<NonEhrProvider | null>(null);
     const [files, setFiles] = useState<NonEhrFile[]>([]);
@@ -462,8 +469,10 @@ export default function NonEhrProviderDetailScreen() {
 
     return (
         <AppWrapper>
+            {canView && (
             <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ flex: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}>
                 {/* ── Header ── */}
+                {canViewProvider && (
                 <View style={[styles.header, { backgroundColor: colors.background }]}>
                     <View style={styles.headerAvatarRow}>
                         <EntityIcon
@@ -496,7 +505,7 @@ export default function NonEhrProviderDetailScreen() {
                                 <Text style={[styles.commLabel, { color: colors.text, fontSize: getScaledFontSize(11) }]}>Call</Text>
                             </TouchableOpacity>
                         )}
-                        {provider.email && (
+                        {provider.email && canMessageProvider && (
                             <TouchableOpacity style={[styles.commBtn, { backgroundColor: colors.background }]} onPress={handleEmail}>
                                 <MaterialIcons name="email" size={getScaledFontSize(22)} color="#008080" />
                                 <Text style={[styles.commLabel, { color: colors.text, fontSize: getScaledFontSize(11) }]}>Email</Text>
@@ -504,6 +513,7 @@ export default function NonEhrProviderDetailScreen() {
                         )}
                     </View>
                 </View>
+                )}
 
                 {/* ── Tabs ── */}
                 <ScrollView
@@ -545,6 +555,7 @@ export default function NonEhrProviderDetailScreen() {
                     {activeTab === 'appointments' && renderAppointmentsTab()}
                 </View>
             </ScrollView>
+            )}
 
         </AppWrapper>
     );

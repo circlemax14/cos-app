@@ -24,6 +24,17 @@ function buildTabLabels(): Record<string, string> {
     appointments: 'Calendar',
     'health-plan': isTablet ? 'Care Plan' : 'Plan',
     'unified-plan': isTablet ? 'Care Plan' : 'Plan',
+    // COS-803 — sits beside the classic Care Plan tab. Short on phones so
+    // six tabs still fit an iPhone SE without wrapping.
+    /*
+     * COS-915 — this IS the care plan now, so it is labelled like one.
+     *
+     * The classic health-plan tab is retired: two tabs both called some
+     * variant of "Plan", one of which required check-ins the same plan tier
+     * cannot show, is how Vishal ended up in an inescapable gate loop.
+     * "Plan+" only ever made sense next to a plain "Plan".
+     */
+    'care-plan-plus': isTablet ? 'Care Plan' : 'Plan',
     plan: isTablet ? 'Health Summary' : 'Summary',
     reports: 'Reports',
   };
@@ -128,7 +139,13 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
     // currently-visible Care Plan tab under either default (legacy
     // health-plan) or the future-flipped unified-plan variant, so the
     // slot stays visually distinct regardless of which one is active.
-    const isHealthPlan = route.name === 'health-plan' || route.name === 'unified-plan';
+    // COS-915 — care-plan-plus carries the care-plan treatment now that it is
+    // the only plan tab. health-plan/unified-plan stay listed: both are still
+    // reachable by deep link, and this only decides styling.
+    const isHealthPlan =
+      route.name === 'health-plan' ||
+      route.name === 'unified-plan' ||
+      route.name === 'care-plan-plus';
     const iconColor = isHealthPlan
       ? (isFocused ? '#FFFFFF' : '#008080')
       : (isFocused ? '#008080' : '#000000');

@@ -111,6 +111,30 @@ export function useAppLock() {
         try { await AsyncStorage.setItem(PRE_LOCK_ROUTE_KEY, last as string); } catch { /* swallow */ }
       }
       setIsLocked(true);
+      /*
+       * COS-778 — collapse the stack BEFORE replacing.
+       *
+       * `router.replace` swaps only the TOP entry, so any root-level screen
+       * (/modal, /agency-detail, /appointments-modal, /calendar-event-*) stays
+       * MOUNTED underneath the lock screen. That mounted screen is what the
+       * iOS left-edge swipe-back returns to — bypass #1 in SCRUM-721.
+       *
+       * dismissAll() drops the modal stack first, so there is less underneath
+       * for a gesture to reach. It is not a complete fix on its own (the tab
+       * navigator below is not a stack entry and does not go away), which is
+       * why gestureEnabled:false and the shield both still matter — but it
+       * removes the specific screens the bypass was demonstrated on.
+       *
+       * Guarded because dismissAll throws when there is nothing to dismiss,
+       * and this runs inside the resume path that produced the triple-Face-ID
+       * prompt — an unhandled throw here would leave `_appLocked=true` with no
+       * lock screen showing, which is strictly worse than the bypass.
+       */
+      try {
+        router.dismissAll();
+      } catch {
+        // Nothing to dismiss, or the router is not ready. Either is fine.
+      }
       router.replace('/(security)/lock-screen' as never);
     } finally {
       // Release on the next tick: the pathname mirror needs a frame to

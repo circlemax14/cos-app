@@ -50,6 +50,15 @@ export interface TaskDetailModalProps {
   /** Parent swaps in TaskEditorModal with initialTask=task. */
   onEdit: (task: PlanTask) => void;
   onDeleted?: (task: PlanTask) => void;
+  /*
+   * COS-869 — passed IN, never read here.
+   *
+   * This mounts from BiopsychosocialPlanScreen, which BOTH the frozen classic
+   * tab and Plan+ render. A useCanRender called here bypasses that screen's
+   * gate() and fires on classic, where nothing may be hidden
+   * (care-plan-section-gates-cos802). The parent routes it through gate().
+   */
+  canDeleteTask: boolean;
 }
 
 /**
@@ -78,6 +87,7 @@ export function TaskDetailModal(props: TaskDetailModalProps): React.JSX.Element 
  * Alert.alert, fire-and-forget delete via v2/net.
  */
 export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | null {
+  const { canDeleteTask } = props;
   const {
     onClose,
     task,
@@ -342,7 +352,7 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
               </>
             ) : (
               <>
-                <Pressable
+                {canDeleteTask && <Pressable
                   onPress={handleDeletePress}
                   accessibilityRole="button"
                   accessibilityLabel="Delete this task"
@@ -357,7 +367,7 @@ export function TaskDetailBody(props: TaskDetailBodyProps): React.JSX.Element | 
                   >
                     Delete
                   </Text>
-                </Pressable>
+                </Pressable>}
                 <TouchableOpacity
                   onPress={() => {
                     // Close this modal first; parent re-opens the edit modal on

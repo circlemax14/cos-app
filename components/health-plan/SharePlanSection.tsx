@@ -120,6 +120,13 @@ export function SharePlanSection({
   // patient hasn't populated yet.
   if (!plan) return null;
 
+  // Entitlement gate. Hides the whole card, not just the button: the card is
+  // nothing BUT the share control (heading, one-line pitch, disclaimer), so
+  // gating the Pressable alone would leave "Share your plan / Send a PDF
+  // copy…" advertising a feature with no way to use it. Same early-return
+  // idiom as the `!plan` guard above — no new JSX, nothing added to the
+  // cold-mount tree.
+
   const disabled = sharing;
 
   const buildHtml = (): string => {

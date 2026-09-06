@@ -38,6 +38,7 @@ import { AppWrapper } from '@/components/app-wrapper'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag'
+import { useCanRender } from '@/hooks/use-entitlement'
 import {
   useHabitCatalog,
   useHabitEntriesToday,
@@ -91,6 +92,10 @@ export default function HabitJournalScreen(): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const flagEnabled = useHabitJournalFlag()
+  // Entitlement gates. Unconditional, above the `!flagEnabled` early return.
+  // ScreenHeader stays ungated so a denied screen still has a way back.
+  const canView = useCanRender('habit-journal.view')
+  const canWrite = useCanRender('habit-journal.write')
 
   const catalogQuery = useHabitCatalog()
   const todayQuery = useHabitEntriesToday()
@@ -199,7 +204,7 @@ export default function HabitJournalScreen(): React.JSX.Element {
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
+        {canView && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginBottom: 6 }}>
             {localDate}
           </Text>
@@ -231,7 +236,7 @@ export default function HabitJournalScreen(): React.JSX.Element {
                 />
               ))}
 
-              <Pressable
+              {canWrite && <Pressable
                 onPress={onSave}
                 disabled={upsertMutation.isPending}
                 accessibilityRole="button"
@@ -253,14 +258,14 @@ export default function HabitJournalScreen(): React.JSX.Element {
                 >
                   {upsertMutation.isPending ? 'Saving…' : 'Save'}
                 </Text>
-              </Pressable>
+              </Pressable>}
 
               <View style={{ marginTop: 24 }}>
                 <HabitCorrelationStrip testID="habit-correlation-strip-journal" />
               </View>
             </>
           )}
-        </ScrollView>
+        </ScrollView>}
       </View>
     </AppWrapper>
   )

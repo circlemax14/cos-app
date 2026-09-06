@@ -24,6 +24,7 @@ import RecommendationsSection from '@/components/health-summary/RecommendationsS
 import ShareSummarySection from '@/components/health-summary/ShareSummarySection';
 import UpdatedAtFooter from '@/components/health-summary/UpdatedAtFooter';
 import { useVitalsRedFlagNotifications } from '@/hooks/use-vitals-red-flag-notifications';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 
 /**
@@ -37,6 +38,33 @@ function HealthSummaryScreenInner() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
+  // SCRUM-715 — per-section entitlement gates.
+  //
+  // Declared at the very top, above every early return, because these are
+  // hooks and this component returns early on both loading (:64) and error
+  // (:77). `canVitals` in particular must exist before the observer call
+  // below it.
+  //
+  // useCanRender FAILS OPEN: it is false only on an affirmative deny, never
+  // while loading, on a failed /v1/auth/me, or when entitlements are absent.
+  // Hiding a patient's own labs because a request timed out would be
+  // indistinguishable from a correct deny, and nobody would report it.
+  //
+  // COS-856 — `plan.view` is the screen-level sibling of the section keys
+  // below. The tab entry is already denied by `canShow('plan')` in
+  // app/Home/_layout.tsx:185; without this, a deep link still lands on the
+  // screen the layout has already hidden.
+  const canView = useCanRender('plan.view');
+  const canIntakeCta = useCanRender('plan.intake-cta');
+  const canBpsHistory = useCanRender('plan.bps-history');
+  const canConditions = useCanRender('plan.current-conditions');
+  const canMedications = useCanRender('plan.medications-by-condition');
+  const canLabs = useCanRender('plan.labs-by-condition');
+  const canVitals = useCanRender('plan.vitals-red-flag');
+  const canTreatments = useCanRender('plan.treatments-supports');
+  const canRecommendations = useCanRender('plan.recommendations');
+  const canShare = useCanRender('plan.share-summary');
+
   const { isLoading, isError, refetch } = useHealthSummary();
 
   // HS-3b overlay: mount the vitals red-flag observer. Rules-of-hooks — called
@@ -48,7 +76,11 @@ function HealthSummaryScreenInner() {
   // local push + POSTs the verdict label to
   // /v1/patients/me/vitals-red-flag-event. No new render subtree, and it
   // mirrors the VitalsRedFlagSection's own iosDisabled short-circuit.
-  useVitalsRedFlagNotifications();
+  // SCRUM-715: gated on the same key as the card it belongs to. The observer
+  // is invisible — it fires local push and POSTs verdicts without rendering
+  // anything — so hiding VitalsRedFlagSection alone would leave the patient
+  // getting alerts about a card that is no longer on their screen.
+  useVitalsRedFlagNotifications(canVitals);
 
   // Gate the 9-section view behind a completed intake — Ken's directive:
   // "whenever anyone opens health summary, they need to go through intake
@@ -60,6 +92,11 @@ function HealthSummaryScreenInner() {
   const intakeQuery = usePatientIntake();
   const intakeComplete = intakeQuery.data?.intake?.status === 'complete';
   const intakeGateOpen = intakeComplete === true;
+
+  // Applied below every hook above — useHealthSummary, the red-flag observer
+  // and usePatientIntake all still run on a denied render, same as the other
+  // `.view` screens.
+  if (!canView) return <AppWrapper><View /></AppWrapper>;
 
   if (isLoading) {
     return (
@@ -84,8 +121,10 @@ function HealthSummaryScreenInner() {
         >
           {/* Intake CTA is reachable even when the summary fetch errors,
               so first-time patients (who have no summary yet) can still
-              start their intake from this tab. */}
-          <IntakeCtaCard />
+              start their intake from this tab. Gated identically to the
+              happy-path copy at :193 — otherwise revoking the key would hide
+              the card on the normal screen but leave it on the error screen. */}
+          {canIntakeCta && <IntakeCtaCard />}
           <View style={styles.centered}>
             <Text style={{ fontSize: getScaledFontSize(48), marginBottom: 16 }}>🩺</Text>
             <Text
@@ -166,18 +205,18 @@ function HealthSummaryScreenInner() {
         </View>
 
         {/* Intake sits below the header — self-gates on status. */}
-        <IntakeCtaCard />
+        {canIntakeCta && <IntakeCtaCard />}
 
         {intakeGateOpen ? (
           <>
-            <BpsHistorySection />
-            <CurrentConditionsSection />
-            <MedicationsByConditionSection />
-            <LabsByConditionSection />
-            <VitalsRedFlagSection />
-            <TreatmentsSupportsSection />
-            <RecommendationsSection />
-            <ShareSummarySection />
+            {canBpsHistory && <BpsHistorySection />}
+            {canConditions && <CurrentConditionsSection />}
+            {canMedications && <MedicationsByConditionSection />}
+            {canLabs && <LabsByConditionSection />}
+            {canVitals && <VitalsRedFlagSection />}
+            {canTreatments && <TreatmentsSupportsSection />}
+            {canRecommendations && <RecommendationsSection />}
+            {canShare && <ShareSummarySection />}
             <UpdatedAtFooter />
           </>
         ) : (

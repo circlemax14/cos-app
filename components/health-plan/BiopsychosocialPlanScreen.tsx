@@ -39,6 +39,7 @@ import { NutritionPlanSection } from '@/components/health-plan/NutritionPlanSect
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import {
@@ -764,6 +765,8 @@ export function BiopsychosocialPlanScreen({
   patientName,
   headerRight,
   deepLinkFocus,
+  entitlementGating = false,
+  planLabel,
 }: {
   currentPlanType: PlanType | undefined;
   onChangePlanType: () => void;
@@ -812,8 +815,107 @@ export function BiopsychosocialPlanScreen({
    * unique structural differences bio had vs. legacy.
    */
   patientName: string | null;
+  /**
+   * COS-803 — apply the per-section entitlement gates.
+   *
+   * Defaults to FALSE, which is the whole point. The Care Plan tab in the
+   * centre of the bottom bar renders this component with the prop absent and
+   * is therefore byte-for-byte the screen that ships in production — no gate
+   * can hide anything there, whatever a plan does or does not grant.
+   *
+   * The new Plan+ tab passes it. Two tabs, one component, and the enhanced
+   * surface is the only one that can be wrong.
+   */
+  entitlementGating?: boolean;
+  /**
+   * COS-805 — what the plan pill SAYS, when that is not the plan type.
+   *
+   * The pill has always rendered `planTypeDisplayName(currentPlanType)` — the
+   * care plan TYPE (basic / advanced / agency), which decides assessment
+   * depth. That is the right label on the classic tab, where the pill opens
+   * the type chooser.
+   *
+   * On Plan+ the pill opens the ENTITLEMENT shelf, so showing the type there
+   * means the label and the destination disagree: switch to Standard, and a
+   * pill still reading "Advanced" takes you to a shelf where Standard is
+   * badged YOUR PLAN. Two different fields, one control.
+   *
+   * Passed = show this. Omitted = the plan type, exactly as before.
+   */
+  planLabel?: string | null;
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
+
+  /*
+   * COS-755 — the care plan is now COMPOSED, not a fixed tier.
+   *
+   * "Basic" and "Advanced" were hardcoded ladders with a fixed set of things
+   * in each. An admin now builds a plan from these sections and can name the
+   * result whatever they like, so the gate belongs on each section rather
+   * than on the tier — a tier check could not survive being renamed.
+   *
+   * useCanRender treats the wildcard as a grant, and the wildcard is what
+   * prod and staging return while plan_tier_enabled is unset there. So every
+   * section still renders everywhere enforcement is off, and this only bites
+   * where a plan is genuinely in force.
+   */
+  /*
+   * COS-803 — one place where gating turns on.
+   *
+   * The hooks run unconditionally (rules of hooks) but the ANSWER is forced
+   * open unless this surface opted in. So the classic Care Plan tab keeps
+   * every section regardless of plan, and only Plan+ composes.
+   */
+  const gate = (allowed: boolean): boolean => !entitlementGating || allowed;
+
+  const rawCanWellbeingMap = useCanRender('biopsychosocial-plan.view-wellbeing-map');
+  const rawCanSelfAssessments = useCanRender('biopsychosocial-plan.view-self-assessments');
+  const rawCanDailyRoutines = useCanRender('biopsychosocial-plan.view-daily-routines');
+  const rawCanNutrition = useCanRender('biopsychosocial-plan.view-nutrition-plan');
+  const rawCanMedications = useCanRender('biopsychosocial-plan.view-medications');
+  const rawCanSharePdf = useCanRender('biopsychosocial-plan.share-plan-pdf');
+  const rawCanDeleteTask = useCanRender('health-plan.delete-task');
+  /*
+   * COS-802 — the blocks COS-755 missed.
+   *
+   * view-wellbeing-score, view-ai-summary and the three domain keys were in
+   * the catalog from the start but had no call site, so an admin could untick
+   * them and nothing happened. view-todays-tasks and view-progress did not
+   * exist at all — the Today tile was the one block on this screen a plan
+   * could not be built without.
+   *
+   * Every one of these keys is granted by the COS-802 back-fill, so a plan
+   * that has been through it renders exactly as it does today.
+   */
+  const rawCanWellbeingScore = useCanRender('biopsychosocial-plan.view-wellbeing-score');
+  const rawCanTodaysTasks = useCanRender('biopsychosocial-plan.view-todays-tasks');
+  const rawCanViewProgress = useCanRender('biopsychosocial-plan.view-progress');
+  const rawCanAiSummary = useCanRender('biopsychosocial-plan.view-ai-summary');
+  const rawCanBioSection = useCanRender('biopsychosocial-plan.view-bio-section');
+  const rawCanPsychologicalSection = useCanRender('biopsychosocial-plan.view-psychological-section');
+  const rawCanSocialSection = useCanRender('biopsychosocial-plan.view-social-section');
+
+  const canWellbeingMap = gate(rawCanWellbeingMap);
+  const canSelfAssessments = gate(rawCanSelfAssessments);
+  const canDailyRoutines = gate(rawCanDailyRoutines);
+  const canNutrition = gate(rawCanNutrition);
+  const canMedications = gate(rawCanMedications);
+  const canSharePdf = gate(rawCanSharePdf);
+  /*
+   * COS-869 — routed through gate() like every other section flag.
+   *
+   * The gate used to live inside TaskDetailModal, which mounts from here — so
+   * it bypassed gate() and fired on the frozen classic tab. Same shape as the
+   * SharePlanSection double gate (COS-868).
+   */
+  const canDeleteTask = gate(rawCanDeleteTask);
+  const canWellbeingScore = gate(rawCanWellbeingScore);
+  const canTodaysTasks = gate(rawCanTodaysTasks);
+  const canViewProgress = gate(rawCanViewProgress);
+  const canAiSummary = gate(rawCanAiSummary);
+  const canBioSection = gate(rawCanBioSection);
+  const canPsychologicalSection = gate(rawCanPsychologicalSection);
+  const canSocialSection = gate(rawCanSocialSection);
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'] as unknown as Record<string, string>;
   const planTypeDisplayName = usePlanTypeDisplayName();
 
@@ -1656,7 +1758,7 @@ export function BiopsychosocialPlanScreen({
               Check back after completing your assessments.
             </Text>
             <PlanTierPill
-              label={planTypeDisplayName(currentPlanType as PlanType)}
+              label={planLabel ?? planTypeDisplayName(currentPlanType as PlanType)}
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
@@ -1830,13 +1932,17 @@ export function BiopsychosocialPlanScreen({
                 otherwise overflow. */}
             <View style={styles.tierRow}>
               <PlanTierPill
-                label={planTypeDisplayName(currentPlanType ?? 'basic')}
+                label={planLabel ?? planTypeDisplayName(currentPlanType ?? 'basic')}
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
                 getScaledFontWeight={getScaledFontWeight}
                 onPress={onChangePlanType}
               />
-              {BPS_PROGRESS_LINK_ENABLED && (
+              {/* COS-802 — the pill is gated; the Switch plan pill beside it
+                  deliberately is NOT. A patient on a thin plan needs the way
+                  OUT of it more than anyone, and gating the escape hatch on
+                  the plan you are trying to escape is a trap. */}
+              {BPS_PROGRESS_LINK_ENABLED && canViewProgress && (
                 <ViewProgressLink
                   colors={colors}
                   getScaledFontSize={getScaledFontSize}
@@ -1909,7 +2015,7 @@ export function BiopsychosocialPlanScreen({
               focusActionSentence={undefined}
               onCompleted={() => undefined}
             />
-            <WellbeingMapGlimpse />
+            {canWellbeingMap && <WellbeingMapGlimpse />}
           </>
         )}
         {/*
@@ -1975,6 +2081,8 @@ export function BiopsychosocialPlanScreen({
           isLoading={wellbeing.isLoading}
           isEmpty={wellbeing.isEmpty}
           tasks={todayTasks}
+          showWellbeing={canWellbeingScore}
+          showToday={canTodaysTasks}
         />
 
         {/*
@@ -2185,7 +2293,7 @@ export function BiopsychosocialPlanScreen({
             {/* Ken 2026-08-14: collapse the three domain groups here, like the
                 SECTION_ORDER cards below. Health Trends keeps the open
                 carousels — that screen exists to show these results. */}
-            <SelfAssessmentTrends collapsible />
+            {canSelfAssessments && <SelfAssessmentTrends collapsible />}
           </View>
         )}
 
@@ -2240,7 +2348,7 @@ export function BiopsychosocialPlanScreen({
             reason — see the card's header. Safe on this surface. */}
         <RetakeRequestInboxCard />
 
-        {BPS_AI_SUMMARY_ENABLED && (
+        {BPS_AI_SUMMARY_ENABLED && canAiSummary && (
           // CHUNK 48 fix (adversarial-verify major): reserve fixed-height
           // slot while ai-health-plan is loading. Cold mount had banner
           // paint null → then mount 120-180pt of card once fetch resolved,
@@ -2289,11 +2397,13 @@ export function BiopsychosocialPlanScreen({
             wire name; do not "fix" the mismatch. All the copy lives in
             HabitsBanner.tsx — there are no habit/routine strings on this
             screen. */}
+        {canDailyRoutines && (
         <HabitsBanner
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+        )}
 
         {/* Nutrition plan & support — Ken 2026-08-07 asked for this in the
             BIO part of the plan; Vishal 2026-08-10 placed it BETWEEN Routines
@@ -2301,6 +2411,7 @@ export function BiopsychosocialPlanScreen({
             MedicationsBanner's card shape exactly (no horizontal margin, tint
             wash, 48pt icon well) with an amber accent so the three rows read
             as one system without nutrition looking like a meds sub-card. */}
+        {canNutrition && (
         <NutritionPlanSection
           colors={{
             card: colors.card as string,
@@ -2343,6 +2454,7 @@ export function BiopsychosocialPlanScreen({
             )
           }
         />
+        )}
 
         {/*
           Ken 2026-08-05 — Medications banner sits directly beneath
@@ -2352,11 +2464,13 @@ export function BiopsychosocialPlanScreen({
           + title + subtitle shape as HabitsBanner so both banners
           read as one system, colored green #199C4F to match the
           "Medical conditions & medications" report group. */}
+        {canMedications && (
         <MedicationsBanner
           colors={colors as unknown as Record<string, string>}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
         />
+        )}
 
         {/*
           CHUNK 51: read-only "Here's what you'll be notified about"
@@ -2486,7 +2600,13 @@ export function BiopsychosocialPlanScreen({
         />
 
         {/* Three section cards */}
-        {SECTION_ORDER.map(({ key, title }) => (
+        {SECTION_ORDER.filter(({ key }) =>
+          key === 'biological'
+            ? canBioSection
+            : key === 'psychological'
+              ? canPsychologicalSection
+              : canSocialSection,
+        ).map(({ key, title }) => (
           // CHUNK 60: wrap SectionCard in an outer <View onLayout> so
           // the banner's tap handler knows where to scroll. onLayout
           // fires against the wrapper (whose parent is the ScrollView
@@ -2619,7 +2739,7 @@ export function BiopsychosocialPlanScreen({
           pure `plan-pdf-builder.ts`. Renders null until a plan exists, so
           the empty / skeleton branches above are unaffected.
         */}
-        <SharePlanSection patientName={patientName} />
+        {canSharePdf && <SharePlanSection patientName={patientName} />}
             </>
           );
           if (BPS_HERO_LAYOUT_ENABLED) {
@@ -2714,6 +2834,7 @@ export function BiopsychosocialPlanScreen({
           ) : bodyEditor?.kind === 'task-detail' ? (
             <TaskDetailBody
               key={`task-detail:${bodyEditor.task.id}:${bodyKeySuffix}`}
+              canDeleteTask={canDeleteTask}
               task={bodyEditor.task}
               accentColor={SECTION_STYLE[sectionForCategory(bodyEditor.task.category)].color}
               colors={colors}
@@ -2768,6 +2889,7 @@ export function BiopsychosocialPlanScreen({
             onSaved={() => setTaskModal(null)}
           />
           <TaskDetailModal
+            canDeleteTask={canDeleteTask}
             visible={taskModal?.mode === 'detail'}
             task={taskModal?.mode === 'detail' ? taskModal.task ?? null : null}
             accentColor={

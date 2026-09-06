@@ -48,6 +48,7 @@ import { useReadinessScoreFlag } from '@/hooks/use-readiness-score-flag'
 import { useReadinessDerivation } from '@/hooks/use-readiness-derivation'
 import { useReadinessHistory } from '@/hooks/use-readiness-history'
 import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
 import {
   METRIC_IMPROVEMENT,
@@ -167,6 +168,10 @@ export default function ReadinessScreen(): React.JSX.Element {
   const { data: hkTrends } = useHealthKitTrends()
   const { getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors.light
+  // Entitlement gate. Hook, so it lives at the top of the component,
+  // above every early return. Fail-open — see hooks/use-entitlement.ts.
+  const canView = useCanRender('readiness.view')
+  const canViewMetrics = useCanRender('readiness.view-metrics')
 
   const composite = readiness.score?.composite
   const band = readiness.score?.band
@@ -262,7 +267,7 @@ export default function ReadinessScreen(): React.JSX.Element {
 
   return (
     <AppWrapper>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      {canView && <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <Pressable
@@ -590,7 +595,7 @@ export default function ReadinessScreen(): React.JSX.Element {
         </Section>
 
         {/* Per-metric breakdown */}
-        {drivers.length > 0 && (
+        {canViewMetrics && drivers.length > 0 && (
           <Section title="Today's contribution" colors={colors} sz={getScaledFontSize} wt={getScaledFontWeight}>
             {drivers.map((d) => {
               const label = METRIC_LABEL[d.metric] ?? d.metric
@@ -772,7 +777,7 @@ export default function ReadinessScreen(): React.JSX.Element {
         <Text style={styles.disclaimer}>
           Readiness is a wellness signal computed on your device from Apple Health samples. It is not a diagnosis and does not replace guidance from your care team.
         </Text>
-      </ScrollView>
+      </ScrollView>}
     </AppWrapper>
   )
 }

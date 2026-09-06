@@ -47,6 +47,7 @@ import { router } from 'expo-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { AppWrapper } from '@/components/app-wrapper'
+import { useCanRender } from '@/hooks/use-entitlement'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
@@ -84,6 +85,14 @@ function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.J
   const fs = getScaledFontSize
   const fw = getScaledFontWeight
   const qc = useQueryClient()
+
+  // COS-849 — per-control entitlement gates. The screen-level `connections.view`
+  // gate lives on the default export below; these four gate individual actions,
+  // so a patient who can see the screen may still not be able to act on it.
+  const canAcceptRequest = useCanRender('connections.accept-request')
+  const canDeclineRequest = useCanRender('connections.decline-request')
+  const canCancelRequest = useCanRender('connections.cancel-request')
+  const canChangeCategory = useCanRender('connections.change-category')
 
   const [email, setEmail] = React.useState('')
   const [searched, setSearched] = React.useState(false)
@@ -255,16 +264,18 @@ function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.J
             </Text>
           </Pressable>
 
-          <Pressable
-            onPress={() => setEditingCategory(editingCategory === c.peerId ? null : c.peerId)}
-            style={[styles.pill, { borderColor: colors.border as string }]}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: editingCategory === c.peerId }}
-            accessibilityLabel="Change category"
-          >
-            <MaterialIcons name="edit" size={fs(15)} color={colors.subtext as string} />
-            <Text style={{ color: colors.text, fontSize: fs(12) }}>Change</Text>
-          </Pressable>
+          {canChangeCategory && (
+            <Pressable
+              onPress={() => setEditingCategory(editingCategory === c.peerId ? null : c.peerId)}
+              style={[styles.pill, { borderColor: colors.border as string }]}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: editingCategory === c.peerId }}
+              accessibilityLabel="Change category"
+            >
+              <MaterialIcons name="edit" size={fs(15)} color={colors.subtext as string} />
+              <Text style={{ color: colors.text, fontSize: fs(12) }}>Change</Text>
+            </Pressable>
+          )}
         </View>
 
         {editingCategory === c.peerId ? (
@@ -345,24 +356,28 @@ function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.J
                           As {labelFor(c.category).toLowerCase()}
                         </Text>
                       </View>
-                      <Pressable
-                        onPress={() => accept.mutate(c.peerId)}
-                        style={[styles.smallBtn, { backgroundColor: colors.tint as string }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Accept this request"
-                      >
-                        <Text style={{ color: '#fff', fontSize: fs(13), fontWeight: fw(700) as never }}>
-                          Accept
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => remove.mutate(c.peerId)}
-                        style={styles.plainBtn}
-                        accessibilityRole="button"
-                        accessibilityLabel="Decline this request"
-                      >
-                        <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Decline</Text>
-                      </Pressable>
+                      {canAcceptRequest && (
+                        <Pressable
+                          onPress={() => accept.mutate(c.peerId)}
+                          style={[styles.smallBtn, { backgroundColor: colors.tint as string }]}
+                          accessibilityRole="button"
+                          accessibilityLabel="Accept this request"
+                        >
+                          <Text style={{ color: '#fff', fontSize: fs(13), fontWeight: fw(700) as never }}>
+                            Accept
+                          </Text>
+                        </Pressable>
+                      )}
+                      {canDeclineRequest && (
+                        <Pressable
+                          onPress={() => remove.mutate(c.peerId)}
+                          style={styles.plainBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="Decline this request"
+                        >
+                          <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Decline</Text>
+                        </Pressable>
+                      )}
                     </View>,
                     c.peerId,
                   ),
@@ -530,14 +545,16 @@ function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.J
                           Request sent · {labelFor(c.category).toLowerCase()}
                         </Text>
                       </View>
-                      <Pressable
-                        onPress={() => remove.mutate(c.peerId)}
-                        style={styles.plainBtn}
-                        accessibilityRole="button"
-                        accessibilityLabel="Cancel this request"
-                      >
-                        <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Cancel</Text>
-                      </Pressable>
+                      {canCancelRequest && (
+                        <Pressable
+                          onPress={() => remove.mutate(c.peerId)}
+                          style={styles.plainBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel this request"
+                        >
+                          <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Cancel</Text>
+                        </Pressable>
+                      )}
                     </View>,
                     c.peerId,
                   ),
@@ -554,7 +571,13 @@ function ConnectionsInner({ embedded = false }: { embedded?: boolean }): React.J
 }
 
 export default function ConnectionsScreen(): React.JSX.Element {
-  return <ConnectionsInner />
+  // COS-849 — connections.view gates the screen BODY. The AppWrapper chrome
+  // stays so a denied patient can still navigate out (headerShown is false for
+  // this route, so returning nothing would strand them on a blank screen).
+  // Gated here rather than inside ConnectionsInner so the embedded Social-tab
+  // panel below keeps its own gate.
+  const canView = useCanRender('connections.view')
+  return canView ? <ConnectionsInner /> : <AppWrapper>{null}</AppWrapper>
 }
 
 /**

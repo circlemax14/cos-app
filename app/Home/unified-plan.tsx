@@ -44,6 +44,7 @@ import {
 import { EVER_VISITED_KEY } from '@/lib/unified-plan-banner';
 import { formatRelative } from '@/lib/plan-time';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 import { useUnifiedPlan } from '@/hooks/use-unified-plan';
 import { useUnifiedPlanDefaultEnabled } from '@/hooks/use-unified-plan-default-flag';
 import { usePlanScreenV2Enabled } from '@/hooks/use-plan-screen-v2-flag';
@@ -115,6 +116,14 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
   const onRefresh = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  // COS-856 entitlement gates. Hooks run unconditionally, above every early
+  // return, and the screen gate is applied below them.
+  const canView = useCanRender('unified-plan.view');
+  const canViewUnifiedPlan = useCanRender('unified-plan.view-unified-plan');
+  const canTogglePlanView = useCanRender('unified-plan.toggle-plan-view');
+
+  if (!canView) return <AppWrapper><View /></AppWrapper>;
 
   // COS-475b — swap to v2 after all hooks so rules-of-hooks holds. v2
   // chunk 1 is a bare shell that doesn't touch useUnifiedPlan's data;
@@ -343,7 +352,7 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
               when the default-flip flag is ON — pre-flip users reach this
               screen only via banner-push from Care Plan, so the classic
               route is already one back-tap away. */}
-          {unifiedDefaultOn ? (
+          {unifiedDefaultOn && canTogglePlanView ? (
             <ClassicViewLink color={colors.subtext} size={getScaledFontSize(22)} />
           ) : null}
           <Pressable
@@ -406,6 +415,7 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
         </View>
 
         {/* Section cards */}
+        {canViewUnifiedPlan && (
         <View style={{ paddingHorizontal: Spacing.md, marginTop: Spacing.sm }}>
           {UNIFIED_SECTION_ORDER.map((key) => {
             const section = data.sections[key];
@@ -425,6 +435,7 @@ export default function UnifiedPlanScreen(): React.JSX.Element {
             );
           })}
         </View>
+        )}
 
         {/* Footer */}
         <View style={{ paddingHorizontal: Spacing.md, marginTop: Spacing.sm }}>

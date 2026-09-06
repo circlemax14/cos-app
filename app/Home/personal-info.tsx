@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { apiClient } from '@/lib/api-client';
 import { getPresignedUploadUrl, confirmPhotoUpload, getPhotoDownloadUrl } from '@/services/user-photo';
 import { useUserPhoto } from '@/stores/user-photo-store';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -21,6 +22,7 @@ import { useUserPhoto } from '@/stores/user-photo-store';
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 export default function PersonalInfoScreen() {
+  const canViewPersonalInfo = useCanRender('personal-info.view');
   const { settings, getScaledFontWeight, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -288,7 +290,7 @@ export default function PersonalInfoScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {isLoadingPatient ? (
+      {canViewPersonalInfo && (isLoadingPatient ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.tint} />
         </View>
@@ -493,7 +495,7 @@ export default function PersonalInfoScreen() {
             <View style={styles.bottomSpacer} />
           </ScrollView>
         </KeyboardAvoidingView>
-      )}
+      ))}
     </AppWrapper>
   );
 }

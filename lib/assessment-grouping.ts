@@ -42,6 +42,12 @@ export type DomainResolver = (subdomainKey: string) => BpsDomain | null
 export interface GroupableAssessment {
   instrumentId: string
   subdomains?: string[]
+  /**
+   * COS-850 — the instrument's OWN domain, joined by cos-backend. Authoritative
+   * when present; `subdomains[0]` is the fallback for records served by a
+   * backend that predates the join.
+   */
+  domain?: string
 }
 
 export interface AssessmentGroup<T> {
@@ -68,11 +74,39 @@ const DOMAIN_ORDER: readonly { domain: BpsDomain; label: string }[] = [
   { domain: 'social', label: 'Social & Faith' },
 ]
 
-/** The domain a record belongs to, or null when it cannot be placed. */
+const DOMAINS: readonly BpsDomain[] = ['biological', 'psychological', 'social']
+
+/**
+ * The domain a record belongs to, or null when it cannot be placed.
+ *
+ * ─── COS-850: WHY `domain` BEATS `subdomains[0]` ─────────────────────
+ *
+ * `subdomains` lists what an instrument TOUCHES; `domain` is the author's
+ * statement of where it BELONGS. Only the second answers "which heading does
+ * this card go under", and for 3 of the 31 active instruments they disagree —
+ * every one of them landing wrongly in Biological:
+ *
+ *   alcohol-3  psychological, but subdomains[0]=substance_use
+ *   pss-4      psychological, but subdomains[0]=immune_stress_response
+ *   iadl       social,        but subdomains[0]=physical_health
+ *
+ * Vishal found the first: "Alcohol Use" under "Biological assessments", on an
+ * Advanced plan that never assigned it. The header above still describes the
+ * first-subdomain rule because it remains the FALLBACK — a record from a
+ * backend that predates the join carries no `domain`, and grouping those by
+ * their first subdomain is better than dropping them into "Other".
+ */
 export function domainForAssessment(
   record: GroupableAssessment | null | undefined,
   domainOf: DomainResolver,
 ): BpsDomain | null {
+  const declared = record?.domain
+  if (typeof declared === 'string') {
+    // `spiritual` is rolled up to `social` by the backend, but a stale cached
+    // record could still carry it — there is no spiritual bucket to hold HOPE.
+    const d = declared === 'spiritual' ? 'social' : declared
+    if ((DOMAINS as readonly string[]).includes(d)) return d as BpsDomain
+  }
   const first = record?.subdomains?.find((k) => typeof k === 'string' && k.trim() !== '')
   if (!first) return null
   return domainOf(first)

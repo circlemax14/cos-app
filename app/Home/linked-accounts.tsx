@@ -12,6 +12,7 @@ import {
   linkProvider,
   signInWithApple,
 } from '@/services/social-auth';
+import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -21,6 +22,9 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LinkedAccountsScreen() {
+  const canViewLinkedAccounts = useCanRender('linked-accounts.view');
+  const canLinkGoogle = useCanRender('linked-accounts.link-google');
+  const canLinkApple = useCanRender('linked-accounts.link-apple');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -132,6 +136,7 @@ export default function LinkedAccountsScreen() {
 
   return (
     <AppWrapper>
+      {canViewLinkedAccounts && (
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.headerSection}>
@@ -191,6 +196,7 @@ export default function LinkedAccountsScreen() {
           </Text>
 
           {/* Google row */}
+          {canLinkGoogle && (
           <Card style={[styles.card, { backgroundColor: colors.card }]}>
             <List.Item
               title={<Text style={textStyle}>Google</Text>}
@@ -230,9 +236,10 @@ export default function LinkedAccountsScreen() {
               }
             />
           </Card>
+          )}
 
           {/* Apple row — iOS only */}
-          {Platform.OS === 'ios' && (
+          {Platform.OS === 'ios' && canLinkApple && (
             <Card style={[styles.card, { backgroundColor: colors.card }]}>
               <List.Item
                 title={<Text style={textStyle}>Apple</Text>}
@@ -285,6 +292,7 @@ export default function LinkedAccountsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
     </AppWrapper>
   );
 }

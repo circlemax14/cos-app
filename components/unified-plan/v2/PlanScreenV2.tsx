@@ -58,12 +58,14 @@ import { fireAndForgetPost } from '@/components/unified-plan/v2/net';
 import { usePlanType } from '@/hooks/use-plan-type';
 import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
+import { useCanRender } from '@/hooks/use-entitlement';
 import type { PlanType } from '@/services/api/plan-type';
 import type { UnifiedSectionKey } from '@/services/api/unified-plan';
 
 export default function PlanScreenV2(): React.JSX.Element {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const canRegenerate = useCanRender('unified-plan.regenerate-plan');
 
   // COS-475b chunk 3 — first real data hook. useUnifiedPlan is a
   // react-query wrapper over GET /v1/plan (Phase 1). Same hook the
@@ -450,7 +452,8 @@ export default function PlanScreenV2(): React.JSX.Element {
             firing the same POST twice. Predicate mirrors PlanTierPill's
             gate for consistency.
           */}
-          {data &&
+          {canRegenerate &&
+          data &&
           'sections' in data &&
           hasPlanContent(data) &&
           planTypeQ.planType !== undefined &&

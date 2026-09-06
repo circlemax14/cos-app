@@ -246,7 +246,7 @@ function BioGoalEditorBodyPresentation(
             placeholderTextColor={colors.subtext}
           />
 
-          <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }]}>NOVOPSYCH SUBDOMAINS</Text>
+          <Text style={[styles.fieldLabel, { color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 8 }]}>WELLBEING AREAS</Text>
           {(Object.entries(subdomainsByDomain()) as [BpsDomain, typeof BPS_SUBDOMAINS[number][]][]).map(([domain, subs]) => (
             <View key={domain} style={{ marginBottom: 10 }}>
               <Text

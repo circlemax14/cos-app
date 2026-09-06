@@ -24,6 +24,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { deleteEvent, readEvents, readReminders, type CalendarEvent } from '@/services/calendar'
 import { listServerCalendarEvents, listHealthPlanTasksAsEvents, type ServerCalendarEvent } from '@/services/api/calendar'
 import { hapticImpact, hapticNotify, hapticSelection } from '@/utils/haptics'
+import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -34,6 +35,13 @@ export default function CalendarEventDetail() {
   const { eventId } = useLocalSearchParams<{ eventId?: string }>()
   const { settings, getScaledFontSize } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
+  // Entitlement gates. Hooks — declared unconditionally, above the loading
+  // and not-found early returns below.
+  const canView = useCanRender('calendar-event-detail.view')
+  const canEdit = useCanRender('calendar-event-detail.edit-event')
+  const canDelete = useCanRender('calendar-event-detail.delete-event')
+  const canShare = useCanRender('calendar-event-detail.share-event')
+  const canAddToNativeCalendar = useCanRender('calendar-event-detail.add-to-native-calendar')
   const [event, setEvent] = useState<CalendarEvent | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -183,133 +191,147 @@ export default function CalendarEventDetail() {
       accessibilityLabel="Dismiss event detail"
     >
       {/* Inner Pressable swallows the press so taps inside the card don't dismiss */}
-      <Pressable
-        onPress={(e) => e.stopPropagation?.()}
-        style={[styles.card, { backgroundColor: colors.background }]}
-      >
-        {/* Title row — color bar + title */}
-        <View style={styles.titleRow}>
-          <View style={[styles.colorBar, { backgroundColor: event.source.color }]} />
-          <Text
-            style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22) }]}
-            selectable
-            numberOfLines={3}
-          >
-            {event.title}
-          </Text>
-        </View>
-
-        {/* Source — small line under title (Apple shows "iCloud · Personal" etc.) */}
-        <Text style={[styles.source, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-          {event.source.title} · {event.source.source}
-        </Text>
-
-        <ScrollView
-          style={{ maxHeight: 280 }}
-          contentContainerStyle={{ paddingVertical: 8 }}
-          showsVerticalScrollIndicator={false}
+      {canView && (
+        <Pressable
+          onPress={(e) => e.stopPropagation?.()}
+          style={[styles.card, { backgroundColor: colors.background }]}
         >
-          {/* Time */}
-          <Text style={[styles.bigLine, { color: colors.text, fontSize: getScaledFontSize(17) }]}>
-            {fmtRange(event)}
+          {/* Title row — color bar + title */}
+          <View style={styles.titleRow}>
+            <View style={[styles.colorBar, { backgroundColor: event.source.color }]} />
+            <Text
+              style={[styles.title, { color: colors.text, fontSize: getScaledFontSize(22) }]}
+              selectable
+              numberOfLines={3}
+            >
+              {event.title}
+            </Text>
+          </View>
+
+          {/* Source — small line under title (Apple shows "iCloud · Personal" etc.) */}
+          <Text style={[styles.source, { color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
+            {event.source.title} · {event.source.source}
           </Text>
 
-          {/* Location */}
-          {event.location && (
-            <Text style={[styles.subLine, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-              📍 {event.location}
+          <ScrollView
+            style={{ maxHeight: 280 }}
+            contentContainerStyle={{ paddingVertical: 8 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Time */}
+            <Text style={[styles.bigLine, { color: colors.text, fontSize: getScaledFontSize(17) }]}>
+              {fmtRange(event)}
             </Text>
-          )}
 
-          {/* Alarms */}
-          {event.alarms.length > 0 && (
-            <Text style={[styles.subLine, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
-              🔔 {event.alarms.map((m) => fmtAlarm(m)).join(', ')}
-            </Text>
-          )}
-
-          {/* Notes */}
-          {event.notes && (
-            <Text
-              style={[styles.notes, { color: colors.text, fontSize: getScaledFontSize(15) }]}
-              selectable
-            >
-              {event.notes}
-            </Text>
-          )}
-
-          {/* App-source badge */}
-          {event.origin === 'app' && (
-            <View style={[styles.appBadge, { backgroundColor: colors.cardBackground }]}>
-              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), textAlign: 'center' }}>
-                From Circle Support Health — not stored in your device calendar.
+            {/* Location */}
+            {event.location && (
+              <Text style={[styles.subLine, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
+                📍 {event.location}
               </Text>
-            </View>
-          )}
-        </ScrollView>
+            )}
 
-        {/* Secondary actions — always available regardless of write
-            permission (Share + Add to Reminders work on any event). */}
-        <View style={[styles.secondaryRow, { borderTopColor: colors.border }]}>
-          <Pressable
-            onPress={handleShare}
-            style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.5 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Share event"
-          >
-            <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '500' }}>Share</Text>
-          </Pressable>
-          <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
-          <Pressable
-            onPress={handleAddToReminders}
-            style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.5 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Add to Reminders"
-          >
-            <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '500' }}>Add to Reminders</Text>
-          </Pressable>
-        </View>
+            {/* Alarms */}
+            {event.alarms.length > 0 && (
+              <Text style={[styles.subLine, { color: colors.subtext, fontSize: getScaledFontSize(15) }]}>
+                🔔 {event.alarms.map((m) => fmtAlarm(m)).join(', ')}
+              </Text>
+            )}
 
-        {/* Action row — Edit | Delete (or just Done if read-only) */}
-        <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
-          {canModify ? (
-            <>
+            {/* Notes */}
+            {event.notes && (
+              <Text
+                style={[styles.notes, { color: colors.text, fontSize: getScaledFontSize(15) }]}
+                selectable
+              >
+                {event.notes}
+              </Text>
+            )}
+
+            {/* App-source badge */}
+            {event.origin === 'app' && (
+              <View style={[styles.appBadge, { backgroundColor: colors.cardBackground }]}>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), textAlign: 'center' }}>
+                  From Circle Support Health — not stored in your device calendar.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Secondary actions — always available regardless of write
+              permission (Share + Add to Reminders work on any event). */}
+          <View style={[styles.secondaryRow, { borderTopColor: colors.border }]}>
+            {canShare && (
               <Pressable
-                onPress={handleEdit}
+                onPress={handleShare}
+                style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Share event"
+              >
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '500' }}>Share</Text>
+              </Pressable>
+            )}
+            {canShare && canAddToNativeCalendar && (
+              <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
+            )}
+            {canAddToNativeCalendar && (
+              <Pressable
+                onPress={handleAddToReminders}
+                style={({ pressed }) => [styles.secondaryAction, { opacity: pressed ? 0.5 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Add to Reminders"
+              >
+                <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: '500' }}>Add to Reminders</Text>
+              </Pressable>
+            )}
+          </View>
+
+          {/* Action row — Edit | Delete (or just Done if read-only) */}
+          <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+            {canModify ? (
+              <>
+                {canEdit && (
+                  <Pressable
+                    onPress={handleEdit}
+                    style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit event"
+                  >
+                    <Text style={[styles.actionText, { color: colors.tint, fontSize: getScaledFontSize(16) }]}>
+                      Edit
+                    </Text>
+                  </Pressable>
+                )}
+                {canEdit && canDelete && (
+                  <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
+                )}
+                {canDelete && (
+                  <Pressable
+                    onPress={handleDelete}
+                    style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete event"
+                  >
+                    <Text style={[styles.actionText, { color: '#FF3B30', fontSize: getScaledFontSize(16) }]}>
+                      Delete
+                    </Text>
+                  </Pressable>
+                )}
+              </>
+            ) : (
+              <Pressable
+                onPress={dismiss}
                 style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
                 accessibilityRole="button"
-                accessibilityLabel="Edit event"
+                accessibilityLabel="Done"
               >
                 <Text style={[styles.actionText, { color: colors.tint, fontSize: getScaledFontSize(16) }]}>
-                  Edit
+                  Done
                 </Text>
               </Pressable>
-              <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
-              <Pressable
-                onPress={handleDelete}
-                style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Delete event"
-              >
-                <Text style={[styles.actionText, { color: '#FF3B30', fontSize: getScaledFontSize(16) }]}>
-                  Delete
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Pressable
-              onPress={dismiss}
-              style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Done"
-            >
-              <Text style={[styles.actionText, { color: colors.tint, fontSize: getScaledFontSize(16) }]}>
-                Done
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      </Pressable>
+            )}
+          </View>
+        </Pressable>
+      )}
     </Pressable>
   )
 }
