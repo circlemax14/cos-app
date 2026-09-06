@@ -294,7 +294,12 @@ test('a refused switch is shown, not swallowed', () => {
 
 test('the shelf refetches after a switch, so the badge moves', () => {
   const code = stripComments(cards)
-  assert.match(code, /invalidateQueries\(\{ queryKey: \['patient-plans'\] \}\)/)
+  // COS-926 — via the shared list, which contains 'patient-plans' and, more
+  // importantly, 'health-plan-assignments' (the gate) that this site lacked.
+  assert.match(code, /refreshAfterPlanChange\(queryClient\)/)
+  const shared = read('lib/plan-change-refresh.ts')
+  assert.match(shared, /'patient-plans'/)
+  assert.match(shared, /'health-plan-assignments'/)
 })
 
 // ── COS-799: switching stays reachable after the first switch ─────────────

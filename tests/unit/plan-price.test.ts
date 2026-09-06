@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatPrice, priceLines } from '../../lib/plan-price.ts';
+import { formatPrice, planChoice, priceLines } from '../../lib/plan-price.ts';
 
 test('formats whole and part amounts the way a card should read', () => {
   assert.equal(formatPrice(999), '$9.99');
@@ -98,4 +98,54 @@ test('a blank label is absent, not a blank price', () => {
     });
     assert.equal(out.label, null, `"${String(bad)}" should not render as a price`);
   }
+});
+
+/*
+ * COS-926 — a free plan is takeable, including one that says so in words.
+ *
+ * An earlier version of planChoice invented a third state: a plan with a
+ * displayPriceLabel and no figure was neither free nor sellable. It broke
+ * `test-plan-1`, labelled "Free Foreever" with no cents — a plan that IS free,
+ * saying so — and told the patient their care team had to move them.
+ *
+ * It also contradicted COS-786, which removed exactly this inference on the
+ * server. A free plan is a real plan; the client must not be stricter.
+ */
+test('a plan labelled free with no figure is FREE, and takeable', () => {
+  const c = planChoice({
+    monthlyPriceCents: null,
+    annualPriceCents: null,
+    currency: 'USD',
+    displayPriceLabel: 'Free Foreever',
+  });
+  assert.equal(c.isFree, true);
+  assert.equal(c.costsMoney, false);
+});
+
+test('a price label never makes a plan cost money — only cents do', () => {
+  const c = planChoice({
+    monthlyPriceCents: null,
+    annualPriceCents: null,
+    currency: 'USD',
+    displayPriceLabel: 'Contact us',
+  });
+  assert.equal(c.isFree, true);
+});
+
+test('THE POINT: each cycle is gated on its OWN price', () => {
+  // Free monthly, priced annually. Gating both buttons on one plan-level
+  // boolean rendered "Subscribe monthly · $0" and started a real charge.
+  const c = planChoice({ monthlyPriceCents: 0, annualPriceCents: 9900, currency: 'USD' });
+  assert.equal(c.monthlyPaid, false);
+  assert.equal(c.annualPaid, true);
+  assert.equal(c.costsMoney, true);
+  assert.equal(c.isFree, false);
+});
+
+test('a zero-priced plan is free, not "$0 to buy"', () => {
+  // formatPrice(0) is "$0", not null, so a truthiness test on the formatted
+  // line calls a free plan paid. trial-30d carries monthlyPriceCents 0.
+  const c = planChoice({ monthlyPriceCents: 0, annualPriceCents: null, currency: 'USD' });
+  assert.equal(c.isFree, true);
+  assert.equal(c.monthlyPaid, false);
 });

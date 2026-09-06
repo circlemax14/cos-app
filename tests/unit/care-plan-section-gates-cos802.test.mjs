@@ -243,7 +243,10 @@ test('the label cannot lag a switch', () => {
   // gate — so the pill can never show the plan you just left.
   const cards = read('components/plan/PlanStatusSection.tsx')
   const body = cards.slice(cards.indexOf('async function onSwitch'))
-  const inval = body.indexOf("invalidateQueries({ queryKey: ['patient-plans'] })")
+  // COS-926 — one shared refresh instead of a per-site list of keys. Five
+  // sites had five different sets and only one named the key the assessment
+  // gate reads, which is how a switch waved the patient straight through.
+  const inval = body.indexOf('refreshAfterPlanChange(queryClient)')
   const done = body.indexOf('onSwitched?.()')
   assert.ok(inval > -1 && done > -1)
   assert.ok(inval < done, 'the refetch must be awaited before the gate closes')

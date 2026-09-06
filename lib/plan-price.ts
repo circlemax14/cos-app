@@ -83,10 +83,29 @@ export function priceLines(pricing: PlanPricing | null | undefined): {
  * because billing's card type carries no status and could not tell. Two copies
  * of one rule is how that happened, so there is one copy now.
  *
- * Money rule, stated once: a plan is only FREE if it has no positive price on
- * either cycle AND the admin did not write a price in words. A plan priced
- * "Contact us" with no figure is neither chargeable (there is no amount to
- * send, and no store product) nor giveable — so it is offered as neither.
+ * Money rule, stated once: a plan is FREE when neither cycle has a positive
+ * price. That is the whole rule.
+ *
+ * COS-926 — an earlier version of this added a third state: a plan with a
+ * `displayPriceLabel` but no figure ("Contact us") was treated as neither free
+ * nor sellable, on the reasoning that we cannot charge for it and should not
+ * give it away. That was wrong twice over.
+ *
+ * It broke a real plan. `test-plan-1` is labelled "Free Foreever" with no
+ * cents, which is a plan that IS free saying so, and the patient was told
+ * "your care team can move you to this plan" about a plan they were meant to
+ * be able to take themselves.
+ *
+ * And it contradicted a decision already made. COS-786 removed exactly this
+ * inference — Vishal, 2026-08-29: "we can also [set the] advanced plan as free
+ * because sometimes the plan is only for the specific users, and we don't want
+ * to charge anything to them." `isPurchasable` on the server has said since
+ * then that a free plan is a real plan; the client had no business being
+ * stricter, least of all by guessing at English.
+ *
+ * If "Contact us with no price" ever needs to be un-takeable, that is the plan
+ * EDITOR's job to refuse at authoring time, where a human can be asked what
+ * they meant — not this function's, reading prose.
  */
 export function planChoice(pricing: PlanPricing | null | undefined): {
   /** Has a real monthly amount. Gate the monthly Subscribe button on THIS. */
@@ -95,8 +114,6 @@ export function planChoice(pricing: PlanPricing | null | undefined): {
   annualPaid: boolean;
   /** Either cycle costs something. */
   costsMoney: boolean;
-  /** An admin priced it in words and gave no figure. Not free, not sellable. */
-  pricedInWordsOnly: boolean;
   /** Safe to hand over for nothing. */
   isFree: boolean;
 } {
@@ -105,12 +122,5 @@ export function planChoice(pricing: PlanPricing | null | undefined): {
   const monthlyPaid = (pricing?.monthlyPriceCents ?? 0) > 0;
   const annualPaid = (pricing?.annualPriceCents ?? 0) > 0;
   const costsMoney = monthlyPaid || annualPaid;
-  const pricedInWordsOnly = !costsMoney && Boolean(pricing?.displayPriceLabel?.trim());
-  return {
-    monthlyPaid,
-    annualPaid,
-    costsMoney,
-    pricedInWordsOnly,
-    isFree: !costsMoney && !pricedInWordsOnly,
-  };
+  return { monthlyPaid, annualPaid, costsMoney, isFree: !costsMoney };
 }

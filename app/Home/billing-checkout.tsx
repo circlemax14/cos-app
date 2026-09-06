@@ -41,6 +41,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { refreshAfterPlanChange } from '@/lib/plan-change-refresh';
 import { usePaymentMethods, type PaymentMethod } from '@/hooks/use-payment-methods';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { Colors } from '@/constants/theme';
@@ -104,8 +105,7 @@ export default function BillingCheckoutScreen() {
        * plan as theirs.
        */
       if (outcome.status === 'applied') {
-        await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
-        await queryClient.invalidateQueries({ queryKey: ['billing'] });
+        await refreshAfterPlanChange(queryClient);
         router.replace('/Home/care-plan-plus' as never);
       }
     } catch (err) {

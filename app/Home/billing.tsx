@@ -61,6 +61,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { AppWrapper } from '@/components/app-wrapper';
 import { Linking } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
+import { refreshAfterPlanChange } from '@/lib/plan-change-refresh';
 import {
   cancelSubscription,
   resumeSubscription,
@@ -237,7 +238,9 @@ export default function BillingScreen() {
     try {
       const r = await switchToPlan(planKey);
       setNotice(`You are now on ${r.planName ?? r.planKey}.`);
-      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+      // COS-926 — the shared list. A switch, a cancel and a resume all change
+      // which plan the patient holds, so all three refresh the same set.
+      await refreshAfterPlanChange(queryClient);
     } catch (err) {
       setNotice(serverMessage(err, 'Could not change your plan. Please try again.'));
     } finally {
@@ -270,7 +273,9 @@ export default function BillingScreen() {
         const can = await Linking.canOpenURL(out.manageUrl);
         if (can) await Linking.openURL(out.manageUrl);
       }
-      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+      // COS-926 — the shared list. A switch, a cancel and a resume all change
+      // which plan the patient holds, so all three refresh the same set.
+      await refreshAfterPlanChange(queryClient);
     } catch (err) {
       setNotice(serverMessage(err, 'Could not cancel. Please try again.'));
     } finally {
@@ -285,7 +290,9 @@ export default function BillingScreen() {
     try {
       await resumeSubscription();
       setNotice('Your plan will keep renewing.');
-      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+      // COS-926 — the shared list. A switch, a cancel and a resume all change
+      // which plan the patient holds, so all three refresh the same set.
+      await refreshAfterPlanChange(queryClient);
     } catch (err) {
       setNotice(serverMessage(err, 'Could not resume. Please try again.'));
     } finally {

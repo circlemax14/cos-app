@@ -40,6 +40,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { refreshAfterPlanChange } from '@/lib/plan-change-refresh';
 
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
@@ -93,8 +94,9 @@ export function PlanAssessmentGate({
     try {
       await switchToPlan(previousPlanKey);
       // Both change: the plan you hold, and what it requires of you.
-      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
-      await queryClient.invalidateQueries({ queryKey: ['health-plan-assignments'] });
+      // COS-926 — this site had the two that mattered; it now shares the list
+      // so it cannot drift from the other four.
+      await refreshAfterPlanChange(queryClient);
     } catch (err) {
       setError(serverMessage(err, 'Could not go back to your previous plan. Please try again.'));
     } finally {

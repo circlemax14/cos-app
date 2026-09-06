@@ -46,8 +46,13 @@ test('THE POINT: the escape REVERTS the switch', () => {
   // A plain "later" leaves a patient holding a plan whose requirements they
   // have not met, with no plan to show — a state nothing else can resolve.
   assert.match(gate, /switchToPlan\(previousPlanKey\)/)
-  assert.match(gate, /invalidateQueries\(\{ queryKey: \['health-plan-assignments'\] \}\)/)
-  assert.match(gate, /invalidateQueries\(\{ queryKey: \['patient-plans'\] \}\)/)
+  /*
+   * COS-926 — both keys still refreshed, now through the shared list so this
+   * site cannot drift from the other five. This path was the ONLY one that
+   * named 'health-plan-assignments'; the switch handlers did not, which is why
+   * a plan switch skipped the gate entirely.
+   */
+  assert.match(gate, /refreshAfterPlanChange\(queryClient\)/)
 })
 
 test('no revert button when there is nowhere to revert to', () => {

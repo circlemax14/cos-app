@@ -35,6 +35,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { refreshAfterPlanChange } from '@/lib/plan-change-refresh';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
 import { planChoice, priceLines } from '@/lib/plan-price';
@@ -326,7 +327,16 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
     setSwitchError(null);
     try {
       await switchToPlan(planKey);
-      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
+      /*
+       * COS-926 — refresh the GATE too, not just the shelf.
+       *
+       * This invalidated ['patient-plans'] alone, so the assessment gate went
+       * on reading a cache written before the switch — when the old plan's
+       * requirements were satisfied — and let the patient through to a plan
+       * built for the plan they had just left. Awaited before onSwitched() so
+       * the screen they land on is already correct.
+       */
+      await refreshAfterPlanChange(queryClient);
       onSwitched?.();
     } catch (err) {
       setSwitchError(serverMessage(err, 'Could not change your plan. Please try again.'));
@@ -403,8 +413,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
        * open and says so, because the one thing that must not happen is
        * telling someone their plan changed when it has not.
        */
-      await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
-      await queryClient.invalidateQueries({ queryKey: ['billing'] });
+      await refreshAfterPlanChange(queryClient);
       if (outcome.status === 'pending') {
         setPayError({ planKey: plan.planKey, message: outcome.message });
         return;
