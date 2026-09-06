@@ -57,6 +57,27 @@ const MAPPING = {
   'list.bullet.clipboard': 'assignment',
   'cross.case.fill': 'medical-services',
   'waveform.path.ecg': 'monitor-heart',
+  /*
+   * COS-928 — the ten names the app actually uses that had no Android entry.
+   *
+   * MAPPING[name] returned undefined for each, and MaterialIcons renders a
+   * BLANK for an unknown name — so on Android the Calendar header toolbar, the
+   * search field, the settings gear and the care-circle person icons were all
+   * invisible. Silent: no warning, no error, just gaps where the buttons are.
+   *
+   * Found by diffing every `<IconSymbol name="...">` in app/ and components/
+   * against this object, not by eye.
+   */
+  'chevron.left': 'chevron-left',
+  'magnifyingglass': 'search',
+  'gear': 'settings',
+  'phone.fill': 'call',
+  'envelope.fill': 'email',
+  'person.2.fill': 'people',
+  'building.2': 'apartment',
+  'square.grid.2x2': 'grid-view',
+  'exclamationmark.shield': 'gpp-maybe',
+  'person.crop.circle.badge.exclamationmark': 'no-accounts',
 } as IconMapping;
 
 /**
@@ -76,5 +97,16 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  /*
+   * COS-928 — `?? 'help-outline'` so a missing mapping is VISIBLE.
+   *
+   * MaterialIcons renders a blank for an unknown name, so every gap above was
+   * silent on Android and invisible on iOS (which uses the .ios.tsx SF Symbol
+   * path and never consults this table). A question-mark glyph is ugly on
+   * purpose: it shows up in the first screenshot instead of the first bug
+   * report.
+   */
+  return (
+    <MaterialIcons color={color} size={size} name={MAPPING[name] ?? 'help-outline'} style={style} />
+  );
 }

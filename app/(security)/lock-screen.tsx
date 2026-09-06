@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
@@ -419,7 +419,13 @@ export default function LockScreen() {
               },
             ]}
           >
-            {showBiometric ? 'Use Face ID or enter your 6-digit PIN' : 'Enter your 6-digit PIN to continue'}
+            {showBiometric
+              ? Platform.OS === 'ios'
+                ? 'Use Face ID or enter your 6-digit PIN'
+                : /* COS-928 — Android has fingerprint, face and iris unlock;
+                     naming Apple's brand on a Pixel is simply wrong. */
+                  'Use biometrics or enter your 6-digit PIN'
+              : 'Enter your 6-digit PIN to continue'}
           </Text>
 
           <View style={styles.dotsRow}>
