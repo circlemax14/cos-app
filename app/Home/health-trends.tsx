@@ -22,7 +22,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   Share,
   StyleSheet,
@@ -30,6 +29,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+// COS-928 — SafeAreaView from safe-area-context, not react-native.
+// RN's own SafeAreaView is a NO-OP on Android (it only ever applied iOS safe
+// area insets), so these screens rendered under the status bar / camera
+// cutout. The context version reads real insets on both platforms and is
+// already a dependency, used elsewhere in the app.
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { todayLocalIso } from '@/lib/day-key';
 import { groupTrendsByBodySystem } from '@/lib/body-system-grouping';
 import { useCanRender } from '@/hooks/use-entitlement'

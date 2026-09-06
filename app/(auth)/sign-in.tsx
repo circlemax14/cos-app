@@ -56,11 +56,55 @@ export default function SignInScreen() {
   const [dataLoadError, setDataLoadError] = useState(false);
   const isAppleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_apple');
   const isGoogleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_google');
+  /*
+   * COS-928 — Google sign-in is iOS-only for now, and this is not a policy
+   * choice; three things are missing on Android and each alone breaks it:
+   *
+   *   1. no Android OAuth client in Google Cloud (there is no
+   *      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID anywhere);
+   *   2. no intent-filter for the applicationId scheme, so Google's redirect
+   *      to `<applicationId>:/oauthredirect` has nothing to come back to —
+   *      Chrome shows ERR_UNKNOWN_URL_SCHEME and promptAsync resolves
+   *      'dismiss', which this screen shows no message for;
+   *   3. the backend's accepted-audience list has no Android client id, so
+   *      even a token that made it home would be rejected.
+   *
+   * A button that opens a browser and silently returns the user to the same
+   * screen is worse than no button. Delete this gate — not the fallback above
+   * — once all three exist.
+   */
+  const canUseGoogleSignIn = isGoogleSignInEnabled && Platform.OS === 'ios';
 
   // Google Sign-In via expo-auth-session/providers/google
   const [, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    /*
+     * COS-928 — the `??` is what stops Android crashing on launch.
+     *
+     * useAuthRequest does Platform.select({ios:'iosClientId', android:
+     * 'androidClientId', ...}) and then invariantClientId(), which THROWS on
+     * `undefined` — synchronously, inside a useMemo, i.e. during this
+     * component's render. EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is defined in
+     * no .env file, so every Android launch hit the route error boundary and
+     * a fresh install could never reach a usable screen.
+     *
+     * Above the feature flag, so no flag flip avoided it: the hook is called
+     * unconditionally and hooks cannot be conditional.
+     *
+     * The fallback value is never USED for a real Android sign-in — the button
+     * is hidden on Android below, because there is no Android OAuth client, no
+     * matching intent-filter and no matching package name yet. It exists only
+     * so the hook can construct. invariantClientId rejects `undefined` and
+     * nothing else, so any defined string defuses it.
+     *
+     * Deliberately NOT an empty EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID= in .env:
+     * that also works, and is invisible — one .env sync from regressing.
+     *
+     * iOS is untouched: Platform.select reads iosClientId there.
+     */
+    androidClientId:
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ??
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
 
@@ -424,7 +468,7 @@ export default function SignInScreen() {
                 </Text>
               </Pressable>
 
-              {(isGoogleSignInEnabled || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
+              {(canUseGoogleSignIn || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
                 <View style={styles.dividerRow}>
                   <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
                   <Text
@@ -441,7 +485,7 @@ export default function SignInScreen() {
                 </View>
               )}
 
-              {isGoogleSignInEnabled && (
+              {canUseGoogleSignIn && (
                 <Pressable
                   onPress={handleGoogleSignIn}
                   disabled={disabled}

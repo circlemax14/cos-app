@@ -23,7 +23,19 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LinkedAccountsScreen() {
   const canViewLinkedAccounts = useCanRender('linked-accounts.view');
-  const canLinkGoogle = useCanRender('linked-accounts.link-google');
+  const canLinkGoogleEntitlement = useCanRender('linked-accounts.link-google');
+  /*
+   * COS-928 — same three missing pieces as the sign-in screen (no Android
+   * OAuth client, no intent-filter for the applicationId scheme, no Android
+   * audience on the backend). Linking would open a browser and silently
+   * return here having done nothing, and this screen's only feedback for a
+   * dismissed flow is no feedback at all.
+   *
+   * Kept as a separate const from the entitlement so the two reasons a row can
+   * be hidden stay legible: "your plan does not include it" and "this platform
+   * cannot do it yet" are different answers.
+   */
+  const canLinkGoogle = canLinkGoogleEntitlement && Platform.OS === 'ios';
   const canLinkApple = useCanRender('linked-accounts.link-apple');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -38,7 +50,33 @@ export default function LinkedAccountsScreen() {
   // Google auth request for linking
   const [, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    /*
+     * COS-928 — the `??` is what stops Android crashing on launch.
+     *
+     * useAuthRequest does Platform.select({ios:'iosClientId', android:
+     * 'androidClientId', ...}) and then invariantClientId(), which THROWS on
+     * `undefined` — synchronously, inside a useMemo, i.e. during this
+     * component's render. EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is defined in
+     * no .env file, so every Android launch hit the route error boundary and
+     * a fresh install could never reach a usable screen.
+     *
+     * Above the feature flag, so no flag flip avoided it: the hook is called
+     * unconditionally and hooks cannot be conditional.
+     *
+     * The fallback value is never USED for a real Android sign-in — the button
+     * is hidden on Android below, because there is no Android OAuth client, no
+     * matching intent-filter and no matching package name yet. It exists only
+     * so the hook can construct. invariantClientId rejects `undefined` and
+     * nothing else, so any defined string defuses it.
+     *
+     * Deliberately NOT an empty EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID= in .env:
+     * that also works, and is invisible — one .env sync from regressing.
+     *
+     * iOS is untouched: Platform.select reads iosClientId there.
+     */
+    androidClientId:
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ??
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
 

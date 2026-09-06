@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,10 +30,28 @@ export default function EnableBiometricScreen() {
     const enrolled = await LocalAuthentication.isEnrolledAsync();
     setHasBiometric(compatible && enrolled);
     const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+    /*
+     * COS-928 — the label is derived, and it is not always an Apple brand.
+     *
+     * This mapped FACIAL_RECOGNITION -> 'Face ID' and FINGERPRINT -> 'Touch ID'
+     * with no platform branch, so a Pixel or Samsung showed "Enable Touch ID?"
+     * — an Apple trademark on an Android phone, in a mandatory onboarding step.
+     *
+     * Worse than wrong wording on one path: AuthenticationType.IRIS is
+     * Android-only and matched NEITHER branch, so biometricType stayed the
+     * initial '' and the screen rendered the title "Enable ?", a button reading
+     * "Enable " and a system prompt whose message was "Enable ". Hence the
+     * generic default below — no path can now produce an empty label.
+     */
+    const isIos = Platform.OS === 'ios';
     if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-      setBiometricType('Face ID');
+      setBiometricType(isIos ? 'Face ID' : 'face unlock');
     } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
-      setBiometricType('Touch ID');
+      setBiometricType(isIos ? 'Touch ID' : 'fingerprint unlock');
+    } else if (types.includes(LocalAuthentication.AuthenticationType.IRIS)) {
+      setBiometricType('iris unlock');
+    } else {
+      setBiometricType('biometrics');
     }
   };
 

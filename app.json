@@ -37,8 +37,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/icon.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png",
+        "backgroundColor": "#E6F4FE"
       },
       "predictiveBackGestureEnabled": false,
       "package": "ai.circlesupporthealth.csh",
@@ -66,12 +68,12 @@
       ],
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "com.google.android.gms.permission.AD_ID",
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
-        "android.permission.FOREGROUND_SERVICE",
         "android.permission.RECEIVE_BOOT_COMPLETED"
-      ]
+      ],
+      "allowBackup": false,
+      "versionCode": 2
     },
     "web": {
       "output": "static",
@@ -129,7 +131,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/withAndroidIntentQueries"
     ],
     "experiments": {
       "typedRoutes": true,
