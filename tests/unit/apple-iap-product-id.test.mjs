@@ -60,3 +60,39 @@ test('the receipt still goes to the server before anything is granted', () => {
 test('and the redirect path is untouched — it has its own compliance guard', () => {
   assert.match(hook, /launchPurchase\(\{/)
 })
+
+/**
+ * COS-921 — detect the store the way this library actually registers.
+ *
+ * react-native-iap 16.5 is a NITRO module. Its JS calls
+ * NitroModules.createHybridObject('RnIap') and registers nothing on the legacy
+ * bridge, so NativeModules.RNIapModule — the 12.x-era name this checked — is
+ * undefined EVEN IN A CORRECT BUILD. Apple IAP would have said "not in this
+ * version of the app" forever, on a binary that takes an archive to test.
+ */
+const billing = code('services/native-store-billing.ts')
+
+test('THE POINT: it no longer looks for a bridge module that cannot exist', () => {
+  assert.doesNotMatch(billing, /RNIapModule|RNIapIosModule|RNIapAmazonModule/)
+  assert.doesNotMatch(billing, /NativeModules/)
+})
+
+test('it probes Nitro with get(), which returns null rather than throwing', () => {
+  // getEnforcing throws on a miss — and nitro's own resolver uses it at module
+  // scope, which is exactly why this must not import nitro to ask.
+  assert.match(billing, /TurboModuleRegistry\.get\('NitroModules'\)/)
+  assert.doesNotMatch(billing, /getEnforcing/)
+})
+
+test('the require stays wrapped — Nitro present does not prove NitroIap is', () => {
+  // If Nitro is linked but the IAP pod is not, requiring react-native-iap
+  // throws; caught, it gives the same honest "unavailable" answer.
+  assert.match(
+    billing,
+    /try \{\s*iap = require\('react-native-iap'\) as IapLike;\s*\} catch \{\s*return \{ status: 'unavailable'/,
+  )
+})
+
+test('and an unlinked build still reports unavailable rather than crashing', () => {
+  assert.match(billing, /if \(!isStoreBillingLinked\(\)\) \{\s*\n\s*return \{ status: 'unavailable'/)
+})

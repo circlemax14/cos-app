@@ -26,23 +26,37 @@
  * client that can be told to lie.
  */
 
-import { NativeModules, Platform } from 'react-native';
-
-/** The native binding each library registers when it is linked into a build. */
-const IAP_NATIVE_MODULES = ['RNIapModule', 'RNIapIosModule', 'RNIapAmazonModule'] as const;
+import { Platform, TurboModuleRegistry } from 'react-native';
 
 /**
- * Is the native half of react-native-iap in THIS binary?
+ * COS-921 — react-native-iap 16.5 is a NITRO module, not a bridge module.
  *
- * Deliberately not a try/require: requiring is the thing that is unsafe.
- * NativeModules is a plain object on the bridge and reading a missing key is
- * just `undefined`. Wrapped anyway — on a bridgeless / new-architecture runtime
- * the proxy can throw for an unknown name.
+ * This checked NativeModules.RNIapModule / RNIapIosModule / RNIapAmazonModule.
+ * Those names belong to react-native-iap 12.x and earlier. 16.5 registers
+ * nothing on the legacy bridge — its JS calls
+ * `NitroModules.createHybridObject('RnIap')` (node_modules/react-native-iap/
+ * lib/module/index.js:73) — so all three reads would have been `undefined`
+ * EVEN IN A CORRECT 2.1.0 BUILD, and Apple IAP would have reported "not in
+ * this version of the app" permanently.
+ *
+ * That is a bug you can only find by shipping a binary, which is exactly the
+ * cost this check exists to avoid.
+ *
+ * `TurboModuleRegistry.get` — not `getEnforcing` — is the safe probe. It
+ * returns null rather than throwing when the module is absent, and
+ * TurboModuleRegistry is React Native core, present on every build. Nitro
+ * itself resolves the same way and THROWS on a miss (its
+ * turbomodule/NativeNitroModules.js calls getEnforcing at module scope), which
+ * is precisely why this must not import nitro to ask the question.
+ *
+ * Nitro being present does not prove NitroIap is. It does not have to: this
+ * only guards the require below, and that require is wrapped — if Nitro is
+ * linked but the IAP pod is not, requiring react-native-iap throws and is
+ * caught, giving the same honest "unavailable" answer.
  */
 export function isStoreBillingLinked(): boolean {
   try {
-    const mods = NativeModules as unknown as Record<string, unknown>;
-    return IAP_NATIVE_MODULES.some((name) => !!mods[name]);
+    return TurboModuleRegistry.get('NitroModules') != null;
   } catch {
     return false;
   }
