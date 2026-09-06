@@ -249,7 +249,6 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
   // One open at a time. An accordion rather than per-card flags because the
   // whole point of collapsing the detail was to stop this section pushing the
   // daily tasks off the screen — several open at once puts it straight back.
-  const [openKey, setOpenKey] = useState<string | null>(null);
   const { canSubscribe, canSwitch } = usePlanChoiceControls();
   const queryClient = useQueryClient();
   const [switching, setSwitching] = useState<string | null>(null);
@@ -261,7 +260,6 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
     setSwitchError(null);
     try {
       await switchToPlan(planKey);
-      setOpenKey(null);
       await queryClient.invalidateQueries({ queryKey: ['patient-plans'] });
       onSwitched?.();
     } catch (err) {
@@ -364,7 +362,6 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
         // The plan they are already on. Reads the server's flag rather than
         // comparing keys here — see PlanShelfCard.isCurrent.
         const current = plan.isCurrent === true;
-        const open = openKey === plan.planKey;
 
         /*
          * COS-808 — the card's feature table, in the prod chooser's order:
@@ -617,7 +614,11 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
               exactly what made these feel empty. The strip variant still
               collapses, because it is still inline above other content.
             */}
-            {(variant === 'chooser' || current || open) &&
+            {/* COS-922 — `|| open` dropped with the expander that set it.
+                Nothing assigns openKey a plan key any more, so the disjunct
+                was always false; leaving it would imply a third way to reveal
+                these that no longer exists. */}
+            {(variant === 'chooser' || current) &&
             (labelled.length > 0 || plain.length > 0 || derived.length > 0) ? (
               <View style={[styles.features, { borderTopColor: (colors.border ?? '#E0E0E0') + '99' }]}>
                 {/* Real plan configuration first — these are the two rows a
@@ -743,39 +744,28 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
             )}
 
             {/*
-              COS-809 — the "What's included" toggle is gone.
+              COS-922 — the toggle is gone, for real this time.
 
-              It survived from when the card hid its highlights: the shelf then
-              sat above the daily tasks and four expanded cards buried them.
-              COS-808 put everything on the face of the card, which left a
-              button that opened a panel containing nothing a patient had not
-              already read.
+              "I don't need this hide details button. If any paid plan, then
+              there should directly be two buttons. Subscribe monthly or
+              subscribe annually."
 
-              It still exists where it still earns its place — with payments
-              on, the panel holds the monthly and annual buttons, and choosing
-              between them is a real decision that needs the space.
+              It was never a regression and it was never reviewed either: the
+              whole branch sits inside `canSubscribe`, which is
+              `subscribeEnabled && canPay`, so until the first gateway was
+              switched on it had never rendered for anyone. COS-809 kept it on
+              the reasoning that "with payments on, the panel holds the monthly
+              and annual buttons, and choosing between them is a real decision
+              that needs the space". Seen for the first time with payments
+              actually on, it is one tap in front of the only action on the
+              card — and the prices are already on the face of the card, so the
+              panel adds nothing to decide with.
+
+              Three states, one rule each, no disclosure:
+                current plan : Go to your plan   (rendered above)
+                free plan    : Switch to this plan
+                paid plan    : Subscribe monthly / Subscribe annually
             */}
-            {!current && !comingSoon && canSubscribe && (
-              <Pressable
-                onPress={() => setOpenKey(open ? null : plan.planKey)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: open }}
-                accessibilityLabel={
-                  open
-                    ? `Hide details for the ${plan.name} plan.`
-                    : `Upgrade to the ${plan.name} plan. Shows how to subscribe.`
-                }
-                style={({ pressed }) => [
-                  styles.upgradeBtn,
-                  { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
-                ]}
-              >
-                <Text style={[styles.upgradeText, { fontSize: getScaledFontSize(14) }]}>
-                  {open ? 'Hide details' : 'Upgrade to this plan'}
-                </Text>
-              </Pressable>
-            )}
-
             {/* Neither control available: say why, inline. There is no longer
                 an expander to hide it behind, and a card with no action and no
                 explanation reads as broken. */}
@@ -797,7 +787,7 @@ export default function PlanStatusSection({ colors, getScaledFontSize, getScaled
                 Opens in place. It deliberately does NOT navigate: the whole
                 value of the shelf is comparing plans side by side, and pushing
                 a screen to read one of them throws that away. */}
-            {!current && !comingSoon && canSubscribe && open && (
+            {!current && !comingSoon && canSubscribe && (
               <View style={[styles.detail, { borderTopColor: colors.border ?? '#E0E0E0' }]}>
                 {canSubscribe && monthly ? (
                   <Pressable

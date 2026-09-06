@@ -25,6 +25,18 @@ const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 
 const planTab = read('app/Home/health-plan.tsx')
 const cards = read('components/plan/PlanStatusSection.tsx')
+
+/**
+ * COS-922 — source with comments removed, for assertions that must NOT match.
+ *
+ * `assert.doesNotMatch(cards, /Upgrade to this plan/)` failed against a
+ * docblock explaining that the button had been removed. Prose naming a pattern
+ * is not a use of it, and a test that cannot tell them apart fails on its own
+ * explanation — the fourth time that has happened this week.
+ */
+const cardsCode = cards
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
 const billing = read('app/Home/billing.tsx')
 const flagHook = read('hooks/use-subscription-upgrade-flag.ts')
 const homeLayout = read('app/Home/_layout.tsx')
@@ -422,8 +434,15 @@ test('every other plan offers an explicit upgrade control', () => {
   // searched BACKWARDS from the button and kept finding the chip's push
   // further up the file, so it passed while asserting nothing about the
   // button at all. Assert the toggle instead.
-  assert.match(cards, /Upgrade to this plan/)
-  assert.match(cards, /setOpenKey\(open \? null : plan\.planKey\)/)
+  /*
+   * COS-922 — the expander is gone at Vishal's request: "I don't need this
+   * hide details button… if any paid plan, then there should directly be two
+   * buttons." The control the test defends is still there, it is just the
+   * real one now rather than a disclosure in front of it.
+   */
+  assert.match(cardsCode, /Subscribe monthly/)
+  assert.doesNotMatch(cardsCode, /Upgrade to this plan/)
+  assert.doesNotMatch(cardsCode, /Hide details/)
 })
 
 test('isDefaultPlan is optional, so an older backend degrades to the chip', () => {
@@ -479,11 +498,21 @@ test('THE POINT: the detail opens in place and does not navigate away', () => {
   // the face of the card, so it opened a panel containing nothing new. It
   // survives only where it still earns its place — with payments on, the panel
   // holds the monthly and annual buttons.
-  assert.match(cards, /accessibilityState=\{\{ expanded: open \}\}/)
-  assert.match(cards, /open \? 'Hide details' : 'Upgrade to this plan'/)
-  // Scoped to the label position: the comment above the toggle still names
-  // what was removed, and that prose is the reason the change is legible.
-  assert.doesNotMatch(cards, /: "What's included"/)
+  /*
+   * COS-922 — the toggle is gone, so there is no expander left to assert.
+   *
+   * What this test was really defending survives and is stronger: reading a
+   * plan still never pushes a screen. The card shows its highlights inline,
+   * and the only navigation from a card is the deliberate one — starting a
+   * purchase, which SHOULD leave the shelf.
+   */
+  assert.doesNotMatch(cardsCode, /expanded: open/)
+  assert.doesNotMatch(cardsCode, /Hide details/)
+  // The one navigation that is correct: checkout, carrying plan and cycle.
+  assert.match(cardsCode, /pathname: '\/Home\/billing-checkout'/)
+  // And it is the SUBSCRIBE buttons that do it — not a "read more" control.
+  assert.match(cardsCode, /Subscribe monthly/)
+  assert.match(cardsCode, /Subscribe annually/)
   // The disclosure control must never navigate.
   const toggle = cards.slice(
     cards.indexOf('onPress={() => setOpenKey(open ? null : plan.planKey)}'),
@@ -494,8 +523,11 @@ test('THE POINT: the detail opens in place and does not navigate away', () => {
 test('one card open at a time', () => {
   // Collapsing the detail exists to stop this section pushing the daily tasks
   // off screen; several open at once puts it straight back.
-  assert.match(cards, /const \[openKey, setOpenKey\] = useState<string \| null>\(null\)/)
-  assert.match(cards, /const open = openKey === plan\.planKey/)
+  // COS-922 — there is no "open" card any more, so nothing can push the daily
+  // tasks off screen by expanding. The state that tracked it is deleted rather
+  // than left inert, which is what the assertions below check.
+  assert.doesNotMatch(cardsCode, /openKey/)
+  assert.doesNotMatch(cardsCode, /const open = /)
 })
 
 test('your own plan shows what you get without being asked', () => {
@@ -506,7 +538,10 @@ test('your own plan shows what you get without being asked', () => {
   // COS-808 replaced the flat list with a feature TABLE, so the guard now
   // covers all three groups it can render: derived plan config, labelled
   // highlights, and unlabelled ones.
-  assert.match(cards, /\(variant === 'chooser' \|\| current \|\| open\) &&/)
+  // COS-922 dropped `|| open` with the expander that set it — always false
+  // once nothing assigns a plan key. The two real cases are unchanged: the
+  // chooser shows highlights, and so does the card you are on.
+  assert.match(cards, /\(variant === 'chooser' \|\| current\) &&/)
   assert.match(cards, /labelled\.length > 0 \|\| plain\.length > 0 \|\| derived\.length > 0/)
 })
 

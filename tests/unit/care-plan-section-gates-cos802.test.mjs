@@ -297,7 +297,10 @@ test('the strip variant still collapses its highlights', () => {
   // It renders inline above other content on the Care Plan tab, which is the
   // whole reason COS-789 collapsed them. Only the chooser is exempt.
   const cards = read('components/plan/PlanStatusSection.tsx')
-  assert.match(cards, /variant === 'chooser' \|\| current \|\| open/)
+  // COS-922 dropped `|| open` with the expander that set it. The property this
+  // defends is untouched: the strip variant still collapses, because it is
+  // still neither the chooser nor the card you are on.
+  assert.match(cards, /variant === 'chooser' \|\| current/)
 })
 
 // ── COS-808: the cards are a table, not a bullet list ────────────────────

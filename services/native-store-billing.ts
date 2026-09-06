@@ -133,9 +133,18 @@ export async function purchaseThroughStore(
     // with a store error the patient cannot act on.
     const products = await iap.getSubscriptions({ skus: [productId] });
     if (!products || products.length === 0) {
+      /*
+       * COS-923 — naming the id is the whole diagnostic.
+       *
+       * An empty result means the store has never heard of this product, and
+       * the three causes look identical from here: the product does not exist
+       * in App Store Connect, it exists under a DIFFERENT id than the plan
+       * carries, or it is not yet "Ready to Submit". Printing the id we asked
+       * for is what tells those apart without another build.
+       */
       return {
         status: 'unavailable',
-        reason: 'That plan is not available in the store yet. Please try again later.',
+        reason: `The store has no product called "${productId}". Check it exists in App Store Connect, is Ready to Submit, and that the id on the plan matches exactly.`,
       };
     }
 
@@ -170,9 +179,32 @@ export async function purchaseThroughStore(
     };
   } catch (err) {
     if (isUserCancelled(err)) return { status: 'cancelled' };
+    /*
+     * COS-923 — say what the STORE said.
+     *
+     * This returned a fixed sentence and dropped `err` on the floor, so
+     * "products not created yet", "no sandbox account signed in", "this
+     * Apple ID cannot purchase" and "the agreement is not active" were all
+     * indistinguishable — and every one of them needs a different fix, on a
+     * path that costs an archive to retry.
+     *
+     * Vishal hit exactly that: "it is saying store could not complete that
+     * purchase, nothing has been charged", with nothing to act on.
+     *
+     * StoreKit's message is Apple's own, written for a person, and carries no
+     * PHI — it is about a product id and an App Store account. The generic
+     * sentence stays as the lead so the patient still knows nothing was
+     * charged; the reason follows it.
+     */
+    const detail =
+      (err as { message?: string })?.message?.trim() ??
+      (err as { code?: string })?.code ??
+      '';
     return {
       status: 'unavailable',
-      reason: 'The store could not complete that purchase. Nothing has been charged.',
+      reason: detail
+        ? `The store could not complete that purchase — ${detail}. Nothing has been charged.`
+        : 'The store could not complete that purchase. Nothing has been charged.',
     };
   } finally {
     // Never let a teardown failure turn a completed purchase into an error.
