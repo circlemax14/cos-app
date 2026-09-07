@@ -23,3 +23,7 @@ dist/
 # Native directories — kept in git for bare workflow
 # /ios/
 # /android/
+
+# Android Studio / IntelliJ project files — machine-local, created the first
+# time Studio opens the android/ project. Not part of the build.
+.idea/
