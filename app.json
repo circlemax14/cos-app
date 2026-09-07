@@ -133,6 +133,15 @@
       "@react-native-community/datetimepicker",
       "expo-sharing",
       "./plugins/withAndroidIntentQueries",
+      "./plugins/withHealthConnect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
       "./plugins/withHipaaBackupRules"
     ],
     "experiments": {

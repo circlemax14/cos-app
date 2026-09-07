@@ -14,7 +14,20 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { initializeHealthKit, isHealthKitAvailable } from '@/services/health';
+/*
+ * COS-929 — the SOURCE FACADE, not HealthKit directly.
+ *
+ * isHealthKitAvailable() is false on Android by construction, so reading it
+ * here meant an Android device could only ever render "not available on this
+ * device" — even with Health Connect installed and granted. The facade picks
+ * HealthKit on iOS and Health Connect on Android, and is the only place that
+ * choice is made.
+ */
+import {
+  healthSourceLabel,
+  isHealthSourceAvailable,
+  requestHealthSourceAccess,
+} from '@/services/health-source';
 import {
   getAppleHealthEnabled,
   setAppleHealthEnabled,
@@ -72,7 +85,28 @@ export default function AppleHealthScreen() {
   const canView = useCanRender('apple-health.view');
   const canGrantHealthKit = useCanRender('apple-health.grant-healthkit-permissions');
 
-  const available = isHealthKitAvailable();
+  /*
+   * Async, because Health Connect's answer needs an SDK round trip where
+   * HealthKit's was a synchronous module check. Starts null — "asking" — so
+   * the screen never flashes "not available on this device" at an Android
+   * patient before the SDK has answered. That flash would be read as the
+   * feature being broken, which is exactly the impression this screen exists
+   * to avoid.
+   */
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const ok = await isHealthSourceAvailable();
+      if (!cancelled) setAvailable(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** "Apple Health" on iOS, "Health Connect" on Android — for the copy. */
+  const sourceLabel = healthSourceLabel();
 
   // COS-397 / SCRUM-535: after the user changes their Apple Health choice,
   // invalidate the reactive preference query + the HealthKit trends so every
@@ -105,7 +139,7 @@ export default function AppleHealthScreen() {
 
   const handleToggle = useCallback(
     async (next: boolean) => {
-      if (!available) return;
+      if (available !== true) return;
 
       if (!next) {
         // The user is opting out. iOS doesn't let an app revoke its own
@@ -123,19 +157,23 @@ export default function AppleHealthScreen() {
         return;
       }
 
-      // Opting in — request HealthKit read permissions. This is the single,
-      // deliberate place the iOS permission dialog is triggered.
+      // Opting in — request read permissions. This is the single, deliberate
+      // place the permission dialog is triggered, on either platform:
+      // HealthKit's on iOS, Health Connect's on Android.
       setIsConnecting(true);
       setStatusMessage(null);
       try {
-        const granted = await initializeHealthKit();
+        const granted = await requestHealthSourceAccess();
         setEnabled(granted);
         await setAppleHealthEnabled(granted);
         invalidateAppleHealth();
+        // COS-929 — the copy names the source the patient actually granted.
+        // "Apple Health access was not granted" on a Pixel is not just wrong,
+        // it points them at a settings screen that does not exist.
         setStatusMessage(
           granted
-            ? { text: 'Apple Health connected. Your daily summary will use Health data.', isError: false }
-            : { text: 'Apple Health access was not granted.', isError: true },
+            ? { text: `${sourceLabel} connected. Your daily summary will use its data.`, isError: false }
+            : { text: `${sourceLabel} access was not granted.`, isError: true },
         );
       } catch (err) {
         setEnabled(false);
@@ -179,13 +217,34 @@ export default function AppleHealthScreen() {
               textAlign: 'center',
             }}
           >
-            Connect Apple Health to enrich your daily summary and health trends
-            with steps, heart rate, sleep, and more from your iPhone and Apple
-            Watch.
+            {/* COS-929 — names the source and the devices that actually feed
+                it on this platform. On Android that is Health Connect, which
+                Samsung Health, Fitbit, Google Fit and Galaxy Watch write into. */}
+            {Platform.OS === 'ios'
+              ? 'Connect Apple Health to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your iPhone and Apple Watch.'
+              : 'Connect Health Connect to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your phone, Samsung Health, Fitbit and your watch.'}
           </Text>
         </View>
 
-        {!available ? (
+        {available === null ? (
+          /*
+           * COS-929 — still asking.
+           *
+           * `!available` was true while the check was in flight, so an Android
+           * patient saw "Not available on this device" for the moment before
+           * the SDK answered — and a wrong answer shown first is the one
+           * people believe. Health Connect's check is an async SDK round trip;
+           * HealthKit's was synchronous, which is why this state did not exist
+           * before and why it must now.
+           */
+          <View style={styles.section}>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                <ActivityIndicator color={colors.tint} />
+              </View>
+            </View>
+          </View>
+        ) : !available ? (
           /* Graceful "not available on this device" state */
           <View style={styles.section}>
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -195,9 +254,17 @@ export default function AppleHealthScreen() {
                     Not available on this device
                   </Text>
                   <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+                    {/*
+                      COS-929 — Android has a real answer now, and it is
+                      actionable rather than a dead end. Health Connect is
+                      preinstalled on Android 14+ and a Play Store download
+                      below that, so "not installed" is something the patient
+                      can fix — telling them the feature is iPhone-only was
+                      true before this build and is not any more.
+                    */}
                     {Platform.OS === 'ios'
                       ? 'Apple Health is unavailable. Make sure the Health app is installed and try again.'
-                      : 'Apple Health is only available on iPhone.'}
+                      : 'Health Connect is not set up on this device. It comes with Android 14 and later, or you can install it from the Play Store.'}
                   </Text>
                 </View>
               </View>

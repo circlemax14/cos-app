@@ -302,3 +302,26 @@ test('THE POINT: `npm run android` cannot build against production', () => {
   // A stage label is a claim; the URL is the truth.
   assert.match(sh, /api\\?\.circlesupporthealth\\?\.ai/)
 })
+
+test('THE POINT: the restore puts iOS back too, not just app.json', () => {
+  /*
+   * prepare-build.sh writes SEVEN coupled fields across FIVE files, four of
+   * them under ios/. An earlier version of run-android.sh snapshot only
+   * app.json, so an Android run left the iOS tree stamped 2.1.0 / channel
+   * `development` — an App Store archive taken at that moment ships a binary
+   * pointing at the dev API. That is SCRUM-147 reached from a new direction,
+   * and it happened here on 2026-09-07.
+   *
+   * The restore therefore re-runs the same tool that did the stamping, with
+   * the stage and version that were in the tree beforehand.
+   */
+  const sh = read('scripts/run-android.sh')
+  assert.match(sh, /ORIG_STAGE/, 'the pre-run stage must be recorded')
+  assert.match(sh, /ORIG_VERSION/)
+  assert.match(sh, /prepare-build\.sh "\$ORIG_STAGE" "\$ORIG_VERSION"/,
+    'restore must re-run prepare-build.sh, not copy a single file back')
+  // Deriving the stage from the CHANNEL, so a tree left mid-swap restores to
+  // what it actually was rather than to a hard-coded guess.
+  assert.match(sh, /ORIG_CHANNEL/)
+  assert.match(sh, /production\) ORIG_STAGE="prod"/)
+})
