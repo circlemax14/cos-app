@@ -85,14 +85,44 @@ test('THE POINT: Android backup stays off — SCRUM-368 / MOBILE-002', () => {
   assert.equal(json('app.json').expo.android.allowBackup, false, 'app.json must pin allowBackup')
   const manifest = read('android/app/src/main/AndroidManifest.xml')
   assert.match(manifest, /android:allowBackup="false"/)
-  assert.match(manifest, /android:fullBackupContent="false"/)
+  assert.match(manifest, /android:fullBackupContent="@xml\/full_backup_rules"/)
   assert.match(manifest, /android:dataExtractionRules="@xml\/data_extraction_rules"/)
-  const rules = read('android/app/src/main/res/xml/data_extraction_rules.xml')
-  for (const domain of ['root', 'file', 'database', 'sharedpref', 'external']) {
-    assert.match(rules, new RegExp(`<exclude domain="${domain}"`), `${domain} must be excluded`)
+
+  // Both files, both channels, every domain. An empty rules file that LOOKS
+  // protective is worse than none.
+  for (const f of ['data_extraction_rules', 'full_backup_rules']) {
+    const rules = read(`android/app/src/main/res/xml/${f}.xml`)
+    for (const domain of ['root', 'file', 'database', 'sharedpref', 'external']) {
+      assert.match(rules, new RegExp(`<exclude domain="${domain}"`), `${f}: ${domain} must be excluded`)
+    }
+    // ...and never expo-secure-store's shape, which INCLUDES app data.
+    assert.doesNotMatch(rules, /<include domain="sharedpref"/, `${f} must not include app data`)
   }
-  assert.match(rules, /<cloud-backup>/)
-  assert.match(rules, /<device-transfer>/)
+  const extraction = read('android/app/src/main/res/xml/data_extraction_rules.xml')
+  assert.match(extraction, /<cloud-backup>/)
+  assert.match(extraction, /<device-transfer>/)
+})
+
+test('THE POINT: the HIPAA plugin runs LAST, or secure-store wins', () => {
+  /*
+   * This is the whole mechanism, and it is invisible from the manifest.
+   *
+   * expo-secure-store's plugin claims fullBackupContent and
+   * dataExtractionRules whenever they are ABSENT, substituting rules that
+   * INCLUDE app data and exclude only its own prefs. Config plugins run in
+   * array order and the last writer wins, so ours must come after it.
+   *
+   * On 2026-09-07 a second `expo prebuild` proved this is not theoretical:
+   * the regenerated directory had no attributes, secure-store claimed them,
+   * and this test is what caught it.
+   */
+  const plugins = json('app.json').expo.plugins.map((p) => (Array.isArray(p) ? p[0] : p))
+  const ours = plugins.indexOf('./plugins/withHipaaBackupRules')
+  const secureStore = plugins.indexOf('expo-secure-store')
+  assert.ok(ours !== -1, 'the HIPAA backup plugin must be registered')
+  assert.ok(secureStore !== -1, 'expo-secure-store is expected in the plugin list')
+  assert.ok(ours > secureStore, 'withHipaaBackupRules must be registered AFTER expo-secure-store')
+  assert.equal(ours, plugins.length - 1, 'it should be LAST, so a future plugin cannot claim the attrs')
 })
 
 test('BackHandler still has an attribute to hang off', () => {
