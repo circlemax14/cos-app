@@ -153,21 +153,79 @@ export async function initializeHealthConnect(): Promise<boolean> {
  * would report failure for someone who happily shared their steps but not
  * their heart rate.
  */
-export async function requestHealthConnectPermissions(): Promise<boolean> {
+export interface HealthConnectGrantResult {
+  granted: boolean;
+  /** Safe to show a patient. Null when it simply was not granted. */
+  reason: string | null;
+}
+
+export async function requestHealthConnectAccess(): Promise<HealthConnectGrantResult> {
   const sdk = loadSdk();
-  if (!sdk) return false;
+  if (!sdk) return { granted: false, reason: 'Health Connect is not part of this app build.' };
   try {
-    if (!(await sdk.initialize())) return false;
+    if (!(await sdk.initialize())) {
+      return { granted: false, reason: 'Could not connect to Health Connect on this device.' };
+    }
+
     const granted = await sdk.requestPermission(
       HEALTH_CONNECT_READ_PERMISSIONS.map((recordType) => ({
         accessType: 'read' as const,
         recordType,
       })),
     );
-    return Array.isArray(granted) && granted.length > 0;
-  } catch {
-    return false;
+    if (Array.isArray(granted) && granted.length > 0) return { granted: true, reason: null };
+
+    /*
+     * COS-931 — DISTINGUISH "they said no" FROM "we never asked".
+     *
+     * Vishal: "our main point at this point is we will request for grant, and
+     * it is saying that access is not granted. Ideally we should request for
+     * it." He is describing a screen that reports refusal without ever showing
+     * a dialog, and an empty array cannot tell those apart on its own.
+     *
+     * Re-reading the granted set after the request is what separates them: if
+     * the patient genuinely declined, Health Connect still knows about us and
+     * returns an empty list; if the dialog never appeared, the request failed
+     * before Health Connect was ever involved. Same distinction, different
+     * fix, and the patient needs to be told which.
+     */
+    const already = await sdk.getGrantedPermissions().catch(() => null);
+    if (already === null) {
+      return {
+        granted: false,
+        reason: 'Health Connect did not respond. Open Health Connect in your device settings and check this app is listed.',
+      };
+    }
+    return { granted: false, reason: null };
+  } catch (err) {
+    /*
+     * COS-931 — say what actually failed.
+     *
+     * This was `catch { return false }`, which is the COS-923 mistake again:
+     * four different failures — the permission delegate never registered, the
+     * provider package not resolvable, an SDK version mismatch, a genuine
+     * refusal — all collapsed into one sentence with nothing to act on, on a
+     * path that costs a rebuild to retry.
+     *
+     * Health Connect's own message names packages and permissions, not
+     * patient data, so it carries no PHI.
+     */
+    const detail =
+      (err as { message?: string })?.message?.trim() ??
+      (err as { code?: string })?.code ??
+      '';
+    return {
+      granted: false,
+      reason: detail
+        ? `Health Connect could not complete the request — ${detail}`
+        : 'Health Connect could not complete the request.',
+    };
   }
+}
+
+/** Back-compat boolean for callers that only need yes/no. */
+export async function requestHealthConnectPermissions(): Promise<boolean> {
+  return (await requestHealthConnectAccess()).granted;
 }
 
 /** Which permissions the patient has actually granted. */

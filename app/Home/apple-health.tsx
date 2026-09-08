@@ -173,17 +173,25 @@ export default function AppleHealthScreen() {
       setIsConnecting(true);
       setStatusMessage(null);
       try {
-        const granted = await requestHealthSourceAccess();
+        const { granted, reason } = await requestHealthSourceAccess();
         setEnabled(granted);
         await setAppleHealthEnabled(granted);
         invalidateAppleHealth();
         // COS-929 — the copy names the source the patient actually granted.
         // "Apple Health access was not granted" on a Pixel is not just wrong,
         // it points them at a settings screen that does not exist.
+        /*
+         * COS-931 — when there IS a reason, show it.
+         *
+         * "Samsung Health access was not granted" is the right sentence for a
+         * patient who tapped Deny. It is the wrong one when no dialog ever
+         * appeared, which is what Vishal hit — it reads as a refusal he never
+         * made, and points him at nothing.
+         */
         setStatusMessage(
           granted
             ? { text: `${sourceLabel} connected. Your daily summary will use its data.`, isError: false }
-            : { text: `${sourceLabel} access was not granted.`, isError: true },
+            : { text: reason ?? `${sourceLabel} access was not granted.`, isError: true },
         );
       } catch (err) {
         setEnabled(false);

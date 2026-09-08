@@ -102,11 +102,20 @@ export async function isHealthSourceAvailable(): Promise<boolean> {
  * prompt, Health Connect separates them — so the difference is absorbed here
  * rather than at every call site.
  */
-export async function requestHealthSourceAccess(): Promise<boolean> {
+export interface HealthAccessResult {
+  granted: boolean;
+  /** Safe to show. Null means "declined", with nothing more to explain. */
+  reason: string | null;
+}
+
+export async function requestHealthSourceAccess(): Promise<HealthAccessResult> {
   const source = activeHealthSource();
-  if (source === 'apple-health') return healthKit.initializeHealthKit();
-  if (source === 'health-connect') return healthConnect.requestHealthConnectPermissions();
-  return false;
+  if (source === 'apple-health') {
+    // HealthKit's init IS the prompt, and iOS gives no reason back.
+    return { granted: await healthKit.initializeHealthKit(), reason: null };
+  }
+  if (source === 'health-connect') return healthConnect.requestHealthConnectAccess();
+  return { granted: false, reason: null };
 }
 
 /**
