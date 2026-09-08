@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
@@ -352,13 +352,8 @@ export default function LockScreen() {
   const blobA = colors.primary + (isDark ? '33' : '22'); // brand tint, top-right
   const blobB = isDark ? '#1E1B4B66' : '#C7D2FE55';      // cool secondary, bottom-left
 
-  return (
-    <View style={[styles.root, { backgroundColor: base }]}>
-      {/* Ambient blobs — pointer-events: none so they don't intercept taps */}
-      <View pointerEvents="none" style={[styles.blob, styles.blobTopRight, { backgroundColor: blobA }]} />
-      <View pointerEvents="none" style={[styles.blob, styles.blobBottomLeft, { backgroundColor: blobB }]} />
-
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+  const lockColumn = (
+    <>
         <View style={styles.headerArea}>
           <Image
             source={require('@/assets/images/logo.png')}
@@ -475,6 +470,56 @@ export default function LockScreen() {
             Forgot PIN?
           </Text>
         </TouchableOpacity>
+    </>
+  );
+
+  return (
+    <View style={[styles.root, { backgroundColor: base }]}>
+      {/* Ambient blobs — pointer-events: none so they don't intercept taps */}
+      <View pointerEvents="none" style={[styles.blob, styles.blobTopRight, { backgroundColor: blobA }]} />
+      <View pointerEvents="none" style={[styles.blob, styles.blobBottomLeft, { backgroundColor: blobB }]} />
+
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        {/*
+         * COS-941 — on Android the column is TALLER than the safe-area box.
+         *
+         * The nav bar is a real 144px window (measured: navigationBars frame
+         * [0,2196][1080,2340] on an S26) that iOS has no equivalent of — the
+         * home indicator costs ~34px. That extra ~110px pushes the LAST child
+         * past the bottom inset, and React Native does not clip overflow, so
+         * it renders UNDER the nav bar rather than being cut off. The nav-bar
+         * window sits on top and takes the touch, so the element looks almost
+         * present and is completely untappable.
+         *
+         * That last child is "Forgot PIN?", whose own comment (COS-376) states
+         * the guarantee it exists to provide: "always-visible recovery so a
+         * forgot-PIN user (esp. with no Face ID) is never permanently locked
+         * out." On Android that guarantee did not hold — a patient who forgets
+         * their PIN and has no biometric had no way back into the app.
+         *
+         * ScrollView rather than shrinking the hero: the overflow depends on
+         * the device's nav-bar height AND the patient's font scale, so a fixed
+         * trim is right for one device and wrong for the next. With flexGrow
+         * the column lays out exactly as it does today when it fits, and
+         * becomes reachable when it does not.
+         *
+         * ANDROID ONLY, deliberately. iOS renders the identical tree it does
+         * today (a Fragment, not a new wrapper): production is iOS, this
+         * screen gates all PHI access, and cos-app/CLAUDE.md records that this
+         * app has crashed in production from cold-mount rendering. There is no
+         * iOS symptom to fix and no reason to take the risk.
+         */}
+        {Platform.OS === 'android' ? (
+          <ScrollView
+            contentContainerStyle={styles.androidScrollContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            {lockColumn}
+          </ScrollView>
+        ) : (
+          lockColumn
+        )}
       </SafeAreaView>
 
       {/* SCRUM-279 (build 45): "Unlocking…" overlay during postUnlockNavigate.
@@ -513,6 +558,9 @@ const BLOB_SIZE = 360;
 const styles = StyleSheet.create({
   root: { flex: 1 },
   safeArea: { flex: 1 },
+  // COS-941 — see the ScrollView above. flexGrow (not flex) so the column keeps
+  // its natural height and only scrolls once it exceeds the viewport.
+  androidScrollContent: { flexGrow: 1 },
   // Ambient backdrop blobs — large soft circles positioned off-screen
   // so only their feathered edges show through. backgroundColor is set
   // inline (uses theme + alpha).
