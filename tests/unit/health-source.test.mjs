@@ -300,3 +300,23 @@ test('trends are one point per DAY, not one per sample', () => {
   assert.match(hc, /byDay/)
   assert.match(hc, /\.slice\(0, 10\)/)
 })
+
+test('THE POINT: the Health Sync preference is readable on Android', () => {
+  /*
+   * COS-933 — one line, and it silently emptied every Android health surface.
+   *
+   * useAppleHealthPreference had `enabled: Platform.OS === 'ios'`, so on
+   * Android the query never ran, `data` stayed undefined, `data === true` was
+   * false, and the trends gate never opened. The Health Sync screen said
+   * "Samsung Health connected" while the vitals section told the same patient
+   * to "turn on Samsung Health in Health Sync".
+   *
+   * The preference is a plain AsyncStorage boolean and governs BOTH sources by
+   * design — to the patient it is one setting.
+   */
+  const code = strip(read('hooks/use-apple-health-preference.ts'))
+  assert.doesNotMatch(code, /enabled:\s*Platform\.OS === 'ios'/,
+    'the preference read must not be gated to iOS')
+  assert.doesNotMatch(code, /Platform\.OS/,
+    'nothing in the preference read should branch on platform at all')
+})
