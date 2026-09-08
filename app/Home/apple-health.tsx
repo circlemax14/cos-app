@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -23,7 +24,9 @@ import { useAccessibility } from '@/stores/accessibility-store';
  * HealthKit on iOS and Health Connect on Android, and is the only place that
  * choice is made.
  */
+import type { HealthMetrics } from '@/services/health';
 import {
+  getTodayHealthMetrics,
   healthSourceIdentity,
   isHealthSourceAvailable,
   requestHealthSourceAccess,
@@ -116,6 +119,39 @@ export default function AppleHealthScreen() {
   const source = healthSourceIdentity();
   const sourceLabel = source.label;
 
+  /*
+   * COS-937 — show WHAT WAS ACTUALLY READ.
+   *
+   * Vishal, after granting everything and still seeing empty vitals: "How do I
+   * validate if the app has actually some data?"
+   *
+   * He could not, and neither could I without adb. "Connected" answers a
+   * question nobody asked — the patient wants to know whether their steps
+   * arrived. Those are two different failures with two different fixes:
+   *
+   *   connected + numbers   -> working
+   *   connected + nothing   -> the SOURCE is empty; go and check the fitness
+   *                            app is syncing. Not our bug, and the patient
+   *                            can act on it.
+   *   not connected         -> permissions.
+   *
+   * Read once when the screen opens and after a successful connect, not on a
+   * timer: this is a diagnostic readout, not a live dashboard, and polling a
+   * health store on a settings screen is a battery cost for nothing.
+   */
+  const [reading, setReading] = useState<HealthMetrics | null>(null);
+  const [readingBusy, setReadingBusy] = useState(false);
+  const refreshReading = useCallback(async () => {
+    setReadingBusy(true);
+    try {
+      setReading(await getTodayHealthMetrics());
+    } catch {
+      setReading(null);
+    } finally {
+      setReadingBusy(false);
+    }
+  }, []);
+
   // COS-397 / SCRUM-535: after the user changes their Apple Health choice,
   // invalidate the reactive preference query + the HealthKit trends so every
   // surface (Health Trends) reflects the new state without a manual refresh.
@@ -144,6 +180,10 @@ export default function AppleHealthScreen() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (available === true && enabled) void refreshReading();
+  }, [available, enabled, refreshReading]);
 
   const handleToggle = useCallback(
     async (next: boolean) => {
@@ -339,6 +379,61 @@ export default function AppleHealthScreen() {
                 )}
               </View>
             </View>
+
+            {/*
+              COS-937 — what we actually read, so "is it working?" has a visible
+              answer. See refreshReading for why the three states are worth
+              distinguishing.
+            */}
+            {enabled && available === true ? (
+              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 12 }]}>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                  <View style={styles.rowLeft}>
+                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(500) as any }}>
+                      Today from {sourceLabel}
+                    </Text>
+                    {readingBusy ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4 }}>
+                        Checking…
+                      </Text>
+                    ) : reading && (reading.steps > 0 || reading.heartRate || reading.sleepHours > 0 || reading.caloriesBurned > 0) ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4, lineHeight: getScaledFontSize(13) * 1.4 }}>
+                        {[
+                          `${String(reading.steps)} steps`,
+                          reading.heartRate ? `${String(reading.heartRate)} bpm` : null,
+                          reading.sleepHours > 0 ? `${String(reading.sleepHours)} h sleep` : null,
+                          reading.caloriesBurned > 0 ? `${String(reading.caloriesBurned)} kcal` : null,
+                        ]
+                          .filter(Boolean)
+                          .join('  ·  ')}
+                      </Text>
+                    ) : (
+                      /*
+                       * Connected, permissions granted, nothing recorded. NOT
+                       * an error — and saying so is the whole point, because
+                       * the fix is in the fitness app, not here.
+                       */
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4, lineHeight: getScaledFontSize(13) * 1.4 }}>
+                        {Platform.OS === 'ios'
+                          ? 'Nothing recorded yet today.'
+                          : 'Nothing recorded yet. Health Connect only receives data from the moment your fitness app starts syncing — it does not backfill past days.'}
+                      </Text>
+                    )}
+                  </View>
+                  <Pressable
+                    onPress={() => void refreshReading()}
+                    disabled={readingBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Check again"
+                    hitSlop={8}
+                  >
+                    <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                      Check
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
 
             {statusMessage ? (
               <Text

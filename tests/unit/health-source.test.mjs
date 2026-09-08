@@ -152,12 +152,58 @@ test('READ only — this app never writes to a health record', () => {
   assert.doesNotMatch(strip(HC), /insertRecords|accessType: 'write'/)
 })
 
-test('the privacy-rationale intent is declared, or Play rejects the listing', () => {
-  // Health Connect links to the app's privacy policy from its own permission
-  // screen, and Play requires any app requesting health permissions to handle
-  // that intent. Without it the link dead-ends on device.
-  assert.match(read('plugins/withHealthConnect.js'), /androidx\.health\.ACTION_SHOW_PERMISSIONS_RATIONALE/)
-  assert.match(read('android/app/src/main/AndroidManifest.xml'), /ACTION_SHOW_PERMISSIONS_RATIONALE/)
+test('THE POINT: the Android-14 rationale intent is declared, or NO dialog ever shows', () => {
+  /*
+   * COS-936 — the bug that made the permission screen die in 7ms.
+   *
+   * AOSP's PermissionsActivity.onCreate:
+   *
+   *     val rationaleIntentDeclared =
+   *         healthPermissionReader.isRationaleIntentDeclared(getPackageNameExtra())
+   *     if (!rationaleIntentDeclared) {
+   *         Log.e(TAG, "App should support rationale intent, finishing!")
+   *         finish()
+   *     }
+   *
+   * and isRationaleIntentDeclared probes ACTION_VIEW_PERMISSION_USAGE with the
+   * category android.intent.category.HEALTH_PERMISSIONS — NEVER the androidx
+   * action, which the controller only reads to build its "this app is out of
+   * date" list.
+   *
+   * So on Android 14+ the androidx action alone reads as declaring nothing.
+   * The activity-alias is a HARD GATE on the dialog rendering at all, not the
+   * Play-listing nicety our own plugin's comment claimed it was.
+   */
+  const manifest = read('android/app/src/main/AndroidManifest.xml')
+  assert.match(manifest, /android\.intent\.action\.VIEW_PERMISSION_USAGE/,
+    'Android 14+ probes THIS action; without it PermissionsActivity finishes in onCreate')
+  assert.match(manifest, /android\.intent\.category\.HEALTH_PERMISSIONS/)
+  assert.match(manifest, /<activity-alias/)
+  // Guarded, or any app could launch our rationale screen.
+  assert.match(manifest, /android\.permission\.START_VIEW_PERMISSION_USAGE/)
+  // The pre-14 half still there for older devices.
+  assert.match(manifest, /ACTION_SHOW_PERMISSIONS_RATIONALE/)
+})
+
+test('THE POINT: we do not reimplement the library own config plugin', () => {
+  /*
+   * The root cause. Our plugin hand-rolled react-native-health-connect's
+   * app.plugin.js and copied ONE of its two rationale halves — the pre-14
+   * action — silently dropping the Android 14+ activity-alias. Copying half a
+   * config plugin is indistinguishable from configuring it wrong, and it cost
+   * a week of chasing the symptom.
+   *
+   * The library's plugin is createRunOncePlugin and does both halves. It is
+   * registered; ours declares permissions and nothing else.
+   */
+  const plugins = json('app.json').expo.plugins.map((p) => (Array.isArray(p) ? p[0] : p))
+  assert.ok(plugins.includes('react-native-health-connect'),
+    "the library's own plugin must be registered — it owns the rationale intents")
+  const ours = strip(read('plugins/withHealthConnect.js'))
+  assert.doesNotMatch(ours, /ACTION_SHOW_PERMISSIONS_RATIONALE/,
+    'our plugin must not re-declare what the library plugin owns')
+  assert.doesNotMatch(ours, /getMainActivityOrThrow/,
+    'our plugin should only touch <uses-permission>, not the activity')
 })
 
 test('minSdk is 26, which Health Connect requires', () => {
@@ -377,4 +423,31 @@ test('THE POINT: every vitals tile has an Android source', () => {
     .map(({ code, metric }) => `${code} (${metric})`)
 
   assert.deepEqual(orphans, [], `vitals tiles with no Android source: ${orphans.join(', ')}`)
+})
+
+test('THE POINT: the screen shows WHAT WAS READ, not just "connected"', () => {
+  /*
+   * COS-937 — Vishal, after granting all 17 permissions through the real
+   * dialog and still seeing empty vitals: "How do I validate if the app has
+   * actually some data?"
+   *
+   * He could not, and neither could I without adb. "Connected" answers a
+   * question nobody asked. Three states need to be distinguishable on screen,
+   * because each has a different fix and only one of them is our bug:
+   *
+   *   connected + numbers  -> working
+   *   connected + nothing  -> the SOURCE is empty; the fix is in the fitness
+   *                           app, and the patient can act on it
+   *   not connected        -> permissions
+   */
+  const screen = strip(read('app/Home/apple-health.tsx'))
+  assert.match(screen, /getTodayHealthMetrics/, 'the screen must actually read')
+  assert.match(screen, /Today from \{sourceLabel\}/)
+  assert.match(screen, /steps/)
+  // "nothing yet" must read as a STATE, not an error — and on Android must
+  // explain the no-backfill behaviour that makes an empty store normal.
+  assert.match(screen, /Nothing recorded yet/)
+  assert.match(screen, /does not backfill/)
+  // And a way to re-check without leaving the screen.
+  assert.match(screen, /accessibilityLabel="Check again"/)
 })

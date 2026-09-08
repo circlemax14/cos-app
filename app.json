@@ -133,6 +133,7 @@
       "@react-native-community/datetimepicker",
       "expo-sharing",
       "./plugins/withAndroidIntentQueries",
+      "react-native-health-connect",
       "./plugins/withHealthConnect",
       [
         "expo-build-properties",

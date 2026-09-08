@@ -10,17 +10,48 @@
  *     missing here means requestPermission() silently returns nothing granted,
  *     with no error.
  *
- *  2. An intent-filter for ACTION_SHOW_PERMISSIONS_RATIONALE. Health Connect
- *     puts a "read the app's privacy policy" link on its own permission
- *     screen, and Google Play REQUIRES the app to handle that intent for any
- *     app requesting health permissions. Without it the listing is rejected —
- *     and on device the link dead-ends.
+ *  2. NOTHING ABOUT THE RATIONALE INTENT — see below. That is the library's
+ *     own plugin's job, and taking it over is what broke the permission
+ *     dialog for a week.
  *
  *  3. The `<queries>` entry for com.google.android.apps.healthdata, so
  *     Android 11+ package visibility does not hide Health Connect from us.
  *     react-native-health-connect's own manifest already contributes this, so
  *     it is NOT re-declared here — duplicating it is harmless but implies we
  *     own it, and the next person would have two places to keep in sync.
+ *
+ * ─── WHY THIS NO LONGER TOUCHES THE RATIONALE INTENT ─────────────────
+ *
+ * COS-936. This plugin used to declare
+ * `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` on MainActivity, copied
+ * from react-native-health-connect's own app.plugin.js — but only HALF of what
+ * that plugin does.
+ *
+ * On Android 14+ the rationale is not reached through that action at all. It
+ * is an `<activity-alias>` handling `ACTION_VIEW_PERMISSION_USAGE` with the
+ * category `android.intent.category.HEALTH_PERMISSIONS`, guarded by
+ * `START_VIEW_PERMISSION_USAGE`. And AOSP's PermissionsActivity treats it as a
+ * HARD GATE, not a nicety:
+ *
+ *     val rationaleIntentDeclared =
+ *         healthPermissionReader.isRationaleIntentDeclared(getPackageNameExtra())
+ *     if (!rationaleIntentDeclared) {
+ *         Log.e(TAG, "App should support rationale intent, finishing!")
+ *         finish()
+ *     }
+ *
+ * isRationaleIntentDeclared probes ACTION_VIEW_PERMISSION_USAGE — never the
+ * androidx action, which the controller only uses to build its "this app is
+ * out of date" list. So declaring the legacy action alone reads as declaring
+ * nothing, and the permission screen kills itself in onCreate. Observed on a
+ * Galaxy S26: dialog started, top, and finishing within 7ms, resolving to an
+ * empty granted set with no error and nothing on screen.
+ *
+ * The library ships app.plugin.js which does BOTH halves correctly and is
+ * createRunOncePlugin. It is now registered in app.json, and this plugin
+ * stays out of its way. The lesson is narrow and worth keeping: do not
+ * reimplement a library's own config plugin — copying half of one is
+ * indistinguishable from configuring it wrong.
  *
  * ─── READ-ONLY, AND ONLY WHAT WE READ ────────────────────────────────
  *
@@ -64,36 +95,20 @@ const READ_PERMISSIONS = [
   'android.permission.health.READ_EXERCISE',
 ];
 
-const RATIONALE_ACTION = 'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE';
 
 module.exports = function withHealthConnect(config) {
   return withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults.manifest;
 
-    // ── 1. permissions ───────────────────────────────────────────────
+    // The 17 READ permissions. Health Connect reads the MANIFEST to decide
+    // what it will even prompt for, so one missing here is silently never
+    // granted.
     if (!Array.isArray(manifest['uses-permission'])) manifest['uses-permission'] = [];
     for (const name of READ_PERMISSIONS) {
       const already = manifest['uses-permission'].some(
         (p) => p?.$?.['android:name'] === name,
       );
       if (!already) manifest['uses-permission'].push({ $: { 'android:name': name } });
-    }
-
-    // ── 2. the privacy-policy rationale intent ───────────────────────
-    //
-    // Attached to MainActivity rather than a new activity: expo-router owns
-    // the single-activity structure, and a second activity would need its own
-    // React root just to render a link. The app handles the intent by
-    // launching normally, which is what Health Connect's link expects.
-    const activity = AndroidConfig.Manifest.getMainActivityOrThrow(cfg.modResults);
-    if (!Array.isArray(activity['intent-filter'])) activity['intent-filter'] = [];
-    const hasRationale = activity['intent-filter'].some((f) =>
-      f?.action?.some?.((a) => a?.$?.['android:name'] === RATIONALE_ACTION),
-    );
-    if (!hasRationale) {
-      activity['intent-filter'].push({
-        action: [{ $: { 'android:name': RATIONALE_ACTION } }],
-      });
     }
 
     return cfg;
