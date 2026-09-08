@@ -68,6 +68,15 @@ export const HEALTH_CONNECT_READ_PERMISSIONS = [
   // without these its Android answer is permanently "no data".
   'RestingHeartRate',
   'RespiratoryRate',
+  /*
+   * COS-934 — the vitals section renders SEVEN tiles, and three of them had no
+   * Android source at all, so they said "no recent data" forever no matter
+   * what the patient's watch recorded: steps, blood glucose and HRV.
+   * Steps is the worst of the three — READ_STEPS was already granted and the
+   * metric simply was not mapped.
+   */
+  'BloodGlucose',
+  'HeartRateVariabilityRmssd',
 ] as const;
 
 export type HealthConnectRecordType = (typeof HEALTH_CONNECT_READ_PERMISSIONS)[number];
@@ -484,6 +493,25 @@ const TREND_SOURCES: Partial<
       const v = (r.energy as { inKilocalories?: number } | undefined)?.inKilocalories;
       return typeof v === 'number' ? Math.round(v) : null;
     },
+  },
+  steps: {
+    recordType: 'Steps',
+    read: (r) => (typeof r.count === 'number' ? Math.round(r.count) : null),
+  },
+  'blood-glucose': {
+    recordType: 'BloodGlucose',
+    read: (r) => {
+      const v = (r.level as { inMilligramsPerDeciliter?: number } | undefined)
+        ?.inMilligramsPerDeciliter;
+      return typeof v === 'number' ? Math.round(v) : null;
+    },
+  },
+  'heart-rate-variability': {
+    recordType: 'HeartRateVariabilityRmssd',
+    read: (r) =>
+      typeof r.heartRateVariabilityMillis === 'number'
+        ? Math.round(r.heartRateVariabilityMillis * 10) / 10
+        : null,
   },
   'sleep-hours': {
     recordType: 'SleepSession',

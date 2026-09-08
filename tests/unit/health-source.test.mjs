@@ -126,9 +126,12 @@ test('THE POINT: manifest permissions match what the code asks for', () => {
     // COS-932 — the readiness snapshot's two inputs.
     RestingHeartRate: 'RESTING_HEART_RATE',
     RespiratoryRate: 'RESPIRATORY_RATE',
+    // COS-934 — the last three vitals tiles.
+    BloodGlucose: 'BLOOD_GLUCOSE',
+    HeartRateVariabilityRmssd: 'HEART_RATE_VARIABILITY',
   }
   const expected = requested.map((r) => RECORD_TO_PERM[r]).filter(Boolean)
-  assert.ok(expected.length >= 10, `expected the 10 record types, saw ${expected.length}`)
+  assert.ok(expected.length >= 12, `expected the 12 record types, saw ${expected.length}`)
   for (const perm of expected) {
     assert.ok(declared.includes(perm), `manifest is missing READ_${perm}`)
   }
@@ -319,4 +322,53 @@ test('THE POINT: the Health Sync preference is readable on Android', () => {
     'the preference read must not be gated to iOS')
   assert.doesNotMatch(code, /Platform\.OS/,
     'nothing in the preference read should branch on platform at all')
+})
+
+test('THE POINT: every vitals tile has an Android source', () => {
+  /*
+   * COS-934 — the vitals section renders a FIXED set of seven tiles keyed by
+   * metricCode. Three of them had no entry in TREND_SOURCES, so on Android
+   * they read "no recent data" forever regardless of what the patient's watch
+   * recorded — steps, blood glucose and HRV. Steps was the worst: READ_STEPS
+   * was already granted and the metric was simply never mapped.
+   *
+   * This compares the tiles the UI asks for against the metrics Health Connect
+   * can answer, so adding a tile without a source fails here rather than
+   * shipping as a permanently empty box.
+   */
+  const section = read('components/health-summary/VitalsRedFlagSection.tsx')
+  const specs = read('services/health.ts')
+  const hc = read('services/health-connect.ts')
+
+  const tileCodes = [...section.matchAll(/^\s*\w+: '(hk-[a-z0-9-]+)',$/gm)].map((m) => m[1])
+  assert.ok(tileCodes.length >= 7, `expected the vitals tiles, saw ${tileCodes.length}`)
+
+  // metricCode -> metric key, from the shared specs.
+  /*
+   * The quotes are OPTIONAL. VITAL_SPECS writes `steps: {` unquoted because it
+   * is a valid JS identifier, and `'blood-glucose': {` quoted because it is
+   * not. A regex demanding quotes silently skipped `steps` — so the tile with
+   * NO source was the one the test could not see, and a mutation removing it
+   * passed. Every key must be resolvable or the assertion below is theatre.
+   */
+  const specBlocks = [...specs.matchAll(/'?([a-z-]+)'?:\s*\{\s*metricCode: '(hk-[a-z0-9-]+)'/g)]
+  const codeToMetric = Object.fromEntries(specBlocks.map((m) => [m[2], m[1]]))
+
+  const hcStart = hc.indexOf('const TREND_SOURCES')
+  const hcSeg = hc.slice(hcStart, hcStart + 8000)
+  const supplied = new Set(
+    [...hcSeg.matchAll(/^  '?([a-z-]+)'?:\s*\{$/gm)].map((m) => m[1]),
+  )
+
+  // A tile whose code resolves to no metric is itself a failure — it means
+  // this test cannot see it, which is how `steps` hid.
+  const unresolved = tileCodes.filter((code) => !codeToMetric[code])
+  assert.deepEqual(unresolved, [], `tile codes with no VITAL_SPECS entry: ${unresolved.join(', ')}`)
+
+  const orphans = tileCodes
+    .map((code) => ({ code, metric: codeToMetric[code] }))
+    .filter(({ metric }) => !supplied.has(metric))
+    .map(({ code, metric }) => `${code} (${metric})`)
+
+  assert.deepEqual(orphans, [], `vitals tiles with no Android source: ${orphans.join(', ')}`)
 })

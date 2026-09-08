@@ -52,6 +52,9 @@ const READ_PERMISSIONS = [
   // COS-932 — the readiness snapshot's two inputs.
   'android.permission.health.READ_RESTING_HEART_RATE',
   'android.permission.health.READ_RESPIRATORY_RATE',
+  // COS-934 — the last three vitals tiles. READ_STEPS is already above.
+  'android.permission.health.READ_BLOOD_GLUCOSE',
+  'android.permission.health.READ_HEART_RATE_VARIABILITY',
 ];
 
 const RATIONALE_ACTION = 'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE';
