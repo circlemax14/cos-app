@@ -16,6 +16,7 @@ import {
   HRV_MIN_SAMPLES,
   type Severity,
 } from '@/lib/vitals-red-flag-rules';
+import { healthSourceLabel } from '@/services/health-source';
 
 type TrafficLight = 'green' | 'amber' | 'red' | 'gray';
 
@@ -319,15 +320,21 @@ function VitalsRedFlagSection() {
 
   // iOS-only surface. On Android or when the user has switched Apple Health
   // OFF in the app preference, render the platform-appropriate empty state.
-  const iosDisabled = Platform.OS !== 'ios' || disabled;
+  /*
+   * COS-932 — a source, not a platform.
+   *
+   * `Platform.OS !== 'ios'` hid this whole section on Android and printed
+   * "Health Connect for Android coming soon" — which stopped being true the
+   * moment Health Connect shipped. `disabled` already carries the real answer:
+   * the trends hook resolves it from whichever source is active.
+   */
+  const iosDisabled = disabled;
   // While the HK trend query is still loading we keep the shell visible and
   // render skeleton tiles instead of the "No recent data" empty text — the
   // isEmpty gate would have swallowed the whole section otherwise.
   const showLoading = isLoading && !iosDisabled;
-  const emptyText =
-    Platform.OS === 'android'
-      ? 'Health Connect for Android coming soon.'
-      : 'Turn on Apple Health in Settings to see your vitals here.';
+  // Names the source on THIS device rather than Apple's product everywhere.
+  const emptyText = `Turn on ${healthSourceLabel()} in Health Sync to see your vitals here.`;
 
   // Hide the aggregate pill entirely when Apple Health is off/non-iOS or all
   // tiles are gray (no meaningful signal to summarise).

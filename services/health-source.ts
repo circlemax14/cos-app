@@ -37,6 +37,8 @@
 import { Platform } from 'react-native';
 
 import type { HealthMetrics } from './health';
+import type { LongitudinalTrend } from './api/types';
+import type { HealthKitVitalMetric } from './health';
 import {
   resolveHealthSourceIdentity,
   type HealthSourceIdentity,
@@ -136,4 +138,32 @@ export async function getTodayHealthMetrics(): Promise<HealthMetrics> {
     isLoading: false,
     error: 'No health source on this platform',
   };
+}
+
+/**
+ * COS-932 — trends from whichever source is active.
+ *
+ * These are what the vitals section, the readiness snapshot and the wellbeing
+ * score read. Before this they called HealthKit directly, so on Android they
+ * returned nothing while the Health Sync screen said "connected" — the exact
+ * split Vishal saw.
+ */
+export async function getAllHealthSourceVitalTrends(
+  daysBack = 90,
+): Promise<LongitudinalTrend[]> {
+  const source = activeHealthSource();
+  if (source === 'apple-health') return healthKit.getAllHealthKitVitalTrends(daysBack);
+  if (source === 'health-connect') return healthConnect.getAllHealthConnectVitalTrends(daysBack);
+  return [];
+}
+
+/** One metric. Null when this source cannot answer it. */
+export async function getHealthSourceVitalTrend(
+  metric: HealthKitVitalMetric,
+  daysBack = 90,
+): Promise<LongitudinalTrend | null> {
+  const source = activeHealthSource();
+  if (source === 'apple-health') return healthKit.getHealthKitVitalTrend(metric, daysBack);
+  if (source === 'health-connect') return healthConnect.getHealthConnectVitalTrend(metric, daysBack);
+  return null;
 }

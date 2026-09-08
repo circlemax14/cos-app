@@ -49,6 +49,9 @@ const READ_PERMISSIONS = [
   'android.permission.health.READ_WEIGHT',
   'android.permission.health.READ_BLOOD_PRESSURE',
   'android.permission.health.READ_OXYGEN_SATURATION',
+  // COS-932 — the readiness snapshot's two inputs.
+  'android.permission.health.READ_RESTING_HEART_RATE',
+  'android.permission.health.READ_RESPIRATORY_RATE',
 ];
 
 const RATIONALE_ACTION = 'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE';

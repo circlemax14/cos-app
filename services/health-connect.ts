@@ -64,6 +64,10 @@ export const HEALTH_CONNECT_READ_PERMISSIONS = [
   'Weight',
   'BloodPressure',
   'OxygenSaturation',
+  // COS-932 — the readiness snapshot reads resting HR and respiratory rate;
+  // without these its Android answer is permanently "no data".
+  'RestingHeartRate',
+  'RespiratoryRate',
 ] as const;
 
 export type HealthConnectRecordType = (typeof HEALTH_CONNECT_READ_PERMISSIONS)[number];
@@ -384,4 +388,208 @@ export async function getTodayHealthMetrics(): Promise<HealthMetrics> {
     getTodayCaloriesBurned(),
   ]);
   return { steps, heartRate, sleepHours, caloriesBurned, isLoading: false, error: null };
+}
+
+/**
+ * COS-932 — vital TRENDS from Health Connect, in the shape the app already
+ * charts.
+ *
+ * ─── WHY THIS EXISTS ─────────────────────────────────────────────────
+ *
+ * COS-929 wired today's four headline metrics and the Health Sync screen, and
+ * stopped there. Every consumer of longitudinal data — the vitals section, the
+ * readiness snapshot, the wellbeing score's sleep pillar — still asked
+ * HealthKit, so on Android they showed "no data yet" while the Health Sync
+ * screen said "connected". Vishal: "if I go to the vitals it is saying Health
+ * Connect for Android coming soon... well-being score also doesn't have it
+ * because for sleep it is saying no data yet."
+ *
+ * ─── THE SAME metricCode AS iOS, DELIBERATELY ────────────────────────
+ *
+ * VITAL_SPECS is imported from services/health.ts rather than re-declared.
+ * metricCode is what the vitals section, the readiness snapshot and the
+ * wellbeing score all key on, so minting Android-specific codes would make the
+ * same measurement a different metric depending on the patient's phone — and
+ * a patient switching device would lose their history.
+ *
+ * ─── ONLY WHAT WE HAVE PERMISSION FOR ────────────────────────────────
+ *
+ * HealthKit charts sixteen metrics. Health Connect can supply most, but each
+ * needs its own manifest permission, and every extra permission is another row
+ * the patient has to decide about on Health Connect's consent screen. So this
+ * covers the eight that the vitals section and the readiness snapshot actually
+ * read, and returns nothing for the rest rather than asking for access we
+ * would not use.
+ */
+
+import type { LongitudinalTrend, TrendDataPoint } from './api/types';
+import { VITAL_SPECS, type HealthKitVitalMetric } from './health';
+
+/**
+ * Which Health Connect record answers each metric, and how to read a number
+ * out of one of its samples.
+ *
+ * A record can carry several fields (BloodPressure has both systolic and
+ * diastolic), so the reader is per-metric rather than per-record.
+ */
+const TREND_SOURCES: Partial<
+  Record<
+    HealthKitVitalMetric,
+    { recordType: string; read: (r: Record<string, unknown>) => number | null }
+  >
+> = {
+  'heart-rate': {
+    recordType: 'HeartRate',
+    // HeartRate is a SERIES record: one record holds many samples.
+    read: (r) => {
+      const samples = r.samples as { beatsPerMinute?: number }[] | undefined;
+      if (!Array.isArray(samples) || samples.length === 0) return null;
+      const nums = samples.map((s) => s.beatsPerMinute).filter((n): n is number => typeof n === 'number');
+      return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
+    },
+  },
+  'resting-heart-rate': {
+    recordType: 'RestingHeartRate',
+    read: (r) => (typeof r.beatsPerMinute === 'number' ? Math.round(r.beatsPerMinute) : null),
+  },
+  'respiratory-rate': {
+    recordType: 'RespiratoryRate',
+    read: (r) => (typeof r.rate === 'number' ? Math.round(r.rate * 10) / 10 : null),
+  },
+  'blood-pressure-systolic': {
+    recordType: 'BloodPressure',
+    read: (r) => {
+      const v = (r.systolic as { inMillimetersOfMercury?: number } | undefined)?.inMillimetersOfMercury;
+      return typeof v === 'number' ? Math.round(v) : null;
+    },
+  },
+  'blood-pressure-diastolic': {
+    recordType: 'BloodPressure',
+    read: (r) => {
+      const v = (r.diastolic as { inMillimetersOfMercury?: number } | undefined)?.inMillimetersOfMercury;
+      return typeof v === 'number' ? Math.round(v) : null;
+    },
+  },
+  'oxygen-saturation': {
+    recordType: 'OxygenSaturation',
+    read: (r) => {
+      const v = (r.percentage as { value?: number } | number | undefined);
+      const n = typeof v === 'number' ? v : (v as { value?: number } | undefined)?.value;
+      return typeof n === 'number' ? Math.round(n) : null;
+    },
+  },
+  'active-energy': {
+    recordType: 'ActiveCaloriesBurned',
+    read: (r) => {
+      const v = (r.energy as { inKilocalories?: number } | undefined)?.inKilocalories;
+      return typeof v === 'number' ? Math.round(v) : null;
+    },
+  },
+  'sleep-hours': {
+    recordType: 'SleepSession',
+    read: (r) => {
+      const start = new Date(String(r.startTime)).getTime();
+      const end = new Date(String(r.endTime)).getTime();
+      const ms = end - start;
+      return Number.isFinite(ms) && ms > 0 ? Math.round((ms / 3_600_000) * 10) / 10 : null;
+    },
+  },
+};
+
+/** Same direction rule the backend uses, so a trend reads consistently. */
+function direction(points: TrendDataPoint[]): LongitudinalTrend['trendDirection'] {
+  if (points.length < 3) return 'insufficient_data';
+  const half = Math.floor(points.length / 2);
+  const mean = (xs: TrendDataPoint[]) => xs.reduce((a, p) => a + p.value, 0) / xs.length;
+  const early = mean(points.slice(0, half));
+  const late = mean(points.slice(-half));
+  if (early === 0) return 'stable';
+  const pct = ((late - early) / Math.abs(early)) * 100;
+  if (Math.abs(pct) < 5) return 'stable';
+  return pct > 0 ? 'improving' : 'worsening';
+}
+
+/**
+ * One metric's trend over `daysBack` days, or null when there is nothing to
+ * chart. Never throws — an absent permission and an absent wearable are the
+ * same answer to a patient.
+ */
+export async function getHealthConnectVitalTrend(
+  metric: HealthKitVitalMetric,
+  daysBack = 90,
+): Promise<LongitudinalTrend | null> {
+  const sourceSpec = TREND_SOURCES[metric];
+  const spec = VITAL_SPECS[metric];
+  if (!sourceSpec || !spec) return null;
+
+  const sdk = loadSdk();
+  if (!sdk) return null;
+  try {
+    if (!(await sdk.initialize())) return null;
+    const now = new Date();
+    const from = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    const { records } = (await sdk.readRecords(sourceSpec.recordType as never, {
+      timeRangeFilter: {
+        operator: 'between',
+        startTime: from.toISOString(),
+        endTime: now.toISOString(),
+      },
+    })) as unknown as { records: Record<string, unknown>[] };
+    if (!Array.isArray(records) || records.length === 0) return null;
+
+    /*
+     * One point per DAY, not per sample. A watch can write a heart rate every
+     * few minutes; charting 20,000 raw points would be unreadable and would
+     * make the trend direction meaningless. Daily means match what the backend
+     * serves for lab trends, so the two render identically.
+     */
+    const byDay = new Map<string, number[]>();
+    for (const r of records) {
+      const value = sourceSpec.read(r);
+      if (value === null) continue;
+      const when = String(r.startTime ?? r.time ?? '');
+      const day = when.slice(0, 10);
+      if (!day) continue;
+      const list = byDay.get(day) ?? [];
+      list.push(value);
+      byDay.set(day, list);
+    }
+
+    const dataPoints: TrendDataPoint[] = [...byDay.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([day, values]) => ({
+        date: day,
+        value: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
+        unit: spec.unit,
+      }));
+    if (dataPoints.length === 0) return null;
+
+    return {
+      id: `hc-${spec.metricCode}`,
+      metricCode: spec.metricCode,
+      metricName: spec.metricName,
+      category: 'vital',
+      dataPoints,
+      trendDirection: direction(dataPoints),
+      trendPeriod: `${String(daysBack)}d`,
+      relatedConditions: [],
+      relatedMedications: [],
+      // Same provenance marker iOS uses. The UI shows "from your device"
+      // rather than naming Apple, so one value is correct for both.
+      source: 'apple-health',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Every metric Health Connect can answer. Failures are per-metric. */
+export async function getAllHealthConnectVitalTrends(
+  daysBack = 90,
+): Promise<LongitudinalTrend[]> {
+  const metrics = Object.keys(TREND_SOURCES) as HealthKitVitalMetric[];
+  const results = await Promise.all(
+    metrics.map((m) => getHealthConnectVitalTrend(m, daysBack).catch(() => null)),
+  );
+  return results.filter((t): t is LongitudinalTrend => t !== null);
 }

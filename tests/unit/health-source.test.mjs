@@ -123,9 +123,12 @@ test('THE POINT: manifest permissions match what the code asks for', () => {
     Weight: 'WEIGHT',
     BloodPressure: 'BLOOD_PRESSURE',
     OxygenSaturation: 'OXYGEN_SATURATION',
+    // COS-932 — the readiness snapshot's two inputs.
+    RestingHeartRate: 'RESTING_HEART_RATE',
+    RespiratoryRate: 'RESPIRATORY_RATE',
   }
   const expected = requested.map((r) => RECORD_TO_PERM[r]).filter(Boolean)
-  assert.ok(expected.length >= 8, `expected the 8 record types, saw ${expected.length}`)
+  assert.ok(expected.length >= 10, `expected the 10 record types, saw ${expected.length}`)
   for (const perm of expected) {
     assert.ok(declared.includes(perm), `manifest is missing READ_${perm}`)
   }
@@ -228,4 +231,72 @@ test('"still checking" is distinct from "not available"', () => {
   const screen = strip(read('app/Home/apple-health.tsx'))
   assert.match(screen, /useState<boolean \| null>\(null\)/)
   assert.match(screen, /available === null \?/)
+})
+
+test('THE POINT: every consumer reads the SOURCE, not HealthKit', () => {
+  /*
+   * COS-932 — the gap Vishal found. COS-929 wired the Health Sync screen and
+   * stopped there, so the toggle said "Samsung Health connected" while the
+   * vitals section said "Health Connect for Android coming soon", the health
+   * summary was empty, and the wellbeing score's sleep pillar read "no data
+   * yet". Every one of those consumers still called HealthKit directly, which
+   * is false on Android by construction.
+   */
+  for (const f of ['hooks/use-healthkit-trends.ts', 'hooks/use-readiness-derivation.ts']) {
+    const code = strip(read(f))
+    assert.match(code, /from '@\/services\/health-source'/, `${f} must read the facade`)
+    /*
+     * Any HealthKit-named CALL, not a specific spelling. The first version of
+     * this asserted `getHealthKitVitalTrend(` and a mutation swapping in
+     * `getAllHealthKitVitalTrends(` sailed straight through it — a test that
+     * pins one name is a test that misses its sibling.
+     *
+     * initializeHealthKit is the one legitimate exception: it is the iOS
+     * permission prompt and is still correct to call on iOS.
+     */
+    const hkCalls = [...code.matchAll(/(^|[^\w.])(?<!function )(\w*HealthKit\w*)\s*\(/g)]
+      .map((m) => m[2])
+      // initializeHealthKit is the iOS permission prompt, still correct there.
+      // useHealthKitTrends is this hook's OWN name — a declaration, not a
+      // call. The name is now a misnomer (it reads whichever source is
+      // active) but renaming it would touch every consumer, and the name is
+      // not what was broken.
+      .filter((n) => n !== 'initializeHealthKit' && n !== 'useHealthKitTrends')
+    assert.deepEqual(hkCalls, [], `${f} calls HealthKit directly: ${hkCalls.join(', ')}`)
+  }
+})
+
+test('the gate asks whether a SOURCE exists, not whether it is iOS', () => {
+  // shouldFetchAppleHealthTrends(isIos, ...) closed every trend on Android.
+  const gate = strip(read('lib/apple-health-gate.ts'))
+  assert.match(gate, /shouldFetchHealthTrends\(\s*hasHealthSource: boolean/)
+  assert.match(gate, /resolveHealthTrendsState\(\s*hasHealthSource: boolean/)
+})
+
+test('no screen still advertises Health Connect as "coming soon"', () => {
+  // It shipped. Saying otherwise on a device that has it connected is worse
+  // than saying nothing.
+  for (const f of ['components/health-summary/VitalsRedFlagSection.tsx']) {
+    assert.doesNotMatch(strip(read(f)), /coming soon/i, `${f} still says coming soon`)
+  }
+})
+
+test('Android trends reuse the iOS metricCodes', () => {
+  /*
+   * metricCode is what the vitals section, the readiness snapshot and the
+   * wellbeing score key on. Minting Android-specific codes would make the same
+   * measurement a different metric depending on the patient's phone, and a
+   * patient switching device would lose their history.
+   */
+  const hc = strip(read('services/health-connect.ts'))
+  assert.match(hc, /import \{ VITAL_SPECS/, 'must import the shared specs')
+  assert.doesNotMatch(hc, /metricCode: '/, 'must not declare its own metric codes')
+})
+
+test('trends are one point per DAY, not one per sample', () => {
+  // A watch writes a heart rate every few minutes; 20,000 raw points is
+  // unreadable and makes the trend direction meaningless.
+  const hc = strip(read('services/health-connect.ts'))
+  assert.match(hc, /byDay/)
+  assert.match(hc, /\.slice\(0, 10\)/)
 })
