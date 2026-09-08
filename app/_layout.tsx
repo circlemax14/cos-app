@@ -241,7 +241,14 @@ function RootLayout() {
   // deliberate testing toggle. Flip back to true (and OTA) before real users
   // see PHI on that build.
   useEffect(() => {
-    if (shouldPreventScreenCapture()) {
+    /*
+     * COS-939 — `__DEV__` lets a debug build be screenshotted.
+     *
+     * Metro compiles this to `false` in every release bundle, so a production
+     * binary and every OTA to one still block capture regardless of what
+     * anyone remembers to flip back. See lib/screenshot-policy.ts.
+     */
+    if (shouldPreventScreenCapture(undefined, __DEV__)) {
       ScreenCapture.preventScreenCaptureAsync().catch(() => {
         // Non-fatal — log loss of capture protection but don't crash the app.
       });
