@@ -298,9 +298,24 @@ function todayRange(): { operator: 'between'; startTime: string; endTime: string
  * recorded the same walk. This is the same trap as merging sources, one level
  * down.
  */
+/**
+ * COS-938 — NOT every aggregate value is a number.
+ *
+ * The library types ACTIVE_CALORIES_TOTAL and ENERGY_TOTAL as EnergyResult,
+ * DISTANCE as LengthResult, the blood-pressure averages as PressureResult and
+ * so on — objects like `{ inCalories, inJoules, inKilocalories, inKilojoules }`.
+ * Only COUNT_TOTAL and BPM_AVG are plain numbers.
+ *
+ * The first version read them all with `typeof v === 'number'`, so every
+ * unit-carrying metric silently returned 0 — indistinguishable on screen from
+ * "the patient has no data", which is exactly the state we were trying to
+ * diagnose. A wrong reader looks identical to an empty store.
+ */
+const unwrap = readAggregate;
+
 async function aggregateToday(
   recordType: HealthConnectRecordType,
-): Promise<Record<string, number> | null> {
+): Promise<Record<string, unknown> | null> {
   const sdk = loadSdk();
   if (!sdk) return null;
   try {
@@ -313,7 +328,7 @@ async function aggregateToday(
     // string[] alongside the numeric buckets, so it does not structurally
     // overlap a Record<string, number>. Every read below re-checks the value
     // is a finite number, so the widening is guarded at the point of use.
-    return (result ?? null) as unknown as Record<string, number> | null;
+    return (result ?? null) as unknown as Record<string, unknown> | null;
   } catch {
     return null;
   }
@@ -321,8 +336,9 @@ async function aggregateToday(
 
 export async function getTodayStepCount(): Promise<number> {
   const agg = await aggregateToday('Steps');
-  const count = agg?.COUNT_TOTAL;
-  return typeof count === 'number' && Number.isFinite(count) ? Math.round(count) : 0;
+  // COUNT_TOTAL is genuinely a number.
+  const count = unwrap(agg?.COUNT_TOTAL, '');
+  return count === null ? 0 : Math.round(count);
 }
 
 /**
@@ -335,8 +351,9 @@ export async function getTodayStepCount(): Promise<number> {
  */
 export async function getTodayHeartRate(): Promise<number | null> {
   const agg = await aggregateToday('HeartRate');
-  const avg = agg?.BPM_AVG;
-  return typeof avg === 'number' && Number.isFinite(avg) && avg > 0 ? Math.round(avg) : null;
+  // BPM_AVG is genuinely a number.
+  const avg = unwrap(agg?.BPM_AVG, '');
+  return avg !== null && avg > 0 ? Math.round(avg) : null;
 }
 
 export async function getTodaySleepHours(): Promise<number> {
@@ -381,13 +398,15 @@ export async function getTodaySleepHours(): Promise<number> {
  */
 export async function getTodayCaloriesBurned(): Promise<number> {
   const active = await aggregateToday('ActiveCaloriesBurned');
-  const activeKcal = active?.ACTIVE_CALORIES_TOTAL ?? active?.ENERGY_TOTAL;
-  if (typeof activeKcal === 'number' && Number.isFinite(activeKcal) && activeKcal > 0) {
-    return Math.round(activeKcal);
-  }
+  // EnergyResult — an OBJECT. See unwrap().
+  const activeKcal =
+    unwrap(active?.ACTIVE_CALORIES_TOTAL, 'inKilocalories') ??
+    unwrap(active?.ENERGY_TOTAL, 'inKilocalories');
+  if (activeKcal !== null && activeKcal > 0) return Math.round(activeKcal);
+
   const total = await aggregateToday('TotalCaloriesBurned');
-  const totalKcal = total?.ENERGY_TOTAL;
-  return typeof totalKcal === 'number' && Number.isFinite(totalKcal) ? Math.round(totalKcal) : 0;
+  const totalKcal = unwrap(total?.ENERGY_TOTAL, 'inKilocalories');
+  return totalKcal === null ? 0 : Math.round(totalKcal);
 }
 
 /**
@@ -448,6 +467,7 @@ export async function getTodayHealthMetrics(): Promise<HealthMetrics> {
  * would not use.
  */
 
+import { readAggregate, readQuantity } from '@/lib/health-connect-quantity';
 import type { LongitudinalTrend, TrendDataPoint } from './api/types';
 import { VITAL_SPECS, type HealthKitVitalMetric } from './health';
 
@@ -484,31 +504,32 @@ const TREND_SOURCES: Partial<
   },
   'blood-pressure-systolic': {
     recordType: 'BloodPressure',
+    // COS-938 — a record carries { value, unit }, NOT { inMillimetersOfMercury }.
     read: (r) => {
-      const v = (r.systolic as { inMillimetersOfMercury?: number } | undefined)?.inMillimetersOfMercury;
-      return typeof v === 'number' ? Math.round(v) : null;
+      const v = readQuantity(r.systolic, 'pressure-mmhg');
+      return v === null ? null : Math.round(v);
     },
   },
   'blood-pressure-diastolic': {
     recordType: 'BloodPressure',
     read: (r) => {
-      const v = (r.diastolic as { inMillimetersOfMercury?: number } | undefined)?.inMillimetersOfMercury;
-      return typeof v === 'number' ? Math.round(v) : null;
+      const v = readQuantity(r.diastolic, 'pressure-mmhg');
+      return v === null ? null : Math.round(v);
     },
   },
   'oxygen-saturation': {
     recordType: 'OxygenSaturation',
+    // percentage is a plain number on this record; readQuantity accepts both.
     read: (r) => {
-      const v = (r.percentage as { value?: number } | number | undefined);
-      const n = typeof v === 'number' ? v : (v as { value?: number } | undefined)?.value;
-      return typeof n === 'number' ? Math.round(n) : null;
+      const v = readQuantity(r.percentage, 'pressure-mmhg');
+      return v === null ? null : Math.round(v);
     },
   },
   'active-energy': {
     recordType: 'ActiveCaloriesBurned',
     read: (r) => {
-      const v = (r.energy as { inKilocalories?: number } | undefined)?.inKilocalories;
-      return typeof v === 'number' ? Math.round(v) : null;
+      const v = readQuantity(r.energy, 'energy-kcal');
+      return v === null ? null : Math.round(v);
     },
   },
   steps: {
@@ -518,9 +539,8 @@ const TREND_SOURCES: Partial<
   'blood-glucose': {
     recordType: 'BloodGlucose',
     read: (r) => {
-      const v = (r.level as { inMilligramsPerDeciliter?: number } | undefined)
-        ?.inMilligramsPerDeciliter;
-      return typeof v === 'number' ? Math.round(v) : null;
+      const v = readQuantity(r.level, 'glucose-mgdl');
+      return v === null ? null : Math.round(v);
     },
   },
   'heart-rate-variability': {
@@ -532,26 +552,29 @@ const TREND_SOURCES: Partial<
   },
   'body-temperature': {
     recordType: 'BodyTemperature',
+    // iOS reports Fahrenheit. readQuantity handles the offset scale, which a
+    // plain multiplier would get wrong.
     read: (r) => {
-      const v = (r.temperature as { inCelsius?: number } | undefined)?.inCelsius;
-      // iOS reports Fahrenheit; convert so the two platforms chart one unit.
-      return typeof v === 'number' ? Math.round((v * 9) / 5 + 32) : null;
+      const v = readQuantity(r.temperature, 'temperature-f');
+      return v === null ? null : Math.round(v);
     },
   },
   weight: {
     recordType: 'Weight',
+    // iOS reports pounds. The unit is read, not assumed: Health Connect stores
+    // whatever the writing app chose, so the same field can arrive in kilograms
+    // from one app and pounds from another on the same device.
     read: (r) => {
-      const v = (r.weight as { inKilograms?: number } | undefined)?.inKilograms;
-      // iOS reports pounds.
-      return typeof v === 'number' ? Math.round(v * 2.20462 * 10) / 10 : null;
+      const v = readQuantity(r.weight, 'mass-lb');
+      return v === null ? null : Math.round(v * 10) / 10;
     },
   },
   'distance-walking-running': {
     recordType: 'Distance',
+    // iOS reports miles.
     read: (r) => {
-      const v = (r.distance as { inMeters?: number } | undefined)?.inMeters;
-      // iOS reports miles.
-      return typeof v === 'number' ? Math.round((v / 1609.344) * 100) / 100 : null;
+      const v = readQuantity(r.distance, 'length-miles');
+      return v === null ? null : Math.round(v * 100) / 100;
     },
   },
   'flights-climbed': {
@@ -701,8 +724,14 @@ async function deriveBmiTrend(daysBack: number): Promise<LongitudinalTrend | nul
         endTime: now.toISOString(),
       },
     })) as unknown as { records: Record<string, unknown>[] };
+    // COS-938 — a Height RECORD is { value, unit }. Read in miles then convert,
+    // because that is the one length target readQuantity knows; metres is what
+    // BMI needs.
     const latestHeightM = (heights ?? [])
-      .map((r) => (r.height as { inMeters?: number } | undefined)?.inMeters)
+      .map((r) => {
+        const miles = readQuantity(r.height, 'length-miles');
+        return miles === null ? null : miles * 1609.344;
+      })
       .filter((n): n is number => typeof n === 'number' && n > 0)
       .pop();
     if (!latestHeightM) return null;

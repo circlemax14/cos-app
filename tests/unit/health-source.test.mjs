@@ -451,3 +451,26 @@ test('THE POINT: the screen shows WHAT WAS READ, not just "connected"', () => {
   // And a way to re-check without leaving the screen.
   assert.match(screen, /accessibilityLabel="Check again"/)
 })
+
+test('THE POINT: no record reader uses the AGGREGATE spelling', () => {
+  /*
+   * COS-938 — the two shapes that look alike:
+   *
+   *   RECORD field   { value: 78.4, unit: 'kilograms' }
+   *   AGGREGATE      { inGrams: 78400, inKilograms: 78.4 }
+   *
+   * Six readers used `inX` on record fields and returned null for every
+   * sample, which on screen is indistinguishable from an empty health store.
+   * Record reads go through readQuantity; aggregate reads through
+   * readAggregate. Neither should ever see an `inX` literal inline.
+   */
+  const hc = strip(read('services/health-connect.ts'))
+  const start = hc.indexOf('const TREND_SOURCES')
+  const readers = hc.slice(start, hc.indexOf('function direction', start))
+  const aggregateSpelling = [...readers.matchAll(/\.(in[A-Z][a-zA-Z]+)/g)].map((m) => m[1])
+  assert.deepEqual(
+    aggregateSpelling, [],
+    `record readers using aggregate keys: ${aggregateSpelling.join(', ')}`,
+  )
+  assert.match(readers, /readQuantity\(/, 'record readers must go through readQuantity')
+})
