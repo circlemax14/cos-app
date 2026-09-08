@@ -125,15 +125,35 @@ export function useAppLock() {
        * why gestureEnabled:false and the shield both still matter — but it
        * removes the specific screens the bypass was demonstrated on.
        *
-       * Guarded because dismissAll throws when there is nothing to dismiss,
-       * and this runs inside the resume path that produced the triple-Face-ID
-       * prompt — an unhandled throw here would leave `_appLocked=true` with no
-       * lock screen showing, which is strictly worse than the bypass.
+       * COS-940 — ASK FIRST, because dismissAll does not throw.
+       *
+       * The guard here was a bare try/catch, on the belief that dismissAll
+       * throws when there is nothing to dismiss. It does not: it dispatches
+       * POP_TO_TOP, the navigator declines it, and react-navigation logs
+       * "The action 'POP_TO_TOP' was not handled by any navigator" to the
+       * console. Nothing is thrown, so the catch never ran and the message
+       * appeared on every lock with an empty modal stack — which is the
+       * common case, since most locks happen from a tab screen.
+       *
+       * In a release build that message is compiled out, so this was invisible
+       * in production and cost nothing there. In a debug build it renders as a
+       * full-width red error toast across the bottom of the screen, which is
+       * what made it worth fixing now: it covers the UI in every screenshot,
+       * and screenshots are the whole point of COS-939.
+       *
+       * The try/catch stays. canDismiss() reads navigation state and can throw
+       * if the router is not mounted yet, and this runs inside the resume path
+       * that produced the triple-Face-ID prompt — an unhandled throw here
+       * would leave `_appLocked=true` with no lock screen showing, which is
+       * strictly worse than the bypass it exists to close.
        */
       try {
-        router.dismissAll();
+        if (router.canDismiss()) {
+          router.dismissAll();
+        }
       } catch {
-        // Nothing to dismiss, or the router is not ready. Either is fine.
+        // Router not ready. Falling through to replace() is correct: that is
+        // the call that actually shows the lock screen.
       }
       router.replace('/(security)/lock-screen' as never);
     } finally {
