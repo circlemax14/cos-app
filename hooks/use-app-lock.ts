@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus, PanResponder } from 'react-native';
-import { router, usePathname } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSecurity } from '@/stores/security-store';
 import { isAppLocked, setAppLocked, hasPendingSignIn, clearPendingSignIn } from '@/lib/lock-gate';
@@ -46,10 +46,34 @@ export function useAppLock() {
   const appState = useRef(AppState.currentState);
   const backgroundTime = useRef<number | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // usePathname re-runs on every navigation. Mirror it into a ref so the
-  // AppState/idle handlers (which capture state on first render) can read
-  // the LATEST path when they fire — not whatever it was at mount.
-  const pathname = usePathname();
+  /*
+   * COS-942 — THIS MUST BE useSegments(), NOT usePathname().
+   *
+   * Every guard in this file compares against a GROUP-PREFIXED constant:
+   * RESTORE_BLOCKLIST holds '/(auth)' and '/(security)/lock-screen', the
+   * re-entrancy guard below tests startsWith('/(security)/lock-screen'), and
+   * computeResumeLockDecision (lib/resume-lock-decision.ts) tests the same.
+   *
+   * usePathname() STRIPS group segments. From expo-router's own source,
+   * node_modules/expo-router/build/global-state/routeInfo.js:
+   *
+   *     const pathname = '/' + segments
+   *       .filter((segment) => !(segment.startsWith('(') && segment.endsWith(')')))
+   *
+   * so it returns '/sign-in', never '/(auth)/sign-in'. Every one of those
+   * comparisons was therefore dead: shouldRestore() returned true for EVERY
+   * route including the sign-in and lock screens, and both "am I already on
+   * the lock screen" guards were permanently false.
+   *
+   * That is the loop: lock while on /sign-in, and resumeAfterUnlock replays
+   * the saved route straight back to /sign-in, forever, with a valid session.
+   *
+   * useSegments() keeps the groups, so joining them reproduces the form the
+   * constants were written for. Fixing it here fixes all three guards at once,
+   * because they all read the refs derived from this one value.
+   */
+  const segments = useSegments();
+  const pathname = '/' + segments.join('/');
   const lastPathRef = useRef<string | null>(null);
   useEffect(() => {
     if (shouldRestore(pathname)) lastPathRef.current = pathname;

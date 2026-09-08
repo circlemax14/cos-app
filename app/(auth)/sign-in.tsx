@@ -28,6 +28,7 @@ import {
   socialSignInWithBackend,
 } from '@/services/social-auth';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
+import { clearPendingSignIn } from '@/lib/lock-gate';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -128,6 +129,29 @@ export default function SignInScreen() {
   }, [googleResponse]);
 
   const handleRoute = async (user: UserProfile) => {
+    /*
+     * COS-942 — a deferred sign-out must not outlive the sign-in that answered it.
+     *
+     * lib/lock-gate.ts's clearPendingSignIn() has always documented itself as
+     * "Used by sign-in success handlers so a stale deferred reason from a
+     * previous lifetime doesn't persist across re-sign-in." No sign-in handler
+     * called it — its only caller was hooks/use-app-lock.ts.
+     *
+     * The consequence, seen on a Galaxy S26: one mistyped password made
+     * api-client's 401 interceptor call forceSignOut('session_expired'). The
+     * app counts as locked whenever a PIN exists (security-store starts
+     * isLocked=true), and 'session_expired' is not in BYPASS_LOCK_REASONS, so
+     * the sign-out was DEFERRED rather than performed — _pendingReason stayed
+     * armed. The correct sign-in seconds later stored fresh tokens and left it
+     * armed. The next unlock consumed it, ran clearTokens() on the NEW tokens
+     * and showed "Session expired" — sending the user back here holding
+     * credentials that had just worked.
+     *
+     * Disarmed here rather than at each call site: handleRoute is the single
+     * funnel for password, Apple and Google sign-in.
+     */
+    clearPendingSignIn();
+
     // SCRUM-279 (build 50): kick off parallel data prefetch the moment
     // the user is authenticated so home/calendar/health-plan have
     // warm caches by the time the user navigates to them.
