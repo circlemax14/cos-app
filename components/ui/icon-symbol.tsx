@@ -78,6 +78,49 @@ const MAPPING = {
   'square.grid.2x2': 'grid-view',
   'exclamationmark.shield': 'gpp-maybe',
   'person.crop.circle.badge.exclamationmark': 'no-accounts',
+  /*
+   * COS-930 — the 29 names that were still unmapped, found by diffing every
+   * literal <IconSymbol name="..."> in app/ and components/ AND the dynamic
+   * names in constants/category-icons.ts, which a scan of JSX alone misses.
+   *
+   * These were BLANK before COS-928 added the `?? 'help-outline'` fallback and
+   * question marks after it. Vishal saw the question marks on the S26, which
+   * is the fallback working as intended: a visible wrong glyph gets fixed, an
+   * invisible one ships.
+   *
+   * Every target below was checked against MaterialIcons' own glyphmap JSON —
+   * an invalid MaterialIcons name renders blank too, so a careless mapping
+   * just swaps one silent failure for another.
+   */
+  'bag': 'shopping-bag',
+  'book.closed.fill': 'menu-book',
+  'book.fill': 'book',
+  'brain.head.profile': 'psychology',
+  'building.2.fill': 'apartment',
+  'cross.case': 'medical-services',
+  'cross.circle.fill': 'add-circle',
+  'cross.fill': 'add',
+  'figure.and.child.holdinghands': 'escalator-warning',
+  'figure.child': 'child-care',
+  'figure.flexibility': 'self-improvement',
+  'figure.run': 'directions-run',
+  'figure.socialdance': 'nightlife',
+  'figure.walk': 'directions-walk',
+  'figure.walk.circle.fill': 'directions-walk',
+  'fork.knife': 'restaurant',
+  'info.circle.fill': 'info',
+  'leaf.circle.fill': 'eco',
+  'leaf.fill': 'eco',
+  'music.mic': 'mic',
+  'music.note': 'music-note',
+  'person.2.circle.fill': 'groups',
+  'person.3.fill': 'groups',
+  'person.badge.shield.checkmark.fill': 'verified-user',
+  'person.fill.checkmark': 'how-to-reg',
+  'person.text.rectangle.fill': 'badge',
+  'pills.fill': 'medication',
+  'shippingbox.fill': 'inventory-2',
+  'wrench.and.screwdriver.fill': 'build',
 } as IconMapping;
 
 /**

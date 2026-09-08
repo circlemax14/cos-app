@@ -568,7 +568,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="apple-health"
         options={{
-          title: 'Apple Health',
+          // COS-930 — the screen is called Health Sync on every platform; the
+          // route keeps its old filename because renaming an expo-router file
+          // changes every deep link pointing at it. headerShown is false so
+          // this never rendered, but a stale name is how the drawer and the
+          // screen came to disagree in the first place.
+          title: 'Health Sync',
           href: null,
           headerShown: false,
         }}

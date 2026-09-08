@@ -91,16 +91,47 @@ if [ ! -f "$SRC" ]; then
   exit 1
 fi
 
+# ── ONE RUN AT A TIME ────────────────────────────────────────────────
+#
+# This script rewrites SHARED files — .env, app.json and the seven version
+# fields across ios/ and android/ — and restores them on exit. Two concurrent
+# runs therefore fight: the second stamps the tree while the first is building,
+# and whichever exits LAST restores its own snapshot over the other's work.
+#
+# Observed on 2026-09-07: a background run's late-firing trap reverted app.json
+# and silently dropped two config plugins that had been added in between. The
+# test suite caught it; nothing in the build did.
+#
+# mkdir is atomic on every POSIX filesystem, which is why it is the lock rather
+# than a -f test.
+LOCK=".android-build.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "REFUSED: another Android build is already running (found $LOCK)."
+  echo "  Two runs would fight over .env, app.json and the version stamps."
+  echo "  If you are sure nothing is running:  rmdir $LOCK"
+  exit 1
+fi
+
 # Snapshot whatever is in .env now, and put it back no matter how we leave.
 BACKUP="$(mktemp)"
 if [ -f .env ]; then cp .env "$BACKUP"; fi
 restore() {
+  rmdir "$LOCK" 2>/dev/null || true
   if [ -f "$BACKUP" ]; then cp "$BACKUP" .env; rm -f "$BACKUP"; fi
   echo ""
   echo "  .env restored to how it was before this run."
   if [ -n "${ORIG_VERSION:-}" ]; then restore_stamps; fi
 }
-trap restore EXIT
+#
+# EXIT ALONE IS NOT ENOUGH. Verified the hard way on 2026-09-07: a SIGTERM
+# killed the script and the tree was left stamped 2.1.0 / `development`,
+# including the four iOS files. bash runs an EXIT trap on a normal exit and on
+# SIGINT, but NOT on SIGTERM or SIGHUP — and this script's normal ending is a
+# human stopping a long-lived Metro server, i.e. a signal.
+#
+# `set -e` also means any failing command exits without a signal, so EXIT still
+# has to be in the list.
+trap restore EXIT INT TERM HUP
 
 # ── Stamp the tree for this stage, and put it back on the way out ────
 #

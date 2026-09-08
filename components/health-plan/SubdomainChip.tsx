@@ -94,7 +94,13 @@ export function SubdomainChip({ subdomainKey, colors, getScaledFontSize }: Subdo
           color: fg,
           fontSize: getScaledFontSize(11),
           fontWeight: '600',
-          lineHeight: 14,
+          // COS-930 — lineHeight must SCALE WITH the font.
+          // A literal against getScaledFontSize means the box stops
+          // growing while the glyphs keep growing: at large accessibility
+          // text the descenders clip, and Android clips harder than iOS
+          // because includeFontPadding is on by default. 1.3x is the ratio
+          // these three already used at 1.0 scale.
+          lineHeight: getScaledFontSize(11) * 1.3,
         }}
       >
         {sub.label}

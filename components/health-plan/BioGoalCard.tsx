@@ -102,7 +102,13 @@ export function BioGoalCard(props: {
             color: text,
             fontSize: getScaledFontSize(17),
             fontWeight: getScaledFontWeight(700) as any,
-            lineHeight: 22,
+            // COS-930 — lineHeight must SCALE WITH the font.
+            // A literal against getScaledFontSize means the box stops
+            // growing while the glyphs keep growing: at large accessibility
+            // text the descenders clip, and Android clips harder than iOS
+            // because includeFontPadding is on by default. 1.3x is the ratio
+            // these three already used at 1.0 scale.
+            lineHeight: getScaledFontSize(17) * 1.3,
             flex: 1,
           }}
         >

@@ -303,6 +303,28 @@ test('THE POINT: `npm run android` cannot build against production', () => {
   assert.match(sh, /api\\?\.circlesupporthealth\\?\.ai/)
 })
 
+test('the build script cannot run twice at once', () => {
+  /*
+   * It rewrites SHARED files — .env, app.json, and the seven version fields
+   * across ios/ and android/ — and restores them on exit. Two concurrent runs
+   * fight, and whichever exits LAST restores its snapshot over the other's
+   * work. On 2026-09-07 a late-firing trap reverted app.json and silently
+   * dropped two config plugins added in between; the test suite caught it,
+   * nothing in the build did.
+   */
+  const sh = read('scripts/run-android.sh')
+  assert.match(sh, /mkdir "\$LOCK"/, 'the lock must be an atomic mkdir, not a -f test')
+  assert.match(sh, /rmdir "\$LOCK"/, 'the lock must be released in the restore path')
+})
+
+test('the trap covers signals, not just a clean exit', () => {
+  // bash runs an EXIT trap on a normal exit and on SIGINT, but NOT on SIGTERM
+  // or SIGHUP — and this script's normal ending is a human stopping a
+  // long-lived Metro server. Verified the hard way: a SIGTERM left the tree
+  // stamped 2.1.0/development including the four iOS files.
+  assert.match(read('scripts/run-android.sh'), /trap restore EXIT INT TERM HUP/)
+})
+
 test('THE POINT: the restore puts iOS back too, not just app.json', () => {
   /*
    * prepare-build.sh writes SEVEN coupled fields across FIVE files, four of

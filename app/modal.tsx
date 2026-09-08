@@ -17,6 +17,18 @@ import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import * as DocumentPicker from 'expo-document-picker';
+// COS-930 — SafeAreaView root, because the app is EDGE-TO-EDGE on Android.
+//
+// android/gradle.properties sets edgeToEdgeEnabled=true and styles.xml makes
+// the status bar transparent, so a plain flex:1 View starts at y=0 — under the
+// clock and the punch-hole camera. Worse than ugly: the SystemUI status-bar
+// window is touchable and sits ON TOP of the app, so a close button or a menu
+// trigger inside that strip receives no taps at all. Vishal hit this on an S26.
+//
+// No iOS regression: these are `presentation: 'modal'` routes, where
+// safe-area-context reports a top inset of 0 inside the sheet, so the
+// SafeAreaView adds nothing. On the full-screen ones it is a fix for iOS too.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   getNonEhrProviders,
   processAndStoreFiles,
@@ -344,7 +356,7 @@ export default function ModalScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Portal.Host>
         <View style={styles.modalHeader}>
           <View style={styles.headerActionsLeft}>
@@ -1098,7 +1110,7 @@ export default function ModalScreen() {
           </TabsProvider>
         )}
       </Portal.Host>
-    </View>
+    </SafeAreaView>
   );
 }
 

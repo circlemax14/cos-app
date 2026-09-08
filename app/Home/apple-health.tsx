@@ -24,7 +24,7 @@ import { useAccessibility } from '@/stores/accessibility-store';
  * choice is made.
  */
 import {
-  healthSourceLabel,
+  healthSourceIdentity,
   isHealthSourceAvailable,
   requestHealthSourceAccess,
 } from '@/services/health-source';
@@ -105,8 +105,16 @@ export default function AppleHealthScreen() {
     };
   }, []);
 
-  /** "Apple Health" on iOS, "Health Connect" on Android — for the copy. */
-  const sourceLabel = healthSourceLabel();
+  /*
+   * COS-930 — the brand on THIS device, plus how its data reaches us.
+   *
+   * `label` is what the patient recognises ("Apple Health" / "Samsung Health"
+   * / "Health"); `via` is the one sentence that stops an empty screen being a
+   * mystery, because Samsung Health only reaches Health Connect once the
+   * patient turns that sync on inside Samsung Health.
+   */
+  const source = healthSourceIdentity();
+  const sourceLabel = source.label;
 
   // COS-397 / SCRUM-535: after the user changes their Apple Health choice,
   // invalidate the reactive preference query + the HealthKit trends so every
@@ -151,7 +159,9 @@ export default function AppleHealthScreen() {
         invalidateAppleHealth();
         setStatusMessage({
           text:
-            'Apple Health turned off. To fully revoke access, open Settings > Privacy & Security > Health.',
+            Platform.OS === 'ios'
+              ? 'Apple Health turned off. To fully revoke access, open Settings > Privacy & Security > Health.'
+              : `${sourceLabel} turned off. To fully revoke access, open Health Connect in your device settings.`,
           isError: false,
         });
         return;
@@ -182,7 +192,7 @@ export default function AppleHealthScreen() {
         const message =
           err instanceof Error
             ? err.message
-            : 'Could not connect to Apple Health. Please try again.';
+            : `Could not connect to ${sourceLabel}. Please try again.`;
         setStatusMessage({ text: message, isError: true });
       } finally {
         setIsConnecting(false);
@@ -221,8 +231,8 @@ export default function AppleHealthScreen() {
                 it on this platform. On Android that is Health Connect, which
                 Samsung Health, Fitbit, Google Fit and Galaxy Watch write into. */}
             {Platform.OS === 'ios'
-              ? 'Connect Apple Health to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your iPhone and Apple Watch.'
-              : 'Connect Health Connect to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your phone, Samsung Health, Fitbit and your watch.'}
+              ? `Connect ${sourceLabel} to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your iPhone and Apple Watch.`
+              : `Connect ${sourceLabel} to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your phone and your watch.`}
           </Text>
         </View>
 
@@ -264,7 +274,7 @@ export default function AppleHealthScreen() {
                     */}
                     {Platform.OS === 'ios'
                       ? 'Apple Health is unavailable. Make sure the Health app is installed and try again.'
-                      : 'Health Connect is not set up on this device. It comes with Android 14 and later, or you can install it from the Play Store.'}
+                      : `${sourceLabel} data is read through Android Health Connect, which is not set up on this device. It comes with Android 14 and later, or you can install it from the Play Store.`}
                   </Text>
                 </View>
               </View>
@@ -290,11 +300,20 @@ export default function AppleHealthScreen() {
               <View style={[styles.row, { borderBottomWidth: 0 }]}>
                 <View style={styles.rowLeft}>
                   <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}>
-                    Enable Apple Health
+                    {`Enable ${sourceLabel}`}
                   </Text>
                   <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
                     {enabled ? 'Connected' : 'Not connected'}
                   </Text>
+                  {/* COS-930 — where the data actually comes from. Null on
+                      iOS, because HealthKit is not something a patient enables
+                      separately and naming it would introduce a word they have
+                      never seen. */}
+                  {source.via ? (
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 4 }}>
+                      {source.via}
+                    </Text>
+                  ) : null}
                 </View>
                 {isLoading || isConnecting ? (
                   <ActivityIndicator size="small" color={colors.tint} />
@@ -306,7 +325,7 @@ export default function AppleHealthScreen() {
                     trackColor={{ false: '#E0E0E0', true: colors.tint }}
                     accessibilityRole="switch"
                     accessibilityState={{ checked: enabled }}
-                    accessibilityLabel="Enable Apple Health"
+                    accessibilityLabel={`Enable ${sourceLabel}`}
                   />
                   )
                 )}
@@ -336,9 +355,9 @@ export default function AppleHealthScreen() {
                 lineHeight: getScaledFontSize(18),
               }}
             >
-              We only read health data — we never write to Apple Health. You can
-              change or revoke access at any time in Settings &gt; Privacy &amp;
-              Security &gt; Health.
+              {Platform.OS === 'ios'
+                ? `We only read health data — we never write to ${sourceLabel}. You can change or revoke access at any time in Settings > Privacy & Security > Health.`
+                : `We only read health data — we never write to ${sourceLabel}. You can change or revoke access at any time in Health Connect, under your device settings.`}
             </Text>
           </View>
         )}

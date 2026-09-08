@@ -27,6 +27,19 @@ import {
 } from '@/services/pin-auth';
 import { NumberPad } from '@/components/ui/number-pad';
 import { PinDots } from '@/components/ui/pin-dots';
+// COS-930 — SafeAreaView inside the Modal, because presentationStyle is
+// iOS-ONLY.
+//
+// RN's Android Modal ignores presentationStyle="pageSheet" entirely, so what
+// is a card sheet on iOS fills the screen from y=0 on Android. And with
+// edgeToEdgeEnabled=true, ReactModalHostView FORCES statusBarTranslucent on
+// every Modal regardless of props — so the modal window is edge-to-edge too.
+// The result is a header row printed over the clock with its Cancel/Done or
+// close control inside the SystemUI touch strip, where taps never reach us.
+//
+// No iOS regression: inside an iOS pageSheet the reported top inset is 0, so
+// this adds no padding there.
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -441,7 +454,7 @@ export default function SecuritySettingsScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowChangePinModal(false)}
       >
-        <View style={[styles.pinModalContainer, { backgroundColor: colors.background }]}>
+        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.pinModalContainer, { backgroundColor: colors.background }]}>
           <View style={[styles.pinModalHeader, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowChangePinModal(false)} accessibilityLabel="Cancel">
               <Text style={{ color: colors.tint, fontSize: getScaledFontSize(16) }}>Cancel</Text>
@@ -503,7 +516,7 @@ export default function SecuritySettingsScreen() {
 
           <NumberPad onDigit={handlePinDigit} onDelete={handlePinDelete} />
           <View style={{ height: 40 }} />
-        </View>
+        </SafeAreaView>
       </Modal>
     </AppWrapper>
   );

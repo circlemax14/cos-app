@@ -183,6 +183,44 @@ test('the screen reads the facade, not HealthKit directly', () => {
   assert.doesNotMatch(screen, /initializeHealthKit\(\)/)
 })
 
+test('THE POINT: no user-visible string hard-codes Apple on Android', () => {
+  /*
+   * The COS-930 bug, pinned. Six strings — including the switch label and its
+   * accessibility label — said "Apple Health" regardless of platform, so a
+   * Galaxy S26 offered "Enable Apple Health".
+   *
+   * Every remaining literal mention must sit behind an explicit
+   * `Platform.OS === 'ios'` branch. Anything else has to interpolate the
+   * resolved brand.
+   */
+  const raw = read('app/Home/apple-health.tsx')
+  const code = strip(raw)
+  const lines = code.split('\n')
+  const offenders = lines
+    .map((l, i) => ({ l, n: i + 1 }))
+    .filter(({ l }) => /Apple Health|Apple Watch|iPhone/.test(l))
+    .filter(({ l }) => !/Platform\.OS === 'ios'/.test(l))
+    // A ternary can put the iOS test on the previous line.
+    .filter(({ n }) => !/Platform\.OS === 'ios'/.test(lines[n - 2] ?? ''))
+  assert.deepEqual(
+    offenders.map((o) => `${o.n}: ${o.l.trim().slice(0, 70)}`),
+    [],
+    'Apple branding must be behind an iOS branch or interpolated from the resolved source',
+  )
+
+  // ...and the switch itself is interpolated, not literal.
+  assert.match(code, /Enable \$\{sourceLabel\}/)
+  assert.match(code, /accessibilityLabel=\{`Enable \$\{sourceLabel\}`\}/)
+})
+
+test('the screen shows WHERE the data comes from on Android', () => {
+  // Samsung Health syncs to Health Connect only once the patient turns that on
+  // inside Samsung Health, so a branded button over an empty screen needs the
+  // mechanism line to be recoverable.
+  const code = strip(read('app/Home/apple-health.tsx'))
+  assert.match(code, /source\.via/)
+})
+
 test('"still checking" is distinct from "not available"', () => {
   // `!available` was true while the async check was in flight, so an Android
   // patient saw "Not available on this device" first — and the wrong answer

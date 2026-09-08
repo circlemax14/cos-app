@@ -37,6 +37,10 @@
 import { Platform } from 'react-native';
 
 import type { HealthMetrics } from './health';
+import {
+  resolveHealthSourceIdentity,
+  type HealthSourceIdentity,
+} from '@/lib/health-source-identity';
 import * as healthKit from './health';
 import * as healthConnect from './health-connect';
 
@@ -53,11 +57,29 @@ export function activeHealthSource(): HealthSourceId {
   return 'none';
 }
 
-/** What the patient calls it. Used in copy, so it must read naturally inline. */
-export function healthSourceLabel(id: HealthSourceId = activeHealthSource()): string {
-  if (id === 'apple-health') return 'Apple Health';
-  if (id === 'health-connect') return 'Health Connect';
-  return 'your health app';
+/**
+ * What the patient calls it, on THEIR device.
+ *
+ * COS-930 — this used to return "Health Connect" on Android, which is the API
+ * name and not a thing anyone has an icon for. The brand is what someone
+ * recognises: "Samsung Health" on a Samsung, "Apple Health" on an iPhone.
+ * lib/health-source-identity.ts owns that mapping and explains why only
+ * Samsung is named.
+ *
+ * Platform.constants.Manufacturer is Android-only and absent on iOS, where it
+ * is not read anyway.
+ */
+export function healthSourceIdentity(): HealthSourceIdentity {
+  const manufacturer =
+    Platform.OS === 'android'
+      ? ((Platform.constants as { Manufacturer?: string } | undefined)?.Manufacturer ?? null)
+      : null;
+  return resolveHealthSourceIdentity(Platform.OS, manufacturer);
+}
+
+/** Just the brand, for inline use in a sentence. */
+export function healthSourceLabel(): string {
+  return healthSourceIdentity().label;
 }
 
 /**
