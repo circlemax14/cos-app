@@ -129,9 +129,15 @@ test('THE POINT: manifest permissions match what the code asks for', () => {
     // COS-934 — the last three vitals tiles.
     BloodGlucose: 'BLOOD_GLUCOSE',
     HeartRateVariabilityRmssd: 'HEART_RATE_VARIABILITY',
+    // COS-935 — the rest of what iOS reads.
+    BodyTemperature: 'BODY_TEMPERATURE',
+    Height: 'HEIGHT',
+    Distance: 'DISTANCE',
+    FloorsClimbed: 'FLOORS_CLIMBED',
+    ExerciseSession: 'EXERCISE',
   }
   const expected = requested.map((r) => RECORD_TO_PERM[r]).filter(Boolean)
-  assert.ok(expected.length >= 12, `expected the 12 record types, saw ${expected.length}`)
+  assert.ok(expected.length >= 17, `expected the 17 record types, saw ${expected.length}`)
   for (const perm of expected) {
     assert.ok(declared.includes(perm), `manifest is missing READ_${perm}`)
   }

@@ -55,6 +55,13 @@ const READ_PERMISSIONS = [
   // COS-934 — the last three vitals tiles. READ_STEPS is already above.
   'android.permission.health.READ_BLOOD_GLUCOSE',
   'android.permission.health.READ_HEART_RATE_VARIABILITY',
+  // COS-935 — the rest of what iOS reads. Height is only for deriving BMI,
+  // which Health Connect has no record for.
+  'android.permission.health.READ_BODY_TEMPERATURE',
+  'android.permission.health.READ_HEIGHT',
+  'android.permission.health.READ_DISTANCE',
+  'android.permission.health.READ_FLOORS_CLIMBED',
+  'android.permission.health.READ_EXERCISE',
 ];
 
 const RATIONALE_ACTION = 'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE';

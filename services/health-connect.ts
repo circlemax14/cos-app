@@ -77,6 +77,23 @@ export const HEALTH_CONNECT_READ_PERMISSIONS = [
    */
   'BloodGlucose',
   'HeartRateVariabilityRmssd',
+  /*
+   * COS-935 — everything else iOS reads that Health Connect can answer, so
+   * "Health Connect returns the data we need, similar to Apple Health" is
+   * true rather than aspirational.
+   *
+   * Height is here only to derive BMI: Health Connect has no BMI record, and
+   * iOS gets one from HealthKit. Deriving it from the latest weight and height
+   * is the same number by the same formula, rather than a blank tile.
+   *
+   * NOT here: walking-heart-rate. Health Connect has no equivalent record at
+   * all, so it stays iOS-only rather than being faked from resting HR.
+   */
+  'BodyTemperature',
+  'Height',
+  'Distance',
+  'FloorsClimbed',
+  'ExerciseSession',
 ] as const;
 
 export type HealthConnectRecordType = (typeof HEALTH_CONNECT_READ_PERMISSIONS)[number];
@@ -513,6 +530,42 @@ const TREND_SOURCES: Partial<
         ? Math.round(r.heartRateVariabilityMillis * 10) / 10
         : null,
   },
+  'body-temperature': {
+    recordType: 'BodyTemperature',
+    read: (r) => {
+      const v = (r.temperature as { inCelsius?: number } | undefined)?.inCelsius;
+      // iOS reports Fahrenheit; convert so the two platforms chart one unit.
+      return typeof v === 'number' ? Math.round((v * 9) / 5 + 32) : null;
+    },
+  },
+  weight: {
+    recordType: 'Weight',
+    read: (r) => {
+      const v = (r.weight as { inKilograms?: number } | undefined)?.inKilograms;
+      // iOS reports pounds.
+      return typeof v === 'number' ? Math.round(v * 2.20462 * 10) / 10 : null;
+    },
+  },
+  'distance-walking-running': {
+    recordType: 'Distance',
+    read: (r) => {
+      const v = (r.distance as { inMeters?: number } | undefined)?.inMeters;
+      // iOS reports miles.
+      return typeof v === 'number' ? Math.round((v / 1609.344) * 100) / 100 : null;
+    },
+  },
+  'flights-climbed': {
+    recordType: 'FloorsClimbed',
+    read: (r) => (typeof r.floors === 'number' ? Math.round(r.floors) : null),
+  },
+  'exercise-time': {
+    recordType: 'ExerciseSession',
+    read: (r) => {
+      const ms = new Date(String(r.endTime)).getTime() - new Date(String(r.startTime)).getTime();
+      // iOS reports minutes.
+      return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 60_000) : null;
+    },
+  },
   'sleep-hours': {
     recordType: 'SleepSession',
     read: (r) => {
@@ -546,6 +599,9 @@ export async function getHealthConnectVitalTrend(
   metric: HealthKitVitalMetric,
   daysBack = 90,
 ): Promise<LongitudinalTrend | null> {
+  // BMI is derived, not read — route it before the record lookup.
+  if (metric === 'body-mass-index') return deriveBmiTrend(daysBack);
+
   const sourceSpec = TREND_SOURCES[metric];
   const spec = VITAL_SPECS[metric];
   if (!sourceSpec || !spec) return null;
@@ -611,13 +667,82 @@ export async function getHealthConnectVitalTrend(
   }
 }
 
+/**
+ * COS-935 — BMI, which Health Connect does not store.
+ *
+ * HealthKit has a BodyMassIndex record; Health Connect does not. Rather than
+ * leave the tile permanently blank on Android, it is computed from the same
+ * two measurements a clinician would use — the latest weight and the latest
+ * height, both of which Health Connect DOES hold.
+ *
+ * Height is read once and reused for every weight point: people are weighed
+ * often and measured rarely, so pairing each weight with the nearest height
+ * reading would mostly pair it with the same value anyway, and would produce
+ * gaps on every day with no height record.
+ *
+ * Returns null rather than a guess when either is missing. A BMI computed from
+ * an assumed height is a clinical number that nobody measured.
+ */
+async function deriveBmiTrend(daysBack: number): Promise<LongitudinalTrend | null> {
+  const spec = VITAL_SPECS['body-mass-index'];
+  if (!spec) return null;
+  const sdk = loadSdk();
+  if (!sdk) return null;
+  try {
+    if (!(await sdk.initialize())) return null;
+    const now = new Date();
+    // Height is looked up over a long window: it changes rarely and a patient
+    // may not have recorded one inside the trend window at all.
+    const heightFrom = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const { records: heights } = (await sdk.readRecords('Height' as never, {
+      timeRangeFilter: {
+        operator: 'between',
+        startTime: heightFrom.toISOString(),
+        endTime: now.toISOString(),
+      },
+    })) as unknown as { records: Record<string, unknown>[] };
+    const latestHeightM = (heights ?? [])
+      .map((r) => (r.height as { inMeters?: number } | undefined)?.inMeters)
+      .filter((n): n is number => typeof n === 'number' && n > 0)
+      .pop();
+    if (!latestHeightM) return null;
+
+    const weightTrend = await getHealthConnectVitalTrend('weight', daysBack);
+    if (!weightTrend || weightTrend.dataPoints.length === 0) return null;
+
+    const dataPoints = weightTrend.dataPoints.map((p) => ({
+      date: p.date,
+      // weight points are in POUNDS (see the weight reader) -> kg for BMI.
+      value: Math.round((p.value / 2.20462 / (latestHeightM * latestHeightM)) * 10) / 10,
+      unit: spec.unit,
+    }));
+
+    return {
+      id: `hc-${spec.metricCode}`,
+      metricCode: spec.metricCode,
+      metricName: spec.metricName,
+      category: 'vital',
+      dataPoints,
+      trendDirection: direction(dataPoints),
+      trendPeriod: `${String(daysBack)}d`,
+      relatedConditions: [],
+      relatedMedications: [],
+      source: 'apple-health',
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Every metric Health Connect can answer. Failures are per-metric. */
 export async function getAllHealthConnectVitalTrends(
   daysBack = 90,
 ): Promise<LongitudinalTrend[]> {
   const metrics = Object.keys(TREND_SOURCES) as HealthKitVitalMetric[];
-  const results = await Promise.all(
-    metrics.map((m) => getHealthConnectVitalTrend(m, daysBack).catch(() => null)),
-  );
+  const results = await Promise.all([
+    ...metrics.map((m) => getHealthConnectVitalTrend(m, daysBack).catch(() => null)),
+    // BMI has no record of its own — see deriveBmiTrend.
+    deriveBmiTrend(daysBack).catch(() => null),
+  ]);
   return results.filter((t): t is LongitudinalTrend => t !== null);
 }

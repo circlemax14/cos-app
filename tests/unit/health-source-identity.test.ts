@@ -8,65 +8,74 @@
  * Pure module, so this runs under `node --test` with no React and no device.
  */
 
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { resolveHealthSourceIdentity } from '../../lib/health-source-identity.ts';
 
-test('THE POINT: a Samsung is never offered Apple Health', () => {
-  const s = resolveHealthSourceIdentity('android', 'samsung');
-  assert.equal(s.label, 'Samsung Health');
-  assert.doesNotMatch(s.label, /Apple/);
-  // ...and it is Health Connect we actually read.
-  assert.equal(s.api, 'health-connect');
+test('THE POINT: Android is Health Connect, whatever the handset', () => {
+  /*
+   * COS-935. The earlier version named the OEM app — "Samsung Health" on a
+   * Samsung — reasoning that the brand is what a patient recognises. Vishal
+   * asked what the two things actually ARE, and the answer showed the label
+   * was a category error:
+   *
+   *   Apple Health   is a hub AND an app. iOS has one component.
+   *   Health Connect is the hub.
+   *   Samsung Health is a recorder that writes into it — Android's Apple
+   *                  Watch, not its Apple Health.
+   *
+   * Calling the feature "Samsung Health" was the same mistake as calling the
+   * iOS feature "Apple Watch", and it promised something we do not do: we read
+   * Health Connect, which holds Samsung Health, Fitbit and Google Fit together.
+   */
+  for (const make of ['samsung', 'Samsung', 'google', 'xiaomi', 'OnePlus', '', null, undefined]) {
+    const s = resolveHealthSourceIdentity('android', make as string | null | undefined);
+    assert.equal(s.label, 'Health Connect', `manufacturer ${String(make)}`);
+    assert.equal(s.api, 'health-connect');
+  }
+});
+
+test('no OEM app is ever named as the feature', () => {
+  // There is no table of manufacturer apps to keep in sync, and no device can
+  // be told to enable a product we do not read.
+  const src = readFileSync(new URL('../../lib/health-source-identity.ts', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  for (const brand of ['Samsung Health', 'Google Fit', 'Fitbit', 'Mi Fitness', 'Huawei Health']) {
+    assert.ok(
+      !new RegExp(`label: '${brand}'`).test(code),
+      `${brand} must not be used as the feature LABEL`,
+    );
+  }
 });
 
 test('iOS keeps Apple Health and reads HealthKit', () => {
   const s = resolveHealthSourceIdentity('ios');
   assert.equal(s.label, 'Apple Health');
   assert.equal(s.api, 'healthkit');
-  // No mechanism line: HealthKit is not something a patient enables
-  // separately, and naming it introduces a word they have never seen.
+  // No mechanism line: Apple Health is hub and recorder in one, so there is no
+  // second app for the patient to go and switch on.
   assert.equal(s.via, null);
-});
-
-test('any other Android device gets the generic word, not another brand', () => {
-  // Naming Xiaomi/Huawei/OnePlus apps means a table that is wrong for whatever
-  // device we did not think of, and a Pixel user told to "Enable Samsung
-  // Health" is worse off than one told "Enable Health".
-  for (const make of ['Google', 'xiaomi', 'OnePlus', 'motorola', 'HUAWEI', '', null, undefined]) {
-    const s = resolveHealthSourceIdentity('android', make as string | null | undefined);
-    assert.equal(s.label, 'Health', `manufacturer ${String(make)} should get the generic label`);
-    assert.equal(s.api, 'health-connect');
-    assert.equal(s.isBrandedLabel, false);
-  }
-});
-
-test('manufacturer matching survives OEM casing and padding', () => {
-  // Platform.constants.Manufacturer is not normalised by the OS and varies.
-  for (const make of ['samsung', 'Samsung', 'SAMSUNG', '  Samsung  ']) {
-    assert.equal(
-      resolveHealthSourceIdentity('android', make).label,
-      'Samsung Health',
-      `"${make}" should be recognised as Samsung`,
-    );
-  }
 });
 
 test('THE POINT: Android always says how the data reaches us', () => {
   /*
-   * The sentence that stops an empty screen being a mystery. Samsung Health
-   * reaches Health Connect only once the patient enables that sync INSIDE
-   * Samsung Health — so a button bearing their app's name over an empty screen
-   * is a bug report unless we say where to look.
+   * The two-app split is the single most common reason an Android patient sees
+   * an empty screen: Samsung Health, Fitbit and Google Fit only reach Health
+   * Connect once the patient turns that sync on inside THAT app. iOS needs no
+   * equivalent sentence because Apple Health is both halves at once.
+   *
+   * So the RECORDERS are named here — in the explanation of where data comes
+   * from — while the FEATURE is named Health Connect. That is the distinction
+   * the label got wrong.
    */
-  for (const make of ['samsung', 'google']) {
+  for (const make of ['samsung', 'google', null]) {
     const s = resolveHealthSourceIdentity('android', make);
-    assert.ok(s.via, `${make}: via must be present on Android`);
+    assert.ok(s.via, `${String(make)}: via must be present on Android`);
     assert.match(s.via, /Health Connect/);
+    assert.match(s.via, /Samsung Health/);
   }
-  // Samsung's names the specific thing to check.
-  assert.match(resolveHealthSourceIdentity('android', 'samsung').via ?? '', /Samsung Health/);
 });
 
 test('a platform with no health API is not offered one', () => {
