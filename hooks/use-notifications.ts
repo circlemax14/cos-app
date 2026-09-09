@@ -8,7 +8,7 @@ import { routeForNotificationData } from '@/lib/notification-routing';
 import { queryClient } from '@/providers/QueryProvider';
 // COS-778 — the lock check and the replay queue for inbound navigation.
 import { isAppLocked } from '@/lib/lock-gate';
-import { deferNavigation } from '@/lib/locked-nav-queue';
+import { consumeDeferredNavigation, deferNavigation } from '@/lib/locked-nav-queue';
 import { ensureAndroidNotificationChannels } from '@/lib/android-notification-channels';
 
 /**
@@ -245,12 +245,30 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
      * fetching into cache while locked regardless; that is tracked there, not
      * papered over here.)
      */
-    if (isAppLocked()) {
-      deferNavigation(target);
-      return;
-    }
+    /*
+     * COS-947 — queue the intent ALWAYS, then navigate if we can.
+     *
+     * This deferred only when isAppLocked(). That is the PIN lock, not the
+     * session, and Vishal's report was a SESSION expiry: with no PIN configured
+     * the tap fell straight to router.push(), the screen's first request 401'd,
+     * requestSignIn() replaced the stack with the sign-in screen, and the
+     * destination was gone. Nothing had been enqueued, so sign-in's reader
+     * found an empty queue.
+     *
+     * Writing unconditionally costs nothing and closes that hole: the queue
+     * holds one route, expires after 5 minutes, is cleared when consumed and
+     * again on sign-out, and never leaves memory. A successful push consumes it
+     * immediately, so nothing stays armed for a later unlock.
+     */
+    deferNavigation(target);
+
+    if (isAppLocked()) return;
+
     // null → Home default (back-compat for unknown/new/data-ready types).
     router.push(target as never);
+    // Navigated, so the intent is spent. Leaving it queued would replay this
+    // route at the NEXT unlock, minutes later and out of context.
+    consumeDeferredNavigation();
   } catch {
     // Never let a navigation failure crash the notification pipeline.
     // Fall back to Home so the tap still does something sensible.

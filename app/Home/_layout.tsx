@@ -383,12 +383,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="integrative-screen"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
         name="chat"
         options={{
           title: 'Chat',

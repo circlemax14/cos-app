@@ -29,6 +29,7 @@ import {
 } from '@/services/social-auth';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
 import { clearPendingSignIn } from '@/lib/lock-gate';
+import { consumeDeferredNavigation } from '@/lib/locked-nav-queue';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -158,6 +159,29 @@ export default function SignInScreen() {
     // Force=true because this is a fresh sign-in — always re-warm.
     prefetchAfterAuth({ force: true });
 
+    /*
+     * COS-947 — a notification tapped while signed out must survive the sign-in.
+     *
+     * Vishal: "due to session expiry my app signed out, and I got a notification
+     * for help and support. When I clicked it I went to the sign in screen, and
+     * after signing in it took me to the HOME screen. Ideally it should take me
+     * to the SUPPORT screen."
+     *
+     * The intent WAS captured. security-store starts isLocked=true whenever a
+     * PIN exists, so while signed out isAppLocked() is true and the tap handler
+     * defers the route rather than pushing it (use-notifications.ts). What was
+     * missing is a reader: consumeDeferredNavigation() had exactly one caller,
+     * the lock screen's resumeAfterUnlock. Someone who signs in with a PASSWORD
+     * never passes through it, so the queued route sat there until its TTL and
+     * they landed on Home.
+     *
+     * Consumed here rather than in the onboarding branches below, and that
+     * ordering is the point: a deep link must not jump a patient over terms
+     * acceptance or device permissions. If a gate diverts them, the intent is
+     * dropped (see below) rather than replayed later out of context.
+     */
+    const deferredAfterSignIn = consumeDeferredNavigation();
+
     if (!user.termsAccepted) {
       router.replace('/(onboarding)/usage-guidelines' as never);
       return;
@@ -187,7 +211,19 @@ export default function SignInScreen() {
     } else if (!user.dataReady && user.fastenConnected) {
       router.replace('/(onboarding)/data-processing' as never);
     } else {
-      router.replace('/Home' as never);
+      /*
+       * COS-947 — the deep link the notification asked for, if one is live.
+       *
+       * Only on this branch: every branch above is an onboarding gate, and a
+       * patient who has not accepted terms should not be dropped onto a PHI
+       * screen because a push happened to arrive. Reaching here means they are
+       * fully onboarded, so the route is safe to honour.
+       *
+       * consumeDeferredNavigation() already enforces the 5-minute TTL and the
+       * leading-slash check, and consuming CLEARS it, so a failed navigation
+       * cannot leave a route armed for someone else's session.
+       */
+      router.replace((deferredAfterSignIn ?? '/Home') as never);
     }
   };
 

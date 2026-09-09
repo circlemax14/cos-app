@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { clearEntitlementCache } from './entitlement-cache';
+import { clearDeferredNavigation } from './locked-nav-queue';
 
 const KEYS = {
   access: 'cos_access_token',
@@ -243,6 +244,28 @@ export async function clearTokens(): Promise<void> {
   } catch {
     // The in-memory half is already cleared, which is what protects this session.
   }
+
+  /*
+   * COS-947 — drop any deferred deep link, for the reason its own module states.
+   *
+   * lib/locked-nav-queue.ts's header says: "CLEARED ON SIGN-OUT. Without that,
+   * signing out and back in as a different account could navigate the new
+   * session to the previous user's screen. That is a PHI leak wearing the
+   * costume of a convenience feature."
+   *
+   * clearDeferredNavigation() was written for that, exported — and never
+   * called. The queue holds a route string that can carry clinical context
+   * (`/Home/biopsychosocial-plan?focus=medications`), and COS-947 has just
+   * added a SECOND reader on the sign-in path, so the window the header
+   * describes is now genuinely reachable: user A taps a notification, the
+   * session drops, user B signs in on the same device inside the 5-minute TTL
+   * and lands on A's screen.
+   *
+   * Here for the same reason the entitlement cache is here — every
+   * credential-clearing path funnels through this function. Synchronous and
+   * in-memory, so it needs no try/catch of its own.
+   */
+  clearDeferredNavigation();
 }
 
 /** Returns true if an access token is stored (does not validate expiry). */

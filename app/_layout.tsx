@@ -182,14 +182,6 @@ function StackWithAppLock() {
         }}
       />
       <Stack.Screen
-        name="today-schedule"
-        options={{
-          title: "Today's Schedule",
-          headerShown: false,
-          autoHideHomeIndicator: true,
-        }}
-      />
-      <Stack.Screen
         name="calendar-event-editor"
         options={{
           // formSheet presentation had inconsistent safe-area + status-
