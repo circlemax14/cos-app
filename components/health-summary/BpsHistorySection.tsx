@@ -46,8 +46,8 @@ function BpsHistorySection() {
 
   const emptyMessage =
     isLoading || generating
-      ? 'Generating your biopsychosocial history…'
-      : 'Complete your intake to see your biopsychosocial history here.';
+      ? 'Generating your biopsychosocial summary…'
+      : 'Complete your intake to see your biopsychosocial summary here.';
 
   return (
     <SummaryCardShell
@@ -81,7 +81,7 @@ function BpsHistorySection() {
               ]}
               accessible
               accessibilityRole="summary"
-              accessibilityLabel={`${d.label} history`}
+              accessibilityLabel={`${d.label} summary`}
             >
               <Text
                 style={[
@@ -97,7 +97,7 @@ function BpsHistorySection() {
                 {d.label.toUpperCase()}
               </Text>
               {bullets.length === 0 ? (
-                <EmptyStateHint text="No history captured yet." />
+                <EmptyStateHint text="Nothing captured yet." />
               ) : (
                 bullets.map((b, i) => (
                   <View key={`${d.key}-${i}`} style={styles.bulletRow}>

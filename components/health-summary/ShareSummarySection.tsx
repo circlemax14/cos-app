@@ -235,8 +235,8 @@ export default function ShareSummarySection() {
         onPress={onShare}
         disabled={sharing}
         accessibilityRole="button"
-        accessibilityLabel="Share health summary as PDF"
-        accessibilityHint="Generates a PDF of your health summary and opens the share sheet"
+        accessibilityLabel="Share health status as PDF"
+        accessibilityHint="Generates a PDF of your health status and opens the share sheet"
         style={({ pressed }) => [
           styles.button,
           {

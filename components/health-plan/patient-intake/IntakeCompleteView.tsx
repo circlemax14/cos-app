@@ -42,7 +42,7 @@ export default function IntakeCompleteView() {
             textAlign: 'center',
           }}
         >
-          Your health summary will be ready in your Care Plan soon.
+          Your health status will be ready shortly.
         </Text>
         <Text
           style={{

@@ -104,7 +104,7 @@ function HealthSummaryScreenInner() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.tint} />
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>
-            Loading your health summary...
+            Loading your health status…
           </Text>
         </View>
       </AppWrapper>
@@ -136,7 +136,7 @@ function HealthSummaryScreenInner() {
                 textAlign: 'center',
               }}
             >
-              Unable to load health summary
+              Unable to load health status
             </Text>
             <Text
               style={{
@@ -152,7 +152,7 @@ function HealthSummaryScreenInner() {
               onPress={() => refetch()}
               style={[styles.retryButton, { backgroundColor: colors.tint }]}
               accessibilityRole="button"
-              accessibilityLabel="Retry loading health summary"
+              accessibilityLabel="Retry loading health status"
             >
               <Text
                 style={{
