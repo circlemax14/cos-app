@@ -82,7 +82,7 @@ export default function ShareSummarySection() {
     const bpsHtml = sections
       ? `
         <section>
-          <h2>Biopsychosocial history</h2>
+          <h2>Biopsychosocial summary</h2>
           ${bioBullets.length ? `<h3 style="color:#199C4F;">Biological</h3><ul>${bioBullets.map(b => `<li>${escape(b)}</li>`).join('')}</ul>` : ''}
           ${psyBullets.length ? `<h3 style="color:#7B3FE4;">Psychological</h3><ul>${psyBullets.map(b => `<li>${escape(b)}</li>`).join('')}</ul>` : ''}
           ${socBullets.length ? `<h3 style="color:#C97600;">Social</h3><ul>${socBullets.map(b => `<li>${escape(b)}</li>`).join('')}</ul>` : ''}
@@ -108,7 +108,7 @@ export default function ShareSummarySection() {
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Health Summary</title>
+<title>Health Status</title>
 <style>
   @page { margin: 0.75in; }
   body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: #111827; font-size: 12pt; line-height: 1.45; }
@@ -126,7 +126,7 @@ export default function ShareSummarySection() {
 </head>
 <body>
   <header>
-    <h1>Health Summary</h1>
+    <h1>Health Status</h1>
     <div class="meta">Generated ${escape(generated)} · Circle Support Health</div>
   </header>
   ${bpsHtml}
@@ -158,8 +158,8 @@ export default function ShareSummarySection() {
   const shareTextFallback = async (html: string) => {
     const message = htmlToText(html);
     await Share.share(
-      { message, title: 'My Health Summary' },
-      { subject: 'My Health Summary' },
+      { message, title: 'My Health Status' },
+      { subject: 'My Health Status' },
     );
   };
 
@@ -173,7 +173,7 @@ export default function ShareSummarySection() {
       if (canShare) {
         await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',
-          dialogTitle: 'Share Health Summary',
+          dialogTitle: 'Share Health Status',
           UTI: 'com.adobe.pdf',
         });
       } else {

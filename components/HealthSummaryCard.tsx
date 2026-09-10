@@ -93,7 +93,7 @@ export function HealthSummaryCard() {
           },
         ]}
       >
-        Health Summary
+        Health Status
       </Text>
 
       {/*

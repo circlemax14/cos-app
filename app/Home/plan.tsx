@@ -190,7 +190,7 @@ function HealthSummaryScreenInner() {
             }}
             accessibilityRole="header"
           >
-            Health Summary
+            Health Status
           </Text>
           <Text
             style={{
@@ -235,7 +235,7 @@ function HealthSummaryScreenInner() {
                 lineHeight: 22,
               }}
             >
-              Your personalized health summary — biopsychosocial history,
+              Your personalized health status — biopsychosocial summary,
               current conditions, medications, labs, vitals, treatments, and
               recommendations — will appear here once you complete your intake.
             </Text>

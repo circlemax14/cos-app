@@ -35,7 +35,12 @@ function buildTabLabels(): Record<string, string> {
      * "Plan+" only ever made sense next to a plain "Plan".
      */
     'care-plan-plus': isTablet ? 'Care Plan' : 'Plan',
-    plan: isTablet ? 'Health Summary' : 'Summary',
+    /*
+     * COS-964 — "Health Status" / "Status". Ken: this is an active clinical
+     * status, not a generated summary. The short form matters: the phone tab
+     * bar truncates, and "Status" carries the meaning where "Summary" did not.
+     */
+    plan: isTablet ? 'Health Status' : 'Status',
     reports: 'Reports',
   };
 }

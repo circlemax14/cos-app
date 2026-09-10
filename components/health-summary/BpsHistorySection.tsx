@@ -51,7 +51,17 @@ function BpsHistorySection() {
 
   return (
     <SummaryCardShell
-      title="Biopsychosocial history"
+      /*
+       * COS-964 — "summary", not "history". Ken: "we don't want that to be a
+       * history page, we want it to be an active status page." A history reads
+       * as a record of what happened; this is what is true about the patient
+       * now, and it is what the care plan is generated from.
+       *
+       * The COMPONENT name and the `plan.bps-history` entitlement key are
+       * unchanged — the key is stored in plan rows and renaming it would
+       * silently un-grant the section for every patient who has it.
+       */
+      title="Biopsychosocial summary"
       icon="psychology"
       accentColor="#7B3FE4"
       isEmpty={emptyAll}
