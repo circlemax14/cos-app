@@ -86,6 +86,52 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
   };
 }
 
+/**
+ * COS-968 — the same doctor, twice.
+ *
+ * Ken, 2026-09-10, on the provider pages: they "duplicate" and filter badly.
+ * He is right, and it is measurable: a live patient returns 78 provider rows
+ * in which every name appears exactly twice — once keyed by the Epic FHIR
+ * id, once by the NPI. So ~39 doctors render as 78 entries, and half of them
+ * open a detail screen where all five tabs read "No … recorded by this
+ * provider", because the records hang off the OTHER copy.
+ *
+ * Merged on name + credentials rather than name alone: two different people
+ * called J. Smith at one clinic will differ in qualifications, and merging
+ * them would be a worse error than showing them twice. The survivor is the
+ * copy that actually has records, so the tap lands somewhere with content.
+ *
+ * `fetchProviderById` resolves through this same list, so an id dropped here
+ * can never be navigated to — the row that carries the id is the row that
+ * renders.
+ *
+ * The proper home for this is cos-backend patient.service.ts:99, where the
+ * two FHIR identifiers are still distinguishable. That needs a `main` deploy;
+ * this does not, and the duplication is on screen today.
+ */
+function dedupeByPerson(providers: Provider[]): Provider[] {
+  const norm = (v?: string) => (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const best = new Map<string, Provider>();
+  for (const p of providers) {
+    const key = `${norm(p.name)}|${norm(p.qualifications)}`;
+    // A blank name would collapse every unnamed row into one. Keep those.
+    if (!norm(p.name)) {
+      best.set(`${key}|${p.id}`, p);
+      continue;
+    }
+    const held = best.get(key);
+    if (!held) {
+      best.set(key, p);
+      continue;
+    }
+    const better =
+      (p.hasData ? 1 : 0) - (held.hasData ? 1 : 0) ||
+      (p.recordCount ?? 0) - (held.recordCount ?? 0);
+    if (better > 0) best.set(key, p);
+  }
+  return [...best.values()];
+}
+
 export async function fetchProviders(): Promise<Provider[]> {
   try {
     // COS-366: retry transient launch-burst throttles (429) so a momentary
@@ -99,10 +145,12 @@ export async function fetchProviders(): Promise<Provider[]> {
       { shouldRetry: isTransientApiError },
     );
     const { roles, practitioners } = res.data.data;
-    return practitioners.map((p) => {
-      const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
-      return transformToProvider(p, role);
-    });
+    return dedupeByPerson(
+      practitioners.map((p) => {
+        const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
+        return transformToProvider(p, role);
+      }),
+    );
   } catch (error) {
     console.warn('Failed to fetch providers (HealthLake may be unavailable):', error);
     return [];

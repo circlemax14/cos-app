@@ -119,38 +119,34 @@ export default function ModalScreen() {
   // Load doctor photos for all providers
   const doctorPhotos = useDoctorPhotos(allProviderIds);
 
-  const lastVisitedFilters = [
-    { id: '3m', label: 'Last 3 months', months: 3 },
-    { id: '6m', label: 'Last 6 months', months: 6 },
-    { id: '1y', label: 'Last 1 year', years: 1 },
-    { id: '2y', label: 'Last 2 years', years: 2 },
-    { id: '5y', label: 'Last 5 years', years: 5 },
+  /*
+   * COS-968 — a filter that emptied the list.
+   *
+   * These options used to be "Last 3 months / 6 months / 1 year / 2 years /
+   * 5 years", filtered on `provider.lastVisited`. NOTHING in cos-backend or
+   * cos-app has ever written that field — zero hits across every repo — so
+   * `if (!provider.lastVisited) return false` deleted every EHR provider the
+   * moment any option was picked. Choosing a filter emptied the screen.
+   *
+   * `hasData` and `recordCount` are computed by the backend and already on
+   * the row, so this asks a question the data can actually answer, and it is
+   * the question Ken's "filter it in a meaningful way" is really about: show
+   * me the doctors I have records from.
+   */
+  const RECORD_FILTERS = [
+    { id: 'with-records', label: 'With records' },
+    { id: 'without-records', label: 'No records yet' },
   ];
-
-  const getCutoffDate = (filterId: string | null) => {
-    if (!filterId) return null;
-    const filter = lastVisitedFilters.find(item => item.id === filterId);
-    if (!filter) return null;
-    const now = new Date();
-    const cutoff = new Date(now);
-    if (filter.months) {
-      cutoff.setMonth(now.getMonth() - filter.months);
-    } else if (filter.years) {
-      cutoff.setFullYear(now.getFullYear() - filter.years);
-    }
-    return cutoff;
-  };
 
   const filterProvidersByLastVisited = (providers: SelectedProvider[]) => {
     if (!lastVisitedFilter) return providers;
-    const cutoff = getCutoffDate(lastVisitedFilter);
-    if (!cutoff) return providers;
     return providers.filter(provider => {
+      // Manually added people and non-medical supports have no EHR records
+      // by definition; a records filter must never hide them.
       if (provider.isManual) return true;
       if (provider.category && provider.category !== 'Medical') return true;
-      if (!provider.lastVisited) return false;
-      const visitedDate = new Date(provider.lastVisited);
-      return visitedDate >= cutoff;
+      const has = provider.hasData === true || (provider.recordCount ?? 0) > 0;
+      return lastVisitedFilter === 'with-records' ? has : !has;
     });
   };
 
@@ -361,7 +357,7 @@ export default function ModalScreen() {
         <View style={styles.modalHeader}>
           <View style={styles.headerActionsLeft}>
             <FilterMenu
-              options={lastVisitedFilters}
+              options={RECORD_FILTERS}
               selectedId={lastVisitedFilter}
               onSelect={setLastVisitedFilter}
               onClear={() => setLastVisitedFilter(null)}
@@ -372,7 +368,7 @@ export default function ModalScreen() {
               fontSize={getScaledFontSize(14)}
               fontWeight={getScaledFontWeight(500) as any}
               iconSize={getScaledFontSize(22)}
-              accessibilityLabel="Filter providers by last visited"
+              accessibilityLabel="Filter providers by whether they have records"
             />
           </View>
           <Text style={[styles.modalTitle, {
