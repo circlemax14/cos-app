@@ -64,12 +64,36 @@ export const SUPPORT_CATEGORIES: Category[] = [
     id: 'psychological',
     name: 'Psychological',
     icon: getCategoryIcon('mental-health'),
+    /*
+     * COS-969 — Ken's own member types, not ours.
+     *
+     * These sub-categories were invented by us in SCRUM-579 to give the
+     * Psychological axis something to hold. Ken has since written the real
+     * list himself, and it is ALREADY IN THIS REPO: services/api/connections
+     * .ts PSYCHOLOGICAL_CATEGORIES / SOCIAL_CATEGORIES, commented "Ken's
+     * chips, 2026-08-01". Two lists for one taxonomy is how a patient ends
+     * up filing their AA sponsor under "Support Group" here and "AA sponsor"
+     * there.
+     *
+     * Re-keying the ids is safe TODAY and only today: nothing persists them
+     * (manually added members live in React state in app/modal.tsx and
+     * app/Home/index.tsx and are lost when the sheet closes; no AsyncStorage,
+     * no API). It stops being safe the moment anything writes one down.
+     *
+     * The keyword hints stay attached where they existed, because
+     * provider-categorization.ts may one day learn these buckets. Ken's
+     * purely-social types carry none: no EHR record will ever say "mentor".
+     */
     subCategories: [
-      { id: 'psychiatrist', name: 'Psychiatrist', icon: getSubCategoryIcon('psychiatrist'), keywords: ['psychiatrist', 'psychiatry', 'psychiatric'] },
-      { id: 'psychologist', name: 'Psychologist', icon: getSubCategoryIcon('psychologist'), keywords: ['psychologist', 'psychology', 'clinical psychologist', 'psyd'] },
-      { id: 'therapist', name: 'Therapist / Counselor', icon: getSubCategoryIcon('mft'), keywords: ['therapist', 'counselor', 'lmft', 'mft', 'marriage and family therapist', 'lpc', 'licensed professional counselor', 'psychotherapist'] },
-      { id: 'social-worker', name: 'Clinical Social Worker', icon: getSubCategoryIcon('lcsw'), keywords: ['clinical social worker', 'lcsw', 'msw', 'social worker'] },
-      { id: 'support-group', name: 'Support Group', icon: getSubCategoryIcon('aa'), keywords: ['support group', 'aa', 'alcoholics anonymous', 'na', 'narcotics anonymous', 'recovery group', 'peer support'] },
+      { id: 'therapist', name: 'Therapist', icon: getSubCategoryIcon('mft'), keywords: ['therapist', 'counselor', 'lmft', 'mft', 'marriage and family therapist', 'lpc', 'licensed professional counselor', 'psychotherapist'] },
+      { id: 'psychiatry', name: 'Psychiatry', icon: getSubCategoryIcon('psychiatrist'), keywords: ['psychiatrist', 'psychiatry', 'psychiatric', 'psychologist', 'psychology', 'clinical psychologist', 'psyd'] },
+      { id: 'recovery', name: 'Recovery', icon: getSubCategoryIcon('aa'), keywords: ['recovery group', 'support group', 'aa', 'alcoholics anonymous', 'na', 'narcotics anonymous'] },
+      { id: 'aa-sponsor', name: 'AA sponsor', icon: getSubCategoryIcon('aa'), keywords: [] },
+      { id: 'peer', name: 'Peer', icon: getSubCategoryIcon('friends'), keywords: ['peer support'] },
+      { id: 'mentor', name: 'Mentor', icon: getSubCategoryIcon('friends'), keywords: [] },
+      { id: 'case-manager', name: 'Case manager', icon: getSubCategoryIcon('lcsw'), keywords: ['clinical social worker', 'lcsw', 'msw', 'social worker', 'case manager'] },
+      { id: 'faith-based', name: 'Faith based', icon: getSubCategoryIcon('church'), keywords: [] },
+      { id: 'parole-officer', name: 'Parole officer', icon: getSubCategoryIcon('others'), keywords: [] },
       { id: 'others-psychological', name: 'Others', icon: getSubCategoryIcon('others'), keywords: ['mental health', 'behavioral health'] },
     ],
   },
@@ -77,12 +101,21 @@ export const SUPPORT_CATEGORIES: Category[] = [
     id: 'social',
     name: 'Social',
     icon: getCategoryIcon('family'),
+    // Ken's SOCIAL_CATEGORIES, same source as above. 'proxy' (Health proxy)
+    // is deliberately NOT here: a health proxy is a legal role with its own
+    // consent flow (services/api/proxy), not a support you file in a list.
     subCategories: [
       { id: 'family', name: 'Family', icon: getSubCategoryIcon('siblings'), keywords: [] },
       { id: 'friend', name: 'Friend', icon: getSubCategoryIcon('friends'), keywords: [] },
+      { id: 'peer-support', name: 'Peer support', icon: getSubCategoryIcon('groups'), keywords: [] },
+      { id: 'health-coach', name: 'Health coach', icon: getSubCategoryIcon('others'), keywords: ['health coach'] },
+      { id: 'nutrition-coach', name: 'Nutrition coach', icon: getSubCategoryIcon('others'), keywords: ['dietitian', 'nutritionist', 'nutrition'] },
+      { id: 'physical-trainer', name: 'Physical trainer', icon: getSubCategoryIcon('others'), keywords: ['trainer', 'personal trainer'] },
+      { id: 'helper', name: 'Helper', icon: getSubCategoryIcon('others'), keywords: [] },
+      { id: 'faith', name: 'Faith', icon: getSubCategoryIcon('church'), keywords: [] },
+      { id: 'leisure', name: 'Leisure', icon: getSubCategoryIcon('groups'), keywords: [] },
       { id: 'neighbor', name: 'Neighbor', icon: getSubCategoryIcon('friends'), keywords: [] },
       { id: 'community', name: 'Community', icon: getSubCategoryIcon('groups'), keywords: [] },
-      { id: 'faith-community', name: 'Faith Community', icon: getSubCategoryIcon('church'), keywords: [] },
       { id: 'others-social', name: 'Others', icon: getSubCategoryIcon('others'), keywords: [] },
     ],
   },
