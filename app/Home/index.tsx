@@ -370,7 +370,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   router.push(`/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
                   return;
                 }
-                const isIntegrative = item.category === 'Integrative';
+                const isIntegrative = item.category?.toLowerCase() === 'integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
                 } else if (!item.isManual) {
@@ -764,7 +764,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   router.push(`/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
                   return;
                 }
-                const isIntegrative = item.category === 'Integrative';
+                const isIntegrative = item.category?.toLowerCase() === 'integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
                 } else if (!item.isManual) {
@@ -968,7 +968,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
                 }
               ]}
               onPress={() => {
-                const isIntegrative = provider.category === 'Integrative';
+                const isIntegrative = provider.category?.toLowerCase() === 'integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(provider.id)}`);
                 } else if (!provider.isManual) {
@@ -1167,38 +1167,37 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
     setShowAddMemberForm(false);
   };
 
-  const lastVisitedFilters = [
-    { id: '3m', label: 'Last 3 months', months: 3 },
-    { id: '6m', label: 'Last 6 months', months: 6 },
-    { id: '1y', label: 'Last 1 year', years: 1 },
-    { id: '2y', label: 'Last 2 years', years: 2 },
-    { id: '5y', label: 'Last 5 years', years: 5 },
+  /*
+   * COS-968 — a filter that emptied the list.
+   *
+   * These options used to be "Last 3 months / 6 months / 1 year / 2 years /
+   * 5 years", filtered on `provider.lastVisited`. NOTHING in cos-backend or
+   * cos-app has ever written that field — zero hits across every repo — so
+   * `if (!provider.lastVisited) return false` deleted every EHR provider the
+   * moment any option was picked. Choosing a filter emptied the screen.
+   *
+   * `hasData` and `recordCount` are computed by the backend and already on
+   * the row, so this asks a question the data can actually answer, and it is
+   * the question Ken's "filter it in a meaningful way" is really about: show
+   * me the doctors I have records from.
+   */
+  const RECORD_FILTERS = [
+    { id: 'with-records', label: 'With records' },
+    { id: 'without-records', label: 'No records yet' },
   ];
-
-  const getCutoffDate = (filterId: string | null) => {
-    if (!filterId) return null;
-    const filter = lastVisitedFilters.find(item => item.id === filterId);
-    if (!filter) return null;
-    const now = new Date();
-    const cutoff = new Date(now);
-    if (filter.months) {
-      cutoff.setMonth(now.getMonth() - filter.months);
-    } else if (filter.years) {
-      cutoff.setFullYear(now.getFullYear() - filter.years);
-    }
-    return cutoff;
-  };
 
   const filterProvidersByLastVisited = (providers: SelectedProvider[]) => {
     if (!lastVisitedFilter) return providers;
-    const cutoff = getCutoffDate(lastVisitedFilter);
-    if (!cutoff) return providers;
     return providers.filter(provider => {
+      // Manually added people and non-medical supports have no EHR records
+      // by definition; a records filter must never hide them.
       if (provider.isManual) return true;
-      if (provider.category && provider.category !== 'Medical') return true;
-      if (!provider.lastVisited) return false;
-      const visitedDate = new Date(provider.lastVisited);
-      return visitedDate >= cutoff;
+      // COS-971 — `category` is LOWERCASED at providers.ts:81, so comparing it
+      // against 'Medical' was always true and every row short-circuited here:
+      // both filter options returned the identical list. The filter did nothing.
+      if (provider.category && provider.category.toLowerCase() !== 'medical') return true;
+      const has = provider.hasData === true || (provider.recordCount ?? 0) > 0;
+      return lastVisitedFilter === 'with-records' ? has : !has;
     });
   };
 
@@ -1230,22 +1229,17 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
           }
         });
 
-        // Sort providers in each subcategory by lastVisited in descending order
+        // Providers with records first, then alphabetical.
         categorizedProviders.forEach((providerList, key) => {
           const sorted = [...providerList].sort((a, b) => {
-            const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
-            const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-
-            // If both have dates, sort by date descending
-            if (dateA > 0 && dateB > 0) {
-              return dateB - dateA; // Descending order (most recent first)
-            }
-            // If only one has a date, prioritize it
-            if (dateA > 0 && dateB === 0) return -1;
-            if (dateB > 0 && dateA === 0) return 1;
-
-            // If neither has a date, maintain original order
-            return 0;
+            // COS-968 — this used to sort on `lastVisited`, which nothing has ever
+            // written, so every comparison was 0 vs 0 and the sort was a no-op.
+            // `recordCount` is real and answers the same question a patient is
+            // actually asking: who do I have anything from?
+            const countA = a.recordCount ?? 0;
+            const countB = b.recordCount ?? 0;
+            if (countA !== countB) return countB - countA;
+            return (a.name ?? '').localeCompare(b.name ?? '');
           });
           categorizedProviders.set(key, sorted);
         });
@@ -1325,21 +1319,16 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       relationship: member.relationship,
     }));
 
-    // Sort by lastVisited in descending order (most recently visited first)
+    // Providers with records first, then alphabetical.
     const sortedProviders = [...providers, ...manualProviders].sort((a, b) => {
-      const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
-      const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-
-      // If both have dates, sort by date descending
-      if (dateA > 0 && dateB > 0) {
-        return dateB - dateA; // Descending order (most recent first)
-      }
-      // If only one has a date, prioritize it
-      if (dateA > 0 && dateB === 0) return -1;
-      if (dateB > 0 && dateA === 0) return 1;
-
-      // If neither has a date, maintain original order
-      return 0;
+      // COS-968 — this used to sort on `lastVisited`, which nothing has ever
+      // written, so every comparison was 0 vs 0 and the sort was a no-op.
+      // `recordCount` is real and answers the same question a patient is
+      // actually asking: who do I have anything from?
+      const countA = a.recordCount ?? 0;
+      const countB = b.recordCount ?? 0;
+      if (countA !== countB) return countB - countA;
+      return (a.name ?? '').localeCompare(b.name ?? '');
     });
     return filterProvidersByLastVisited(sortedProviders);
   };
@@ -1514,7 +1503,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
           </Text>
           <View style={{ width: getScaledFontSize(24), alignItems: 'center', justifyContent: 'center' }}>
             <FilterMenu
-              options={lastVisitedFilters}
+              options={RECORD_FILTERS}
               selectedId={lastVisitedFilter}
               onSelect={setLastVisitedFilter}
               onClear={() => setLastVisitedFilter(null)}
@@ -1525,7 +1514,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
               fontSize={getScaledFontSize(14)}
               fontWeight={getScaledFontWeight(500) as any}
               iconSize={getScaledFontSize(20)}
-              accessibilityLabel="Filter providers by last visited"
+              accessibilityLabel="Filter providers by whether they have records"
             />
           </View>
         </View>
@@ -2357,21 +2346,16 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
           const departments = await fetchProvidersByDepartment();
           const department = departments.find(d => d.id === departmentId);
           if (department) {
-            // Sort by lastVisited in descending order (most recently visited first)
+            // Providers with records first, then alphabetical.
             const sortedDoctors = [...department.providers].sort((a, b) => {
-              const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
-              const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-
-              // If both have dates, sort by date descending
-              if (dateA > 0 && dateB > 0) {
-                return dateB - dateA; // Descending order (most recent first)
-              }
-              // If only one has a date, prioritize it
-              if (dateA > 0 && dateB === 0) return -1;
-              if (dateB > 0 && dateA === 0) return 1;
-
-              // If neither has a date, maintain original order
-              return 0;
+              // COS-968 — this used to sort on `lastVisited`, which nothing has ever
+              // written, so every comparison was 0 vs 0 and the sort was a no-op.
+              // `recordCount` is real and answers the same question a patient is
+              // actually asking: who do I have anything from?
+              const countA = a.recordCount ?? 0;
+              const countB = b.recordCount ?? 0;
+              if (countA !== countB) return countB - countA;
+              return (a.name ?? '').localeCompare(b.name ?? '');
             });
             setFastenProviders(sortedDoctors);
             console.log(`Loaded ${sortedDoctors.length} providers from department ${department.name}`);
@@ -2379,7 +2363,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
             setFastenProviders([]);
           }
         } else {
-          // Load all providers (already sorted by lastVisited in fetchProviders)
+          // Load all providers (deduped in fetchProviders; sorted below)
           const providers = await fetchProviders();
           setFastenProviders(providers);
           console.log(`Loaded ${providers.length} providers from Fasten Health`);
@@ -2408,13 +2392,12 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
       const dataB = b.hasData !== false ? 1 : 0;
       if (dataA !== dataB) return dataB - dataA;
 
-      // Then by lastVisited (most recent first)
-      const dateA = a.lastVisited ? new Date(a.lastVisited).getTime() : 0;
-      const dateB = b.lastVisited ? new Date(b.lastVisited).getTime() : 0;
-      if (dateA > 0 && dateB > 0) return dateB - dateA;
-      if (dateA > 0 && dateB === 0) return -1;
-      if (dateB > 0 && dateA === 0) return 1;
-      return 0;
+      // COS-968 — was `lastVisited`, a field nothing writes. Break the
+      // hasData tie on how much is actually there, then on name.
+      const countA = a.recordCount ?? 0;
+      const countB = b.recordCount ?? 0;
+      if (countA !== countB) return countB - countA;
+      return (a.name ?? '').localeCompare(b.name ?? '');
     });
 
     return sortedProviders.map(provider => ({

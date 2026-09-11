@@ -1,3 +1,15 @@
+/*
+ * ⚠️ NOT MOUNTED. 2026-09-10: this component has zero importers repo-wide.
+ * The COS-855 "we are rebuilding your summary" banner it carries therefore
+ * never reaches a patient — `hooks/use-health-summary.ts` still polls every
+ * 5s while `rebuilding === true`, but no live section on the Health Status
+ * screen renders the banner. (Care Plan Plus has its own, separate one:
+ * COS-822 / regenPending, app/Home/care-plan-plus.tsx:330.)
+ *
+ * Kept rather than deleted: tests/unit/health-summary-rebuilding-contract
+ * is the record of that decision, and the behaviour should be re-mounted on
+ * Health Status rather than quietly lost. Found during COS-964.
+ */
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -35,7 +47,7 @@ export function HealthSummaryCard() {
             },
           ]}
         >
-          Generating your health summary...
+          Generating your health status…
         </Text>
       </View>
     );
@@ -58,7 +70,7 @@ export function HealthSummaryCard() {
             },
           ]}
         >
-          Unable to generate health summary.
+          Unable to generate health status.
         </Text>
         <TouchableOpacity onPress={() => refetch()}>
           <Text
@@ -93,7 +105,7 @@ export function HealthSummaryCard() {
           },
         ]}
       >
-        Health Summary
+        Health Status
       </Text>
 
       {/*
@@ -123,7 +135,7 @@ export function HealthSummaryCard() {
               { color: colors.subtext, fontSize: getScaledFontSize(12) },
             ]}
           >
-            Updating your health summary — we&apos;ll let you know when it&apos;s ready.
+            Updating your health status — we&apos;ll let you know when it&apos;s ready.
           </Text>
         </View>
       )}

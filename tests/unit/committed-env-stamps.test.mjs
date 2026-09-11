@@ -1,0 +1,152 @@
+/**
+ * COS-939 — nothing non-prod ever gets COMMITTED.
+ *
+ * ─── THE FAILURE THIS EXISTS FOR ─────────────────────────────────────
+ *
+ * Six commits on this branch (COS-932 through COS-938) shipped app.json,
+ * Expo.plist, Info.plist and project.pbxproj all stamped 2.1.0 / development.
+ * A build had swapped the tree to dev and the restore never ran — the script
+ * was killed by a signal, and I committed on top of the swapped tree without
+ * looking. Merging that to main leaves main stamped for dev.
+ *
+ * That is exactly the SCRUM-147 / SCRUM-151 failure: someone opens Xcode on
+ * main and archives, MARKETING_VERSION reads 2.1.0 and the channel reads
+ * `development`, and a binary pointing at the DEV api and the DEV Cognito pool
+ * goes to App Store review. It looks like it works, because it does work —
+ * against the wrong backend, with patient data in the wrong account.
+ *
+ * ─── WHY IT CHECKS THE INDEX, NOT THE WORKING TREE ───────────────────
+ *
+ * The working tree is LEGITIMATELY stamped dev for the whole length of an
+ * Android or dev-device build — that is what prepare-build.sh is for, and
+ * failing then would be a false alarm on every test run during a build, which
+ * is how a guard gets deleted.
+ *
+ * The index is the thing that becomes a commit. Checking `git show :<path>`
+ * fails at the exact moment something non-prod is staged, and passes the
+ * instant the fix is staged. During a build, the index still holds prod while
+ * the tree holds dev — no false positive, no reason to switch this off.
+ *
+ * Three prior guards did not catch this: prepare-build.sh verifies the tree it
+ * just wrote, run-android.sh restores on exit (but EXIT does not fire on
+ * SIGKILL), and the env-budget check reads .env. None of them look at what is
+ * about to be committed.
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+
+const REPO = new URL('../../', import.meta.url).pathname;
+
+/** Staged content of a path, or null when git cannot tell us. */
+function staged(path) {
+  try {
+    return execFileSync('git', ['show', `:${path}`], {
+      cwd: REPO,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return null; // not a repo, no git, or path not tracked
+  }
+}
+
+/** The value of the <string> immediately after a <key>. */
+function plistValue(xml, key) {
+  const m = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(xml);
+  return m ? m[1] : null;
+}
+
+test('THE POINT: the staged app.json is stamped for PRODUCTION', () => {
+  const raw = staged('app.json');
+  if (raw === null) return; // nothing to check outside a checkout
+
+  const expo = JSON.parse(raw).expo;
+  const channel = expo.updates?.requestHeaders?.['expo-channel-name'];
+
+  /*
+   * Major version IS the environment (cos-app/CLAUDE.md): 1.x production,
+   * 2.x dev, 3.x staging. Asserting the major rather than a literal version
+   * means this keeps working across every prod release without an edit — a
+   * guard that needs updating on each release is a guard that gets deleted.
+   */
+  assert.match(expo.version, /^1\./, `app.json version ${expo.version} is not production (1.x)`);
+  assert.match(
+    expo.runtimeVersion,
+    /^1\./,
+    `app.json runtimeVersion ${expo.runtimeVersion} is not production (1.x)`,
+  );
+  assert.equal(channel, 'production', `app.json expo-channel-name is ${channel}`);
+});
+
+test('the staged iOS stamps agree with app.json', () => {
+  /*
+   * All four files are set together by prepare-build.sh and drifted together
+   * here, but they have drifted APART before — SCRUM-147 shipped 1.3.0 with a
+   * plist still reading 1.2.0, so no OTA could ever reach that binary. Checking
+   * only app.json would have passed that.
+   */
+  const expoPlist = staged('ios/CSH/Supporting/Expo.plist');
+  if (expoPlist !== null) {
+    const runtime = plistValue(expoPlist, 'EXUpdatesRuntimeVersion');
+    assert.match(runtime ?? '', /^1\./, `Expo.plist runtime ${runtime} is not production`);
+    assert.equal(
+      plistValue(expoPlist, 'expo-channel-name'),
+      'production',
+      'Expo.plist channel is not production',
+    );
+  }
+
+  const infoPlist = staged('ios/CSH/Info.plist');
+  if (infoPlist !== null) {
+    const short = plistValue(infoPlist, 'CFBundleShortVersionString');
+    assert.match(short ?? '', /^1\./, `Info.plist CFBundleShortVersionString ${short}`);
+  }
+
+  const pbx = staged('ios/CSH.xcodeproj/project.pbxproj');
+  if (pbx !== null) {
+    // Debug AND Release both carry it; a mismatch between them is its own bug.
+    const versions = [...pbx.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((m) => m[1].trim());
+    assert.ok(versions.length > 0, 'no MARKETING_VERSION found in pbxproj');
+    for (const v of versions) {
+      assert.match(v, /^1\./, `pbxproj MARKETING_VERSION ${v} is not production`);
+    }
+  }
+});
+
+test('THE POINT: the staged ANDROID stamps are production too', () => {
+  /*
+   * android/ is generated by `expo prebuild` but it is CHECKED IN, so what is
+   * committed is what Gradle builds — prebuild does not re-run on a normal
+   * build, and never on a colleague's machine.
+   *
+   * prepare-build.sh originally knew only about app.json and the three iOS
+   * files, so the branch reached a state where iOS read 1.5.2/production and
+   * Android read 2.1.0/development in the same commit: the two platforms
+   * disagreeing about which backend the app talks to, and only one of them
+   * checked by anything.
+   */
+  const gradle = staged('android/app/build.gradle');
+  if (gradle !== null) {
+    const m = /versionName "([^"]+)"/.exec(gradle);
+    assert.ok(m, 'no versionName in build.gradle');
+    assert.match(m[1], /^1\./, `gradle versionName ${m[1]} is not production`);
+  }
+
+  const strings = staged('android/app/src/main/res/values/strings.xml');
+  if (strings !== null) {
+    const m = /<string name="expo_runtime_version">([^<]+)</.exec(strings);
+    assert.ok(m, 'no expo_runtime_version in strings.xml');
+    assert.match(m[1], /^1\./, `android OTA runtime ${m[1]} is not production`);
+  }
+
+  const manifest = staged('android/app/src/main/AndroidManifest.xml');
+  if (manifest !== null) {
+    // The channel is a JSON blob inside an XML attribute, so every quote is
+    // HTML-escaped as &quot;.
+    const m = /expo-channel-name&quot;:&quot;([^&]+)&quot;/.exec(manifest);
+    assert.ok(m, 'no expo-channel-name in AndroidManifest');
+    assert.equal(m[1], 'production', `android OTA channel is ${m[1]}`);
+  }
+});

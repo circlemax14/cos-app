@@ -1,9 +1,20 @@
+import { useEffect, useState } from 'react'
 import { Platform } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
-import { getAllHealthKitVitalTrends } from '@/services/health'
+/*
+ * COS-932 — the SOURCE facade, not HealthKit.
+ *
+ * This hook feeds the vitals section and the health summary. Calling HealthKit
+ * directly meant both were empty on Android even with Health Connect connected
+ * and permissions granted.
+ */
+import {
+  getAllHealthSourceVitalTrends,
+  isHealthSourceAvailable,
+} from '@/services/health-source'
 import type { LongitudinalTrend } from '@/services/api/types'
 import { useAppleHealthPreference } from '@/hooks/use-apple-health-preference'
-import { shouldFetchAppleHealthTrends } from '@/lib/apple-health-gate'
+import { shouldFetchHealthTrends } from '@/lib/apple-health-gate'
 
 /**
  * Pulls longitudinal vitals from Apple HealthKit and exposes them in the
@@ -26,20 +37,38 @@ import { shouldFetchAppleHealthTrends } from '@/lib/apple-health-gate'
  */
 export function useHealthKitTrends(daysBack: number = 90) {
   const preferenceQuery = useAppleHealthPreference()
-  const isIos = Platform.OS === 'ios'
+  /*
+   * COS-932 — "is there a health source", not "is this iOS".
+   *
+   * Async because Health Connect's availability needs an SDK round trip.
+   * Starts false so a device with no source never fetches, and flips true once
+   * the SDK answers — which then enables the query.
+   */
+  const [hasSource, setHasSource] = useState(Platform.OS === 'ios')
+  useEffect(() => {
+    if (Platform.OS === 'ios') return
+    let cancelled = false
+    void (async () => {
+      const ok = await isHealthSourceAvailable()
+      if (!cancelled) setHasSource(ok)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
   // Treat the preference as ON only once it has explicitly resolved to true.
   // While it loads we leave the gate closed, so we never momentarily fetch
   // HealthKit for a user who has it turned off.
   const preferenceEnabled = preferenceQuery.data === true
-  const enabled = shouldFetchAppleHealthTrends(isIos, preferenceEnabled)
+  const enabled = shouldFetchHealthTrends(hasSource, preferenceEnabled)
 
   const query = useQuery({
     // Key includes the resolved preference so flipping it re-evaluates
     // (and a disabled run never serves a cached enabled snapshot).
-    queryKey: ['healthkit-trends', daysBack, preferenceEnabled],
+    queryKey: ['healthkit-trends', daysBack, preferenceEnabled, hasSource],
     queryFn: async (): Promise<LongitudinalTrend[]> => {
       try {
-        return await getAllHealthKitVitalTrends(daysBack)
+        return await getAllHealthSourceVitalTrends(daysBack)
       } catch {
         return []
       }
@@ -54,7 +83,7 @@ export function useHealthKitTrends(daysBack: number = 90) {
   // When the preference is disabled (iOS) or the platform isn't iOS, the
   // underlying query is disabled and `data` is undefined. Force an empty
   // array so consumers reading `data` never see stale Apple Health trends.
-  const disabled = isIos && !preferenceEnabled && !preferenceQuery.isLoading
+  const disabled = hasSource && !preferenceEnabled && !preferenceQuery.isLoading
 
   return {
     ...query,

@@ -17,6 +17,18 @@ import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import * as DocumentPicker from 'expo-document-picker';
+// COS-930 — SafeAreaView root, because the app is EDGE-TO-EDGE on Android.
+//
+// android/gradle.properties sets edgeToEdgeEnabled=true and styles.xml makes
+// the status bar transparent, so a plain flex:1 View starts at y=0 — under the
+// clock and the punch-hole camera. Worse than ugly: the SystemUI status-bar
+// window is touchable and sits ON TOP of the app, so a close button or a menu
+// trigger inside that strip receives no taps at all. Vishal hit this on an S26.
+//
+// No iOS regression: these are `presentation: 'modal'` routes, where
+// safe-area-context reports a top inset of 0 inside the sheet, so the
+// SafeAreaView adds nothing. On the full-screen ones it is a fix for iOS too.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   getNonEhrProviders,
   processAndStoreFiles,
@@ -107,38 +119,37 @@ export default function ModalScreen() {
   // Load doctor photos for all providers
   const doctorPhotos = useDoctorPhotos(allProviderIds);
 
-  const lastVisitedFilters = [
-    { id: '3m', label: 'Last 3 months', months: 3 },
-    { id: '6m', label: 'Last 6 months', months: 6 },
-    { id: '1y', label: 'Last 1 year', years: 1 },
-    { id: '2y', label: 'Last 2 years', years: 2 },
-    { id: '5y', label: 'Last 5 years', years: 5 },
+  /*
+   * COS-968 — a filter that emptied the list.
+   *
+   * These options used to be "Last 3 months / 6 months / 1 year / 2 years /
+   * 5 years", filtered on `provider.lastVisited`. NOTHING in cos-backend or
+   * cos-app has ever written that field — zero hits across every repo — so
+   * `if (!provider.lastVisited) return false` deleted every EHR provider the
+   * moment any option was picked. Choosing a filter emptied the screen.
+   *
+   * `hasData` and `recordCount` are computed by the backend and already on
+   * the row, so this asks a question the data can actually answer, and it is
+   * the question Ken's "filter it in a meaningful way" is really about: show
+   * me the doctors I have records from.
+   */
+  const RECORD_FILTERS = [
+    { id: 'with-records', label: 'With records' },
+    { id: 'without-records', label: 'No records yet' },
   ];
-
-  const getCutoffDate = (filterId: string | null) => {
-    if (!filterId) return null;
-    const filter = lastVisitedFilters.find(item => item.id === filterId);
-    if (!filter) return null;
-    const now = new Date();
-    const cutoff = new Date(now);
-    if (filter.months) {
-      cutoff.setMonth(now.getMonth() - filter.months);
-    } else if (filter.years) {
-      cutoff.setFullYear(now.getFullYear() - filter.years);
-    }
-    return cutoff;
-  };
 
   const filterProvidersByLastVisited = (providers: SelectedProvider[]) => {
     if (!lastVisitedFilter) return providers;
-    const cutoff = getCutoffDate(lastVisitedFilter);
-    if (!cutoff) return providers;
     return providers.filter(provider => {
+      // Manually added people and non-medical supports have no EHR records
+      // by definition; a records filter must never hide them.
       if (provider.isManual) return true;
-      if (provider.category && provider.category !== 'Medical') return true;
-      if (!provider.lastVisited) return false;
-      const visitedDate = new Date(provider.lastVisited);
-      return visitedDate >= cutoff;
+      // COS-971 — `category` is LOWERCASED at providers.ts:81, so comparing it
+      // against 'Medical' was always true and every row short-circuited here:
+      // both filter options returned the identical list. The filter did nothing.
+      if (provider.category && provider.category.toLowerCase() !== 'medical') return true;
+      const has = provider.hasData === true || (provider.recordCount ?? 0) > 0;
+      return lastVisitedFilter === 'with-records' ? has : !has;
     });
   };
 
@@ -193,8 +204,24 @@ export default function ModalScreen() {
 
         // Categorize each provider (can belong to multiple subcategories)
         providers.forEach(provider => {
+          /*
+           * COS-983 — this comparison never matched, so the backend's answer
+           * was thrown away.
+           *
+           * `cat.name` is 'Medical'; `provider.category` is LOWERCASED at
+           * services/api/providers.ts:81. So categoryMatch was always
+           * undefined, the mapping below never ran, and every provider fell
+           * through to keyword guessing — which is the thing that files
+           * PADMA DASARI MD under Physician Assistants.
+           *
+           * Identical to the defect COS-971 fixed five lines away at :147.
+           * The lowercasing is deliberate upstream; the comparison has to
+           * meet it rather than the other way round.
+           */
           const categoryMatch = provider.category
-            ? SUPPORT_CATEGORIES.find(cat => cat.name === provider.category)
+            ? SUPPORT_CATEGORIES.find(
+                cat => cat.name.toLowerCase() === provider.category?.toLowerCase(),
+              )
             : undefined;
           const subCategoryNames = provider.subCategories && provider.subCategories.length > 0
             ? provider.subCategories
@@ -344,12 +371,12 @@ export default function ModalScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Portal.Host>
         <View style={styles.modalHeader}>
           <View style={styles.headerActionsLeft}>
             <FilterMenu
-              options={lastVisitedFilters}
+              options={RECORD_FILTERS}
               selectedId={lastVisitedFilter}
               onSelect={setLastVisitedFilter}
               onClear={() => setLastVisitedFilter(null)}
@@ -360,7 +387,7 @@ export default function ModalScreen() {
               fontSize={getScaledFontSize(14)}
               fontWeight={getScaledFontWeight(500) as any}
               iconSize={getScaledFontSize(22)}
-              accessibilityLabel="Filter providers by last visited"
+              accessibilityLabel="Filter providers by whether they have records"
             />
           </View>
           <Text style={[styles.modalTitle, {
@@ -1098,7 +1125,7 @@ export default function ModalScreen() {
           </TabsProvider>
         )}
       </Portal.Host>
-    </View>
+    </SafeAreaView>
   );
 }
 

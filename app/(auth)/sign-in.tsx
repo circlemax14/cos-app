@@ -28,6 +28,8 @@ import {
   socialSignInWithBackend,
 } from '@/services/social-auth';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
+import { clearPendingSignIn } from '@/lib/lock-gate';
+import { consumeDeferredNavigation } from '@/lib/locked-nav-queue';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -56,11 +58,55 @@ export default function SignInScreen() {
   const [dataLoadError, setDataLoadError] = useState(false);
   const isAppleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_apple');
   const isGoogleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_google');
+  /*
+   * COS-928 — Google sign-in is iOS-only for now, and this is not a policy
+   * choice; three things are missing on Android and each alone breaks it:
+   *
+   *   1. no Android OAuth client in Google Cloud (there is no
+   *      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID anywhere);
+   *   2. no intent-filter for the applicationId scheme, so Google's redirect
+   *      to `<applicationId>:/oauthredirect` has nothing to come back to —
+   *      Chrome shows ERR_UNKNOWN_URL_SCHEME and promptAsync resolves
+   *      'dismiss', which this screen shows no message for;
+   *   3. the backend's accepted-audience list has no Android client id, so
+   *      even a token that made it home would be rejected.
+   *
+   * A button that opens a browser and silently returns the user to the same
+   * screen is worse than no button. Delete this gate — not the fallback above
+   * — once all three exist.
+   */
+  const canUseGoogleSignIn = isGoogleSignInEnabled && Platform.OS === 'ios';
 
   // Google Sign-In via expo-auth-session/providers/google
   const [, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    /*
+     * COS-928 — the `??` is what stops Android crashing on launch.
+     *
+     * useAuthRequest does Platform.select({ios:'iosClientId', android:
+     * 'androidClientId', ...}) and then invariantClientId(), which THROWS on
+     * `undefined` — synchronously, inside a useMemo, i.e. during this
+     * component's render. EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID is defined in
+     * no .env file, so every Android launch hit the route error boundary and
+     * a fresh install could never reach a usable screen.
+     *
+     * Above the feature flag, so no flag flip avoided it: the hook is called
+     * unconditionally and hooks cannot be conditional.
+     *
+     * The fallback value is never USED for a real Android sign-in — the button
+     * is hidden on Android below, because there is no Android OAuth client, no
+     * matching intent-filter and no matching package name yet. It exists only
+     * so the hook can construct. invariantClientId rejects `undefined` and
+     * nothing else, so any defined string defuses it.
+     *
+     * Deliberately NOT an empty EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID= in .env:
+     * that also works, and is invisible — one .env sync from regressing.
+     *
+     * iOS is untouched: Platform.select reads iosClientId there.
+     */
+    androidClientId:
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ??
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   });
 
@@ -84,11 +130,57 @@ export default function SignInScreen() {
   }, [googleResponse]);
 
   const handleRoute = async (user: UserProfile) => {
+    /*
+     * COS-942 — a deferred sign-out must not outlive the sign-in that answered it.
+     *
+     * lib/lock-gate.ts's clearPendingSignIn() has always documented itself as
+     * "Used by sign-in success handlers so a stale deferred reason from a
+     * previous lifetime doesn't persist across re-sign-in." No sign-in handler
+     * called it — its only caller was hooks/use-app-lock.ts.
+     *
+     * The consequence, seen on a Galaxy S26: one mistyped password made
+     * api-client's 401 interceptor call forceSignOut('session_expired'). The
+     * app counts as locked whenever a PIN exists (security-store starts
+     * isLocked=true), and 'session_expired' is not in BYPASS_LOCK_REASONS, so
+     * the sign-out was DEFERRED rather than performed — _pendingReason stayed
+     * armed. The correct sign-in seconds later stored fresh tokens and left it
+     * armed. The next unlock consumed it, ran clearTokens() on the NEW tokens
+     * and showed "Session expired" — sending the user back here holding
+     * credentials that had just worked.
+     *
+     * Disarmed here rather than at each call site: handleRoute is the single
+     * funnel for password, Apple and Google sign-in.
+     */
+    clearPendingSignIn();
+
     // SCRUM-279 (build 50): kick off parallel data prefetch the moment
     // the user is authenticated so home/calendar/health-plan have
     // warm caches by the time the user navigates to them.
     // Force=true because this is a fresh sign-in — always re-warm.
     prefetchAfterAuth({ force: true });
+
+    /*
+     * COS-947 — a notification tapped while signed out must survive the sign-in.
+     *
+     * Vishal: "due to session expiry my app signed out, and I got a notification
+     * for help and support. When I clicked it I went to the sign in screen, and
+     * after signing in it took me to the HOME screen. Ideally it should take me
+     * to the SUPPORT screen."
+     *
+     * The intent WAS captured. security-store starts isLocked=true whenever a
+     * PIN exists, so while signed out isAppLocked() is true and the tap handler
+     * defers the route rather than pushing it (use-notifications.ts). What was
+     * missing is a reader: consumeDeferredNavigation() had exactly one caller,
+     * the lock screen's resumeAfterUnlock. Someone who signs in with a PASSWORD
+     * never passes through it, so the queued route sat there until its TTL and
+     * they landed on Home.
+     *
+     * Consumed here rather than in the onboarding branches below, and that
+     * ordering is the point: a deep link must not jump a patient over terms
+     * acceptance or device permissions. If a gate diverts them, the intent is
+     * dropped (see below) rather than replayed later out of context.
+     */
+    const deferredAfterSignIn = consumeDeferredNavigation();
 
     if (!user.termsAccepted) {
       router.replace('/(onboarding)/usage-guidelines' as never);
@@ -119,7 +211,19 @@ export default function SignInScreen() {
     } else if (!user.dataReady && user.fastenConnected) {
       router.replace('/(onboarding)/data-processing' as never);
     } else {
-      router.replace('/Home' as never);
+      /*
+       * COS-947 — the deep link the notification asked for, if one is live.
+       *
+       * Only on this branch: every branch above is an onboarding gate, and a
+       * patient who has not accepted terms should not be dropped onto a PHI
+       * screen because a push happened to arrive. Reaching here means they are
+       * fully onboarded, so the route is safe to honour.
+       *
+       * consumeDeferredNavigation() already enforces the 5-minute TTL and the
+       * leading-slash check, and consuming CLEARS it, so a failed navigation
+       * cannot leave a route armed for someone else's session.
+       */
+      router.replace((deferredAfterSignIn ?? '/Home') as never);
     }
   };
 
@@ -424,7 +528,7 @@ export default function SignInScreen() {
                 </Text>
               </Pressable>
 
-              {(isGoogleSignInEnabled || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
+              {(canUseGoogleSignIn || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
                 <View style={styles.dividerRow}>
                   <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
                   <Text
@@ -441,7 +545,7 @@ export default function SignInScreen() {
                 </View>
               )}
 
-              {isGoogleSignInEnabled && (
+              {canUseGoogleSignIn && (
                 <Pressable
                   onPress={handleGoogleSignIn}
                   disabled={disabled}

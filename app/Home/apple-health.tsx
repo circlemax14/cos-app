@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,7 +15,22 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { initializeHealthKit, isHealthKitAvailable } from '@/services/health';
+/*
+ * COS-929 — the SOURCE FACADE, not HealthKit directly.
+ *
+ * isHealthKitAvailable() is false on Android by construction, so reading it
+ * here meant an Android device could only ever render "not available on this
+ * device" — even with Health Connect installed and granted. The facade picks
+ * HealthKit on iOS and Health Connect on Android, and is the only place that
+ * choice is made.
+ */
+import type { HealthMetrics } from '@/services/health';
+import {
+  getTodayHealthMetrics,
+  healthSourceIdentity,
+  isHealthSourceAvailable,
+  requestHealthSourceAccess,
+} from '@/services/health-source';
 import {
   getAppleHealthEnabled,
   setAppleHealthEnabled,
@@ -72,7 +88,69 @@ export default function AppleHealthScreen() {
   const canView = useCanRender('apple-health.view');
   const canGrantHealthKit = useCanRender('apple-health.grant-healthkit-permissions');
 
-  const available = isHealthKitAvailable();
+  /*
+   * Async, because Health Connect's answer needs an SDK round trip where
+   * HealthKit's was a synchronous module check. Starts null — "asking" — so
+   * the screen never flashes "not available on this device" at an Android
+   * patient before the SDK has answered. That flash would be read as the
+   * feature being broken, which is exactly the impression this screen exists
+   * to avoid.
+   */
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const ok = await isHealthSourceAvailable();
+      if (!cancelled) setAvailable(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /*
+   * COS-930 — the brand on THIS device, plus how its data reaches us.
+   *
+   * `label` is what the patient recognises ("Apple Health" / "Samsung Health"
+   * / "Health"); `via` is the one sentence that stops an empty screen being a
+   * mystery, because Samsung Health only reaches Health Connect once the
+   * patient turns that sync on inside Samsung Health.
+   */
+  const source = healthSourceIdentity();
+  const sourceLabel = source.label;
+
+  /*
+   * COS-937 — show WHAT WAS ACTUALLY READ.
+   *
+   * Vishal, after granting everything and still seeing empty vitals: "How do I
+   * validate if the app has actually some data?"
+   *
+   * He could not, and neither could I without adb. "Connected" answers a
+   * question nobody asked — the patient wants to know whether their steps
+   * arrived. Those are two different failures with two different fixes:
+   *
+   *   connected + numbers   -> working
+   *   connected + nothing   -> the SOURCE is empty; go and check the fitness
+   *                            app is syncing. Not our bug, and the patient
+   *                            can act on it.
+   *   not connected         -> permissions.
+   *
+   * Read once when the screen opens and after a successful connect, not on a
+   * timer: this is a diagnostic readout, not a live dashboard, and polling a
+   * health store on a settings screen is a battery cost for nothing.
+   */
+  const [reading, setReading] = useState<HealthMetrics | null>(null);
+  const [readingBusy, setReadingBusy] = useState(false);
+  const refreshReading = useCallback(async () => {
+    setReadingBusy(true);
+    try {
+      setReading(await getTodayHealthMetrics());
+    } catch {
+      setReading(null);
+    } finally {
+      setReadingBusy(false);
+    }
+  }, []);
 
   // COS-397 / SCRUM-535: after the user changes their Apple Health choice,
   // invalidate the reactive preference query + the HealthKit trends so every
@@ -103,9 +181,13 @@ export default function AppleHealthScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (available === true && enabled) void refreshReading();
+  }, [available, enabled, refreshReading]);
+
   const handleToggle = useCallback(
     async (next: boolean) => {
-      if (!available) return;
+      if (available !== true) return;
 
       if (!next) {
         // The user is opting out. iOS doesn't let an app revoke its own
@@ -117,25 +199,39 @@ export default function AppleHealthScreen() {
         invalidateAppleHealth();
         setStatusMessage({
           text:
-            'Apple Health turned off. To fully revoke access, open Settings > Privacy & Security > Health.',
+            Platform.OS === 'ios'
+              ? 'Apple Health turned off. To fully revoke access, open Settings > Privacy & Security > Health.'
+              : `${sourceLabel} turned off. To fully revoke access, open Health Connect in your device settings.`,
           isError: false,
         });
         return;
       }
 
-      // Opting in — request HealthKit read permissions. This is the single,
-      // deliberate place the iOS permission dialog is triggered.
+      // Opting in — request read permissions. This is the single, deliberate
+      // place the permission dialog is triggered, on either platform:
+      // HealthKit's on iOS, Health Connect's on Android.
       setIsConnecting(true);
       setStatusMessage(null);
       try {
-        const granted = await initializeHealthKit();
+        const { granted, reason } = await requestHealthSourceAccess();
         setEnabled(granted);
         await setAppleHealthEnabled(granted);
         invalidateAppleHealth();
+        // COS-929 — the copy names the source the patient actually granted.
+        // "Apple Health access was not granted" on a Pixel is not just wrong,
+        // it points them at a settings screen that does not exist.
+        /*
+         * COS-931 — when there IS a reason, show it.
+         *
+         * "Samsung Health access was not granted" is the right sentence for a
+         * patient who tapped Deny. It is the wrong one when no dialog ever
+         * appeared, which is what Vishal hit — it reads as a refusal he never
+         * made, and points him at nothing.
+         */
         setStatusMessage(
           granted
-            ? { text: 'Apple Health connected. Your daily summary will use Health data.', isError: false }
-            : { text: 'Apple Health access was not granted.', isError: true },
+            ? { text: `${sourceLabel} connected. Your daily summary will use its data.`, isError: false }
+            : { text: reason ?? `${sourceLabel} access was not granted.`, isError: true },
         );
       } catch (err) {
         setEnabled(false);
@@ -144,7 +240,7 @@ export default function AppleHealthScreen() {
         const message =
           err instanceof Error
             ? err.message
-            : 'Could not connect to Apple Health. Please try again.';
+            : `Could not connect to ${sourceLabel}. Please try again.`;
         setStatusMessage({ text: message, isError: true });
       } finally {
         setIsConnecting(false);
@@ -179,13 +275,34 @@ export default function AppleHealthScreen() {
               textAlign: 'center',
             }}
           >
-            Connect Apple Health to enrich your daily summary and health trends
-            with steps, heart rate, sleep, and more from your iPhone and Apple
-            Watch.
+            {/* COS-929 — names the source and the devices that actually feed
+                it on this platform. On Android that is Health Connect, which
+                Samsung Health, Fitbit, Google Fit and Galaxy Watch write into. */}
+            {Platform.OS === 'ios'
+              ? `Connect ${sourceLabel} to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your iPhone and Apple Watch.`
+              : `Connect ${sourceLabel} to enrich your daily summary and health trends with steps, heart rate, sleep, and more from your phone and your watch.`}
           </Text>
         </View>
 
-        {!available ? (
+        {available === null ? (
+          /*
+           * COS-929 — still asking.
+           *
+           * `!available` was true while the check was in flight, so an Android
+           * patient saw "Not available on this device" for the moment before
+           * the SDK answered — and a wrong answer shown first is the one
+           * people believe. Health Connect's check is an async SDK round trip;
+           * HealthKit's was synchronous, which is why this state did not exist
+           * before and why it must now.
+           */
+          <View style={styles.section}>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                <ActivityIndicator color={colors.tint} />
+              </View>
+            </View>
+          </View>
+        ) : !available ? (
           /* Graceful "not available on this device" state */
           <View style={styles.section}>
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -195,9 +312,17 @@ export default function AppleHealthScreen() {
                     Not available on this device
                   </Text>
                   <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+                    {/*
+                      COS-929 — Android has a real answer now, and it is
+                      actionable rather than a dead end. Health Connect is
+                      preinstalled on Android 14+ and a Play Store download
+                      below that, so "not installed" is something the patient
+                      can fix — telling them the feature is iPhone-only was
+                      true before this build and is not any more.
+                    */}
                     {Platform.OS === 'ios'
                       ? 'Apple Health is unavailable. Make sure the Health app is installed and try again.'
-                      : 'Apple Health is only available on iPhone.'}
+                      : `${sourceLabel} data is read through Android Health Connect, which is not set up on this device. It comes with Android 14 and later, or you can install it from the Play Store.`}
                   </Text>
                 </View>
               </View>
@@ -223,11 +348,20 @@ export default function AppleHealthScreen() {
               <View style={[styles.row, { borderBottomWidth: 0 }]}>
                 <View style={styles.rowLeft}>
                   <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }}>
-                    Enable Apple Health
+                    {`Enable ${sourceLabel}`}
                   </Text>
                   <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
                     {enabled ? 'Connected' : 'Not connected'}
                   </Text>
+                  {/* COS-930 — where the data actually comes from. Null on
+                      iOS, because HealthKit is not something a patient enables
+                      separately and naming it would introduce a word they have
+                      never seen. */}
+                  {source.via ? (
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 4 }}>
+                      {source.via}
+                    </Text>
+                  ) : null}
                 </View>
                 {isLoading || isConnecting ? (
                   <ActivityIndicator size="small" color={colors.tint} />
@@ -239,12 +373,67 @@ export default function AppleHealthScreen() {
                     trackColor={{ false: '#E0E0E0', true: colors.tint }}
                     accessibilityRole="switch"
                     accessibilityState={{ checked: enabled }}
-                    accessibilityLabel="Enable Apple Health"
+                    accessibilityLabel={`Enable ${sourceLabel}`}
                   />
                   )
                 )}
               </View>
             </View>
+
+            {/*
+              COS-937 — what we actually read, so "is it working?" has a visible
+              answer. See refreshReading for why the three states are worth
+              distinguishing.
+            */}
+            {enabled && available === true ? (
+              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 12 }]}>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                  <View style={styles.rowLeft}>
+                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(500) as any }}>
+                      Today from {sourceLabel}
+                    </Text>
+                    {readingBusy ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4 }}>
+                        Checking…
+                      </Text>
+                    ) : reading && (reading.steps > 0 || reading.heartRate || reading.sleepHours > 0 || reading.caloriesBurned > 0) ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4, lineHeight: getScaledFontSize(13) * 1.4 }}>
+                        {[
+                          `${String(reading.steps)} steps`,
+                          reading.heartRate ? `${String(reading.heartRate)} bpm` : null,
+                          reading.sleepHours > 0 ? `${String(reading.sleepHours)} h sleep` : null,
+                          reading.caloriesBurned > 0 ? `${String(reading.caloriesBurned)} kcal` : null,
+                        ]
+                          .filter(Boolean)
+                          .join('  ·  ')}
+                      </Text>
+                    ) : (
+                      /*
+                       * Connected, permissions granted, nothing recorded. NOT
+                       * an error — and saying so is the whole point, because
+                       * the fix is in the fitness app, not here.
+                       */
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 4, lineHeight: getScaledFontSize(13) * 1.4 }}>
+                        {Platform.OS === 'ios'
+                          ? 'Nothing recorded yet today.'
+                          : 'Nothing recorded yet. Health Connect only receives data from the moment your fitness app starts syncing — it does not backfill past days.'}
+                      </Text>
+                    )}
+                  </View>
+                  <Pressable
+                    onPress={() => void refreshReading()}
+                    disabled={readingBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Check again"
+                    hitSlop={8}
+                  >
+                    <Text style={{ color: colors.tint, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }}>
+                      Check
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
 
             {statusMessage ? (
               <Text
@@ -269,9 +458,9 @@ export default function AppleHealthScreen() {
                 lineHeight: getScaledFontSize(18),
               }}
             >
-              We only read health data — we never write to Apple Health. You can
-              change or revoke access at any time in Settings &gt; Privacy &amp;
-              Security &gt; Health.
+              {Platform.OS === 'ios'
+                ? `We only read health data — we never write to ${sourceLabel}. You can change or revoke access at any time in Settings > Privacy & Security > Health.`
+                : `We only read health data — we never write to ${sourceLabel}. You can change or revoke access at any time in Health Connect, under your device settings.`}
             </Text>
           </View>
         )}

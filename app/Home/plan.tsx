@@ -15,6 +15,7 @@ import { useHealthSummary } from '@/hooks/use-health-summary';
 import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import BpsHistorySection from '@/components/health-summary/BpsHistorySection';
+import RebuildingBanner from '@/components/health-summary/RebuildingBanner';
 import CurrentConditionsSection from '@/components/health-summary/CurrentConditionsSection';
 import MedicationsByConditionSection from '@/components/health-summary/MedicationsByConditionSection';
 import LabsByConditionSection from '@/components/health-summary/LabsByConditionSection';
@@ -104,7 +105,7 @@ function HealthSummaryScreenInner() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.tint} />
           <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 12 }}>
-            Loading your health summary...
+            Loading your health status…
           </Text>
         </View>
       </AppWrapper>
@@ -136,7 +137,7 @@ function HealthSummaryScreenInner() {
                 textAlign: 'center',
               }}
             >
-              Unable to load health summary
+              Unable to load health status
             </Text>
             <Text
               style={{
@@ -152,7 +153,7 @@ function HealthSummaryScreenInner() {
               onPress={() => refetch()}
               style={[styles.retryButton, { backgroundColor: colors.tint }]}
               accessibilityRole="button"
-              accessibilityLabel="Retry loading health summary"
+              accessibilityLabel="Retry loading health status"
             >
               <Text
                 style={{
@@ -190,7 +191,7 @@ function HealthSummaryScreenInner() {
             }}
             accessibilityRole="header"
           >
-            Health Summary
+            Health Status
           </Text>
           <Text
             style={{
@@ -209,6 +210,15 @@ function HealthSummaryScreenInner() {
 
         {intakeGateOpen ? (
           <>
+            {/*
+              COS-984 — ABOVE the sections, never instead of them. See the note
+              in RebuildingBanner: this page is read-only prose, so what is on
+              screen stays true while a rebuild runs. Ungated by entitlements
+              on purpose — it reports the state of the page itself, not a
+              feature, and a patient whose plan is regenerating deserves to
+              know regardless of what their plan includes.
+            */}
+            <RebuildingBanner />
             {canBpsHistory && <BpsHistorySection />}
             {canConditions && <CurrentConditionsSection />}
             {canMedications && <MedicationsByConditionSection />}
@@ -235,7 +245,7 @@ function HealthSummaryScreenInner() {
                 lineHeight: 22,
               }}
             >
-              Your personalized health summary — biopsychosocial history,
+              Your personalized health status — biopsychosocial summary,
               current conditions, medications, labs, vitals, treatments, and
               recommendations — will appear here once you complete your intake.
             </Text>

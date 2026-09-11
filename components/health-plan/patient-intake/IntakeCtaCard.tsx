@@ -207,7 +207,7 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
               lineHeight: getScaledFontSize(17),
             }}
           >
-            Your intake powers the biopsychosocial history, treatments, and recommendations shown below.
+            Your intake powers the biopsychosocial summary, treatments, and recommendations shown below.
           </Text>
         </View>
 
@@ -286,7 +286,7 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
     : 'Complete your health check-in';
   const body = inProgress
     ? 'Pick up right where you left off — takes about 10 minutes.'
-    : 'A quick 30-question intake so we can personalize your Care Plan and health summary.';
+    : 'A quick 30-question intake so we can personalize your Care Plan and health status.';
 
   return (
     <Pressable

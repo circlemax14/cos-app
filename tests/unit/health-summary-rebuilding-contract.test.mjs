@@ -20,22 +20,35 @@ import { dirname, join } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
-const CARD = read('components/HealthSummaryCard.tsx');
+/*
+ * COS-984 — the banner moved to a component that is actually MOUNTED.
+ *
+ * These assertions were written against components/HealthSummaryCard.tsx,
+ * which has zero importers on any branch — so every one of them passed while
+ * describing behaviour no patient could ever see. The file is still checked
+ * (it holds the original COS-855 reasoning) but the CONTRACT now points at
+ * the live component and the screen that renders it.
+ */
+const CARD = read('components/health-summary/RebuildingBanner.tsx');
+const SCREEN = read('app/Home/plan.tsx');
 const HOOK = read('hooks/use-health-summary.ts');
 
 test('THE POINT: the banner does NOT replace the summary', () => {
   // The care-plan flow replaces its screen because the stale plan underneath
   // has tappable goals. A summary is read-only prose — hiding it removes
   // something useful to say nothing new.
-  const bannerAt = CARD.indexOf('summary.rebuilding === true');
-  const overviewAt = CARD.indexOf('{summary.overview}');
-  assert.ok(bannerAt > -1, 'no rebuilding banner');
-  assert.ok(overviewAt > -1, 'no summary content');
-  assert.ok(bannerAt < overviewAt, 'banner must sit ABOVE the content, not instead of it');
+  // The banner must render BEFORE the sections on the screen that mounts it.
+  const bannerAt = SCREEN.indexOf('<RebuildingBanner />');
+  const firstSectionAt = SCREEN.indexOf('<BpsHistorySection />');
+  assert.ok(bannerAt > -1, 'the banner is not mounted on the Health Status screen');
+  assert.ok(firstSectionAt > -1, 'no summary content');
+  assert.ok(bannerAt < firstSectionAt, 'banner must sit ABOVE the content, not instead of it');
   // An early `return` between them would mean the content never renders.
-  assert.ok(
-    !/summary\.rebuilding === true[\s\S]{0,400}?\breturn\b/.test(CARD),
-    'the banner must not early-return past the summary',
+  // And it must not be an early return that swallows the sections.
+  assert.doesNotMatch(
+    SCREEN,
+    /<RebuildingBanner \/>[\s\S]{0,200}?:\s*null/,
+    'the banner must not replace the sections',
   );
 });
 
@@ -51,7 +64,7 @@ test('`rebuilding` is optional, so an older API response still renders', () => {
   // The backend field is additive; a bundle pointed at an API without it must
   // behave exactly as before rather than rendering a permanent banner.
   assert.match(HOOK, /rebuilding\?: boolean/);
-  assert.match(CARD, /summary\.rebuilding === true/, 'must test explicitly, not truthiness');
+  assert.match(CARD, /summary\?\.rebuilding !== true/, 'must test explicitly, not truthiness');
 });
 
 test('the banner uses primitives this file already imports (iOS 26 envelope)', () => {

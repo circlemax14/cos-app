@@ -86,6 +86,80 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
   };
 }
 
+/**
+ * COS-968 — the same doctor, twice.
+ *
+ * Ken, 2026-09-10, on the provider pages: they "duplicate" and filter badly.
+ * He is right, and it is measurable: a live patient returns 78 provider rows
+ * in which every name appears exactly twice — once keyed by the Epic FHIR
+ * id, once by the NPI. So ~39 doctors render as 78 entries, and half of them
+ * open a detail screen where all five tabs read "No … recorded by this
+ * provider", because the records hang off the OTHER copy.
+ *
+ * Merged on name + credentials rather than name alone: two different people
+ * called J. Smith at one clinic will differ in qualifications, and merging
+ * them would be a worse error than showing them twice. The survivor is the
+ * copy that actually has records, so the tap lands somewhere with content.
+ *
+ * `fetchProviderById` resolves through this same list, so an id dropped here
+ * can never be navigated to — the row that carries the id is the row that
+ * renders.
+ *
+ * The proper home for this is cos-backend patient.service.ts:99, where the
+ * two FHIR identifiers are still distinguishable. That needs a `main` deploy;
+ * this does not, and the duplication is on screen today.
+ */
+function dedupeByPerson(providers: Provider[]): Provider[] {
+  const norm = (v?: string) => (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const groups = new Map<string, Provider[]>();
+  for (const p of providers) {
+    const key = `${norm(p.name)}|${norm(p.qualifications)}`;
+    // A blank name is not an identity. Key those to themselves so they can
+    // never pool together.
+    const k = norm(p.name) ? key : `${key}|${p.id}`;
+    const g = groups.get(k);
+    if (g) g.push(p);
+    else groups.set(k, [p]);
+  }
+
+  /*
+   * COS-971 — merge ONLY the pattern we actually observed, and nothing else.
+   *
+   * The first cut of this merged every row sharing name+credentials, keeping
+   * whichever had records. That was too greedy against real data: production
+   * returns a PLACEHOLDER practitioner name with no specialty, repeated, and
+   * on two live accounts it collapsed 17 and 15 DISTINCT practitioner FHIR ids
+   * into a single row. Those doctors became unreachable from the list. Showing
+   * a doctor twice is untidy; hiding sixteen is dangerous, and it is the worse
+   * failure of the two.
+   *
+   * The duplication we are actually fixing has a narrow signature: EXACTLY TWO
+   * rows for one person — the same human arriving once under the Epic FHIR id
+   * and once under the NPI — where only ONE of them carries records, which is
+   * why half the roster opened onto five empty tabs.
+   *
+   * So: collapse a group only when it is a pair AND exactly one side has
+   * records. Anything else — three or more rows, or two rows that both have
+   * records — is left intact, because at that point we cannot tell a duplicate
+   * from two people, and the safe answer is to show both.
+   */
+  const out: Provider[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    const withData = group.filter((p) => p.hasData === true || (p.recordCount ?? 0) > 0);
+    if (group.length === 2 && withData.length === 1) {
+      out.push(withData[0]);
+      continue;
+    }
+    out.push(...group);
+  }
+  return out;
+}
+
 export async function fetchProviders(): Promise<Provider[]> {
   try {
     // COS-366: retry transient launch-burst throttles (429) so a momentary
@@ -99,10 +173,12 @@ export async function fetchProviders(): Promise<Provider[]> {
       { shouldRetry: isTransientApiError },
     );
     const { roles, practitioners } = res.data.data;
-    return practitioners.map((p) => {
-      const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
-      return transformToProvider(p, role);
-    });
+    return dedupeByPerson(
+      practitioners.map((p) => {
+        const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
+        return transformToProvider(p, role);
+      }),
+    );
   } catch (error) {
     console.warn('Failed to fetch providers (HealthLake may be unavailable):', error);
     return [];
@@ -308,14 +384,29 @@ export async function fetchProviderTreatmentPlans(
   // can widen the condition / medication filter to include encounter
   // attribution. Match by name (the appointments endpoint tags each
   // encounter with the provider's display name, not an ID).
+  /*
+   * COS-977 — an unresolved provider name must attribute NOTHING, not everything.
+   *
+   * This read `(!providerName || a.doctorName === providerName)`. The left half
+   * is a fail-OPEN: whenever the provider's name could not be resolved, every
+   * encounter passed the filter, and every condition and prescription linked to
+   * any encounter was attributed to whichever doctor the patient had tapped.
+   *
+   * So on a provider whose name is missing — which is most of them while
+   * hasData/recordCount are broken — the Treatment and Medications tabs showed
+   * a patient another doctor's diagnoses under this doctor's heading. Silent,
+   * plausible-looking, and wrong in the direction that matters clinically.
+   *
+   * With no name there is no attribution to make, so the honest answer is an
+   * empty set: the tab says nothing was recorded by this provider, which is
+   * what we actually know.
+   */
   const providerEncounterRefs = new Set(
-    (apptRes?.data?.data?.appointments ?? [])
-      .filter(
-        (a) =>
-          a.resourceType === 'Encounter' &&
-          (!providerName || a.doctorName === providerName),
-      )
-      .map((a) => `Encounter/${a.id}`),
+    !providerName
+      ? []
+      : (apptRes?.data?.data?.appointments ?? [])
+          .filter((a) => a.resourceType === 'Encounter' && a.doctorName === providerName)
+          .map((a) => `Encounter/${a.id}`),
   );
 
   const diagnoses: ProviderDiagnosis[] = conditions

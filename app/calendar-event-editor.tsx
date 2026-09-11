@@ -207,6 +207,19 @@ export default function CalendarEventEditor() {
   // Date picker visibility (iOS uses inline; Android uses native dialogs)
   const [showStartPicker, setShowStartPicker] = useState(false)
   const [showEndPicker, setShowEndPicker] = useState(false)
+  /*
+   * COS-928 — Android needs TWO pickers where iOS needs one.
+   *
+   * @react-native-community/datetimepicker does not support mode="datetime"
+   * on Android: it silently renders the date picker only. So on Android the
+   * time half of an event could never be set — you could move an appointment
+   * to another day but not to another hour, with nothing on screen to say why.
+   *
+   * The Android convention is date first, then time, as two dialogs. This
+   * tracks which half is open; on iOS it stays 'date' and is never read,
+   * because the iOS branch keeps its single spinner exactly as it was.
+   */
+  const [androidStep, setAndroidStep] = useState<'date' | 'time'>('date')
 
   // Picker modal visibility flags
   const [showTzPicker, setShowTzPicker] = useState(false)
@@ -468,13 +481,37 @@ export default function CalendarEventEditor() {
           {showStartPicker && (
             <DateTimePicker
               value={start}
-              mode={allDay ? 'date' : 'datetime'}
-              onChange={(_, d) => {
-                if (Platform.OS === 'android') setShowStartPicker(false)
-                if (d) {
-                  setStart(d)
-                  if (end.getTime() <= d.getTime()) setEnd(new Date(d.getTime() + 60 * 60_000))
+              /*
+               * COS-928 — 'datetime' is iOS-only. On Android this renders the
+               * date half, then the time half (see androidStep); on an all-day
+               * event there is no time to ask for and one dialog is correct on
+               * both platforms.
+               */
+              mode={allDay ? 'date' : Platform.OS === 'ios' ? 'datetime' : androidStep}
+              onChange={(event, d) => {
+                if (Platform.OS !== 'android') {
+                  if (d) {
+                    setStart(d)
+                    if (end.getTime() <= d.getTime()) setEnd(new Date(d.getTime() + 60 * 60_000))
+                  }
+                  return
                 }
+                // Android: the dialog always closes on its own. Dismissing it
+                // must not advance to the time step or roll the date back.
+                if (event.type === 'dismissed' || !d) {
+                  setShowStartPicker(false)
+                  setAndroidStep('date')
+                  return
+                }
+                setStart(d)
+                if (end.getTime() <= d.getTime()) setEnd(new Date(d.getTime() + 60 * 60_000))
+                if (!allDay && androidStep === 'date') {
+                  // Re-open immediately for the time half.
+                  setAndroidStep('time')
+                  return
+                }
+                setShowStartPicker(false)
+                setAndroidStep('date')
               }}
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             />
@@ -493,11 +530,25 @@ export default function CalendarEventEditor() {
           {showEndPicker && (
             <DateTimePicker
               value={end}
-              mode={allDay ? 'date' : 'datetime'}
+              mode={allDay ? 'date' : Platform.OS === 'ios' ? 'datetime' : androidStep}
               minimumDate={start}
-              onChange={(_, d) => {
-                if (Platform.OS === 'android') setShowEndPicker(false)
-                if (d) setEnd(d)
+              onChange={(event, d) => {
+                if (Platform.OS !== 'android') {
+                  if (d) setEnd(d)
+                  return
+                }
+                if (event.type === 'dismissed' || !d) {
+                  setShowEndPicker(false)
+                  setAndroidStep('date')
+                  return
+                }
+                setEnd(d)
+                if (!allDay && androidStep === 'date') {
+                  setAndroidStep('time')
+                  return
+                }
+                setShowEndPicker(false)
+                setAndroidStep('date')
               }}
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             />

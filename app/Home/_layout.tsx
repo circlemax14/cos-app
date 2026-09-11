@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { CustomScrollableTabBar } from '@/components/custom-scrollable-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { AiClipboardIcon } from '@/components/ui/ai-clipboard-icon';
+import { HealthStatusIcon } from '@/components/ui/health-status-icon';
 import { BeatingHeartIcon } from '@/components/ui/beating-heart-icon';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useCanShowScreen, useEnforceScreenAccess } from '@/hooks/use-feature-permissions';
@@ -206,9 +206,21 @@ export default function TabLayout() {
         name="plan"
         options={{
           href: canShow('plan') ? undefined : null,
-          title: 'Health Summary',
+          /*
+           * COS-964 — "Health Status", not "Health Summary".
+           *
+           * Ken: this is an ACTIVE clinical status, not a generated summary and
+           * not a history. He made the same point about the biopsychosocial
+           * page — "we don't want that to be a history page, we want it to be
+           * an active status page."
+           *
+           * The ROUTE stays `plan`. Renaming it would break every deep link,
+           * every stored navigation intent and the notification routing that
+           * targets it — and a route name is not user-visible.
+           */
+          title: 'Health Status',
           tabBarIcon: ({ color }) => (
-            <AiClipboardIcon size={getScaledFontSize(26)} color={color} />
+            <HealthStatusIcon size={getScaledFontSize(26)} color={color} />
           ),
         }}
       />
@@ -379,12 +391,6 @@ export default function TabLayout() {
         name="non-ehr-provider-detail"
         options={{
           title: 'Provider Detail',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="integrative-screen"
-        options={{
           href: null,
         }}
       />
@@ -568,7 +574,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="apple-health"
         options={{
-          title: 'Apple Health',
+          // COS-930 — the screen is called Health Sync on every platform; the
+          // route keeps its old filename because renaming an expo-router file
+          // changes every deep link pointing at it. headerShown is false so
+          // this never rendered, but a stale name is how the drawer and the
+          // screen came to disagree in the first place.
+          title: 'Health Sync',
           href: null,
           headerShown: false,
         }}

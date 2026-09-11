@@ -22,6 +22,19 @@ import {
 } from '@/hooks/use-notification-categories'
 import { useProactiveNudgesFlag } from '@/hooks/use-proactive-nudges-flag'
 import { useCanRender } from '@/hooks/use-entitlement'
+// COS-930 — SafeAreaView inside the Modal, because presentationStyle is
+// iOS-ONLY.
+//
+// RN's Android Modal ignores presentationStyle="pageSheet" entirely, so what
+// is a card sheet on iOS fills the screen from y=0 on Android. And with
+// edgeToEdgeEnabled=true, ReactModalHostView FORCES statusBarTranslucent on
+// every Modal regardless of props — so the modal window is edge-to-edge too.
+// The result is a header row printed over the clock with its Cancel/Done or
+// close control inside the SystemUI touch strip, where taps never reach us.
+//
+// No iOS regression: inside an iOS pageSheet the reported top inset is 0, so
+// this adds no padding there.
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -400,7 +413,7 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
           presentationStyle="pageSheet"
           onRequestClose={() => setPickerOpen(false)}
         >
-          <View style={[{ flex: 1, backgroundColor: colors.background }]}>
+          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[{ flex: 1, backgroundColor: colors.background }]}>
             <View style={[styles.header, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
               <Text
                 style={{
@@ -462,7 +475,7 @@ export default function ReminderSettingsScreen(): React.JSX.Element {
                 )
               })}
             </ScrollView>
-          </View>
+          </SafeAreaView>
         </Modal>
       </View>
     </AppWrapper>
