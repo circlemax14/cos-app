@@ -15,6 +15,7 @@ import { useHealthSummary } from '@/hooks/use-health-summary';
 import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import BpsHistorySection from '@/components/health-summary/BpsHistorySection';
+import RebuildingBanner from '@/components/health-summary/RebuildingBanner';
 import CurrentConditionsSection from '@/components/health-summary/CurrentConditionsSection';
 import MedicationsByConditionSection from '@/components/health-summary/MedicationsByConditionSection';
 import LabsByConditionSection from '@/components/health-summary/LabsByConditionSection';
@@ -209,6 +210,15 @@ function HealthSummaryScreenInner() {
 
         {intakeGateOpen ? (
           <>
+            {/*
+              COS-984 — ABOVE the sections, never instead of them. See the note
+              in RebuildingBanner: this page is read-only prose, so what is on
+              screen stays true while a rebuild runs. Ungated by entitlements
+              on purpose — it reports the state of the page itself, not a
+              feature, and a patient whose plan is regenerating deserves to
+              know regardless of what their plan includes.
+            */}
+            <RebuildingBanner />
             {canBpsHistory && <BpsHistorySection />}
             {canConditions && <CurrentConditionsSection />}
             {canMedications && <MedicationsByConditionSection />}
