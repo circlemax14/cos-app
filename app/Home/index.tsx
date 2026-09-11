@@ -370,7 +370,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   router.push(`/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
                   return;
                 }
-                const isIntegrative = item.category === 'Integrative';
+                const isIntegrative = item.category?.toLowerCase() === 'integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
                 } else if (!item.isManual) {
@@ -764,7 +764,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   router.push(`/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
                   return;
                 }
-                const isIntegrative = item.category === 'Integrative';
+                const isIntegrative = item.category?.toLowerCase() === 'integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(item.id)}`);
                 } else if (!item.isManual) {
@@ -968,7 +968,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
                 }
               ]}
               onPress={() => {
-                const isIntegrative = provider.category === 'Integrative';
+                const isIntegrative = provider.category?.toLowerCase() === 'integrative';
                 if (isIntegrative) {
                   router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(provider.id)}`);
                 } else if (!provider.isManual) {

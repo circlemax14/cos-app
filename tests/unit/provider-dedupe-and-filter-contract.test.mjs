@@ -102,3 +102,31 @@ test('the filter still exempts the rows that can never have EHR records', () => 
     assert.match(src, /if \(provider\.isManual\) return true;/, `${f}: manual rows must be exempt`);
   }
 });
+
+test('THE POINT: category comparisons meet the lowercasing, they do not ignore it', () => {
+  /*
+   * COS-983 — a third instance of the same defect, in two more files.
+   *
+   * `category` is lowercased at providers.ts:81. Comparing it against a
+   * capitalised literal is ALWAYS FALSE, so:
+   *   - app/modal.tsx threw away the backend's categorisation entirely and
+   *     fell back to keyword guessing (the thing that files PADMA DASARI MD
+   *     under Physician Assistants)
+   *   - three `=== 'Integrative'` checks in index.tsx could never fire
+   *
+   * This is the same bug COS-971 fixed five lines from the modal one.
+   */
+  for (const f of ['app/modal.tsx', 'app/Home/index.tsx']) {
+    const src = read(f);
+    assert.doesNotMatch(
+      src,
+      /category(\?)? === '(Medical|Integrative|Psychological|Social)'/,
+      `${f}: comparing a lowercased category against a capitalised literal`,
+    );
+    assert.doesNotMatch(
+      src,
+      /cat\.name === provider\.category/,
+      `${f}: SUPPORT_CATEGORIES name compared without normalising case`,
+    );
+  }
+});

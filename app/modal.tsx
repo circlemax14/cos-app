@@ -204,8 +204,24 @@ export default function ModalScreen() {
 
         // Categorize each provider (can belong to multiple subcategories)
         providers.forEach(provider => {
+          /*
+           * COS-983 — this comparison never matched, so the backend's answer
+           * was thrown away.
+           *
+           * `cat.name` is 'Medical'; `provider.category` is LOWERCASED at
+           * services/api/providers.ts:81. So categoryMatch was always
+           * undefined, the mapping below never ran, and every provider fell
+           * through to keyword guessing — which is the thing that files
+           * PADMA DASARI MD under Physician Assistants.
+           *
+           * Identical to the defect COS-971 fixed five lines away at :147.
+           * The lowercasing is deliberate upstream; the comparison has to
+           * meet it rather than the other way round.
+           */
           const categoryMatch = provider.category
-            ? SUPPORT_CATEGORIES.find(cat => cat.name === provider.category)
+            ? SUPPORT_CATEGORIES.find(
+                cat => cat.name.toLowerCase() === provider.category?.toLowerCase(),
+              )
             : undefined;
           const subCategoryNames = provider.subCategories && provider.subCategories.length > 0
             ? provider.subCategories
