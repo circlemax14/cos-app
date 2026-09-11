@@ -384,14 +384,29 @@ export async function fetchProviderTreatmentPlans(
   // can widen the condition / medication filter to include encounter
   // attribution. Match by name (the appointments endpoint tags each
   // encounter with the provider's display name, not an ID).
+  /*
+   * COS-977 — an unresolved provider name must attribute NOTHING, not everything.
+   *
+   * This read `(!providerName || a.doctorName === providerName)`. The left half
+   * is a fail-OPEN: whenever the provider's name could not be resolved, every
+   * encounter passed the filter, and every condition and prescription linked to
+   * any encounter was attributed to whichever doctor the patient had tapped.
+   *
+   * So on a provider whose name is missing — which is most of them while
+   * hasData/recordCount are broken — the Treatment and Medications tabs showed
+   * a patient another doctor's diagnoses under this doctor's heading. Silent,
+   * plausible-looking, and wrong in the direction that matters clinically.
+   *
+   * With no name there is no attribution to make, so the honest answer is an
+   * empty set: the tab says nothing was recorded by this provider, which is
+   * what we actually know.
+   */
   const providerEncounterRefs = new Set(
-    (apptRes?.data?.data?.appointments ?? [])
-      .filter(
-        (a) =>
-          a.resourceType === 'Encounter' &&
-          (!providerName || a.doctorName === providerName),
-      )
-      .map((a) => `Encounter/${a.id}`),
+    !providerName
+      ? []
+      : (apptRes?.data?.data?.appointments ?? [])
+          .filter((a) => a.resourceType === 'Encounter' && a.doctorName === providerName)
+          .map((a) => `Encounter/${a.id}`),
   );
 
   const diagnoses: ProviderDiagnosis[] = conditions
