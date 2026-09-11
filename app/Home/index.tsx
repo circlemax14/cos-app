@@ -1192,7 +1192,10 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
       // Manually added people and non-medical supports have no EHR records
       // by definition; a records filter must never hide them.
       if (provider.isManual) return true;
-      if (provider.category && provider.category !== 'Medical') return true;
+      // COS-971 — `category` is LOWERCASED at providers.ts:81, so comparing it
+      // against 'Medical' was always true and every row short-circuited here:
+      // both filter options returned the identical list. The filter did nothing.
+      if (provider.category && provider.category.toLowerCase() !== 'medical') return true;
       const has = provider.hasData === true || (provider.recordCount ?? 0) > 0;
       return lastVisitedFilter === 'with-records' ? has : !has;
     });

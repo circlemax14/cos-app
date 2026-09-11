@@ -111,25 +111,53 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
  */
 function dedupeByPerson(providers: Provider[]): Provider[] {
   const norm = (v?: string) => (v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const best = new Map<string, Provider>();
+
+  const groups = new Map<string, Provider[]>();
   for (const p of providers) {
     const key = `${norm(p.name)}|${norm(p.qualifications)}`;
-    // A blank name would collapse every unnamed row into one. Keep those.
-    if (!norm(p.name)) {
-      best.set(`${key}|${p.id}`, p);
-      continue;
-    }
-    const held = best.get(key);
-    if (!held) {
-      best.set(key, p);
-      continue;
-    }
-    const better =
-      (p.hasData ? 1 : 0) - (held.hasData ? 1 : 0) ||
-      (p.recordCount ?? 0) - (held.recordCount ?? 0);
-    if (better > 0) best.set(key, p);
+    // A blank name is not an identity. Key those to themselves so they can
+    // never pool together.
+    const k = norm(p.name) ? key : `${key}|${p.id}`;
+    const g = groups.get(k);
+    if (g) g.push(p);
+    else groups.set(k, [p]);
   }
-  return [...best.values()];
+
+  /*
+   * COS-971 — merge ONLY the pattern we actually observed, and nothing else.
+   *
+   * The first cut of this merged every row sharing name+credentials, keeping
+   * whichever had records. That was too greedy against real data: production
+   * returns a PLACEHOLDER practitioner name with no specialty, repeated, and
+   * on two live accounts it collapsed 17 and 15 DISTINCT practitioner FHIR ids
+   * into a single row. Those doctors became unreachable from the list. Showing
+   * a doctor twice is untidy; hiding sixteen is dangerous, and it is the worse
+   * failure of the two.
+   *
+   * The duplication we are actually fixing has a narrow signature: EXACTLY TWO
+   * rows for one person — the same human arriving once under the Epic FHIR id
+   * and once under the NPI — where only ONE of them carries records, which is
+   * why half the roster opened onto five empty tabs.
+   *
+   * So: collapse a group only when it is a pair AND exactly one side has
+   * records. Anything else — three or more rows, or two rows that both have
+   * records — is left intact, because at that point we cannot tell a duplicate
+   * from two people, and the safe answer is to show both.
+   */
+  const out: Provider[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    const withData = group.filter((p) => p.hasData === true || (p.recordCount ?? 0) > 0);
+    if (group.length === 2 && withData.length === 1) {
+      out.push(withData[0]);
+      continue;
+    }
+    out.push(...group);
+  }
+  return out;
 }
 
 export async function fetchProviders(): Promise<Provider[]> {
