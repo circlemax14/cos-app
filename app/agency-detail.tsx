@@ -557,7 +557,7 @@ export default function AgencyDetailScreen() {
                      "my agency has no staff". */
                   <AgencyTeamSection agencyId={String(agencyId)} />
                 ) : (
-                  <AgencyVisitsSection agencyId={String(agencyId)} />
+                  <AgencyVisitsSection agencyId={String(agencyId)} showEmptyState />
                 )}
 
                 <Button

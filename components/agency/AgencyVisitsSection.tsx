@@ -77,7 +77,23 @@ async function fetchAgencyVisits(agencyId: string): Promise<AgencyVisit[]> {
   return Array.isArray(visits) ? (visits as AgencyVisit[]) : []
 }
 
-export function AgencyVisitsSection({ agencyId }: { agencyId: string }): React.JSX.Element | null {
+/**
+ * COS-996 — `showEmptyState` exists because this component has two homes.
+ *
+ * Stacked under the team list it must vanish when there is nothing to show, or
+ * a patient with no visits gets a heading over blank space. As a TAB the
+ * opposite is true: the patient chose "Scheduling" and an empty pane reads as
+ * a broken screen, not as "nothing booked". Note it null-renders for FOUR
+ * distinct reasons — flag off, loading, error, no visits — and only the last
+ * is worth a message; the others are not the patient's business.
+ */
+export function AgencyVisitsSection({
+  agencyId,
+  showEmptyState = false,
+}: {
+  agencyId: string;
+  showEmptyState?: boolean;
+}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const fs = getScaledFontSize
@@ -99,12 +115,37 @@ export function AgencyVisitsSection({ agencyId }: { agencyId: string }): React.J
     retry: false,
   })
 
+  const empty = showEmptyState ? (
+    <View style={{ paddingVertical: 28, paddingHorizontal: 16, alignItems: 'center' }}>
+      <Text
+        style={{
+          color: colors.text + '99',
+          fontSize: fs(14),
+          textAlign: 'center',
+          lineHeight: fs(20),
+        }}
+      >
+        No visits are booked yet. When your care team schedules one, it will show up here.
+      </Text>
+    </View>
+  ) : null
+
+  /*
+   * Flag / loading / error still render NOTHING, even as a tab. That decision
+   * predates this change and its reason holds: an error banner over somebody's
+   * care schedule is more alarming than a transient 500 deserves. My first
+   * attempt showed the empty state on isError too — which tells a patient "no
+   * visits are booked" when we actually have no idea, and that is the one
+   * wrong answer here, because they might have a visit tomorrow.
+   *
+   * Only a SUCCESSFUL fetch returning zero rows is a real "nothing booked".
+   */
   if (!enabled) return null
   if (isLoading) return null
   if (isError) return null
 
   const visits = (data ?? []).slice(0, MAX_ROWS)
-  if (visits.length === 0) return null
+  if (visits.length === 0) return empty
 
   // One clock reading for the whole render, so two rows can never disagree
   // about what "Today" means because midnight fell between them.
