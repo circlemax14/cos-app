@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SRC = readFileSync(join(process.cwd(), 'app/agency-detail.tsx'), 'utf8');
+const SRC = readFileSync(join(process.cwd(), 'app/Home/agency-detail.tsx'), 'utf8');
 
 test('the CTA starts in an unknown state, not a claim', () => {
   assert.match(

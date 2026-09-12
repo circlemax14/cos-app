@@ -165,28 +165,16 @@ function StackWithAppLock() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
-        name="agency-detail"
-        options={{
-          /*
-           * COS-996 — fullScreenModal, not modal.
-           *
-           * Supports (`modal`) and this screen are siblings on the SAME root
-           * Stack, and both were `presentation: 'modal'`. Pushing from inside
-           * the Supports sheet therefore presented a SECOND inset pageSheet on
-           * top of the first — the sheet-on-a-sheet Vishal reported, with
-           * Supports still visible behind it and two sets of rounded corners.
-           *
-           * fullScreenModal presents one full screen instead. The X already
-           * calls router.dismiss(), so it still lands back on Supports; only
-           * the presentation changes. Same fix, same reason, as
-           * calendar-event-editor below.
-           */
-          presentation: 'fullScreenModal',
-          title: 'Agency Details',
-          headerShown: false,
-        }}
-      />
+      {/*
+        * COS-999 — agency-detail is NOT registered here any more.
+        *
+        * It moved to app/Home/agency-detail.tsx so it renders with the bottom
+        * tab bar and the AppWrapper header, which Vishal asked for. As the
+        * comment below already said for personal-info: a root-level Stack
+        * sibling of Home structurally CANNOT show the tab bar. Changing
+        * `presentation` never could have fixed that — `modal` only hid the
+        * absence behind a sheet.
+        */}
       <Stack.Screen
         name="appointments-modal"
         options={{

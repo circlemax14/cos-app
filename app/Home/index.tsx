@@ -367,7 +367,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   return;
                 }
                 if (isCareManager) {
-                  router.push(`/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
+                  router.push(`/Home/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
                   return;
                 }
                 const isIntegrative = item.category?.toLowerCase() === 'integrative';
@@ -761,7 +761,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   return;
                 }
                 if (isCareManager) {
-                  router.push(`/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
+                  router.push(`/Home/agency-detail?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}` as never);
                   return;
                 }
                 const isIntegrative = item.category?.toLowerCase() === 'integrative';
@@ -1939,7 +1939,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   }
                 ]}
                 onPress={() => {
-                  router.push(`/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
+                  router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
                 }}
                 activeOpacity={0.7}
               >

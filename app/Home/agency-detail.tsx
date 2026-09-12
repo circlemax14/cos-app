@@ -12,6 +12,7 @@ import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AgencyTeamSection } from '@/components/agency/AgencyTeamSection';
 import { AgencyVisitsSection } from '@/components/agency/AgencyVisitsSection';
+import { AgencyScheduleCalendar } from '@/components/agency/AgencyScheduleCalendar';
 import { useCanRender } from '@/hooks/use-entitlement';
 // COS-930 — SafeAreaView root, because the app is EDGE-TO-EDGE on Android.
 //
@@ -25,6 +26,7 @@ import { useCanRender } from '@/hooks/use-entitlement';
 // safe-area-context reports a top inset of 0 inside the sheet, so the
 // SafeAreaView adds nothing. On the full-screen ones it is a fix for iOS too.
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppWrapper } from '@/components/app-wrapper';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -38,10 +40,19 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
  * user to the Home tab instead of leaving them on a blank screen.
  */
 function closeModal() {
-  if (router.canDismiss()) {
-    router.dismiss();
-    return;
-  }
+  /*
+   * COS-999 — no router.dismiss() here any more.
+   *
+   * This screen now lives inside the Tabs navigator. expo-router's
+   * canDismiss() walks DOWN from the root and returns true at the first stack
+   * with more than one entry — which, from in here, is the ROOT stack. So
+   * dismiss() would pop `Home` itself off rather than this screen. It was only
+   * survivable because app/index.tsx replaces itself out, leaving one root
+   * route in the common case.
+   *
+   * back() is correct now: per the TabRouter's firstRoute behaviour it lands on
+   * Home, which is where a patient closing an agency expects to be.
+   */
   if (router.canGoBack()) {
     router.back();
     return;
@@ -315,15 +326,19 @@ export default function AgencyDetailScreen() {
 
   return (
     /*
-     * COS-996 — SafeAreaView, now that this route is `fullScreenModal`.
+     * COS-999 — AppWrapper supplies the header, and living under app/Home/
+     * supplies the bottom tab bar. Vishal: "the top header and the bottom
+     * navigations are missed. It's not like we are covering the entire screen."
      *
-     * Under `presentation: 'modal'` the sheet reported a top inset of 0, so a
-     * bare View was fine and only the loading branch bothered. Full screen
-     * removes that free inset: on Android edge-to-edge and on a notched
-     * iPhone the header — including the X — would render under system chrome,
-     * and on Android the status-bar window swallows the taps outright.
+     * Changing `presentation` could never have fixed that. A root-level Stack
+     * sibling of Home structurally cannot show the tab bar — `modal` merely hid
+     * the absence behind a sheet, and `fullScreenModal` exposed it.
+     *
+     * SafeAreaView now claims only LEFT/RIGHT: AppWrapper owns the top inset
+     * and the tab bar owns the bottom, so claiming those here would double-pad.
      */
-    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+    <AppWrapper>
+    <SafeAreaView edges={['left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Pull-to-refresh stays off: it was omitted because the sheet's
           dismiss gesture owned the pull, and adding it now is a behaviour
           change this ticket did not ask for. */}
@@ -555,22 +570,13 @@ export default function AgencyDetailScreen() {
                      refuses a patient who is not assigned, but swallowing that
                      here would render an empty list — indistinguishable from
                      "my agency has no staff". */
-                  <AgencyTeamSection agencyId={String(agencyId)} />
+                  <AgencyTeamSection agencyId={String(agencyId)} showEmptyState />
                 ) : (
-                  <AgencyVisitsSection agencyId={String(agencyId)} showEmptyState />
+                  /* COS-999 — the calendar Vishal asked for, in place of the
+                     four-row list. AgencyVisitsSection stays in the codebase:
+                     it is still the right shape stacked under other content. */
+                  <AgencyScheduleCalendar agencyId={String(agencyId)} />
                 )}
-
-                <Button
-                  mode="text"
-                  onPress={handleLeaveAgency}
-                  disabled={isRequesting}
-                  textColor="#B3261E"
-                  style={{ marginTop: 8, alignSelf: 'center' }}
-                  labelStyle={{ fontSize: getScaledFontSize(14) }}
-                  accessibilityLabel={`Leave ${agency?.name ?? 'this agency'}`}
-                >
-                  Leave this agency
-                </Button>
               </>
             ) : null}
           </>
@@ -791,7 +797,47 @@ export default function AgencyDetailScreen() {
         </Modal>
       </ScrollView>
       )}
+
+      {/*
+        * COS-999 — pinned to the bottom of the SCREEN, not the end of the list.
+        *
+        * Vishal: "I want it as a button at the very bottom of the screen,
+        * whatever the size of the screen doesn't matter."
+        *
+        * So it sits outside the ScrollView as a sibling. Inside it, the button
+        * was wherever the content happened to end — which on a member with a
+        * long team list meant scrolling to find it, and on a short one left it
+        * floating mid-screen. Outside, it is in the same place on every device.
+        *
+        * Only for a member: there is nothing to leave otherwise.
+        */}
+      {canView && requestStatus === 'approved' ? (
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 10,
+            paddingBottom: 12,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: 'rgba(128,128,128,0.3)',
+            backgroundColor: colors.background,
+          }}
+        >
+          <Button
+            mode="outlined"
+            onPress={handleLeaveAgency}
+            disabled={isRequesting}
+            textColor="#B3261E"
+            style={{ borderColor: '#B3261E' }}
+            contentStyle={{ minHeight: 48 }}
+            labelStyle={{ fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}
+            accessibilityLabel={`Leave ${agency?.name ?? 'this agency'}`}
+          >
+            Leave this agency
+          </Button>
+        </View>
+      ) : null}
     </SafeAreaView>
+    </AppWrapper>
   );
 }
 

@@ -533,7 +533,21 @@ export default function ModalScreen() {
                               <TouchableOpacity
                                 style={[styles.listItemContent, { marginLeft: getScaledFontSize(16), flex: 1 }]}
                                 onPress={() => {
-                                  router.push(`/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
+                                  /*
+                                   * COS-999 — dismiss the sheet, THEN push.
+                                   *
+                                   * This was the one detail target in this file
+                                   * that pushed without closing the sheet first
+                                   * (the doctor rows at :694 and :1022 already
+                                   * did). Pushing from inside a presented sheet
+                                   * renders the next screen INSIDE it — which is
+                                   * why agency-detail needed a modal
+                                   * presentation, and why it never had a tab bar.
+                                   */
+                                  router.back();
+                                  setTimeout(() => {
+                                    router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
+                                  }, 300);
                                 }}
                                 activeOpacity={0.7}
                               >

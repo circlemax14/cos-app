@@ -374,6 +374,15 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      {/* COS-999 — same shape as doctor-detail: reached by id+name from the
+          Supports sheet and the Home orbit, hidden from the tab bar itself. */}
+      <Tabs.Screen
+        name="agency-detail"
+        options={{
+          title: 'Agency Detail',
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="proxy-management"
         options={{

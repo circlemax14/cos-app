@@ -71,7 +71,9 @@ export interface AgencyVisit {
  */
 const MAX_ROWS = 4
 
-async function fetchAgencyVisits(agencyId: string): Promise<AgencyVisit[]> {
+// COS-999 — exported so the Scheduling calendar shares this exact fetch
+// (and its query key) rather than growing a second, drifting copy.
+export async function fetchAgencyVisits(agencyId: string): Promise<AgencyVisit[]> {
   const res = await apiClient.get(`/v1/agencies/${encodeURIComponent(agencyId)}/visits`)
   const visits = res?.data?.data?.visits
   return Array.isArray(visits) ? (visits as AgencyVisit[]) : []
