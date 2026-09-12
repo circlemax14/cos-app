@@ -25,7 +25,15 @@ export interface SubCategory {
 
 export interface Category {
   id: string;
+  /**
+   * The STORED value. `app/modal.tsx` writes this onto a provider row as
+   * `category`, and rows created before any rename still carry the old string
+   * — so renaming this field splits the data rather than relabelling it.
+   * Change `displayName` instead.
+   */
   name: string;
+  /** COS-996 — what the patient sees. Falls back to `name`. Never persisted. */
+  displayName?: string;
   subCategories: SubCategory[];
   icon?: string; // Optional icon name
 }
@@ -34,6 +42,9 @@ export const SUPPORT_CATEGORIES: Category[] = [
   {
     id: 'care-manager',
     name: 'Care Manager',
+    // Vishal: "the rename will be agencies because we are searching for the
+    // agencies." Display only — `name` stays the stored value.
+    displayName: 'Agencies',
     icon: getCategoryIcon('care-manager'),
     subCategories: [],
   },

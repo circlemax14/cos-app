@@ -1429,7 +1429,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   marginBottom: getScaledFontSize(4),
                 }
               ]}>
-                {category.name}
+                {category.displayName ?? category.name}
               </Text>
               <Text style={[
                 styles.listItemRole,
@@ -1499,7 +1499,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
               marginLeft: getScaledFontSize(8),
             }
           ]}>
-            {category.name}
+            {category.displayName ?? category.name}
           </Text>
           <View style={{ width: getScaledFontSize(24), alignItems: 'center', justifyContent: 'center' }}>
             <FilterMenu
@@ -1901,7 +1901,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                 marginLeft: getScaledFontSize(8),
               }
             ]}>
-              Care Manager Agencies
+              Agencies
             </Text>
             <View style={{ width: getScaledFontSize(24) }} />
           </View>

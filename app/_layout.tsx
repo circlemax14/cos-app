@@ -168,7 +168,21 @@ function StackWithAppLock() {
       <Stack.Screen
         name="agency-detail"
         options={{
-          presentation: 'modal',
+          /*
+           * COS-996 — fullScreenModal, not modal.
+           *
+           * Supports (`modal`) and this screen are siblings on the SAME root
+           * Stack, and both were `presentation: 'modal'`. Pushing from inside
+           * the Supports sheet therefore presented a SECOND inset pageSheet on
+           * top of the first — the sheet-on-a-sheet Vishal reported, with
+           * Supports still visible behind it and two sets of rounded corners.
+           *
+           * fullScreenModal presents one full screen instead. The X already
+           * calls router.dismiss(), so it still lands back on Supports; only
+           * the presentation changes. Same fix, same reason, as
+           * calendar-event-editor below.
+           */
+          presentation: 'fullScreenModal',
           title: 'Agency Details',
           headerShown: false,
         }}

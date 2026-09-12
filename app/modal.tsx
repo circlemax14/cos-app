@@ -44,7 +44,10 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 interface CategoryGroup {
   id: string;
+  /** The STORED value — see constants/categories.ts. Not the label. */
   name: string;
+  /** COS-996 — display label; falls back to `name`. */
+  displayName?: string;
   doctors: Provider[];
   subCategories?: SubCategoryGroup[];
   icon?: string;
@@ -273,6 +276,7 @@ export default function ModalScreen() {
           return {
             id: categoryDef.id,
             name: categoryDef.name,
+            displayName: categoryDef.displayName,
             doctors: [],
             subCategories,
             icon: categoryDef.icon,
@@ -469,7 +473,7 @@ export default function ModalScreen() {
                   return (
                     <TabScreen
                       key={category.id}
-                      label={category.name}
+                      label={category.displayName ?? category.name}
                     >
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
@@ -568,35 +572,31 @@ export default function ModalScreen() {
                                   </Text>
                                 )}
                               </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => {
-                                  const isSelected = selectedCareManager?.id === agency.id;
-                                  if (isSelected) {
-                                    setSelectedCareManager(null);
-                                  } else {
-                                    setSelectedCareManager({ id: agency.id, name: agency.name, agencyName: agency.name, logoUrl: agency.logoUrl });
-                                  }
-                                }}
+                              {/*
+                                * COS-996 — the manual add/remove is gone.
+                                *
+                                * Vishal: "once any agency is approved, that agency
+                                * will be directly added to the circle. We don't need
+                                * to give user a manual option."
+                                *
+                                * It was also never tied to membership: this button
+                                * wrote `selectedCareManager` directly, so a patient
+                                * could put an agency in their circle without ever
+                                * requesting to join it, and an approved patient
+                                * stayed out until they found this button. The ring
+                                * and the membership could disagree in both
+                                * directions. Approval now writes the ring in the
+                                * same transaction as the membership
+                                * (agency-request.service.ts), and leaving clears it.
+                                *
+                                * A chevron, because the row still opens the agency.
+                                */}
+                              <View
                                 style={{ padding: getScaledFontSize(8), minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
-                                accessibilityRole="button"
-                                accessibilityLabel={selectedCareManager?.id === agency.id ? 'Remove from circle' : 'Add to circle'}
+                                pointerEvents="none"
                               >
-                                {(() => {
-                                  const isSelected = selectedCareManager?.id === agency.id;
-                                  return (
-                                    <View style={{
-                                      width: getScaledFontSize(32),
-                                      height: getScaledFontSize(32),
-                                      borderRadius: getScaledFontSize(16),
-                                      backgroundColor: isSelected ? '#EF4444' + '20' : colors.tint + '20',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                    }}>
-                                      <IconSymbol name={isSelected ? 'minus' : 'plus'} size={getScaledFontSize(18)} color={isSelected ? '#EF4444' : colors.tint} />
-                                    </View>
-                                  );
-                                })()}
-                              </TouchableOpacity>
+                                <IconSymbol name="chevron.right" size={getScaledFontSize(18)} color={colors.text + '60'} />
+                              </View>
                             </View>
                           ))
                         )}
@@ -620,7 +620,7 @@ export default function ModalScreen() {
                   return (
                     <TabScreen
                       key={category.id}
-                      label={category.name}
+                      label={category.displayName ?? category.name}
                     >
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
@@ -724,7 +724,7 @@ export default function ModalScreen() {
                 return (
                   <TabScreen
                     key={category.id}
-                    label={category.name}
+                    label={category.displayName ?? category.name}
                   >
                     {showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>

@@ -2,7 +2,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router } from 'expo-router';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { Card, Button } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -49,6 +49,18 @@ function closeModal() {
   router.replace('/Home' as never);
 }
 
+/**
+ * COS-996 — what the bottom of this screen is allowed to say.
+ *
+ * 'unknown' is the INITIAL value and the whole point of this type. The state
+ * used to start at 'none', so every visit rendered "Request Care Manager" —
+ * including to a patient already with this agency — and flipped a second or
+ * two later when two awaited calls landed. Vishal watched it change under his
+ * thumb as he reached for it. A CTA that is wrong for a second is worse than
+ * one that arrives a second later, because the wrong one gets tapped.
+ */
+type AgencyCta = 'unknown' | 'none' | 'pending' | 'approved' | 'blocked' | 'leaving';
+
 export default function AgencyDetailScreen() {
   const params = useLocalSearchParams();
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
@@ -66,7 +78,11 @@ export default function AgencyDetailScreen() {
   const [agency, setAgency] = useState<CareManagerAgency | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
-  const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
+  const [requestStatus, setRequestStatus] = useState<AgencyCta>('unknown');
+  /** The agency the patient already belongs to, when it is not this one. */
+  const [otherAgency, setOtherAgency] = useState<{ id: string; name: string } | null>(null);
+  /** COS-996 — which half of "who looks after me, and when". */
+  const [detailTab, setDetailTab] = useState<'team' | 'scheduling'>('team');
   const [, setPatientAgencyId] = useState<string | null>(null);
   // SCRUM-268 Phase 4: tier the patient is requesting. 'agency-supported'
   // is the default — the lighter-touch option where the AI plan still
@@ -93,27 +109,79 @@ export default function AgencyDetailScreen() {
         }
       }
 
-      // Check if patient has a pending request or is already assigned
+      /*
+       * COS-996 — resolve the CTA ONCE, from both answers together.
+       *
+       * These were two independent setState calls racing each other, so the
+       * screen could show 'pending' and then 'approved' within the same second.
+       *
+       * The membership test was also simply wrong. It read
+       *
+       *     if (meRes.data?.data?.agencyId === agencyId) -> approved
+       *
+       * but EVERY patient is stamped with the isDefault agency by
+       * ensureUserProfile, so `agencyId` alone never means "is a member" — it
+       * means "exists". /v1/auth/me already answers the real question with
+       * `hasElectedAgency` (added in COS-887 for precisely this bug on the
+       * support screen); this screen just never asked.
+       */
+      let pendingHere = false;
+      let pendingType: 'join' | 'leave' | null = null;
       try {
         const statusRes = await apiClient.get('/v1/patients/me/agency-request/status');
         const pendingRequest = statusRes.data?.data;
-        if (pendingRequest && pendingRequest.agencyId === agencyId) {
-          setRequestStatus('pending');
-        }
+        pendingHere = Boolean(pendingRequest && pendingRequest.agencyId === agencyId);
+        if (pendingHere) pendingType = pendingRequest.requestType === 'leave' ? 'leave' : 'join';
       } catch {
-        // No pending request
+        // No pending request.
       }
 
-      // Check if patient is already assigned to this agency
+      let myAgencyId: string | null = null;
+      let elected = false;
       try {
         const meRes = await apiClient.get('/v1/auth/me');
-        const userAgencyId = meRes.data?.data?.agencyId;
-        setPatientAgencyId(userAgencyId || null);
-        if (userAgencyId === agencyId) {
-          setRequestStatus('approved');
-        }
+        myAgencyId = (meRes.data?.data?.agencyId as string | undefined) ?? null;
+        /*
+         * COS-996 — prefer `hasJoinedAgency`, fall back to `hasElectedAgency`.
+         *
+         * `hasElectedAgency` only asks whether the agency on the profile is not
+         * the signup default. On PRODUCTION the single agency IS the default,
+         * so it reads false for a patient who genuinely joined — this screen
+         * would then offer "Request Care Manager" to someone who already has
+         * one, which is the bug this whole change exists to remove.
+         * `hasJoinedAgency` is derived from `agencyJoinedAt`, written only by an
+         * approved join. The fallback covers an app running ahead of the API.
+         */
+        const me = meRes.data?.data ?? {};
+        elected = me.hasJoinedAgency === true
+          || (me.hasJoinedAgency === undefined && me.hasElectedAgency === true);
       } catch {
-        // ignore
+        // Unreachable /me: fall through to 'none' rather than claim membership.
+      }
+      setPatientAgencyId(myAgencyId);
+
+      const belongsHere = elected && myAgencyId === agencyId;
+      const belongsElsewhere = elected && Boolean(myAgencyId) && myAgencyId !== agencyId;
+
+      if (belongsHere && pendingType === 'leave') {
+        // Still a member, but on the way out — the agency has not actioned it.
+        setRequestStatus('leaving');
+      } else if (belongsHere) {
+        setRequestStatus('approved');
+      } else if (pendingHere) {
+        setRequestStatus('pending');
+      } else if (belongsElsewhere) {
+        /*
+         * Name the agency they are actually with. "You already have an agency"
+         * is not actionable — a patient cannot leave one the app will not name.
+         */
+        const other = myAgencyId
+          ? await getCareManagerAgencyById(myAgencyId).catch(() => null)
+          : null;
+        setOtherAgency({ id: String(myAgencyId), name: other?.name ?? 'your current agency' });
+        setRequestStatus('blocked');
+      } else {
+        setRequestStatus('none');
       }
     };
     loadData();
@@ -139,6 +207,44 @@ export default function AgencyDetailScreen() {
     } finally {
       setIsRequesting(false);
     }
+  };
+
+  /**
+   * COS-996 — ask to leave. The agency gets a grace period to respond before
+   * this auto-approves, so the confirmation says so: a patient who thinks they
+   * have already left, and has not, is the worst version of this screen.
+   */
+  const handleLeaveAgency = () => {
+    const name = agency?.name ?? 'this agency';
+    Alert.alert(
+      `Leave ${name}?`,
+      `We'll let ${name} know. They have 5 days to respond and may get in touch to talk it over. ` +
+        `If they don't respond, you'll be moved out automatically after that.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Request to leave',
+          style: 'destructive',
+          onPress: async () => {
+            setIsRequesting(true);
+            try {
+              await apiClient.post('/v1/patients/me/agency-request/leave', {});
+              setRequestStatus('leaving');
+            } catch (err) {
+              const status = (err as { response?: { status?: number } })?.response?.status;
+              Alert.alert(
+                'Could not send that',
+                status === 409
+                  ? 'You already have a request in progress with this agency.'
+                  : 'Please try again in a moment.',
+              );
+            } finally {
+              setIsRequesting(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleConsentNo = () => {
@@ -208,9 +314,19 @@ export default function AgencyDetailScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* No RefreshControl — pulling the sheet down triggers the native
-          modal dismiss gesture (iOS) or no-op (Android). */}
+    /*
+     * COS-996 — SafeAreaView, now that this route is `fullScreenModal`.
+     *
+     * Under `presentation: 'modal'` the sheet reported a top inset of 0, so a
+     * bare View was fine and only the loading branch bothered. Full screen
+     * removes that free inset: on Android edge-to-edge and on a notched
+     * iPhone the header — including the X — would render under system chrome,
+     * and on Android the status-bar window swallows the taps outright.
+     */
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Pull-to-refresh stays off: it was omitted because the sheet's
+          dismiss gesture owned the pull, and adding it now is a behaviour
+          change this ticket did not ask for. */}
       {canView && (
       <ScrollView style={{ flex: 1 }}>
         {/* Header */}
@@ -365,30 +481,109 @@ export default function AgencyDetailScreen() {
 
       {/* Request Care Manager Button / Status */}
       <View style={styles.buttonContainer}>
-        {requestStatus === 'approved' ? (
+        {requestStatus === 'unknown' ? (
+          /*
+           * COS-996 — hold the space, say nothing.
+           *
+           * Same height as the button that may replace it, so nothing jumps
+           * when the answer arrives. Rendering the real CTA here is what made
+           * the screen offer "Request Care Manager" to patients who already
+           * had one.
+           */
+          <View
+            style={[styles.requestButton, { borderRadius: 12, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', minHeight: 56 }]}
+            accessibilityRole="progressbar"
+            accessibilityLabel="Checking your agency status"
+          >
+            <ActivityIndicator color={colors.tint} />
+          </View>
+        ) : requestStatus === 'approved' ? (
           <>
             <View style={[styles.requestButton, { backgroundColor: '#E8F5E9', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
               <MaterialIcons name="check-circle" size={getScaledFontSize(24)} color="#2E7D32" />
               <Text style={{ color: '#2E7D32', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
-                You are assigned to this agency
+                {/* "You are assigned to this agency" read like a clerical
+                    record. The patient chose this agency; say it their way. */}
+                {agency?.name ? `${agency.name} is your care agency` : 'This is your care agency'}
               </Text>
             </View>
-            {/* Gated on approval, not on the endpoint's own 403. The API
-                refuses a patient who is not assigned, but swallowing that here
-                would render an empty list — indistinguishable from "my agency
-                has no staff". */}
+
             {agencyId ? (
               <>
-                <AgencyTeamSection agencyId={String(agencyId)} />
-                {/* SCRUM-688 — the WHEN to the team list's WHO. Directly below
-                    it, because the two answer halves of one question.
-                    Null-renders unless a visit is actually booked, and is
-                    dark-flagged, so a patient with an empty calendar sees this
-                    screen exactly as it is today. */}
-                <AgencyVisitsSection agencyId={String(agencyId)} />
+                {/*
+                  * COS-996 — two tabs, because this is two questions.
+                  *
+                  * WHO looks after me, and WHEN am I seeing them. They were
+                  * stacked, so the calendar sat below a staff list of unknown
+                  * length and was often never scrolled to.
+                  */}
+                <View style={styles.detailTabs} accessibilityRole="tablist">
+                  {([['team', 'Your team'], ['scheduling', 'Scheduling']] as const).map(([key, label]) => {
+                    const active = detailTab === key;
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        onPress={() => setDetailTab(key)}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={label}
+                        style={[
+                          styles.detailTab,
+                          { borderBottomColor: active ? colors.tint : 'transparent' },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: active ? colors.tint : colors.text,
+                            opacity: active ? 1 : 0.6,
+                            fontSize: getScaledFontSize(15),
+                            fontWeight: getScaledFontWeight(active ? 600 : 400) as any,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Quiet, and below the tabs: leaving is rare and should not
+                    compete with the things a member actually came here for. */}
+                {detailTab === 'team' ? (
+                  /* Gated on approval, not on the endpoint's own 403. The API
+                     refuses a patient who is not assigned, but swallowing that
+                     here would render an empty list — indistinguishable from
+                     "my agency has no staff". */
+                  <AgencyTeamSection agencyId={String(agencyId)} />
+                ) : (
+                  <AgencyVisitsSection agencyId={String(agencyId)} />
+                )}
+
+                <Button
+                  mode="text"
+                  onPress={handleLeaveAgency}
+                  disabled={isRequesting}
+                  textColor="#B3261E"
+                  style={{ marginTop: 8, alignSelf: 'center' }}
+                  labelStyle={{ fontSize: getScaledFontSize(14) }}
+                  accessibilityLabel={`Leave ${agency?.name ?? 'this agency'}`}
+                >
+                  Leave this agency
+                </Button>
               </>
             ) : null}
           </>
+        ) : requestStatus === 'leaving' ? (
+          <View style={[styles.requestButton, { backgroundColor: '#FFF3E0', borderRadius: 12, paddingVertical: 16, paddingHorizontal: 16, alignItems: 'center' }]}>
+            <MaterialIcons name="logout" size={getScaledFontSize(24)} color="#E65100" />
+            <Text style={{ color: '#E65100', fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
+              Leaving {agency?.name ?? 'this agency'}
+            </Text>
+            <Text style={{ color: '#E65100', fontSize: getScaledFontSize(13), marginTop: 4, textAlign: 'center', lineHeight: getScaledFontSize(19) }}>
+              They have 5 days to respond and may get in touch. If they don&rsquo;t, you&rsquo;ll be moved out automatically.
+            </Text>
+          </View>
         ) : requestStatus === 'pending' ? (
           <View style={[styles.requestButton, { backgroundColor: '#FFF3E0', borderRadius: 12, paddingVertical: 16, alignItems: 'center' }]}>
             <MaterialIcons name="hourglass-top" size={getScaledFontSize(24)} color="#E65100" />
@@ -398,6 +593,35 @@ export default function AgencyDetailScreen() {
             <Text style={{ color: '#E65100', fontSize: getScaledFontSize(13), marginTop: 4, textAlign: 'center' }}>
               Your request is being reviewed by the agency
             </Text>
+          </View>
+        ) : requestStatus === 'blocked' ? (
+          /*
+           * COS-996 — a patient belongs to ONE agency at a time.
+           *
+           * This screen used to offer "Request Care Manager" on every other
+           * agency, so a patient already with one could ask a second to take
+           * them on. Explain the rule and name the agency holding them, rather
+           * than showing a button that would be refused.
+           */
+          <View style={[styles.requestButton, { backgroundColor: '#EEF2F7', borderRadius: 12, paddingVertical: 16, paddingHorizontal: 16, alignItems: 'center' }]}>
+            <MaterialIcons name="info-outline" size={getScaledFontSize(24)} color="#37474F" />
+            <Text style={{ color: '#263238', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, marginTop: 8, textAlign: 'center' }}>
+              You&rsquo;re already with {otherAgency?.name ?? 'another agency'}
+            </Text>
+            <Text style={{ color: '#455A64', fontSize: getScaledFontSize(13), marginTop: 6, textAlign: 'center', lineHeight: getScaledFontSize(19) }}>
+              To join {agency?.name ?? 'this agency'}, you&rsquo;ll need to leave{' '}
+              {otherAgency?.name ?? 'your current agency'} first. You can do that from their page.
+            </Text>
+            {otherAgency ? (
+              <Button
+                mode="outlined"
+                onPress={() => router.push({ pathname: '/agency-detail', params: { id: otherAgency.id, name: otherAgency.name } } as never)}
+                style={{ marginTop: 12 }}
+                labelStyle={{ fontSize: getScaledFontSize(14) }}
+              >
+                Open {otherAgency.name}
+              </Button>
+            ) : null}
           </View>
         ) : (
           canConnectAgency && <Button
@@ -567,11 +791,27 @@ export default function AgencyDetailScreen() {
         </Modal>
       </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  detailTabs: {
+    flexDirection: 'row',
+    marginTop: 20,
+    marginBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.3)',
+  },
+  detailTab: {
+    flex: 1,
+    paddingVertical: 12,
+    // 44pt minimum touch target — these are the primary controls on this half
+    // of the screen and the audience skews older.
+    minHeight: 44,
+    justifyContent: 'center',
+    borderBottomWidth: 2,
+  },
   container: {
     flex: 1,
   },
