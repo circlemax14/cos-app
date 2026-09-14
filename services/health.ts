@@ -1029,7 +1029,7 @@ export type HealthKitVitalMetric =
   | 'heart-rate-variability'
   | 'sleep-hours'
 
-interface VitalSpec {
+export interface VitalSpec {
   metricCode: string
   metricName: string
   permission: string
@@ -1049,7 +1049,15 @@ interface VitalSpec {
   dayReducer?: 'mean' | 'sum'
 }
 
-const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
+/**
+ * COS-932 — EXPORTED so Health Connect reuses the same specs.
+ *
+ * metricCode is what every downstream consumer keys on — the vitals section,
+ * the readiness snapshot, the wellbeing score. If Android minted its own codes
+ * the same measurement would be a different metric depending on the patient's
+ * phone, and a trend would break the moment someone switched device.
+ */
+export const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
   'blood-pressure-systolic': {
     metricCode: 'hk-bp-systolic',
     metricName: 'Blood Pressure (Systolic)',

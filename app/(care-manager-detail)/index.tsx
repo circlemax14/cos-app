@@ -7,5 +7,5 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 export default function CareManagerDetailRedirect() {
   const params = useLocalSearchParams();
-  return <Redirect href={`/agency-detail?id=${params.id}&name=${params.name}` as never} />;
+  return <Redirect href={`/Home/agency-detail?id=${params.id}&name=${params.name}` as never} />;
 }

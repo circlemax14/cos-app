@@ -42,7 +42,7 @@ export default function IntakeCompleteView() {
             textAlign: 'center',
           }}
         >
-          Your health summary will be ready in your Care Plan soon.
+          Your health status will be ready shortly.
         </Text>
         <Text
           style={{
@@ -66,7 +66,7 @@ export default function IntakeCompleteView() {
             },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Back to Health Summary"
+          accessibilityLabel="Back to Health Status"
         >
           <Text
             style={{
@@ -75,7 +75,7 @@ export default function IntakeCompleteView() {
               fontWeight: getScaledFontWeight(600) as any,
             }}
           >
-            Back to Health Summary
+            Back to Health Status
           </Text>
         </Pressable>
       </View>

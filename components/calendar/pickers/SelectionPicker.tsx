@@ -18,6 +18,19 @@ import React from 'react'
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
+// COS-930 — SafeAreaView inside the Modal, because presentationStyle is
+// iOS-ONLY.
+//
+// RN's Android Modal ignores presentationStyle="pageSheet" entirely, so what
+// is a card sheet on iOS fills the screen from y=0 on Android. And with
+// edgeToEdgeEnabled=true, ReactModalHostView FORCES statusBarTranslucent on
+// every Modal regardless of props — so the modal window is edge-to-edge too.
+// The result is a header row printed over the clock with its Cancel/Done or
+// close control inside the SystemUI touch strip, where taps never reach us.
+//
+// No iOS regression: inside an iOS pageSheet the reported top inset is 0, so
+// this adds no padding there.
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 export interface SelectionOption<T extends string> {
   value: T
@@ -47,7 +60,7 @@ export function SelectionPicker<T extends string>({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.root, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <Pressable onPress={onClose} hitSlop={10} style={styles.headerSide}>
             <Text style={{ color: colors.tint, fontSize: getScaledFontSize(17) }}>Cancel</Text>
@@ -99,7 +112,7 @@ export function SelectionPicker<T extends string>({
             )
           })}
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   )
 }

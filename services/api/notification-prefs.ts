@@ -45,12 +45,25 @@ export async function fetchTimezonePref(): Promise<TimezonePref> {
   return res.data.data
 }
 
+/**
+ * COS-1017 — a choice made in Settings, not a device reading.
+ *
+ * `useTimezoneSync` PUTs the DEVICE zone on sign-in and on every foreground so
+ * a traveller's reminders follow them (COS-871). That was silently undoing this
+ * screen: Vishal set Australia, reopened the app in India, and the sync wrote
+ * Asia/Kolkata back over it — so his reminders kept arriving on Indian time,
+ * correctly, for a value he had not chosen.
+ *
+ * `source: 'user'` marks this as a decision the device cannot know, and the
+ * server refuses later device syncs for that user. Passing null clears both,
+ * which is how someone goes back to following their device.
+ */
 export async function updateTimezonePref(
   timezone: string | null,
 ): Promise<TimezonePref> {
   const res = await apiClient.put<{ success: boolean; data: TimezonePref }>(
     '/v1/patients/me/notification-prefs/timezone',
-    { timezone },
+    { timezone, source: 'user' },
   )
   return res.data.data
 }

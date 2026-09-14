@@ -3,7 +3,13 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, SafeAreaView, ActivityIndicator, RefreshControl, Platform } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, ActivityIndicator, RefreshControl, Platform } from 'react-native';
+// COS-928 — SafeAreaView from safe-area-context, not react-native.
+// RN's own SafeAreaView is a NO-OP on Android (it only ever applied iOS safe
+// area insets), so these screens rendered under the status bar / camera
+// cutout. The context version reads real insets on both platforms and is
+// already a dependency, used elsewhere in the app.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

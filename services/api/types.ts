@@ -15,6 +15,20 @@ export interface Provider {
   lastVisited?: string;
   /** Whether this provider has any clinical records (encounters, meds, reports). */
   hasData?: boolean;
+  /*
+   * COS-1011 — how this clinician is connected to the patient.
+   *
+   *   treated    was in the visit, prescribed, performed, or diagnosed
+   *   mentioned  interpreted a report or signed a document, never in the room
+   *   none       in the directory, absent from the clinical record
+   *
+   * `hasData` cannot express this: it is true for a radiologist who read one
+   * image and for the surgeon who operated, which is why the list could not
+   * put the right people first.
+   */
+  involvement?: 'treated' | 'mentioned' | 'none';
+  /** Records evidencing treatment specifically, not paperwork. */
+  treatedCount?: number;
   /** How many clinical records reference this provider. */
   recordCount?: number;
 }

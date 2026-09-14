@@ -6,6 +6,18 @@ import { Text } from 'react-native-paper';
 import { apiClient } from '@/lib/api-client';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+// COS-930 — SafeAreaView root, because the app is EDGE-TO-EDGE on Android.
+//
+// android/gradle.properties sets edgeToEdgeEnabled=true and styles.xml makes
+// the status bar transparent, so a plain flex:1 View starts at y=0 — under the
+// clock and the punch-hole camera. Worse than ugly: the SystemUI status-bar
+// window is touchable and sits ON TOP of the app, so a close button or a menu
+// trigger inside that strip receives no taps at all. Vishal hit this on an S26.
+//
+// No iOS regression: these are `presentation: 'modal'` routes, where
+// safe-area-context reports a top inset of 0 inside the sheet, so the
+// SafeAreaView adds nothing. On the full-screen ones it is a fix for iOS too.
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -40,9 +52,9 @@ export default function PrivacyPolicyScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -51,7 +63,7 @@ export default function PrivacyPolicyScreen() {
     : 'Unknown';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border ?? '#e0e0e0' }]}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -103,7 +115,7 @@ export default function PrivacyPolicyScreen() {
           </Text>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
