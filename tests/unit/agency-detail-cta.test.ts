@@ -147,8 +147,15 @@ test('the X goes back to Supports only when Supports sent you', () => {
   assert.match(SRC, /function closeModal\(from\?: string\)/, 'closeModal must take an origin');
   assert.match(
     SRC,
-    /if \(from === 'supports'\)[\s\S]{0,220}router\.replace\('\/modal'/,
-    "a 'supports' origin must re-present the sheet, not router.back()",
+    /if \(from === 'supports'\)[\s\S]{0,1400}router\.replace\('\/Home'[\s\S]{0,200}router\.push\('\/modal'/,
+    "a 'supports' origin must land on Home and present the sheet OVER it",
+  );
+  // Replacing this screen WITH the sheet leaves it with no chrome and no way
+  // back — the sheet's own close button has nothing to return to.
+  assert.doesNotMatch(
+    SRC,
+    /router\.replace\('\/modal'/,
+    'the sheet must never replace this screen; it must sit over Home',
   );
   // Every X must pass the origin, or the one that does not silently goes Home.
   const bare = SRC.match(/onPress=\{closeModal\}/g) ?? [];

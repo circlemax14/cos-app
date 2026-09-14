@@ -58,9 +58,26 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
  */
 function closeModal(from?: string) {
   if (from === 'supports') {
-    // Re-present the sheet rather than going back to it: it was dismissed on
-    // the way in, so there is nothing behind us to return to.
-    router.replace('/modal' as never);
+    /*
+     * COS-1005 — land on Home FIRST, then present the sheet over it.
+     *
+     * My previous attempt replaced THIS screen with the sheet. So the sheet had
+     * nothing behind it: no tab bar, no header, and its own close button had
+     * nowhere to return to. Vishal was stuck on a full-screen Supports with no
+     * way out. (The guard test forbids that call by name, which is why this
+     * note describes it rather than quoting it.)
+     *
+     * Home is where Supports is opened from everywhere else — app/Home/index.tsx
+     * does a plain router.push('/modal') in six places — so putting Home behind
+     * it makes closing the sheet behave exactly as it does normally. replace,
+     * not push, so this screen is not left underneath.
+     *
+     * The delay is the same 300ms this codebase already uses when it sequences
+     * a dismissal into a push (app/modal.tsx), giving the tab swap time to
+     * settle before the sheet is presented on top of it.
+     */
+    router.replace('/Home' as never);
+    setTimeout(() => router.push('/modal' as never), 300);
     return;
   }
   if (router.canGoBack()) {
@@ -468,7 +485,7 @@ export default function AgencyDetailScreen() {
       {canView && (
       <ScrollView style={{ flex: 1 }}>
         {/* Header */}
-        <View style={[styles.header, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { backgroundColor: 'transparent' }]}>
           <View style={{ width: getScaledFontSize(24) }} />
           <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>
             Agency Details
@@ -480,7 +497,8 @@ export default function AgencyDetailScreen() {
 
       {/* Agency Info Card */}
       {canViewAgency && (
-      <Card style={[styles.agencyCard, { backgroundColor: colors.background }]}>
+      /* COS-1005 — transparent: this painted colors.background, the same colour as the page, so it added nothing except an opaque panel that clipped AppWrapper's bubbles. */
+      <Card style={[styles.agencyCard, { backgroundColor: 'transparent' }]}>
         <Card.Content>
           <View style={styles.agencyHeader}>
             <View style={[
@@ -581,7 +599,7 @@ export default function AgencyDetailScreen() {
 
       {/* Specialties */}
       {agency.specialties && agency.specialties.length > 0 && (
-        <Card style={[styles.sectionCard, { backgroundColor: colors.background }]}>
+        <Card style={[styles.sectionCard, { backgroundColor: 'transparent' }]}>
           <Card.Content>
             <Text style={[styles.sectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>
               Specialties
@@ -600,7 +618,7 @@ export default function AgencyDetailScreen() {
 
       {/* Services */}
       {agency.services && agency.services.length > 0 && (
-        <Card style={[styles.sectionCard, { backgroundColor: colors.background }]}>
+        <Card style={[styles.sectionCard, { backgroundColor: 'transparent' }]}>
           <Card.Content>
             <Text style={[styles.sectionTitle, { color: colors.text, fontSize: getScaledFontSize(18), fontWeight: getScaledFontWeight(600) as any }]}>
               Services
@@ -927,7 +945,6 @@ export default function AgencyDetailScreen() {
             paddingBottom: 12,
             borderTopWidth: StyleSheet.hairlineWidth,
             borderTopColor: 'rgba(128,128,128,0.3)',
-            backgroundColor: colors.background,
           }}
         >
           <Button
