@@ -123,6 +123,30 @@ export default function AgencyDetailScreen() {
    *
    * useFocusEffect runs on every focus, so returning to it is now a refresh.
    */
+  /*
+   * COS-1003 — clear the previous agency's answer before loading the next.
+   *
+   * Now that this lives in the Tabs navigator it is a screen the navigator
+   * KEEPS MOUNTED, and navigating from one agency to another reuses that same
+   * instance with new params. So the state from the agency you just left stays
+   * on screen until the new load lands.
+   *
+   * Vishal opened BrightFuture straight after QA Test and watched it show
+   * "Your team / Scheduling" — QA Test's answer — for two or three seconds
+   * before flipping to "you're already with QA Test". Exactly the flicker
+   * COS-996 removed, reintroduced by COS-999 through a different door: a
+   * definitive answer displayed before it applies to what you are looking at.
+   *
+   * Keyed on agencyId alone: a name change is cosmetic and must not blank the
+   * screen.
+   */
+  React.useEffect(() => {
+    setRequestStatus('unknown');
+    setAgency(null);
+    setOtherAgency(null);
+    setAutoApproveAt(null);
+  }, [agencyId]);
+
   const reload = useCallback(async () => {
       if (agencyId) {
         const agencyData = await getCareManagerAgencyById(agencyId);
@@ -707,7 +731,7 @@ export default function AgencyDetailScreen() {
             {otherAgency ? (
               <Button
                 mode="outlined"
-                onPress={() => router.push({ pathname: '/agency-detail', params: { id: otherAgency.id, name: otherAgency.name } } as never)}
+                onPress={() => router.push({ pathname: '/Home/agency-detail', params: { id: otherAgency.id, name: otherAgency.name } } as never)}
                 style={{ marginTop: 12 }}
                 labelStyle={{ fontSize: getScaledFontSize(14) }}
               >

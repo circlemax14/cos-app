@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SRC = readFileSync(join(process.cwd(), 'app/Home/agency-detail.tsx'), 'utf8');
@@ -89,4 +89,50 @@ test('the approved state splits into a team tab and a scheduling tab', () => {
   for (const section of ['AgencyTeamSection', 'AgencyVisitsSection']) {
     assert.ok(SRC.includes(section), `${section} must still be rendered after the tab split`);
   }
+});
+
+test('nothing pushes to the retired root route', () => {
+  /*
+   * COS-1003 — the screen moved to app/Home/agency-detail.tsx (COS-999) and the
+   * root route was deleted. I rewrote four of the five call sites: my sweep
+   * matched the template-literal form `/agency-detail?...` and missed the
+   * object form { pathname: '/agency-detail' } inside this very file — the
+   * "Open <other agency>" button. Tapping it gave Vishal a black "Unmatched
+   * Route" screen.
+   *
+   * Scanning the whole app rather than this one file, because the next one
+   * added will not be here either.
+   */
+  const offenders: string[] = [];
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name.startsWith('.')) continue;
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) { walk(full); continue; }
+      if (!/\.(ts|tsx)$/.test(name)) continue;
+      const body = readFileSync(full, 'utf8');
+      // The retired path, NOT preceded by /Home. Quote or backtick delimited.
+      if (/["'`]\/agency-detail(?![a-zA-Z-])/.test(body)) offenders.push(full);
+    }
+  };
+  for (const root of ['app', 'components', 'hooks', 'lib', 'services']) {
+    try { walk(join(process.cwd(), root)); } catch { /* optional dir */ }
+  }
+
+  assert.deepEqual(
+    offenders.map((f) => f.replace(process.cwd() + '/', '')),
+    [],
+    'these push to the deleted root route and will render "Unmatched Route"',
+  );
+});
+
+test('per-agency state resets when the agency changes', () => {
+  // The screen is kept mounted by the Tabs navigator, so moving between two
+  // agencies reuses it. Without this reset the previous agency's verdict shows
+  // for as long as the next load takes.
+  assert.match(
+    SRC,
+    /setRequestStatus\('unknown'\);[\s\S]{0,220}\}, \[agencyId\]\)/,
+    'an effect keyed on agencyId must clear the previous agency answer',
+  );
 });
