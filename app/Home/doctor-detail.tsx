@@ -820,9 +820,32 @@ export default function DoctorDetailScreen() {
             />
 
             {isEmpty ? (
+              /*
+               * COS-1014 — say what is missing, not that nothing happened.
+               *
+               * Vishal opened Jordan Waverly, DO and read "we don't have any
+               * treatment information on file for this provider yet", and
+               * reasonably concluded the filter had let a stranger through. It
+               * had not: that provider saw him across SEVEN visits and produced
+               * 23 reports. He simply never recorded a diagnosis — 0 of them —
+               * and this tab reads diagnoses.
+               *
+               * On a medical record, "no information on file" is read as a
+               * statement that nothing happened. Naming the visits that DO
+               * exist turns a false absence into an accurate one.
+               */
               <View style={{ padding: 20, alignItems: 'center' }}>
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
-                  No diagnoses recorded by this provider in your EHR.
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(15),
+                    textAlign: 'center',
+                    lineHeight: getScaledFontSize(22),
+                  }}
+                >
+                  {visitCards.length > 0
+                    ? `This provider did not record a diagnosis, but they saw you ${visitCards.length === 1 ? 'once' : `${visitCards.length} times`}. Those visits are listed above.`
+                    : 'No diagnoses recorded by this provider in your EHR.'}
                 </Text>
               </View>
             ) : (
