@@ -75,7 +75,17 @@ export interface ProviderDetail {
   };
   progressNotes: { reports: DetailReport[] };
   medications: { active: DetailMedication[]; previous: DetailMedication[] };
-  encounters?: DetailEncounter[];
+  /*
+   * COS-1016 — encounters are nested under `appointments`, not at the top level.
+   *
+   * I wrote this model from the interface NAMES in the service rather than the
+   * shape it actually returns, so `detail.encounters` was always undefined: no
+   * visit cards ever rendered, and the treatment tab fell back to "No diagnoses
+   * recorded by this provider" for a provider with seven visits. Vishal asked
+   * the obvious question — how can there be ten records and no information —
+   * and the answer was that the client was reading a field that does not exist.
+   */
+  appointments?: { encounters: DetailEncounter[] };
 }
 
 /** One visit, with everything the record ties to it. */
@@ -104,7 +114,7 @@ export function toVisitCards(detail: ProviderDetail): {
   unlinkedMedications: DetailMedication[];
   unlinkedReports: DetailReport[];
 } {
-  const encounters = detail.encounters ?? [];
+  const encounters = detail.appointments?.encounters ?? [];
   const meds = [...detail.medications.active, ...detail.medications.previous];
   const reports = detail.progressNotes.reports;
 
