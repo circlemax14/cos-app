@@ -1,5 +1,6 @@
 import { apiClient } from '@/lib/api-client';
 import { sameProvider } from '@/lib/provider-identity';
+import { classifyProvider, dedupeProviders } from '@/lib/provider-relevance';
 import { retryAsync, isTransientApiError } from '@/lib/retry-async';
 import { categorizeProvider } from '@/services/provider-categorization';
 import type {
@@ -201,12 +202,28 @@ export async function fetchProviders(): Promise<Provider[]> {
       { shouldRetry: isTransientApiError },
     );
     const { roles, practitioners } = res.data.data;
-    return dedupeByPerson(
-      practitioners.map((p) => {
-        const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
-        return transformToProvider(p, role);
-      }),
-    );
+    const all = practitioners.map((p) => {
+      const role = roles.find((r) => r.practitioner?.reference === `Practitioner/${p.id}`);
+      return transformToProvider(p, role);
+    });
+
+    /*
+     * COS-1009 — the people who treated you, once each.
+     *
+     * An EHR export names everyone who touched the record. Measured on a real
+     * 59-row account: two pharmacists (both filed as PCP), one technologist, a
+     * row literally named "Provider", and fifteen exact duplicates. 59 rows,
+     * 40 actual clinicians.
+     *
+     * dedupeByPerson below stays for the narrower case it was written for
+     * (COS-968: the same person keyed by FHIR id and by NPI, where exactly one
+     * side has records). dedupeProviders handles the plain repeats it
+     * deliberately refuses to touch, and it keys on name PLUS credential so it
+     * cannot repeat COS-971's collapse of sixteen distinct doctors.
+     */
+    return dedupeProviders(
+      dedupeByPerson(all).filter((prov) => classifyProvider(prov) !== 'unnamed'),
+    ).filter((prov) => classifyProvider(prov) === 'care');
   } catch (error) {
     console.warn('Failed to fetch providers (HealthLake may be unavailable):', error);
     return [];
