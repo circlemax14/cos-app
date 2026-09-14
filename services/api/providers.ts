@@ -32,6 +32,13 @@ interface FhirPractitioner {
   recordCount?: number;
 }
 
+/** COS-1007 — the grouping the server already stored, when it sends one. */
+interface ServerCategorisation {
+  category?: string;
+  subCategory?: string;
+  subCategories?: string[];
+}
+
 interface FhirPractitionerRole {
   practitioner?: { reference?: string };
   specialty?: { text?: string; coding?: { display?: string }[] }[];
@@ -69,7 +76,27 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
   const qualifications = extractQualifications(practitioner);
   const specialty = extractSpecialty(role);
 
-  const cat = categorizeProvider({ name, qualifications, specialty });
+  /*
+   * COS-1007 — trust the server's grouping; guess only when it sends none.
+   *
+   * categorizeProvider() keyword-matches the display NAME, which is a poor
+   * proxy for a fact we already hold. On a real patient's 59 providers the
+   * stored columns say 27 PCP / 13 RN / 10 PT-OT / 5 Others / 2 PA / 2 NP,
+   * while guessing from the name yields 46 Others — and the 13 it does get
+   * right are only the ones with the word "Nurse" in them. So the Supports
+   * screen collapsed six groups into one.
+   *
+   * The fallback stays for rows ingested before the columns existed, and for
+   * manually added members who never had them.
+   */
+  const server = practitioner as unknown as ServerCategorisation;
+  const guessed = categorizeProvider({ name, qualifications, specialty });
+  const serverSubs =
+    Array.isArray(server.subCategories) && server.subCategories.length > 0
+      ? server.subCategories
+      : server.subCategory
+        ? [server.subCategory]
+        : undefined;
 
   return {
     id: practitioner.id,
@@ -78,9 +105,9 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
     specialty,
     phone: extractContact(practitioner, 'phone'),
     email: extractContact(practitioner, 'email'),
-    category: cat.category.toLowerCase(),
-    subCategory: cat.subCategory,
-    subCategories: cat.subCategories,
+    category: (server.category ?? guessed.category).toLowerCase(),
+    subCategory: server.subCategory ?? guessed.subCategory,
+    subCategories: serverSubs ?? guessed.subCategories,
     hasData: practitioner.hasData ?? true,
     recordCount: practitioner.recordCount ?? 0,
   };

@@ -90,8 +90,30 @@ test('THE POINT: the records filter actually compares like with like', () => {
 });
 
 test('category is still lowercased upstream, which is why the above matters', () => {
-  // If this ever stops being true the comparison above must change with it.
-  assert.match(API, /category: cat\.category\.toLowerCase\(\)/);
+  /*
+   * The INVARIANT is that whatever category reaches the grouping has been
+   * lowercased — that is why modal.tsx compares case-insensitively (COS-983).
+   *
+   * COS-1007 changed where the value comes from: the server's stored category
+   * when it sends one, the local guess when it does not. It is still lowercased
+   * on the way out, so the invariant holds. Asserting the old expression
+   * verbatim would have pinned the SOURCE rather than the property, and failed
+   * against a change that kept the property intact.
+   */
+  assert.match(API, /category: \([\s\S]{0,80}\)\.toLowerCase\(\)/);
+});
+
+test('the server-stored grouping wins over the name guess', () => {
+  /*
+   * COS-1007 — measured on a real patient's 59 providers: the stored columns
+   * say 27 PCP / 13 RN / 10 PT-OT / 5 Others / 2 PA / 2 NP, while guessing from
+   * the display name yields 46 Others. Guessing must never take precedence over
+   * a fact we already hold.
+   */
+  assert.match(API, /server\.subCategory \?\? guessed\.subCategory/,
+    'the stored subCategory must be preferred over the guess');
+  assert.match(API, /server\.category \?\? guessed\.category/,
+    'the stored category must be preferred over the guess');
 });
 
 test('the filter still exempts the rows that can never have EHR records', () => {

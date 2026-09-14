@@ -408,20 +408,26 @@ export function categorizeProvider(provider: {
     }
   }
 
-  // Check for Medical category providers
-  const isMedical =
-    // Same word-boundary rule as matchesKeyword: these run against `quals`
-    // alone, but a qualification string like "Padiatrics" would still trip
-    // a bare `includes('pa')`.
-    ['md', 'do', 'np', 'pa', 'rn', 'pt', 'ot', 'dc'].some((c) => matchesKeyword(quals, c)) ||
-    name.includes('doctor') ||
-    name.includes('physician') ||
-    name.includes('nurse') ||
-    name.includes('therapist') ||
-    specialty.length > 0 ||
-    quals.length > 0;
-
-  if (isMedical) {
+  /*
+   * COS-1007 — the `isMedical` gate is gone, and it could only ever do harm.
+   *
+   * It used to wrap everything below. Both exits of this function returned
+   * `category: 'Medical'` regardless, so the gate never decided the CATEGORY —
+   * it only decided whether the subcategory block ran at all. When it said no,
+   * the function returned a blanket "Others".
+   *
+   * And it said no almost always. It tested the credential list against `quals`
+   * — never `combined` — and `quals` comes from the row's `specialty` column,
+   * which is blank on these rows; `specialty` itself is always empty because
+   * getPatientProviders returns `roles: []` as a literal. So of its seven
+   * disjuncts only four survived: the literal words doctor / physician / nurse
+   * / therapist in the name. On a real patient's 59 providers that produced 46
+   * Others, and the 13 it got right were the ones with "Nurse" in the name.
+   *
+   * The block below already defaults to Others when nothing matches, which is
+   * the same answer the gate was producing — just arrived at by looking.
+   */
+  {
     // Collect ALL applicable subcategories (not just one)
     const applicableSubCategories: MedicalSubcategory[] = [];
 
@@ -488,12 +494,6 @@ export function categorizeProvider(provider: {
       subCategories: applicableSubCategories, // All applicable subcategories
     };
   }
-
-  return {
-    category: 'Medical',
-    subCategory: 'Others',
-    subCategories: ['Others'],
-  };
 }
 
 /**

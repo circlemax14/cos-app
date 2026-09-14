@@ -462,26 +462,16 @@ export default function ModalScreen() {
                   return providers.length + manualMembers.length > 0;
                 });
                 /*
-                 * COS-1006 — hide empty subcategories in Medical too.
+                 * COS-1007 — REVERTED. Medical shows its full taxonomy again.
                  *
-                 * Every other category already showed only the ones with
-                 * people in them; Medical rendered all eight regardless. Since
-                 * `canAddMember` is false for Medical, an empty Medical tab is
-                 * unreachable filler — nothing to read and nothing to add — and
-                 * it still has to be scrolled past in a `mode="scrollable"` tab
-                 * strip where a partially-visible tab is easy to miss. That is
-                 * the "sometimes Others works, sometimes it doesn't" Vishal hit.
-                 *
-                 * Fewer tabs is a smaller strip, so fewer tabs sit half off the
-                 * edge. It reduces the misses rather than removing them: the
-                 * underlying tap behaviour belongs to react-native-paper-tabs
-                 * and is not something to patch from here.
-                 *
-                 * Falls back to the full list when NOTHING has data, so the
-                 * taxonomy is still visible rather than the screen going blank.
+                 * I hid the empty Medical subcategories to shorten a scrollable
+                 * tab strip whose edge tabs are easy to mis-tap. That treated a
+                 * symptom and destroyed information: with the real defect still
+                 * putting every provider in "Others", hiding the empties left
+                 * Vishal looking at a Medical tab with ONE subcategory. Worse
+                 * than what he reported.
                  */
-                const subCategoriesToShow =
-                  subCategoriesWithData.length > 0 ? subCategoriesWithData : subCategories;
+                const subCategoriesToShow = isNonMedicalCategory ? subCategoriesWithData : subCategories;
                 const showEmptyNonMedical = isNonMedicalCategory && subCategoriesWithData.length === 0;
                 const emptyFormKey = `category-${category.id}`;
                 const manualSubCategoryLabel = manualSubCategoryId
