@@ -2,16 +2,14 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { Card, Button } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { getCareManagerAgencyById, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { apiClient } from '@/lib/api-client';
-import { usePlanTypeDisplayName } from '@/hooks/use-plan-type-display-name';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AgencyTeamSection } from '@/components/agency/AgencyTeamSection';
-import { AgencyVisitsSection } from '@/components/agency/AgencyVisitsSection';
 import { AgencyScheduleCalendar } from '@/components/agency/AgencyScheduleCalendar';
 import { useCanRender } from '@/hooks/use-entitlement';
 // COS-930 — SafeAreaView root, because the app is EDGE-TO-EDGE on Android.
@@ -76,8 +74,6 @@ export default function AgencyDetailScreen() {
   const params = useLocalSearchParams();
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  // COS-360 / SCRUM-577 — flag-gated "Family Support" rename.
-  const planTypeDisplayName = usePlanTypeDisplayName();
 
   // COS-849 entitlement gates. Hooks, so unconditional and above the early
   // return for the loading state below.
@@ -98,11 +94,15 @@ export default function AgencyDetailScreen() {
   /** COS-996 — which half of "who looks after me, and when". */
   const [detailTab, setDetailTab] = useState<'team' | 'scheduling'>('team');
   const [, setPatientAgencyId] = useState<string | null>(null);
-  // SCRUM-268 Phase 4: tier the patient is requesting. 'agency-supported'
-  // is the default — the lighter-touch option where the AI plan still
-  // runs the show and the care team supplements. 'agency-managed' lets
-  // the care team direct the cadence + add the heavier instruments.
-  const [requestedTier, setRequestedTier] = useState<'agency-supported' | 'agency-managed'>('agency-supported');
+  /*
+   * COS-1002 — no longer a choice, still part of the contract.
+   *
+   * A request for a care manager is now always 'agency-managed'. Kept as a
+   * named constant rather than inlined at the call site so the field stays
+   * greppable from the payload, the dashboard's Service Tier column and
+   * setPlanType() on approval, all of which still read it.
+   */
+  const requestedTier = 'agency-managed' as const;
 
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
@@ -240,10 +240,37 @@ export default function AgencyDetailScreen() {
    */
   React.useEffect(() => {
     if (requestStatus !== 'pending' && requestStatus !== 'leaving') return;
+
+    /*
+     * COS-1002 — five seconds, not fifteen.
+     *
+     * Vishal approved his own request and asked why the screen took a few
+     * seconds to catch up: it was waiting for the next tick. The push arrives
+     * instantly but cannot reach this screen — the notification handler
+     * invalidates React Query caches (see hooks/use-notifications.ts) and this
+     * screen's status is local state, so there is nothing for it to invalidate.
+     *
+     * The real fix is to move this status onto React Query so the existing push
+     * handler invalidates it and the update is immediate. That is a bigger
+     * change than this round should carry, so: a tighter interval, and a
+     * foreground refresh below, which together cover the cases that actually
+     * happen. The window is narrow — only while a request is unresolved AND the
+     * screen is focused.
+     */
     const timer = setInterval(() => {
       void reload();
-    }, 15000);
-    return () => clearInterval(timer);
+    }, 5000);
+
+    // Coming back to the APP while already on this screen: useFocusEffect does
+    // not fire for that, because the screen never lost focus.
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void reload();
+    });
+
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
   }, [requestStatus, reload]);
 
   const handleRequestCareManager = () => {
@@ -733,59 +760,26 @@ export default function AgencyDetailScreen() {
                   </Text>
                 </View>
 
-                {/* SCRUM-268 Phase 4: which level of service is the patient
-                    asking for? Carries through as `requestedTier` on the
-                    agency-request payload and becomes the patient's plan
-                    type once the agency approves. */}
-                <View style={styles.tierSection}>
-                  <Text style={[styles.consentQuestion, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any, marginBottom: 8 }]}>
-                    Level of service
-                  </Text>
-                  {([
-                    {
-                      value: 'agency-supported' as const,
-                      title: planTypeDisplayName('agency-supported'),
-                      desc: 'Keep your AI-driven plan; your care team adds extra check-ins (ADL, IADL, Mini-Cog) and provides oversight.',
-                    },
-                    {
-                      value: 'agency-managed' as const,
-                      title: planTypeDisplayName('agency-managed'),
-                      desc: 'Your care team actively directs your plan with intake and cognitive assessment.',
-                    },
-                  ]).map((opt) => {
-                    const selected = requestedTier === opt.value;
-                    return (
-                      <TouchableOpacity
-                        key={opt.value}
-                        onPress={() => setRequestedTier(opt.value)}
-                        style={[
-                          styles.tierOption,
-                          {
-                            borderColor: selected ? (colors.tint as string) : colors.text + '30',
-                            backgroundColor: selected ? (colors.tint as string) + '12' : 'transparent',
-                          },
-                        ]}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected }}
-                      >
-                        <MaterialIcons
-                          name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
-                          size={getScaledFontSize(20)}
-                          color={selected ? (colors.tint as string) : colors.text + '60'}
-                          style={{ marginTop: 2 }}
-                        />
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(700) as any }}>
-                            {opt.title}
-                          </Text>
-                          <Text style={{ color: colors.text + 'BB', fontSize: getScaledFontSize(12), marginTop: 4, lineHeight: getScaledFontSize(18) }}>
-                            {opt.desc}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                {/*
+                  * COS-1002 — the "Level of service" picker is gone.
+                  *
+                  * Vishal: "why is the consent form asking me what kind of
+                  * level of service I'm expecting, family support or agency
+                  * support ... family support is not required at this point.
+                  * When I'm going to raise a request for care manager, it will
+                  * directly be agency always."
+                  *
+                  * The two options were 'agency-supported' — labelled "Family
+                  * Support" under the v2 assessment flag — and 'agency-managed',
+                  * labelled "Agency". Asking a patient to pick between them at
+                  * the moment they ask for a care manager put a plan decision in
+                  * front of someone who has not met the care team yet, in
+                  * vocabulary only we understand.
+                  *
+                  * The tier is still SENT, as 'agency-managed', so the payload,
+                  * the agency's queue column and the plan applied on approval
+                  * are all unchanged in shape — only the question disappears.
+                  */}
 
                 <View style={styles.termsSection}>
                   <Text style={[styles.termsTitle, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
@@ -1119,17 +1113,6 @@ const styles = StyleSheet.create({
   consentDescription: {
     fontSize: 14,
     flexShrink: 1,
-  },
-  tierSection: {
-    marginBottom: 24,
-  },
-  tierOption: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 10,
   },
   termsSection: {
     marginTop: 8,
