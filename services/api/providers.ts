@@ -231,24 +231,36 @@ export async function fetchProviders(): Promise<Provider[]> {
     ).filter((prov) => classifyProvider(prov) === 'care');
 
     /*
-     * COS-1011 — the people who actually treated them, first.
+     * COS-1012 — FILTER, not sort.
      *
-     * Vishal: "it's not like all forty did the treatment." Measured on a real
-     * record: of 40 clinicians, 25 saw or treated the patient, 7 appear only on
-     * paperwork (read a scan, signed a note, never in the room), and 8 are in
-     * the directory but nowhere in the record at all.
+     * COS-1011 ranked these and left everyone in the list. Vishal, having
+     * opened several: "they are not even taking care of the patient, but still
+     * they are coming. I don't think you have added that filter." He is right —
+     * putting someone twentieth is not removing them, and a list you have to
+     * scroll past is not a list that was filtered.
      *
-     * Sorted rather than filtered, deliberately. A radiologist who read your
-     * scan is a real part of your care and removing them would be another
-     * silent claim of absence — the failure this screen already makes too
-     * often. They simply stop competing for the top of the list with the
-     * surgeon who operated.
+     * Measured on the real record, of 59 rows: 22 TREATED the patient, 7 are on
+     * paperwork only, and 30 appear in no clinical record whatsoever. That last
+     * group is the complaint — they are in the EHR's directory and nothing else.
+     *
+     * Kept: treated. Everyone the record shows actually seeing, prescribing for,
+     * operating on or diagnosing this patient.
+     *
+     * FAILS OPEN, deliberately. If not a single provider carries involvement —
+     * an older API, a failed field, a stage not yet deployed — this filter would
+     * empty the screen entirely, and a blank provider list is a far worse
+     * failure than an over-full one. In that case the unfiltered list is
+     * returned.
      */
-    const rank = (p: Provider): number =>
-      p.involvement === 'treated' ? 0 : p.involvement === 'mentioned' ? 1 : 2;
-    return [...clinicians].sort(
-      (a, b) => rank(a) - rank(b) || (b.treatedCount ?? 0) - (a.treatedCount ?? 0),
-    );
+    const labelled = clinicians.filter((p) => p.involvement !== undefined);
+    if (labelled.length === 0) return clinicians;
+
+    const treated = clinicians.filter((p) => p.involvement === 'treated');
+    // If the record genuinely shows no treatment by anyone, showing nothing
+    // would read as "you have never been treated". Fall back to everyone who
+    // appears in the record at all.
+    if (treated.length > 0) return treated;
+    return clinicians.filter((p) => p.involvement === 'mentioned');
   } catch (error) {
     console.warn('Failed to fetch providers (HealthLake may be unavailable):', error);
     return [];
