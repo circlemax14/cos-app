@@ -155,7 +155,18 @@ export default function DoctorDetailScreen() {
   // loadAiInsight, so this effect is safe to call liberally.
   useEffect(() => {
     if (!providerId || isLoadingData) return;
-    if (activeTab === 'treatment' || activeTab === 'progress' || activeTab === 'appointments') {
+    /*
+     * COS-1008 — only 'treatment'. The other two were paid for and discarded.
+     *
+     * insightFor('treatment') is the only one this screen renders; the
+     * 'progress' and 'appointments' results fed renderOverviewCard, which is
+     * dead code. Each call is UNCACHED server-side — four or five record
+     * searches plus a model generation — so opening one provider and touching
+     * three tabs bought three generations and displayed one.
+     *
+     * Pure subtraction: nothing on screen changes.
+     */
+    if (activeTab === 'treatment') {
       loadAiInsight(activeTab);
     }
   }, [providerId, activeTab, isLoadingData, loadAiInsight]);
@@ -270,7 +281,7 @@ export default function DoctorDetailScreen() {
           // Load provider-specific data
           const [plans, apts, carePlanData] = await Promise.all([
             fetchProviderTreatmentPlans(providerId, providerData?.name),
-            fetchProviderAppointments(providerData?.name ?? ''),
+            fetchProviderAppointments(providerData?.name ?? '', providerId),
             fetchCarePlans(),
           ]);
 
@@ -347,7 +358,7 @@ export default function DoctorDetailScreen() {
         const providerData = await fetchProviderById(providerId);
         const [plans, apts, carePlanData, allProviders, existingShares] = await Promise.all([
           fetchProviderTreatmentPlans(providerId, providerData?.name),
-          fetchProviderAppointments(providerData?.name ?? ''),
+          fetchProviderAppointments(providerData?.name ?? '', providerId),
           fetchCarePlans(),
           fetchProviders(),
           fetchDataShares(),

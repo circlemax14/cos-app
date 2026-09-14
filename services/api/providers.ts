@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { sameProvider } from '@/lib/provider-identity';
 import { retryAsync, isTransientApiError } from '@/lib/retry-async';
 import { categorizeProvider } from '@/services/provider-categorization';
 import type {
@@ -529,10 +530,13 @@ export async function fetchProviderProgressNotes(
   }>('/v1/patients/me/reports');
   const matchesProvider = (performer: string | undefined): boolean => {
     if (!performer) return false;
-    if (providerName && performer.toLowerCase().includes(providerName.toLowerCase())) return true;
-    if (performer.includes(`Practitioner/${providerId}`)) return true;
-    if (performer === providerId) return true;
-    return false;
+    // id first — `performer` may be a reference or a bare id.
+    if (providerId && (performer.includes(`Practitioner/${providerId}`) || performer === providerId)) {
+      return true;
+    }
+    // Otherwise compare people rather than printed strings: "Riley Rowntree, MD"
+    // and "Riley Rowntree" are the same clinician.
+    return sameProvider({ name: providerName }, { name: performer });
   };
   return res.data.data.reports
     .filter((r) => matchesProvider(r.performer))
@@ -545,7 +549,14 @@ export async function fetchProviderProgressNotes(
     }));
 }
 
-export async function fetchProviderAppointments(providerName: string): Promise<ProviderAppointment[]> {
+/*
+ * COS-1008 — provider identity moved to lib/provider-identity.ts so it can be
+ * unit-tested; `node --test` cannot resolve the `@/` alias this file uses.
+ */
+export async function fetchProviderAppointments(
+  providerName: string,
+  providerId?: string,
+): Promise<ProviderAppointment[]> {
   const res = await apiClient.get<{
     success: boolean;
     data: {
@@ -571,7 +582,13 @@ export async function fetchProviderAppointments(providerName: string): Promise<P
     };
   }>('/v1/patients/me/appointments');
   return res.data.data.appointments
-    .filter((a) => a.doctorName === providerName)
+    // id first; normalised name only when a record carries no reference.
+    .filter((a) =>
+      sameProvider(
+        { id: providerId, name: providerName },
+        { id: (a as { doctorId?: string }).doctorId, name: a.doctorName },
+      ),
+    )
     .map((a) => ({
       id: a.id,
       resourceType: a.resourceType,
