@@ -37,20 +37,32 @@ export { ErrorBoundary } from '@/components/RouteErrorBoundary';
  * only if we can go back. If neither works (deep-link entry point) send the
  * user to the Home tab instead of leaving them on a blank screen.
  */
-function closeModal() {
-  /*
-   * COS-999 — no router.dismiss() here any more.
-   *
-   * This screen now lives inside the Tabs navigator. expo-router's
-   * canDismiss() walks DOWN from the root and returns true at the first stack
-   * with more than one entry — which, from in here, is the ROOT stack. So
-   * dismiss() would pop `Home` itself off rather than this screen. It was only
-   * survivable because app/index.tsx replaces itself out, leaving one root
-   * route in the common case.
-   *
-   * back() is correct now: per the TabRouter's firstRoute behaviour it lands on
-   * Home, which is where a patient closing an agency expects to be.
-   */
+/**
+ * COS-1004 — where the X goes depends on where you came from.
+ *
+ * Vishal: "if I'm coming from the supports model to the agency details screen,
+ * then clicking on the cross should take me back to the supports model. But if
+ * I'm coming from the circle of providers or deep linking, like from a
+ * notification, then it should take me to the home screen."
+ *
+ * That cannot be inferred from the navigation state. The Supports sheet is
+ * DISMISSED before it pushes here (COS-999 — pushing from inside a presented
+ * sheet was what made this screen render inside it), so by the time this screen
+ * exists there is nothing left in the stack to say Supports was ever open. And
+ * `router.back()` is no help either: under the TabRouter's firstRoute behaviour
+ * every back from a Home screen lands on Home regardless of what pushed it.
+ *
+ * So the caller states it, with `from=supports`. Anything that does not say so
+ * — the Home orbit, the care-manager redirect shim, a notification deep link —
+ * gets Home, which is the right default for an entry point we do not control.
+ */
+function closeModal(from?: string) {
+  if (from === 'supports') {
+    // Re-present the sheet rather than going back to it: it was dismissed on
+    // the way in, so there is nothing behind us to return to.
+    router.replace('/modal' as never);
+    return;
+  }
   if (router.canGoBack()) {
     router.back();
     return;
@@ -105,6 +117,8 @@ export default function AgencyDetailScreen() {
   const requestedTier = 'agency-managed' as const;
 
   const agencyId = params.id as string | undefined;
+  /** Who sent us here. Only the Supports sheet claims an origin. */
+  const cameFrom = params.from as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
 
   /*
@@ -408,11 +422,12 @@ export default function AgencyDetailScreen() {
 
   if (!agency) {
     return (
-      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+      <AppWrapper>
+      <SafeAreaView edges={['left', 'right']} style={styles.container}>
         <View style={styles.header}>
           <View style={{ width: getScaledFontSize(24) }} />
           <View style={{ flex: 1 }} />
-          <TouchableOpacity onPress={closeModal} style={styles.closeButton} accessibilityLabel="Close">
+          <TouchableOpacity onPress={() => closeModal(cameFrom)} style={styles.closeButton} accessibilityLabel="Close">
             <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -420,6 +435,7 @@ export default function AgencyDetailScreen() {
           <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading agency information...</Text>
         </View>
       </SafeAreaView>
+      </AppWrapper>
     );
   }
 
@@ -437,7 +453,15 @@ export default function AgencyDetailScreen() {
      * and the tab bar owns the bottom, so claiming those here would double-pad.
      */
     <AppWrapper>
-    <SafeAreaView edges={['left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
+    {/*
+      * COS-1004 — no backgroundColor here.
+      *
+      * AppWrapper paints the app's ground AND its decorative bubbles behind
+      * this screen. An opaque panel on top clipped them, which is what Vishal
+      * saw as the bubbles "cutting". doctor-detail — the screen this one was
+      * modelled on — sets no background for exactly this reason.
+      */}
+    <SafeAreaView edges={['left', 'right']} style={styles.container}>
       {/* Pull-to-refresh stays off: it was omitted because the sheet's
           dismiss gesture owned the pull, and adding it now is a behaviour
           change this ticket did not ask for. */}
@@ -449,7 +473,7 @@ export default function AgencyDetailScreen() {
           <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(20), fontWeight: getScaledFontWeight(600) as any }]}>
             Agency Details
           </Text>
-          <TouchableOpacity onPress={closeModal} style={styles.closeButton} accessibilityLabel="Close">
+          <TouchableOpacity onPress={() => closeModal(cameFrom)} style={styles.closeButton} accessibilityLabel="Close">
             <IconSymbol name="xmark" size={getScaledFontSize(24)} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -731,7 +755,14 @@ export default function AgencyDetailScreen() {
             {otherAgency ? (
               <Button
                 mode="outlined"
-                onPress={() => router.push({ pathname: '/Home/agency-detail', params: { id: otherAgency.id, name: otherAgency.name } } as never)}
+                onPress={() =>
+                  // Carry the origin across: if Supports sent you here, the X on
+                  // the agency you hop to should still return you to Supports.
+                  router.push({
+                    pathname: '/Home/agency-detail',
+                    params: { id: otherAgency.id, name: otherAgency.name, ...(cameFrom ? { from: cameFrom } : {}) },
+                  } as never)
+                }
                 style={{ marginTop: 12 }}
                 labelStyle={{ fontSize: getScaledFontSize(14) }}
               >

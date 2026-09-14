@@ -136,3 +136,26 @@ test('per-agency state resets when the agency changes', () => {
     'an effect keyed on agencyId must clear the previous agency answer',
   );
 });
+
+test('the X goes back to Supports only when Supports sent you', () => {
+  /*
+   * COS-1004 — this cannot be read off the navigation state. The Supports sheet
+   * is dismissed BEFORE it pushes here, so nothing in the stack records that it
+   * was open; and router.back() from any Home screen lands on Home anyway
+   * (TabRouter firstRoute). So the caller declares it.
+   */
+  assert.match(SRC, /function closeModal\(from\?: string\)/, 'closeModal must take an origin');
+  assert.match(
+    SRC,
+    /if \(from === 'supports'\)[\s\S]{0,220}router\.replace\('\/modal'/,
+    "a 'supports' origin must re-present the sheet, not router.back()",
+  );
+  // Every X must pass the origin, or the one that does not silently goes Home.
+  const bare = SRC.match(/onPress=\{closeModal\}/g) ?? [];
+  assert.equal(bare.length, 0, 'every close button must pass the origin through');
+});
+
+test('the Supports sheet stamps the origin it is the only one to claim', () => {
+  const MODAL = readFileSync(join(process.cwd(), 'app/modal.tsx'), 'utf8');
+  assert.match(MODAL, /from=supports/, 'the Supports agency row must declare where it came from');
+});

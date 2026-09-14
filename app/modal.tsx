@@ -546,7 +546,7 @@ export default function ModalScreen() {
                                    */
                                   router.back();
                                   setTimeout(() => {
-                                    router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}` as never);
+                                    router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}&from=supports` as never);
                                   }, 300);
                                 }}
                                 activeOpacity={0.7}
