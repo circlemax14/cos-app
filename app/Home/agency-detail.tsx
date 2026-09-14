@@ -123,9 +123,7 @@ export default function AgencyDetailScreen() {
    *
    * useFocusEffect runs on every focus, so returning to it is now a refresh.
    */
-  useFocusEffect(
-    useCallback(() => {
-    const loadData = async () => {
+  const reload = useCallback(async () => {
       if (agencyId) {
         const agencyData = await getCareManagerAgencyById(agencyId);
         if (agencyData) {
@@ -218,10 +216,35 @@ export default function AgencyDetailScreen() {
       } else {
         setRequestStatus('none');
       }
-    };
-    void loadData();
-    }, [agencyId, agencyName]),
+  }, [agencyId, agencyName]);
+
+  // Every focus is a refresh — see the note above.
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
   );
+
+  /*
+   * COS-1001 — and poll while the answer can change without us.
+   *
+   * Vishal approved his own join request from the dashboard, the push
+   * notification arrived on the phone, and this screen — still open, never
+   * blurred — went on saying "Request Pending". useFocusEffect cannot help
+   * there: nothing re-focused.
+   *
+   * A pending or leaving request is the only state another party can resolve
+   * while the patient is looking at it, so that is the only state worth
+   * polling. Fifteen seconds is well under the time it takes to read the
+   * screen and wonder, and it stops the moment the state settles.
+   */
+  React.useEffect(() => {
+    if (requestStatus !== 'pending' && requestStatus !== 'leaving') return;
+    const timer = setInterval(() => {
+      void reload();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [requestStatus, reload]);
 
   const handleRequestCareManager = () => {
     setShowConsentModal(true);
