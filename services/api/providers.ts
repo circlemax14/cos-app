@@ -39,6 +39,9 @@ interface ServerCategorisation {
   category?: string;
   subCategory?: string;
   subCategories?: string[];
+  /** COS-1011 — treated / mentioned / none. See patient.service.ts. */
+  involvement?: 'treated' | 'mentioned' | 'none';
+  treatedCount?: number;
 }
 
 interface FhirPractitionerRole {
@@ -112,6 +115,8 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
     subCategories: serverSubs ?? guessed.subCategories,
     hasData: practitioner.hasData ?? true,
     recordCount: practitioner.recordCount ?? 0,
+    involvement: server.involvement,
+    treatedCount: server.treatedCount ?? 0,
   };
 }
 
@@ -221,9 +226,29 @@ export async function fetchProviders(): Promise<Provider[]> {
      * deliberately refuses to touch, and it keys on name PLUS credential so it
      * cannot repeat COS-971's collapse of sixteen distinct doctors.
      */
-    return dedupeProviders(
+    const clinicians = dedupeProviders(
       dedupeByPerson(all).filter((prov) => classifyProvider(prov) !== 'unnamed'),
     ).filter((prov) => classifyProvider(prov) === 'care');
+
+    /*
+     * COS-1011 — the people who actually treated them, first.
+     *
+     * Vishal: "it's not like all forty did the treatment." Measured on a real
+     * record: of 40 clinicians, 25 saw or treated the patient, 7 appear only on
+     * paperwork (read a scan, signed a note, never in the room), and 8 are in
+     * the directory but nowhere in the record at all.
+     *
+     * Sorted rather than filtered, deliberately. A radiologist who read your
+     * scan is a real part of your care and removing them would be another
+     * silent claim of absence — the failure this screen already makes too
+     * often. They simply stop competing for the top of the list with the
+     * surgeon who operated.
+     */
+    const rank = (p: Provider): number =>
+      p.involvement === 'treated' ? 0 : p.involvement === 'mentioned' ? 1 : 2;
+    return [...clinicians].sort(
+      (a, b) => rank(a) - rank(b) || (b.treatedCount ?? 0) - (a.treatedCount ?? 0),
+    );
   } catch (error) {
     console.warn('Failed to fetch providers (HealthLake may be unavailable):', error);
     return [];
