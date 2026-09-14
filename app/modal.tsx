@@ -461,7 +461,27 @@ export default function ModalScreen() {
                   const manualMembers = manualMembersBySubCategory[key] || [];
                   return providers.length + manualMembers.length > 0;
                 });
-                const subCategoriesToShow = isNonMedicalCategory ? subCategoriesWithData : subCategories;
+                /*
+                 * COS-1006 — hide empty subcategories in Medical too.
+                 *
+                 * Every other category already showed only the ones with
+                 * people in them; Medical rendered all eight regardless. Since
+                 * `canAddMember` is false for Medical, an empty Medical tab is
+                 * unreachable filler — nothing to read and nothing to add — and
+                 * it still has to be scrolled past in a `mode="scrollable"` tab
+                 * strip where a partially-visible tab is easy to miss. That is
+                 * the "sometimes Others works, sometimes it doesn't" Vishal hit.
+                 *
+                 * Fewer tabs is a smaller strip, so fewer tabs sit half off the
+                 * edge. It reduces the misses rather than removing them: the
+                 * underlying tap behaviour belongs to react-native-paper-tabs
+                 * and is not something to patch from here.
+                 *
+                 * Falls back to the full list when NOTHING has data, so the
+                 * taxonomy is still visible rather than the screen going blank.
+                 */
+                const subCategoriesToShow =
+                  subCategoriesWithData.length > 0 ? subCategoriesWithData : subCategories;
                 const showEmptyNonMedical = isNonMedicalCategory && subCategoriesWithData.length === 0;
                 const emptyFormKey = `category-${category.id}`;
                 const manualSubCategoryLabel = manualSubCategoryId
