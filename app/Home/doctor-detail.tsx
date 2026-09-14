@@ -19,6 +19,7 @@ import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { AppWrapper } from '@/components/app-wrapper';
+import { fetchProviderDetail, toVisitCards, type VisitCard } from '@/services/api/provider-detail';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api/data-sharing';
 
@@ -60,6 +61,16 @@ export default function DoctorDetailScreen() {
   
   // Get provider data from params or load by ID
   const providerId = params.id as string | undefined;
+  /*
+   * COS-1013 — one call that already joins by id.
+   *
+   * The rest of this screen fetches from four endpoints and filters each by
+   * display name. /detail does the joins server-side against the practitioner
+   * REFERENCE, which is why its answers agree with each other where the old
+   * ones did not.
+   */
+  const [visitCards, setVisitCards] = useState<VisitCard[]>([]);
+  const [visitsLoading, setVisitsLoading] = useState(true);
   const providerName = params.name as string || '';
   const providerQualifications = params.qualifications as string || '';
   const providerSpecialty = params.specialty as string || '';
@@ -153,6 +164,20 @@ export default function DoctorDetailScreen() {
   // Kick off the overview narrative fetch when a tab becomes active
   // (or the provider changes). Each fetch is deduped inside
   // loadAiInsight, so this effect is safe to call liberally.
+  useEffect(() => {
+    let cancelled = false;
+    if (!providerId) return;
+    setVisitsLoading(true);
+    void fetchProviderDetail(providerId).then((detail) => {
+      if (cancelled) return;
+      setVisitCards(detail ? toVisitCards(detail).visits : []);
+      setVisitsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [providerId]);
+
   useEffect(() => {
     if (!providerId || isLoadingData) return;
     /*
@@ -709,6 +734,84 @@ export default function DoctorDetailScreen() {
           </View>
         ) : (
           <>
+            {/*
+              * COS-1013 — one card per visit, newest first.
+              *
+              * Vishal: "the patient visited on 3 Feb 2025, then there will be
+              * one card. Patient visits multiple times, multiple cards."
+              *
+              * A card says what HAPPENED that day — what was prescribed, what
+              * was produced — and never what was diagnosed. No Condition in
+              * this data references an encounter (0 of 9), so putting a
+              * diagnosis inside a visit would assert a date the record does not
+              * support. The diagnosis cards stay below, undated by visit, which
+              * is the honest arrangement.
+              *
+              * Per-visit cards existed before and were removed on feedback; the
+              * difference now is that they carry the visit's actual contents
+              * rather than an aggregate.
+              */}
+            {visitCards.length > 0 ? (
+              <View style={{ marginBottom: 20 }}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(17),
+                    fontWeight: getScaledFontWeight(700) as any,
+                    marginBottom: 10,
+                  }}
+                >
+                  Your visits
+                </Text>
+                {visitCards.slice(0, 12).map((v) => (
+                  <View
+                    key={v.encounter.id}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.3)',
+                      borderRadius: 12,
+                      padding: 14,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: getScaledFontSize(16),
+                        fontWeight: getScaledFontWeight(600) as any,
+                      }}
+                    >
+                      {formatDate(v.encounter.date) || 'Date not recorded'}
+                    </Text>
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 2 }}>
+                      {[v.encounter.type, v.encounter.location].filter(Boolean).join(' · ')}
+                    </Text>
+                    {v.encounter.reason ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 4 }}>
+                        {v.encounter.reason}
+                      </Text>
+                    ) : null}
+
+                    {v.medications.length > 0 ? (
+                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 10, lineHeight: getScaledFontSize(22) }}>
+                        Medicines started: {v.medications.map((m) => m.name).join(', ')}
+                      </Text>
+                    ) : null}
+                    {v.reports.length > 0 ? (
+                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 6, lineHeight: getScaledFontSize(22) }}>
+                        Tests and reports: {v.reports.map((r) => r.name).join(', ')}
+                      </Text>
+                    ) : null}
+                    {v.medications.length === 0 && v.reports.length === 0 ? (
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 10 }}>
+                        No medicines or tests were recorded for this visit.
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            ) : visitsLoading ? null : null}
+
             <WhatChangedCard
               state={insightFor('treatment')}
               colors={colors}
