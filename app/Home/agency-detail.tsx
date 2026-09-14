@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useLocalSearchParams, router } from 'expo-router';
-import React, { useState } from 'react';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { Card, Button } from 'react-native-paper';
@@ -92,6 +92,9 @@ export default function AgencyDetailScreen() {
   const [requestStatus, setRequestStatus] = useState<AgencyCta>('unknown');
   /** The agency the patient already belongs to, when it is not this one. */
   const [otherAgency, setOtherAgency] = useState<{ id: string; name: string } | null>(null);
+  /** COS-1000 — when a pending leave expires. Server-supplied; null when the
+   *  sweeper is off, in which case we must not promise a date. */
+  const [autoApproveAt, setAutoApproveAt] = useState<string | null>(null);
   /** COS-996 — which half of "who looks after me, and when". */
   const [detailTab, setDetailTab] = useState<'team' | 'scheduling'>('team');
   const [, setPatientAgencyId] = useState<string | null>(null);
@@ -104,8 +107,24 @@ export default function AgencyDetailScreen() {
   const agencyId = params.id as string | undefined;
   const agencyName = params.name as string || 'Care Management Agency';
 
-  // Load agency data and request status
-  React.useEffect(() => {
+  /*
+   * COS-1000 — reload on FOCUS, not on mount.
+   *
+   * This was React.useEffect, which was correct while the screen was a
+   * root-stack modal: every open was a fresh mount. Moving it into the Tabs
+   * navigator (COS-999) made it a screen the navigator KEEPS MOUNTED, so
+   * leaving and coming back never re-ran the effect.
+   *
+   * Vishal saw exactly that: he asked to leave, an admin approved it, the push
+   * notification arrived — and the screen still said "Leaving…" even after he
+   * closed it and opened it again. The server was right the whole time; the
+   * membership, the join date and the care-team ring were already cleared. The
+   * screen was showing a snapshot from before he asked.
+   *
+   * useFocusEffect runs on every focus, so returning to it is now a refresh.
+   */
+  useFocusEffect(
+    useCallback(() => {
     const loadData = async () => {
       if (agencyId) {
         const agencyData = await getCareManagerAgencyById(agencyId);
@@ -142,7 +161,12 @@ export default function AgencyDetailScreen() {
         const statusRes = await apiClient.get('/v1/patients/me/agency-request/status');
         const pendingRequest = statusRes.data?.data;
         pendingHere = Boolean(pendingRequest && pendingRequest.agencyId === agencyId);
-        if (pendingHere) pendingType = pendingRequest.requestType === 'leave' ? 'leave' : 'join';
+        if (pendingHere) {
+          pendingType = pendingRequest.requestType === 'leave' ? 'leave' : 'join';
+          setAutoApproveAt(
+            typeof pendingRequest.autoApproveAt === 'string' ? pendingRequest.autoApproveAt : null,
+          );
+        }
       } catch {
         // No pending request.
       }
@@ -195,8 +219,9 @@ export default function AgencyDetailScreen() {
         setRequestStatus('none');
       }
     };
-    loadData();
-  }, [agencyId, agencyName]);
+    void loadData();
+    }, [agencyId, agencyName]),
+  );
 
   const handleRequestCareManager = () => {
     setShowConsentModal(true);
@@ -229,8 +254,8 @@ export default function AgencyDetailScreen() {
     const name = agency?.name ?? 'this agency';
     Alert.alert(
       `Leave ${name}?`,
-      `We'll let ${name} know. They have 5 days to respond and may get in touch to talk it over. ` +
-        `If they don't respond, you'll be moved out automatically after that.`,
+      `We'll let ${name} know, and they may get in touch to talk it over. ` +
+        `You'll see the exact date on this screen once the request is in.`,
       [
         { text: 'Not now', style: 'cancel' },
         {
@@ -587,7 +612,18 @@ export default function AgencyDetailScreen() {
               Leaving {agency?.name ?? 'this agency'}
             </Text>
             <Text style={{ color: '#E65100', fontSize: getScaledFontSize(13), marginTop: 4, textAlign: 'center', lineHeight: getScaledFontSize(19) }}>
-              They have 5 days to respond and may get in touch. If they don&rsquo;t, you&rsquo;ll be moved out automatically.
+              {/*
+                * COS-1000 — name the date when there is one.
+                *
+                * "They have 5 days" left the patient counting from a day they
+                * had to remember. The date comes from the server precisely so
+                * that a stage with the sweeper switched off falls back to the
+                * second sentence instead of promising an expiry nothing will
+                * act on.
+                */}
+              {autoApproveAt
+                ? `${agency?.name ?? 'The agency'} may get in touch to talk it over. If they don't respond, you'll be moved out automatically on ${new Date(autoApproveAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}.`
+                : `${agency?.name ?? 'The agency'} may get in touch to talk it over. They'll confirm before anything changes.`}
             </Text>
           </View>
         ) : requestStatus === 'pending' ? (
