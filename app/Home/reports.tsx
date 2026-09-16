@@ -15,6 +15,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
 import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
+import { fetchHistoryOverview, type HistoryOverview } from '@/services/api/history-overview';
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
 import { fetchReports, fetchReportById } from '@/services/api/reports';
 import { fetchDocuments, fetchDocumentDownloadUrl, getReportBinarySource, type PatientDocument } from '@/services/api/documents';
@@ -83,6 +84,9 @@ function ReportsInner() {
   // History tab state
   const [historySubTab, setHistorySubTab] = useState<'medical' | 'psychiatric' | 'psychological' | 'social'>('medical');
   const [historySummary, setHistorySummary] = useState<HistorySummary | null>(null);
+  // COS-1024 — the fast, AI-free half. Lands in ~1-2s and is what the patient
+  // reads while the 90s summary is still being generated.
+  const [historyOverview, setHistoryOverview] = useState<HistoryOverview | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isRefreshingHistory, setIsRefreshingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -391,6 +395,17 @@ function ReportsInner() {
       setIsLoadingHistory(true);
     }
     setHistoryError(null);
+
+    /*
+     * COS-1024 — fire the overview FIRST and do not await it here.
+     *
+     * history-overview is AI-free FHIR queries (~1-2s); the summary is a 30-90s
+     * LLM call. Awaiting them together would waste the whole point. This resolves
+     * while the summary is still running and clears the blocking overlay.
+     */
+    void fetchHistoryOverview().then((o) => {
+      if (o) setHistoryOverview(o);
+    });
 
     try {
       const summaries = await fetchHistorySummary();
@@ -702,6 +717,25 @@ function ReportsInner() {
     }
 
     if (!historySummary) {
+      // COS-1024 — the summary has not landed. If the overview has, the patient
+      // has real content to read; claiming "no history" over the top of it is
+      // the same false-absence bug as COS-1020.
+      if (historyOverview) {
+        const c = historyOverview.counts;
+        return (
+          <View style={styles.historyEmptyContainer}>
+            <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+              {c.conditions} conditions · {c.medications} medications · {c.encounters} visits
+            </Text>
+            <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+              {c.diagnosticReports} reports · {c.observations} results on file
+            </Text>
+            <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any }]}>
+              Writing your summary…
+            </Text>
+          </View>
+        );
+      }
       return (
         <View style={styles.historyEmptyContainer}>
           <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>
@@ -1227,7 +1261,14 @@ function ReportsInner() {
       />
 
       {/* Loading Overlay for History */}
-      {(isLoadingHistory || isRefreshingHistory) && mainTab === 'history' && (
+      {/*
+        * COS-1024 — blocks only while there is genuinely nothing to show.
+        * Once the overview lands the patient reads counts and recent items,
+        * and the summary fills in underneath when it is ready. A full-screen
+        * blocker over content that has already arrived is the behaviour the
+        * overview endpoint was written to end.
+        */}
+      {(isLoadingHistory || isRefreshingHistory) && mainTab === 'history' && !historyOverview && (
         <View style={styles.loadingOverlay}>
           <View style={[styles.loadingOverlayContent, { backgroundColor: colors.background }]}>
             <ActivityIndicator size="large" color="#008080" />
