@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
 import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
-import { fetchReports } from '@/services/api/reports';
+import { fetchReports, fetchReportById } from '@/services/api/reports';
 import { fetchDocuments, fetchDocumentDownloadUrl, getReportBinarySource, type PatientDocument } from '@/services/api/documents';
 import type { Report } from '@/services/api/types';
 import { LabResultsTable } from '@/components/reports/lab-results-table';
@@ -24,6 +24,26 @@ import { DocumentViewer, type DocumentViewerSource } from '@/components/reports/
 import { InlineVisitSummary } from '@/components/reports/inline-visit-summary';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import { useCanRender } from '@/hooks/use-entitlement';
+
+
+/**
+ * COS-1023 — a date a patient can read.
+ *
+ * `report.date` is DiagnosticReport.effectiveDateTime and was printed verbatim:
+ * an ISO-8601 timestamp, on the card, in the modal header, and beside a
+ * "Generated …" date that WAS formatted — in the same sentence. The Documents
+ * cards on this very screen have always formatted theirs; the Reports cards
+ * never did.
+ *
+ * Returns the raw string when it cannot parse, because showing something the
+ * record actually contains beats showing "Invalid Date".
+ */
+function formatReportDate(value: string | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 function ReportsInner() {
   const canViewReports = useCanRender('reports.view');
@@ -140,7 +160,7 @@ function ReportsInner() {
       const source = await getReportBinarySource(report.id, binaryId);
       setViewerSource({ ...source, contentType });
       setViewerTitle(report.title);
-      setViewerSubtitle([report.provider, report.date].filter(Boolean).join(' · '));
+      setViewerSubtitle([report.provider, formatReportDate(report.date)].filter(Boolean).join(' · '));
       setViewerVisible(true);
     } finally {
       setOpeningDocumentId(null);
@@ -332,20 +352,20 @@ function ReportsInner() {
     setSummaryError(null);
 
     try {
-      const summary = await fetchReportSummary({
-        title: selectedReport.title,
-        date: selectedReport.date,
-        provider: selectedReport.provider,
-        exam: selectedReport.exam,
-        clinicalHistory: selectedReport.clinicalHistory,
-        technique: selectedReport.technique,
-        findings: selectedReport.findings,
-        impression: selectedReport.impression,
-        interpretedBy: selectedReport.interpretedBy,
-        performingFacility: selectedReport.performingFacility?.name,
-        accessionNumber: selectedReport.accessionNumber,
-        orderNumber: selectedReport.orderNumber,
-      });
+      /*
+       * COS-1023 — send the id and let the server read the report.
+       *
+       * This call used to pass the clinical fields off `selectedReport`, which
+       * came from the LIST — where every one of exam / clinicalHistory /
+       * technique / findings / impression is undefined and is dropped from the
+       * JSON. The "Simple Summary" a patient read was therefore generated from
+       * a title, a date and a provider name, and nothing else. That is the
+       * single clearest cause of "the data is not meaningful".
+       *
+       * report-summary.routes.ts has accepted `{ reportId }` all along — its
+       * own comment says "The frontend sends { reportId }". It did not.
+       */
+      const summary = await fetchReportSummary({ reportId: selectedReport.id });
       setReportSummary(summary);
     } catch (error) {
       console.error('Error generating report summary:', error);
@@ -555,7 +575,7 @@ function ReportsInner() {
                     </View>
                   </View>
                   <Text style={[styles.reportDate, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                    {report.date}
+                    {formatReportDate(report.date)}
                   </Text>
                 </View>
 
@@ -616,8 +636,36 @@ function ReportsInner() {
                 <TouchableOpacity
                   style={styles.viewButton}
                   onPress={() => {
+                    /*
+                     * COS-1023 — open on the LIST row, then hydrate from the
+                     * DETAIL endpoint.
+                     *
+                     * The list mapper (mapDiagnosticReportSummary) never sets
+                     * results[], findings, impression, exam, clinicalHistory,
+                     * technique or presentedForms. Everything in this modal that
+                     * renders those — LabResultsTable, the Narrative block, the
+                     * Attachments block — was therefore unreachable, and
+                     * fetchReportById() sat in the API layer imported by nothing.
+                     *
+                     * Open first so the sheet is never blocked on a request; the
+                     * detail merges in when it lands.
+                     */
                     setSelectedReport(report);
                     setShowReportModal(true);
+                    void (async () => {
+                      try {
+                        const full = await fetchReportById(report.id);
+                        if (!full) return;
+                        // Guard against a race: the patient may have gone back
+                        // and opened a different report while this was in flight.
+                        setSelectedReport((current) =>
+                          current && current.id === full.id ? { ...current, ...full } : current,
+                        );
+                      } catch {
+                        // The list row already renders; a failed hydrate just
+                        // means fewer sections, never a broken sheet.
+                      }
+                    })();
                   }}
                 >
                   <Text style={[styles.viewButtonText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
@@ -831,7 +879,7 @@ function ReportsInner() {
                 </View>
                 <View style={styles.reportModalMeta}>
                   <Text style={[styles.reportModalMetaText, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
-                    {selectedReport.provider} • {selectedReport.date}
+                    {selectedReport.provider} • {formatReportDate(selectedReport.date)}
                   </Text>
                   {selectedReport.accessionNumber && (
                     <Text style={[styles.reportModalMetaText, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
@@ -870,7 +918,7 @@ function ReportsInner() {
                         {selectedReport.title}
                       </Text>
                       <Text style={[styles.summaryReportDate, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any, marginBottom: 12 }]}>
-                        {selectedReport.date} • Generated {new Date(reportSummary.generatedAt).toLocaleDateString('en-US', { 
+                        {formatReportDate(selectedReport.date)} • Generated {new Date(reportSummary.generatedAt).toLocaleDateString('en-US', { 
                           month: 'short', 
                           day: 'numeric', 
                           year: 'numeric',
