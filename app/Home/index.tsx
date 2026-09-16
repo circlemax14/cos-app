@@ -160,6 +160,18 @@ interface CircleViewProps {
 }
 
 // Original Circle View for iPhone/Android (fixed dimensions)
+/*
+ * COS-1022 — `??` does not catch the empty string, and the default IS ''.
+ *
+ * Every circle view defaults `patientName = ''`. The avatar then asked for
+ * `patientName ?? 'Patient'`, and nullish coalescing only replaces null and
+ * undefined — so '' survives, reaches nameToInitials, hits its `if (!raw)`
+ * branch and renders "?" in the middle of the care circle. That is the "?"
+ * Vishal photographed, and it is the same class as COS-1020: a terminal
+ * fallback shown while the real value is still on its way.
+ *
+ * `||` is correct here precisely because '' is not a name worth rendering.
+ */
 function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getScaledFontWeight, patientName = '', patientPhotoUrl, cmLogoUrl, onAddProviderPress, isCircleComplete, selectedCareManager, onCareManagerPress, pendingTaskCount = 0 }: CircleViewProps) {
   // Load doctor photos for all providers
   const providerIds = providers.map(p => p.id);
@@ -251,7 +263,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
           <EntityIcon
             type="patient"
             imageUrl={patientPhotoUrl ?? null}
-            name={patientName ?? 'Patient'}
+            name={patientName || 'Patient'}
             size={getScaledFontSize(centerAvatarSize)}
             style={styles.centerAvatarImage}
           />
@@ -441,7 +453,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                     specialty={item.specialty ?? undefined}
                     imageUrl={doctorPhotos.get(item.id) ?? null}
                     iconUrl={item.iconUrl ?? null}
-                    name={item.name ?? 'Provider'}
+                    name={item.name || 'Provider'}
                     size={getScaledFontSize(avatarSize)}
                   />
                   <Text
@@ -645,7 +657,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
           <EntityIcon
             type="patient"
             imageUrl={patientPhotoUrl ?? null}
-            name={patientName ?? 'Patient'}
+            name={patientName || 'Patient'}
             size={getScaledFontSize(centerAvatarSize)}
             style={styles.centerAvatarImage}
           />
@@ -834,7 +846,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                     specialty={item.specialty ?? undefined}
                     imageUrl={doctorPhotos.get(item.id) ?? null}
                     iconUrl={item.iconUrl ?? null}
-                    name={item.name ?? 'Provider'}
+                    name={item.name || 'Provider'}
                     size={getScaledFontSize(avatarSize)}
                   />
                   <Text
@@ -922,7 +934,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
           <EntityIcon
           type="patient"
           imageUrl={patientPhotoUrl ?? null}
-          name={patientName ?? 'Patient'}
+          name={patientName || 'Patient'}
           size={getScaledFontSize(56)}
           style={styles.listAvatar}
         />
@@ -982,7 +994,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
                 specialty={provider.specialty ?? undefined}
                 imageUrl={doctorPhotos.get(provider.id) ?? null}
                 iconUrl={provider.iconUrl ?? null}
-                name={provider.name ?? 'Provider'}
+                name={provider.name || 'Provider'}
                 size={getScaledFontSize(56)}
                 style={styles.listAvatar}
               />
@@ -1350,7 +1362,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
         <EntityIcon
           type="patient"
           imageUrl={patientPhotoUrl ?? null}
-          name={patientName ?? 'Patient'}
+          name={patientName || 'Patient'}
           size={getScaledFontSize(56)}
           style={styles.listAvatar}
         />
@@ -1827,7 +1839,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   type="provider"
                   specialty={provider.specialty ?? undefined}
                   imageUrl={null}
-                  name={provider.providerName ?? 'Provider'}
+                  name={provider.providerName || 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.listAvatar}
                 />
@@ -2233,7 +2245,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                   specialty={provider.specialty ?? undefined}
                   imageUrl={doctorPhotos.get(provider.id) ?? null}
                   iconUrl={provider.iconUrl ?? null}
-                  name={provider.name ?? 'Provider'}
+                  name={provider.name || 'Provider'}
                   size={getScaledFontSize(56)}
                   style={styles.listAvatar}
                 />
