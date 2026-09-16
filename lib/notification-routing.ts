@@ -213,7 +213,63 @@ export function routeForNotificationData(
     case 'EHI_EXPORT_COMPLETE':
       return null;
 
-    // ── Unknown / future types → Home (back-compat default) ─────────
+    /*
+     * COS-947 — SUPPORT_TICKET_STATUS. The type Vishal actually tapped.
+     *
+     * "I got the notification for help and support. But when I click the
+     * notification, I went to the sign in screen, and then after sign in it
+     * took me to the home screen."
+     *
+     * Making sign-in replay the deferred route was necessary and NOT
+     * sufficient: with no case here the tap resolved to null, which
+     * use-notifications turns into '/Home' BEFORE the queue ever sees it. The
+     * queue then faithfully replayed /Home, so the fix would have looked
+     * broken while working perfectly.
+     *
+     * The backend has carried `ticketId` on this payload all along and its own
+     * comment calls the missing case "a dead tap ... one line to add"
+     * (cos-backend ticket-notify.service.ts:115-121). Falls back to the list
+     * when the id is absent, because landing on Support beats landing on Home.
+     */
+    case 'SUPPORT_TICKET_STATUS': {
+      const ticketId = typeof data.ticketId === 'string' ? data.ticketId : null;
+      return ticketId
+        ? `/Home/support-ticket-detail?ticketId=${encodeURIComponent(ticketId)}`
+        : '/Home/support';
+    }
+
+    /*
+     * COS-947 — three senders that were reaching Home by accident.
+     *
+     * TASK_REMINDER is the one that matters most: it and HEALTH_PLAN_REMINDER
+     * are mutually exclusive on whether the user has a timezone, only the
+     * OTHER one was mapped, and use-timezone-sync now sets a timezone for
+     * everyone who opens the app — so the routed branch is becoming vestigial
+     * exactly as the unrouted one becomes the fleet's daily reminder.
+     *
+     * All three land on today-schedule rather than a CRUD editor: a reminder
+     * exists to be acted on, and /Home/habits is where routines are edited,
+     * not ticked off.
+     */
+    case 'TASK_REMINDER':
+    case 'HABIT_REMINDER':
+      return '/Home/today-schedule';
+
+    case 'HEALTH_SUMMARY_READY':
+      return '/Home/plan';
+
+    case 'nudge':
+    case 'NUDGE':
+      return '/Home/nudges';
+
+    /*
+     * HEALTH_DATA_REFRESHED and SYSTEM_ALERT deliberately fall through to Home.
+     * Neither names one screen — a refresh touches every surface, and a system
+     * alert is by definition not about a place. Recorded so the next audit does
+     * not re-file them as omissions.
+     *
+     * Unknown / future types → Home (back-compat default).
+     */
     default:
       return null;
   }

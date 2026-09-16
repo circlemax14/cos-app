@@ -2,7 +2,7 @@
   "expo": {
     "name": "CSH",
     "slug": "cos",
-    "version": "1.5.2",
+    "version": "1.5.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "cos",
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "63",
+      "buildNumber": "64",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"
@@ -21,7 +21,7 @@
         "NSContactsUsageDescription": "Circle Support Health does not access your contacts. This message is required by iOS because a third-party library included in the app bundle references the Contacts API; the app itself does not read, transmit, or store any contact information.",
         "NSPhotoLibraryUsageDescription": "Circle Support Health needs photo library access to upload health documents.",
         "NSFaceIDUsageDescription": "Circle Support Health uses Face ID to securely unlock your health information.",
-        "NSHealthShareUsageDescription": "Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health summary.",
+        "NSHealthShareUsageDescription": "Circle Support Health reads your activity, heart rate, and sleep data to show a personalized daily health status.",
         "NSHealthUpdateUsageDescription": "Circle Support Health updates your health data so your care team has the latest information.",
         "NSCalendarsUsageDescription": "Circle Support Health reads your calendars so all your appointments — medical, work, and personal — appear together in one view.",
         "NSCalendarsFullAccessUsageDescription": "Circle Support Health reads and writes calendar events so you can manage all your appointments in one place. Events you create here will appear in your other calendar apps.",
@@ -37,8 +37,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/icon.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png",
+        "backgroundColor": "#E6F4FE"
       },
       "predictiveBackGestureEnabled": false,
       "package": "ai.circlesupporthealth.csh",
@@ -66,12 +68,12 @@
       ],
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "com.google.android.gms.permission.AD_ID",
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
-        "android.permission.FOREGROUND_SERVICE",
         "android.permission.RECEIVE_BOOT_COMPLETED"
-      ]
+      ],
+      "allowBackup": false,
+      "versionCode": 2
     },
     "web": {
       "output": "static",
@@ -86,7 +88,7 @@
         "expo-channel-name": "production"
       }
     },
-    "runtimeVersion": "1.5.2",
+    "runtimeVersion": "1.5.3",
     "plugins": [
       "expo-router",
       "expo-updates",
@@ -129,7 +131,19 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/withAndroidIntentQueries",
+      "react-native-health-connect",
+      "./plugins/withHealthConnect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      "./plugins/withHipaaBackupRules"
     ],
     "experiments": {
       "typedRoutes": true,

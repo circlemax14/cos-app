@@ -6,6 +6,8 @@ import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
 import { useReportTrends } from '@/hooks/use-report-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTrends'
+import TrendSourceBar from '@/components/health-summary/TrendSourceBar'
+import { fetchAssessments } from '@/services/api/assessments'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import { fetchTrendsSummary, type TrendsSummary } from '@/services/api/trends'
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer'
@@ -22,7 +24,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   Share,
   StyleSheet,
@@ -30,9 +31,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+// COS-928 — SafeAreaView from safe-area-context, not react-native.
+// RN's own SafeAreaView is a NO-OP on Android (it only ever applied iOS safe
+// area insets), so these screens rendered under the status bar / camera
+// cutout. The context version reads real insets on both platforms and is
+// already a dependency, used elsewhere in the app.
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { todayLocalIso } from '@/lib/day-key';
 import { groupTrendsByBodySystem } from '@/lib/body-system-grouping';
 import { useCanRender } from '@/hooks/use-entitlement'
+import { useQuery } from '@tanstack/react-query'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -134,6 +142,40 @@ export default function HealthTrendsScreen() {
       .map((t) => applyTimeFilter(t, timeFilter))
       .filter((t) => t.dataPoints.length > 0)
   }, [healthKitTrends, clinicTrends, timeFilter])
+
+  /*
+   * COS-967 — Ken's coloured bar. See components/health-summary/TrendSourceBar
+   * for why it is derived rather than drawn to a fixed three segments.
+   *
+   * `assessments-trends` is the SAME query key SelfAssessmentTrends uses, so
+   * React Query serves both from one fetch — this adds no request.
+   *
+   * It counts METRICS TRACKED, not readings. A step counter emits a point a
+   * day and would otherwise dwarf a whole lab panel, which would teach the
+   * patient something false about where their records come from.
+   */
+  const assessmentsQuery = useQuery({
+    queryKey: ['assessments-trends'],
+    queryFn: fetchAssessments,
+    staleTime: 60 * 1000,
+  })
+
+  const trendSources = useMemo(() => {
+    const assessmentCount = new Set(
+      (assessmentsQuery.data ?? []).map((r) => r.instrumentId),
+    ).size
+    return [
+      { key: 'clinic', label: 'From your clinic', count: clinicTrends.length, color: '#0EA5E9' },
+      { key: 'checkins', label: 'Your check-ins', count: assessmentCount, color: '#8B5CF6' },
+      // NOT "Apple Health": on Android the same data is Health Connect, and
+      // health-connect.ts:686 mislabels its own rows `source: 'apple-health'`
+      // (wrong label, right bucket). "Your devices" is true on both.
+      { key: 'devices', label: 'From your devices', count: appleHealthTrends.length, color: '#10B981' },
+      // A segment is only drawn when its producer actually returned rows.
+      // Today the clinic bucket is empty on every stage, so most accounts
+      // will show two segments — that is the honest picture, not a bug.
+    ].filter((s) => s.count > 0)
+  }, [clinicTrends.length, appleHealthTrends.length, assessmentsQuery.data])
 
   /**
    * SCRUM-265 #13 made this a slider and capped it at the ten most
@@ -245,7 +287,7 @@ export default function HealthTrendsScreen() {
               Health Trends
             </Text>
             <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
-              Labs, vitals and Apple Health, over time
+              Labs, check-ins and device data, over time
             </Text>
           </View>
         </View>
@@ -254,6 +296,12 @@ export default function HealthTrendsScreen() {
             cross-metric narrative + key takeaways + next steps via
             the new /v1/patients/me/trends/summarize endpoint (cached
             24h server-side). */}
+        <TrendSourceBar
+          sources={trendSources}
+          noun="things we track"
+          testID="trend-source-bar"
+        />
+
         <SummarizeCard />
 
         {/* Time period filter chips */}

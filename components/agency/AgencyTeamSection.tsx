@@ -52,7 +52,23 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-export function AgencyTeamSection({ agencyId }: { agencyId: string }): React.JSX.Element | null {
+/**
+ * COS-999 — `showEmptyState` for the same reason AgencyVisitsSection has one.
+ *
+ * Stacked under other content, vanishing is right. As a TAB the patient chose
+ * "Your team" and a blank pane reads as broken rather than as "nobody yet".
+ *
+ * Only a SUCCESSFUL fetch returning zero rows gets the message: loading and
+ * error still render nothing, because "no one is assigned to you" is a claim,
+ * and after a failed request we do not know it.
+ */
+export function AgencyTeamSection({
+  agencyId,
+  showEmptyState = false,
+}: {
+  agencyId: string;
+  showEmptyState?: boolean;
+}): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const fs = getScaledFontSize
@@ -77,7 +93,24 @@ export function AgencyTeamSection({ agencyId }: { agencyId: string }): React.JSX
   if (isError) return null
 
   const team = data ?? []
-  if (team.length === 0) return null
+  if (team.length === 0) {
+    if (!showEmptyState) return null
+    return (
+      <View style={{ paddingVertical: 28, paddingHorizontal: 16, alignItems: 'center' }}>
+        <Text
+          style={{
+            color: (colors.text as string) + '99',
+            fontSize: fs(14),
+            textAlign: 'center',
+            lineHeight: fs(20),
+          }}
+        >
+          No one from this agency has been assigned to you yet. When they assign a care manager
+          or care giver, they will appear here.
+        </Text>
+      </View>
+    )
+  }
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card as string, borderColor: colors.border as string }]}>

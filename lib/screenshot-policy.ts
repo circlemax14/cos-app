@@ -41,12 +41,42 @@
 export const SCREENSHOTS_BLOCKED = true;
 
 /**
- * Pure decision helper: should the app actively prevent screen capture?
- * Extracted so the default-secure invariant is unit-testable without mounting
- * any React Native component.
+ * COS-939 — a DEBUG-BUILD exception, which is strictly safer than the flag.
+ *
+ * Vishal, testing the Android build: "this app doesn't allow screenshots...
+ * please disable this blockage so that I can share the screenshots of the UI."
+ *
+ * A real need — we have spent days on Android UI I could not see, because
+ * FLAG_SECURE blocks `adb screencap` and `uiautomator` too.
+ *
+ * The sanctioned path was to flip SCREENSHOTS_BLOCKED to false, OTA, collect,
+ * and flip back. That is EXACTLY the procedure that failed: COS-905 records
+ * ten weeks on main with capture protection off for every patient, because the
+ * flip back never came. The guard in prepare-build.sh now stops a PROD BUILD
+ * shipping that way, but an OTA to production needs no such build.
+ *
+ * So the exception is `__DEV__` instead. It is compiled out of every release
+ * bundle by Metro, which means:
+ *
+ *   - a debug build (expo run:android / run:ios) allows screenshots;
+ *   - a release binary and EVERY OTA to one CANNOT, whatever anyone forgets;
+ *   - there is nothing to flip back.
+ *
+ * SCREENSHOTS_BLOCKED stays, because it is still the only way to let a
+ * TestFlight or internal-track tester screenshot a RELEASE build — Ken's case.
+ * That path keeps its guard and its test.
+ *
+ * `isDevBuild` is a PARAMETER rather than a direct `__DEV__` read so this file
+ * stays RN-import-free and node:test can load it (see the header). The caller
+ * in app/_layout.tsx passes the real global.
  */
 export function shouldPreventScreenCapture(
   blocked: boolean = SCREENSHOTS_BLOCKED,
+  isDevBuild = false,
 ): boolean {
+  // A debug build never carries real patient data — it points at dev by
+  // construction (scripts/run-android.sh, prepare-build.sh) — so the PHI this
+  // safeguard protects is not present to leak.
+  if (isDevBuild === true) return false;
   return blocked === true;
 }

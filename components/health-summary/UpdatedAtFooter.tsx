@@ -31,7 +31,7 @@ function UpdatedAtFooter() {
     <View
       style={styles.wrap}
       accessibilityRole="summary"
-      accessibilityLabel={`${label}. Your health summary updates automatically as your data changes.`}
+      accessibilityLabel={`${label}. Your health status updates automatically as your data changes.`}
     >
       <View style={styles.headerRow}>
         <MaterialIcons

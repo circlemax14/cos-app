@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as ScreenCapture from 'expo-screen-capture';
 import { PaperProvider } from 'react-native-paper';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
 import { useEffect } from 'react';
 import { View } from 'react-native';
@@ -164,28 +165,22 @@ function StackWithAppLock() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
-        name="agency-detail"
-        options={{
-          presentation: 'modal',
-          title: 'Agency Details',
-          headerShown: false,
-        }}
-      />
+      {/*
+        * COS-999 — agency-detail is NOT registered here any more.
+        *
+        * It moved to app/Home/agency-detail.tsx so it renders with the bottom
+        * tab bar and the AppWrapper header, which Vishal asked for. As the
+        * comment below already said for personal-info: a root-level Stack
+        * sibling of Home structurally CANNOT show the tab bar. Changing
+        * `presentation` never could have fixed that — `modal` only hid the
+        * absence behind a sheet.
+        */}
       <Stack.Screen
         name="appointments-modal"
         options={{
           presentation: 'modal',
           title: 'All Appointments',
           headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="today-schedule"
-        options={{
-          title: "Today's Schedule",
-          headerShown: false,
-          autoHideHomeIndicator: true,
         }}
       />
       <Stack.Screen
@@ -240,7 +235,14 @@ function RootLayout() {
   // deliberate testing toggle. Flip back to true (and OTA) before real users
   // see PHI on that build.
   useEffect(() => {
-    if (shouldPreventScreenCapture()) {
+    /*
+     * COS-939 — `__DEV__` lets a debug build be screenshotted.
+     *
+     * Metro compiles this to `false` in every release bundle, so a production
+     * binary and every OTA to one still block capture regardless of what
+     * anyone remembers to flip back. See lib/screenshot-policy.ts.
+     */
+    if (shouldPreventScreenCapture(undefined, __DEV__)) {
       ScreenCapture.preventScreenCaptureAsync().catch(() => {
         // Non-fatal — log loss of capture protection but don't crash the app.
       });
@@ -271,10 +273,34 @@ function RootLayout() {
             <PaperProvider>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                 <BadgeCelebrationProvider>
+                {/*
+                  COS-928 — GestureHandlerRootView, which was missing entirely.
+                  Verified: this file had no import of it and expo-router's
+                  ExpoRoot supplies SafeAreaProvider but NOT this.
+
+                  react-native-gesture-handler's createHandler throws in
+                  render() whenever its context is absent on a native platform,
+                  so any <Swipeable> would take the screen down in a dev build.
+                  The only Swipeable is the calendar's EventListItem, rendered
+                  only for device-calendar events — which need READ_CALENDAR,
+                  which the manifest did not have until this same change added
+                  it. So the permission fix is precisely what would have made
+                  this crash appear, and the two must land together.
+
+                  THIS ALSO FIXES iOS. In a release build __DEV__ is false so
+                  RNGH does not throw — the gestures are simply never
+                  recognised. Swipe-to-delete a calendar event has therefore
+                  never worked on production 1.5.2 either. It is the one change
+                  in the Android batch that alters the live iOS render tree, so
+                  it wraps the existing View rather than replacing it: same
+                  children, same order, one extra flex:1 parent.
+                */}
+                <GestureHandlerRootView style={{ flex: 1 }}>
                 <View style={{ flex: 1 }} {...idleHandlers}>
                 <StackWithAppLock />
                 <StatusBar style="auto" />
                 </View>
+                </GestureHandlerRootView>
                 </BadgeCelebrationProvider>
               </ThemeProvider>
             </PaperProvider>

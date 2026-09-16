@@ -318,7 +318,7 @@ test('(e) chunk 73 wire preserved: labelAllowFontScaling reference is still deri
 // ternaries back to a single spelling — in EITHER direction — trips this.
 // =========================================================================
 
-test('(f) tab labels are adaptive: "Plan"/"Summary" on phones, "Care Plan"/"Health Summary" on tablets (Ken 2026-08-05)', () => {
+test('(f) tab labels are adaptive: "Plan"/"Status" on phones, "Care Plan"/"Health Status" on tablets (Ken 2026-08-05, reworded 2026-09-10)', () => {
   // The factory replaced the static map. A revert to a module-level const
   // map would lose the per-device branch entirely.
   assert.match(
@@ -345,10 +345,24 @@ test('(f) tab labels are adaptive: "Plan"/"Summary" on phones, "Care Plan"/"Heal
     /'unified-plan':\s*isTablet\s*\?\s*['"]Care Plan['"]\s*:\s*['"]Plan['"]/,
     'The `unified-plan` tab label must carry the SAME adaptive pair as `health-plan` (`isTablet ? \'Care Plan\' : \'Plan\'`). The two routes are the flag-off / flag-on variants of one slot (see isHealthPlan in renderTab) — if only one is updated, flipping TAB_SWAP_BPS_ENABLED silently changes the tab\'s wording.',
   )
+  /*
+   * COS-964 — the WORDS changed; the adaptive pair did not.
+   *
+   * This asserted `isTablet ? 'Health Summary' : 'Summary'` on Ken's
+   * instruction of 2026-08-05. Ken changed it himself on 2026-09-10: the tab is
+   * HEALTH STATUS, because "we don't want that to be a history page, we want it
+   * to be an active status page" — a summary reads as something generated about
+   * the past, a status as what is true now.
+   *
+   * The STRUCTURAL half of his 2026-08-05 decision is untouched and still
+   * asserted below: two spellings, one per form factor, because the short one
+   * exists to survive the iPhone SE wrap. "Status" is shorter than "Summary",
+   * so the phone branch is safer than it was, not riskier.
+   */
   assert.match(
     TAB_BAR_TSX_SRC,
-    /\bplan:\s*isTablet\s*\?\s*['"]Health Summary['"]\s*:\s*['"]Summary['"]/,
-    'The `plan` tab label must remain `isTablet ? \'Health Summary\' : \'Summary\'`. Same reasoning as the health-plan pair: both spellings are load-bearing, one per form factor.',
+    /\bplan:\s*isTablet\s*\?\s*['"]Health Status['"]\s*:\s*['"]Status['"]/,
+    'The `plan` tab label must be `isTablet ? \'Health Status\' : \'Status\'` (Ken 2026-09-10, superseding \'Health Summary\'/\'Summary\' from 2026-08-05). Same reasoning as the health-plan pair: both spellings are load-bearing, one per form factor.',
   )
   // The consumer. If displayLabel stops reading the built map, the labels
   // above become dead code and every tab falls back to options.title.
@@ -396,7 +410,7 @@ test('(f) tab labels are adaptive: "Plan"/"Summary" on phones, "Care Plan"/"Heal
 // re-run the exact regexes / count-equality checks the wires above use.
 function synthGoodSource() {
   return [
-    "const TAB_LABELS = { 'health-plan': 'Care Plan', plan: 'Health Summary' };",
+    "const TAB_LABELS = { 'health-plan': 'Care Plan', plan: 'Health Status' };",
     'function CustomScrollableTabBar() {',
     '  return (',
     '    <View accessibilityRole="tablist">',

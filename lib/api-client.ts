@@ -87,8 +87,31 @@ apiClient.interceptors.response.use(
 
     const originalRequest = error.config as typeof error.config & { _retry?: boolean };
 
+    /*
+     * COS-942 — a 401 from an UNAUTHENTICATED endpoint means "wrong
+     * credentials", never "your session expired".
+     *
+     * services/auth.ts posts /v1/auth/login on this very instance, so a
+     * mistyped password came back 401 and fell into the refresh path below.
+     * There is no refresh token when you are signed out, so it reached
+     * `forceSignOut('session_expired')` — which deletes the tokens and
+     * cos_username, and, because the app counts as locked whenever a PIN
+     * exists, DEFERRED a sign-out that then outlived the successful retry and
+     * fired at the next unlock.
+     *
+     * Vishal hit this on a Galaxy S26: one typo, then a correct password, then
+     * an endless sign-in -> PIN -> sign-in loop.
+     *
+     * These three endpoints are how you OBTAIN a session, so they can never
+     * report the loss of one. Their 401 belongs to the caller, which already
+     * renders "Invalid email or password".
+     */
+    const AUTH_ENDPOINTS = ['/v1/auth/login', '/v1/auth/refresh', '/v1/auth/social'];
+    const url = originalRequest?.url ?? '';
+    const isUnauthenticatedAuthCall = AUTH_ENDPOINTS.some((p) => url.includes(p));
+
     // 401 → try token refresh once
-    if (error.response.status === 401 && !originalRequest?._retry) {
+    if (error.response.status === 401 && !originalRequest?._retry && !isUnauthenticatedAuthCall) {
       if (isRefreshing) {
         // Queue this request until refresh completes. The settle helpers
         // (see ./refresh-queue) guarantee this promise ALWAYS settles — even

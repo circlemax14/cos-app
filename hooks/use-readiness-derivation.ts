@@ -20,13 +20,28 @@
  * NO NEW BE CALLS: this is entirely on-device. Zero API surface change.
  */
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { invalidateWellbeingCaches } from '@/lib/invalidate-wellbeing'
 import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
-import { isHealthKitAvailable, getHealthKitVitalTrend, initializeHealthKit } from '@/services/health'
+/*
+ * COS-932 — the SOURCE facade, not HealthKit directly.
+ *
+ * Calling HealthKit here meant the readiness snapshot was permanently empty on
+ * Android, which is what made the wellbeing score's sleep pillar read "no data
+ * yet" on a device with Health Connect connected and granted.
+ *
+ * initializeHealthKit stays imported: it is the iOS permission prompt and is
+ * still correct to call there. requestHealthSourceAccess is its cross-platform
+ * equivalent for the paths that need one.
+ */
+import { initializeHealthKit } from '@/services/health'
+import {
+  getHealthSourceVitalTrend,
+  isHealthSourceAvailable,
+} from '@/services/health-source'
 import { NativeModules } from 'react-native'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AppleHealthKitRaw = require('react-native-health').default ?? require('react-native-health')
@@ -254,9 +269,19 @@ async function fetchReadinessInputs(): Promise<{
   baseline: DailyReadinessMetrics[]
   debug: ReadinessDebugSnapshot
 }> {
+  /*
+   * COS-932 — gate on "is there a health source", not "is this iOS".
+   *
+   * `!isIos` short-circuited the whole snapshot on Android, so readiness — and
+   * with it the wellbeing score's sleep pillar — returned "no data yet" on a
+   * device with Health Connect connected and permissions granted.
+   *
+   * `isIos` stays in the debug payload because it is a fact worth recording;
+   * it is just no longer the gate.
+   */
   const isIos = Platform.OS === 'ios'
-  const hkAvailable = isHealthKitAvailable()
-  if (!isIos || !hkAvailable) {
+  const hkAvailable = await isHealthSourceAvailable()
+  if (!hkAvailable) {
     return {
       today: undefined,
       baseline: [],
@@ -303,16 +328,16 @@ async function fetchReadinessInputs(): Promise<{
   // the adaptive score in lib/readiness-score.ts. .catch(()=>null)
   // per-metric so a missing permission on one doesn't fail the batch.
   const [hrv, sleep, hr, resp, steps, kcal, exerciseMin, walkingHr, spo2, flights, hrvProbe15, hrvProbe90] = await Promise.all([
-    getHealthKitVitalTrend('heart-rate-variability', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('sleep-hours', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('resting-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('respiratory-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('steps', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('active-energy', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('exercise-time', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('walking-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('oxygen-saturation', READINESS_LOOKBACK_DAYS).catch(() => null),
-    getHealthKitVitalTrend('flights-climbed', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('heart-rate-variability', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('sleep-hours', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('resting-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('respiratory-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('steps', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('active-energy', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('exercise-time', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('walking-heart-rate', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('oxygen-saturation', READINESS_LOOKBACK_DAYS).catch(() => null),
+    getHealthSourceVitalTrend('flights-climbed', READINESS_LOOKBACK_DAYS).catch(() => null),
     probeHrvRaw(READINESS_LOOKBACK_DAYS),
     probeHrvRaw90d(90),
   ])
@@ -494,7 +519,26 @@ export interface UseReadinessDerivationResult {
  */
 export function useReadinessDerivation(enabled: boolean): UseReadinessDerivationResult {
   const isIos = Platform.OS === 'ios'
-  const isUnavailable = !isIos || !isHealthKitAvailable()
+  /*
+   * COS-932 — availability, not platform.
+   *
+   * `!isIos` here made the readiness tile permanently "unavailable" on
+   * Android. Async because Health Connect's answer is an SDK round trip;
+   * starts as "unavailable" so a device with no source never renders a live
+   * tile, and flips once the SDK answers.
+   */
+  const [sourceAvailable, setSourceAvailable] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const ok = await isHealthSourceAvailable()
+      if (!cancelled) setSourceAvailable(ok)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const isUnavailable = !sourceAvailable
   // Ken 2026-08-06 iter 3 — a successful readiness snapshot POST feeds
   // the sleep sub-score of the wellbeing composite. Grab the query
   // client here so the post effect below can invalidate wellbeing

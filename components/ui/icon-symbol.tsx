@@ -57,6 +57,70 @@ const MAPPING = {
   'list.bullet.clipboard': 'assignment',
   'cross.case.fill': 'medical-services',
   'waveform.path.ecg': 'monitor-heart',
+  /*
+   * COS-928 — the ten names the app actually uses that had no Android entry.
+   *
+   * MAPPING[name] returned undefined for each, and MaterialIcons renders a
+   * BLANK for an unknown name — so on Android the Calendar header toolbar, the
+   * search field, the settings gear and the care-circle person icons were all
+   * invisible. Silent: no warning, no error, just gaps where the buttons are.
+   *
+   * Found by diffing every `<IconSymbol name="...">` in app/ and components/
+   * against this object, not by eye.
+   */
+  'chevron.left': 'chevron-left',
+  'magnifyingglass': 'search',
+  'gear': 'settings',
+  'phone.fill': 'call',
+  'envelope.fill': 'email',
+  'person.2.fill': 'people',
+  'building.2': 'apartment',
+  'square.grid.2x2': 'grid-view',
+  'exclamationmark.shield': 'gpp-maybe',
+  'person.crop.circle.badge.exclamationmark': 'no-accounts',
+  /*
+   * COS-930 — the 29 names that were still unmapped, found by diffing every
+   * literal <IconSymbol name="..."> in app/ and components/ AND the dynamic
+   * names in constants/category-icons.ts, which a scan of JSX alone misses.
+   *
+   * These were BLANK before COS-928 added the `?? 'help-outline'` fallback and
+   * question marks after it. Vishal saw the question marks on the S26, which
+   * is the fallback working as intended: a visible wrong glyph gets fixed, an
+   * invisible one ships.
+   *
+   * Every target below was checked against MaterialIcons' own glyphmap JSON —
+   * an invalid MaterialIcons name renders blank too, so a careless mapping
+   * just swaps one silent failure for another.
+   */
+  'bag': 'shopping-bag',
+  'book.closed.fill': 'menu-book',
+  'book.fill': 'book',
+  'brain.head.profile': 'psychology',
+  'building.2.fill': 'apartment',
+  'cross.case': 'medical-services',
+  'cross.circle.fill': 'add-circle',
+  'cross.fill': 'add',
+  'figure.and.child.holdinghands': 'escalator-warning',
+  'figure.child': 'child-care',
+  'figure.flexibility': 'self-improvement',
+  'figure.run': 'directions-run',
+  'figure.socialdance': 'nightlife',
+  'figure.walk': 'directions-walk',
+  'figure.walk.circle.fill': 'directions-walk',
+  'fork.knife': 'restaurant',
+  'info.circle.fill': 'info',
+  'leaf.circle.fill': 'eco',
+  'leaf.fill': 'eco',
+  'music.mic': 'mic',
+  'music.note': 'music-note',
+  'person.2.circle.fill': 'groups',
+  'person.3.fill': 'groups',
+  'person.badge.shield.checkmark.fill': 'verified-user',
+  'person.fill.checkmark': 'how-to-reg',
+  'person.text.rectangle.fill': 'badge',
+  'pills.fill': 'medication',
+  'shippingbox.fill': 'inventory-2',
+  'wrench.and.screwdriver.fill': 'build',
 } as IconMapping;
 
 /**
@@ -76,5 +140,16 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  /*
+   * COS-928 — `?? 'help-outline'` so a missing mapping is VISIBLE.
+   *
+   * MaterialIcons renders a blank for an unknown name, so every gap above was
+   * silent on Android and invisible on iOS (which uses the .ios.tsx SF Symbol
+   * path and never consults this table). A question-mark glyph is ugly on
+   * purpose: it shows up in the first screenshot instead of the first bug
+   * report.
+   */
+  return (
+    <MaterialIcons color={color} size={size} name={MAPPING[name] ?? 'help-outline'} style={style} />
+  );
 }

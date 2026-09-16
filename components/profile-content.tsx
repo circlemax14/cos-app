@@ -378,11 +378,20 @@ export function ProfileContent({
               expo-router file changes every deep link that points at it, and
               the name of a file is not worth that.
 
-              iOS only: HealthKit does not exist on Android, and there is no
-              Android build yet. When there is, drop the Platform check — the
-              screen already handles every platform on its own.
+              COS-929 — the Platform check is GONE, which is what the paragraph
+              above said to do once an Android build existed. It now does, and
+              Android reads Health Connect (services/health-connect.ts) exactly
+              as iOS reads HealthKit — Samsung Health, Fitbit, Google Fit and
+              Galaxy Watch all write into it, so one integration picks them all
+              up the way HealthKit picks up Apple Watch.
+
+              Which source is active is decided in services/health-source.ts
+              and is never a set: Health Connect already aggregates across the
+              apps feeding it, so merging anything on top double-counts steps
+              and heart rate — and those feed the readiness snapshot, the
+              wellbeing score and the health age.
             */}
-            {Platform.OS === 'ios' && canOpenHealthSync && (
+            {canOpenHealthSync && (
               <DrawerRow
                 iconName="favorite-border"
                 label="Health Sync"
