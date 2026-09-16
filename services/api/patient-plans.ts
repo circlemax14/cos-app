@@ -64,7 +64,33 @@ export interface PlanShelfBilling {
    * has already changed once.
    */
   isDefaultPlan?: boolean;
+  /**
+   * COS-792 — they asked to stop renewing, and the date it actually ends.
+   *
+   * Optional because an app running against an older backend will not receive
+   * them; absent must read as "not cancelling", never as "cancelled".
+   */
+  cancelAtPeriodEnd?: boolean;
+  cancelEffectiveAt?: string | null;
 }
+
+/**
+ * COS-1021 — the ONE billing shape for `/v1/patients/me/plans`.
+ *
+ * There were three, and they had already drifted: COS-744 declared one in
+ * components/plan/PlanStatusSection.tsx, COS-784 another here, COS-742 a third
+ * in app/Home/billing.tsx. All three described the same response, and two of
+ * them carried a comment admitting the duplication and deferring the fix.
+ *
+ * The drift was not hypothetical — PlanStatusSection's copy was missing
+ * `cancelAtPeriodEnd` and `cancelEffectiveAt` entirely, so the cancellation
+ * banner could never render from that component no matter what the server sent.
+ *
+ * `BillingSummary` is kept as the exported name because both call sites already
+ * use it; this alias is what lets them keep their imports while there is only
+ * one declaration left to maintain.
+ */
+export type BillingSummary = PlanShelfBilling;
 
 export interface PlanShelf {
   plans: PlanShelfCard[];

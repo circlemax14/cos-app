@@ -25,6 +25,7 @@ const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 
 const planTab = read('app/Home/health-plan.tsx')
 const cards = read('components/plan/PlanStatusSection.tsx')
+const planShelf = read('services/api/patient-plans.ts')
 
 /**
  * COS-922 — source with comments removed, for assertions that must NOT match.
@@ -488,7 +489,28 @@ test('every other plan offers an explicit upgrade control', () => {
 test('isDefaultPlan is optional, so an older backend degrades to the chip', () => {
   // A stale app may under-offer the chooser; it must never mis-state which
   // plan someone is on. `!== true` gives that, `=== false` would not.
-  assert.match(cards, /isDefaultPlan\?: boolean/)
+  //
+  // COS-1021 — asserted against the API layer, which is now the ONE place this
+  // shape is declared. It used to live in PlanStatusSection.tsx, in one of
+  // three copies that had already drifted apart.
+  assert.match(planShelf, /isDefaultPlan\?: boolean/)
+})
+
+test('COS-1021: there is exactly one BillingSummary declaration', () => {
+  /*
+   * Three files described /v1/patients/me/plans and two carried a comment
+   * admitting it. The drift was real: PlanStatusSection's copy had no
+   * `cancelAtPeriodEnd`, so a cancelling patient could not be shown as
+   * cancelling from that component however the server answered.
+   */
+  for (const [name, src] of [['PlanStatusSection', cards], ['billing.tsx', billing]]) {
+    assert.doesNotMatch(src, /export interface BillingSummary/, `${name} redeclares it`)
+    assert.match(src, /from '@\/services\/api\/patient-plans'/, `${name} does not import it`)
+  }
+  assert.match(planShelf, /export type BillingSummary = PlanShelfBilling/)
+  // The fields that were missing from the drifted copy must be on the survivor.
+  assert.match(planShelf, /cancelAtPeriodEnd\?: boolean/)
+  assert.match(planShelf, /cancelEffectiveAt\?: string \| null/)
 })
 
 // ── the background circles ─────────────────────────────────────────────────
