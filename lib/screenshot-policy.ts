@@ -7,11 +7,12 @@
  * (preventScreenCaptureAsync) because PHI is rendered on virtually every
  * authenticated screen — see app/_layout.tsx (SCRUM-368 / MOBILE-003).
  *
- * SCREENSHOTS_BLOCKED is a deliberate, temporary testing toggle:
- *   - true  (DEFAULT, SECURE)  → capture protection ON — today's behavior.
- *   - false (UNSAFE)           → app calls allowScreenCaptureAsync() and stops
- *                                preventing capture, so testers (e.g. Ken) can
- *                                send screenshots.
+ * SCREENSHOTS_BLOCKED is the app-wide capture policy:
+ *   - true   → capture protection ON.
+ *   - false  → app calls allowScreenCaptureAsync(); anyone can screenshot.
+ *
+ * It is currently FALSE by product decision (COS-1034, below) so patients can
+ * capture their own records. It was a temporary testing toggle until then.
  *
  * HIPAA / PHI SAFEGUARD WARNING:
  * Flipping this to `false` removes a PHI safeguard for EVERY user on that
@@ -22,23 +23,37 @@
  * lasting OTA with this set to false.
  */
 /*
- * COS-905 — restored to the secure default.
+ * COS-1034 — SCREEN CAPTURE IS NOW ALLOWED, AS A DELIBERATE PRODUCT DECISION.
  *
- * This was flipped to false on 2026-06-26 for a round of screenshot testing
- * and never flipped back. Ten weeks, on main, through every build and OTA in
- * between — so every patient has had capture protection off while PHI renders
- * on virtually every authenticated screen, and on iOS a screenshot syncs to
- * iCloud Photos, which is not a BAA'd third party.
+ * Vishal, 2026-09-17, asked for screenshots enabled on production for every
+ * user, and confirmed it after being shown the consequences below. This is a
+ * POLICY CHANGE, not the "temporary toggle" this file used to describe, and
+ * the distinction matters — the last time this constant was false it was an
+ * accident that lasted ten weeks.
  *
- * The 2026-08-21 audit flagged it at ~8 weeks. It was still false today. That
- * is what a temporary toggle with no guard costs.
+ * WHAT THIS COSTS, recorded so the decision is legible later:
+ *   - PHI renders on virtually every authenticated screen.
+ *   - On iOS a screenshot lands in the photo library and syncs to iCloud
+ *     Photos, which is NOT a BAA-covered service. The same is true of Google
+ *     Photos on Android.
+ *   - It applies to every user, not to testers.
+ *   - Screenshots taken while this is false cannot be recalled by setting it
+ *     back to true.
  *
- * If a tester needs screenshots again: flip it, OTA, collect, flip back, OTA —
- * and the test in tests/unit/screenshot-policy.test.ts must be edited in the
- * same commit, which is the point of it. It is not there to be annoying; it is
- * there so "temporary" leaves a trace someone has to answer for.
+ * WHAT IT IS FOR: patients being able to keep and share their own records —
+ * which is a legitimate thing for a patient to want to do with their own data,
+ * and is the reason this was asked for.
+ *
+ * FOR HISTORY: this was previously flipped to false on 2026-06-26 for a round
+ * of screenshot testing and never flipped back. Ten weeks on main, through
+ * every build and OTA, with capture protection off for every patient. The
+ * 2026-08-21 audit flagged it at ~8 weeks and it was STILL false. COS-905
+ * restored it and added the guards. Those guards worked exactly as designed:
+ * they made this change something a person had to decide and sign, rather than
+ * something that could drift. That is why they are being AMENDED here rather
+ * than deleted.
  */
-export const SCREENSHOTS_BLOCKED = true;
+export const SCREENSHOTS_BLOCKED = false;
 
 /**
  * COS-939 — a DEBUG-BUILD exception, which is strictly safer than the flag.
