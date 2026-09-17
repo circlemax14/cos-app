@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from './auth-tokens';
+import { getAccessToken, getRefreshToken, storeTokens, clearTokens, readSessionPresence } from './auth-tokens';
 import { CLIENT_INFO_HEADERS } from './client-info';
 import { requestSignIn, SignInReason } from './lock-gate';
 import {
@@ -137,6 +137,42 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = await getRefreshToken();
         if (!refreshToken) {
+          /*
+           * COS-1032 — "could not read the token" is not "signed out".
+           *
+           * Vishal, on Android, for the second time: "I'm keep on coming back
+           * to the sign in screen even after entering the PIN."
+           *
+           * getRefreshToken() returns `string | null`, and null collapses two
+           * different facts: the user is genuinely signed out, OR the secure
+           * store did not answer. On Android that store is the Keystore, and a
+           * read right after launch or device unlock can come back empty for a
+           * moment even though the token is sitting there.
+           *
+           * Treating that null as a sign-out is what produces the loop he
+           * sees. forceSignOut() arms a DEFERRED sign-in (he has a PIN, so it
+           * cannot run immediately), he then enters the PIN, and
+           * postUnlockNavigate consumes the pending reason and routes him
+           * straight back to sign-in. The password was never wrong and the
+           * session was never dead.
+           *
+           * auth-tokens.ts already solved this for the SPLASH — readSessionPresence
+           * retries the read and answers 'present' | 'absent' | 'indeterminate',
+           * and its own comment says the local-read path "never got the
+           * equivalent" of checkSession's indeterminate arm. It was wired into
+           * app/index.tsx and nowhere else. This is the other caller.
+           *
+           * The evidence that a session SHOULD exist is stronger here than at
+           * the splash: this request carried an Authorization header and came
+           * back 401, so there WAS an access token moments ago.
+           */
+          const presence = await readSessionPresence({ expectSession: true });
+          if (presence === 'indeterminate') {
+            // Fail this one request and leave the session alone. The next call
+            // re-reads once the store has woken; a genuinely dead session
+            // still gets signed out on the read that actually answers.
+            throw error;
+          }
           await forceSignOut('session_expired');
           throw error;
         }
