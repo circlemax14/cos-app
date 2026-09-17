@@ -48,11 +48,37 @@ test('THE POINT: the refresh-token read retries on NULL, not only on throw', () 
   assert.doesNotMatch(fn[0], /readSecureWithRetry\(KEYS\.refresh\)/)
 })
 
-test('the null it guards is still destructive — so the guard has to hold', () => {
-  // If this ever stops being true the test above is guarding nothing, and
-  // whoever changed it should be told which invariant they moved.
+test('COS-1032: the null is no longer destructive on its own', () => {
+  /*
+   * This test used to assert the OPPOSITE — that `if (!refreshToken)` went
+   * straight to forceSignOut — and said: "if this ever stops being true the
+   * test above is guarding nothing, and whoever changed it should be told
+   * which invariant they moved."
+   *
+   * It did its job. COS-1032 moved that invariant deliberately.
+   *
+   * The retry in getRefreshToken (asserted above) reduced how OFTEN the read
+   * comes back empty; it could never make it impossible, because a Keystore
+   * that is not awake yet will return null however many times you ask. So the
+   * interceptor now asks a second question before destroying anything: is the
+   * token ABSENT, or did the store fail to answer? Only 'absent' signs out.
+   *
+   * That is what fixed Vishal's Android loop — the deferred sign-out armed by
+   * this branch was consumed by the PIN unlock and bounced him back to
+   * sign-in, with a live session and a correct password.
+   */
   assert.match(client, /const refreshToken = await getRefreshToken\(\)/)
-  assert.match(client, /if \(!refreshToken\)\s*\{\s*await forceSignOut/)
+
+  const branch = client.slice(
+    client.indexOf('const refreshToken = await getRefreshToken()'),
+  )
+  const beforeSignOut = branch.slice(0, branch.indexOf('await forceSignOut'))
+  assert.match(beforeSignOut, /readSessionPresence\(\{ expectSession: true \}\)/)
+  assert.match(beforeSignOut, /presence === 'indeterminate'/)
+
+  // And a GENUINE absence must still sign out — the danger this file was
+  // written about is a session that lingers after it is really gone.
+  assert.match(branch, /await forceSignOut\('session_expired'\)/)
   assert.match(client, /async function forceSignOut[\s\S]*?await clearTokens\(\)/)
 })
 

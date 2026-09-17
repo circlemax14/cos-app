@@ -200,7 +200,18 @@ export function CustomChat({
     return (
         <KeyboardAvoidingView
             style={[styles.container, { backgroundColor: colors.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            /*
+             * COS-1031 — `undefined` means NO keyboard avoidance on Android.
+             *
+             * With edgeToEdgeEnabled=true the Android window no longer auto-resizes
+             * for android:windowSoftInputMode="adjustResize", so the undefined arm
+             * left the composer and the last messages behind the keyboard the moment
+             * you tapped to type. Eight other sites in this codebase already pass
+             * 'height' for exactly this; these three disagreed with them.
+             *
+             * iOS keeps 'padding' byte-for-byte — only the false arm changes.
+             */
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             <FlatList

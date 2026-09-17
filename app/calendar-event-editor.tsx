@@ -374,11 +374,32 @@ export default function CalendarEventEditor() {
     // wraps the inner content so the keyboard pushes the form up while
     // the header stays anchored at the top.
     <SafeAreaView
-      edges={['top']}
+      /*
+       * COS-1031 — no tab bar beneath this route to absorb the bottom inset.
+       *
+       * This is a root Stack screen, not a tab screen, so nothing below it
+       * consumes the Android navigation/gesture bar. With edge-to-edge on, the
+       * bottom field rows and the delete action sat under it.
+       *
+       * Gated: ungated, ['top','bottom'] would hand iOS a real 34pt band it
+       * does not have today and would move a signed-off layout.
+       */
+      edges={Platform.OS === 'android' ? ['top', 'bottom'] : ['top']}
       style={[styles.root, { backgroundColor: colors.background }]}
     >
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      /*
+       * COS-1031 — `undefined` means NO keyboard avoidance on Android.
+       *
+       * With edgeToEdgeEnabled=true the Android window no longer auto-resizes
+       * for android:windowSoftInputMode="adjustResize", so the undefined arm
+       * left the composer and the last messages behind the keyboard the moment
+       * you tapped to type. Eight other sites in this codebase already pass
+       * 'height' for exactly this; these three disagreed with them.
+       *
+       * iOS keeps 'padding' byte-for-byte — only the false arm changes.
+       */
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.root, { backgroundColor: colors.background }]}
     >
       {/* Header — 56pt tall, Cancel on left, Save/Add on right, title

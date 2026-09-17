@@ -38,6 +38,7 @@ import { useQuery } from '@tanstack/react-query';
 import { refreshAfterPlanChange } from '@/lib/plan-change-refresh';
 import { router } from 'expo-router';
 import { apiClient } from '@/lib/api-client';
+import type { BillingSummary } from '@/services/api/patient-plans';
 import { planChoice, priceLines } from '@/lib/plan-price';
 import { usePaymentMethods } from '@/hooks/use-payment-methods';
 import { parseHighlight, sortRows } from '@/lib/plan-highlight';
@@ -76,27 +77,14 @@ export interface PatientPlanCard {
   isCurrent: boolean;
 }
 
-export interface BillingSummary {
-  planKey: string | null;
-  planName: string | null;
-  billingCycle: string | null;
-  billingStatus: string | null;
-  currentPeriodEnd: string | null;
-  pricing: PatientPlanCard['pricing'];
-  trial: { endsAt: string | null; daysRemaining: number | null; convertsTo: string | null } | null;
-  /**
-   * COS-788 — the patient is parked on the DEFAULT plan, i.e. nobody has
-   * chosen. Optional so an app running against a backend that predates the
-   * field falls back to the chip, which is the safe half: a stale app can
-   * under-offer the chooser, never mis-state which plan someone is on.
-   *
-   * NOTE: this interface duplicates BillingSummary in
-   * services/api/patient-plans.ts — COS-744 declared one here, COS-784 declared
-   * another there, and both describe /v1/patients/me/plans. Worth collapsing
-   * into one; not today.
-   */
-  isDefaultPlan?: boolean;
-}
+/**
+ * COS-1021 — one declaration, in the API layer.
+ *
+ * This copy was missing `cancelAtPeriodEnd` and `cancelEffectiveAt`, so the
+ * cancellation state could never be read here however the server answered —
+ * the exact drift the old comment predicted and deferred.
+ */
+export type { BillingSummary };
 
 async function fetchPlans(): Promise<{ plans: PatientPlanCard[]; billing: BillingSummary | null }> {
   const res = await apiClient.get('/v1/patients/me/plans');

@@ -15,8 +15,9 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Checkbox } from 'expo-checkbox';
 import { fetchHistorySummary, type HistorySummary } from '@/services/api/history-summary';
+import { fetchHistoryOverview, type HistoryOverview } from '@/services/api/history-overview';
 import { fetchReportSummary, type ReportSummary } from '@/services/api/report-summary';
-import { fetchReports } from '@/services/api/reports';
+import { fetchReports, fetchReportById } from '@/services/api/reports';
 import { fetchDocuments, fetchDocumentDownloadUrl, getReportBinarySource, type PatientDocument } from '@/services/api/documents';
 import type { Report } from '@/services/api/types';
 import { LabResultsTable } from '@/components/reports/lab-results-table';
@@ -24,6 +25,26 @@ import { DocumentViewer, type DocumentViewerSource } from '@/components/reports/
 import { InlineVisitSummary } from '@/components/reports/inline-visit-summary';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import { useCanRender } from '@/hooks/use-entitlement';
+
+
+/**
+ * COS-1023 — a date a patient can read.
+ *
+ * `report.date` is DiagnosticReport.effectiveDateTime and was printed verbatim:
+ * an ISO-8601 timestamp, on the card, in the modal header, and beside a
+ * "Generated …" date that WAS formatted — in the same sentence. The Documents
+ * cards on this very screen have always formatted theirs; the Reports cards
+ * never did.
+ *
+ * Returns the raw string when it cannot parse, because showing something the
+ * record actually contains beats showing "Invalid Date".
+ */
+function formatReportDate(value: string | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 function ReportsInner() {
   const canViewReports = useCanRender('reports.view');
@@ -63,6 +84,9 @@ function ReportsInner() {
   // History tab state
   const [historySubTab, setHistorySubTab] = useState<'medical' | 'psychiatric' | 'psychological' | 'social'>('medical');
   const [historySummary, setHistorySummary] = useState<HistorySummary | null>(null);
+  // COS-1024 — the fast, AI-free half. Lands in ~1-2s and is what the patient
+  // reads while the 90s summary is still being generated.
+  const [historyOverview, setHistoryOverview] = useState<HistoryOverview | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isRefreshingHistory, setIsRefreshingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -140,7 +164,7 @@ function ReportsInner() {
       const source = await getReportBinarySource(report.id, binaryId);
       setViewerSource({ ...source, contentType });
       setViewerTitle(report.title);
-      setViewerSubtitle([report.provider, report.date].filter(Boolean).join(' · '));
+      setViewerSubtitle([report.provider, formatReportDate(report.date)].filter(Boolean).join(' · '));
       setViewerVisible(true);
     } finally {
       setOpeningDocumentId(null);
@@ -332,20 +356,20 @@ function ReportsInner() {
     setSummaryError(null);
 
     try {
-      const summary = await fetchReportSummary({
-        title: selectedReport.title,
-        date: selectedReport.date,
-        provider: selectedReport.provider,
-        exam: selectedReport.exam,
-        clinicalHistory: selectedReport.clinicalHistory,
-        technique: selectedReport.technique,
-        findings: selectedReport.findings,
-        impression: selectedReport.impression,
-        interpretedBy: selectedReport.interpretedBy,
-        performingFacility: selectedReport.performingFacility?.name,
-        accessionNumber: selectedReport.accessionNumber,
-        orderNumber: selectedReport.orderNumber,
-      });
+      /*
+       * COS-1023 — send the id and let the server read the report.
+       *
+       * This call used to pass the clinical fields off `selectedReport`, which
+       * came from the LIST — where every one of exam / clinicalHistory /
+       * technique / findings / impression is undefined and is dropped from the
+       * JSON. The "Simple Summary" a patient read was therefore generated from
+       * a title, a date and a provider name, and nothing else. That is the
+       * single clearest cause of "the data is not meaningful".
+       *
+       * report-summary.routes.ts has accepted `{ reportId }` all along — its
+       * own comment says "The frontend sends { reportId }". It did not.
+       */
+      const summary = await fetchReportSummary({ reportId: selectedReport.id });
       setReportSummary(summary);
     } catch (error) {
       console.error('Error generating report summary:', error);
@@ -371,6 +395,17 @@ function ReportsInner() {
       setIsLoadingHistory(true);
     }
     setHistoryError(null);
+
+    /*
+     * COS-1024 — fire the overview FIRST and do not await it here.
+     *
+     * history-overview is AI-free FHIR queries (~1-2s); the summary is a 30-90s
+     * LLM call. Awaiting them together would waste the whole point. This resolves
+     * while the summary is still running and clears the blocking overlay.
+     */
+    void fetchHistoryOverview().then((o) => {
+      if (o) setHistoryOverview(o);
+    });
 
     try {
       const summaries = await fetchHistorySummary();
@@ -555,7 +590,7 @@ function ReportsInner() {
                     </View>
                   </View>
                   <Text style={[styles.reportDate, {  fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                    {report.date}
+                    {formatReportDate(report.date)}
                   </Text>
                 </View>
 
@@ -616,8 +651,36 @@ function ReportsInner() {
                 <TouchableOpacity
                   style={styles.viewButton}
                   onPress={() => {
+                    /*
+                     * COS-1023 — open on the LIST row, then hydrate from the
+                     * DETAIL endpoint.
+                     *
+                     * The list mapper (mapDiagnosticReportSummary) never sets
+                     * results[], findings, impression, exam, clinicalHistory,
+                     * technique or presentedForms. Everything in this modal that
+                     * renders those — LabResultsTable, the Narrative block, the
+                     * Attachments block — was therefore unreachable, and
+                     * fetchReportById() sat in the API layer imported by nothing.
+                     *
+                     * Open first so the sheet is never blocked on a request; the
+                     * detail merges in when it lands.
+                     */
                     setSelectedReport(report);
                     setShowReportModal(true);
+                    void (async () => {
+                      try {
+                        const full = await fetchReportById(report.id);
+                        if (!full) return;
+                        // Guard against a race: the patient may have gone back
+                        // and opened a different report while this was in flight.
+                        setSelectedReport((current) =>
+                          current && current.id === full.id ? { ...current, ...full } : current,
+                        );
+                      } catch {
+                        // The list row already renders; a failed hydrate just
+                        // means fewer sections, never a broken sheet.
+                      }
+                    })();
                   }}
                 >
                   <Text style={[styles.viewButtonText, { fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(600) as any }]}>
@@ -654,6 +717,25 @@ function ReportsInner() {
     }
 
     if (!historySummary) {
+      // COS-1024 — the summary has not landed. If the overview has, the patient
+      // has real content to read; claiming "no history" over the top of it is
+      // the same false-absence bug as COS-1020.
+      if (historyOverview) {
+        const c = historyOverview.counts;
+        return (
+          <View style={styles.historyEmptyContainer}>
+            <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }]}>
+              {c.conditions} conditions · {c.medications} medications · {c.encounters} visits
+            </Text>
+            <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(400) as any }]}>
+              {c.diagnosticReports} reports · {c.observations} results on file
+            </Text>
+            <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(400) as any }]}>
+              Writing your summary…
+            </Text>
+          </View>
+        );
+      }
       return (
         <View style={styles.historyEmptyContainer}>
           <Text style={[styles.historyEmptyText, { color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any }]}>
@@ -831,7 +913,7 @@ function ReportsInner() {
                 </View>
                 <View style={styles.reportModalMeta}>
                   <Text style={[styles.reportModalMetaText, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
-                    {selectedReport.provider} • {selectedReport.date}
+                    {selectedReport.provider} • {formatReportDate(selectedReport.date)}
                   </Text>
                   {selectedReport.accessionNumber && (
                     <Text style={[styles.reportModalMetaText, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any }]}>
@@ -870,7 +952,7 @@ function ReportsInner() {
                         {selectedReport.title}
                       </Text>
                       <Text style={[styles.summaryReportDate, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(400) as any, marginBottom: 12 }]}>
-                        {selectedReport.date} • Generated {new Date(reportSummary.generatedAt).toLocaleDateString('en-US', { 
+                        {formatReportDate(selectedReport.date)} • Generated {new Date(reportSummary.generatedAt).toLocaleDateString('en-US', { 
                           month: 'short', 
                           day: 'numeric', 
                           year: 'numeric',
@@ -1179,7 +1261,14 @@ function ReportsInner() {
       />
 
       {/* Loading Overlay for History */}
-      {(isLoadingHistory || isRefreshingHistory) && mainTab === 'history' && (
+      {/*
+        * COS-1024 — blocks only while there is genuinely nothing to show.
+        * Once the overview lands the patient reads counts and recent items,
+        * and the summary fills in underneath when it is ready. A full-screen
+        * blocker over content that has already arrived is the behaviour the
+        * overview endpoint was written to end.
+        */}
+      {(isLoadingHistory || isRefreshingHistory) && mainTab === 'history' && !historyOverview && (
         <View style={styles.loadingOverlay}>
           <View style={[styles.loadingOverlayContent, { backgroundColor: colors.background }]}>
             <ActivityIndicator size="large" color="#008080" />

@@ -120,28 +120,14 @@ function isPurchasable(plan: PlanCard): boolean {
   return (m !== null && m > 0) || (a !== null && a > 0);
 }
 
-/** COS-742 — the patient's current billing state, from the same call. */
-export interface BillingSummary {
-  planKey: string | null;
-  planName: string | null;
-  billingCycle: string | null;
-  billingStatus: string | null;
-  currentPeriodEnd: string | null;
-  pricing: PlanCard['pricing'];
-  trial: { endsAt: string | null; daysRemaining: number | null; convertsTo: string | null } | null;
-  /**
-   * COS-792 — they asked to stop renewing, and when it actually ends.
-   *
-   * NOTE: this is the THIRD declaration of this shape in the app —
-   * components/plan/PlanStatusSection.tsx and services/api/patient-plans.ts
-   * have the other two, all describing /v1/patients/me/plans. Every field
-   * added to the endpoint now has to be added in three places, which is
-   * exactly how they drift. Collapsing them is overdue.
-   */
-  cancelAtPeriodEnd?: boolean;
-  cancelEffectiveAt?: string | null;
-  isDefaultPlan?: boolean;
-}
+/**
+ * COS-1021 — re-exported from the API layer, not redeclared.
+ *
+ * This file used to carry its own copy and its own comment noting it was the
+ * third. See services/api/patient-plans.ts for why there is now one.
+ */
+import type { BillingSummary } from '@/services/api/patient-plans';
+export type { BillingSummary };
 
 async function fetchBilling(): Promise<{ plans: PlanCard[]; billing: BillingSummary | null }> {
   const res = await apiClient.get('/v1/patients/me/plans');

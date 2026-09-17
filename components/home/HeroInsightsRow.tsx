@@ -210,6 +210,9 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
   const { score: composite, band } = pickWellbeingDisplayScore(catalog)
   const hasScore = typeof composite === 'number' && Number.isFinite(composite)
   const bandTokens = band ? WELLBEING_BANDS[band] : null
+  // COS-1020 — ScoreCatalog has carried `isLoading` all along; this tile just
+  // never read it, so a cold derivation rendered as "no check-in yet".
+  const isPendingFirstLoad = catalog.isLoading && !hasScore
 
   return (
     <Tile
@@ -219,11 +222,19 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
       accessibilityLabel={
         hasScore
           ? `Wellbeing score ${Math.round(composite as number)}${bandTokens ? ', ' + bandTokens.label : ''}`
-          : 'Wellbeing score not available yet'
+          : isPendingFirstLoad
+            ? 'Wellbeing score, checking'
+            : 'Wellbeing score not available yet'
       }
       body={
         hasScore ? (
           <Ready number={Math.round(composite as number)} chip={bandTokens} variant={variant} />
+        ) : isPendingFirstLoad ? (
+          <Empty
+            pending
+            hint={variant === 'large' ? 'Checking your latest check-in…' : 'Checking…'}
+            variant={variant}
+          />
         ) : (
           <Empty
             hint={variant === 'large' ? 'Complete a check-in to see your wellbeing score.' : 'Take a check-in'}
@@ -238,7 +249,10 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
 // ─── Health Age tile ─────────────────────────────────────────────────
 function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
   const flag = useHealthAgeFlag()
-  const { data } = useHealthAge(flag)
+  // COS-1020 — `isLoading` (v5) is `isPending && isFetching`, so it is true
+  // ONLY during a real first fetch. `isPending` alone would also be true for a
+  // DISABLED query — flag off — and would pin this tile on "Checking…" forever.
+  const { data, isLoading } = useHealthAge(flag)
   const overall = data?.overall ?? null
   const hasScore = typeof overall === 'number' && Number.isFinite(overall)
   const bandTokens = data?.band ? HEALTH_AGE_BANDS[data.band] : null
@@ -251,11 +265,19 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
       accessibilityLabel={
         hasScore
           ? `Health age ${Math.round(overall as number)}${bandTokens ? ', ' + bandTokens.label : ''}`
-          : 'Health age not available yet'
+          : isLoading
+            ? 'Health age, checking'
+            : 'Health age not available yet'
       }
       body={
         hasScore ? (
           <Ready number={Math.round(overall as number)} chip={bandTokens} variant={variant} />
+        ) : isLoading ? (
+          <Empty
+            pending
+            hint={variant === 'large' ? 'Checking your latest results…' : 'Checking…'}
+            variant={variant}
+          />
         ) : (
           <Empty
             hint={
@@ -416,12 +438,33 @@ function DailyReadBody({
   )
 }
 
-function Empty({ hint, variant }: { hint: string; variant: Variant }): React.JSX.Element {
+/**
+ * COS-1020 — `pending` is the state this tile never had.
+ *
+ * The body was a BINARY: a score, or the empty state. While the first request
+ * was still in flight `data` is undefined, so a patient on a cold Lambda or a
+ * slow connection was shown "Connect labs" / "Take a check-in" — which is not
+ * merely blank, it is WRONG. It tells someone who has labs that they have none,
+ * and invites them to redo work they already did.
+ *
+ * Deliberately reuses this component rather than adding a skeleton: the iOS 26
+ * envelope (ADR-0003) is why Home renders as few primitives as it does, and a
+ * third state is a prop, not another wrapper. Same <View><Text><Text>.
+ */
+function Empty({
+  hint,
+  variant,
+  pending = false,
+}: {
+  hint: string
+  variant: Variant
+  pending?: boolean
+}): React.JSX.Element {
   const bigStyle = variant === 'large' ? styles.emptyBigLarge : styles.emptyBig
   return (
     <View style={styles.body}>
       <Text style={bigStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-        —
+        {pending ? '· · ·' : '—'}
       </Text>
       <Text style={styles.subtle} numberOfLines={variant === 'large' ? 3 : 2} maxFontSizeMultiplier={1.2}>
         {hint}
