@@ -9,7 +9,7 @@ import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { Button, Card, List, Menu, TextInput as PaperTextInput } from 'react-native-paper';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { fetchProviders, fetchProvidersByDepartment } from '@/services/api/providers';
@@ -180,11 +180,46 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
   // Original fixed values
   const containerWidth = 384;
   const containerHeight = 320;
-  const radius = 144 * 1.2; // 158.4
   const centerAvatarSize = 80;
   const orbitAvatarSize = 48;
   const orbitAvatarContainerSize = 120;
   const linkLineWidth = 92;
+
+  /*
+   * COS-1031 — the orbit was sized for an iPhone and clipped on Android.
+   *
+   * Vishal: "in Android everything was so big — it is actually touching the
+   * edge of the screens."
+   *
+   * The literal is `144 * 1.2` = 172.8 (the old `// 158.4` comment was stale).
+   * A bubble centre sits at ±172.8 from the middle and each bubble reserves
+   * orbitAvatarContainerSize = 120, so the orbit needs
+   *
+   *     172.8 * 2 + 120 = 465.6dp
+   *
+   * of width. A common Android phone is 360dp. The 9 o'clock and 3 o'clock
+   * provider bubbles therefore run off BOTH edges — which is the "touching the
+   * edge" half of the report, on the landing screen.
+   *
+   * Clamped to whatever the viewport can actually hold, with the iOS value
+   * preserved exactly. Gated rather than applied everywhere because iOS is the
+   * shipped platform and its layout is signed off; an unconditional change
+   * would also move every iPhone. (Worth knowing separately: an iPhone SE at
+   * 375pt clips by the same arithmetic — that is a real but pre-existing iOS
+   * issue and not something to fix silently in an Android commit.)
+   */
+  const { width: orbitViewportWidth } = Dimensions.get('window');
+  const IOS_ORBIT_RADIUS = 144 * 1.2;
+  const radius =
+    Platform.OS === 'android'
+      ? Math.min(
+          IOS_ORBIT_RADIUS,
+          // Half the space left once both bubbles and a 12dp breathing margin
+          // are accounted for. Floor of 96 so a very narrow device degrades to
+          // a tight orbit rather than an inverted one.
+          Math.max(96, (orbitViewportWidth - orbitAvatarContainerSize - 24) / 2),
+        )
+      : IOS_ORBIT_RADIUS;
 
   // Build orbit items: selected CM + providers + ONE "+" placeholder (never two)
   const hasCareManager = !!selectedCareManager;

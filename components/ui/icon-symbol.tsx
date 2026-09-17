@@ -149,7 +149,40 @@ export function IconSymbol({
    * purpose: it shows up in the first screenshot instead of the first bug
    * report.
    */
+  /*
+   * COS-1031 — Android icons were 25-40% heavier than the same icon on iOS.
+   *
+   * Vishal, testing a real Android build: "in iOS everything was so
+   * sophisticated and aligned, but in Android everything was so big."
+   *
+   * The two platforms resolve DIFFERENT files, and they fill their box
+   * differently for the same nominal `size`:
+   *
+   *   iOS      icon-symbol.ios.tsx renders <SymbolView resizeMode="scaleAspectFit">
+   *            into a size x size box. An SF Symbol aspect-fits, so its ink
+   *            occupies roughly 0.6-0.75 of that box.
+   *   Android  MaterialIcons is a FONT. The glyph fills its em box — ink is
+   *            roughly 0.85-0.95 of `size`.
+   *
+   * So `size={24}` is a ~16pt mark on iOS and a ~22dp mark on Android. It is
+   * most obvious in the chrome that is on screen the whole session: the
+   * AppWrapper hamburger, the accessibility button, and every tab-bar icon.
+   *
+   * 0.8 brings the Android ink weight into the SF Symbol range while leaving
+   * the LAYOUT box alone — callers still reserve `size`, so nothing reflows
+   * and no spacing changes. Only the glyph inside it gets smaller.
+   *
+   * iOS cannot be affected: React Native resolves icon-symbol.ios.tsx there
+   * and never loads this file at all.
+   */
+  const ANDROID_INK_RATIO = 0.8;
+
   return (
-    <MaterialIcons color={color} size={size} name={MAPPING[name] ?? 'help-outline'} style={style} />
+    <MaterialIcons
+      color={color}
+      size={Math.round(size * ANDROID_INK_RATIO)}
+      name={MAPPING[name] ?? 'help-outline'}
+      style={style}
+    />
   );
 }
