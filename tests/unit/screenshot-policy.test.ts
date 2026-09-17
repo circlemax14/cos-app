@@ -1,20 +1,30 @@
 /**
- * The PHI capture safeguard, and the guard that failed.
+ * The PHI capture safeguard, and the decision that changed it.
  *
- * COS-905. SCREENSHOTS_BLOCKED was flipped to false on 2026-06-26 for a round
- * of screenshot testing and never flipped back — ten weeks, on main, through
- * every build and OTA in between.
+ * COS-1034 (2026-09-17): capture is now ALLOWED for every user, by product
+ * decision, so patients can keep and share their own records. Vishal asked for
+ * it and confirmed after being shown the cost: PHI renders on virtually every
+ * authenticated screen, and a screenshot lands in iCloud Photos / Google
+ * Photos, neither of which is BAA-covered.
  *
- * The reason it survived that long is in this file's own history: the test was
- * rewritten to assert `false`, with a comment explaining that this was
- * temporary. A guard edited to agree with the thing it guards is not a guard.
- * It turned a deliberate exception into the documented expectation, and the
- * only signal left was a comment nobody was reading.
+ * WHY THIS TEST STILL EXISTS, inverted rather than deleted.
  *
- * So the assertion below is written to be UNCOMFORTABLE to change. If a tester
- * genuinely needs capture allowed, flip the constant, edit this test, and both
- * changes land in one diff with a reviewer looking at them — which is the whole
- * mechanism. What must not happen again is the test quietly agreeing.
+ * COS-905: the constant was flipped to false on 2026-06-26 for a round of
+ * screenshot testing and never flipped back — ten weeks, on main, through
+ * every build and OTA. It survived because THIS TEST WAS REWRITTEN TO AGREE
+ * WITH IT, with a comment saying it was temporary. A guard edited to agree
+ * with the thing it guards is not a guard.
+ *
+ * The lesson was never "false is forbidden". It was that the value must always
+ * be the one someone DECIDED, and that changing it must cost a visible diff.
+ * So the assertion is inverted, not removed: if anyone flips this back to true
+ * — which may well be right, if counsel or Apple says so — this test fails and
+ * they must come here and say why. The mechanism is intact and pointed the
+ * other way.
+ *
+ * If it does go back to true, restore the wording below from git history
+ * rather than writing new: the old text explains the HIPAA reasoning better
+ * than a fresh paraphrase will.
  */
 
 import { test } from 'node:test';
@@ -25,19 +35,18 @@ import {
   shouldPreventScreenCapture,
 } from '../../lib/screenshot-policy.ts';
 
-test('THE POINT: capture protection is ON — PHI renders on every authenticated screen', () => {
-  // On iOS a screenshot syncs to iCloud Photos, which is not a BAA'd third
-  // party. This is the HIPAA invariant, not a preference.
+test('THE POINT: capture is allowed, and that is a decision someone signed', () => {
   assert.equal(
     SCREENSHOTS_BLOCKED,
-    true,
-    'SCREENSHOTS_BLOCKED is false. If that is deliberate and temporary, say so HERE and in the ' +
-      'commit — and flip it back before the next build. It was left false for ten weeks last time.',
+    false,
+    'SCREENSHOTS_BLOCKED is true. If capture protection has been restored — which may be ' +
+      'right — say why HERE and in the commit, and restore the HIPAA wording from git history. ' +
+      'This value must always be one somebody decided, never one that drifted.',
   );
 });
 
 test('the shipped default is what the app actually applies', () => {
-  assert.equal(shouldPreventScreenCapture(), true);
+  assert.equal(shouldPreventScreenCapture(), false);
 });
 
 test('the helper still honours an explicit argument, both ways', () => {
@@ -79,9 +88,17 @@ test('THE POINT: a debug build may be screenshotted, a release build may not', (
    */
   assert.equal(shouldPreventScreenCapture(true, true), false, 'debug build: allowed');
   assert.equal(shouldPreventScreenCapture(true, false), true, 'release build: still blocked');
-  // The default is the secure one, so an omitted argument cannot open it.
-  assert.equal(shouldPreventScreenCapture(true), true);
-  assert.equal(shouldPreventScreenCapture(), true);
+  assert.equal(shouldPreventScreenCapture(true), true, 'explicit block still blocks');
+  /*
+   * COS-1034 — the omitted-argument case now follows the shipped default,
+   * which is `false`. The two explicit assertions above are the ones that
+   * prove the __DEV__ exception itself, and they are unchanged: the helper's
+   * logic did not move, only the constant it defaults to.
+   *
+   * Kept rather than deleted because it is the line that will fail first if
+   * the policy is ever restored, and that failure is the intended signal.
+   */
+  assert.equal(shouldPreventScreenCapture(), false);
 });
 
 test('the debug exception is strictly an exception — the flag still governs release', () => {
