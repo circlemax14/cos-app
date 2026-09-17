@@ -2,7 +2,7 @@ import { FastenStitchElement } from '@fastenhealth/fasten-stitch-element-react-n
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -223,7 +223,12 @@ export default function FastenConnectScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    // COS-1031 — onboarding route, no tab bar beneath it to absorb the bottom
+    // inset. Gated so iOS keeps its signed-off layout. See calendar-event-editor.
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={Platform.OS === 'android' ? ['top', 'bottom'] : ['top']}
+    >
       {canView && connectedCount > 0 && (
         <View style={styles.successBanner}>
           <Text style={[styles.successBannerText, { fontSize: getScaledFontSize(14) }]}>
