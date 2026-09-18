@@ -185,3 +185,39 @@ export function useHasExplicitGrant(dottedKey: string): boolean {
   const { source, allowed } = useEntitlement(dottedKey);
   return source === 'live' && allowed;
 }
+
+/**
+ * COS-1038 — for a key that expresses a RESTRICTION rather than an unlock.
+ *
+ * Vishal, 2026-09-18: "enabling and disabling the screenshots or screen share
+ * it must be a permission so I can disable directly in the plan".
+ *
+ * Every other hook in this file answers "may the patient see this?", where the
+ * safe direction on doubt is YES and a wildcard is a grant. A restriction
+ * inverts both, and reusing `useCanRender` for one would be actively wrong:
+ *
+ *   - WILDCARD. The resolver returns a wildcard for every patient on a stage
+ *     where `plan_tier_enabled` is unset — which is production, today. Under
+ *     `useCanRender` that reads as "granted", so a restriction keyed on it
+ *     would switch itself on for the entire fleet the moment it shipped. That
+ *     is the exact inverse of the intent, and it would look like a bug in the
+ *     app rather than in the gate.
+ *
+ *   - PROVISIONAL. 'unprovisioned' and 'unknown' are also allowed=true, and
+ *     they mean "we have no answer", not "yes".
+ *
+ * So this accepts only the two sources where a REAL array actually named the
+ * key: a live answer, or the last one this device saw. Cached counts on
+ * purpose — a restriction that a patient can defeat by turning off wi-fi is
+ * not a restriction, and the cache is the same confirmation `useCanRender`
+ * already trusts in the other direction.
+ *
+ * Absence is therefore permissive: no plan, no array, a timeout, a wildcard,
+ * or a plan that simply does not carry the key all leave the restriction OFF.
+ * That is deliberate — it keeps the un-restricted behaviour as the default and
+ * makes turning one ON an affirmative act on a plan.
+ */
+export function useHasNamedGrant(dottedKey: string): boolean {
+  const { source, allowed } = useEntitlement(dottedKey);
+  return allowed && (source === 'live' || source === 'cached');
+}

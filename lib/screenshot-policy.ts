@@ -95,3 +95,43 @@ export function shouldPreventScreenCapture(
   if (isDevBuild === true) return false;
   return blocked === true;
 }
+
+/**
+ * COS-1038 — the plan-level lever, which is what was actually asked for.
+ *
+ * Vishal, 2026-09-18: "I told you that if this has to be permission so
+ * enabling and disabling the screenshots or screen share it must be a
+ * permission so I can disable directly in the plan".
+ *
+ * He is right, and `SCREENSHOTS_BLOCKED` alone could never do it. A constant
+ * is compiled into the JS bundle, so changing it needs an OTA or a new binary,
+ * it applies to the whole fleet at once, and it leaves no record of who
+ * decided. That combination is precisely how this file spent ten weeks set
+ * wrong (see COS-905 above) — the flip back needed a deploy, so it never came.
+ *
+ * As a permission the same decision becomes data: set on a plan in the admin
+ * dashboard, applied per patient, changed without shipping anything, and
+ * carried in the entitlements audit trail like every other grant.
+ *
+ * DIRECTION, because it is the easy thing to get backwards. The key names the
+ * RESTRICTION, not the ability:
+ *
+ *     key present on the plan  →  capture BLOCKED for that patient
+ *     key absent               →  capture allowed
+ *
+ * Absence is permissive because that is the shipped decision this file already
+ * records: capture is on for everyone (COS-1034), and the plan is how it gets
+ * taken away from a cohort that should not have it. Naming the key the other
+ * way round would mean every existing plan had to be edited before anyone
+ * could screenshot anything, which inverts the default Vishal chose.
+ *
+ * The gate is read with `useHasNamedGrant` (hooks/use-entitlement.ts), NOT
+ * `useCanRender` — a wildcard must never switch a restriction on. That hook's
+ * header has the full reasoning.
+ *
+ * THE GLOBAL CONSTANT STILL WINS. `SCREENSHOTS_BLOCKED` is OR-ed with this, so
+ * setting it true re-blocks the entire fleet regardless of any plan. It stays
+ * as the emergency lever precisely because a per-plan control is the wrong
+ * shape for "stop this everywhere, now".
+ */
+export const CAPTURE_BLOCK_ENTITLEMENT = 'privacy-controls.block-screen-capture';

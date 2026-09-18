@@ -5,11 +5,9 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import * as ScreenCapture from 'expo-screen-capture';
 import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
-import { useEffect } from 'react';
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
@@ -39,6 +37,7 @@ import { QueryProvider } from '@/providers/QueryProvider';
 // Renders nothing; MUST live inside <QueryProvider> so the hook has
 // a QueryClient in context.
 import { FeatureFlagBridge } from '@/components/FeatureFlagBridge';
+import { ScreenCaptureBridge } from '@/components/privacy/ScreenCaptureBridge';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
@@ -59,7 +58,6 @@ registerStoreBilling({
   isLinked: isStoreBillingLinked,
   purchase: purchaseThroughStore,
 });
-import { shouldPreventScreenCapture } from '@/lib/screenshot-policy';
 
 // Initialize Sentry as early as possible — before any other imports run side
 // effects — so we capture errors thrown during module load + provider setup.
@@ -216,44 +214,6 @@ function RootLayout() {
   const colorScheme = useColorScheme();
   useNotifications();
 
-  // SCRUM-368 (MOBILE-003): Block screenshots and screen-recording app-wide.
-  // PHI is rendered on virtually every authenticated screen (patient detail,
-  // health summary, assessments, calendar events), so we apply the flag
-  // globally rather than per-screen. On Android this sets FLAG_SECURE on the
-  // window — which ALSO hides the app preview from the recent-apps switcher.
-  // On iOS this listens to UIScreen.capturedDidChangeNotification and blanks
-  // the screen during recording; iOS app-switcher snapshot redaction is a
-  // separate concern (see NOTES — may require a native AppDelegate shim).
-  //
-  // COS-401 / SCRUM-537: the block is now gated on SCREENSHOTS_BLOCKED
-  // (lib/screenshot-policy.ts), default true (secure). This is an OTA-safe JS
-  // toggle: flipping the flag to false makes us call allowScreenCaptureAsync()
-  // instead, so testers can capture screenshots without a native rebuild.
-  //
-  // HIPAA / PHI SAFEGUARD: flipping SCREENSHOTS_BLOCKED off disables a PHI
-  // safeguard for ALL users on that build/OTA — intended ONLY as a temporary,
-  // deliberate testing toggle. Flip back to true (and OTA) before real users
-  // see PHI on that build.
-  useEffect(() => {
-    /*
-     * COS-939 — `__DEV__` lets a debug build be screenshotted.
-     *
-     * Metro compiles this to `false` in every release bundle, so a production
-     * binary and every OTA to one still block capture regardless of what
-     * anyone remembers to flip back. See lib/screenshot-policy.ts.
-     */
-    if (shouldPreventScreenCapture(undefined, __DEV__)) {
-      ScreenCapture.preventScreenCaptureAsync().catch(() => {
-        // Non-fatal — log loss of capture protection but don't crash the app.
-      });
-    } else {
-      // Testing toggle is OFF-secure: actively re-allow capture in case a prior
-      // run/instance had prevention enabled. OTA-safe expo-screen-capture path.
-      ScreenCapture.allowScreenCaptureAsync().catch(() => {
-        // Non-fatal.
-      });
-    }
-  }, []);
 
   // Capture every touch at the root so the idle-lock timer (15 min) is
   // reset whenever the user actually interacts with the app. The
@@ -265,6 +225,7 @@ function RootLayout() {
   return (
     <QueryProvider>
       <FeatureFlagBridge />
+      <ScreenCaptureBridge />
       <AccessibilityProvider>
         <SecurityProvider>
         <ProviderSelectionProvider>
