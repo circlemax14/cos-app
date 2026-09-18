@@ -117,6 +117,9 @@ export async function fetchMedications(): Promise<Medication[]> {
           timing?: { repeat?: { frequency?: number; period?: number; periodUnit?: string } };
         }>;
         reasonCode?: Array<{ text?: string }>;
+        // COS-1041 — always present on the wire; this mapper just never read it.
+        status?: string;
+        authoredOn?: string;
       }>;
     };
   }>('/v1/patients/me/medical-data');
@@ -132,6 +135,8 @@ export async function fetchMedications(): Promise<Medication[]> {
       dosage: dosage?.text ?? '',
       frequency,
       purpose: m.reasonCode?.[0]?.text ?? '',
+      status: m.status,
+      authoredOn: m.authoredOn ?? null,
     };
   });
 }
