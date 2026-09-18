@@ -31,6 +31,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  CAPTURE_BLOCK_ENTITLEMENT,
   SCREENSHOTS_BLOCKED,
   shouldPreventScreenCapture,
 } from '../../lib/screenshot-policy.ts';
@@ -55,20 +56,64 @@ test('the helper still honours an explicit argument, both ways', () => {
 });
 
 test('the app wires the policy to expo-screen-capture, not to a literal', () => {
-  // A screen that calls allowScreenCaptureAsync() unconditionally would defeat
-  // the constant entirely.
-  const layout = readFileSync(new URL('../../app/_layout.tsx', import.meta.url), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
-  // COS-939 added the __DEV__ argument, so the call is no longer bare. The
-  // PROPERTY is unchanged and is what this asserts: the decision comes from
-  // the policy module, never from a literal at the call site.
-  assert.match(layout, /shouldPreventScreenCapture\(|SCREENSHOTS_BLOCKED/);
+  /*
+   * COS-1038 — the call site MOVED, and the move is the change.
+   *
+   * It used to be a useEffect in RootLayout. RootLayout is the component that
+   * renders <QueryProvider>, so it sits outside the query context and cannot
+   * read an entitlement — which is why a plan could not govern capture until
+   * now. The effect therefore lives in a headless child mounted inside the
+   * provider (components/privacy/ScreenCaptureBridge.tsx), the same shape
+   * FeatureFlagBridge already uses for the same reason.
+   *
+   * This asserts the unchanged PROPERTY in its new home: the decision comes
+   * from the policy module, never from a literal at the call site. And it
+   * still asserts _layout.tsx MOUNTS the bridge, because a bridge that is
+   * never rendered applies no policy at all and nothing else would notice.
+   */
+  const strip = (t: string) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  const bridge = strip(
+    readFileSync(new URL('../../components/privacy/ScreenCaptureBridge.tsx', import.meta.url), 'utf8'),
+  );
+  assert.match(bridge, /shouldPreventScreenCapture\(/);
   assert.doesNotMatch(
-    layout,
+    bridge,
     /if \((true|false)\)\s*\{\s*ScreenCapture\.preventScreenCaptureAsync/,
     'the call site must not hard-code the decision',
   );
+
+  const layout = strip(readFileSync(new URL('../../app/_layout.tsx', import.meta.url), 'utf8'));
+  assert.match(layout, /<ScreenCaptureBridge \/>/, 'the bridge must actually be mounted');
+  assert.match(
+    layout,
+    /<QueryProvider>[\s\S]*<ScreenCaptureBridge \/>/,
+    'the bridge must be inside QueryProvider or its entitlement hook has no client',
+  );
+});
+
+test('THE POINT: the plan is the lever, and absence is permissive', () => {
+  /*
+   * COS-1038. Vishal: "it must be a permission so I can disable directly in
+   * the plan". The direction is the part that is easy to get backwards, so it
+   * is pinned here rather than left to the comment.
+   *
+   * The key names the RESTRICTION. A plan carrying it blocks that patient; a
+   * plan without it leaves capture allowed, which is the shipped default from
+   * COS-1034. Flipping this naming would require editing every existing plan
+   * before anyone could screenshot anything.
+   */
+  assert.equal(
+    CAPTURE_BLOCK_ENTITLEMENT,
+    'privacy-controls.block-screen-capture',
+    'the key must match the backend catalog entry exactly — a feature string that ' +
+      'exists only on the client is a permanent deny (COS-1019).',
+  );
+
+  // The plan supplies `blocked`; the helper is unchanged underneath it.
+  assert.equal(shouldPreventScreenCapture(true, false), true, 'plan carries the key: blocked');
+  assert.equal(shouldPreventScreenCapture(false, false), false, 'plan does not: allowed');
 });
 
 test('THE POINT: a debug build may be screenshotted, a release build may not', () => {
