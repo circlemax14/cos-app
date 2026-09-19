@@ -59,6 +59,9 @@ import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
 // 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
 import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
+import TrendSourceBar from '@/components/health-summary/TrendSourceBar';
+import { buildTrendSources } from '@/lib/trend-sources';
+import { useHealthKitTrends } from '@/hooks/use-healthkit-trends';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
 import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
@@ -3009,6 +3012,37 @@ function HomeScreenInner() {
   // the tile is byte-identical to today's Home when OFF.
   const planShelfEnabled = usePlanShelfFlag();
 
+  /*
+   * COS-1045 — Ken's coloured source bar, on Home.
+   *
+   * Ken 2026-09-18: bring the Trends screen's coloured segments onto the Home
+   * Health Trends button so it says what is being tracked instead of being a
+   * row link.
+   *
+   * Built from lib/trend-sources, the SAME builder the Trends screen uses, so
+   * the two cannot describe the same data differently. Rendered with
+   * components/health-summary/TrendSourceBar — the bar Ken already approved in
+   * COS-967 — rather than a second implementation.
+   *
+   * `useHealthKitTrends` is a cached react-query hook that does not fetch at
+   * all on a device with no health source, and the Trends screen shares its
+   * key, so this costs a cache read rather than a new cold-mount request.
+   *
+   * The clinic bucket is deliberately not fetched here: it is empty on every
+   * stage today, and adding a network call to Home for a segment that never
+   * draws would be cost for nothing. buildTrendSources drops it.
+   */
+  const { data: homeHealthKitTrends } = useHealthKitTrends();
+  const trendSources = useMemo(
+    () =>
+      buildTrendSources({
+        clinic: 0,
+        checkins: 0,
+        devices: (homeHealthKitTrends ?? []).length,
+      }),
+    [homeHealthKitTrends],
+  );
+
   // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
   // built from today's driver metrics. Chat route auto-sends the
   // prefill once on mount (see app/Home/health-chat.tsx).
@@ -3928,6 +3962,17 @@ function HomeScreenInner() {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* COS-1045 — the bar sits WITH the button rather than inside it.
+            TrendSourceBar is styled for a normal card background; the hero
+            above is filled with colors.tint, and re-theming a shared
+            component for one caller is how it stops being shared. Renders
+            nothing when no source has rows. */}
+        {trendSources.length > 0 && (
+          <View style={{ marginHorizontal: 16, marginTop: -4, marginBottom: 12 }}>
+            <TrendSourceBar sources={trendSources} noun="things we track" />
+          </View>
+        )}
 
         {/*
          * SCRUM-653: standalone WellbeingMapPreview injection removed —
