@@ -45,6 +45,7 @@ import { useScoreCatalog } from '@/hooks/use-score-catalog'
 import { pickWellbeingDisplayScore } from '@/lib/wellbeing-display-score'
 import { useWellbeingScoreEndpoint } from '@/hooks/use-wellbeing-history'
 import { ScoreRing } from '@/components/home/ScoreRing'
+import { positionOf } from '@/lib/dial-geometry'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
 
@@ -303,6 +304,35 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
   const hasScore = typeof overall === 'number' && Number.isFinite(overall)
   const bandTokens = data?.band ? HEALTH_AGE_BANDS[data.band] : null
 
+  /*
+   * COS-1046 — the dial on this tile, matching the detail screen's scale.
+   *
+   * Health Age is an AGE IN YEARS, not a 0-100 score, so the wellbeing tile's
+   * `score / 100` progress would be meaningless here — a health age of 44
+   * would fill 44% of a ring whose full turn means nothing.
+   *
+   * The detail screen centres its DialGauge on the patient's CHRONOLOGICAL
+   * age with a +/-10 year span, so half-full reads "your health age matches
+   * your real age", and the arc shows how far either side you sit. This
+   * reuses `positionOf` from lib/dial-geometry — the exact function that dial
+   * calls — rather than re-deriving the mapping, so the two cannot disagree.
+   *
+   * DRAWN ONLY WHEN BOTH AGES ARE KNOWN. app/Home/health-age.tsx states the
+   * rule and this follows it: "a scale with one endpoint missing is
+   * decoration, not a measurement." With no chronological age the tile
+   * renders the bare number exactly as it does today.
+   */
+  const chrono = data?.chronologicalAge ?? null
+  const HEALTH_AGE_SPAN_YEARS = 10
+  const ring =
+    hasScore && typeof chrono === 'number' && Number.isFinite(chrono)
+      ? {
+          progress: positionOf(overall as number, chrono, HEALTH_AGE_SPAN_YEARS),
+          color: bandTokens?.fg ?? '#5CBF9A',
+          trackColor: 'rgba(127,127,127,0.18)',
+        }
+      : null
+
   return (
     <Tile
       variant={variant}
@@ -317,7 +347,7 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
       }
       body={
         hasScore ? (
-          <Ready number={Math.round(overall as number)} chip={bandTokens} variant={variant} />
+          <Ready number={Math.round(overall as number)} chip={bandTokens} variant={variant} ring={ring} />
         ) : isLoading ? (
           <Empty
             pending
