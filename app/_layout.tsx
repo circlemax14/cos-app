@@ -17,6 +17,7 @@ import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
 // hook on EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED — default OFF so this ships
 // dark and inert until Ken flips the env var + cuts a new bundle.
 import { useEntitlementsSync } from '@/hooks/use-entitlements-sync';
+import { useChatSync } from '@/hooks/use-chat-sync';
 import { useTimezoneSync } from '@/hooks/use-timezone-sync';
 // ADR-0004 P1 — health-data-changed WSS sync + long-poll fallback. Mirrors
 // the entitlements-sync contract for lab/vaccine/summary/plan invalidation.
@@ -118,6 +119,14 @@ function StackWithAppLock() {
   // Runs iff EXPO_PUBLIC_ENTITLEMENTS_SYNC_ENABLED='true' AND a session
   // exists. Pure passthrough otherwise.
   useEntitlementsSync();
+  /*
+   * COS-1060 — refetch a conversation when a message arrives.
+   *
+   * Mounted beside the other two sync hooks, and it is the THIRD socket the
+   * app opens — see the note in use-chat-sync for why that was accepted rather
+   * than refactoring two live features to share one.
+   */
+  useChatSync();
   /*
    * COS-871 — send the device's IANA timezone so reminders arrive in the
    * patient's own morning. The per-user-TZ sweeper (SCRUM-256/259) has been
