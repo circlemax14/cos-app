@@ -44,6 +44,52 @@ if [[ "$CHANNEL" != "preview" && "$CHANNEL" != "production" ]]; then
   exit 64
 fi
 
+# ── COS-1035: the .env in the tree must match the channel being published ────
+#
+# 2026-09-17, a near miss. The working tree's .env pointed at the DEV API and
+# the DEV Cognito pool while every version stamp said production / runtime
+# 1.5.3. `.env` is gitignored, so `git status` showed nothing at all. Publishing
+# from that state would have repointed the whole production channel at dev — the
+# 2026-08-18 failure with a new face.
+#
+# publish-ota.sh cannot hit this: it re-runs prepare-build.sh, which rewrites
+# .env for the target environment and verifies it. THIS script takes a channel
+# straight off the command line and never looks at .env — and it is what
+# `npm run eas:update:prod` calls.
+#
+# Compared against .env.prod / .env.staging rather than hardcoded, so the check
+# cannot drift from the real endpoints.
+case "$CHANNEL" in
+  production) EXPECTED_ENV=".env.prod" ;;
+  preview)    EXPECTED_ENV=".env.staging" ;;
+esac
+
+if [ ! -f "$EXPECTED_ENV" ]; then
+  echo "!! $EXPECTED_ENV is missing — cannot verify what this OTA would ship." >&2
+  exit 1
+fi
+
+read_key() { grep "^$1=" "$2" 2>/dev/null | cut -d= -f2- | tr -d '\r'; }
+for KEY in EXPO_PUBLIC_API_BASE_URL EXPO_PUBLIC_COGNITO_USER_POOL_ID; do
+  WANT="$(read_key "$KEY" "$EXPECTED_ENV")"
+  GOT="$(read_key "$KEY" .env)"
+  if [ -z "$GOT" ]; then
+    echo "!! .env has no $KEY. An OTA with an EMPTY endpoint SIGABRTs on launch" >&2
+    echo "   (2026-08-18). Run ./scripts/prepare-build.sh <env> <version> first." >&2
+    exit 1
+  fi
+  if [ "$WANT" != "$GOT" ]; then
+    echo "!! .env does NOT match channel '$CHANNEL'." >&2
+    echo "   $KEY" >&2
+    echo "     .env      : $GOT" >&2
+    echo "     $EXPECTED_ENV : $WANT" >&2
+    echo "   Publishing would point '$CHANNEL' users at the wrong backend." >&2
+    echo "   Fix: cp $EXPECTED_ENV .env   (or run ./scripts/prepare-build.sh)" >&2
+    exit 1
+  fi
+done
+echo "  ok  .env matches channel '$CHANNEL'"
+
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 RUNTIME="$(grep -E '"runtimeVersion"' app.json | sed -E 's/.*"runtimeVersion":[[:space:]]*"([^"]+)".*/\1/')"
 
