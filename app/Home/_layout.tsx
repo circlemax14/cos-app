@@ -114,6 +114,33 @@ export default function TabLayout() {
         }}
       />
       {/*
+        COS-1058 — Inbox, next to Calendar as asked.
+
+        Gated with `href` like every other tab in this file, never by omitting
+        the <Tabs.Screen>: COS-856 did that and the calendar tab moved to the
+        end of the bar as plain text. The entry is always rendered; only the
+        href changes.
+
+        `inbox` is a new screen with no entitlement key yet, so canShow returns
+        its default. That default is fail-open, which is right here — a patient
+        who cannot see their own messages because /auth/me timed out is a worse
+        failure than one who sees an empty inbox.
+      */}
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          href: canShow('inbox') ? undefined : null,
+          title: 'Inbox',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={getScaledFontSize(24)} name="message.fill" color={color} />
+          ),
+        }}
+      />
+      {/* Pushed screens — reachable only via router.push from Inbox. */}
+      <Tabs.Screen name="conversation" options={{ href: null }} />
+      <Tabs.Screen name="find-people" options={{ href: null }} />
+      <Tabs.Screen name="connection-requests" options={{ href: null }} />
+      {/*
         COS-469 / Phase 4 — Care Plan tab default swap.
         `unifiedDefault` OFF: legacy `health-plan` remains the visible
         default (baseline). `unifiedDefault` ON: `health-plan` becomes

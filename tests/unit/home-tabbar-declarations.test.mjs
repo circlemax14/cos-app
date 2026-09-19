@@ -46,7 +46,11 @@ const LAYOUT = readFileSync(join(ROOT, 'app/Home/_layout.tsx'), 'utf8')
 // for testing entitlements, so a `canShow` gate would hide it exactly when a
 // plan got the answer wrong. `health-plan` stays out of this set because it
 // flips to href: null under unifiedDefault.
-const REAL_TABS = new Set(['index', 'appointments', 'plan', 'reports', 'care-plan-plus']);
+// COS-1058 — `inbox` is a real visible tab, next to Calendar. It is gated with
+// `href` like the others (undefined to show, null to hide), never by omitting
+// the <Tabs.Screen>, so it belongs in this set rather than among the pushed
+// screens that must carry href: null.
+const REAL_TABS = new Set(['index', 'appointments', 'plan', 'reports', 'care-plan-plus', 'inbox']);
 
 const screens = readdirSync(join(ROOT, 'app/Home'))
   .filter((f) => /\.tsx$/.test(f))
