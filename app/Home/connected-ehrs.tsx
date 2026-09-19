@@ -271,7 +271,8 @@ export default function ConnectedEhrsScreen() {
   const scale = getScaledFontSize;
   const weight = (w: number) => getScaledFontWeight(w) as unknown as string;
 
-  const { connectedHospitals, isLoadingClinics, refreshConnectedEhrs } = useConnectedEhrs();
+  const { connectedHospitals, isLoadingClinics, loadFailed, isImporting, refreshConnectedEhrs } =
+    useConnectedEhrs();
   const { data: permissions } = useFeaturePermissions();
   const canConnectClinic = permissions?.permissions?.CONNECT_CLINIC?.enabled === true;
 
@@ -321,11 +322,57 @@ export default function ConnectedEhrsScreen() {
           >
             {isLoadingClinics
               ? 'Loading your connections…'
-              : connectedHospitals.length === 0
-                ? 'No connections yet'
-                : `${connectedHospitals.length} connected`}
+              : loadFailed
+                ? 'Could not load your connections'
+                : connectedHospitals.length === 0
+                  ? 'No connections yet'
+                  : isImporting
+                    ? `${connectedHospitals.length} connected · importing records`
+                    : `${connectedHospitals.length} connected`}
           </Text>
         </View>
+
+        {/* COS-1059 — the message Ken needed and did not get.
+            Fasten says "Success! 1 new provider connected" the moment the
+            portal is authorised, but the clinic only appears once the EHI
+            export lands and the Organizations are extracted — minutes later.
+            The backend already reports status 'syncing' for exactly that
+            window; nothing rendered it, so the gap read as failure. */}
+        {isImporting ? (
+          <View
+            style={[
+              styles.emptyCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                paddingVertical: 14,
+                marginBottom: 12,
+              },
+            ]}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: scale(14),
+                fontWeight: weight(700) as 'bold',
+                textAlign: 'center',
+              }}
+            >
+              Connected — importing your records
+            </Text>
+            <Text
+              style={{
+                color: colors.subtext,
+                fontSize: scale(12.5),
+                textAlign: 'center',
+                marginTop: 4,
+                lineHeight: scale(18),
+              }}
+            >
+              This usually takes a few minutes. You do not need to connect again.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Loading */}
         {isLoadingClinics && connectedHospitals.length === 0 ? (
@@ -334,10 +381,14 @@ export default function ConnectedEhrsScreen() {
           </View>
         ) : null}
 
-        {/* Empty state */}
+        {/* COS-1059 — three different answers, not one.
+            "We could not load this", "you have none" and "you have one and we
+            are still importing it" were all rendering as the last one. Ken
+            connected successfully, saw "No connected clinics yet", and
+            reasonably tried again twice. */}
         {!isLoadingClinics && connectedHospitals.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 44, marginBottom: 12 }}>🏥</Text>
+            <Text style={{ fontSize: 44, marginBottom: 12 }}>{loadFailed ? '⚠️' : '🏥'}</Text>
             <Text
               style={{
                 color: colors.text,
@@ -347,7 +398,7 @@ export default function ConnectedEhrsScreen() {
                 marginBottom: 6,
               }}
             >
-              No connected clinics yet
+              {loadFailed ? 'We could not load your connections' : 'No connected clinics yet'}
             </Text>
             <Text
               style={{
@@ -357,7 +408,9 @@ export default function ConnectedEhrsScreen() {
                 lineHeight: scale(18),
               }}
             >
-              Connect your first EHR to securely import your medical history.
+              {loadFailed
+                ? 'This is a problem on our side, not with your clinic. Pull down to try again.'
+                : 'Connect your first EHR to securely import your medical history.'}
             </Text>
           </View>
         ) : null}

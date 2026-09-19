@@ -25,6 +25,18 @@ export interface ConnectedHospital {
 export function useConnectedEhrs() {
   const [connectedHospitals, setConnectedHospitals] = useState<ConnectedHospital[]>([]);
   const [isLoadingClinics, setIsLoadingClinics] = useState(false);
+  /*
+   * COS-1059 — a failed load is NOT an empty list.
+   *
+   * The catch below used to `setConnectedHospitals([])`, so a timeout, a 500,
+   * or the 404 this endpoint returns when a patient has no fhirPatientId all
+   * rendered as "No connected clinics yet" — a confident claim about the
+   * patient, made from an error.
+   *
+   * Ken hit exactly that: he connected successfully, saw "No connected clinics
+   * yet", and reasonably concluded it had failed. He then tried twice more.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const loadClinics = useCallback(async () => {
     // Skip API calls if user is not authenticated (e.g., on sign-in screen)
@@ -32,6 +44,7 @@ export function useConnectedEhrs() {
     if (!hasSession) return;
 
     setIsLoadingClinics(true);
+    setLoadFailed(false);
     try {
       const clinics = await fetchConnectedClinics();
       const hospitals: ConnectedHospital[] = clinics.map((clinic) => ({
@@ -69,7 +82,12 @@ export function useConnectedEhrs() {
 
       setConnectedHospitals([...hospitals, ...integrativeHospitals]);
     } catch {
-      setConnectedHospitals([]);
+      /*
+       * Keep whatever was already on screen rather than blanking it. A patient
+       * whose list vanishes on a flaky refresh thinks their clinic
+       * disconnected; the caller renders `loadFailed` instead.
+       */
+      setLoadFailed(true);
     } finally {
       setIsLoadingClinics(false);
     }
@@ -79,5 +97,22 @@ export function useConnectedEhrs() {
     loadClinics();
   }, [loadClinics]);
 
-  return { connectedHospitals, isLoadingClinics, refreshConnectedEhrs: loadClinics };
+  /*
+   * COS-1059 — a connection exists but its records are still importing.
+   *
+   * The backend already returns one entry PER CONNECTION the moment a patient
+   * authorises a portal, with status 'syncing' and a 'Connected Clinic'
+   * fallback name, because the Organizations are extracted minutes later when
+   * the EHI export lands. The screen had no notion of that state, so the gap
+   * between "Fasten says success" and "the clinic appears" read as failure.
+   */
+  const isImporting = connectedHospitals.some((h) => h.status === 'syncing');
+
+  return {
+    connectedHospitals,
+    isLoadingClinics,
+    loadFailed,
+    isImporting,
+    refreshConnectedEhrs: loadClinics,
+  };
 }
