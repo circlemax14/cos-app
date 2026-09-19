@@ -53,6 +53,29 @@
  * something that could drift. That is why they are being AMENDED here rather
  * than deleted.
  */
+/**
+ * COS-1057 — RETIRED AS A CONTROL. Read by nothing.
+ *
+ * Vishal, 2026-09-19: "this needs to be a feature that I can configure in the
+ * plan, it should not be like this variable where we are mentioning that
+ * screenshots blocked true or false."
+ *
+ * He is right, and the history above is the argument for it: this constant
+ * spent ten weeks set wrong because changing it needed an OTA, applied to the
+ * whole fleet at once, and left no record of who decided. COS-1038 added the
+ * plan permission but kept this OR-ed on top as a fleet-wide override — which
+ * meant there were still two places to look and one of them could silently
+ * outrank the other.
+ *
+ * Now there is one: the plan. This export remains only so that anything still
+ * importing it compiles, and it is deliberately `false` so that if some
+ * forgotten caller does read it, it grants rather than blocks. Deleting it
+ * outright is the follow-up once nothing references it.
+ *
+ * DO NOT re-introduce this into the decision. If capture must be stopped
+ * everywhere at once, that is a plan change applied to every plan, or a
+ * feature-flag kill switch — not a constant that needs a release.
+ */
 export const SCREENSHOTS_BLOCKED = false;
 
 /**
@@ -85,15 +108,25 @@ export const SCREENSHOTS_BLOCKED = false;
  * stays RN-import-free and node:test can load it (see the header). The caller
  * in app/_layout.tsx passes the real global.
  */
+/**
+ * Should capture be prevented for THIS patient?
+ *
+ * COS-1057 — `planBlocksCapture` is now the only input. It used to default to
+ * SCREENSHOTS_BLOCKED, which meant the answer had two sources and a reader had
+ * to know which won. There is no default any more: the caller must say what
+ * the patient's plan decided, so "nobody set it" cannot quietly mean "blocked".
+ *
+ * The `__DEV__` exception (COS-939) stays. A debug build points at dev by
+ * construction, so the PHI this protects is not present to leak, and Metro
+ * compiles the branch out of every release bundle — a release binary and every
+ * OTA to one ignore it regardless of what anyone forgets.
+ */
 export function shouldPreventScreenCapture(
-  blocked: boolean = SCREENSHOTS_BLOCKED,
+  planBlocksCapture: boolean,
   isDevBuild = false,
 ): boolean {
-  // A debug build never carries real patient data — it points at dev by
-  // construction (scripts/run-android.sh, prepare-build.sh) — so the PHI this
-  // safeguard protects is not present to leak.
   if (isDevBuild === true) return false;
-  return blocked === true;
+  return planBlocksCapture === true;
 }
 
 /**

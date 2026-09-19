@@ -17,7 +17,6 @@ import * as ScreenCapture from 'expo-screen-capture';
 import { useHasNamedGrant } from '@/hooks/use-entitlement';
 import {
   CAPTURE_BLOCK_ENTITLEMENT,
-  SCREENSHOTS_BLOCKED,
   shouldPreventScreenCapture,
 } from '@/lib/screenshot-policy';
 
@@ -27,9 +26,16 @@ export function ScreenCaptureBridge(): null {
   // the shipped default (capture allowed, COS-1034).
   const planBlocksCapture = useHasNamedGrant(CAPTURE_BLOCK_ENTITLEMENT);
 
-  // The constant is the fleet-wide emergency lever and OUTRANKS the plan, so
-  // it is OR-ed rather than replaced. Today it is false, so the plan governs.
-  const blocked = SCREENSHOTS_BLOCKED || planBlocksCapture;
+  /*
+   * COS-1057 — the plan is the ONLY control.
+   *
+   * This used to be `SCREENSHOTS_BLOCKED || planBlocksCapture`, keeping the
+   * constant as a fleet-wide override. Vishal asked for one place to look, and
+   * he is right: two sources meant a reader had to know which won, and the
+   * constant is the one that spent ten weeks set wrong because changing it
+   * needed a release.
+   */
+  const blocked = planBlocksCapture;
 
   useEffect(() => {
     /*

@@ -46,8 +46,19 @@ test('THE POINT: capture is allowed, and that is a decision someone signed', () 
   );
 });
 
-test('the shipped default is what the app actually applies', () => {
-  assert.equal(shouldPreventScreenCapture(), false);
+test('THE POINT: there is no default — the caller must say what the plan decided', () => {
+  /*
+   * COS-1057. This used to call shouldPreventScreenCapture() with no argument,
+   * which read the SCREENSHOTS_BLOCKED constant. That default WAS the problem:
+   * the answer had two sources and a reader had to know which won.
+   *
+   * There is no default now. A caller that forgets to pass the plan's answer
+   * gets undefined, which is not true — so the failure mode is ALLOWING
+   * capture rather than silently blocking it. A patient who can screenshot
+   * when they should not is a visible bug; one who cannot screenshot for no
+   * stated reason is the support ticket we just spent a day tracing.
+   */
+  assert.equal(shouldPreventScreenCapture(undefined as unknown as boolean), false);
 });
 
 test('the helper still honours an explicit argument, both ways', () => {
@@ -146,16 +157,39 @@ test('THE POINT: a debug build may be screenshotted, a release build may not', (
   assert.equal(shouldPreventScreenCapture(), false);
 });
 
-test('the debug exception is strictly an exception — the flag still governs release', () => {
-  // SCREENSHOTS_BLOCKED remains the only lever for letting a TestFlight or
-  // internal-track tester screenshot a RELEASE build, and keeps its guard.
+test('THE POINT: the constant is read by NOTHING in the decision path', () => {
+  /*
+   * The guarantee Vishal asked for: ONE place to look. If this fails, someone
+   * has re-introduced a second source of truth that can outrank the plan —
+   * which is how this setting spent ten weeks wrong.
+   */
+  const bridge = readFileSync(
+    new URL('../../components/privacy/ScreenCaptureBridge.tsx', import.meta.url),
+    'utf8',
+  )
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(bridge, /SCREENSHOTS_BLOCKED/);
+  assert.match(bridge, /const blocked = planBlocksCapture/);
+});
+
+test('the debug exception is strictly an exception — the PLAN governs release', () => {
+  // COS-1057 — the plan's answer passes straight through on a release build.
   assert.equal(shouldPreventScreenCapture(false, false), false);
   assert.equal(shouldPreventScreenCapture(true, false), true);
 });
 
-test('the warning in the source still says never to ship it false', () => {
-  // If someone deletes the warning, they are removing the only context the
-  // next person gets.
+test('the source still records WHY the constant was retired', () => {
+  /*
+   * COS-1057 — the old guard asserted a warning about never shipping the
+   * constant `false`. That warning describes a control that no longer exists,
+   * and keeping it would send the next reader hunting for a lever that does
+   * nothing.
+   *
+   * What must survive is the reason: one place to look, and do not put the
+   * constant back into the decision.
+   */
   const src = readFileSync(new URL('../../lib/screenshot-policy.ts', import.meta.url), 'utf8');
-  assert.match(src, /Never ship a binary or a\s*\n\s*\* lasting OTA with this set to false/);
+  assert.match(src, /RETIRED AS A CONTROL/);
+  assert.match(src, /DO NOT re-introduce this into the decision/);
 });
