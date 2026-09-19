@@ -7,6 +7,7 @@ import { useReportTrends } from '@/hooks/use-report-trends'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTrends'
 import TrendSourceBar from '@/components/health-summary/TrendSourceBar'
+import { buildTrendSources } from '@/lib/trend-sources'
 import { fetchAssessments } from '@/services/api/assessments'
 import type { LongitudinalTrend, TrendDataPoint } from '@/services/api/types'
 import { fetchTrendsSummary, type TrendsSummary } from '@/services/api/trends'
@@ -164,17 +165,21 @@ export default function HealthTrendsScreen() {
     const assessmentCount = new Set(
       (assessmentsQuery.data ?? []).map((r) => r.instrumentId),
     ).size
-    return [
-      { key: 'clinic', label: 'From your clinic', count: clinicTrends.length, color: '#0EA5E9' },
-      { key: 'checkins', label: 'Your check-ins', count: assessmentCount, color: '#8B5CF6' },
-      // NOT "Apple Health": on Android the same data is Health Connect, and
-      // health-connect.ts:686 mislabels its own rows `source: 'apple-health'`
-      // (wrong label, right bucket). "Your devices" is true on both.
-      { key: 'devices', label: 'From your devices', count: appleHealthTrends.length, color: '#10B981' },
-      // A segment is only drawn when its producer actually returned rows.
-      // Today the clinic bucket is empty on every stage, so most accounts
-      // will show two segments — that is the honest picture, not a bug.
-    ].filter((s) => s.count > 0)
+    /*
+     * COS-1045 — built from lib/trend-sources, which Home now uses too.
+     *
+     * The labels, colours and drop-empty rule used to live inline here. Home
+     * needed the same bar, and copying three labels and three hex values into
+     * a second file is how a patient ends up seeing the same data described
+     * two ways on two screens. The reasoning that was in this comment block
+     * moved with them — including why the device segment must never say
+     * "Apple Health".
+     */
+    return buildTrendSources({
+      clinic: clinicTrends.length,
+      checkins: assessmentCount,
+      devices: appleHealthTrends.length,
+    })
   }, [clinicTrends.length, appleHealthTrends.length, assessmentsQuery.data])
 
   /**

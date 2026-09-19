@@ -20,6 +20,7 @@ import CurrentConditionsSection from '@/components/health-summary/CurrentConditi
 import MedicationsByConditionSection from '@/components/health-summary/MedicationsByConditionSection';
 import LabsByConditionSection from '@/components/health-summary/LabsByConditionSection';
 import VitalsRedFlagSection from '@/components/health-summary/VitalsRedFlagSection';
+import ReportsSection from '@/components/health-summary/ReportsSection';
 import TreatmentsSupportsSection from '@/components/health-summary/TreatmentsSupportsSection';
 import RecommendationsSection from '@/components/health-summary/RecommendationsSection';
 import ShareSummarySection from '@/components/health-summary/ShareSummarySection';
@@ -62,6 +63,15 @@ function HealthSummaryScreenInner() {
   const canMedications = useCanRender('plan.medications-by-condition');
   const canLabs = useCanRender('plan.labs-by-condition');
   const canVitals = useCanRender('plan.vitals-red-flag');
+  /*
+   * COS-1045 — Reports, gated like every other section on this screen.
+   *
+   * `useCanRender` is fail-open on an unknown, which is the right default for
+   * clinical content the patient owns: hiding a patient's own reports because
+   * /v1/auth/me timed out is a safety problem that looks identical to a
+   * correct deny, so nobody reports it.
+   */
+  const canReports = useCanRender('plan.reports');
   const canTreatments = useCanRender('plan.treatments-supports');
   const canRecommendations = useCanRender('plan.recommendations');
   const canShare = useCanRender('plan.share-summary');
@@ -224,6 +234,7 @@ function HealthSummaryScreenInner() {
             {canMedications && <MedicationsByConditionSection />}
             {canLabs && <LabsByConditionSection />}
             {canVitals && <VitalsRedFlagSection />}
+            {canReports && <ReportsSection />}
             {canTreatments && <TreatmentsSupportsSection />}
             {canRecommendations && <RecommendationsSection />}
             {canShare && <ShareSummarySection />}
