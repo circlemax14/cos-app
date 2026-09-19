@@ -136,3 +136,30 @@ describe('COS-1063 — the old duplicate People screen is gone', () => {
     assert.ok(!/name="connections"/.test(layout), 'the connections Tabs.Screen entry must be removed');
   });
 });
+
+
+describe('COS-1064 — the Social entry is gated by the plan', () => {
+  test('THE POINT: each row is gated on ITS OWN destination', () => {
+    /*
+     * Chat is a plan feature now. A row that leads somewhere the plan excludes
+     * would push the patient to a screen `useEnforceScreenAccess` immediately
+     * redirects away from — which teaches them the app is broken, not that
+     * they do not have the feature.
+     *
+     * Gated separately because a plan could grant answering requests without
+     * granting directory search; one shared flag would make that unexpressible.
+     */
+    assert.match(entryCode, /const canFind = canShow\('find-people'\)/);
+    assert.match(entryCode, /const canRequests = canShow\('connection-requests'\)/);
+    assert.match(entryCode, /\{canFind && \(/);
+    assert.match(entryCode, /\{canRequests && \(/);
+  });
+
+  test('with neither granted it renders NOTHING, not an empty block', () => {
+    assert.match(entryCode, /if \(!canFind && !canRequests\) return null/);
+  });
+
+  test("it reads the app's own gate, not a second copy of the rule", () => {
+    assert.match(entryCode, /import \{ useCanShowScreen \} from '@\/hooks\/use-feature-permissions'/);
+  });
+});
