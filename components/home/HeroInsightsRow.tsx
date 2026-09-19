@@ -43,6 +43,8 @@ import { useDailyReadFlag } from '@/hooks/use-daily-read-flag'
 import { useCanRender } from '@/hooks/use-entitlement'
 import { useScoreCatalog } from '@/hooks/use-score-catalog'
 import { pickWellbeingDisplayScore } from '@/lib/wellbeing-display-score'
+import { useWellbeingScoreEndpoint } from '@/hooks/use-wellbeing-history'
+import { ScoreRing } from '@/components/home/ScoreRing'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
 
@@ -207,7 +209,40 @@ function ReadinessTile({ variant }: { variant: Variant }): React.JSX.Element {
  */
 function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
   const catalog = useScoreCatalog()
-  const { score: composite, band } = pickWellbeingDisplayScore(catalog)
+  const derived = pickWellbeingDisplayScore(catalog)
+  /*
+   * COS-1041 — THE HOME NUMBER AND THE DETAIL NUMBER WERE DIFFERENT NUMBERS.
+   *
+   * Ken 2026-09-18: Home read 60, the Wellbeing screen read 51 out of 100,
+   * same user, same moment.
+   *
+   * The header above used to promise these "can never disagree", and it was
+   * half right: this tile and WellbeingScoreTile share pickWellbeingDisplayScore,
+   * so the two numbers ON HOME always matched. Nothing ever tied either of
+   * them to the SCREEN THEY OPEN, and that screen resolves differently:
+   *
+   *   wellbeing-score.tsx : endpoint?.overall ?? derivation?.composite
+   *   here (before)       : catalog.composite ?? mean(catalog.rows)
+   *
+   * Two independent paths, so two numbers. Worse, the fallback is not a
+   * rounding difference — it is the unweighted MEAN of whatever catalog rows
+   * happen to be numeric, which drifts further from the composite the more
+   * sparse a patient's data is. A patient with three strong rows and no
+   * composite sees a flattering average on Home and the real figure one tap
+   * later.
+   *
+   * So Home now reads the SAME endpoint first, in the SAME precedence, and
+   * keeps the derived value only as the offline/flag-off fallback that screen
+   * also uses. Home already pays for this query — useWellbeingScoreWarmer
+   * warms exactly this key above — so this is a cache read, not a new fetch.
+   */
+  const { data: endpoint } = useWellbeingScoreEndpoint()
+  const authoritative =
+    typeof endpoint?.overall === 'number' && Number.isFinite(endpoint.overall)
+      ? endpoint.overall
+      : derived.score
+  const composite = authoritative
+  const band = endpoint?.band ?? derived.band
   const hasScore = typeof composite === 'number' && Number.isFinite(composite)
   const bandTokens = band ? WELLBEING_BANDS[band] : null
   // COS-1020 — ScoreCatalog has carried `isLoading` all along; this tile just
@@ -228,7 +263,18 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
       }
       body={
         hasScore ? (
-          <Ready number={Math.round(composite as number)} chip={bandTokens} variant={variant} />
+          <Ready
+            number={Math.round(composite as number)}
+            chip={bandTokens}
+            variant={variant}
+            // 0-100, so progress is the score itself. Matches the detail
+            // screen's DialGauge, which uses center=50 span=50.
+            ring={{
+              progress: (composite as number) / 100,
+              color: bandTokens?.fg ?? '#5CBF9A',
+              trackColor: 'rgba(127,127,127,0.18)',
+            }}
+          />
         ) : isPendingFirstLoad ? (
           <Empty
             pending
@@ -381,12 +427,47 @@ function Ready({
   number,
   chip,
   variant,
+  ring,
 }: {
   number: number
   chip: { fg: string; bg: string; label: string } | null
   variant: Variant
+  /*
+   * COS-1041 — when present, the number is drawn inside a dial instead of
+   * bare. Optional rather than always-on because only the two 0-100 SCORES
+   * have a meaningful full-circle position; a tile showing a count or an age
+   * would be drawing a fraction of nothing.
+   */
+  ring?: { progress: number; color: string; trackColor: string } | null
 }): React.JSX.Element {
   const scoreStyle = variant === 'large' ? styles.scoreNumberLarge : styles.scoreNumber
+  const ringSize = variant === 'large' ? 92 : 64
+
+  if (ring) {
+    return (
+      <View style={styles.body}>
+        <ScoreRing
+          progress={ring.progress}
+          size={ringSize}
+          stroke={Math.max(5, Math.round(ringSize * 0.09))}
+          color={ring.color}
+          trackColor={ring.trackColor}
+        >
+          <Text style={scoreStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+            {number}
+          </Text>
+        </ScoreRing>
+        {chip && (
+          <View style={[styles.chip, { backgroundColor: chip.bg }]}>
+            <Text style={[styles.chipText, { color: chip.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.1}>
+              {chip.label}
+            </Text>
+          </View>
+        )}
+      </View>
+    )
+  }
+
   return (
     <View style={styles.body}>
       <Text style={scoreStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>

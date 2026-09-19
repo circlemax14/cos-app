@@ -284,6 +284,28 @@ export interface Medication {
   dosage: string;
   frequency: string;
   purpose: string;
+  /*
+   * COS-1041 — the FHIR MedicationRequest status, carried through at last.
+   *
+   * COS-1009 removed the server-side `status: 'active'` filter on purpose:
+   * "what was I given by this doctor" and "what am I taking now" are different
+   * questions, and the screen was silently answering only the second. Its
+   * comment closed with "Status still ships on every row, so the client
+   * separates current from past rather than blending them."
+   *
+   * That was true of the API and false of this client. The backend spreads the
+   * raw FHIR resource, so `status` has been on the wire the whole time — but
+   * this type never declared it and the mapper never read it, so the Health
+   * Status card had no way to separate anything and rendered six years of
+   * prescriptions as one undifferentiated list.
+   *
+   * Optional because a resource may legitimately omit it; absent is treated as
+   * past, never as current. Guessing "current" on missing data would put a
+   * discontinued drug in front of a clinician as an active one.
+   */
+  status?: string;
+  /** FHIR authoredOn. Used to order past medications newest-first. */
+  authoredOn?: string | null;
 }
 
 /** Richer medication from /v1/patients/me/medications */
