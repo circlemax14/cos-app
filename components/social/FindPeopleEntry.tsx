@@ -28,14 +28,35 @@ import { useRouter } from 'expo-router';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { useCanShowScreen } from '@/hooks/use-feature-permissions';
 
 export function FindPeopleEntry({ pendingCount = 0 }: { pendingCount?: number }) {
   const router = useRouter();
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  /*
+   * COS-1064 — chat is a plan feature now, so these two rows are gated like
+   * any other screen.
+   *
+   * Each row is gated on ITS OWN destination rather than both on one flag: a
+   * plan could reasonably grant answering requests without granting directory
+   * search. Showing a row that redirects straight home is worse than not
+   * showing it — the patient learns the app is broken, not that they lack the
+   * feature.
+   *
+   * `useCanShowScreen` defaults to VISIBLE while the query is in flight, and
+   * PlanBootGate (COS-1061) means the answer is normally already in hand.
+   */
+  const canShow = useCanShowScreen();
+  const canFind = canShow('find-people');
+  const canRequests = canShow('connection-requests');
+
+  // Nothing to offer. Render nothing rather than an empty bordered block.
+  if (!canFind && !canRequests) return null;
 
   return (
     <View style={styles.wrap}>
+      {canFind && (
       <Pressable
         onPress={() => router.push('/Home/find-people' as never)}
         accessibilityRole="button"
@@ -56,7 +77,9 @@ export function FindPeopleEntry({ pendingCount = 0 }: { pendingCount?: number })
         </View>
         <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.subtext} />
       </Pressable>
+      )}
 
+      {canRequests && (
       <Pressable
         onPress={() => router.push('/Home/connection-requests' as never)}
         accessibilityRole="button"
@@ -94,6 +117,7 @@ export function FindPeopleEntry({ pendingCount = 0 }: { pendingCount?: number })
         )}
         <MaterialIcons name="chevron-right" size={getScaledFontSize(22)} color={colors.subtext} />
       </Pressable>
+      )}
     </View>
   );
 }
