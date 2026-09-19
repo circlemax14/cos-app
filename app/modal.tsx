@@ -4,6 +4,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
+import { FindPeopleEntry } from '@/components/social/FindPeopleEntry';
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
 import { Button, Menu, Portal, Text, TextInput as PaperTextInput } from 'react-native-paper';
@@ -842,7 +843,24 @@ export default function ModalScreen() {
                         </View>
                       </ScrollView>
                     ) : category.subCategories && category.subCategories.length > 0 ? (
-                      // Category has subcategories: Show nested tabs
+                      /*
+                       * COS-1063 — ONE direct child, always.
+                       *
+                       * react-native-paper-tabs <TabScreen> with more than one
+                       * direct child crashes the native snapshot on iOS 26, so
+                       * the Social tab's new "Find people" entry cannot be a
+                       * sibling of the nested <TabsProvider>. This flex:1 View
+                       * wraps them instead: same children, same order, one
+                       * extra parent — the shape COS-1032 used for the same
+                       * reason.
+                       *
+                       * The entry renders for `social` only. The other
+                       * subcategory tabs (Medical, Psychological) are provider
+                       * directories; connecting to a person is not what they
+                       * are for.
+                       */
+                      <View style={{ flex: 1 }}>
+                      {category.id === 'social' && <FindPeopleEntry />}
                       <TabsProvider defaultIndex={0}>
                         <Tabs
                           showLeadingSpace={false}
@@ -1069,6 +1087,7 @@ export default function ModalScreen() {
                           })}
                         </Tabs>
                       </TabsProvider>
+                      </View>
                     ) : (
                       // Category has no subcategories: Show all providers directly
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
