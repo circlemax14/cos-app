@@ -76,6 +76,41 @@ COMMIT=$(git rev-parse --short HEAD)
 
 # ── Set every version artifact + .env for this environment, and verify ──────
 echo "=== preparing $ENVIRONMENT $VERSION (commit $COMMIT) ==="
+# ── Restore on EXIT, not on success ────────────────────────────────────────
+# COS-1040. prepare-build.sh below rewrites SEVEN version-stamped files and
+# swaps .env, and .env is inlined into every bundle. This script previously
+# restored nothing: with `set -euo pipefail` and several explicit `exit 1`s,
+# ANY failure after this point left the checkout stamped for a non-prod
+# environment with a non-prod .env still on disk.
+#
+# That is not hypothetical. On 2026-09-18 a failed dev precheck left app.json,
+# both plists, the pbxproj, build.gradle, the manifest and strings.xml reading
+# 2.1.0/development, and .env pointing at the dev API. An archive or a `git
+# add -A` from that state ships dev config to production — which is COS-742
+# (dev values committed to main) and the 2026-08-18 SIGABRT, twice over.
+#
+# cos-app/CLAUDE.md states the rule: a build script that swaps .env must trap
+# the restore on EXIT, not at the end of the happy path. This is that trap.
+# It restores unconditionally, including after a SUCCESSFUL non-prod publish —
+# leaving the tree stamped for dev because the publish worked is the same
+# hazard arriving by a happier route.
+_OTA_STAMPED="app.json ios/CSH/Info.plist ios/CSH/Supporting/Expo.plist \
+ios/CSH.xcodeproj/project.pbxproj android/app/build.gradle \
+android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/strings.xml"
+_OTA_ENV_BACKUP="$(mktemp)"
+cp .env "$_OTA_ENV_BACKUP" 2>/dev/null || true
+_ota_restore() {
+  local rc=$?
+  cp "$_OTA_ENV_BACKUP" .env 2>/dev/null || true
+  rm -f "$_OTA_ENV_BACKUP"
+  # The tree was verified clean above, so HEAD is the correct restore target.
+  git checkout -- $_OTA_STAMPED 2>/dev/null || true
+  echo
+  echo "   restored .env and the version stamps to HEAD."
+  return $rc
+}
+trap _ota_restore EXIT
+
 ./scripts/prepare-build.sh "$ENVIRONMENT" "$VERSION" >/tmp/prep-ota.log 2>&1 || {
   echo "!! prepare-build.sh failed:"; tail -20 /tmp/prep-ota.log; exit 1; }
 grep -E "^  (ok|FAIL)" /tmp/prep-ota.log | sed 's/^/  /'
@@ -91,7 +126,14 @@ API=$(grep '^EXPO_PUBLIC_API_BASE_URL' .env | cut -d= -f2-)
 echo
 echo "=== verifying endpoints inline into the bundle ==="
 rm -rf /tmp/ota-precheck
-npx expo export --platform ios --output-dir /tmp/ota-precheck --source-maps >/dev/null 2>&1
+# --clear is NOT optional. COS-1040 — without it Metro serves a CACHED bundle
+# whose EXPO_PUBLIC_* were inlined for whatever environment was exported last,
+# ignoring the .env this script just swapped in. Observed 2026-09-18: a `dev`
+# publish produced a bundle byte-identical to the previous `prod` one (same
+# content hash), carrying the production API host and Cognito pool. The check
+# below caught it, which is the only reason it was not published — but the
+# cache is the bug and the check is the net, so clear the cache.
+npx expo export --platform ios --output-dir /tmp/ota-precheck --source-maps --clear >/dev/null 2>&1
 HBC=$(ls /tmp/ota-precheck/_expo/static/js/ios/*.hbc 2>/dev/null | head -1)
 [ -z "$HBC" ] && { echo "!! export produced no bundle"; exit 1; }
 
@@ -113,16 +155,21 @@ echo "  runtime : $VERSION"
 echo "  API     : $API"
 echo "  commit  : $COMMIT"
 echo
+# --clear-cache for the same reason as the precheck's --clear (COS-1040): this
+# is a SEPARATE bundling run, so a clean precheck proves nothing about what
+# actually gets published. Verifying one bundle and shipping another is worse
+# than not checking at all.
 EAS_SKIP_AUTO_FINGERPRINT=1 npx eas update \
   --branch "$BRANCH" \
+  --clear-cache \
   --non-interactive \
   --message "$MESSAGE [$ENVIRONMENT $VERSION @ $COMMIT]"
 
 echo
 if [ "$ENVIRONMENT" != "prod" ]; then
 cat <<WARN
-⚠️  .env still points at $ENVIRONMENT. It is inlined into every bundle.
-    Before any prod publish or archive:  ./scripts/prepare-build.sh prod <version>
+ℹ️  .env and the version stamps are restored to HEAD automatically on exit
+    (see the trap above). Nothing is left pointing at $ENVIRONMENT.
 WARN
 fi
 echo "Rollback: npx eas update:list --branch $BRANCH   then"
