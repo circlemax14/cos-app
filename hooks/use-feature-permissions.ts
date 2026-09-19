@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'expo-router'
 import { apiClient } from '@/lib/api-client'
+import { decideFeatureLaunched, decideScreenVisible } from '@/lib/screen-visibility'
 
 export type Feature =
   | 'HEALTH_CHAT'
@@ -42,7 +43,15 @@ const FEATURE_DEFAULT_FALSE: ReadonlySet<Feature> = new Set<Feature>([
 
 export interface ScreenAccess {
   enabled: boolean
-  reason: 'public' | 'entitlement' | 'entitlement-missing' | 'care-manager-off' | 'unknown-feature'
+  reason:
+    | 'public'
+    | 'entitlement'
+    | 'entitlement-missing'
+    | 'care-manager-off'
+    | 'unknown-feature'
+    // COS-1061 — the feature is switched off in Feature Control. Nobody has
+    // it, on any plan.
+    | 'not-launched'
 }
 
 export interface FeaturePermissionsResponse {
@@ -55,6 +64,19 @@ export interface FeaturePermissionsResponse {
    * to showing everything, which is the behaviour it had anyway.
    */
   screens?: Record<string, ScreenAccess>
+  /**
+   * COS-1061 — axis 1: is this feature built and switched on at all?
+   *
+   * `screens` already has this folded in server-side, so a client reading only
+   * that is correctly gated. This map is here so the app applies the check
+   * ITSELF — Vishal asked for both checks to be mandatory — and it is not
+   * redundant: `screens` is cached on the device, and a stale
+   * `enabled: true` must not outvote a fresh `launched: false`.
+   *
+   * Optional, and read ONLY as `=== false`. An older API omits it entirely,
+   * and treating a missing answer as "not launched" would blank every screen.
+   */
+  launched?: Record<string, boolean>
 }
 
 export function useFeaturePermissions() {
@@ -81,7 +103,24 @@ export function useFeaturePermissions() {
  */
 export function useCanShowScreen(): (route: string) => boolean {
   const { data } = useFeaturePermissions()
-  return (route: string) => data?.screens?.[route]?.enabled ?? true
+  /*
+   * COS-1061 — BOTH checks. The decision table itself is pure and lives in
+   * lib/screen-visibility.ts, where every branch is tested without a renderer
+   * or a device.
+   */
+  return (route: string) => decideScreenVisible(route, data?.screens, data?.launched)
+}
+
+/**
+ * COS-1061 — is this feature switched on platform-wide, ignoring the plan?
+ *
+ * For call sites that want to hide a thing outright rather than offer an
+ * upgrade path: "not in your plan" and "does not exist yet" are different
+ * messages, and only the first is worth showing a patient.
+ */
+export function useIsFeatureLaunched(): (featureKeyOrRoute: string) => boolean {
+  const { data } = useFeaturePermissions()
+  return (key: string) => decideFeatureLaunched(key, data?.screens, data?.launched)
 }
 
 export function useIsFeatureEnabled(feature: Feature): boolean {

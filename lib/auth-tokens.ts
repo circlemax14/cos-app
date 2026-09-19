@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { clearEntitlementCache } from './entitlement-cache';
+import { clearScreenAccessCache } from './screen-access-cache';
 import { clearDeferredNavigation } from './locked-nav-queue';
 
 const KEYS = {
@@ -243,6 +244,20 @@ export async function clearTokens(): Promise<void> {
     await clearEntitlementCache();
   } catch {
     // The in-memory half is already cleared, which is what protects this session.
+  }
+
+  /*
+   * COS-1061 — and the screen map, for exactly the same reason.
+   *
+   * PlanBootGate renders the app straight from this cache when it is present.
+   * Leaving one account's map behind would let the next person on this device
+   * see that patient's navigation for the moment before their own map lands —
+   * which tab bar you get is itself a statement about someone's care.
+   */
+  try {
+    await clearScreenAccessCache();
+  } catch {
+    // Same contract: the in-memory copy is already gone.
   }
 
   /*

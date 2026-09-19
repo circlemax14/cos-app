@@ -39,6 +39,7 @@ import { QueryProvider } from '@/providers/QueryProvider';
 // a QueryClient in context.
 import { FeatureFlagBridge } from '@/components/FeatureFlagBridge';
 import { ScreenCaptureBridge } from '@/components/privacy/ScreenCaptureBridge';
+import { PlanBootGate } from '@/components/PlanBootGate';
 import { SettingsProvider } from '@/stores/settings-store';
 import { UserPhotoProvider } from '@/stores/user-photo-store';
 import { installRedactedConsoleError } from '@/lib/redact-error-logs';
@@ -267,7 +268,20 @@ function RootLayout() {
                 */}
                 <GestureHandlerRootView style={{ flex: 1 }}>
                 <View style={{ flex: 1 }} {...idleHandlers}>
-                <StackWithAppLock />
+                {/*
+                  COS-1061 — do not draw the app until we know which screens it
+                  has. Wraps the Stack rather than the tab layout because Vishal
+                  asked for the whole app, and because the flash is not confined
+                  to the tab bar — a pushed screen the plan excludes has the
+                  same problem.
+
+                  INSIDE the providers and inside <QueryProvider> (its hook
+                  needs the client), and OUTSIDE the Stack so no route mounts
+                  and starts firing its own queries behind the loader.
+                */}
+                <PlanBootGate>
+                  <StackWithAppLock />
+                </PlanBootGate>
                 <StatusBar style="auto" />
                 </View>
                 </GestureHandlerRootView>
