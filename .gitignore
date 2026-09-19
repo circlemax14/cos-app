@@ -28,3 +28,22 @@ dist/
 # time Studio opens the android/ project. Not part of the build.
 .idea/
 .android-build.lock/
+
+# COS-1051 — Android upload-signing secrets. NEVER commit these.
+#
+# `keystore.properties` holds the store and key passwords in plaintext, and
+# `upload.keystore` is the signing key itself. Together they are everything
+# needed to sign a release as us.
+#
+# They were never committed, but nothing on main stopped it: the ignore rules
+# lived only on the parked COS-1037 branch, so a `git add -A` here would have
+# taken both. That is not hypothetical in this repo — COS-742 committed dev
+# build config to main exactly that way, and COS-1032 repeated it.
+#
+# Losing the upload key is recoverable (Google support can reset it); leaking
+# it is not, because anyone holding it can sign an artifact that Play accepts
+# as ours.
+android/keystore.properties
+android/app/upload.keystore
+android/app/*.keystore
+android/app/*.jks
