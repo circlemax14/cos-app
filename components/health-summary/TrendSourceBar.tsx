@@ -149,12 +149,24 @@ function TrendSourceBar({ sources, noun = 'things we track', testID }: TrendSour
 }
 
 const styles = StyleSheet.create({
+  /*
+   * COS-1074 — this owns its INSIDE. It does not set its own outer spacing.
+   *
+   * `marginBottom: Spacing.md` used to live here. On the Health Trends screen
+   * that read as the gap to the next block, so it looked harmless. COS-1072
+   * put the bar inside the Home trends card as that panel's only child, where
+   * the margin had nothing to separate it from: 10px above the bordered box
+   * and 28px below it, against the card's clipped bottom edge.
+   *
+   * A shared component dictating its neighbours' gap is a bug waiting for its
+   * second caller. Spacing belongs to whoever is doing the arranging; both
+   * call sites now set it.
+   */
   wrap: {
     borderWidth: 1,
     borderRadius: Radii.md,
     padding: Spacing.md,
     gap: Spacing.sm,
-    marginBottom: Spacing.md,
   },
   bar: {
     flexDirection: 'row',
