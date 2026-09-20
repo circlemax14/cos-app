@@ -184,15 +184,39 @@ export function PlanBootGate({ children }: { children: React.ReactNode }) {
   // Genuinely unknown: first run, still fetching. This is the loader.
   if (signedIn === null || isLoading || !cacheReady || !mayUseCache) {
     return (
+      /*
+       * COS-1072 — an overlay, not a bare screen. Vishal: "there should be a
+       * full screen loader with an overlay effect."
+       *
+       * The scrim is drawn rather than laid OVER the app, because the children
+       * are deliberately unmounted: rendering them behind would mount every
+       * route and start its queries, which is the cost this gate exists to
+       * avoid. So the effect is a dimmed ground with a raised card on it —
+       * the look of an overlay without the behaviour that defeats the point.
+       *
+       * Primitives only: View / Text / ActivityIndicator. No Modal (ADR-0003
+       * bans it on this path) and no Animated.
+       */
       <View
-        style={[styles.container, { backgroundColor: colors.background }]}
+        style={[styles.scrim, { backgroundColor: colors.background }]}
         accessibilityRole="progressbar"
         accessibilityLabel="Loading your plan"
       >
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.label, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
-          Setting up your app…
-        </Text>
+        <View style={styles.scrimVeil} pointerEvents="none" />
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.background, borderColor: colors.border ?? 'rgba(127,127,127,0.25)' },
+          ]}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
+            Setting up your app…
+          </Text>
+          <Text style={[styles.sublabel, { color: colors.subtext, fontSize: getScaledFontSize(12.5) }]}>
+            Checking which features your plan includes
+          </Text>
+        </View>
       </View>
     );
   }
@@ -203,14 +227,38 @@ export function PlanBootGate({ children }: { children: React.ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scrim: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
+  /* A flat dim over the ground, so the card below reads as raised above it. */
+  scrimVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  card: {
+    minWidth: 220,
+    maxWidth: 320,
+    alignItems: 'center',
+    paddingVertical: 26,
+    paddingHorizontal: 24,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 20,
+    elevation: 8,
+  },
   label: {
-    marginTop: 14,
+    marginTop: 16,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  sublabel: {
+    marginTop: 6,
     textAlign: 'center',
   },
 });

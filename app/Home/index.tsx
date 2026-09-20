@@ -60,8 +60,7 @@ import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
 // 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
 import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
 import TrendSourceBar from '@/components/health-summary/TrendSourceBar';
-import { buildTrendSources } from '@/lib/trend-sources';
-import { useHealthKitTrends } from '@/hooks/use-healthkit-trends';
+import { useTrendSourceCounts } from '@/hooks/use-trend-source-counts';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
 import { buildReadinessExplainPrompt } from '@/lib/readiness-explain-prompt';
@@ -3024,24 +3023,30 @@ function HomeScreenInner() {
    * components/health-summary/TrendSourceBar — the bar Ken already approved in
    * COS-967 — rather than a second implementation.
    *
-   * `useHealthKitTrends` is a cached react-query hook that does not fetch at
-   * all on a device with no health source, and the Trends screen shares its
-   * key, so this costs a cache read rather than a new cold-mount request.
-   *
-   * The clinic bucket is deliberately not fetched here: it is empty on every
-   * stage today, and adding a network call to Home for a segment that never
-   * draws would be cost for nothing. buildTrendSources drops it.
+   * COS-1072 — the paragraph that used to sit here said the clinic bucket was
+   * "empty on every stage today" and therefore not worth fetching. That was
+   * true when written and is not any more, and the zero it justified is what
+   * made Home say 11 while the Trends screen said 106. Removed rather than
+   * edited, because the decision it recorded has been reversed.
    */
-  const { data: homeHealthKitTrends } = useHealthKitTrends();
-  const trendSources = useMemo(
-    () =>
-      buildTrendSources({
-        clinic: 0,
-        checkins: 0,
-        devices: (homeHealthKitTrends ?? []).length,
-      }),
-    [homeHealthKitTrends],
-  );
+  /*
+   * COS-1072 — the SAME numbers the Health Trends screen shows.
+   *
+   * This was `{ clinic: 0, checkins: 0, devices: healthKitTrends.length }`,
+   * which rendered "11 things we track" on Home beside a screen that said 106.
+   *
+   * The zeroes were deliberate and are now wrong. The comment above them said
+   * the clinic bucket "is empty on every stage today" — true when written,
+   * false since patients started having labs, and a hard-coded zero never
+   * notices that the world moved. The device count was also raw, so it counted
+   * metrics the clinic already covers.
+   *
+   * useTrendSourceCounts reuses the Health Trends screen's query keys, so the
+   * two screens cannot disagree and navigating from here costs no extra fetch.
+   * It does add three requests to Home's first load — the honest price of the
+   * number being true. See hooks/use-trend-source-counts.ts.
+   */
+  const { sources: trendSources, isLoading: trendSourcesLoading } = useTrendSourceCounts();
 
   // SCRUM-639 — "Why?" button opens the AI chat with a prefill prompt
   // built from today's driver metrics. Chat route auto-sends the
@@ -3961,18 +3966,40 @@ function HomeScreenInner() {
               </Text>
             </View>
           )}
-        </TouchableOpacity>
+          {/*
+            COS-1072 — the source bar now lives INSIDE this card.
+            ───────────────────────────────────────────────────────────
+            It used to sit below as a separate block. Vishal: "health trends
+            has this bar and when I click on it I will be taken to the health
+            trends screen — they both should be merged together."
 
-        {/* COS-1045 — the bar sits WITH the button rather than inside it.
-            TrendSourceBar is styled for a normal card background; the hero
-            above is filled with colors.tint, and re-theming a shared
-            component for one caller is how it stops being shared. Renders
-            nothing when no source has rows. */}
-        {trendSources.length > 0 && (
-          <View style={{ marginHorizontal: 16, marginTop: -4, marginBottom: 12 }}>
-            <TrendSourceBar sources={trendSources} noun="things we track" />
-          </View>
-        )}
+            COS-1045 kept them apart for a real reason: TrendSourceBar is
+            styled for a normal card background and this hero is filled with
+            colors.tint, and re-theming a shared component for one caller is
+            how it stops being shared. That reason is respected rather than
+            overridden — the bar gets its own surface-coloured panel in the
+            lower half of the card, so it still renders on the background it
+            was designed for. One card, two zones, one tap target.
+
+            Full-bleed: the card's horizontal padding is moved onto the header
+            zone so this panel can reach the rounded edges. The card already
+            sets overflow:'hidden', so the corners clip.
+          */}
+          {!trendSourcesLoading && trendSources.length > 0 && (
+            <View
+              style={[
+                styles.trendsHeroStats,
+                {
+                  backgroundColor: colors.background,
+                  marginHorizontal: isTabletDevice ? -14 : -12,
+                  marginBottom: isTabletDevice ? -16 : -12,
+                },
+              ]}
+            >
+              <TrendSourceBar sources={trendSources} noun="things we track" />
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/*
          * SCRUM-653: standalone WellbeingMapPreview injection removed —
@@ -4292,6 +4319,18 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingHorizontal: 12,
     borderRadius: 14,
+  },
+  /*
+   * COS-1072 — the lower zone of the trends card, holding TrendSourceBar on a
+   * surface-coloured background rather than on the tint. marginHorizontal and
+   * marginBottom are applied at the call site because they must cancel the
+   * card's own padding, which differs between phone and tablet.
+   */
+  trendsHeroStats: {
+    marginTop: 14,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
   trendsHeroBlob: {
     position: 'absolute',

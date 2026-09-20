@@ -4,6 +4,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { useTrends } from '@/hooks/use-trends'
 import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
 import { useReportTrends } from '@/hooks/use-report-trends'
+import { useTrendSourceCounts } from '@/hooks/use-trend-source-counts'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import { SelfAssessmentTrends } from '@/components/health-plan/SelfAssessmentTrends'
 import TrendSourceBar from '@/components/health-summary/TrendSourceBar'
@@ -144,43 +145,31 @@ export default function HealthTrendsScreen() {
       .filter((t) => t.dataPoints.length > 0)
   }, [healthKitTrends, clinicTrends, timeFilter])
 
-  /*
-   * COS-967 — Ken's coloured bar. See components/health-summary/TrendSourceBar
-   * for why it is derived rather than drawn to a fixed three segments.
-   *
-   * `assessments-trends` is the SAME query key SelfAssessmentTrends uses, so
-   * React Query serves both from one fetch — this adds no request.
-   *
-   * It counts METRICS TRACKED, not readings. A step counter emits a point a
-   * day and would otherwise dwarf a whole lab panel, which would teach the
-   * patient something false about where their records come from.
-   */
-  const assessmentsQuery = useQuery({
-    queryKey: ['assessments-trends'],
-    queryFn: fetchAssessments,
-    staleTime: 60 * 1000,
-  })
 
-  const trendSources = useMemo(() => {
-    const assessmentCount = new Set(
-      (assessmentsQuery.data ?? []).map((r) => r.instrumentId),
-    ).size
-    /*
-     * COS-1045 — built from lib/trend-sources, which Home now uses too.
-     *
-     * The labels, colours and drop-empty rule used to live inline here. Home
-     * needed the same bar, and copying three labels and three hex values into
-     * a second file is how a patient ends up seeing the same data described
-     * two ways on two screens. The reasoning that was in this comment block
-     * moved with them — including why the device segment must never say
-     * "Apple Health".
-     */
-    return buildTrendSources({
-      clinic: clinicTrends.length,
-      checkins: assessmentCount,
-      devices: appleHealthTrends.length,
-    })
-  }, [clinicTrends.length, appleHealthTrends.length, assessmentsQuery.data])
+
+  /*
+   * COS-1072 — the bar's numbers come from the shared hook now.
+   *
+   * They used to be computed here from this screen's own arrays, and Home
+   * computed its own separately: Home said 11, this screen said 106, same
+   * component and same words.
+   *
+   * TWO BEHAVIOUR CHANGES, both deliberate:
+   *
+   * 1. The device count is no longer TIME-FILTERED. It was
+   *    `appleHealthTrends.length`, which is filtered by the range selector, so
+   *    "things we track" changed when the patient chose 7d instead of 1y.
+   *    What we track is not a function of the window you are looking through.
+   *
+   * 2. Devices are de-duplicated against clinic metrics. If the clinic
+   *    measures your heart rate and so does your watch, that is one measure
+   *    with two sources.
+   *
+   * The hook reuses the very query keys this screen already holds
+   * (useTrends / useReportTrends / useHealthKitTrends / 'assessments-trends'),
+   * so this adds no request here. See hooks/use-trend-source-counts.ts.
+   */
+  const { sources: trendSources } = useTrendSourceCounts()
 
   /**
    * SCRUM-265 #13 made this a slider and capped it at the ten most
