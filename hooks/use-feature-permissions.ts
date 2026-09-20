@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'expo-router'
 import { apiClient } from '@/lib/api-client'
 import { decideFeatureLaunched, decideScreenVisible } from '@/lib/screen-visibility'
+import { readCachedScreenAccess } from '@/lib/screen-access-cache'
 
 export type Feature =
   | 'HEALTH_CHAT'
@@ -101,14 +102,47 @@ export function useFeaturePermissions() {
  * never heard of. Hiding navigation on a slow network would be a worse
  * failure than briefly showing a screen the plan does not include.
  */
+/**
+ * COS-1069 — the last-known map from disk, in the shape the decision wants.
+ *
+ * `PlanBootGate` lets the app render as soon as a disk-cached map exists. That
+ * is deliberate: a returning patient should not sit behind a spinner. But the
+ * gate and this hook were reading DIFFERENT things — the gate read the disk
+ * cache, this hook read only the live query — so on every launch after the
+ * first the gate opened, `data` was still undefined here, and every screen fell
+ * through to the visible default until the network answered.
+ *
+ * Which is the exact flash the gate was built to remove, reintroduced by the
+ * gate itself. A gate must not open on evidence the gated code cannot see.
+ */
+function cachedMaps(): {
+  screens: Record<string, { enabled: boolean }> | undefined
+  launched: Record<string, boolean> | undefined
+} {
+  const cached = readCachedScreenAccess()
+  if (!cached) return { screens: undefined, launched: undefined }
+  const screens: Record<string, { enabled: boolean }> = {}
+  for (const [route, enabled] of Object.entries(cached.screens)) screens[route] = { enabled }
+  return { screens, launched: cached.launched }
+}
+
 export function useCanShowScreen(): (route: string) => boolean {
   const { data } = useFeaturePermissions()
   /*
    * COS-1061 — BOTH checks. The decision table itself is pure and lives in
    * lib/screen-visibility.ts, where every branch is tested without a renderer
    * or a device.
+   *
+   * COS-1069 — live answer first, then the device's last-known map, then the
+   * visible default. Same precedence as the entitlement gate, and the same
+   * reason: a remembered answer beats a guess, and only a genuine unknown
+   * falls through to showing something.
    */
-  return (route: string) => decideScreenVisible(route, data?.screens, data?.launched)
+  return (route: string) => {
+    if (data) return decideScreenVisible(route, data.screens, data.launched)
+    const fallback = cachedMaps()
+    return decideScreenVisible(route, fallback.screens, fallback.launched)
+  }
 }
 
 /**
@@ -120,7 +154,11 @@ export function useCanShowScreen(): (route: string) => boolean {
  */
 export function useIsFeatureLaunched(): (featureKeyOrRoute: string) => boolean {
   const { data } = useFeaturePermissions()
-  return (key: string) => decideFeatureLaunched(key, data?.screens, data?.launched)
+  return (key: string) => {
+    if (data) return decideFeatureLaunched(key, data.screens, data.launched)
+    const fallback = cachedMaps()
+    return decideFeatureLaunched(key, fallback.screens, fallback.launched)
+  }
 }
 
 export function useIsFeatureEnabled(feature: Feature): boolean {
