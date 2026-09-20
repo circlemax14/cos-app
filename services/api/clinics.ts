@@ -25,14 +25,28 @@ function parseStatus(value: string | undefined): ClinicStatus | undefined {
   return VALID_STATUSES.includes(value as ClinicStatus) ? (value as ClinicStatus) : undefined;
 }
 
+/**
+ * COS-1066 — this used to end in `catch { return [] }`, and that is why Ken's
+ * problem was invisible for two days.
+ *
+ * `use-connected-ehrs` (COS-1059) was given a `loadFailed` state so a broken
+ * load could stop claiming "No connected clinics yet". That fix could never
+ * fire: THIS function sits underneath it and turned every failure — a timeout,
+ * a 500, a 403, an expired token — into an empty array. The hook received a
+ * successful response containing nothing, because that is exactly what an
+ * empty array is.
+ *
+ * Two silent catches on one path, and the outer one was the one that got
+ * fixed. It now throws, and the hook decides what a failure means — which is
+ * the whole point of the hook having a failure state.
+ */
 export async function fetchConnectedClinics(): Promise<Clinic[]> {
-  try {
-    const res = await apiClient.get<{
-      success: boolean;
-      data: OrgWire[];
-    }>('/v1/patients/me/clinics');
+  const res = await apiClient.get<{
+    success: boolean;
+    data: OrgWire[];
+  }>('/v1/patients/me/clinics');
 
-    return res.data.data.map((org) => {
+  return (res.data.data ?? []).map((org) => {
       const addr = org.address?.[0];
       return {
         id: org.id,
@@ -49,7 +63,4 @@ export async function fetchConnectedClinics(): Promise<Clinic[]> {
         lastSyncAt: findExtension(org.extension, 'lastSyncAt'),
       };
     });
-  } catch {
-    return [];
-  }
 }
