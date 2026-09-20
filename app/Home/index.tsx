@@ -4329,7 +4329,12 @@ const styles = StyleSheet.create({
   trendsHeroStats: {
     marginTop: 14,
     paddingHorizontal: 12,
-    paddingTop: 10,
+    /*
+     * COS-1074 — symmetric now that TrendSourceBar no longer carries its own
+     * marginBottom. Before, the bar added 16 below itself and the panel added
+     * 12, giving 10 above the bordered box and 28 below it.
+     */
+    paddingTop: 12,
     paddingBottom: 12,
   },
   trendsHeroBlob: {

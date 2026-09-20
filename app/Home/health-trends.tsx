@@ -1283,7 +1283,13 @@ const styles = StyleSheet.create({
   },
   summarizeCard: {
     marginHorizontal: 16,
-    marginTop: 12,
+    /*
+     * COS-1074 — 28, not 12. TrendSourceBar used to contribute 16 of its own
+     * marginBottom and React Native never collapses margins, so the real gap
+     * here has always been 28. The bar stopped setting that margin; this keeps
+     * the screen pixel-identical rather than silently tightening it.
+     */
+    marginTop: 28,
     marginBottom: 4,
     borderRadius: 14,
     padding: 14,
