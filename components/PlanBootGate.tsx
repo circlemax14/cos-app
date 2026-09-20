@@ -68,6 +68,25 @@ import { readSessionPresence } from '@/lib/auth-tokens';
  */
 export const BOOT_TIMEOUT_MS = 12_000;
 
+/**
+ * COS-1069 — how long to hold the loader before falling back to the device's
+ * last-known map.
+ *
+ * The cache exists so a patient on a train is not locked out. It was reading as
+ * "render immediately, always", which skipped the loader on every launch after
+ * the first — and the whole point of the loader is that the plan is resolved
+ * BEFORE any screen is drawn. Vishal, twice: *"show a full page loader while
+ * the data is loading… when the plan data is fetched, then we show the screens
+ * which are available."*
+ *
+ * So the cache is a FALLBACK, not a fast path. A normal fetch answers in a few
+ * hundred milliseconds and the `data` branch above fires first, so this timer
+ * is rarely reached — it bounds the wait for a slow network rather than adding
+ * one. Short enough that nobody stares at a spinner; long enough that a healthy
+ * connection always gets the live answer.
+ */
+export const CACHE_FALLBACK_MS = 2_500;
+
 export function PlanBootGate({ children }: { children: React.ReactNode }) {
   const { settings, getScaledFontSize } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -75,6 +94,8 @@ export function PlanBootGate({ children }: { children: React.ReactNode }) {
   const [signedIn, setSignedIn] = React.useState<boolean | null>(null);
   const [cacheReady, setCacheReady] = React.useState(false);
   const [timedOut, setTimedOut] = React.useState(false);
+  /** COS-1069 — false until the live fetch has had CACHE_FALLBACK_MS to answer. */
+  const [mayUseCache, setMayUseCache] = React.useState(false);
 
   const { data, isError, isLoading, refetch } = useFeaturePermissions();
 
@@ -121,8 +142,15 @@ export function PlanBootGate({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [waiting]);
 
+  React.useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setMayUseCache(true), CACHE_FALLBACK_MS);
+    return () => clearTimeout(t);
+  }, [waiting]);
+
   const retry = React.useCallback(() => {
     setTimedOut(false);
+    setMayUseCache(false);
     void refetch();
   }, [refetch]);
 
@@ -133,16 +161,28 @@ export function PlanBootGate({ children }: { children: React.ReactNode }) {
   // A live answer is in hand.
   if (data) return <>{children}</>;
 
-  // No live answer yet, but this device has one from last time. Render from it
-  // — the whole reason the cache exists. The live fetch keeps running.
-  if (cacheReady && readCachedScreenAccess()) return <>{children}</>;
+  /*
+   * No live answer yet. The device may have one from last time, but it is a
+   * FALLBACK for a slow or failed fetch — not a reason to skip the loader.
+   *
+   * Before COS-1069 this had no timer, so it fired on every launch after the
+   * first: the gate opened, `useCanShowScreen` still had no data, every screen
+   * fell through to its visible default, and the tab bar retracted a moment
+   * later. The exact flash this component exists to remove, caused by this
+   * component.
+   *
+   * `useCanShowScreen` now reads the same cached map (see
+   * use-feature-permissions), so when this DOES fire the gating is correct
+   * rather than wide open.
+   */
+  if (mayUseCache && cacheReady && readCachedScreenAccess()) return <>{children}</>;
 
   if (isError || timedOut) {
     return <ConnectionErrorScreen variant="error" onRetry={retry} />;
   }
 
   // Genuinely unknown: first run, still fetching. This is the loader.
-  if (signedIn === null || isLoading || !cacheReady) {
+  if (signedIn === null || isLoading || !cacheReady || !mayUseCache) {
     return (
       <View
         style={[styles.container, { backgroundColor: colors.background }]}

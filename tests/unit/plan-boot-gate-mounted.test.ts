@@ -68,8 +68,15 @@ describe('COS-1061 — the gate cannot trap anyone', () => {
     assert.match(gateCode, /setTimedOut\(false\)[\s\S]{0,80}refetch\(\)/);
   });
 
-  test('a cached map renders immediately — no loader for a returning patient', () => {
-    assert.match(gateCode, /readCachedScreenAccess\(\)\) return <>\{children\}<\/>/);
+  test('a cached map is used when the fetch is slow — the patient is never stranded', () => {
+    /*
+     * COS-1069 — this used to read "renders immediately — no loader for a
+     * returning patient", and that WAS the behaviour: the cache short-circuit
+     * had no timer, so the loader never appeared after the first launch and the
+     * plan was not resolved before screens drew. The cache is now a bounded
+     * fallback; see the COS-1069 block below for the ordering that matters.
+     */
+    assert.match(gateCode, /mayUseCache && cacheReady && readCachedScreenAccess\(\)\) return <>\{children\}<\/>/);
   });
 
   test('the timeout is generous enough for a cold Lambda', () => {
@@ -91,5 +98,65 @@ describe('COS-1061 — the cached map is cleared on sign-out', () => {
     assert.match(tokens, /clearScreenAccessCache/);
     const call = tokens.indexOf('await clearScreenAccessCache()');
     assert.ok(call > -1, 'clearScreenAccessCache must be CALLED, not only imported');
+  });
+});
+
+
+/**
+ * COS-1069 — the gate and the gating hook must read the SAME evidence.
+ *
+ * The first version opened as soon as a disk-cached map existed. `useCanShowScreen`
+ * could not see that cache — it read only the live query — so on every launch
+ * after the first: the gate opened, every screen fell through to its visible
+ * default, and the tab bar retracted when the network answered.
+ *
+ * That is precisely the flash PlanBootGate exists to remove, caused by
+ * PlanBootGate. A gate must not open on evidence the gated code cannot see.
+ */
+describe('COS-1069 — the cache is a fallback, not a fast path', () => {
+  const hookCode = readFileSync(new URL('../../hooks/use-feature-permissions.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  test('THE POINT: useCanShowScreen reads the same disk cache the gate does', () => {
+    assert.match(hookCode, /readCachedScreenAccess/);
+    assert.match(
+      hookCode,
+      /if \(data\) return decideScreenVisible[\s\S]{0,200}cachedMaps\(\)/,
+      'live answer first, then the cached map — a remembered answer beats a guess',
+    );
+  });
+
+  test('THE POINT: the gate waits before falling back to cache', () => {
+    /*
+     * Without the timer the loader never appeared for a returning patient, and
+     * the plan was NOT resolved before screens rendered — which is the entire
+     * requirement.
+     */
+    assert.match(gateCode, /CACHE_FALLBACK_MS/);
+    assert.match(gateCode, /mayUseCache && cacheReady && readCachedScreenAccess\(\)/);
+  });
+
+  test('a live answer still short-circuits immediately — no artificial delay', () => {
+    /*
+     * The `data` branch must come BEFORE the cache branch, so a normal fetch
+     * dismisses the loader the moment it lands. The timer bounds a slow
+     * network; it must never add latency to a fast one.
+     */
+    const dataAt = gateCode.indexOf('if (data) return');
+    const cacheAt = gateCode.indexOf('mayUseCache && cacheReady');
+    assert.ok(dataAt > -1 && cacheAt > dataAt, 'the live-data branch must precede the cache branch');
+  });
+
+  test('the fallback window is bounded and sane', () => {
+    const m = /CACHE_FALLBACK_MS = ([\d_]+)/.exec(gateCode);
+    assert.ok(m, 'CACHE_FALLBACK_MS must be a literal');
+    const ms = Number(m[1].replace(/_/g, ''));
+    assert.ok(ms >= 1000, `${ms}ms is too short — a normal fetch would lose the race`);
+    assert.ok(ms <= 5000, `${ms}ms leaves a returning patient staring at a spinner`);
+  });
+
+  test('a retry re-arms the wait rather than jumping straight to cache', () => {
+    assert.match(gateCode, /setMayUseCache\(false\)/);
   });
 });
