@@ -369,7 +369,21 @@ export default function ConnectedEhrsScreen() {
                 lineHeight: scale(18),
               }}
             >
-              This usually takes a few minutes. You do not need to connect again.
+              {/*
+                COS-1066 — this said "usually takes a few minutes".
+
+                Ken's export took NINETEEN HOURS: he connected on 2026-09-18 and
+                the first webhook from Fasten arrived 2026-09-19T11:08Z. An Epic
+                EHI export is a bulk job their side queues; we do not request it
+                and cannot hurry it.
+
+                "A few minutes" is why he checked twice, was told to wait, and
+                reported it broken again. Copy that under-promises the wait is
+                not reassurance — it manufactures a second complaint.
+              */}
+              Your clinic is sending your records now. This can take several
+              hours, and sometimes up to a day. You do not need to connect
+              again — it will appear here on its own.
             </Text>
           </View>
         ) : null}
