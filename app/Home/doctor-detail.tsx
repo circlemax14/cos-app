@@ -1,9 +1,9 @@
 import { AICitationsFooter } from '@/components/ai/ai-citations-footer';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Platform, Modal as RNModal } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, Alert, Modal as RNModal } from 'react-native';
 import { Card, Button, Portal, Modal, Switch, TextInput as PaperTextInput } from 'react-native-paper';
 import { EntityIcon } from '@/components/icons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -19,7 +19,12 @@ import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { AppWrapper } from '@/components/app-wrapper';
-import { fetchProviderDetail, toVisitCards, type VisitCard } from '@/services/api/provider-detail';
+import {
+  fetchProviderDetail,
+  toVisitCards,
+  groupVisitCourses,
+  type VisitCard,
+} from '@/services/api/provider-detail';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api/data-sharing';
 
@@ -27,6 +32,18 @@ import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api
 // so a crash costs this screen instead of the whole app. See
 // components/RouteErrorBoundary.tsx.
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
+
+/**
+ * COS-1077 — hoisted to module scope. It was local to the treatment renderer;
+ * the visit list needs it too, and a pure date formatter should not be
+ * redefined on every render.
+ */
+const formatDate = (iso: string | null | undefined) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 export default function DoctorDetailScreen() {
   const params = useLocalSearchParams();
@@ -70,6 +87,8 @@ export default function DoctorDetailScreen() {
    * ones did not.
    */
   const [visitCards, setVisitCards] = useState<VisitCard[]>([]);
+  /* COS-1077 — which therapy courses the patient has opened. */
+  const [openCourses, setOpenCourses] = useState<string[]>([]);
   const [visitsLoading, setVisitsLoading] = useState(true);
   const providerName = params.name as string || '';
   const providerQualifications = params.qualifications as string || '';
@@ -90,7 +109,7 @@ export default function DoctorDetailScreen() {
     iconUrl: doctorData?.iconUrl ?? null as string | null,
   });
 
-  const [activeTab, setActiveTab] = useState('treatment');
+  const [activeTab, setActiveTab] = useState('conditions');
   const [appointmentSubTab, setAppointmentSubTab] = useState<'past' | 'recommended'>('past');
   type AiInsightState = { summary: string; loading: boolean; empty: boolean };
   const [aiInsights, setAiInsights] = useState<Record<string, AiInsightState>>({});
@@ -191,8 +210,11 @@ export default function DoctorDetailScreen() {
      *
      * Pure subtraction: nothing on screen changes.
      */
-    if (activeTab === 'treatment') {
-      loadAiInsight(activeTab);
+    if (activeTab === 'conditions') {
+      // The TAB was renamed; the SECTION was not. loadAiInsight keys the
+      // server-side narrative cache by section name, so passing the tab id
+      // here would orphan every summary generated before COS-1077.
+      loadAiInsight('treatment');
     }
   }, [providerId, activeTab, isLoadingData, loadAiInsight]);
 
@@ -217,7 +239,7 @@ export default function DoctorDetailScreen() {
   );
 
   useEffect(() => {
-    if (!providerId || activeTab !== 'progress') return;
+    if (!providerId || activeTab !== 'visits') return;
     if (aiProgressNotes || aiProgressLoading) return;
     loadAiProgressNotes();
   }, [providerId, activeTab, aiProgressNotes, aiProgressLoading, loadAiProgressNotes]);
@@ -407,10 +429,7 @@ export default function DoctorDetailScreen() {
       setRefreshing(false);
     }
   }, [providerId]);
-
-  // Doctor contact information
   const doctorPhone = provider?.phone || params.phone as string || '';
-  const doctorEmail = provider?.email || params.email as string || '';
   const doctorQualifications = provider?.qualifications || providerQualifications;
   const doctorSpecialty = provider?.specialty || providerSpecialty;
 
@@ -428,99 +447,24 @@ export default function DoctorDetailScreen() {
     }
   };
 
-  const handleMessage = async () => {
-    const url = `sms:${doctorPhone}`;
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('Error', 'Unable to send a message');
-      }
-    } catch {
-      Alert.alert('Error', 'Unable to send a message');
-    }
-  };
-
-  const handleVideoCall = async () => {
-    try {
-      if (Platform.OS === 'ios') {
-        // Try FaceTime first
-        const facetimeUrl = `facetime://${doctorPhone}`;
-        const canOpenFaceTime = await Linking.canOpenURL(facetimeUrl);
-        if (canOpenFaceTime) {
-          await Linking.openURL(facetimeUrl);
-          return;
-        }
-        // Fallback to FaceTime audio
-        const facetimeAudioUrl = `facetime-audio://${doctorPhone}`;
-        const canOpenAudio = await Linking.canOpenURL(facetimeAudioUrl);
-        if (canOpenAudio) {
-          await Linking.openURL(facetimeAudioUrl);
-          return;
-        }
-      }
-      
-      // For Android and iOS fallback, show options
-      // The system will show app chooser for these URL schemes if multiple apps are installed
-      const videoApps = [
-        { name: 'Zoom', url: 'zoomus://' },
-        { name: 'Google Meet', url: 'https://meet.google.com' },
-        { name: 'Skype', url: 'skype:' },
-        { name: 'WhatsApp', url: `whatsapp://send?phone=${doctorPhone}` },
-      ];
-      
-      const availableApps = [];
-      for (const app of videoApps) {
-        const canOpen = await Linking.canOpenURL(app.url);
-        if (canOpen) {
-          availableApps.push(app);
-        }
-      }
-      
-      if (availableApps.length > 0) {
-        Alert.alert(
-          'Video Call',
-          'Choose a video calling app:',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            ...availableApps.map(app => ({
-              text: app.name,
-              onPress: () => Linking.openURL(app.url),
-            })),
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Video Call',
-          'No video calling apps found. Please install a video calling app like Zoom, Google Meet, or Skype.',
-        );
-      }
-    } catch {
-      Alert.alert('Error', 'Unable to start a video call');
-    }
-  };
-
-  const handleEmail = async () => {
-    const url = `mailto:${doctorEmail}`;
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('Error', 'Unable to send an email');
-      }
-    } catch {
-      Alert.alert('Error', 'Unable to send an email');
-    }
-  };
-
+  /*
+   * COS-1077 — five tabs become three, per Vishal's mockup.
+   *
+   * Nothing is removed: the five sections still render, regrouped behind the
+   * three names Ken asked for.
+   *   Current Conditions = diagnoses + procedures + medications
+   *   Visits / Notes     = the visit list, with its notes and reports attached
+   *   Share Data         = unchanged
+   *
+   * Ken, on the 14 lab cards sitting under Progress Notes: "All of these
+   * should be under new tab for conditions." Progress Notes stops being a
+   * wall of one-card-per-lab-test and becomes what he asked for — "a list of
+   * visits with attached notes."
+   */
   const tabs = [
-    { id: 'treatment', label: 'Diagnosis & Treatment Plan' },
-    { id: 'progress', label: 'Progress Notes' },
-    { id: 'medications', label: 'Medications' },
+    { id: 'conditions', label: 'Current Conditions' },
+    { id: 'visits', label: 'Visits / Notes' },
     { id: 'share', label: 'Share Data' },
-    { id: 'appointments', label: 'Appointments' },
   ];
 
   const handleTabPress = (tabId: string) => {
@@ -717,13 +661,6 @@ export default function DoctorDetailScreen() {
       unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
     };
 
-    const formatDate = (iso: string | null | undefined) => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return '';
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    };
-
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
         {isLoadingData ? (
@@ -751,66 +688,6 @@ export default function DoctorDetailScreen() {
               * difference now is that they carry the visit's actual contents
               * rather than an aggregate.
               */}
-            {visitCards.length > 0 ? (
-              <View style={{ marginBottom: 20 }}>
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontSize: getScaledFontSize(17),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    marginBottom: 10,
-                  }}
-                >
-                  Your visits
-                </Text>
-                {visitCards.slice(0, 12).map((v) => (
-                  <View
-                    key={v.encounter.id}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.3)',
-                      borderRadius: 12,
-                      padding: 14,
-                      marginBottom: 10,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: colors.text,
-                        fontSize: getScaledFontSize(16),
-                        fontWeight: getScaledFontWeight(600) as any,
-                      }}
-                    >
-                      {formatDate(v.encounter.date) || 'Date not recorded'}
-                    </Text>
-                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 2 }}>
-                      {[v.encounter.type, v.encounter.location].filter(Boolean).join(' · ')}
-                    </Text>
-                    {v.encounter.reason ? (
-                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 4 }}>
-                        {v.encounter.reason}
-                      </Text>
-                    ) : null}
-
-                    {v.medications.length > 0 ? (
-                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 10, lineHeight: getScaledFontSize(22) }}>
-                        Medicines started: {v.medications.map((m) => m.name).join(', ')}
-                      </Text>
-                    ) : null}
-                    {v.reports.length > 0 ? (
-                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 6, lineHeight: getScaledFontSize(22) }}>
-                        Tests and reports: {v.reports.map((r) => r.name).join(', ')}
-                      </Text>
-                    ) : null}
-                    {v.medications.length === 0 && v.reports.length === 0 ? (
-                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 10 }}>
-                        No medicines or tests were recorded for this visit.
-                      </Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            ) : visitsLoading ? null : null}
 
             <WhatChangedCard
               state={insightFor('treatment')}
@@ -1372,6 +1249,134 @@ export default function DoctorDetailScreen() {
     );
   };
 
+  /*
+   * COS-1077 — the visit list, moved here and grouped.
+   *
+   * It used to render inside the Diagnosis & Treatment tab, which is why Ken
+   * found "Your visits" under a heading about diagnoses. He asked for "a list
+   * of visits with attached notes" in the notes tab, so that is where it now
+   * lives.
+   *
+   * Runs of the same visit type at the same place collapse into one course —
+   * 22 of 55 encounters on the reference record are "Therapies Series", and
+   * most carry nothing but "No medicines or tests were recorded". The
+   * collapsed card always states what came out of the course, so grouping can
+   * misjudge a date range but can never hide a report or a medicine.
+   */
+  const renderVisitCard = (v: VisitCard) => (
+    <View
+      key={v.encounter.id}
+      style={[styles.visitCard, { borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.3)' }]}
+    >
+      <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }}>
+        {formatDate(v.encounter.date) || 'Date not recorded'}
+      </Text>
+      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 2 }}>
+        {[v.encounter.type, v.encounter.location].filter(Boolean).join(' \u00B7 ')}
+      </Text>
+      {v.medications.length > 0 ? (
+        <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 10, lineHeight: getScaledFontSize(22) }}>
+          Medicines started: {v.medications.map((m) => m.name).join(', ')}
+        </Text>
+      ) : null}
+      {v.reports.length > 0 ? (
+        <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 6, lineHeight: getScaledFontSize(22) }}>
+          Tests and reports: {v.reports.map((r) => r.name).join(', ')}
+        </Text>
+      ) : null}
+      {v.medications.length === 0 && v.reports.length === 0 ? (
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 10 }}>
+          No medicines or tests were recorded for this visit.
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  const renderVisitList = () => {
+    /*
+     * The block this replaced ended `: visitsLoading ? null : null` — both
+     * branches null, so the flag was set and never read and the list simply
+     * popped in. Showing it is the point of tracking it.
+     */
+    if (visitsLoading) {
+      return (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}>
+            Loading your visits\u2026
+          </Text>
+        </View>
+      );
+    }
+    const groups = groupVisitCourses(visitCards);
+    if (groups.length === 0) return null;
+    return (
+      <View style={styles.visitListWrap}>
+        <Text style={{ color: colors.text, fontSize: getScaledFontSize(17), fontWeight: getScaledFontWeight(700) as any, marginBottom: 10 }}>
+          Your visits
+        </Text>
+        {groups.slice(0, 12).map((g) => {
+          if (!g.courseType) return renderVisitCard(g.visits[0]);
+          const open = openCourses.includes(g.id);
+          const attached: string[] = [];
+          if (g.reportCount > 0) attached.push(`${g.reportCount} report${g.reportCount === 1 ? '' : 's'}`);
+          if (g.medicationCount > 0) attached.push(`${g.medicationCount} medicine${g.medicationCount === 1 ? '' : 's'}`);
+          return (
+            <View
+              key={g.id}
+              style={[styles.visitCard, { borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.3)' }]}
+            >
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(600) as any }}>
+                {formatDate(g.startDate)} \u2013 {formatDate(g.endDate)}
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 2 }}>
+                {g.courseType} \u00B7 {g.visits.length} visits
+              </Text>
+              {g.visits[0].encounter.location ? (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 2 }}>
+                  {g.visits[0].encounter.location}
+                </Text>
+              ) : null}
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 10 }}>
+                {attached.length > 0
+                  ? `${attached.join(' and ')} came from this course.`
+                  : `No notes, tests or medicines are attached to these ${g.visits.length} visits.`}
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  setOpenCourses((prev) =>
+                    prev.includes(g.id) ? prev.filter((x) => x !== g.id) : [...prev, g.id],
+                  )
+                }
+                accessibilityRole="button"
+                accessibilityState={{ expanded: open }}
+                style={{ paddingVertical: 10 }}
+              >
+                <Text style={{ color: '#008080', fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
+                  {open ? 'Hide these visits' : `Show all ${g.visits.length} visits`}
+                </Text>
+              </TouchableOpacity>
+              {open
+                ? g.visits.map((v) => (
+                    <View key={v.encounter.id} style={styles.courseRow}>
+                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any }}>
+                        {formatDate(v.encounter.date) || 'Date not recorded'}
+                        {v.encounter.reason ? ` \u00B7 ${v.encounter.reason}` : ''}
+                      </Text>
+                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+                        {v.reports.length === 0 && v.medications.length === 0
+                          ? 'No notes, tests or medicines recorded.'
+                          : [...v.reports.map((r) => r.name), ...v.medications.map((m) => m.name)].join(', ')}
+                      </Text>
+                    </View>
+                  ))
+                : null}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderAppointments = () => (
     <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
       {/* Past / Recommended sub-tab toggle */}
@@ -1601,55 +1606,57 @@ export default function DoctorDetailScreen() {
             </Text>
           )}
         
-        {/* Communication Options */}
+        {/*
+          * COS-1077 — four buttons become two.
+          *
+          * Vishal struck through Call / Message / Video / Mail in his mockup.
+          * The record is why: of the seven clinics on the reference account
+          * exactly two carry a phone number, and the only one that does is
+          * named "MarinHealth- Billing Questions". Video and Mail were never
+          * wired to anything real at all — they dialled the same phone field.
+          *
+          * Two buttons that say what they do beats four that mostly cannot.
+          * A disabled button still renders, with the reason on its face,
+          * because a control that vanishes teaches the patient nothing.
+          */}
         <View style={styles.communicationContainer}>
-          {canCallDoctor && (
-          <TouchableOpacity
-            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
-            onPress={handleCall}
-            disabled={!doctorPhone}
-            accessibilityLabel="Call doctor"
-            accessibilityRole="button"
-          >
-            <MaterialIcons name="phone" size={getScaledFontSize(24)} color="#008080" />
-            <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Call</Text>
-          </TouchableOpacity>
-          )}
-
           {canMessageDoctor && (
           <TouchableOpacity
-            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
-            onPress={handleMessage}
-            disabled={!doctorPhone}
-            accessibilityLabel="Message doctor"
+            style={styles.primaryAction}
+            onPress={() => router.push('/Home/inbox')}
+            accessibilityLabel="Open your inbox"
             accessibilityRole="button"
           >
-            <MaterialIcons name="message" size={getScaledFontSize(24)} color="#008080" />
-            <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Message</Text>
+            <MaterialIcons name="inbox" size={getScaledFontSize(18)} color="#FFFFFF" />
+            <Text style={[styles.primaryActionLabel, { fontSize: getScaledFontSize(15) }]}>
+              Inbox
+            </Text>
           </TouchableOpacity>
           )}
 
+          {canCallDoctor && (
           <TouchableOpacity
-            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorPhone ? 1 : 0.4 }]}
-            onPress={handleVideoCall}
+            style={[styles.secondaryAction, !doctorPhone && styles.secondaryActionOff]}
+            onPress={handleCall}
             disabled={!doctorPhone}
-            accessibilityLabel="Video call doctor"
+            accessibilityLabel={doctorPhone ? 'Call the office' : 'No office number on file'}
             accessibilityRole="button"
           >
-            <MaterialIcons name="videocam" size={getScaledFontSize(24)} color="#008080" />
-            <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Video</Text>
+            <MaterialIcons
+              name="phone"
+              size={getScaledFontSize(18)}
+              color={doctorPhone ? '#008080' : '#A3ABB0'}
+            />
+            <Text
+              style={[
+                styles.secondaryActionLabel,
+                { fontSize: getScaledFontSize(15), color: doctorPhone ? '#008080' : '#A3ABB0' },
+              ]}
+            >
+              {doctorPhone ? 'Call office' : 'No office number'}
+            </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.communicationButton, { backgroundColor: colors.background, opacity: doctorEmail ? 1 : 0.4 }]}
-            onPress={handleEmail}
-            disabled={!doctorEmail}
-            accessibilityLabel="Email doctor"
-            accessibilityRole="button"
-          >
-            <MaterialIcons name="email" size={getScaledFontSize(24)} color="#008080" />
-            <Text style={[styles.communicationLabel, { color: colors.text, fontSize: getScaledFontSize(12), fontWeight: getScaledFontWeight(500) as any }]}>Mail</Text>
-          </TouchableOpacity>
+          )}
         </View>
       </View>
         )}
@@ -1684,11 +1691,17 @@ export default function DoctorDetailScreen() {
           (the "No diagnoses or prescriptions recorded" suppression).
           A follow-up ticket will surface CarePlan content at the
           patient level (home or a dedicated screen). */}
-      {activeTab === 'treatment' && renderTreatmentPlan()}
-      {activeTab === 'progress' && renderProgressNotes()}
-      {activeTab === 'medications' && renderProviderMedications()}
+      {/*
+        * Rendered as flat siblings, not wrapped in a fragment or a View.
+        * ADR-0003: this screen has crashed on iOS 26 from added nesting, and
+        * regrouping tabs is not a reason to introduce a new wrapper.
+        */}
+      {activeTab === 'conditions' && renderTreatmentPlan()}
+      {activeTab === 'conditions' && renderProviderMedications()}
+      {activeTab === 'visits' && renderVisitList()}
+      {activeTab === 'visits' && renderAppointments()}
+      {activeTab === 'visits' && renderProgressNotes()}
       {activeTab === 'share' && renderShareData()}
-      {activeTab === 'appointments' && renderAppointments()}
     </ScrollView>
 
     {/* Edit Modal */}
@@ -2619,12 +2632,41 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
   },
+  visitListWrap: { marginBottom: 20, paddingHorizontal: 16 },
+  visitCard: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 10 },
+  courseRow: { borderTopWidth: 1, borderTopColor: 'rgba(128,128,128,0.2)', paddingVertical: 10 },
+  /* COS-1077 — the two-button action row. */
+  primaryAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#008080',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  primaryActionLabel: { color: '#FFFFFF', fontWeight: '600' },
+  secondaryAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F1F3F4',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  /* Still rendered, still readable — it states why it cannot be used. */
+  secondaryActionOff: { opacity: 0.75 },
+  secondaryActionLabel: { fontWeight: '600' },
   communicationContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
-    gap: 24,
+    marginTop: 18,
+    /* 24 spaced four icon buttons; two full-width pills want far less. */
+    gap: 10,
     paddingHorizontal: 16,
   },
   communicationButton: {

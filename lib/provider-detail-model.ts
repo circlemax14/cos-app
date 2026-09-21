@@ -141,3 +141,92 @@ export function toVisitCards(detail: ProviderDetail): {
     unlinkedReports: reports.filter((r) => !r.encounterId || !known.has(r.encounterId)),
   };
 }
+
+/**
+ * COS-1077 — a course of therapy is ONE card, not N near-identical ones.
+ *
+ * Ken, looking at his own record: "Many of these visits were to physical
+ * therapy. How should we filter this?" On the reference record 22 of 55
+ * encounters are type "Therapies Series" — 40% of the list — and most carry
+ * nothing but the line "No medicines or tests were recorded for this visit."
+ * The one that matters, the Therapy Discharge, is buried in the middle of the
+ * repetition wearing the same face as the rest.
+ *
+ * We do not have to decide whether that is one episode or many: the EHR
+ * already decided. The encounter type is literally "Therapies Series", so
+ * consecutive visits of the same type at the same place are the same course.
+ *
+ * ─── WHY GROUPING AND NOT A FILTER ───────────────────────────────────
+ *
+ * A filter asks the patient to know the answer before they can see it, and
+ * leaves the default view exactly as noisy as the thing being complained
+ * about. It also costs permanent chrome on every provider — and most of the
+ * 59 in this record have one visit type, so the control would do nothing.
+ *
+ * ─── THE SAFETY PROPERTY ─────────────────────────────────────────────
+ *
+ * The group carries the SUM of its members' reports and medications, so a
+ * caller can always say what came out of the course on the collapsed face.
+ * The rule can therefore get a date range wrong; it can never hide a result.
+ * That is the whole reason grouping is defensible on a medical record.
+ */
+export interface VisitGroup {
+  /** Stable id: the newest member's encounter id. */
+  id: string;
+  /** Present only when this is a course; a lone visit has none. */
+  courseType?: string;
+  /** Newest first, same order as `toVisitCards`. */
+  visits: VisitCard[];
+  /** Oldest member's date. */
+  startDate?: string;
+  /** Newest member's date. */
+  endDate?: string;
+  /** Totals across every member — never let the collapsed card hide these. */
+  reportCount: number;
+  medicationCount: number;
+}
+
+/** Same type AND same location — two courses at different clinics stay apart. */
+function sameCourse(a: VisitCard, b: VisitCard): boolean {
+  const type = (s?: string) => (s ?? '').trim().toLowerCase();
+  if (!type(a.encounter.type) || type(a.encounter.type) !== type(b.encounter.type)) return false;
+  return type(a.encounter.location) === type(b.encounter.location);
+}
+
+/**
+ * Collapse runs of consecutive same-type visits into courses.
+ *
+ * CONSECUTIVE is deliberate. Grouping every "Outpatient" visit in a record
+ * would merge two unrelated years into one card; a run broken by a different
+ * visit type is a different episode, and the break is the evidence.
+ *
+ * A run of one is returned as a plain visit with no `courseType`, so callers
+ * render it exactly as before — this is additive, not a change to single visits.
+ */
+export function groupVisitCourses(visits: VisitCard[]): VisitGroup[] {
+  const out: VisitGroup[] = [];
+  let run: VisitCard[] = [];
+
+  const flush = () => {
+    if (run.length === 0) return;
+    const dates = run.map((v) => v.encounter.date).filter((d): d is string => Boolean(d)).sort();
+    out.push({
+      id: run[0].encounter.id,
+      // A run of one is not a course — no badge, no "show all", no date range.
+      courseType: run.length > 1 ? run[0].encounter.type : undefined,
+      visits: run,
+      startDate: dates[0],
+      endDate: dates[dates.length - 1],
+      reportCount: run.reduce((n, v) => n + v.reports.length, 0),
+      medicationCount: run.reduce((n, v) => n + v.medications.length, 0),
+    });
+    run = [];
+  };
+
+  for (const v of visits) {
+    if (run.length > 0 && !sameCourse(run[run.length - 1], v)) flush();
+    run.push(v);
+  }
+  flush();
+  return out;
+}
