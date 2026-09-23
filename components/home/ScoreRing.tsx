@@ -61,12 +61,29 @@ export function ringSweep(progress: number): { right: number; left: number } {
   };
 }
 
+/**
+ * COS-1084 — where the arc ENDS, in degrees from 12 o'clock.
+ *
+ * The sweep functions above say how far each half-window turns; this says
+ * where the leading edge finished, which is where a cap goes. Separated and
+ * exported for the same reason as ringSweep: it is arithmetic, and arithmetic
+ * belongs somewhere a test can reach without a renderer.
+ *
+ * 0 is the top. A full circle returns 360 rather than 0 so a completed ring
+ * caps at the top rather than reading as empty.
+ */
+export function ringEndAngle(progress: number): number {
+  const p = Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0;
+  return p * 360;
+}
+
 export function ScoreRing({
   progress,
   size,
   stroke,
   color,
   trackColor,
+  endCap = false,
   children,
 }: {
   /** 0..1. Clamped — see ringSweep. */
@@ -75,6 +92,18 @@ export function ScoreRing({
   stroke: number;
   color: string;
   trackColor: string;
+  /**
+   * COS-1084 — a dot at the leading edge of the arc.
+   *
+   * Vishal: the dials "don't look that much good... do some more creativity".
+   * A bare arc reads as a filled shape; a cap at its end reads as a NEEDLE
+   * that has travelled to a position, which is what a score is. It also gives
+   * the eye somewhere to land on a small tile.
+   *
+   * Suppressed at 0 — a cap sitting at 12 o'clock on an empty ring looks like
+   * a full score rendered wrong.
+   */
+  endCap?: boolean;
   children?: React.ReactNode;
 }): React.JSX.Element {
   const half = size / 2;
@@ -128,6 +157,36 @@ export function ScoreRing({
       />
       {sweep.right > 0 && <Half side="right" rotate={sweep.right} />}
       {sweep.left > 0 && <Half side="left" rotate={sweep.left} />}
+      {/*
+        The cap rides a full-size container rotated to the arc's end angle, so
+        the dot lands on the circumference without any trigonometry. Same
+        technique as the halves: a static transform on a static value, which is
+        what the iOS 26 hardening note permits (no Animated, no LayoutAnimation).
+      */}
+      {endCap && progress > 0 && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.window,
+            {
+              width: size,
+              height: size,
+              alignItems: 'center',
+              transform: [{ rotate: `${ringEndAngle(progress)}deg` }],
+            },
+          ]}
+        >
+          <View
+            style={{
+              width: stroke * 1.55,
+              height: stroke * 1.55,
+              borderRadius: stroke,
+              backgroundColor: color,
+              marginTop: (stroke - stroke * 1.55) / 2,
+            }}
+          />
+        </View>
+      )}
       {children}
     </View>
   );

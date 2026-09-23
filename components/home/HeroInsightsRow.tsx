@@ -474,19 +474,78 @@ function Ready({
   const ringSize = variant === 'large' ? 92 : 64
 
   if (ring) {
+    /*
+     * COS-1084 — Vishal: the dials "don't look that much good... do some more
+     * creativity and update them so that the patients can directly access them
+     * and be attracted towards them."
+     *
+     * Four changes, all inside Home's primitive envelope (View / Text /
+     * StyleSheet — no SVG, no gradient, no Animated; see ScoreRing's header
+     * and ADR-0003 for why that envelope is not negotiable here):
+     *
+     *   1. A THICKER arc. 9% of the diameter is a hairline at 64px and reads
+     *      as a border rather than a gauge. 13% carries at tile size.
+     *   2. An END CAP, so the arc reads as a needle that travelled to a
+     *      position rather than a shape that happens to be filled in.
+     *   3. The NUMBER takes the band colour. It was a fixed near-black, so the
+     *      one element the eye lands on carried no meaning; now the figure and
+     *      its band agree at a glance without reading the chip.
+     *   4. A HALO — the band colour at very low opacity behind the ring. It
+     *      lifts the dial off a white card, which is most of what "doesn't
+     *      look good" was describing.
+     *
+     * The chip stays. Colour alone fails this cohort (older patients, glare,
+     * colour-blindness), so the band keeps a text label — the same reasoning
+     * TrendSourceBar records for its segments.
+     */
+    const stroke = Math.max(6, Math.round(ringSize * 0.12))
+    /*
+     * The figure is sized from the INNER diameter, not left at the bare
+     * tile's fixed 34/56px.
+     *
+     * Caught by rendering the change rather than by reading it: a thicker arc
+     * shrinks the hole it encloses, so the same 56px number that cleared a
+     * hairline ring collides with this one — a two-digit score visibly
+     * touching the arc on both sides. 0.56 of the inner diameter clears three
+     * digits at every tile size, and scales with the ring instead of needing a
+     * second constant to keep in step.
+     */
+    const inner = ringSize - stroke * 2
+    const numberSize = Math.round(inner * 0.56)
     return (
       <View style={styles.body}>
-        <ScoreRing
-          progress={ring.progress}
-          size={ringSize}
-          stroke={Math.max(5, Math.round(ringSize * 0.09))}
-          color={ring.color}
-          trackColor={ring.trackColor}
-        >
-          <Text style={scoreStyle} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            {number}
-          </Text>
-        </ScoreRing>
+        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              width: ringSize + stroke * 2.2,
+              height: ringSize + stroke * 2.2,
+              borderRadius: (ringSize + stroke * 2.2) / 2,
+              backgroundColor: ring.color,
+              opacity: 0.08,
+            }}
+          />
+          <ScoreRing
+            progress={ring.progress}
+            size={ringSize}
+            stroke={stroke}
+            color={ring.color}
+            trackColor={ring.trackColor}
+            endCap
+          >
+            <Text
+              style={[
+                scoreStyle,
+                { color: ring.color, fontSize: numberSize, lineHeight: Math.round(numberSize * 1.16) },
+              ]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.15}
+            >
+              {number}
+            </Text>
+          </ScoreRing>
+        </View>
         {chip && (
           <View style={[styles.chip, { backgroundColor: chip.bg }]}>
             <Text style={[styles.chipText, { color: chip.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.1}>
