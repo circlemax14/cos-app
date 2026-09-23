@@ -94,7 +94,7 @@ android {
         applicationId 'ai.circlesupporthealth.csh'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
+        versionCode 3
         versionName "1.5.3"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
@@ -106,15 +106,37 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // COS-1037 — the UPLOAD key for Google Play.
+        //
+        // Read from android/keystore.properties, which is gitignored along
+        // with the .keystore itself. A release build falls back to the DEBUG
+        // key when that file is absent, so a fresh clone still builds — but
+        // buildRelease below refuses to produce an uploadable artifact in that
+        // state, because a debug-signed AAB is rejected by Play and the error
+        // it gives does not say why.
+        release {
+            def props = new Properties()
+            def f = rootProject.file('keystore.properties')
+            if (f.exists()) {
+                f.withInputStream { props.load(it) }
+                storeFile file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // COS-1037 — upload key when configured, debug key otherwise so a
+            // fresh clone still builds. scripts/build-android-release.sh checks
+            // which one was used and refuses to hand you a debug-signed AAB.
+            signingConfig rootProject.file('keystore.properties').exists()
+                ? signingConfigs.release
+                : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
