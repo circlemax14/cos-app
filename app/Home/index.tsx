@@ -3892,113 +3892,95 @@ function HomeScreenInner() {
           </View>
         )}
 
-        {/* SCRUM-265 #9: Health Trends tile redesigned — taller hero with
-            an accent gradient overlay, four illustrative metric icons,
-            and a prominent CTA. The plain banner felt forgettable next
-            to the rest of the home cards; the new layout treats trends
-            as a feature surface, not a row link. */}
+        {/*
+          COS-1083 — ONE button, one surface.
+
+          Vishal: "I was expecting it to be one button where we display
+          everything and then we click on it and we move to the health trends
+          screen." What shipped was a tinted hero with the source bar dropped
+          into a surface-coloured panel inside it — two visual objects inside
+          one tap target, which is what "you cut the corners" described.
+
+          The fix is to stop fighting TrendSourceBar. COS-1045 kept them apart
+          because the bar is styled for a normal card background while the hero
+          was filled with colors.tint; COS-1072 worked around that with an
+          inset panel. Making the WHOLE card the surface colour removes the
+          conflict rather than routing around it: the bar renders on the
+          background it was designed for, the tint becomes an accent instead of
+          a field, and the card reads as a single button.
+
+          The decorative blob and the tablet-only chip row are gone. Both were
+          ornament, and ADR-0003 asks for fewer nested views on this screen.
+        */}
         <TouchableOpacity
           style={[
-            styles.trendsHeroCard,
-            !isTabletDevice && styles.trendsHeroCardPhone,
-            { backgroundColor: colors.tint as string },
+            styles.trendsCard,
+            !isTabletDevice && styles.trendsCardPhone,
+            { backgroundColor: colors.background, borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.25)' },
           ]}
           onPress={() => router.push('/Home/health-trends' as never)}
           accessibilityRole="button"
-          accessibilityLabel="View health trends"
-          activeOpacity={0.92}
+          accessibilityLabel={
+            trendSourcesLoading ? 'Health Trends, still counting what we track' : 'View health trends'
+          }
+          activeOpacity={0.85}
         >
-          <View style={styles.trendsHeroBlob} pointerEvents="none" />
-          <View style={styles.trendsHeroHeader}>
-            <View style={[
-              styles.trendsHeroBadge,
-              !isTabletDevice && { width: 32, height: 32, borderRadius: 10 },
-            ]}>
+          <View style={styles.trendsRow}>
+            <View style={[styles.trendsBadge, { backgroundColor: `${colors.tint as string}1A` }]}>
               <MaterialIcons
                 name="show-chart"
-                size={isTabletDevice ? getScaledFontSize(20) : 16}
+                size={isTabletDevice ? getScaledFontSize(20) : 18}
                 color={colors.tint as string}
               />
             </View>
-            <View style={{ flex: 1, marginLeft: isTabletDevice ? 12 : 10 }}>
+            <View style={{ flex: 1, marginLeft: 12 }}>
               <Text
                 style={[
-                  styles.trendsHeroTitle,
-                  {
-                    fontSize: isTabletDevice ? getScaledFontSize(17) : 14,
-                    fontWeight: getScaledFontWeight(800) as any,
-                  },
+                  styles.trendsTitle,
+                  { color: colors.text, fontSize: isTabletDevice ? getScaledFontSize(17) : 15 },
                 ]}
-                allowFontScaling={isTabletDevice}
               >
                 Health Trends
               </Text>
-              <Text
-                style={[
-                  styles.trendsHeroSubtitle,
-                  { fontSize: isTabletDevice ? getScaledFontSize(12) : 10 },
-                ]}
-                allowFontScaling={isTabletDevice}
-                numberOfLines={1}
-              >
-                Labs + vitals + Apple Health over time
-              </Text>
-            </View>
-            <View style={styles.trendsHeroArrow}>
-              <MaterialIcons
-                name="arrow-forward"
-                size={isTabletDevice ? getScaledFontSize(18) : 14}
-                color="#FFFFFF"
-              />
-            </View>
-          </View>
-          {/* SCRUM-279 (2026-06-08): Chips row dropped on phone — too
-              busy + redundant with the page itself. iPad keeps them. */}
-          {isTabletDevice && (
-            <View style={styles.trendsHeroIconRow}>
-              {(['favorite', 'bloodtype', 'directions-walk', 'bedtime'] as const).map((iconName) => (
-                <View key={iconName} style={styles.trendsHeroChip}>
-                  <MaterialIcons name={iconName} size={getScaledFontSize(15)} color="#FFFFFF" />
+              {/*
+                The count is the thing worth waiting for, so the wait is shown
+                HERE. Vishal: "there should be a small loader on that place,
+                after that it will be there."
+
+                Before, the whole lower zone was gated on `!trendSourcesLoading`
+                and rendered nothing at all — so the card drew short and then
+                grew when three queries resolved. A card that jumps under the
+                user's thumb is worse than a spinner.
+              */}
+              {trendSourcesLoading ? (
+                <View style={styles.trendsLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.tint as string} />
+                  <Text style={[styles.trendsSubtitle, { color: colors.subtext, marginLeft: 8 }]}>
+                    Counting what we track…
+                  </Text>
                 </View>
-              ))}
-              <Text style={[styles.trendsHeroChipsTrailing, { fontSize: getScaledFontSize(12) }]}>
-                + 14 more
-              </Text>
+              ) : (
+                <Text style={[styles.trendsSubtitle, { color: colors.subtext }]}>
+                  Labs, check-ins and devices over time
+                </Text>
+              )}
             </View>
-          )}
-          {/*
-            COS-1072 — the source bar now lives INSIDE this card.
-            ───────────────────────────────────────────────────────────
-            It used to sit below as a separate block. Vishal: "health trends
-            has this bar and when I click on it I will be taken to the health
-            trends screen — they both should be merged together."
+            <MaterialIcons
+              name="chevron-right"
+              size={isTabletDevice ? getScaledFontSize(24) : 22}
+              color={colors.subtext as string}
+            />
+          </View>
 
-            COS-1045 kept them apart for a real reason: TrendSourceBar is
-            styled for a normal card background and this hero is filled with
-            colors.tint, and re-theming a shared component for one caller is
-            how it stops being shared. That reason is respected rather than
-            overridden — the bar gets its own surface-coloured panel in the
-            lower half of the card, so it still renders on the background it
-            was designed for. One card, two zones, one tap target.
-
-            Full-bleed: the card's horizontal padding is moved onto the header
-            zone so this panel can reach the rounded edges. The card already
-            sets overflow:'hidden', so the corners clip.
-          */}
-          {!trendSourcesLoading && trendSources.length > 0 && (
-            <View
-              style={[
-                styles.trendsHeroStats,
-                {
-                  backgroundColor: colors.background,
-                  marginHorizontal: isTabletDevice ? -14 : -12,
-                  marginBottom: isTabletDevice ? -16 : -12,
-                },
-              ]}
-            >
+          {/* Reserved height while loading, so the card is the same size
+              before and after the numbers arrive. */}
+          {trendSourcesLoading ? (
+            <View style={styles.trendsBarPlaceholder} />
+          ) : trendSources.length > 0 ? (
+            <View style={styles.trendsBarWrap}>
               <TrendSourceBar sources={trendSources} noun="things we track" />
             </View>
-          )}
+          ) : null}
         </TouchableOpacity>
 
         {/*
@@ -4295,6 +4277,40 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   // SCRUM-265 #9: refreshed Health Trends hero tile.
+  /*
+   * COS-1083 — the one-button trends card.
+   *
+   * The trendsHero* entries below are now unreferenced. They are left in place
+   * deliberately: removing twelve entries from a 900-line StyleSheet by script
+   * spliced the component body into the stylesheet on the first attempt, and a
+   * dead style key costs nothing while a corrupted 4,000-line screen costs a
+   * night. They can go in a follow-up with a renderer to check against.
+   */
+  trendsCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 6,
+    overflow: 'hidden',
+  },
+  trendsCardPhone: { borderRadius: 14, paddingHorizontal: 12, paddingTop: 12 },
+  trendsRow: { flexDirection: 'row', alignItems: 'center' },
+  trendsBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trendsTitle: { fontWeight: '700', letterSpacing: 0.1 },
+  trendsSubtitle: { fontSize: 12, marginTop: 2 },
+  trendsLoadingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  /* Matches TrendSourceBar's rendered height so nothing shifts. */
+  trendsBarPlaceholder: { height: 74 },
+  trendsBarWrap: { marginTop: 10 },
   trendsHeroCard: {
     marginHorizontal: 16,
     marginBottom: 16,
