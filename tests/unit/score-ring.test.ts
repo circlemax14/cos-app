@@ -122,3 +122,43 @@ test('the ring the tile draws is inside ringSweep’s accepted range', () => {
     assert.ok(s.right >= 0 && s.right <= 180 && s.left >= 0 && s.left <= 180);
   }
 });
+
+/*
+ * COS-1084 - ringEndAngle, extracted exactly as ringSweep is above: this file
+ * cannot import the .tsx, so the function is lifted as text and evaluated on
+ * its own. That also proves it depends on nothing in the component.
+ */
+const endBody = src.slice(src.indexOf('export function ringEndAngle'));
+const endRaw = endBody.slice(0, endBody.indexOf('\n}') + 2);
+const endSrc = ['function ringEndAngle(progress) {', ...endRaw.split('\n').slice(1)].join('\n');
+const ringEndAngle = new Function(`${endSrc}; return ringEndAngle;`)() as (p: number) => number;
+
+test('ringEndAngle: 0 empty, 90 at a quarter, 360 at full', () => {
+  assert.equal(ringEndAngle(0), 0);
+  assert.equal(ringEndAngle(0.25), 90);
+  assert.equal(ringEndAngle(0.5), 180);
+  assert.equal(ringEndAngle(1), 360);
+});
+
+test('THE POINT: a full ring caps at 360, not 0', () => {
+  // Same place on a circle, different meaning to anything reading the value:
+  // returning 0 would make a completed score indistinguishable from an empty
+  // one, and the cap is suppressed at 0.
+  assert.notEqual(ringEndAngle(1), ringEndAngle(0));
+});
+
+test('ringEndAngle clamps rather than over-rotating', () => {
+  assert.equal(ringEndAngle(1.4), 360);
+  assert.equal(ringEndAngle(-2), 0);
+  assert.equal(ringEndAngle(Number.NaN), 0);
+});
+
+test('THE POINT: the cap sits exactly at the leading edge of the swept arc', () => {
+  // ringSweep says how far each half turned; ringEndAngle says where the arc
+  // stopped. If they drift the dot floats off the end of the colour, which
+  // looks like a rendering bug and reads as a wrong score.
+  for (const p of [0.1, 0.33, 0.5, 0.75, 0.99]) {
+    const sweep = ringSweep(p);
+    assert.equal(Math.round(sweep.right + sweep.left), Math.round(ringEndAngle(p)));
+  }
+});
