@@ -42,6 +42,9 @@ interface ServerCategorisation {
   /** COS-1011 — treated / mentioned / none. See patient.service.ts. */
   involvement?: 'treated' | 'mentioned' | 'none';
   treatedCount?: number;
+  /** COS-1090 — recency, banded server-side. See provider-recency.ts. */
+  lastSeenAt?: string;
+  recencyBand?: 'current-acute' | 'recent-stable' | 'stable-resolved' | null;
 }
 
 interface FhirPractitionerRole {
@@ -117,6 +120,10 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
     recordCount: practitioner.recordCount ?? 0,
     involvement: server.involvement,
     treatedCount: server.treatedCount ?? 0,
+    // COS-1090 - passed straight through; the band is decided server-side so
+    // moving a boundary is a deploy, not an app release (COS-1014).
+    lastSeenAt: server.lastSeenAt,
+    recencyBand: server.recencyBand ?? null,
   };
 }
 

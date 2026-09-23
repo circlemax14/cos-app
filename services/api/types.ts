@@ -29,6 +29,22 @@ export interface Provider {
   involvement?: 'treated' | 'mentioned' | 'none';
   /** Records evidencing treatment specifically, not paperwork. */
   treatedCount?: number;
+  /**
+   * COS-1090 - how recently this provider last treated the patient, and the
+   * band derived from it on the SERVER.
+   *
+   * Ken, reading his own list of 83 aloud: "these may be like radiologists or
+   * other people involved in my surgery"; "my only current treating physicians
+   * have been..." - two or three names. Every one of those strangers passes
+   * the involvement test, because an anaesthetist really was in the room for
+   * your operation. Four years ago.
+   *
+   * `recencyBand: null` means no dated record at all, which is NOT "long ago":
+   * 61 of his 83 appear in no encounter and no prescription, and putting them
+   * in the oldest band would pad that tab with strangers.
+   */
+  lastSeenAt?: string;
+  recencyBand?: 'current-acute' | 'recent-stable' | 'stable-resolved' | null;
   /** How many clinical records reference this provider. */
   recordCount?: number;
 }

@@ -79,6 +79,15 @@ export default function ModalScreen() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(null);
   const [lastVisitedFilter, setLastVisitedFilter] = React.useState<string | null>(null);
+  /*
+   * COS-1090 — Ken: "by default we will use the six months to one year one
+   * filter", and "if they want to go into these other categories, they can
+   * press a tab or search them or drop down".
+   *
+   * Defaulting to a VALUE rather than null is the whole point: on his real
+   * account the unfiltered list is 83 providers and the default band is 8.
+   */
+  const [recencyFilter, setRecencyFilter] = React.useState<string | null>('current-acute');
   const [manualMembersBySubCategory, setManualMembersBySubCategory] = React.useState<Record<string, ManualMember[]>>({});
   const [openManualFormKey, setOpenManualFormKey] = React.useState<string | null>(null);
   const [manualName, setManualName] = React.useState('');
@@ -142,7 +151,34 @@ export default function ModalScreen() {
     { id: 'without-records', label: 'No records yet' },
   ];
 
+  /*
+   * COS-1090 — Ken's three recency bands, renamed by Hitesh on 2026-09-23
+   * ("stable is a more user-friendly term than chronic").
+   *
+   * "Everyone" is here because the bands deliberately EXCLUDE providers with
+   * no dated record at all — 61 of Ken's 83 — and a filter that can hide
+   * three quarters of a list with no way to see them is a trap.
+   */
+  const RECENCY_FILTERS = [
+    { id: 'current-acute', label: 'Current & acute' },
+    { id: 'recent-stable', label: 'Recent & stable' },
+    { id: 'stable-resolved', label: 'Stable & resolved' },
+    { id: 'all', label: 'Everyone' },
+  ];
+
+  const filterProvidersByRecency = (providers: SelectedProvider[]) => {
+    if (!recencyFilter || recencyFilter === 'all') return providers;
+    return providers.filter(provider => {
+      // Manually added people and non-medical supports have no EHR dates by
+      // definition. A recency filter must never hide the care circle.
+      if (provider.isManual) return true;
+      if (provider.category && provider.category.toLowerCase() !== 'medical') return true;
+      return provider.recencyBand === recencyFilter;
+    });
+  };
+
   const filterProvidersByLastVisited = (providers: SelectedProvider[]) => {
+    providers = filterProvidersByRecency(providers);
     if (!lastVisitedFilter) return providers;
     return providers.filter(provider => {
       // Manually added people and non-medical supports have no EHR records
@@ -393,6 +429,20 @@ export default function ModalScreen() {
               fontWeight={getScaledFontWeight(500) as any}
               iconSize={getScaledFontSize(22)}
               accessibilityLabel="Filter providers by whether they have records"
+            />
+            <FilterMenu
+              options={RECENCY_FILTERS}
+              selectedId={recencyFilter}
+              onSelect={setRecencyFilter}
+              onClear={() => setRecencyFilter('all')}
+              color={colors.text}
+              menuBackgroundColor={colors.background}
+              menuTextColor={colors.text}
+              menuHighlightColor={colors.tint + '20'}
+              fontSize={getScaledFontSize(14)}
+              fontWeight={getScaledFontWeight(500) as any}
+              iconSize={getScaledFontSize(22)}
+              accessibilityLabel="Filter providers by how recently they treated you"
             />
           </View>
           <Text style={[styles.modalTitle, {

@@ -515,12 +515,34 @@ export default function DoctorDetailScreen() {
     }
   };
 
+  /*
+   * COS-1090 - three tabs, named the way Ken named them on the 2026-09-23 call:
+   *
+   *   "So we have three things: conditions, notes, and shared data.
+   *    Is that what we have?"  - and Vishal: "Yes."
+   *
+   * Was five: Diagnosis & Treatment Plan / Progress Notes / Medications /
+   * Share Data / Appointments.
+   *
+   * WHERE THE OTHER TWO WENT - nothing is deleted; two tabs became sections
+   * inside the tabs that already implied them.
+   *
+   * MEDICATIONS moved under Conditions. Ken has asked for medications grouped
+   * by the condition they treat since the Plan work, and a separate tab was
+   * the thing preventing it: a drug list with no indication beside it is the
+   * least useful way to show it.
+   *
+   * APPOINTMENTS moved under Notes, because Ken defined that tab as "the ones
+   * that are telling us of the current visits". A visit you had and a visit
+   * you have booked are the same object at different times.
+   *
+   * "Progress Notes" -> "Notes" is his too: "it may not be progress, right?
+   * How about notes? ... Make it simple."
+   */
   const tabs = [
-    { id: 'treatment', label: 'Diagnosis & Treatment Plan' },
-    { id: 'progress', label: 'Progress Notes' },
-    { id: 'medications', label: 'Medications' },
-    { id: 'share', label: 'Share Data' },
-    { id: 'appointments', label: 'Appointments' },
+    { id: 'treatment', label: 'Conditions' },
+    { id: 'progress', label: 'Notes' },
+    { id: 'share', label: 'Shared Data' },
   ];
 
   const handleTabPress = (tabId: string) => {
@@ -1684,11 +1706,19 @@ export default function DoctorDetailScreen() {
           (the "No diagnoses or prescriptions recorded" suppression).
           A follow-up ticket will surface CarePlan content at the
           patient level (home or a dedicated screen). */}
-      {activeTab === 'treatment' && renderTreatmentPlan()}
-      {activeTab === 'progress' && renderProgressNotes()}
-      {activeTab === 'medications' && renderProviderMedications()}
+      {activeTab === 'treatment' && (
+        <>
+          {renderTreatmentPlan()}
+          {renderProviderMedications()}
+        </>
+      )}
+      {activeTab === 'progress' && (
+        <>
+          {renderProgressNotes()}
+          {renderAppointments()}
+        </>
+      )}
       {activeTab === 'share' && renderShareData()}
-      {activeTab === 'appointments' && renderAppointments()}
     </ScrollView>
 
     {/* Edit Modal */}
