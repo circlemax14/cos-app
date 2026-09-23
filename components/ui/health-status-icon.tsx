@@ -1,80 +1,66 @@
 import React from 'react';
-import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 interface HealthStatusIconProps {
   size?: number;
   color: string;
-  /** Stroke weight. Scales with size by default so it reads at any tab size. */
-  strokeWidth?: number;
 }
 
 /**
- * COS-964 — the Health Status icon, drawn to Ken's sketch.
+ * COS-1081 — the Health Status icon, redrawn to Vishal's mark.
  *
- * A clipboard with a clip at the top, a circled medical cross in the upper
- * body, and three record lines beneath it. Line art only, single colour,
- * inheriting the tab's active/inactive tint like every other icon here.
+ * A bold ring, a gap, and a solid disc with a medical cross cut out of it.
  *
- * ─── WHY IT REPLACES AiClipboardIcon ON THIS TAB ─────────────────────
+ * ─── WHAT IT REPLACES, AND WHY ───────────────────────────────────────
  *
- * That icon carries an AI sparkle, and its own comment explains the intent:
- * the tab was an "AI-synthesized snapshot", so it read as "chart, but smart".
- * The tab is becoming HEALTH STATUS — Ken's point being that it is an ACTIVE
- * CLINICAL STATUS, not a generated summary and not a history. A sparkle says
- * "the computer wrote this", which is the opposite of the message.
+ * COS-964 drew a clipboard from Ken's sketch: a board, a clip, a small circled
+ * cross and two record lines. Five separate elements inside a 26px tab icon.
+ * At that size the clip reads as noise, the record lines merge into a grey
+ * smudge, and the cross — the one part that says "health" — is a 3.1px circle
+ * carrying a 1.4px stroke.
  *
- * AiClipboardIcon is deliberately NOT deleted: it still fits any surface that
- * genuinely is AI-generated, and removing it would be a second, unrelated
- * change riding along with a rename.
+ * Vishal's replacement keeps only the part that was doing the work and makes
+ * it the whole mark. One idea at one weight, legible at 26px and still correct
+ * blown up in a header.
  *
- * ─── DRAWN, NOT IMPORTED ─────────────────────────────────────────────
+ * ─── WHY IT IS CUT OUT RATHER THAN DRAWN IN WHITE ────────────────────
  *
- * Ken supplied a specific mark. The nearest lucide equivalents
- * (ClipboardPlus, FilePlus) put the cross bare rather than circled and carry
- * no record lines, so they are recognisably a different icon. This is ~20
- * lines of SVG against a dependency that would not match the drawing.
+ * The supplied artwork is black-on-white, so the obvious translation is a
+ * filled circle with a white cross on top. That breaks the moment the tab bar
+ * is not white — a white cross on a dark surface is a white cross, not a hole,
+ * and it stops matching the tint every other icon here follows.
  *
- * Geometry is expressed against a 24x24 viewBox and scaled, so it stays crisp
- * at the 26px tab size and at the larger sizes a header uses.
+ * So the cross and the inner gap are HOLES, made with `fillRule="evenodd"`:
+ * the shape is painted once in `color`, and the counters let the background
+ * through, whatever the background happens to be. One colour in, correct on
+ * light, dark, active and inactive.
+ *
+ * Geometry is against a 24x24 viewBox and scales, so there is no stroke weight
+ * to tune per size and nothing thins out when the icon grows.
  */
-export function HealthStatusIcon({
-  size = 26,
-  color,
-  strokeWidth,
-}: HealthStatusIconProps) {
-  // Hairlines disappear on a large render; a fixed weight blocks up on a small
-  // one. Scaling keeps the mark looking like the same icon at every size.
-  const sw = strokeWidth ?? Math.max(1.4, size * 0.075);
 
+/** A circle as a path, so it can share a fill rule with the shapes it cuts. */
+const circle = (cx: number, cy: number, r: number): string =>
+  `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`;
+
+/** A plus sign centred on (cx, cy): `arm` is half-thickness, `reach` half-length. */
+const cross = (cx: number, cy: number, arm: number, reach: number): string =>
+  `M${cx - arm} ${cy - reach}` +
+  `H${cx + arm}V${cy - arm}` +
+  `H${cx + reach}V${cy + arm}` +
+  `H${cx + arm}V${cy + reach}` +
+  `H${cx - arm}V${cy + arm}` +
+  `H${cx - reach}V${cy - arm}` +
+  `H${cx - arm}Z`;
+
+export function HealthStatusIcon({ size = 26, color }: HealthStatusIconProps) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {/* The board */}
-      <Rect
-        x={4}
-        y={3.5}
-        width={16}
-        height={18}
-        rx={2.2}
-        stroke={color}
-        strokeWidth={sw}
-      />
-      {/* The clip at the top, drawn as a tab rather than a full rectangle so it
-          reads as a clip and not as a second nested box at small sizes. */}
-      <Path
-        d="M9.6 3.5V2.9c0-.6.5-1.1 1.1-1.1h2.6c.6 0 1.1.5 1.1 1.1v.6"
-        stroke={color}
-        strokeWidth={sw}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* The circled cross — the medical mark */}
-      <Circle cx={12} cy={9.6} r={3.1} stroke={color} strokeWidth={sw} />
-      <Line x1={12} y1={8.1} x2={12} y2={11.1} stroke={color} strokeWidth={sw} strokeLinecap="round" />
-      <Line x1={10.5} y1={9.6} x2={13.5} y2={9.6} stroke={color} strokeWidth={sw} strokeLinecap="round" />
-      {/* Record lines. Three, shortening slightly, so the lower half reads as
-          written content rather than as an empty box. */}
-      <Line x1={7.6} y1={15.6} x2={16.4} y2={15.6} stroke={color} strokeWidth={sw} strokeLinecap="round" />
-      <Line x1={7.6} y1={18} x2={16.4} y2={18} stroke={color} strokeWidth={sw} strokeLinecap="round" />
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {/* Outer ring: disc with a hole. */}
+      <Path d={`${circle(12, 12, 11.2)} ${circle(12, 12, 8.9)}`} fill={color} fillRule="evenodd" />
+      {/* Inner disc with the cross cut out of it. The gap between this and the
+          ring is simply the space neither path paints. */}
+      <Path d={`${circle(12, 12, 7.7)} ${cross(12, 12, 1.7, 5.1)}`} fill={color} fillRule="evenodd" />
     </Svg>
   );
 }
