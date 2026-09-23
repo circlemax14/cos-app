@@ -59,7 +59,7 @@ import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useDailyReadFlag } from '@/hooks/use-daily-read-flag';
 // 2026-08-05 — replaces the 3 stacked hero cards with a compact side-by-side row.
 import { HeroInsightsRow } from '@/components/home/HeroInsightsRow';
-import TrendSourceBar from '@/components/health-summary/TrendSourceBar';
+import { totalTracked } from '@/lib/trend-sources';
 import { useTrendSourceCounts } from '@/hooks/use-trend-source-counts';
 // SCRUM-639 — Explainable score. buildReadinessExplainPrompt turns
 // the score + drivers into an AI prompt with the specific inputs.
@@ -3893,95 +3893,102 @@ function HomeScreenInner() {
         )}
 
         {/*
-          COS-1083 — ONE button, one surface.
+          COS-1085 — the trends button, rebuilt compact.
 
-          Vishal: "I was expecting it to be one button where we display
-          everything and then we click on it and we move to the health trends
-          screen." What shipped was a tinted hero with the source bar dropped
-          into a surface-coloured panel inside it — two visual objects inside
-          one tap target, which is what "you cut the corners" described.
+          Vishal on the COS-1083 version: "this button seems to be big and very
+          odd, doesn't look attractive... make a unique button so that it is
+          also attractive and it is also informative." And on the spinner:
+          "I was expecting there will be a loader for the COMPLETE button, and
+          once you fetch all the data after that button will be visible."
 
-          The fix is to stop fighting TrendSourceBar. COS-1045 kept them apart
-          because the bar is styled for a normal card background while the hero
-          was filled with colors.tint; COS-1072 worked around that with an
-          inset panel. Making the WHOLE card the surface colour removes the
-          conflict rather than routing around it: the bar renders on the
-          background it was designed for, the tint becomes an accent instead of
-          a field, and the card reads as a single button.
+          Two things were wrong.
 
-          The decorative blob and the tablet-only chip row are gone. Both were
-          ornament, and ADR-0003 asks for fewer nested views on this screen.
+          WHY IT WAS BIG. It rendered TrendSourceBar, which stacks a label AND
+          a number under each of three segments, then a summary line. That is
+          right on the Health Trends screen, where the bar IS the content. On
+          Home it made a ~160px block out of one figure.
+
+          So Home now draws its own compact presentation: the total as the hero
+          figure, a thin full-width strip, and one inline legend line. The
+          NUMBERS still come from useTrendSourceCounts — the same hook, the
+          same query keys as the Trends screen — so COS-1072's guarantee holds:
+          the two surfaces cannot disagree about the count. Only the layout
+          differs, and TrendSourceBar itself is untouched, so COS-1045's
+          "do not re-theme a shared component for one caller" still holds too.
+
+          WHY THE SPINNER WAS WRONG. A spinner inside an otherwise-finished
+          button says "this button works, one bit is still arriving". The
+          honest state is that the button has nothing to say yet. So the whole
+          thing is a skeleton of exactly the same dimensions until the counts
+          land — nothing jumps, and nothing invites a tap toward a screen whose
+          headline number we do not have.
         */}
-        <TouchableOpacity
-          style={[
-            styles.trendsCard,
-            !isTabletDevice && styles.trendsCardPhone,
-            { backgroundColor: colors.background, borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.25)' },
-          ]}
-          onPress={() => router.push('/Home/health-trends' as never)}
-          accessibilityRole="button"
-          accessibilityLabel={
-            trendSourcesLoading ? 'Health Trends, still counting what we track' : 'View health trends'
-          }
-          activeOpacity={0.85}
-        >
-          <View style={styles.trendsRow}>
-            <View style={[styles.trendsBadge, { backgroundColor: `${colors.tint as string}1A` }]}>
-              <MaterialIcons
-                name="show-chart"
-                size={isTabletDevice ? getScaledFontSize(20) : 18}
-                color={colors.tint as string}
-              />
+        {trendSourcesLoading ? (
+          <View
+            style={[styles.trendsCard, { backgroundColor: colors.background, borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.25)' }]}
+            accessibilityLabel="Loading your health trends"
+          >
+            <View style={styles.trendsRow}>
+              <View style={[styles.trendsSkelNum, { backgroundColor: (colors.tint as string) + '14' }]} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={[styles.trendsSkelLine, { width: '52%', backgroundColor: (colors.tint as string) + '14' }]} />
+                <View style={[styles.trendsSkelLine, { width: '34%', marginTop: 6, backgroundColor: (colors.tint as string) + '0F' }]} />
+              </View>
             </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text
-                style={[
-                  styles.trendsTitle,
-                  { color: colors.text, fontSize: isTabletDevice ? getScaledFontSize(17) : 15 },
-                ]}
-              >
-                Health Trends
+            <View style={[styles.trendsStrip, { backgroundColor: (colors.tint as string) + '14' }]} />
+            <View style={[styles.trendsSkelLine, { width: '68%', marginTop: 10, backgroundColor: (colors.tint as string) + '0F' }]} />
+          </View>
+        ) : trendSources.length > 0 ? (
+          <TouchableOpacity
+            style={[
+              styles.trendsCard,
+              { backgroundColor: colors.background, borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.25)' },
+            ]}
+            onPress={() => router.push('/Home/health-trends' as never)}
+            accessibilityRole="button"
+            accessibilityLabel={`Health trends. ${totalTracked(trendSources)} things we track. ${trendSources
+              .map((s) => `${s.count} ${s.label}`)
+              .join(', ')}`}
+            activeOpacity={0.85}
+          >
+            <View style={styles.trendsRow}>
+              {/* The total is the hero. It is the one number worth waiting for,
+                  and it was previously buried under the bar as a caption. */}
+              <Text style={[styles.trendsTotal, { color: colors.tint as string }]} maxFontSizeMultiplier={1.2}>
+                {totalTracked(trendSources)}
               </Text>
-              {/*
-                The count is the thing worth waiting for, so the wait is shown
-                HERE. Vishal: "there should be a small loader on that place,
-                after that it will be there."
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.trendsTitle, { color: colors.text }]} numberOfLines={1}>
+                  Health Trends
+                </Text>
+                <Text style={[styles.trendsSubtitle, { color: colors.subtext }]} numberOfLines={1}>
+                  things we track for you
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={colors.subtext as string} />
+            </View>
 
-                Before, the whole lower zone was gated on `!trendSourcesLoading`
-                and rendered nothing at all — so the card drew short and then
-                grew when three queries resolved. A card that jumps under the
-                user's thumb is worse than a spinner.
-              */}
-              {trendSourcesLoading ? (
-                <View style={styles.trendsLoadingRow}>
-                  <ActivityIndicator size="small" color={colors.tint as string} />
-                  <Text style={[styles.trendsSubtitle, { color: colors.subtext, marginLeft: 8 }]}>
-                    Counting what we track…
+            {/* One thin strip, proportioned by source. The signature of the
+                card, and the whole composition in 8px of height. */}
+            <View style={styles.trendsStrip}>
+              {trendSources.map((s) => (
+                <View key={s.key} style={{ flex: s.count, backgroundColor: s.color }} />
+              ))}
+            </View>
+
+            {/* One line, not three stacked blocks. */}
+            <View style={styles.trendsLegend}>
+              {trendSources.map((s) => (
+                <View key={s.key} style={styles.trendsLegendItem}>
+                  <View style={[styles.trendsDot, { backgroundColor: s.color }]} />
+                  <Text style={[styles.trendsLegendText, { color: colors.subtext }]} numberOfLines={1}>
+                    {s.count} {s.label.replace(/^From your /, '').replace(/^Your /, '')}
                   </Text>
                 </View>
-              ) : (
-                <Text style={[styles.trendsSubtitle, { color: colors.subtext }]}>
-                  Labs, check-ins and devices over time
-                </Text>
-              )}
+              ))}
             </View>
-            <MaterialIcons
-              name="chevron-right"
-              size={isTabletDevice ? getScaledFontSize(24) : 22}
-              color={colors.subtext as string}
-            />
-          </View>
-
-          {/* Reserved height while loading, so the card is the same size
-              before and after the numbers arrive. */}
-          {trendSourcesLoading ? (
-            <View style={styles.trendsBarPlaceholder} />
-          ) : trendSources.length > 0 ? (
-            <View style={styles.trendsBarWrap}>
-              <TrendSourceBar sources={trendSources} noun="things we track" />
-            </View>
-          ) : null}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        ) : null}
 
         {/*
          * SCRUM-653: standalone WellbeingMapPreview injection removed —
@@ -4278,13 +4285,8 @@ const styles = StyleSheet.create({
   },
   // SCRUM-265 #9: refreshed Health Trends hero tile.
   /*
-   * COS-1083 — the one-button trends card.
-   *
-   * The trendsHero* entries below are now unreferenced. They are left in place
-   * deliberately: removing twelve entries from a 900-line StyleSheet by script
-   * spliced the component body into the stylesheet on the first attempt, and a
-   * dead style key costs nothing while a corrupted 4,000-line screen costs a
-   * night. They can go in a follow-up with a renderer to check against.
+   * COS-1085 — the compact trends button. The trendsHero* entries further down
+   * are dead and stay there for now; see the COS-1083 note in git history.
    */
   trendsCard: {
     marginHorizontal: 16,
@@ -4292,25 +4294,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 6,
+    paddingVertical: 13,
     overflow: 'hidden',
   },
-  trendsCardPhone: { borderRadius: 14, paddingHorizontal: 12, paddingTop: 12 },
   trendsRow: { flexDirection: 'row', alignItems: 'center' },
-  trendsBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
+  trendsTotal: { fontSize: 32, fontWeight: '800', letterSpacing: -0.5, minWidth: 46 },
+  trendsTitle: { fontWeight: '700', fontSize: 15, letterSpacing: 0.1 },
+  trendsSubtitle: { fontSize: 12, marginTop: 1 },
+  trendsStrip: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: 12,
   },
-  trendsTitle: { fontWeight: '700', letterSpacing: 0.1 },
-  trendsSubtitle: { fontSize: 12, marginTop: 2 },
-  trendsLoadingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
-  /* Matches TrendSourceBar's rendered height so nothing shifts. */
-  trendsBarPlaceholder: { height: 74 },
-  trendsBarWrap: { marginTop: 10 },
+  trendsLegend: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  trendsLegendItem: { flexDirection: 'row', alignItems: 'center', marginRight: 14 },
+  trendsDot: { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
+  trendsLegendText: { fontSize: 11.5 },
+  /* Skeleton pieces — same box, same rhythm, so nothing moves when data lands. */
+  /*
+   * 38, not 30: the real row's height is set by the 32px total's line box, and
+   * a skeleton that is 8px shorter still nudges the page when data lands —
+   * which is the jump this skeleton exists to prevent.
+   */
+  trendsSkelNum: { width: 46, height: 38, borderRadius: 8 },
+  trendsSkelLine: { height: 11, borderRadius: 5 },
   trendsHeroCard: {
     marginHorizontal: 16,
     marginBottom: 16,
