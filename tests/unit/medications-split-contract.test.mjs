@@ -5,7 +5,7 @@
  * ─── WHY THIS FILE WAS RED ───────────────────────────────────────────
  *
  * It asserted the ORIGINAL two-headed-section design: `{medical.map(...)}`,
- * `{psychiatric.map(...)}`, and an uppercase "Psychiatric" heading. That
+ * `{psychotropic.map(...)}`, and an uppercase "Psychotropic" heading. That
  * design was removed on 2026-08-18 (cos-app#421) after Vishal called it out —
  * the headings split the list in two, so a patient's medications no longer
  * appeared in one place and the order they were added in was destroyed.
@@ -16,7 +16,7 @@
  * because the tests were written against the implementation's shape rather
  * than against the requirement.
  *
- * So this rewrite pins the REQUIREMENT — Ken's medical/psychiatric
+ * So this rewrite pins the REQUIREMENT — Ken's medical/psychotropic
  * distinction must reach the patient — while leaving the presentation free to
  * change again.
  *
@@ -51,9 +51,9 @@ test("Ken's distinction still reaches the patient", () => {
   assert.match(SECTION, /PSYCH_TINT/);
 });
 
-test('ONLY psychiatric is asserted — medical is a default, not a finding', () => {
+test('ONLY psychotropic is asserted — medical is a default, not a finding', () => {
   // classifyMedication returns 'medical' for anything not on its curated
-  // list, including psychiatric drugs it does not know. Marking medical would
+  // list, including psychotropic drugs it does not know. Marking medical would
   // present a fallback as a conclusion on a screen a patient may hand to a
   // family member.
   assert.doesNotMatch(SECTION, /medical-services/, 'no medical glyph');
@@ -64,7 +64,7 @@ test('THE REGRESSION THIS FILE MISSED: one list, one order', () => {
   // Two separate .map() passes was the tell for the split design.
   assert.match(SECTION, /\{active\.map\(renderCard\)\}/);
   assert.doesNotMatch(SECTION, /\{medical\.map\(renderCard\)\}/);
-  assert.doesNotMatch(SECTION, /\{psychiatric\.map\(renderCard\)\}/);
+  assert.doesNotMatch(SECTION, /\{psychotropic\.map\(renderCard\)\}/);
 });
 
 test('the counts survive, because they were the useful half of the headings', () => {

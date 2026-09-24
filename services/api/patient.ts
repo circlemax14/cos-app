@@ -120,16 +120,31 @@ export async function fetchMedications(): Promise<Medication[]> {
         // COS-1041 — always present on the wire; this mapper just never read it.
         status?: string;
         authoredOn?: string;
+        // COS-1109 — recognises a finished one-off course. See types.ts.
+        dispenseRequest?: { numberOfRepeatsAllowed?: number };
       }>;
     };
   }>('/v1/patients/me/medical-data');
   return res.data.data.medications.map((m) => {
     const dosage = m.dosageInstruction?.[0];
     const timing = dosage?.timing?.repeat;
-    let frequency = dosage?.text ?? '';
-    if (!frequency && timing) {
-      frequency = `${timing.frequency ?? 1}x per ${timing.period ?? 1} ${timing.periodUnit ?? 'day'}`;
-    }
+    /*
+     * COS-1109 — `frequency` must NOT fall back to the sig text.
+     *
+     * Both fields were assigned `dosageInstruction[0].text`, and MedRow renders
+     * them as `[dosage, frequency].join(' • ')`. So every row on the Health
+     * Status card printed its instructions twice, separated by a bullet:
+     *   "Take 1 capsule by mouth Daily. • Take 1 capsule by mouth Daily."
+     * On rows whose sig carries the EHR's "Historical Med" annotation that read
+     * as four lines of near-identical text per medication.
+     *
+     * The sig text belongs to `dosage`. `frequency` is only ever the STRUCTURED
+     * timing, and stays empty when the EHR sent none — an empty half renders as
+     * nothing, which is correct, rather than as a duplicate.
+     */
+    const frequency = timing
+      ? `${timing.frequency ?? 1}x per ${timing.period ?? 1} ${timing.periodUnit ?? 'day'}`
+      : '';
     return {
       name: m.medicationCodeableConcept?.text ?? 'Unknown',
       dosage: dosage?.text ?? '',
@@ -137,6 +152,7 @@ export async function fetchMedications(): Promise<Medication[]> {
       purpose: m.reasonCode?.[0]?.text ?? '',
       status: m.status,
       authoredOn: m.authoredOn ?? null,
+      dispenseRequest: m.dispenseRequest ?? null,
     };
   });
 }

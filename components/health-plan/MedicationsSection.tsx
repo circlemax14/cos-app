@@ -792,7 +792,7 @@ export function MedicationsSection({
                 </Text>
               </View>
             ) : (
-              /* Ken 2026-08-14 asked for medical vs psychiatric. This was
+              /* Ken 2026-08-14 asked for medical vs psychotropic. This was
                  built as TWO HEADED SECTIONS, and Vishal 2026-08-18 corrected
                  it: "it's not like we have 2 sections, it has to be icon
                  based."
@@ -833,23 +833,23 @@ export function MedicationsSection({
                 // distinction the patient cannot see on their own list is
                 // furniture. Counts stay — they were the useful half of the
                 // headings.
-                const { medical, psychiatric } = splitByMedicationClass(active);
-                const showLegend = medical.length > 0 && psychiatric.length > 0;
+                const { medical, psychotropic } = splitByMedicationClass(active);
+                const showLegend = medical.length > 0 && psychotropic.length > 0;
 
                 return (
                   <>
-                    {/* One quiet line, not a two-key legend: only psychiatric
+                    {/* One quiet line, not a two-key legend: only psychotropic
                         rows carry a mark now, so a "Medical" key would explain
                         a symbol that does not appear anywhere. */}
                     {showLegend ? (
                       <View
                         style={styles.legendRow}
                         accessible
-                        accessibilityLabel={`${psychiatric.length} of your ${active.length} medications are psychiatric and are marked.`}
+                        accessibilityLabel={`${psychotropic.length} of your ${active.length} medications are psychotropic and are marked.`}
                       >
                         <View style={[styles.classDot, { backgroundColor: PSYCH_TINT }]} />
                         <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
-                          {`${psychiatric.length} of ${active.length} are psychiatric`}
+                          {`${psychotropic.length} of ${active.length} are psychotropic`}
                         </Text>
                       </View>
                     ) : null}
@@ -1078,10 +1078,10 @@ function MedicationCardDescriptive({
   // injectable, because that is the case where it changes what the patient
   // does.
   //
-  // ─── AND ONLY PSYCHIATRIC IS MARKED ────────────────────────────────
+  // ─── AND ONLY PSYCHOTROPIC IS MARKED ────────────────────────────────
   //
-  // classifyMedication is deliberately one-sided — psychiatric on a confident
-  // match, 'medical' for everything else INCLUDING psychiatric drugs not on
+  // classifyMedication is deliberately one-sided — psychotropic on a confident
+  // match, 'medical' for everything else INCLUDING psychotropic drugs not on
   // its list. So 'medical' is a default, not a finding, and badging it would
   // dress a fallback up as a conclusion. Marking only what we detected drops
   // a claim we cannot support, and takes a mark off most rows as a bonus.
@@ -1122,7 +1122,7 @@ function MedicationCardDescriptive({
   //
   //   THE MONOGRAM ANCHORS THE ROW. Every line of text now starts at the same
   //   x, against a fixed tile, instead of floating against the card edge.
-  //   ONE TINT, NOT SIX: violet when psychiatric, neutral otherwise. The six
+  //   ONE TINT, NOT SIX: violet when psychotropic, neutral otherwise. The six
   //   hash-picked hues of the mockup looked richer but meant nothing —
   //   Metformin and Metoprolol both draw "M" — and they competed with the two
   //   colours on this screen that DO mean something.
@@ -1406,7 +1406,7 @@ function MedicationCardDescriptive({
         accessibilityElementsHidden={true}
         importantForAccessibility="no-hide-descendants"
       >
-        {/* No psychiatric mark here — it is a chip in the row above now.
+        {/* No psychotropic mark here — it is a chip in the row above now.
             Saying it twice on one card is how a footnote becomes noise. */}
         {notableForm ? (
           <>
@@ -1591,10 +1591,10 @@ function MedicationCard({
   const composedA11yLabel = composeMedA11yLabel(med);
 
   // The scannable half of the class mark: a thin edge down the left of
-  // psychiatric rows. The word in the meta row says WHAT it is; this is what
+  // psychotropic rows. The word in the meta row says WHAT it is; this is what
   // lets someone find them without reading. Medical rows get nothing, because
   // 'medical' is a default rather than something we detected.
-  const isPsychRow = classifyMedication(med) === 'psychiatric';
+  const isPsychRow = classifyMedication(med) === 'psychotropic';
 
   return (
     <View
@@ -1631,7 +1631,7 @@ function MedicationCard({
 
             The hue is decorative and I argued against it earlier, on the
             grounds that six hash-picked colours compete with the two that
-            carry meaning. D defuses that: psychiatric is now a LABELLED CHIP
+            carry meaning. D defuses that: psychotropic is now a LABELLED CHIP
             in the row below, so the class has its own channel and the tile is
             free to be identity. Two medications starting with the same letter
             still get the same colour — the tile aids recognition, it does not
