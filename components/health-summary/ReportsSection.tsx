@@ -122,7 +122,7 @@ function ReportsSection() {
 
   return (
     <SummaryCardShell
-      title="Reports"
+      title="Reports & History"
       icon="description"
       accentColor="#7C3AED"
       preview={
