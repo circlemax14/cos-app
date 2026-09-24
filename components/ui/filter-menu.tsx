@@ -24,6 +24,17 @@ interface FilterMenuProps {
   iconName?: IconName;
   iconSize?: number;
   accessibilityLabel?: string;
+  /**
+   * COS-1103 — a filter is ON, so say so on the trigger.
+   *
+   * Vishal: "there should be some kind of indicator that filter is applied."
+   * Without it the only place the selection appears is inside the menu, which
+   * is closed by the time you are looking at the list it changed — so an
+   * active filter and no filter look identical.
+   */
+  active?: boolean;
+  /** Colour of the active dot. Falls back to the icon colour. */
+  activeColor?: string;
 }
 
 export function FilterMenu({
@@ -40,6 +51,8 @@ export function FilterMenu({
   iconName = 'slider.vertical.3',
   iconSize = 22,
   accessibilityLabel = 'Filter options',
+  active = false,
+  activeColor,
 }: FilterMenuProps) {
   const anchorRef = React.useRef<View>(null);
   const [visible, setVisible] = React.useState(false);
@@ -73,7 +86,25 @@ export function FilterMenu({
         accessibilityLabel={accessibilityLabel}
         style={styles.touchTarget}
       >
-        <IconSymbol name={iconName} size={iconSize} color={color} />
+        <IconSymbol name={iconName} size={iconSize} color={active ? (activeColor ?? color) : color} />
+        {active && (
+          <View
+            // Sized from the icon so it stays proportional at every Dynamic
+            // Type setting rather than becoming a speck or a blob.
+            style={[
+              styles.activeDot,
+              {
+                width: Math.max(7, iconSize * 0.32),
+                height: Math.max(7, iconSize * 0.32),
+                borderRadius: Math.max(7, iconSize * 0.32) / 2,
+                backgroundColor: activeColor ?? color,
+              },
+            ]}
+            // Decorative: the state is already in accessibilityLabel below.
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        )}
       </TouchableOpacity>
       <Modal
         visible={visible}
@@ -150,6 +181,11 @@ const getMenuPosition = (anchor: { x: number; y: number; height: number } | null
 };
 
 const styles = StyleSheet.create({
+  activeDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+  },
   touchTarget: {
     alignItems: 'center',
     justifyContent: 'center',
