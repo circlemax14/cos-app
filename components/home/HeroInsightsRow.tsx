@@ -50,7 +50,6 @@ import { useHomeDialGaugeFlag } from '@/hooks/use-home-dial-gauge-flag'
 import { useHomeDimensions } from '@/components/home/HomeResponsiveProvider'
 import { WellbeingDialHero } from '@/components/home/WellbeingDialHero'
 import { HealthAgeDialHero } from '@/components/home/HealthAgeDialHero'
-import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
 import { positionOf } from '@/lib/dial-geometry'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
@@ -152,7 +151,6 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   const enabledCount = 1 + (healthAgeEnabled ? 1 : 0);
 
   const variant: Variant = enabledCount === 1 ? 'large' : 'compact'
-  const dialMode = useHomeDialGaugeFlag()
 
   return (
     /*
@@ -255,9 +253,6 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
    * warms exactly this key above — so this is a cache read, not a new fetch.
    */
   const { data: endpoint } = useWellbeingScoreEndpoint()
-  // COS-1096 — the trend the detail screen shows. Home already warms this
-  // query (useWellbeingScoreWarmer above), so reading it here costs nothing.
-  const { derivation: wbDerivation } = useWellbeingDerivation()
   const authoritative =
     typeof endpoint?.overall === 'number' && Number.isFinite(endpoint.overall)
       ? endpoint.overall
@@ -313,7 +308,7 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.62}
+                scale={0.95}
               />
             }
           />
@@ -364,18 +359,6 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
    * renders the bare number exactly as it does today.
    */
   const chrono = data?.chronologicalAge ?? null
-  /*
-   * COS-1096 — same treatment the detail screen gives its date: omitted
-   * rather than guessed when unparseable, because a wrong date on a health
-   * figure is worse than no date.
-   */
-  const healthAgeAsOf = (() => {
-    const iso = data?.computedAt
-    if (!iso) return null
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return null
-    return `As of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
-  })()
   const HEALTH_AGE_SPAN_YEARS = 10
   const ring =
     hasScore && typeof chrono === 'number' && Number.isFinite(chrono)
@@ -436,7 +419,7 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.62}
+                scale={0.78}
               />
             }
           />
@@ -531,7 +514,17 @@ function Tile({ variant, label, onPress, accessibilityLabel, body }: TileProps):
    * ScoreRing path keeps its card, because a bare 64px ring with no border and
    * no header would read as a stray graphic rather than a tile.
    */
-  const bare = useHomeDialGaugeFlag()
+  /*
+   * COS-1098 — the card is BACK. Vishal: "bring back that border that we were
+   * originally having which we were trying to display as a card outside of
+   * the circle."
+   *
+   * COS-1095 removed it to give the dial more room. That was the right trade
+   * then and the wrong one now: he wants the card, and the room is bought back
+   * by taking the band chip OUT of the ring instead, which frees the whole
+   * interior for the number.
+   */
+  const bare = false
   const tileStyle = variant === 'large' ? styles.tileLarge : styles.tile
   const headerLabelStyle = variant === 'large' ? styles.headerLabelLarge : styles.headerLabel
   return (
@@ -653,9 +646,27 @@ function Ready({
      * and paints over the next dial. That is precisely what shipped in
      * COS-1096, and it is why only the number and the chip go inside now.
      */
+    /*
+     * COS-1098 — the dial fills the CARD, not the tile.
+     *
+     *   tile     (screenWidth - 32 margin - 10 gap) / 2
+     *   card     that, less 6pt padding each side and 1pt of border
+     *
+     * Vishal asked for the circles 30% bigger AND the card back. Those pull
+     * against each other and the screen decides: two rings at +30% would be
+     * 229pt each, needing 500pt of width on a 393pt phone. The card costs a
+     * further 8%. So the ring is as large as the card allows — 162pt — and the
+     * "bigger" is spent where it actually reads, on the NUMBER, which grows
+     * from 35pt to 53pt now that the chip has vacated the interior.
+     *
+     * Padding is 6 rather than the card's usual 10 for the same reason: every
+     * point of it comes straight off the diameter.
+     */
     const perTile = screenWidth > 0 ? (screenWidth - 32 - 10) / 2 : 0
     const dialSize =
-      perTile > 0 ? Math.round(Math.max(140, Math.min(200, perTile))) : Math.round(ringSize * 1.5)
+      perTile > 0
+        ? Math.round(Math.max(130, Math.min(200, perTile - 6 * 2 - 2)))
+        : Math.round(ringSize * 1.5)
     return (
       <View style={styles.body}>
         {/*

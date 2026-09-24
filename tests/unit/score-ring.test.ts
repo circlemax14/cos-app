@@ -235,35 +235,36 @@ test('COS-1097: the circles sit in PARALLEL, not stacked', () => {
  * out and paints over the next dial, which is what shipped in COS-1096. So the
  * compact stack's height is asserted against the ring it has to live in.
  */
-test('COS-1097: the compact dial contents FIT inside the ring', () => {
+test('COS-1098: the compact dial contents FIT inside the ring', () => {
+  /*
+   * THE CHECK THAT WOULD HAVE CAUGHT THE OVERLAP.
+   *
+   * DialGauge lays children out absolutely at a fixed height and pads them 18%
+   * each side. Content taller than the ring does not expand it — it spills out
+   * and paints over the next dial, which is what shipped in COS-1096.
+   */
   const PHONE = 393;
   const perTile = (PHONE - 32 - 10) / 2;
-  const dialSize = Math.max(140, Math.min(200, perTile));
+  // COS-1098: the card is back, so the ring is the tile less 6pt padding
+  // either side and 1pt of border.
+  const dialSize = Math.max(130, Math.min(200, perTile - 6 * 2 - 2));
   const interiorWidth = dialSize * (1 - 0.18 * 2);
-  const scale = 0.62;
 
-  // Wellbeing: number line + chip.
-  const numberLine = 60 * scale;          // lineHeight
-  const chipHeight = 11 + 3 * 2 + 4;      // font + vertical padding + gap
-  const wellbeingHeight = numberLine + 4 * scale + chipHeight;
+  // Wellbeing: "41" at 56*0.95, plus "/100" at 18*0.95. No chip any more.
+  const wbFont = 56 * 0.95;
+  const wbWidth = 2 * wbFont * 0.58 + 4 * (18 * 0.95) * 0.55;
   assert.ok(
-    wellbeingHeight < dialSize,
-    `wellbeing stack ${wellbeingHeight.toFixed(0)}pt must fit ring ${dialSize.toFixed(0)}pt`,
+    wbWidth < interiorWidth,
+    `wellbeing row ${wbWidth.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
   );
+  assert.ok(60 * 0.95 < dialSize, 'wellbeing number must be shorter than the ring');
 
-  // Widest band label has to clear the 18% padding on both sides.
-  // "Foundational" at 11pt with 0.6 letterSpacing and 8pt padding each side.
-  const widestChip = 'Foundational'.length * 11 * 0.58 + 'Foundational'.length * 0.6 + 16;
+  // Health age: "63.4" is FOUR glyphs, which is the binding constraint.
+  const haFont = 52 * 0.78;
+  const haWidth = 4 * haFont * 0.58;
   assert.ok(
-    widestChip < interiorWidth,
-    `widest chip ${widestChip.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
-  );
-
-  // Health age: "63.4" is four glyphs at 52*scale.
-  const ageWidth = 4 * (52 * scale) * 0.58;
-  assert.ok(
-    ageWidth < interiorWidth,
-    `age ${ageWidth.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
+    haWidth < interiorWidth,
+    `health age ${haWidth.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
   );
 });
 
@@ -277,16 +278,39 @@ test('COS-1097: the label sits OUTSIDE the ring', () => {
   assert.ok(titleAt > 0 && titleAt < gaugeAt, 'the title must render before the gauge');
 });
 
-test('COS-1097: the band chip never scales below readable', () => {
-  // scale 0.62 would put the health-age chip at 6pt — decoration, not a label,
-  // and it is the only thing in the compact dial saying what the number means.
-  const hero = readFileSync('components/home/HealthAgeDialHero.tsx', 'utf8');
-  assert.ok(/Math\.max\(10, 11 \* scale\)/.test(hero), 'chip font must have a floor');
+test('COS-1098: no band chip inside the ring, in EITHER dial', () => {
+  // Vishal: "remove this Foundational and Younger text that we are trying to
+  // show within the circle." The compact branches must carry the number only.
+  for (const file of [
+    'components/home/WellbeingDialHero.tsx',
+    'components/home/HealthAgeDialHero.tsx',
+  ]) {
+    const src = readFileSync(file, 'utf8');
+    // The compact branch runs from `if (compact)` to the component's main
+    // `return (`. Sliced by that rather than by a literal of the full JSX,
+    // which differs between the two files.
+    const from = src.indexOf('if (compact)');
+    const to = src.indexOf('\n  return (', from);
+    assert.ok(from > 0 && to > from, `${file} must have a compact branch`);
+    const compact = src.slice(from, to);
+    assert.ok(!/ScoreBandChip|tokens\.label/.test(compact), `${file} compact branch must have no chip`);
+  }
 });
 
-test('COS-1095: the ScoreRing fallback keeps its card', () => {
-  // A bare 64px ring with no border and no header reads as a stray graphic,
-  // not a tile. Only gauge mode loses the chrome.
+test('COS-1098: removing the chip is recorded as a knowing trade', () => {
+  /*
+   * The band is now carried by COLOUR alone inside the ring. This file's own
+   * rule says colour alone fails older patients, glare and colour-blindness,
+   * so the reason it was done anyway has to be written down — otherwise the
+   * next person reads it as an oversight and "fixes" it.
+   */
+  const src = readFileSync('components/home/WellbeingDialHero.tsx', 'utf8');
+  assert.ok(/colour alone fails/i.test(src), 'the trade must be documented');
+});
+
+test('COS-1098: BOTH paths keep the card', () => {
+  // COS-1095 stripped the card to buy the dial room; COS-1098 buys that room
+  // back by evicting the chip instead, because Vishal asked for the border.
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
-  assert.ok(/const bare = useHomeDialGaugeFlag\(\)/.test(hero), 'chrome removal is flag-scoped');
+  assert.ok(/const bare = false/.test(hero), 'no path may render without the card');
 });

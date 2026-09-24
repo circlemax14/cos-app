@@ -74,8 +74,15 @@ export interface WellbeingDialHeroProps {
    * with "Wellbe…" and "4.6 yea…" truncated by an 18% horizontal padding that
    * leaves ~112pt of usable width.
    *
-   * Compact keeps the number, its scale and the band chip. The title and date
-   * move OUTSIDE the ring, where there is room for them.
+   * Compact keeps ONLY the number and its scale. Vishal, 2026-09-24: "remove
+   * this Foundational and Younger text that we are trying to show within the
+   * circle." The title and date already live outside it.
+   *
+   * ⚠️ The band is now carried by COLOUR alone inside the ring — the number
+   * takes the band's foreground. That is a deliberate step back from the rule
+   * this file records elsewhere (colour alone fails older patients, glare and
+   * colour-blindness), taken because he asked for it. The band still has its
+   * text label on the detail screen one tap away.
    */
   compact?: boolean
 }
@@ -128,11 +135,6 @@ export function WellbeingDialHero({
             /100
           </Text>
         </View>
-        {band ? (
-          <View style={[styles.chipRow, { marginTop: 4 * scale }]}>
-            <ScoreBandChip band={band} />
-          </View>
-        ) : null}
       </>
     )
   }
