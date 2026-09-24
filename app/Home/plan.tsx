@@ -27,7 +27,11 @@ import ShareSummarySection from '@/components/health-summary/ShareSummarySection
 import UpdatedAtFooter from '@/components/health-summary/UpdatedAtFooter';
 import { useVitalsRedFlagNotifications } from '@/hooks/use-vitals-red-flag-notifications';
 import { useCanRender } from '@/hooks/use-entitlement';
+import { router } from 'expo-router';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
+import { HealthAlertBadge } from '@/components/health-summary/HealthAlertBadge';
+import { useHealthAlerts } from '@/hooks/use-health-alerts';
+import { useHealthAlertsFlag } from '@/hooks/use-health-alerts-flag';
 
 /**
  * Renamed from the default export and wrapped below. This screen crashed the
@@ -81,6 +85,10 @@ function HealthSummaryScreenInner() {
    * being switched on.
    */
   const canReports = useCanRender('reports.view');
+  // COS-1112 — the flag is threaded INTO the hook, not wrapped around it:
+  // hooks cannot be conditional, and an "off" feature must not still fetch.
+  const healthAlertsEnabled = useHealthAlertsFlag();
+  const healthAlerts = useHealthAlerts(healthAlertsEnabled);
   const canTreatments = useCanRender('plan.treatments-supports');
   const canRecommendations = useCanRender('plan.recommendations');
   const canShare = useCanRender('plan.share-summary');
@@ -197,6 +205,23 @@ function HealthSummaryScreenInner() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/*
+          COS-1112 — Ken's health-alert indicator, "up in the top of the page in
+          the corner". Gated: it mounts an animated SVG in a screen body, which
+          is outside the envelope ADR-0003 draws after the 2026-08-18 cold-mount
+          crash. Flag off ⇒ this subtree does not exist and the header is
+          byte-identical to today.
+        */}
+        {healthAlertsEnabled && (
+          <View style={styles.alertCorner}>
+            <HealthAlertBadge
+              level={healthAlerts.level}
+              firingCount={healthAlerts.firing.length}
+              isLoading={healthAlerts.isLoading}
+              onPress={() => router.push('/Home/health-alerts')}
+            />
+          </View>
+        )}
         {/* Header — anchors the tab. */}
         <View style={styles.headerSection}>
           <Text style={{ fontSize: getScaledFontSize(40), marginBottom: 12 }}>🩺</Text>
@@ -300,6 +325,11 @@ const styles = StyleSheet.create({
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  alertCorner: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 4,
+    marginBottom: 4,
   },
   headerSection: {
     alignItems: 'center',

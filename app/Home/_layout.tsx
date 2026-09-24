@@ -301,6 +301,22 @@ export default function TabLayout() {
         }}
       />
       {/*
+        COS-1112 — Health Alerts detail. Same rule as Health Age: reachable
+        only from the corner badge on Health Status
+        (router.push('/Home/health-alerts')). Without href:null expo-router
+        auto-mounts it as a sixth visible tab, which is precisely what Ken
+        asked us NOT to build: "I don't want to open up another tab… I think
+        it should not be a page, I think it should be an icon."
+      */}
+      <Tabs.Screen
+        name="health-alerts"
+        options={{
+          title: 'Health Alerts',
+          href: null,
+          headerShown: false,
+        }}
+      />
+      {/*
         SCRUM-644 followup (2026-08-05) — Daily Read drilldown, same
         pattern as Health Age above. Reached from the Home tile via
         DailyReadCard onPress → router.push('/Home/daily-read'). Must
