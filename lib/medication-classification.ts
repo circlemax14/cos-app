@@ -1,22 +1,34 @@
 /**
- * Medical vs Psychiatric, for the medications list — SCRUM-674a.
+ * Medical vs Psychotropic, for the medications list — SCRUM-674a.
+ *
+ * COS-1110 — the word is PSYCHOTROPIC, never "psychiatric". Ken, 2026-09-24:
+ * "I don't want any medication called a psychiatric med. It's used for many
+ * purposes. It's not always used for anxiety, it's not always used for
+ * depression."
+ *
+ * He is right, and it is the same asymmetry this file already argues for
+ * below. Psychotropic describes the DRUG — it acts on the mind. Psychiatric
+ * describes the PATIENT, and applying it to a prescription asserts a
+ * diagnosis the record may not contain. Escitalopram taken for sleep is
+ * psychotropic; calling it psychiatric tells the patient something about
+ * themselves that nobody wrote down.
  *
  * Ken 2026-08-14: wants the plan screen's medications divided into medical and
- * psychiatric, in the list and in the add flow.
+ * psychotropic, in the list and in the add flow.
  *
  * ─── THE ASYMMETRY THAT DECIDES THE DESIGN ───────────────────────────
  *
  * These two errors are NOT equally bad:
  *
  *   - an antipsychotic shown under "Medical"  → a missed grouping
- *   - lisinopril shown under "Psychiatric"    → the app asserting something
+ *   - lisinopril shown under "Psychotropic"    → the app asserting something
  *                                                false about the patient, on a
  *                                                screen they may show a family
  *                                                member or a clinician
  *
- * So this classifier is deliberately ONE-SIDED: it names Psychiatric only on a
+ * So this classifier is deliberately ONE-SIDED: it names Psychotropic only on a
  * confident match against a curated list, and everything else is Medical. It
- * will under-call psychiatric medications. That is the intended failure
+ * will under-call psychotropic medications. That is the intended failure
  * direction.
  *
  * (This reverses what I first proposed to Ken — a third "Unclassified" bucket.
@@ -25,7 +37,7 @@
  *
  * ─── WHY A NAME LIST AND NOT ATC ─────────────────────────────────────
  *
- * The right long-term source is RxNorm → ATC (psychiatric = N05 psycholeptics
+ * The right long-term source is RxNorm → ATC (psychotropic = N05 psycholeptics
  * + N06 psychoanaleptics). That needs a network integration, caching, and a
  * failure path — worth doing, not worth blocking a display grouping on. The
  * list below IS the ATC N05/N06 content, spelled out by generic name and
@@ -35,19 +47,19 @@
  * ─── N03, LEFT FOR KEN ───────────────────────────────────────────────
  *
  * Antiepileptics widely used as mood stabilisers — lamotrigine, valproate,
- * carbamazepine — are ATC N03, not N05/N06. Whether they read as psychiatric
+ * carbamazepine — are ATC N03, not N05/N06. Whether they read as psychotropic
  * depends on why the patient is taking them, which we do not know. They are
- * listed separately below and are NOT psychiatric by default. Flip
- * `treatMoodStabilisersAsPsychiatric` when Ken rules.
+ * listed separately below and are NOT psychotropic by default. Flip
+ * `treatMoodStabilisersAsPsychotropic` when Ken rules.
  */
 
-export type MedicationClass = 'medical' | 'psychiatric'
+export type MedicationClass = 'medical' | 'psychotropic'
 
 /**
  * ATC N05 (psycholeptics) + N06 (psychoanaleptics), by generic name and common
  * US brand. Matched on word boundaries against a normalised name.
  */
-const PSYCHIATRIC = [
+const PSYCHOTROPIC = [
   // N06A antidepressants
   'fluoxetine', 'sertraline', 'paroxetine', 'citalopram', 'escitalopram', 'fluvoxamine',
   'venlafaxine', 'desvenlafaxine', 'duloxetine', 'levomilnacipran',
@@ -99,7 +111,7 @@ const PSYCHIATRIC = [
 
 /**
  * ATC N03 — antiepileptics commonly prescribed as mood stabilisers. NOT
- * psychiatric by default: whether they belong there depends on the indication,
+ * psychotropic by default: whether they belong there depends on the indication,
  * which we do not hold. Ken to rule.
  */
 const MOOD_STABILISERS = [
@@ -111,9 +123,9 @@ const MOOD_STABILISERS = [
 ] as const
 
 /**
- * Deliberately NOT classified as psychiatric, though they often are in
- * practice — each has a common non-psychiatric indication, and the asymmetry
- * above says we should not assert the psychiatric one:
+ * Deliberately NOT classified as psychotropic, though they often are in
+ * practice — each has a common non-psychotropic indication, and the asymmetry
+ * above says we should not assert the psychotropic one:
  *
  *   clonidine, guanfacine  — antihypertensives, also used in ADHD
  *   hydroxyzine            — antihistamine, also used for anxiety
@@ -154,14 +166,14 @@ export interface ClassifiableMedication {
  */
 export function classifyMedication(
   med: ClassifiableMedication | null | undefined,
-  opts?: { treatMoodStabilisersAsPsychiatric?: boolean },
+  opts?: { treatMoodStabilisersAsPsychotropic?: boolean },
 ): MedicationClass {
   const text = normalise(`${med?.name ?? ''} ${med?.genericName ?? ''}`)
   if (text.trim() === '') return 'medical'
 
-  if (matches(text, PSYCHIATRIC)) return 'psychiatric'
-  if (opts?.treatMoodStabilisersAsPsychiatric && matches(text, MOOD_STABILISERS)) {
-    return 'psychiatric'
+  if (matches(text, PSYCHOTROPIC)) return 'psychotropic'
+  if (opts?.treatMoodStabilisersAsPsychotropic && matches(text, MOOD_STABILISERS)) {
+    return 'psychotropic'
   }
   return 'medical'
 }
@@ -169,12 +181,12 @@ export function classifyMedication(
 /** Split a list into the two display buckets, preserving order within each. */
 export function splitByMedicationClass<T extends ClassifiableMedication>(
   meds: readonly T[],
-  opts?: { treatMoodStabilisersAsPsychiatric?: boolean },
-): { medical: T[]; psychiatric: T[] } {
+  opts?: { treatMoodStabilisersAsPsychotropic?: boolean },
+): { medical: T[]; psychotropic: T[] } {
   const medical: T[] = []
-  const psychiatric: T[] = []
+  const psychotropic: T[] = []
   for (const m of meds) {
-    ;(classifyMedication(m, opts) === 'psychiatric' ? psychiatric : medical).push(m)
+    ;(classifyMedication(m, opts) === 'psychotropic' ? psychotropic : medical).push(m)
   }
-  return { medical, psychiatric }
+  return { medical, psychotropic }
 }

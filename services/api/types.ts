@@ -322,6 +322,14 @@ export interface Medication {
   status?: string;
   /** FHIR authoredOn. Used to order past medications newest-first. */
   authoredOn?: string | null;
+  /*
+   * COS-1109 — enough of dispenseRequest to recognise a finished one-off
+   * course. `numberOfRepeatsAllowed: 0` with an old authoredOn is a course
+   * that was dispensed once and is over, however the EHR still stamps status.
+   * Ken's card led with a four-capsule, zero-refill antibiotic from seven
+   * months earlier, presented as current therapy for his knee arthritis.
+   */
+  dispenseRequest?: { numberOfRepeatsAllowed?: number } | null;
 }
 
 /** Richer medication from /v1/patients/me/medications */

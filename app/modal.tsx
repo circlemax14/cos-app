@@ -1,4 +1,5 @@
 import { DoctorCard } from '@/components/ui/doctor-card';
+import { providerContextLine } from '@/lib/provider-context-line';
 import { providerInactiveReason, inactiveLabel } from '@/utils/provider-direct-care';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
@@ -873,6 +874,25 @@ export default function ModalScreen() {
                     key={category.id}
                     label={category.displayName ?? category.name}
                   >
+                    {/*
+                      COS-1113 — ONE direct child of TabScreen. More than one
+                      crashes the native snapshot on iOS 26, which is why this
+                      wrapper exists rather than two siblings.
+
+                      FindPeopleEntry is hoisted ABOVE the ternary because it
+                      used to sit only in the else branch, and that branch never
+                      ran for Social. `showEmptyNonMedical` is true whenever a
+                      non-medical category has no rows, and Social can never
+                      have any: matchProviderToSubCategory hard-codes the
+                      category to 'medical' (constants/categories.ts), the
+                      server only ever sends category 'Medical', and manual
+                      members are unhydrated useState that dies with the modal.
+                      So the one entry point to Find People was unreachable from
+                      the Social tab in its normal state — exactly the state in
+                      which a patient most needs it.
+                    */}
+                    <View style={{ flex: 1 }}>
+                    {category.id === 'social' && <FindPeopleEntry />}
                     {showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={styles.addMemberContainer}>
@@ -982,7 +1002,6 @@ export default function ModalScreen() {
                        * are for.
                        */
                       <View style={{ flex: 1 }}>
-                      {category.id === 'social' && <FindPeopleEntry />}
                       {/*
                         COS-1101 — say WHY the filter did nothing.
                         Kept in the BODY even though the control moved back to
@@ -1285,6 +1304,10 @@ export default function ModalScreen() {
                                   id={provider.id}
                                   name={provider.name}
                                   qualifications={provider.qualifications || 'Healthcare Provider'}
+                                  /* COS-1114 — show the evidence the recency
+                                     filter acted on. Without it a working
+                                     filter reads as the app guessing. */
+                                  contextLine={providerContextLine(provider)}
                                   image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
                                   inactive={!!inactiveReason}
                                   inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
@@ -1311,6 +1334,7 @@ export default function ModalScreen() {
                         })()}
                       </ScrollView>
                     )}
+                    </View>
                   </TabScreen>
                 );
               })}

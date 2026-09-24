@@ -11,26 +11,63 @@ import type { Medication } from '@/services/api/types';
 import { Colors } from '@/constants/theme';
 import { Spacing } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { splitByRecency } from '@/lib/medication-recency';
+import { rankCurrent, splitByRecency } from '@/lib/medication-recency';
 
 type ThemedColors = (typeof Colors)['light'] | (typeof Colors)['dark'];
 
 /**
  * Match a medication's free-text `purpose` (FHIR reasonCode.text) against the
- * patient's known conditions. Substring match in both directions gives us a
- * reasonable recall rate on messy EHR data without heavy NLP.
+ * patient's known conditions.
+ *
+ * COS-1109 — the old `cl.includes(firstWord)` fallback was an UNANCHORED
+ * substring test of one whitespace token against a condition name, with no
+ * minimum length and no normalisation. A purpose beginning "As…" bound to any
+ * condition containing those two letters — and every condition ending in
+ * "disease" contains "as". That is the same class of bug as COS-1087, where
+ * matching 'ot' inside a surname misfiled 92 production rows.
+ *
+ * Now: strip punctuation, require a token of at least four characters, and
+ * match on WORD BOUNDARIES in both directions.
  */
+const MIN_TOKEN = 4;
+
+const normalise = (s: string): string =>
+  s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const escapeTerm = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Word-boundary containment, so "as" never matches inside "disease". */
+const hasTerm = (haystack: string, term: string): boolean =>
+  new RegExp(`(?<![a-z0-9])${escapeTerm(term)}(?![a-z0-9])`, 'i').test(haystack);
+
 function matchCondition(purpose: string | undefined, conditions: string[]): string | null {
   if (!purpose) return null;
-  const p = purpose.toLowerCase().trim();
+  const p = normalise(purpose);
   if (!p) return null;
-  const firstWord = p.split(/\s+/)[0];
+
+  // Whole-phrase match first — the only unambiguous signal.
   for (const c of conditions) {
-    const cl = c.toLowerCase().trim();
-    if (!cl) continue;
-    if (p.includes(cl) || (firstWord && cl.includes(firstWord))) return c;
+    const cl = normalise(c);
+    if (cl && (hasTerm(p, cl) || hasTerm(cl, p))) return c;
   }
-  return null;
+
+  /*
+   * Token fallback. Scores rather than taking the first hit: the old version
+   * returned whichever condition happened to sit earliest in an array built by
+   * splitting Bedrock prose on commas, so the same drug could move between
+   * headings across sessions with no data change.
+   */
+  const tokens = p.split(' ').filter((t) => t.length >= MIN_TOKEN);
+  if (tokens.length === 0) return null;
+
+  let best: { cond: string; score: number } | null = null;
+  for (const c of conditions) {
+    const cl = normalise(c);
+    if (!cl) continue;
+    const score = tokens.reduce((n, t) => n + (hasTerm(cl, t) ? t.length : 0), 0);
+    if (score > 0 && (!best || score > best.score)) best = { cond: c, score };
+  }
+  return best ? best.cond : null;
 }
 
 function MedicationsByConditionSection() {
@@ -68,10 +105,17 @@ function MedicationsByConditionSection() {
     [meds],
   );
 
+  /*
+   * COS-1109 — rank before grouping. See lib/medication-recency.rankCurrent:
+   * the card had no sort at all, so group order and row order were both the
+   * arbitrary order HealthLake returned rows in.
+   */
+  const rankedCurrent = useMemo(() => rankCurrent(currentMeds), [currentMeds]);
+
   const groups = useMemo(() => {
     const byCond = new Map<string, Medication[]>();
     const unmatched: Medication[] = [];
-    currentMeds.forEach((m) => {
+    rankedCurrent.forEach((m) => {
       const c = matchCondition(m.purpose, conditions);
       if (c) {
         const list = byCond.get(c) ?? [];
@@ -93,7 +137,36 @@ function MedicationsByConditionSection() {
       }
     });
     return { byCond, unmatched };
-  }, [currentMeds, conditions]);
+  }, [rankedCurrent, conditions]);
+
+  /*
+   * COS-1109 — ONE ordered list of sections, ungrouped bucket included.
+   *
+   * It used to be hardcoded to render last, *below* the "53 past medications
+   * not shown here" sentence. So Ken's two daily drugs sat under a generic
+   * heading, beneath a line about medications he no longer takes — the exact
+   * thing he screenshotted. Ranking is by each section's best member, and
+   * because rankedCurrent is already sorted, that is simply its first row.
+   */
+  const sections = useMemo(() => {
+    const out: { key: string; title: string; items: Medication[]; muted: boolean }[] = [];
+    for (const [cond, items] of groups.byCond.entries()) {
+      out.push({ key: `c:${cond}`, title: cond, items, muted: false });
+    }
+    if (groups.unmatched.length > 0) {
+      out.push({
+        key: 'unmatched',
+        // "Other medications" read as a leftovers bin for the drugs he cares
+        // most about. This says WHY they are separate without implying they
+        // matter less.
+        title: 'No condition recorded',
+        items: groups.unmatched,
+        muted: true,
+      });
+    }
+    const rankOf = (items: Medication[]) => rankedCurrent.indexOf(items[0]);
+    return out.sort((a, b) => rankOf(a.items) - rankOf(b.items));
+  }, [groups, rankedCurrent]);
 
   // Empty means "nothing at all on file", not "nothing current" — a patient
   // with only past prescriptions must still see the history line below rather
@@ -121,23 +194,23 @@ function MedicationsByConditionSection() {
       emptyState={<EmptyStateHint text={emptyText} />}
     >
       <View style={{ gap: Spacing.md }}>
-        {[...groups.byCond.entries()].map(([cond, list]) => (
-          <View key={cond} style={[styles.group, { borderColor: colors.border }]}>
+        {sections.map((sec) => (
+          <View key={sec.key} style={[styles.group, { borderColor: colors.border }]}>
             <Text
               style={[
                 styles.groupTitle,
                 {
-                  color: colors.text,
+                  color: sec.muted ? colors.subtext : colors.text,
                   fontSize: getScaledFontSize(14),
                   fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
                 },
               ]}
             >
-              {cond}
+              {sec.title}
             </Text>
-            {list.map((m, i) => (
+            {sec.items.map((m, i) => (
               <MedRow
-                key={`${m.name}-${i}`}
+                key={`${sec.key}-${m.name}-${i}`}
                 med={m}
                 colors={colors}
                 getScaledFontSize={getScaledFontSize}
@@ -148,8 +221,11 @@ function MedicationsByConditionSection() {
         {/* COS-1041 — the history stays reachable and, crucially, COUNTED.
             COS-1009 removed the server filter precisely so "what was I given
             by this doctor" could be answered; hiding these rows entirely
-            would re-break that. Naming the number also explains the change to
-            a patient who remembers seeing a much longer list. */}
+            would re-break that.
+
+            COS-1109 moved this to the BOTTOM. It used to sit above the
+            ungrouped bucket, so a patient's current medications rendered
+            underneath a sentence about medications he no longer takes. */}
         {pastMeds.length > 0 && (
           <Text
             style={{
@@ -163,30 +239,6 @@ function MedicationsByConditionSection() {
               : `${pastMeds.length} past medication${pastMeds.length === 1 ? '' : 's'} not shown here. See the Medications screen for the full history.`}
           </Text>
         )}
-        {groups.unmatched.length > 0 && (
-          <View style={[styles.group, { borderColor: colors.border }]}>
-            <Text
-              style={[
-                styles.groupTitle,
-                {
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-                },
-              ]}
-            >
-              Other medications
-            </Text>
-            {groups.unmatched.map((m, i) => (
-              <MedRow
-                key={`${m.name}-u${i}`}
-                med={m}
-                colors={colors}
-                getScaledFontSize={getScaledFontSize}
-              />
-            ))}
-          </View>
-        )}
         <Text
           style={{
             color: colors.subtext,
@@ -194,7 +246,8 @@ function MedicationsByConditionSection() {
             fontStyle: 'italic',
           }}
         >
-          Matched to your conditions above where an indication was recorded.
+          Ordered by what you are most likely taking now. Grouped by condition
+          where an indication was recorded.
         </Text>
       </View>
     </SummaryCardShell>

@@ -78,19 +78,19 @@ export function formTagIfNotable(isInjectable: boolean): string | null {
  *
  * ONLY PSYCHIATRIC IS MARKED, and that is a statement about confidence rather
  * than about layout. classifyMedication is deliberately one-sided: it names
- * psychiatric on a confident match against a curated ATC N05/N06 list and
- * returns 'medical' for everything else, INCLUDING psychiatric drugs it does
+ * psychotropic on a confident match against a curated ATC N05/N06 list and
+ * returns 'medical' for everything else, INCLUDING psychotropic drugs it does
  * not happen to know. 'medical' is therefore a default, not a finding.
  *
  * Marking both kinds would dress that default up as a conclusion — the app
  * telling a patient "this one is medical" when what it actually knows is
- * "this one is not in my psychiatric list". Marking only what we detected
+ * "this one is not in my psychotropic list". Marking only what we detected
  * removes a claim we cannot support, and as a side effect removes a mark from
  * most rows, which is most of the noise.
  */
 export function classMark(cls: string): { show: boolean; label: string } {
-  return cls === 'psychiatric'
-    ? { show: true, label: 'psychiatric' }
+  return cls === 'psychotropic'
+    ? { show: true, label: 'psychotropic' }
     : { show: false, label: '' }
 }
 

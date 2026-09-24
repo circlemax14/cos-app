@@ -5,6 +5,7 @@ import type {
   HealthInputOptions,
   HealthValue,
   HealthPermission,
+  HealthUnit,
 } from 'react-native-health';
 
 /**
@@ -1037,6 +1038,25 @@ export interface VitalSpec {
   refRange: { low: number; high: number }
   // healthkit returns SpO2 as a 0..1 fraction — we need to scale it to a %.
   scale?: (v: number) => number
+  /*
+   * COS-1111 — the HealthKit unit to REQUEST, when the native module's default
+   * is not the unit we store and threshold in.
+   *
+   * react-native-health defaults blood glucose to mmol/L
+   * (RCTAppleHealthKit+Methods_Results.m:19-21, HKUnitMolarMassBloodGlucose per
+   * litre) and we passed no `unit` key, so every iOS glucose reading arrived in
+   * mmol/L and was then labelled and thresholded as mg/dL.
+   *
+   * The numbers do not merely shift, they INVERT. A real 180 mg/dL is 10.0
+   * mmol/L, so evaluateGlucose saw 10 and returned "Glucose below 70 mg/dL" —
+   * an amber HYPOglycaemia flag on a hyperglycaemic reading. That flag is
+   * POSTed to the backend and fed into the AI health summary, and
+   * vitals_red_flag_enabled is true on production.
+   *
+   * Ask for the unit explicitly rather than converting after the fact: a
+   * conversion has to know what it was given, which is the thing we got wrong.
+   */
+  hkUnit?: HealthUnit
   // Which react-native-health method to call. Defaults are inferred from the
   // metric key for clinical vitals (`getBloodPressureSamples`, etc.); fitness
   // metrics are explicit because their HealthKit method names don't share
@@ -1078,6 +1098,8 @@ export const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     permission: 'BloodGlucose',
     unit: 'mg/dL',
     refRange: { low: 70, high: 100 },
+    // COS-1111 — without this the native default is mmol/L. See hkUnit above.
+    hkUnit: 'mgPerdL' as HealthUnit,
   },
   'body-temperature': {
     metricCode: 'hk-body-temp',
@@ -1335,6 +1357,9 @@ export const getHealthKitVitalTrend = (
       endDate: end.toISOString(),
       ascending: true,
       includeManuallyAdded: true,
+      // COS-1111 — request the unit we store in. Omitted for any spec that
+      // already matches the native default; see VitalSpec.hkUnit.
+      ...(spec.hkUnit ? { unit: spec.hkUnit } : {}),
     }
 
     fetcher(options, (err: string | Error | null, results: unknown) => {
@@ -1465,6 +1490,9 @@ const getHealthKitSleepTrend = (
       endDate: end.toISOString(),
       ascending: true,
       includeManuallyAdded: true,
+      // COS-1111 — request the unit we store in. Omitted for any spec that
+      // already matches the native default; see VitalSpec.hkUnit.
+      ...(spec.hkUnit ? { unit: spec.hkUnit } : {}),
     }
 
     fetcher(options, (err: string | Error | null, results: unknown) => {
