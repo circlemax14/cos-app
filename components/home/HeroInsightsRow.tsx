@@ -307,7 +307,7 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.62}
+                scale={0.5}
               />
             }
           />
@@ -417,7 +417,7 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.62}
+                scale={0.5}
               />
             }
           />
@@ -696,8 +696,18 @@ function Ready({
           labelColor="#8A9499"
           dotCoreColor="#FFFFFF"
           getScaledFontSize={(n) => n}
-          centerLabel={dial.centerLabel}
-          formatEnd={(n) => String(Math.round(n))}
+          /*
+           * COS-1100 — no scale labels on a Home dial.
+           *
+           * Vishal: "remove 0 to 100 and 58 to 78 numbering within circle."
+           * They are drawn INSIDE the ring, ~14pt clear of the track at this
+           * size, straight across the space the figure needs — which is why
+           * "63.4" came out as "6…" between a rotated 58 and 78.
+           *
+           * The centre label goes too: "68" under the arc was the third number
+           * in a tile whose job is to show ONE.
+           */
+          showEndLabels={false}
         >
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
             {dialContent ?? (
