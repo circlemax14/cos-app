@@ -206,34 +206,58 @@ test('COS-1094: the SVG dial stays behind a kill-switch', () => {
   assert.ok(/<ScoreRing/.test(hero), 'ScoreRing fallback must remain');
 });
 
-test('COS-1095: gauge mode drops the card chrome and sizes from real width', () => {
+test('COS-1095: gauge mode drops the card chrome', () => {
   // Vishal: "there are two cards with the border… why can't we remove those
   // cards and just have two circles". The card spent a border, 10pt padding
-  // either side and a header row on chrome, and the dial got the remainder —
-  // which is why the circles came out small.
+  // either side and a header row on chrome, and the dial got the remainder.
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
   assert.ok(/tileBare/.test(hero), 'a chrome-free tile style must exist');
   assert.ok(/\{!bare && \(/.test(hero), 'the header row must be dropped in gauge mode');
+});
+
+test('COS-1096: the dial is sized by the DETAIL SCREEN formula, full width', () => {
+  /*
+   * Both rejected attempts were "the same design, but smaller". They could not
+   * work: at two-across the ring is ~176px with a ~110pt interior, and the
+   * stack inside is six elements deep. This asserts the Home dial uses the
+   * same min(340, max(240, width - 56)) the screen it opens uses.
+   */
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
   assert.ok(
-    /\(screenWidth - 32 - 8\) \/ 2/.test(hero),
-    'dial must be sized from the row width, not a multiple of the old ring',
+    /Math\.min\(340, Math\.max\(240, screenWidth - 56\)\)/.test(hero),
+    'Home must use the detail screen dial formula',
+  );
+  const detail = readFileSync('app/Home/wellbeing-score.tsx', 'utf8');
+  assert.ok(
+    /Math\.min\(340, Math\.max\(240, width - 56\)\)/.test(detail),
+    'the detail screen formula must still be the one Home copies',
   );
 });
 
-test('COS-1095: the dial size is clamped at both ends', () => {
-  // Unclamped, a tablet renders one enormous dial per half-screen and a narrow
-  // phone renders one too small to read the number in.
+test('COS-1096: gauge mode STACKS the dials instead of rowing them', () => {
+  // Side by side is what made them small. The row layout is the thing that
+  // gives, not the design.
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
-  assert.ok(/Math\.max\(120, Math\.min\(260, perTile\)\)/.test(hero), 'clamp 120..260');
+  assert.ok(
+    /dialMode \|\| variant === 'large' \? styles\.singleColumn : styles\.row/.test(hero),
+    'gauge mode must use the single-column layout',
+  );
 });
 
-test('COS-1095: the title moves inside the ring when the card header goes', () => {
-  // Otherwise removing the header would leave two unlabelled circles — and
-  // Ken's own screenshots put "Health Age" inside the dial.
+test('COS-1096: Home renders the detail screens OWN hero components', () => {
+  /*
+   * The entire requirement is that the tile and the screen behind it agree.
+   * Two drawings of one gauge diverge the moment either is touched — which is
+   * exactly how the first two attempts drifted from Ken's screenshots.
+   */
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
-  assert.ok(/dialTitle="Wellbeing"/.test(hero), 'wellbeing tile passes its title');
-  assert.ok(/dialTitle="Health Age"/.test(hero), 'health age tile passes its title');
-  assert.ok(/styles\.dialTitle/.test(hero), 'the in-ring title must be rendered');
+  assert.ok(/<WellbeingDialHero/.test(hero), 'wellbeing tile uses the shared hero');
+  assert.ok(/<HealthAgeDialHero/.test(hero), 'health age tile uses the shared hero');
+
+  // And the detail screen must render the SAME component, or they are two
+  // drawings again with extra steps.
+  const detail = readFileSync('app/Home/wellbeing-score.tsx', 'utf8');
+  assert.ok(/<WellbeingDialHero/.test(detail), 'the detail screen uses it too');
 });
 
 test('COS-1095: the ScoreRing fallback keeps its card', () => {
