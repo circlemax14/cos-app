@@ -235,47 +235,57 @@ test('COS-1097: the circles sit in PARALLEL, not stacked', () => {
  * out and paints over the next dial, which is what shipped in COS-1096. So the
  * compact stack's height is asserted against the ring it has to live in.
  */
-test('COS-1098: the compact dial contents FIT inside the ring', () => {
+test('COS-1099: the compact contents fit WITH Dynamic Type applied', () => {
   /*
-   * THE CHECK THAT WOULD HAVE CAUGHT THE OVERLAP.
+   * THE BUG THIS TEST MISSED THE FIRST TIME.
    *
-   * DialGauge lays children out absolutely at a fixed height and pads them 18%
-   * each side. Content taller than the ring does not expand it — it spills out
-   * and paints over the next dial, which is what shipped in COS-1096.
+   * COS-1098 asserted the fit using the NOMINAL font size and passed, while
+   * the build it was guarding rendered "63.4" and "41/100" with an ellipsis.
+   * Both Texts carry maxFontSizeMultiplier={1.1}, so what actually reaches the
+   * ring is up to 10% wider than the number in the source. A fit check that
+   * ignores the multiplier is checking a size the device never draws.
    */
+  const DYNAMIC_TYPE = 1.1;
   const PHONE = 393;
   const perTile = (PHONE - 32 - 10) / 2;
-  // COS-1098: the card is back, so the ring is the tile less 6pt padding
-  // either side and 1pt of border.
   const dialSize = Math.max(130, Math.min(200, perTile - 6 * 2 - 2));
-  const interiorWidth = dialSize * (1 - 0.18 * 2);
+  const interior = dialSize * (1 - 0.18 * 2);
+  const SCALE = 0.62;
 
-  // Wellbeing: "41" at 56*0.95, plus "/100" at 18*0.95. No chip any more.
-  const wbFont = 56 * 0.95;
-  const wbWidth = 2 * wbFont * 0.58 + 4 * (18 * 0.95) * 0.55;
+  // Health age: "63.4" — four glyphs, the binding case.
+  const haWidth = 4 * (52 * SCALE * DYNAMIC_TYPE) * 0.58;
   assert.ok(
-    wbWidth < interiorWidth,
-    `wellbeing row ${wbWidth.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
+    haWidth < interior,
+    `health age ${haWidth.toFixed(0)}pt must fit ${interior.toFixed(0)}pt at Dynamic Type`,
   );
-  assert.ok(60 * 0.95 < dialSize, 'wellbeing number must be shorter than the ring');
 
-  // Health age: "63.4" is FOUR glyphs, which is the binding constraint.
-  const haFont = 52 * 0.78;
-  const haWidth = 4 * haFont * 0.58;
+  // Wellbeing: "41" plus "/100" on the same baseline row.
+  const wbWidth =
+    2 * (56 * SCALE * DYNAMIC_TYPE) * 0.58 + 4 * (18 * SCALE * DYNAMIC_TYPE) * 0.55;
   assert.ok(
-    haWidth < interiorWidth,
-    `health age ${haWidth.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
+    wbWidth < interior,
+    `wellbeing ${wbWidth.toFixed(0)}pt must fit ${interior.toFixed(0)}pt at Dynamic Type`,
   );
+
+  // And the height, which is what spilled over the next dial in COS-1096.
+  assert.ok(60 * SCALE * DYNAMIC_TYPE < dialSize, 'the number must be shorter than the ring');
 });
 
-test('COS-1097: the label sits OUTSIDE the ring', () => {
-  // Inside, the 18% padding truncated it to "Wellbe…". Outside it has the
-  // tile's full width.
+test('COS-1099: the tile label is rendered exactly ONCE', () => {
+  // COS-1097 added a title above the gauge because the card had been removed
+  // and nothing named the tile; COS-1098 brought the card back and its header
+  // names it again — so "Wellbeing" rendered twice, stacked.
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
   const dialBranch = hero.slice(hero.indexOf('if (dialEnabled && dial)'));
-  const titleAt = dialBranch.indexOf('styles.dialTitle');
-  const gaugeAt = dialBranch.indexOf('<DialGauge');
-  assert.ok(titleAt > 0 && titleAt < gaugeAt, 'the title must render before the gauge');
+  assert.ok(!/styles\.dialTitle/.test(dialBranch), 'the dial branch must not draw its own title');
+});
+
+test('COS-1099: no chevron on a dial tile', () => {
+  // The header is a row of [label, chevron], so the glyph takes width the
+  // label needs — which truncated "Wellbeing" to "Wellbe…".
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/const showChevron = !useHomeDialGaugeFlag\(\)/.test(hero), 'chevron must be gated');
+  assert.ok(/\{showChevron && \(/.test(hero), 'the chevron must be conditional');
 });
 
 test('COS-1098: no band chip inside the ring, in EITHER dial', () => {
