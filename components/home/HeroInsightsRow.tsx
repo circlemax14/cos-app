@@ -299,7 +299,6 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
              * `trend` comes from useWellbeingDerivation, whose query Home
              * already warms, so this is a cache read rather than a new fetch.
              */
-            dialTitle="Wellbeing"
             dialContent={
               <WellbeingDialHero
                 compact
@@ -308,7 +307,7 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.95}
+                scale={0.62}
               />
             }
           />
@@ -405,7 +404,6 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                   }
                 : null
             }
-            dialTitle="Health Age"
             dialContent={
               <HealthAgeDialHero
                 compact
@@ -419,7 +417,7 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.78}
+                scale={0.62}
               />
             }
           />
@@ -525,6 +523,18 @@ function Tile({ variant, label, onPress, accessibilityLabel, body }: TileProps):
    * interior for the number.
    */
   const bare = false
+  /*
+   * COS-1099 — no chevron on a dial tile.
+   *
+   * Vishal: "at the right corner there is an arrow icon. Remove that one, so
+   * that there is more space."
+   *
+   * The header is a row of [label, chevron], so the chevron takes width the
+   * label needs — which is what truncated "Wellbeing" to "Wellbe…". The card
+   * is still pressable and still announces "Opens details" to VoiceOver; the
+   * glyph was the only thing lost, and it was costing the label its room.
+   */
+  const showChevron = !useHomeDialGaugeFlag()
   const tileStyle = variant === 'large' ? styles.tileLarge : styles.tile
   const headerLabelStyle = variant === 'large' ? styles.headerLabelLarge : styles.headerLabel
   return (
@@ -544,13 +554,15 @@ function Tile({ variant, label, onPress, accessibilityLabel, body }: TileProps):
           <Text style={headerLabelStyle} numberOfLines={1}>
             {label}
           </Text>
-          <MaterialIcons
-            name="chevron-right"
-            size={variant === 'large' ? 20 : 16}
-            color="#687076"
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          />
+          {showChevron && (
+            <MaterialIcons
+              name="chevron-right"
+              size={variant === 'large' ? 20 : 16}
+              color="#687076"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            />
+          )}
         </View>
       )}
       {body}
@@ -565,7 +577,6 @@ function Ready({
   variant,
   ring,
   dial,
-  dialTitle,
   dialContent,
 }: {
   number: number
@@ -588,8 +599,6 @@ function Ready({
    * health-age.tsx already do.
    */
   dial?: { value: number; center: number; span: number; centerLabel?: string } | null
-  /** COS-1095 — shown INSIDE the ring in gauge mode, where the card header is gone. */
-  dialTitle?: string
   /*
    * COS-1096 — the full stack that goes inside the ring, supplied by the tile.
    *
@@ -670,15 +679,11 @@ function Ready({
     return (
       <View style={styles.body}>
         {/*
-          COS-1097 — the label lives OUTSIDE the ring.
-          Inside, an 18% padding left ~112pt and truncated it to "Wellbe…".
-          Out here it has the tile's whole width.
+          COS-1099 — NO title here. COS-1097 added one because the card had
+          been removed and nothing else named the tile; COS-1098 brought the
+          card back and its header names it again, so this was rendering
+          "Wellbeing" twice, one above the other.
         */}
-        {dialTitle ? (
-          <Text style={styles.dialTitle} numberOfLines={1}>
-            {dialTitle}
-          </Text>
-        ) : null}
         <DialGauge
           value={dial.value}
           center={dial.center}
@@ -697,17 +702,6 @@ function Ready({
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
             {dialContent ?? (
               <>
-            {/*
-              COS-1095 — the title lives INSIDE the ring now that the card
-              header is gone. That is also how Ken's screenshots read: "Health
-              Age" sits above the figure, within the dial, rather than on a
-              bar above a box.
-            */}
-            {dialTitle ? (
-              <Text style={styles.dialTitle} numberOfLines={1}>
-                {dialTitle}
-              </Text>
-            ) : null}
             <Text
               style={[
                 scoreStyle,
@@ -925,13 +919,6 @@ const styles = StyleSheet.create({
    * tile. minHeight is dropped too; the dial sizes itself from the available
    * width and the row takes its height from that.
    */
-  dialTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#11181C',
-    marginBottom: 2,
-    textAlign: 'center',
-  },
   tileBare: {
     flex: 1,
     alignItems: 'center',
