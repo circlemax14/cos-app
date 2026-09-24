@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Animated, Platform, ScrollView, StyleSheet, T
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
+import { restoreTarget } from '@/lib/root-modal-routes';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -61,7 +62,23 @@ async function resumeAfterUnlock() {
   const deferredRoute = consumeDeferredNavigation();
   if (deferredRoute) target = deferredRoute;
 
-  router.replace(target as never);
+  /*
+   * COS-1102 — a MODAL cannot be restored as the only entry on the stack.
+   *
+   * Reported 2026-09-24: the app reopened straight into the Supports modal,
+   * full screen, with no way out. `target` had been '/modal' — saved when the
+   * app locked while the patient was looking at it — and `router.replace` on a
+   * fresh stack made it the sole entry. A modal is drawn over something; with
+   * nothing underneath it fills the screen, and its X button calls
+   * router.back(), which on a one-entry stack does nothing at all.
+   *
+   * So a root-level modal is re-entered as /Home plus a push. Same
+   * destination, but with the screen it belongs over actually present, which
+   * is what makes it closable.
+   */
+  const { base, push } = restoreTarget(target);
+  router.replace(base as never);
+  if (push) router.push(push as never);
 }
 
 /**

@@ -2,6 +2,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
+import { dismissTo } from '@/lib/dismiss-to';
 import React from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Card, List, Text, Icon } from 'react-native-paper';
@@ -68,7 +69,7 @@ export default function AppointmentsModalScreen() {
   };
 
   const closeModal = () => {
-    router.back();
+    dismissTo('/Home');
   };
 
   return (
