@@ -71,7 +71,16 @@ function HealthSummaryScreenInner() {
    * /v1/auth/me timed out is a safety problem that looks identical to a
    * correct deny, so nobody reports it.
    */
-  const canReports = useCanRender('plan.reports');
+  /*
+   * COS-1108 — NOT `plan.reports`. That key exists in no catalog and no plan on
+   * any stage, so it is a permanent deny wherever entitlements are enforced:
+   * the section was invisible on dev (plan_tier_enabled=true) and visible on
+   * staging/production only because the resolver returns a WILDCARD there,
+   * which useCanRender reads as a grant. `reports.view` is a real catalog key
+   * granted by every plan on every stage, so this survives prod enforcement
+   * being switched on.
+   */
+  const canReports = useCanRender('reports.view');
   const canTreatments = useCanRender('plan.treatments-supports');
   const canRecommendations = useCanRender('plan.recommendations');
   const canShare = useCanRender('plan.share-summary');
