@@ -1,4 +1,5 @@
 import { DoctorCard } from '@/components/ui/doctor-card';
+import { providerContextLine } from '@/lib/provider-context-line';
 import { providerInactiveReason, inactiveLabel } from '@/utils/provider-direct-care';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
@@ -1303,6 +1304,10 @@ export default function ModalScreen() {
                                   id={provider.id}
                                   name={provider.name}
                                   qualifications={provider.qualifications || 'Healthcare Provider'}
+                                  /* COS-1114 — show the evidence the recency
+                                     filter acted on. Without it a working
+                                     filter reads as the app guessing. */
+                                  contextLine={providerContextLine(provider)}
                                   image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
                                   inactive={!!inactiveReason}
                                   inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}

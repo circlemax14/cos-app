@@ -11,6 +11,13 @@ interface DoctorCardProps {
   qualifications: string;
   image: number | { uri: string } | null;
   specialty?: string | null;
+  /**
+   * COS-1114 — one line of evidence for WHY this provider is listed:
+   * "Last seen Mar 2025 · 4 visits". Built by lib/provider-context-line.
+   * Absent when we genuinely know nothing, rather than a placeholder that
+   * would repeat on every row of a dateless EHR export.
+   */
+  contextLine?: string | null;
   showSwitch?: boolean;
   switchValue?: boolean;
   onSwitchChange?: (value: boolean) => void;
@@ -37,6 +44,7 @@ export function DoctorCard({
   qualifications,
   image,
   specialty,
+  contextLine,
   showSwitch = false,
   switchValue = false,
   onSwitchChange,
@@ -100,6 +108,19 @@ export function DoctorCard({
             >
               {qualifications}
             </Text>
+            {contextLine ? (
+              <Text
+                style={{
+                  fontSize: getScaledFontSize(11),
+                  fontWeight: getScaledFontWeight(500) as any,
+                  color: '#6B7280',
+                  marginTop: 2,
+                }}
+                numberOfLines={1}
+              >
+                {contextLine}
+              </Text>
+            ) : null}
             {inactive && inactiveReason ? (
               <Text
                 style={{
