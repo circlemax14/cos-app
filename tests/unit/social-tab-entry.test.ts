@@ -74,13 +74,31 @@ describe('COS-1063 — iOS 26: TabScreen keeps exactly ONE direct child', () => 
      * The safe shape is:
      *     <TabScreen><View style={{flex:1}}>{cond && <X/>}<TabsProvider>…
      *
-     * So the entry must be immediately preceded by the wrapper View.
+     * COS-1101 RELAXED THE FORM OF THIS CHECK, NOT ITS SUBSTANCE.
+     *
+     * It used to require the three to be literally adjacent, which broke the
+     * moment anything else was added inside the wrapper — the Supports filter,
+     * in that case. Adjacency was never the rule: the rule is that TabScreen
+     * receives ONE child, and everything else lives inside it. So this now
+     * asserts containment and order, which is what actually prevents the
+     * crash, and stays true as the wrapper gains contents.
      */
-    assert.match(
-      modalCode,
-      /<View style=\{\{ flex: 1 \}\}>\s*\{category\.id === 'social' && <FindPeopleEntry \/>\}\s*<TabsProvider/,
-      'FindPeopleEntry must sit INSIDE a flex:1 View alongside TabsProvider — as a sibling of ' +
-        'TabsProvider under TabScreen it gives TabScreen two direct children, which crashes iOS 26',
+    const open = modalCode.indexOf('<View style={{ flex: 1 }}>');
+    assert.ok(open > 0, 'the flex:1 wrapper View must exist');
+
+    const close = modalCode.indexOf('</TabsProvider>', open);
+    assert.ok(close > open, 'TabsProvider must close inside the wrapper');
+
+    const inside = modalCode.slice(open, close);
+    const entryAt = inside.indexOf('<FindPeopleEntry />');
+    const providerAt = inside.indexOf('<TabsProvider');
+
+    assert.ok(entryAt > 0, 'FindPeopleEntry must be INSIDE the wrapper, not a sibling of it');
+    assert.ok(providerAt > 0, 'TabsProvider must be inside the same wrapper');
+    assert.ok(
+      entryAt < providerAt,
+      'FindPeopleEntry must come before TabsProvider — after it, the entry renders ' +
+        'below the sub-tabs instead of above them',
     );
   });
 
