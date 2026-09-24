@@ -235,40 +235,52 @@ test('COS-1097: the circles sit in PARALLEL, not stacked', () => {
  * out and paints over the next dial, which is what shipped in COS-1096. So the
  * compact stack's height is asserted against the ring it has to live in.
  */
-test('COS-1099: the compact contents fit WITH Dynamic Type applied', () => {
+test('COS-1100: the contents fit the interior the END LABELS actually leave', () => {
   /*
-   * THE BUG THIS TEST MISSED THE FIRST TIME.
+   * TWO THINGS THIS TEST GOT WRONG BEFORE, both of which shipped.
    *
-   * COS-1098 asserted the fit using the NOMINAL font size and passed, while
-   * the build it was guarding rendered "63.4" and "41/100" with an ellipsis.
-   * Both Texts carry maxFontSizeMultiplier={1.1}, so what actually reaches the
-   * ring is up to 10% wider than the number in the source. A fit check that
-   * ignores the multiplier is checking a size the device never draws.
+   * 1. COS-1098 measured the NOMINAL font. Both Texts carry
+   *    maxFontSizeMultiplier={1.1}, so the device draws up to 10% wider.
+   * 2. COS-1099 fixed that and still passed on a build rendering "6…",
+   *    because it treated the interior as the ring minus DialGauge's 18%
+   *    padding. The scale's end labels sit INSIDE that, at radius
+   *    r - stroke/2 - endFont*1.15 — about 18pt clear of the track on a 162pt
+   *    ring — straight across the figure's line. The usable width was never
+   *    the padded width while they were drawn.
+   *
+   * Home now passes showEndLabels={false}, so the padded width is honest. The
+   * check below asserts BOTH: that Home suppresses them, and that the figures
+   * fit what is left with Dynamic Type applied.
    */
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/showEndLabels=\{false\}/.test(hero), 'Home must suppress the scale labels');
+
   const DYNAMIC_TYPE = 1.1;
-  const PHONE = 393;
-  const perTile = (PHONE - 32 - 10) / 2;
+  const perTile = (393 - 32 - 10) / 2;
   const dialSize = Math.max(130, Math.min(200, perTile - 6 * 2 - 2));
   const interior = dialSize * (1 - 0.18 * 2);
-  const SCALE = 0.62;
+  const SCALE = 0.5;
 
-  // Health age: "63.4" — four glyphs, the binding case.
   const haWidth = 4 * (52 * SCALE * DYNAMIC_TYPE) * 0.58;
-  assert.ok(
-    haWidth < interior,
-    `health age ${haWidth.toFixed(0)}pt must fit ${interior.toFixed(0)}pt at Dynamic Type`,
-  );
+  assert.ok(haWidth < interior, `health age ${haWidth.toFixed(0)}pt vs ${interior.toFixed(0)}pt`);
 
-  // Wellbeing: "41" plus "/100" on the same baseline row.
   const wbWidth =
     2 * (56 * SCALE * DYNAMIC_TYPE) * 0.58 + 4 * (18 * SCALE * DYNAMIC_TYPE) * 0.55;
-  assert.ok(
-    wbWidth < interior,
-    `wellbeing ${wbWidth.toFixed(0)}pt must fit ${interior.toFixed(0)}pt at Dynamic Type`,
-  );
+  assert.ok(wbWidth < interior, `wellbeing ${wbWidth.toFixed(0)}pt vs ${interior.toFixed(0)}pt`);
 
-  // And the height, which is what spilled over the next dial in COS-1096.
   assert.ok(60 * SCALE * DYNAMIC_TYPE < dialSize, 'the number must be shorter than the ring');
+});
+
+test('COS-1100: the DETAIL screens keep their scale labels', () => {
+  // They run a ~300pt dial with room for them, and the labels are what makes
+  // it a scale rather than a decorative ring. Suppressing them is a Home-only
+  // concession to size, not a change to the component's default.
+  const gauge = readFileSync('components/health/DialGauge.tsx', 'utf8');
+  assert.ok(/showEndLabels = true/.test(gauge), 'the default must stay true');
+  for (const screen of ['app/Home/wellbeing-score.tsx', 'app/Home/health-age.tsx']) {
+    const src = readFileSync(screen, 'utf8');
+    assert.ok(!/showEndLabels/.test(src), `${screen} must not opt out`);
+  }
 });
 
 test('COS-1099: the tile label is rendered exactly ONCE', () => {

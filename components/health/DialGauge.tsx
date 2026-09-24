@@ -53,6 +53,15 @@ export interface DialGaugeProps {
   getScaledFontSize: (n: number) => number
   /** Printed at the arc's midpoint, under the ring. Omitted when absent. */
   centerLabel?: string
+  /**
+   * COS-1100 — draw the scale's end labels inside the ring.
+   *
+   * True on the detail screens, where a 300pt dial has room for them. FALSE on
+   * Home: at 162pt they sit only ~14pt clear of the track, directly across the
+   * space the figure needs, and the figure loses — "63.4" rendered as "6…"
+   * beside a rotated 58 and 78.
+   */
+  showEndLabels?: boolean
   /** Printed at each end of the scale, rotated onto the tangent. */
   formatEnd?: (n: number) => string
   children?: React.ReactNode
@@ -72,6 +81,7 @@ export function DialGauge({
   getScaledFontSize,
   centerLabel,
   formatEnd = (n) => n.toFixed(1),
+  showEndLabels = true,
   children,
 }: DialGaugeProps): React.JSX.Element {
   const stroke = Math.max(8, size * 0.038)
@@ -170,6 +180,8 @@ export function DialGauge({
         />
 
         {/* 8, 9 — end labels, laid along the tangent as in the reference. */}
+        {showEndLabels ? (
+          <>
         <SvgText
           x={leftLabel.x}
           y={leftLabel.y}
@@ -190,6 +202,8 @@ export function DialGauge({
         >
           {formatEnd(center + span)}
         </SvgText>
+          </>
+        ) : null}
       </Svg>
 
       {/* The reference seats the midpoint's value just under the arc, upright
