@@ -41,6 +41,28 @@ interface HealthStatusIconProps {
  * blinking. Cadence is slower than Plan's heartbeat on purpose — two animated
  * icons at the same tempo in one bar look like a fault.
  *
+ * ─── COS-1106: WHY THE WAVES WERE CUTTING ────────────────────────────
+ *
+ * Two mistakes, both mine, both about measuring the wrong thing.
+ *
+ * An arc's widest point is its MIDDLE, not its endpoints. COS-1104 checked the
+ * endpoint x of each arc and found them inside the box — but the outer pair at
+ * radius 12.2 bulges to 12 + 12.2 + half its stroke = 25.0 in a 24-wide
+ * viewBox. It was clipped before anything animated.
+ *
+ * And the wave then SCALED IT UP. These Animated.Views are absoluteFill inside
+ * a size x size box; scaling a filled view past 1 pushes its content beyond
+ * the view bounds, where React Native clips. 1.06 and 1.08 put both pairs
+ * outside.
+ *
+ * So the arcs are pulled in until their widest point clears the box — 9.6 and
+ * 11.0 — and the wave now grows from 0.86 to 1.0 rather than through it.
+ * Expansion reads the same; it simply never leaves the frame.
+ *
+ * ⚠️ Any future change to a radius, a stroke or a scale must be checked at
+ * (12 + radius + strokeWidth/2) * maxScale <= 24. The endpoints are not the
+ * binding constraint.
+ *
  * ─── CONSTRAINTS CARRIED FORWARD ─────────────────────────────────────
  *
  * The cross stays a HOLE via `fillRule="evenodd"`. A filled disc with a white
@@ -56,7 +78,7 @@ interface HealthStatusIconProps {
  * bars Animated from HOME's cards; this is the tab bar, where it is proven.
  */
 export function HealthStatusIcon({
-  size = 28,
+  size = 30,
   color,
   animated = true,
 }: HealthStatusIconProps) {
@@ -103,8 +125,8 @@ export function HealthStatusIcon({
   // Static values when animation is off, so the mark still reads complete.
   const innerOpacity = animated ? inner.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) : 1;
   const outerOpacity = animated ? outer.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.6] }) : 0.45;
-  const innerScale = animated ? inner.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.06] }) : 1;
-  const outerScale = animated ? outer.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.08] }) : 1;
+  const innerScale = animated ? inner.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) : 1;
+  const outerScale = animated ? outer.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) : 1;
 
   return (
     <View style={[styles.box, { width: size, height: size }]}>
@@ -113,7 +135,7 @@ export function HealthStatusIcon({
         <Path
           fill={color}
           fillRule="evenodd"
-          d="M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM11 7.2h2v3.8h3.8v2H13v3.8h-2V13H7.2v-2H11Z"
+          d="M12 4.6a7.4 7.4 0 1 0 0 14.8 7.4 7.4 0 0 0 0-14.8ZM10.95 6.9h2.1v4.05h4.05v2.1h-4.05v4.05h-2.1v-4.05H6.9v-2.1h4.05Z"
         />
       </Svg>
 
@@ -122,8 +144,8 @@ export function HealthStatusIcon({
         style={[StyleSheet.absoluteFill, { opacity: innerOpacity, transform: [{ scale: innerScale }] }]}
       >
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-          <Path d="M20.09 17.88A10 10 0 0 0 20.09 6.12" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
-          <Path d="M3.91 17.88A10 10 0 0 1 3.91 6.12" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
+          <Path d="M19.56 17.91A9.6 9.6 0 0 0 19.56 6.09" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
+          <Path d="M4.44 17.91A9.6 9.6 0 0 1 4.44 6.09" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
         </Svg>
       </Animated.View>
 
@@ -132,8 +154,8 @@ export function HealthStatusIcon({
         style={[StyleSheet.absoluteFill, { opacity: outerOpacity, transform: [{ scale: outerScale }] }]}
       >
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-          <Path d="M22.77 17.73A12.2 12.2 0 0 0 22.77 6.27" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
-          <Path d="M1.23 17.73A12.2 12.2 0 0 1 1.23 6.27" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+          <Path d="M21.53 17.5A11 11 0 0 0 21.53 6.5" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+          <Path d="M2.47 17.5A11 11 0 0 1 2.47 6.5" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
         </Svg>
       </Animated.View>
     </View>
