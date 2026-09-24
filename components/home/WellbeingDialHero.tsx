@@ -65,6 +65,19 @@ export interface WellbeingDialHeroProps {
    * anything being re-tuned by hand.
    */
   scale?: number
+  /**
+   * COS-1097 — only what FITS inside a half-width ring.
+   *
+   * DialGauge lays its children out absolutely at a fixed height, so content
+   * taller than the ring does not expand it — it spills out and paints over
+   * whatever is below. That is exactly what shipped: two dials overlapping,
+   * with "Wellbe…" and "4.6 yea…" truncated by an 18% horizontal padding that
+   * leaves ~112pt of usable width.
+   *
+   * Compact keeps the number, its scale and the band chip. The title and date
+   * move OUTSIDE the ring, where there is room for them.
+   */
+  compact?: boolean
 }
 
 export function WellbeingDialHero({
@@ -77,6 +90,7 @@ export function WellbeingDialHero({
   getScaledFontSize,
   title,
   scale = 1,
+  compact = false,
 }: WellbeingDialHeroProps): React.JSX.Element {
   const asOf = (() => {
     if (!computedAt) return null
@@ -89,6 +103,39 @@ export function WellbeingDialHero({
     if (Number.isNaN(d.getTime())) return null
     return `as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
   })()
+
+  if (compact) {
+    return (
+      <>
+        <View style={styles.topRow}>
+          <Text
+            style={[
+              styles.number,
+              { color: textColor, fontSize: 56 * scale, lineHeight: 60 * scale },
+            ]}
+            numberOfLines={1}
+            // Content that grows with the user's type setting is what pushes
+            // it out of the ring. Capped tighter here than on the detail
+            // screen, which has the room.
+            maxFontSizeMultiplier={1.1}
+          >
+            {typeof composite === 'number' ? composite : '—'}
+          </Text>
+          <Text
+            style={[styles.scaleLabel, { color: subtextColor, fontSize: 18 * scale }]}
+            maxFontSizeMultiplier={1.1}
+          >
+            /100
+          </Text>
+        </View>
+        {band ? (
+          <View style={[styles.chipRow, { marginTop: 4 * scale }]}>
+            <ScoreBandChip band={band} />
+          </View>
+        ) : null}
+      </>
+    )
+  }
 
   return (
     <>

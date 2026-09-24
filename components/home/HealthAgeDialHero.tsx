@@ -48,6 +48,15 @@ export interface HealthAgeDialHeroProps {
   extra?: React.ReactNode
   /** 1 is the detail screen; Home passes less so the same stack fits its ring. */
   scale?: number
+  /**
+   * COS-1097 — only what FITS inside a half-width ring. See the note in
+   * WellbeingDialHero: DialGauge lays children out absolutely at a fixed
+   * height, so anything taller spills over the next dial.
+   *
+   * Keeps the age and the band chip. "Health Age", the date and the
+   * years-younger phrase move OUTSIDE the ring.
+   */
+  compact?: boolean
 }
 
 export function HealthAgeDialHero({
@@ -60,6 +69,7 @@ export function HealthAgeDialHero({
   getScaledFontSize,
   extra,
   scale = 1,
+  compact = false,
 }: HealthAgeDialHeroProps): React.JSX.Element {
   const phrase = gapPhrase(gap)
   const phraseTone =
@@ -68,6 +78,50 @@ export function HealthAgeDialHero({
       : phrase.direction === 'older'
         ? '#8A5100'
         : subtextColor
+
+  if (compact) {
+    return (
+      <>
+        <Text
+          style={{
+            color: tokens?.fg ?? textColor,
+            fontSize: getScaledFontSize(52 * scale),
+            lineHeight: getScaledFontSize(58 * scale),
+            fontWeight: '800',
+            letterSpacing: -1.5,
+            textAlign: 'center',
+          }}
+          numberOfLines={1}
+          maxFontSizeMultiplier={1.1}
+          accessibilityLabel={
+            typeof overall === 'number' ? `Your Health Age is ${formatAge(overall)} years` : undefined
+          }
+        >
+          {typeof overall === 'number' ? formatAge(overall) : '—'}
+        </Text>
+        {tokens ? (
+          <View style={[styles.chip, { backgroundColor: tokens.bg, marginTop: 4 * scale }]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.chipLabel,
+                {
+                  color: tokens.fg,
+                  // NOT scaled below a floor. scale 0.62 would render this at
+                  // 6pt, which is decoration rather than a label — and the
+                  // chip is the only thing in the compact dial that says what
+                  // the number MEANS.
+                  fontSize: getScaledFontSize(Math.max(10, 11 * scale)),
+                },
+              ]}
+            >
+              {tokens.label}
+            </Text>
+          </View>
+        ) : null}
+      </>
+    )
+  }
 
   return (
     <>
