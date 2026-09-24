@@ -168,6 +168,31 @@ export default function ModalScreen() {
 
   const filterProvidersByRecency = (providers: SelectedProvider[]) => {
     if (!recencyFilter || recencyFilter === 'all') return providers;
+
+    /*
+     * COS-1093 — if NOTHING can be banded, the filter cannot mean anything, so
+     * it must not be applied.
+     *
+     * The band comes from the newest dated clinical record linking a provider
+     * to the patient. A patient whose records carry no usable dates — an EHR
+     * that never sent them, an import still in flight, or a seeded test
+     * account — gets `null` on every provider. Filtering on that hid all 59
+     * providers on the dev account and showed an empty Medical tab.
+     *
+     * That is the "you have nothing" failure again: the screen would claim the
+     * patient has no providers when the truth is that we could not date the
+     * ones they have. Same rule the server already follows for involvement —
+     * a patient seeing too many doctors is a far better failure than a patient
+     * seeing none.
+     *
+     * Note this is deliberately NOT "the selected band is empty". A patient
+     * whose providers are all three years old SHOULD open on an empty
+     * "Current & acute" and switch tabs — that is the honest answer to the
+     * question they asked. The bypass is only for "no answer exists at all".
+     */
+    const anyBanded = providers.some(p => p.recencyBand != null);
+    if (!anyBanded) return providers;
+
     return providers.filter(provider => {
       // Manually added people and non-medical supports have no EHR dates by
       // definition. A recency filter must never hide the care circle.
