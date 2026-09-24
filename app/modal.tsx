@@ -4,6 +4,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
+import { dismissTo } from '@/lib/dismiss-to';
 import { FindPeopleEntry } from '@/components/social/FindPeopleEntry';
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
@@ -254,7 +255,7 @@ export default function ModalScreen() {
   };
 
   const closeModal = () => {
-    router.back();
+    dismissTo('/Home');
   };
 
   const selectedProviderIds = React.useMemo(
@@ -615,7 +616,7 @@ export default function ModalScreen() {
                                    * why agency-detail needed a modal
                                    * presentation, and why it never had a tab bar.
                                    */
-                                  router.back();
+                                  dismissTo('/Home');
                                   setTimeout(() => {
                                     router.push(`/Home/agency-detail?id=${encodeURIComponent(agency.id)}&name=${encodeURIComponent(agency.name)}&from=supports` as never);
                                   }, 300);
@@ -777,7 +778,7 @@ export default function ModalScreen() {
                                 qualifications={provider.specialty || 'Integrative Health'}
                                 image={null}
                                 onPress={() => {
-                                  router.back();
+                                  dismissTo('/Home');
                                   setTimeout(() => {
                                     router.push(`/Home/non-ehr-provider-detail?id=${encodeURIComponent(provider.id)}`);
                                   }, 300);
@@ -1191,7 +1192,7 @@ export default function ModalScreen() {
                                           inactive={!!inactiveReason}
                                           inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
                                           onPress={provider.isManual ? undefined : () => {
-                                            router.back();
+                                            dismissTo('/Home');
                                             setTimeout(() => {
                                               router.push(`/Home/doctor-detail?id=${encodeURIComponent(provider.id)}&name=${encodeURIComponent(provider.name)}&qualifications=${encodeURIComponent(provider.qualifications || '')}&specialty=${encodeURIComponent(provider.specialty || '')}`);
                                             }, 300);
@@ -1268,7 +1269,7 @@ export default function ModalScreen() {
                                   inactive={!!inactiveReason}
                                   inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
                                   onPress={() => {
-                                    router.back();
+                                    dismissTo('/Home');
                                     setTimeout(() => {
                                       router.push(`/Home/doctor-detail?id=${encodeURIComponent(provider.id)}&name=${encodeURIComponent(provider.name)}&qualifications=${encodeURIComponent(provider.qualifications || '')}&specialty=${encodeURIComponent(provider.specialty || '')}`);
                                     }, 300);

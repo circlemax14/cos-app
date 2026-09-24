@@ -39,6 +39,7 @@ import {
 } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { router, useLocalSearchParams } from 'expo-router'
+import { dismissTo } from '@/lib/dismiss-to';
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Colors } from '@/constants/theme'
@@ -347,7 +348,7 @@ export default function CalendarEventEditor() {
           showAs, repeatValue, timeZone, travelTimeValue,
           alarms: allAlarms,
         }).catch(() => {})
-        router.back()
+        dismissTo('/Home/appointments')
       } else {
         hapticNotify('error')
         Alert.alert(
@@ -416,7 +417,7 @@ export default function CalendarEventEditor() {
         ]}
       >
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => dismissTo('/Home/appointments')}
           hitSlop={10}
           style={({ pressed }) => [styles.headerSide, { opacity: pressed ? 0.5 : 1 }]}
           accessibilityRole="button"

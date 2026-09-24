@@ -4,6 +4,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
+import { dismissTo } from '@/lib/dismiss-to';
 import React, { useState, useEffect } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Card, Chip, Divider, Text } from 'react-native-paper';
@@ -85,7 +86,7 @@ export default function JennyScheduleScreen() {
   return (
     <AppWrapper notificationCount={3}>
       <View style={[styles.header, { backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => dismissTo('/Home')} style={styles.backButton}>
           <IconSymbol name="chevron.left" size={getScaledFontSize(24)} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, {

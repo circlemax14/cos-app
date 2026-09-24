@@ -19,6 +19,7 @@ import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
 import { File, Paths } from 'expo-file-system'
 import { router, useLocalSearchParams } from 'expo-router'
+import { dismissTo } from '@/lib/dismiss-to';
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { deleteEvent, readEvents, readReminders, type CalendarEvent } from '@/services/calendar'
@@ -96,7 +97,7 @@ export default function CalendarEventDetail() {
           style: 'destructive',
           onPress: async () => {
             const ok = await deleteEvent(event.id)
-            if (ok) { hapticNotify('success'); router.back() }
+            if (ok) { hapticNotify('success'); dismissTo('/Home/appointments') }
             else { hapticNotify('error'); Alert.alert('Could not delete', 'Check your calendar permissions and try again.') }
           },
         },
@@ -157,7 +158,7 @@ export default function CalendarEventDetail() {
     }
   }
 
-  const dismiss = () => router.back()
+  const dismiss = () => dismissTo('/Home/appointments')
 
   if (isLoading) {
     return (
