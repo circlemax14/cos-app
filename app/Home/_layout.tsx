@@ -247,13 +247,16 @@ export default function TabLayout() {
            */
           title: 'Health Status',
           /*
-           * COS-1105 — 28, not 26. Vishal: "the icon is small compared to
-           * other icons in the nav bar." Its disc is 58% of its viewBox where
-           * a filled house icon is about 75%, so it needs the extra points to
-           * carry the same visual weight beside them.
+           * COS-1106 — 30. Vishal, twice: "it's still small."
+           *
+           * Two levers, and the first one was nearly exhausted: the disc is
+           * now 62% of its viewBox (from 48%, then 58%) and cannot grow much
+           * further without the arcs having nowhere to sit. So the rest comes
+           * from render size — 26 -> 28 -> 30 — against a house icon at 24
+           * that fills about 75% of ITS box.
            */
           tabBarIcon: ({ color }) => (
-            <HealthStatusIcon size={getScaledFontSize(28)} color={color} />
+            <HealthStatusIcon size={getScaledFontSize(30)} color={color} />
           ),
         }}
       />
