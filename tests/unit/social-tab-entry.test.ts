@@ -39,6 +39,33 @@ describe('COS-1063 — the Social tab reaches people-search', () => {
     assert.match(modalCode, /import \{ FindPeopleEntry \} from '@\/components\/social\/FindPeopleEntry'/);
   });
 
+  /*
+   * COS-1113 — the test above passed for weeks while the entry was UNREACHABLE.
+   *
+   * It regex-matched the source text of modal.tsx, so it could see that the
+   * element existed but not that its branch never executed. The entry sat only
+   * in the else branch of `showEmptyNonMedical ? … : …`, and that condition is
+   * true on every open for Social: no EHR provider can be filed into a social
+   * sub-category (matchProviderToSubCategory hard-codes 'medical'), the server
+   * only ever sends category 'Medical', and manual members are unhydrated
+   * useState. So the entry rendered only after a patient manually added a
+   * Social member in that same modal session, and vanished when it closed.
+   *
+   * A presence assertion cannot catch that. This one pins the POSITION.
+   */
+  test('THE POINT: the entry is OUTSIDE the showEmptyNonMedical ternary', () => {
+    const entryAt = modalCode.indexOf("category.id === 'social' && <FindPeopleEntry");
+    const ternaryAt = modalCode.indexOf('{showEmptyNonMedical ? (');
+    assert.ok(entryAt > -1, 'entry not found at all');
+    assert.ok(ternaryAt > -1, 'the empty-state ternary moved — re-check this guard');
+    assert.ok(
+      entryAt < ternaryAt,
+      'FindPeopleEntry must render BEFORE the empty-state ternary. Inside it, ' +
+        'the Social tab can never reach people-search, because Social always ' +
+        'takes the empty branch.',
+    );
+  });
+
   test("it renders for the 'social' category only", () => {
     /*
      * Medical and Psychological are provider directories. Connecting to a
