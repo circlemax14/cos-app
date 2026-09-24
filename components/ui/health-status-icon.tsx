@@ -7,60 +7,90 @@ interface HealthStatusIconProps {
 }
 
 /**
- * COS-1081 — the Health Status icon, redrawn to Vishal's mark.
+ * COS-1104 — the Health Status icon: the cross, broadcasting.
  *
- * A bold ring, a gap, and a solid disc with a medical cross cut out of it.
+ * A medical cross cut out of a solid disc, with arcs radiating symmetrically
+ * to either side. Option 2 ("Broadcast") from the 2026-09-24 proposal.
  *
- * ─── WHAT IT REPLACES, AND WHY ───────────────────────────────────────
+ * ─── WHY THE ARCS ────────────────────────────────────────────────────
  *
- * COS-964 drew a clipboard from Ken's sketch: a board, a clip, a small circled
- * cross and two record lines. Five separate elements inside a 26px tab icon.
- * At that size the clip reads as noise, the record lines merge into a grey
- * smudge, and the cross — the one part that says "health" — is a 3.1px circle
- * carrying a 1.4px stroke.
+ * COS-1081's mark was a cross in a ring, and it had two problems that had
+ * nothing to do with how well it was drawn.
  *
- * Vishal's replacement keeps only the part that was doing the work and makes
- * it the whole mark. One idea at one weight, legible at 26px and still correct
- * blown up in a header.
+ * It said MEDICAL. A cross means first aid, hospital, clinic. Ken's definition
+ * of this tab is narrower — "an ACTIVE clinical status, not a generated
+ * summary and not a history" — and nothing in a static cross says "where you
+ * are right now". The arcs are what add that: they are the grammar of a live
+ * signal, and they turn a symbol for medicine into a reading being taken.
  *
- * ─── WHY IT IS CUT OUT RATHER THAN DRAWN IN WHITE ────────────────────
+ * And it COLLIDED WITH ITS NEIGHBOUR. The Plan tab sits immediately beside it
+ * and is also a round custom mark — a pulse in a circle. At 26px two adjacent
+ * circles of similar weight read as one blob and the eye has to decode which
+ * is which every time. The arcs break the silhouette, so the two no longer
+ * rhyme.
  *
- * The supplied artwork is black-on-white, so the obvious translation is a
- * filled circle with a white cross on top. That breaks the moment the tab bar
- * is not white — a white cross on a dark surface is a white cross, not a hole,
- * and it stops matching the tint every other icon here follows.
+ * ─── WHY THE CROSS IS STILL A HOLE ───────────────────────────────────
  *
- * So the cross and the inner gap are HOLES, made with `fillRule="evenodd"`:
- * the shape is painted once in `color`, and the counters let the background
- * through, whatever the background happens to be. One colour in, correct on
- * light, dark, active and inactive.
+ * Carried forward from COS-1081, and it still matters. The obvious way to draw
+ * this is a filled disc with a white cross painted on top. That looks identical
+ * on a white tab bar and wrong on any other — a white cross on a dark surface
+ * is a white cross, not a hole. `fillRule="evenodd"` makes it a genuine
+ * cut-out, so the bar shows through whatever colour it is.
  *
- * Geometry is against a 24x24 viewBox and scales, so there is no stroke weight
- * to tune per size and nothing thins out when the icon grows.
+ * ─── DENSITY ─────────────────────────────────────────────────────────
+ *
+ * Five elements: the disc, and four arcs. That is at the top of what survives
+ * 26px, which is why the outer pair is drawn thinner and at 45% opacity — they
+ * read as depth rather than as two more shapes. If they turn to haze on a real
+ * device, deleting those two lines leaves a clean three-element mark; the
+ * proposal recorded that trade before this shipped.
+ *
+ * Geometry is a 24x24 viewBox scaled to `size`, so it stays crisp at the 26px
+ * tab size and correct enlarged in a header.
  */
-
-/** A circle as a path, so it can share a fill rule with the shapes it cuts. */
-const circle = (cx: number, cy: number, r: number): string =>
-  `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`;
-
-/** A plus sign centred on (cx, cy): `arm` is half-thickness, `reach` half-length. */
-const cross = (cx: number, cy: number, arm: number, reach: number): string =>
-  `M${cx - arm} ${cy - reach}` +
-  `H${cx + arm}V${cy - arm}` +
-  `H${cx + reach}V${cy + arm}` +
-  `H${cx + arm}V${cy + reach}` +
-  `H${cx - arm}V${cy + arm}` +
-  `H${cx - reach}V${cy - arm}` +
-  `H${cx - arm}Z`;
-
 export function HealthStatusIcon({ size = 26, color }: HealthStatusIconProps) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      {/* Outer ring: disc with a hole. */}
-      <Path d={`${circle(12, 12, 11.2)} ${circle(12, 12, 8.9)}`} fill={color} fillRule="evenodd" />
-      {/* Inner disc with the cross cut out of it. The gap between this and the
-          ring is simply the space neither path paints. */}
-      <Path d={`${circle(12, 12, 7.7)} ${cross(12, 12, 1.7, 5.1)}`} fill={color} fillRule="evenodd" />
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* The disc, with the cross cut OUT of it — see the header. */}
+      <Path
+        fill={color}
+        fillRule="evenodd"
+        d="M12 6.2a5.8 5.8 0 1 0 0 11.6 5.8 5.8 0 0 0 0-11.6Zm-.75 2v3.05H8.2v1.5h3.05v3.05h1.5v-3.05h3.05v-1.5H12.75V8.2Z"
+      />
+
+      {/* Inner arcs — the signal. Rounded caps so they do not look chopped. */}
+      <Path
+        d="M18.54 17.89A8.8 8.8 0 0 0 18.54 6.11"
+        stroke={color}
+        strokeWidth={1.9}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M5.46 17.89A8.8 8.8 0 0 1 5.46 6.11"
+        stroke={color}
+        strokeWidth={1.9}
+        strokeLinecap="round"
+      />
+
+      {/*
+        Outer arcs. Thinner and faded — the same colour at lower opacity, never
+        a second colour: this icon inherits ONE tint from the tab bar and
+        cannot introduce another.
+      */}
+      <Path
+        d="M21.35 17.4A10.8 10.8 0 0 0 21.35 6.6"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        opacity={0.45}
+      />
+      <Path
+        d="M2.65 17.4A10.8 10.8 0 0 1 2.65 6.6"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        opacity={0.45}
+      />
     </Svg>
   );
 }
