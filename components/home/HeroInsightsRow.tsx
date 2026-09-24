@@ -47,6 +47,7 @@ import { useWellbeingScoreEndpoint } from '@/hooks/use-wellbeing-history'
 import { ScoreRing } from '@/components/home/ScoreRing'
 import { DialGauge } from '@/components/health/DialGauge'
 import { useHomeDialGaugeFlag } from '@/hooks/use-home-dial-gauge-flag'
+import { useHomeDimensions } from '@/components/home/HomeResponsiveProvider'
 import { positionOf } from '@/lib/dial-geometry'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
@@ -281,6 +282,7 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
             // wellbeing-score.tsx passes, so the tile and the screen behind it
             // draw the same gauge on the same scale.
             dial={{ value: composite as number, center: 50, span: 50 }}
+            dialTitle="Wellbeing"
           />
         ) : isPendingFirstLoad ? (
           <Empty
@@ -375,6 +377,7 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                   }
                 : null
             }
+            dialTitle="Health Age"
           />
         ) : isLoading ? (
           <Empty
@@ -452,6 +455,22 @@ interface TileProps {
   body: React.ReactNode
 }
 function Tile({ variant, label, onPress, accessibilityLabel, body }: TileProps): React.JSX.Element {
+  /*
+   * COS-1095 — Vishal: "it seems like there are two cards with the border…
+   * why can't we remove those cards and just have two circles, then it will
+   * look much better."
+   *
+   * He is right, and the reason is arithmetic rather than taste. The card
+   * spends 1px of border, 10pt of padding either side and a header row on
+   * chrome, and the dial gets what is left — which at two-across on a phone is
+   * why the circles came out small. Ken's screenshots have no card at all: the
+   * ring IS the container, with its own label inside it.
+   *
+   * So in gauge mode the chrome goes and the label moves inside the ring. The
+   * ScoreRing path keeps its card, because a bare 64px ring with no border and
+   * no header would read as a stray graphic rather than a tile.
+   */
+  const bare = useHomeDialGaugeFlag()
   const tileStyle = variant === 'large' ? styles.tileLarge : styles.tile
   const headerLabelStyle = variant === 'large' ? styles.headerLabelLarge : styles.headerLabel
   return (
@@ -461,20 +480,25 @@ function Tile({ variant, label, onPress, accessibilityLabel, body }: TileProps):
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Opens details"
       hitSlop={4}
-      style={({ pressed }) => [tileStyle, pressed && styles.tilePressed]}
+      style={({ pressed }) => [
+        bare ? styles.tileBare : tileStyle,
+        pressed && styles.tilePressed,
+      ]}
     >
-      <View style={styles.headerRow}>
-        <Text style={headerLabelStyle} numberOfLines={1}>
-          {label}
-        </Text>
-        <MaterialIcons
-          name="chevron-right"
-          size={variant === 'large' ? 20 : 16}
-          color="#687076"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        />
-      </View>
+      {!bare && (
+        <View style={styles.headerRow}>
+          <Text style={headerLabelStyle} numberOfLines={1}>
+            {label}
+          </Text>
+          <MaterialIcons
+            name="chevron-right"
+            size={variant === 'large' ? 20 : 16}
+            color="#687076"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        </View>
+      )}
       {body}
     </Pressable>
   )
@@ -487,6 +511,7 @@ function Ready({
   variant,
   ring,
   dial,
+  dialTitle,
 }: {
   number: number
   chip: { fg: string; bg: string; label: string } | null
@@ -508,8 +533,11 @@ function Ready({
    * health-age.tsx already do.
    */
   dial?: { value: number; center: number; span: number; centerLabel?: string } | null
+  /** COS-1095 — shown INSIDE the ring in gauge mode, where the card header is gone. */
+  dialTitle?: string
 }): React.JSX.Element {
   const dialEnabled = useHomeDialGaugeFlag()
+  const { width: screenWidth } = useHomeDimensions()
   const scoreStyle = variant === 'large' ? styles.scoreNumberLarge : styles.scoreNumber
   const ringSize = variant === 'large' ? 92 : 64
 
@@ -530,7 +558,25 @@ function Ready({
    * the number. 1.5x clears them at both variants.
    */
   if (dialEnabled && dial) {
-    const dialSize = Math.round(ringSize * 1.5)
+    /*
+     * COS-1095 — sized from the ACTUAL available width, not from a multiple of
+     * the old ring.
+     *
+     * The row is marginHorizontal 16 with an 8pt gap, so each of two tiles gets
+     * (W - 32 - 8) / 2. On a 393pt phone that is ~176 against the 96 a 1.5x
+     * multiplier gave — which is the whole of Vishal's complaint: "it make the
+     * circles very small".
+     *
+     * Clamped at both ends: 120 so a narrow phone still reads, 260 so a tablet
+     * does not render one enormous dial per half-screen. Falls back to the
+     * multiplier when width is 0, which is what the provider reports before
+     * first layout.
+     */
+    const perTile = screenWidth > 0 ? (screenWidth - 32 - 8) / 2 : 0
+    const dialSize =
+      perTile > 0
+        ? Math.round(Math.max(120, Math.min(260, perTile)))
+        : Math.round(ringSize * 1.5)
     return (
       <View style={styles.body}>
         <DialGauge
@@ -549,10 +595,21 @@ function Ready({
           formatEnd={(n) => String(Math.round(n))}
         >
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            {/*
+              COS-1095 — the title lives INSIDE the ring now that the card
+              header is gone. That is also how Ken's screenshots read: "Health
+              Age" sits above the figure, within the dial, rather than on a
+              bar above a box.
+            */}
+            {dialTitle ? (
+              <Text style={styles.dialTitle} numberOfLines={1}>
+                {dialTitle}
+              </Text>
+            ) : null}
             <Text
               style={[
                 scoreStyle,
-                { color: chip?.fg ?? ring?.color ?? '#1A1A1A', fontSize: Math.round(dialSize * 0.3) },
+                { color: chip?.fg ?? ring?.color ?? '#1A1A1A', fontSize: Math.round(dialSize * 0.26) },
               ]}
               numberOfLines={1}
             >
@@ -755,6 +812,21 @@ const styles = StyleSheet.create({
     // No flexDirection:row so the single tile stretches to fill container width.
     marginHorizontal: 16,
     marginBottom: 12,
+  },
+  /*
+   * COS-1095 — gauge mode: no card, no border, no padding. The dial is the
+   * tile. minHeight is dropped too; the dial sizes itself from the available
+   * width and the row takes its height from that.
+   */
+  dialTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#687076',
+    marginBottom: 1,
+  },
+  tileBare: {
+    flex: 1,
+    alignItems: 'center',
   },
   tile: {
     flex: 1,

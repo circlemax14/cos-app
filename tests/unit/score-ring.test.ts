@@ -205,3 +205,40 @@ test('COS-1094: the SVG dial stays behind a kill-switch', () => {
   assert.ok(/if \(dialEnabled && dial\)/.test(hero), 'dial must be gated');
   assert.ok(/<ScoreRing/.test(hero), 'ScoreRing fallback must remain');
 });
+
+test('COS-1095: gauge mode drops the card chrome and sizes from real width', () => {
+  // Vishal: "there are two cards with the border… why can't we remove those
+  // cards and just have two circles". The card spent a border, 10pt padding
+  // either side and a header row on chrome, and the dial got the remainder —
+  // which is why the circles came out small.
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/tileBare/.test(hero), 'a chrome-free tile style must exist');
+  assert.ok(/\{!bare && \(/.test(hero), 'the header row must be dropped in gauge mode');
+  assert.ok(
+    /\(screenWidth - 32 - 8\) \/ 2/.test(hero),
+    'dial must be sized from the row width, not a multiple of the old ring',
+  );
+});
+
+test('COS-1095: the dial size is clamped at both ends', () => {
+  // Unclamped, a tablet renders one enormous dial per half-screen and a narrow
+  // phone renders one too small to read the number in.
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/Math\.max\(120, Math\.min\(260, perTile\)\)/.test(hero), 'clamp 120..260');
+});
+
+test('COS-1095: the title moves inside the ring when the card header goes', () => {
+  // Otherwise removing the header would leave two unlabelled circles — and
+  // Ken's own screenshots put "Health Age" inside the dial.
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/dialTitle="Wellbeing"/.test(hero), 'wellbeing tile passes its title');
+  assert.ok(/dialTitle="Health Age"/.test(hero), 'health age tile passes its title');
+  assert.ok(/styles\.dialTitle/.test(hero), 'the in-ring title must be rendered');
+});
+
+test('COS-1095: the ScoreRing fallback keeps its card', () => {
+  // A bare 64px ring with no border and no header reads as a stray graphic,
+  // not a tile. Only gauge mode loses the chrome.
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/const bare = useHomeDialGaugeFlag\(\)/.test(hero), 'chrome removal is flag-scoped');
+});
