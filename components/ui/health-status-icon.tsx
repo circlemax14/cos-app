@@ -41,6 +41,26 @@ interface HealthStatusIconProps {
  * blinking. Cadence is slower than Plan's heartbeat on purpose — two animated
  * icons at the same tempo in one bar look like a fault.
  *
+ * ─── COS-1107: THE DISC IS THE ICON ──────────────────────────────────
+ *
+ * Third round on size, because the first two measured the wrong thing.
+ *
+ * I compared "disc diameter" to "house bounding box" and called them equal at
+ * 18pt. They are not. A filled circle covers pi/4 — 79% — of the square it sits
+ * in, and the house glyph fills its corners, so the same nominal width reads
+ * lighter as a circle. 18.6pt of circle is about 272pt^2 of ink against the
+ * house's 324.
+ *
+ * Worse, the arcs were contributing nothing to perceived size: the outer pair
+ * animated between 0.12 and 0.6 opacity at 1.6 stroke, which is why Vishal's
+ * screenshot shows a small disc and no arcs at all. I had been counting them
+ * as part of the mark.
+ *
+ * So the disc grew to r=8.8 — 73% of the box, level with the house — and the
+ * outer arc pair is GONE. It cost radius the disc needed and returned nothing
+ * visible. One pair remains, at a weight that actually reads, and the wave
+ * still travels because it is the motion that carries it, not the count.
+ *
  * ─── COS-1106: WHY THE WAVES WERE CUTTING ────────────────────────────
  *
  * Two mistakes, both mine, both about measuring the wrong thing.
@@ -83,7 +103,6 @@ export function HealthStatusIcon({
   animated = true,
 }: HealthStatusIconProps) {
   const inner = useRef(new Animated.Value(0)).current;
-  const outer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!animated) return;
@@ -113,20 +132,15 @@ export function HealthStatusIcon({
       );
 
     const a = wave(inner, 0);
-    const b = wave(outer, 320);
     a.start();
-    b.start();
     return () => {
       a.stop();
-      b.stop();
     };
-  }, [animated, inner, outer]);
+  }, [animated, inner]);
 
   // Static values when animation is off, so the mark still reads complete.
-  const innerOpacity = animated ? inner.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) : 1;
-  const outerOpacity = animated ? outer.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.6] }) : 0.45;
+  const innerOpacity = animated ? inner.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) : 1;
   const innerScale = animated ? inner.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) : 1;
-  const outerScale = animated ? outer.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) : 1;
 
   return (
     <View style={[styles.box, { width: size, height: size }]}>
@@ -135,7 +149,7 @@ export function HealthStatusIcon({
         <Path
           fill={color}
           fillRule="evenodd"
-          d="M12 4.6a7.4 7.4 0 1 0 0 14.8 7.4 7.4 0 0 0 0-14.8ZM10.95 6.9h2.1v4.05h4.05v2.1h-4.05v4.05h-2.1v-4.05H6.9v-2.1h4.05Z"
+          d="M12 3.2a8.8 8.8 0 1 0 0 17.6 8.8 8.8 0 0 0 0-17.6ZM10.75 5.9h2.5v4.85h4.85v2.5h-4.85v4.85h-2.5v-4.85H5.9v-2.5h4.85Z"
         />
       </Svg>
 
@@ -144,20 +158,11 @@ export function HealthStatusIcon({
         style={[StyleSheet.absoluteFill, { opacity: innerOpacity, transform: [{ scale: innerScale }] }]}
       >
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-          <Path d="M19.56 17.91A9.6 9.6 0 0 0 19.56 6.09" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
-          <Path d="M4.44 17.91A9.6 9.6 0 0 1 4.44 6.09" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
+          <Path d="M20.35 19.01A10.9 10.9 0 0 0 20.35 4.99" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+          <Path d="M3.65 19.01A10.9 10.9 0 0 1 3.65 4.99" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
         </Svg>
       </Animated.View>
 
-      <Animated.View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { opacity: outerOpacity, transform: [{ scale: outerScale }] }]}
-      >
-        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-          <Path d="M21.53 17.5A11 11 0 0 0 21.53 6.5" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
-          <Path d="M2.47 17.5A11 11 0 0 1 2.47 6.5" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
-        </Svg>
-      </Animated.View>
     </View>
   );
 }
