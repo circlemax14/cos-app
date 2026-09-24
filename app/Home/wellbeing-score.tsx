@@ -39,6 +39,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { ScoreBandChip } from '@/components/home/ScoreBandChip'
 import { ScoreHistorySparkline } from '@/components/home/ScoreHistorySparkline'
 import { DialGauge } from '@/components/health/DialGauge'
+import { WellbeingDialHero } from '@/components/home/WellbeingDialHero'
 import { useCanRender } from '@/hooks/use-entitlement'
 import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
 import {
@@ -138,66 +139,15 @@ export default function WellbeingScoreDetailScreen(): React.JSX.Element {
    * zero is worse than no dial.
    */
   const heroStack = (
-    <>
-      <View style={styles.heroTopRow}>
-        <Text style={[styles.heroNumber, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
-          {typeof composite === 'number' ? composite : '—'}
-        </Text>
-        <Text style={[styles.heroScale, { color: colors.subtext }]} maxFontSizeMultiplier={1.3}>
-          /100
-        </Text>
-      </View>
-
-      {trend ? (
-        <View
-          style={styles.heroTrendRow}
-          accessible
-          accessibilityLabel={trendA11yLabel(trend.arrow, trend.delta)}
-        >
-          <MaterialIcons
-            name={trendIconName(trend.arrow)}
-            size={16}
-            color={TREND_TONE_COLOR[trendTone(trend.arrow)]}
-          />
-          <Text
-            style={[styles.heroTrendLabel, { color: TREND_TONE_COLOR[trendTone(trend.arrow)] }]}
-            maxFontSizeMultiplier={1.3}
-          >
-            {trendLabel(trend.arrow, trend.delta)}
-          </Text>
-        </View>
-      ) : null}
-
-      <View style={styles.heroChipRow}>
-        <ScoreBandChip band={band} />
-      </View>
-
-      {/* AS-OF DATE. `computedAt` has always been in the payload and was never
-          shown, so a patient could not tell whether they were reading a score
-          from this morning or from before a week of changes.
-
-          Omitted rather than guessed when the timestamp is unparseable: a
-          wrong date on a health figure is worse than no date. */}
-      {(() => {
-        const iso = endpoint?.computedAt
-        if (!iso) return null
-        const d = new Date(iso)
-        if (Number.isNaN(d.getTime())) return null
-        return (
-          <Text
-            style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(12),
-              marginTop: 6,
-              textAlign: 'center',
-            }}
-            maxFontSizeMultiplier={1.3}
-          >
-            {`as of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
-          </Text>
-        )
-      })()}
-    </>
+    <WellbeingDialHero
+      composite={typeof composite === 'number' ? composite : null}
+      trend={trend}
+      band={band}
+      computedAt={endpoint?.computedAt}
+      textColor={colors.text as string}
+      subtextColor={colors.subtext as string}
+      getScaledFontSize={getScaledFontSize}
+    />
   )
 
   return (

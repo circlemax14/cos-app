@@ -48,6 +48,9 @@ import { ScoreRing } from '@/components/home/ScoreRing'
 import { DialGauge } from '@/components/health/DialGauge'
 import { useHomeDialGaugeFlag } from '@/hooks/use-home-dial-gauge-flag'
 import { useHomeDimensions } from '@/components/home/HomeResponsiveProvider'
+import { WellbeingDialHero } from '@/components/home/WellbeingDialHero'
+import { HealthAgeDialHero } from '@/components/home/HealthAgeDialHero'
+import { useWellbeingDerivation } from '@/hooks/use-wellbeing-derivation'
 import { positionOf } from '@/lib/dial-geometry'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
@@ -149,9 +152,19 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
   const enabledCount = 1 + (healthAgeEnabled ? 1 : 0);
 
   const variant: Variant = enabledCount === 1 ? 'large' : 'compact'
+  const dialMode = useHomeDialGaugeFlag()
 
   return (
-    <View style={variant === 'large' ? styles.singleColumn : styles.row}>
+    /*
+     * COS-1096 — in gauge mode the dials STACK, full width.
+     *
+     * Ken's screenshots are full-width heroes. Two of them side by side gives
+     * each a ~176px ring with a ~110pt interior, and the stack that goes
+     * inside is six elements deep. It does not fit, at any font size — which
+     * is why two attempts at "the same thing but smaller" both came back
+     * wrong. The row layout is the thing that has to give, not the design.
+     */
+    <View style={dialMode || variant === 'large' ? styles.singleColumn : styles.row}>
       {wellbeingPerm && <WellbeingTile variant={variant} />}
       {healthAgeEnabled && <HealthAgeTile variant={variant} />}
     </View>
@@ -241,6 +254,9 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
    * warms exactly this key above — so this is a cache read, not a new fetch.
    */
   const { data: endpoint } = useWellbeingScoreEndpoint()
+  // COS-1096 — the trend the detail screen shows. Home already warms this
+  // query (useWellbeingScoreWarmer above), so reading it here costs nothing.
+  const { derivation: wbDerivation } = useWellbeingDerivation()
   const authoritative =
     typeof endpoint?.overall === 'number' && Number.isFinite(endpoint.overall)
       ? endpoint.overall
@@ -282,7 +298,24 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
             // wellbeing-score.tsx passes, so the tile and the screen behind it
             // draw the same gauge on the same scale.
             dial={{ value: composite as number, center: 50, span: 50 }}
-            dialTitle="Wellbeing"
+            /*
+             * COS-1096 — the detail screen's OWN stack, not a lookalike.
+             * `trend` comes from useWellbeingDerivation, whose query Home
+             * already warms, so this is a cache read rather than a new fetch.
+             */
+            dialContent={
+              <WellbeingDialHero
+                title="Wellbeing"
+                composite={composite as number}
+                trend={wbDerivation?.trend ?? null}
+                band={band}
+                computedAt={endpoint?.computedAt}
+                textColor="#11181C"
+                subtextColor="#687076"
+                getScaledFontSize={(n) => n}
+                scale={0.82}
+              />
+            }
           />
         ) : isPendingFirstLoad ? (
           <Empty
@@ -331,6 +364,18 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
    * renders the bare number exactly as it does today.
    */
   const chrono = data?.chronologicalAge ?? null
+  /*
+   * COS-1096 — same treatment the detail screen gives its date: omitted
+   * rather than guessed when unparseable, because a wrong date on a health
+   * figure is worse than no date.
+   */
+  const healthAgeAsOf = (() => {
+    const iso = data?.computedAt
+    if (!iso) return null
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return null
+    return `As of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+  })()
   const HEALTH_AGE_SPAN_YEARS = 10
   const ring =
     hasScore && typeof chrono === 'number' && Number.isFinite(chrono)
@@ -377,7 +422,22 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                   }
                 : null
             }
-            dialTitle="Health Age"
+            dialContent={
+              <HealthAgeDialHero
+                overall={overall}
+                gap={
+                  typeof overall === 'number' && typeof chrono === 'number'
+                    ? overall - chrono
+                    : null
+                }
+                asOf={healthAgeAsOf}
+                tokens={bandTokens}
+                textColor="#11181C"
+                subtextColor="#687076"
+                getScaledFontSize={(n) => n}
+                scale={0.82}
+              />
+            }
           />
         ) : isLoading ? (
           <Empty
@@ -512,6 +572,7 @@ function Ready({
   ring,
   dial,
   dialTitle,
+  dialContent,
 }: {
   number: number
   chip: { fg: string; bg: string; label: string } | null
@@ -535,6 +596,15 @@ function Ready({
   dial?: { value: number; center: number; span: number; centerLabel?: string } | null
   /** COS-1095 — shown INSIDE the ring in gauge mode, where the card header is gone. */
   dialTitle?: string
+  /*
+   * COS-1096 — the full stack that goes inside the ring, supplied by the tile.
+   *
+   * Ken's screenshots are the DETAIL SCREENS, and their interiors are six
+   * elements deep. Rendering a title and a number here and calling it the same
+   * design is what produced two rejected attempts. Each tile now passes the
+   * screen's own component, so the tile and the screen behind it cannot drift.
+   */
+  dialContent?: React.ReactNode
 }): React.JSX.Element {
   const dialEnabled = useHomeDialGaugeFlag()
   const { width: screenWidth } = useHomeDimensions()
@@ -572,10 +642,21 @@ function Ready({
      * multiplier when width is 0, which is what the provider reports before
      * first layout.
      */
-    const perTile = screenWidth > 0 ? (screenWidth - 32 - 8) / 2 : 0
+    /*
+     * COS-1096 — the SAME formula wellbeing-score.tsx uses:
+     *   min(340, max(240, width - 56))
+     *
+     * Two-across was the mistake behind both rejected attempts. At half width
+     * the ring is ~176px and its usable interior ~110pt, and six stacked
+     * elements — title, date, a 56pt number, /100, the trend, the band chip —
+     * do not fit in 110pt at any legible size. It was never a styling problem.
+     *
+     * So the dials are full-width and stacked. Same size as the screen they
+     * open, which is what Ken asked for.
+     */
     const dialSize =
-      perTile > 0
-        ? Math.round(Math.max(120, Math.min(260, perTile)))
+      screenWidth > 0
+        ? Math.round(Math.min(340, Math.max(240, screenWidth - 56)))
         : Math.round(ringSize * 1.5)
     return (
       <View style={styles.body}>
@@ -595,6 +676,8 @@ function Ready({
           formatEnd={(n) => String(Math.round(n))}
         >
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            {dialContent ?? (
+              <>
             {/*
               COS-1095 — the title lives INSIDE the ring now that the card
               header is gone. That is also how Ken's screenshots read: "Health
@@ -622,6 +705,8 @@ function Ready({
                 </Text>
               </View>
             ) : null}
+              </>
+            )}
           </View>
         </DialGauge>
       </View>
@@ -812,6 +897,9 @@ const styles = StyleSheet.create({
     // No flexDirection:row so the single tile stretches to fill container width.
     marginHorizontal: 16,
     marginBottom: 12,
+    // COS-1096 — stacked dials need air between them; without it two rings
+    // touch and read as one ambiguous shape.
+    gap: 8,
   },
   /*
    * COS-1095 — gauge mode: no card, no border, no padding. The dial is the
