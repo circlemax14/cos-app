@@ -246,8 +246,14 @@ export default function TabLayout() {
            * targets it — and a route name is not user-visible.
            */
           title: 'Health Status',
+          /*
+           * COS-1105 — 28, not 26. Vishal: "the icon is small compared to
+           * other icons in the nav bar." Its disc is 58% of its viewBox where
+           * a filled house icon is about 75%, so it needs the extra points to
+           * carry the same visual weight beside them.
+           */
           tabBarIcon: ({ color }) => (
-            <HealthStatusIcon size={getScaledFontSize(26)} color={color} />
+            <HealthStatusIcon size={getScaledFontSize(28)} color={color} />
           ),
         }}
       />
