@@ -162,3 +162,46 @@ test('THE POINT: the cap sits exactly at the leading edge of the swept arc', () 
     assert.equal(Math.round(sweep.right + sweep.left), Math.round(ringEndAngle(p)));
   }
 });
+
+/**
+ * COS-1094 — the Home dial must use the SAME scale as the screen behind it.
+ *
+ * Ken screenshotted wellbeing-score.tsx and health-age.tsx and asked for that
+ * view on Home. If the tile and the detail screen disagree about the scale,
+ * the same number sits at two different positions and the tile is worse than
+ * no dial at all.
+ */
+test('COS-1094: Home dial scales match the detail screens verbatim', () => {
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+
+  // wellbeing-score.tsx passes center={50} span={50}
+  assert.ok(
+    /dial=\{\{ value: composite as number, center: 50, span: 50 \}\}/.test(hero),
+    'wellbeing tile must use center 50 / span 50',
+  );
+  // health-age.tsx passes center={chrono} span={10}
+  assert.ok(
+    /center: chrono/.test(hero) && /span: HEALTH_AGE_SPAN_YEARS/.test(hero),
+    'health age tile must centre on chronological age',
+  );
+});
+
+test('COS-1094: the dial never renders without both endpoints known', () => {
+  // health-age.tsx: "a scale with one endpoint missing is decoration, not a
+  // measurement". The tile must not disagree.
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(
+    /typeof chrono === 'number' && Number\.isFinite\(chrono\)[\s\S]{0,400}?center: chrono/.test(hero),
+    'health age dial must be null when chronological age is unknown',
+  );
+});
+
+test('COS-1094: the SVG dial stays behind a kill-switch', () => {
+  // Home is SVG-free after a cold-mount crash (ADR-0003). DialGauge uses
+  // react-native-svg, so it must never mount unguarded — and the ScoreRing
+  // fallback must still be reachable.
+  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
+  assert.ok(/useHomeDialGaugeFlag\(\)/.test(hero), 'dial must read the flag');
+  assert.ok(/if \(dialEnabled && dial\)/.test(hero), 'dial must be gated');
+  assert.ok(/<ScoreRing/.test(hero), 'ScoreRing fallback must remain');
+});

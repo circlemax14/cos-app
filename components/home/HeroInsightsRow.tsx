@@ -45,6 +45,8 @@ import { useScoreCatalog } from '@/hooks/use-score-catalog'
 import { pickWellbeingDisplayScore } from '@/lib/wellbeing-display-score'
 import { useWellbeingScoreEndpoint } from '@/hooks/use-wellbeing-history'
 import { ScoreRing } from '@/components/home/ScoreRing'
+import { DialGauge } from '@/components/health/DialGauge'
+import { useHomeDialGaugeFlag } from '@/hooks/use-home-dial-gauge-flag'
 import { positionOf } from '@/lib/dial-geometry'
 import { useWellbeingScoreWarmer } from '@/hooks/use-wellbeing-score-warmer'
 import { useIsFeatureEnabled } from '@/hooks/use-feature-permissions'
@@ -275,6 +277,10 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
               color: bandTokens?.fg ?? '#5CBF9A',
               trackColor: 'rgba(127,127,127,0.18)',
             }}
+            // COS-1094 — center 50 / span 50 is exactly what
+            // wellbeing-score.tsx passes, so the tile and the screen behind it
+            // draw the same gauge on the same scale.
+            dial={{ value: composite as number, center: 50, span: 50 }}
           />
         ) : isPendingFirstLoad ? (
           <Empty
@@ -347,7 +353,29 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
       }
       body={
         hasScore ? (
-          <Ready number={Math.round(overall as number)} chip={bandTokens} variant={variant} ring={ring} />
+          <Ready
+            number={Math.round(overall as number)}
+            chip={bandTokens}
+            variant={variant}
+            ring={ring}
+            /*
+             * COS-1094 — the SAME scale health-age.tsx uses: centred on the
+             * patient's chronological age, ten years either side. Null when
+             * chrono is unknown, because a dial with one endpoint missing is
+             * decoration rather than a measurement — health-age.tsx records
+             * that reasoning and this must not disagree with it.
+             */
+            dial={
+              hasScore && typeof chrono === 'number' && Number.isFinite(chrono)
+                ? {
+                    value: overall as number,
+                    center: chrono,
+                    span: HEALTH_AGE_SPAN_YEARS,
+                    centerLabel: String(Math.round(chrono)),
+                  }
+                : null
+            }
+          />
         ) : isLoading ? (
           <Empty
             pending
@@ -458,6 +486,7 @@ function Ready({
   chip,
   variant,
   ring,
+  dial,
 }: {
   number: number
   chip: { fg: string; bg: string; label: string } | null
@@ -469,9 +498,78 @@ function Ready({
    * would be drawing a fraction of nothing.
    */
   ring?: { progress: number; color: string; trackColor: string } | null
+  /*
+   * COS-1094 — the real scale behind the number, so the tile can draw the same
+   * DialGauge the detail screen draws.
+   *
+   * `progress` alone is not enough: a dial has to label its own endpoints, and
+   * 0..1 cannot say whether the ends are 0 and 100 or "ten years either side of
+   * your age". Each tile supplies its own, exactly as wellbeing-score.tsx and
+   * health-age.tsx already do.
+   */
+  dial?: { value: number; center: number; span: number; centerLabel?: string } | null
 }): React.JSX.Element {
+  const dialEnabled = useHomeDialGaugeFlag()
   const scoreStyle = variant === 'large' ? styles.scoreNumberLarge : styles.scoreNumber
   const ringSize = variant === 'large' ? 92 : 64
+
+  /*
+   * COS-1094 — Ken asked for the Home tiles to match the screens he
+   * screenshotted, which are wellbeing-score.tsx and health-age.tsx rendering
+   * DialGauge. So this uses THAT component rather than approximating it in
+   * Views: a second drawing of the same gauge would drift from the first the
+   * moment either is touched, and the whole point is that they agree.
+   *
+   * ⚠️ DialGauge uses react-native-svg and Home is deliberately SVG-free after
+   * a cold-mount crash (ADR-0003). It is therefore behind a kill-switch, with
+   * the ScoreRing path below untouched as the fallback — see
+   * hooks/use-home-dial-gauge-flag.ts.
+   *
+   * The dial needs more room than a bare ring to be legible at tile scale: its
+   * ticks and end labels live INSIDE the track, so at 64px they collide with
+   * the number. 1.5x clears them at both variants.
+   */
+  if (dialEnabled && dial) {
+    const dialSize = Math.round(ringSize * 1.5)
+    return (
+      <View style={styles.body}>
+        <DialGauge
+          value={dial.value}
+          center={dial.center}
+          span={dial.span}
+          size={dialSize}
+          ringColor={ring?.trackColor ?? '#E3E6E8'}
+          trackColor={ring?.trackColor ?? '#E3E6E8'}
+          tickColor="#C7CDD1"
+          fillColor={ring?.color ?? chip?.fg ?? '#5CBF9A'}
+          labelColor="#8A9499"
+          dotCoreColor="#FFFFFF"
+          getScaledFontSize={(n) => n}
+          centerLabel={dial.centerLabel}
+          formatEnd={(n) => String(Math.round(n))}
+        >
+          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <Text
+              style={[
+                scoreStyle,
+                { color: chip?.fg ?? ring?.color ?? '#1A1A1A', fontSize: Math.round(dialSize * 0.3) },
+              ]}
+              numberOfLines={1}
+            >
+              {number}
+            </Text>
+            {chip ? (
+              <View style={[styles.chip, { backgroundColor: chip.bg, marginTop: 2 }]}>
+                <Text style={[styles.chipText, { color: chip.fg }]} numberOfLines={1}>
+                  {chip.label}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </DialGauge>
+      </View>
+    )
+  }
 
   if (ring) {
     /*
