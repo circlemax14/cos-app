@@ -26,20 +26,48 @@ test('exactly one FilterMenu is rendered', () => {
   assert.strictEqual(rendered.length, 1, 'one filter control, not two');
 });
 
-test('the filter renders only for categories whose records carry dates', () => {
+test('the filter sits in the SUPPORTS header, beside the close button', () => {
   /*
-   * Vishal: "outside we have agencies, social, where these filters are not
-   * applicable and not required." A band is computed from clinical records, so
-   * offering it on the social list was offering to filter by something that
-   * list does not have.
+   * COS-1103 — Vishal: "the place of the filter should be where it was already
+   * there, like in this supports line where we have cross on the right side."
+   *
+   * COS-1101 had moved it into the Medical body. That fixed the wrong half:
+   * the problem was never the position, it was that the control appeared on
+   * tabs it could not filter.
+   */
+  const header = src.slice(src.indexOf('styles.modalHeader'), src.indexOf('SUPPORTS'));
+  assert.ok(/<FilterMenu/.test(header), 'the filter must render in the header');
+});
+
+test('it is shown only on tabs where a band means something', () => {
+  // A band is computed from dated clinical records. On Agencies and Social it
+  // can filter nothing, which is what made it noise at the top before.
+  assert.ok(
+    /activeCategoryId === 'medical' \|\| activeCategoryId === 'integrative'/.test(src),
+    'visibility must be gated on the open category',
+  );
+  assert.ok(
+    /setActiveCategoryIndex\(index\)/.test(src),
+    'the tabs must report which category is open — the header sits above them',
+  );
+});
+
+test('an applied filter is indicated ON the control', () => {
+  // Vishal: "there should be some kind of indicator that filter is applied."
+  assert.ok(/active=\{isRecencyFilterActive\}/.test(src), 'the trigger must show active state');
+  const menu = readFileSync('components/ui/filter-menu.tsx', 'utf8');
+  assert.ok(/styles\.activeDot/.test(menu), 'the dot must render');
+});
+
+test('"Everyone" does not count as an applied filter', () => {
+  /*
+   * It is the OFF position. A dot there would claim the control is narrowing a
+   * list it is showing in full — the opposite of what an indicator is for.
    */
   assert.ok(
-    /\{\(category\.id === 'medical' \|\| category\.id === 'integrative'\) && \(/.test(src),
-    'the filter must be gated to medical/integrative',
+    /recencyFilter !== null && recencyFilter !== 'all'/.test(src),
+    'the off position must not light the indicator',
   );
-  // And it must NOT be back in the modal header, above every category.
-  const header = src.slice(src.indexOf('styles.modalHeader'), src.indexOf('SUPPORTS'));
-  assert.ok(!/<FilterMenu/.test(header), 'no filter in the modal header');
 });
 
 test('a bypassed filter SAYS it was bypassed', () => {
@@ -58,11 +86,16 @@ test('a bypassed filter SAYS it was bypassed', () => {
   );
 });
 
-test('the active filter is visible without opening the menu', () => {
-  // The selection was only ever shown inside the menu, which is closed by the
-  // time you look at the list it was supposed to change.
+test('the active filter is legible without opening the menu', () => {
+  /*
+   * COS-1101 printed the chosen band as text beside the control. COS-1103
+   * moved the control into the header, where there is no room for a label —
+   * so the DOT carries that job, and the state is spelled out for VoiceOver
+   * in the accessibility label instead of being inferable only from a colour.
+   */
+  assert.ok(/active=\{isRecencyFilterActive\}/.test(src), 'the dot reflects the state');
   assert.ok(
-    /RECENCY_FILTERS\.find\(f => f\.id === recencyFilter\)\?\.label/.test(src),
-    'the chosen band must be printed beside the control',
+    /Currently \$\{activeRecencyLabel\}/.test(src),
+    'the chosen band must be announced, not left to colour alone',
   );
 });

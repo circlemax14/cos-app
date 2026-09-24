@@ -88,6 +88,10 @@ export default function ModalScreen() {
    * account the unfiltered list is 83 providers and the default band is 8.
    */
   const [recencyFilter, setRecencyFilter] = React.useState<string | null>('current-acute');
+  // COS-1103 — which category tab is open, so the header can show the filter
+  // only where it applies. Index rather than id: that is what TabsProvider
+  // reports, and deriving the id from categoryGroups keeps one source of truth.
+  const [activeCategoryIndex, setActiveCategoryIndex] = React.useState(0);
   const [manualMembersBySubCategory, setManualMembersBySubCategory] = React.useState<Record<string, ManualMember[]>>({});
   const [openManualFormKey, setOpenManualFormKey] = React.useState<string | null>(null);
   const [manualName, setManualName] = React.useState('');
@@ -253,6 +257,27 @@ export default function ModalScreen() {
     setManualSubCategoryId(null);
     setOpenManualFormKey(null);
   };
+
+  /*
+   * COS-1103 — the header's view of the filter.
+   *
+   * `showRecencyFilter` is gated on the OPEN TAB, not on the screen: a recency
+   * band is computed from dated clinical records, so on Agencies and Social it
+   * could filter nothing and offering it there was the original complaint.
+   *
+   * `integrative` is included because it is the other category that will carry
+   * dated records once uploads are processed.
+   */
+  const activeCategoryId = categoryGroups[activeCategoryIndex]?.id;
+  const showRecencyFilter =
+    activeCategoryId === 'medical' || activeCategoryId === 'integrative';
+  /*
+   * "Everyone" is the off position, not an applied filter — the dot must not
+   * claim a filter is narrowing a list it is showing in full.
+   */
+  const isRecencyFilterActive = recencyFilter !== null && recencyFilter !== 'all';
+  const activeRecencyLabel =
+    RECENCY_FILTERS.find((f) => f.id === recencyFilter)?.label ?? 'Everyone';
 
   const closeModal = () => {
     dismissTo('/Home');
@@ -448,14 +473,41 @@ export default function ModalScreen() {
       <Portal.Host>
         <View style={styles.modalHeader}>
           {/*
-            COS-1101 — no filters up here any more.
-            Vishal: "why do we have those filters at the top, although they are
-            required within the medical category only... outside we have
-            agencies, social, where these filters are not applicable."
-            The recency control now lives inside the Medical category, which is
-            the only place its answer means anything.
+            COS-1103 — the filter is back in the header, where it was, but it
+            only appears on the tabs where a band means anything.
+
+            COS-1101 moved it into the Medical body because it was showing on
+            Agencies and Social, where it can filter nothing. That fixed the
+            wrong half: the problem was never the position, it was that the
+            control appeared regardless of context. So it returns to the bar
+            beside the close button and is gated on the open tab instead.
           */}
-          <View style={styles.headerActionsLeft} />
+          <View style={styles.headerActionsLeft}>
+            {showRecencyFilter && (
+              <FilterMenu
+                options={RECENCY_FILTERS}
+                selectedId={recencyFilter}
+                onSelect={setRecencyFilter}
+                onClear={() => setRecencyFilter('all')}
+                color={colors.text}
+                menuBackgroundColor={colors.background}
+                menuTextColor={colors.text}
+                menuHighlightColor={colors.tint + '20'}
+                fontSize={getScaledFontSize(14)}
+                fontWeight={getScaledFontWeight(500) as any}
+                iconSize={getScaledFontSize(22)}
+                // The dot, and the colour change, so an applied filter is
+                // visible without opening the menu that applied it.
+                active={isRecencyFilterActive}
+                activeColor={colors.tint}
+                accessibilityLabel={
+                  isRecencyFilterActive
+                    ? `Filter providers by recency. Currently ${activeRecencyLabel}`
+                    : 'Filter providers by how recently they treated you'
+                }
+              />
+            )}
+          </View>
           <Text style={[styles.modalTitle, {
             fontSize: getScaledFontSize(20),
             fontWeight: getScaledFontWeight(600) as any,
@@ -485,6 +537,15 @@ export default function ModalScreen() {
           <TabsProvider
             defaultIndex={0}
             onChangeIndex={(index) => {
+              /*
+               * COS-1103 — the header needs to know which category is open.
+               *
+               * Vishal: the filter icon belongs back in the SUPPORTS bar next
+               * to the close button, but only while the Medical tab is
+               * showing. The header sits above the tabs, so the only way it
+               * can know is for the tabs to tell it.
+               */
+              setActiveCategoryIndex(index);
               // Reset selected category when switching tabs
               setSelectedCategoryId(null);
               setOpenManualFormKey(null);
@@ -923,52 +984,11 @@ export default function ModalScreen() {
                       <View style={{ flex: 1 }}>
                       {category.id === 'social' && <FindPeopleEntry />}
                       {/*
-                        COS-1101 — the recency filter lives HERE, in Medical.
-                        Vishal: "those filters are ideally required within the
-                        medical category only... outside we have agencies,
-                        social, where these filters are not applicable."
-                        He is right. A band is computed from clinical records,
-                        so it can only ever mean something for clinicians — the
-                        control was offering to filter lists it could not
-                        affect. `integrative` is included because it is the
-                        other category that will carry dated records.
-                      */}
-                      {(category.id === 'medical' || category.id === 'integrative') && (
-                        <View style={styles.recencyBar}>
-                          <FilterMenu
-                            options={RECENCY_FILTERS}
-                            selectedId={recencyFilter}
-                            onSelect={setRecencyFilter}
-                            onClear={() => setRecencyFilter('all')}
-                            color={colors.text}
-                            menuBackgroundColor={colors.background}
-                            menuTextColor={colors.text}
-                            menuHighlightColor={colors.tint + '20'}
-                            fontSize={getScaledFontSize(14)}
-                            fontWeight={getScaledFontWeight(500) as any}
-                            iconSize={getScaledFontSize(22)}
-                            accessibilityLabel="Filter providers by how recently they treated you"
-                          />
-                          {/*
-                            The ACTIVE filter, stated in the open. Vishal chose
-                            a band and could not tell it had been chosen: the
-                            selection was visible only inside the menu he had
-                            just closed.
-                          */}
-                          <Text
-                            style={{
-                              color: colors.text,
-                              fontSize: getScaledFontSize(13),
-                              fontWeight: getScaledFontWeight(600) as any,
-                            }}
-                            numberOfLines={1}
-                          >
-                            {RECENCY_FILTERS.find(f => f.id === recencyFilter)?.label ?? 'Everyone'}
-                          </Text>
-                        </View>
-                      )}
-                      {/*
                         COS-1101 — say WHY the filter did nothing.
+                        Kept in the BODY even though the control moved back to
+                        the header (COS-1103): this explains the LIST, and a
+                        message about the list belongs beside it rather than
+                        under an icon three rows above.
 
                         A provider is banded from the newest dated record
                         linking them to this patient. When no provider has one —
@@ -1370,14 +1390,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: 'center',
-  },
-  recencyBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    paddingBottom: 2,
   },
   emptyDepartmentContainer: {
     padding: 20,
