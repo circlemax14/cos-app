@@ -53,8 +53,12 @@ export interface HealthAgeDialHeroProps {
    * WellbeingDialHero: DialGauge lays children out absolutely at a fixed
    * height, so anything taller spills over the next dial.
    *
-   * Keeps the age and the band chip. "Health Age", the date and the
-   * years-younger phrase move OUTSIDE the ring.
+   * Keeps ONLY the age. Vishal, 2026-09-24: "remove this Foundational and
+   * Younger text that we are trying to show within the circle." The title
+   * already lives outside it.
+   *
+   * ⚠️ The band survives as the number's COLOUR. See the matching note in
+   * WellbeingDialHero for why that is a knowing trade rather than an oversight.
    */
   compact?: boolean
 }
@@ -99,26 +103,6 @@ export function HealthAgeDialHero({
         >
           {typeof overall === 'number' ? formatAge(overall) : '—'}
         </Text>
-        {tokens ? (
-          <View style={[styles.chip, { backgroundColor: tokens.bg, marginTop: 4 * scale }]}>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.chipLabel,
-                {
-                  color: tokens.fg,
-                  // NOT scaled below a floor. scale 0.62 would render this at
-                  // 6pt, which is decoration rather than a label — and the
-                  // chip is the only thing in the compact dial that says what
-                  // the number MEANS.
-                  fontSize: getScaledFontSize(Math.max(10, 11 * scale)),
-                },
-              ]}
-            >
-              {tokens.label}
-            </Text>
-          </View>
-        ) : null}
       </>
     )
   }
