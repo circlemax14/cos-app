@@ -19,7 +19,10 @@ test('every arc fits the viewBox at its WIDEST point, not just its ends', () => 
   // radius and stroke are read from the file so this cannot drift from it.
   const arcs = [...src.matchAll(/A(\d+(?:\.\d+)?) \1 0 0 [01] [\d.]+ [\d.]+"\s+stroke=\{color\}\s+strokeWidth=\{(\d+(?:\.\d+)?)\}/g)]
     .map((m) => ({ r: Number(m[1]), stroke: Number(m[2]) }));
-  assert.ok(arcs.length >= 4, `expected 4 arcs, parsed ${arcs.length}`);
+  // COS-1107 dropped the outer pair — it animated between 0.12 and 0.6 opacity
+  // and was invisible on a real phone, while costing radius the disc needed.
+  // Two arcs, symmetric. If a pair is ever added back, this still checks it.
+  assert.ok(arcs.length >= 2, `expected at least 2 arcs, parsed ${arcs.length}`);
   for (const { r, stroke } of arcs) {
     const widest = 12 + r + stroke / 2;
     assert.ok(widest <= 24, `arc r=${r} stroke=${stroke} reaches ${widest} in a 24 box`);
@@ -46,6 +49,20 @@ test('the cross is a HOLE, not a painted shape', () => {
   // wrong on any other. evenodd makes it a real cut-out.
   assert.ok(/fillRule="evenodd"/.test(src), 'the disc must use evenodd');
   assert.ok(!/fill="#fff"|fill="white"/i.test(src), 'no painted-on cross');
+});
+
+test('the disc carries the icon, not the arcs', () => {
+  /*
+   * Three rounds were spent on "it is still small" because the arcs were being
+   * counted as part of the mark while rendering nearly invisible. The disc is
+   * what the eye measures, so its radius is pinned against the 24 box: at 73%
+   * it matches the house glyph the other tabs use.
+   */
+  const disc = src.match(/M12 [\d.]+a(\d+(?:\.\d+)?) /);
+  assert.ok(disc, 'the disc path must be parseable');
+  const r = Number(disc[1]);
+  assert.ok(r >= 8.5, `disc r=${r} is too small to read beside a filled glyph`);
+  assert.ok(12 + r <= 24, `disc r=${r} overflows the box`);
 });
 
 test('the icon carries exactly one colour', () => {
