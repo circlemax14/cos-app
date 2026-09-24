@@ -78,7 +78,6 @@ export default function ModalScreen() {
   const [categoryGroups, setCategoryGroups] = React.useState<CategoryGroup[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(null);
-  const [lastVisitedFilter, setLastVisitedFilter] = React.useState<string | null>(null);
   /*
    * COS-1090 — Ken: "by default we will use the six months to one year one
    * filter", and "if they want to go into these other categories, they can
@@ -146,11 +145,6 @@ export default function ModalScreen() {
    * the question Ken's "filter it in a meaningful way" is really about: show
    * me the doctors I have records from.
    */
-  const RECORD_FILTERS = [
-    { id: 'with-records', label: 'With records' },
-    { id: 'without-records', label: 'No records yet' },
-  ];
-
   /*
    * COS-1090 — Ken's three recency bands, renamed by Hitesh on 2026-09-23
    * ("stable is a more user-friendly term than chronic").
@@ -165,6 +159,21 @@ export default function ModalScreen() {
     { id: 'stable-resolved', label: 'Stable & resolved' },
     { id: 'all', label: 'Everyone' },
   ];
+
+  /*
+   * COS-1101 — can this list be filtered by recency at all?
+   *
+   * Exported from the filter so the UI can SAY SO. Vishal: "if I click on any
+   * filter like stable and resolved, that row is highlighted but I don't see
+   * anywhere the filters are applied."
+   *
+   * He was looking at the fail-open working exactly as designed and it looked
+   * broken — which means the design was half right. Ignoring a filter the user
+   * just chose is the correct behaviour when no provider has a date; doing it
+   * SILENTLY is not.
+   */
+  const anyRecencyData = (providers: SelectedProvider[]) =>
+    providers.some(p => p.recencyBand != null);
 
   const filterProvidersByRecency = (providers: SelectedProvider[]) => {
     if (!recencyFilter || recencyFilter === 'all') return providers;
@@ -190,8 +199,7 @@ export default function ModalScreen() {
      * "Current & acute" and switch tabs — that is the honest answer to the
      * question they asked. The bypass is only for "no answer exists at all".
      */
-    const anyBanded = providers.some(p => p.recencyBand != null);
-    if (!anyBanded) return providers;
+    if (!anyRecencyData(providers)) return providers;
 
     return providers.filter(provider => {
       // Manually added people and non-medical supports have no EHR dates by
@@ -202,21 +210,19 @@ export default function ModalScreen() {
     });
   };
 
-  const filterProvidersByLastVisited = (providers: SelectedProvider[]) => {
-    providers = filterProvidersByRecency(providers);
-    if (!lastVisitedFilter) return providers;
-    return providers.filter(provider => {
-      // Manually added people and non-medical supports have no EHR records
-      // by definition; a records filter must never hide them.
-      if (provider.isManual) return true;
-      // COS-971 — `category` is LOWERCASED at providers.ts:81, so comparing it
-      // against 'Medical' was always true and every row short-circuited here:
-      // both filter options returned the identical list. The filter did nothing.
-      if (provider.category && provider.category.toLowerCase() !== 'medical') return true;
-      const has = provider.hasData === true || (provider.recordCount ?? 0) > 0;
-      return lastVisitedFilter === 'with-records' ? has : !has;
-    });
-  };
+  /*
+   * COS-1101 — ONE filter, not two.
+   *
+   * Vishal: "there was already one filter present, but now you added one more.
+   * I don't know why we have two. We should get only one."
+   *
+   * The records filter (with-records / no-records) is gone. It asked a
+   * question the recency filter answers better: "have I seen this person, and
+   * when" is strictly more informative than "is there any record at all", and
+   * two controls that overlap force the reader to work out how they combine.
+   */
+  const filterProvidersByLastVisited = (providers: SelectedProvider[]) =>
+    filterProvidersByRecency(providers);
 
   const getSubCategoryKey = (categoryId: string, subCategoryId: string) =>
     `${categoryId}-${subCategoryId}`;
@@ -440,36 +446,15 @@ export default function ModalScreen() {
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <Portal.Host>
         <View style={styles.modalHeader}>
-          <View style={styles.headerActionsLeft}>
-            <FilterMenu
-              options={RECORD_FILTERS}
-              selectedId={lastVisitedFilter}
-              onSelect={setLastVisitedFilter}
-              onClear={() => setLastVisitedFilter(null)}
-              color={colors.text}
-              menuBackgroundColor={colors.background}
-              menuTextColor={colors.text}
-              menuHighlightColor={colors.tint + '20'}
-              fontSize={getScaledFontSize(14)}
-              fontWeight={getScaledFontWeight(500) as any}
-              iconSize={getScaledFontSize(22)}
-              accessibilityLabel="Filter providers by whether they have records"
-            />
-            <FilterMenu
-              options={RECENCY_FILTERS}
-              selectedId={recencyFilter}
-              onSelect={setRecencyFilter}
-              onClear={() => setRecencyFilter('all')}
-              color={colors.text}
-              menuBackgroundColor={colors.background}
-              menuTextColor={colors.text}
-              menuHighlightColor={colors.tint + '20'}
-              fontSize={getScaledFontSize(14)}
-              fontWeight={getScaledFontWeight(500) as any}
-              iconSize={getScaledFontSize(22)}
-              accessibilityLabel="Filter providers by how recently they treated you"
-            />
-          </View>
+          {/*
+            COS-1101 — no filters up here any more.
+            Vishal: "why do we have those filters at the top, although they are
+            required within the medical category only... outside we have
+            agencies, social, where these filters are not applicable."
+            The recency control now lives inside the Medical category, which is
+            the only place its answer means anything.
+          */}
+          <View style={styles.headerActionsLeft} />
           <Text style={[styles.modalTitle, {
             fontSize: getScaledFontSize(20),
             fontWeight: getScaledFontWeight(600) as any,
@@ -936,6 +921,75 @@ export default function ModalScreen() {
                        */
                       <View style={{ flex: 1 }}>
                       {category.id === 'social' && <FindPeopleEntry />}
+                      {/*
+                        COS-1101 — the recency filter lives HERE, in Medical.
+                        Vishal: "those filters are ideally required within the
+                        medical category only... outside we have agencies,
+                        social, where these filters are not applicable."
+                        He is right. A band is computed from clinical records,
+                        so it can only ever mean something for clinicians — the
+                        control was offering to filter lists it could not
+                        affect. `integrative` is included because it is the
+                        other category that will carry dated records.
+                      */}
+                      {(category.id === 'medical' || category.id === 'integrative') && (
+                        <View style={styles.recencyBar}>
+                          <FilterMenu
+                            options={RECENCY_FILTERS}
+                            selectedId={recencyFilter}
+                            onSelect={setRecencyFilter}
+                            onClear={() => setRecencyFilter('all')}
+                            color={colors.text}
+                            menuBackgroundColor={colors.background}
+                            menuTextColor={colors.text}
+                            menuHighlightColor={colors.tint + '20'}
+                            fontSize={getScaledFontSize(14)}
+                            fontWeight={getScaledFontWeight(500) as any}
+                            iconSize={getScaledFontSize(22)}
+                            accessibilityLabel="Filter providers by how recently they treated you"
+                          />
+                          {/*
+                            The ACTIVE filter, stated in the open. Vishal chose
+                            a band and could not tell it had been chosen: the
+                            selection was visible only inside the menu he had
+                            just closed.
+                          */}
+                          <Text
+                            style={{
+                              color: colors.text,
+                              fontSize: getScaledFontSize(13),
+                              fontWeight: getScaledFontWeight(600) as any,
+                            }}
+                            numberOfLines={1}
+                          >
+                            {RECENCY_FILTERS.find(f => f.id === recencyFilter)?.label ?? 'Everyone'}
+                          </Text>
+                        </View>
+                      )}
+                      {/*
+                        COS-1101 — say WHY the filter did nothing.
+
+                        A provider is banded from the newest dated record
+                        linking them to this patient. When no provider has one —
+                        an import still running, an EHR that sent no dates, a
+                        seeded test account — filtering would empty the list, so
+                        it is skipped. Doing that silently is what made the
+                        control look broken.
+                      */}
+                      {(category.id === 'medical' || category.id === 'integrative') &&
+                        recencyFilter !== 'all' &&
+                        !anyRecencyData(category.doctors) && (
+                          <Text
+                            style={{
+                              color: colors.text + 'AA',
+                              fontSize: getScaledFontSize(12),
+                              paddingHorizontal: 16,
+                              paddingBottom: 8,
+                            }}
+                          >
+                            Showing everyone — we do not have visit dates for these providers yet.
+                          </Text>
+                        )}
                       <TabsProvider defaultIndex={0}>
                         <Tabs
                           showLeadingSpace={false}
@@ -1315,6 +1369,14 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: 'center',
+  },
+  recencyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 2,
   },
   emptyDepartmentContainer: {
     padding: 20,
