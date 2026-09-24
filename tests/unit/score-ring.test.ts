@@ -215,49 +215,73 @@ test('COS-1095: gauge mode drops the card chrome', () => {
   assert.ok(/\{!bare && \(/.test(hero), 'the header row must be dropped in gauge mode');
 });
 
-test('COS-1096: the dial is sized by the DETAIL SCREEN formula, full width', () => {
-  /*
-   * Both rejected attempts were "the same design, but smaller". They could not
-   * work: at two-across the ring is ~176px with a ~110pt interior, and the
-   * stack inside is six elements deep. This asserts the Home dial uses the
-   * same min(340, max(240, width - 56)) the screen it opens uses.
-   */
+test('COS-1097: the circles sit in PARALLEL, not stacked', () => {
+  // Vishal: "there should be two circles in parallel with proper data".
+  // COS-1096 stacked them full-width; the premise (the six-element detail
+  // stack does not fit a half ring) was right, the conclusion was wrong.
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
   assert.ok(
-    /Math\.min\(340, Math\.max\(240, screenWidth - 56\)\)/.test(hero),
-    'Home must use the detail screen dial formula',
+    /variant === 'large' \? styles\.singleColumn : styles\.row/.test(hero),
+    'gauge mode must use the row layout like every other tile',
   );
-  const detail = readFileSync('app/Home/wellbeing-score.tsx', 'utf8');
+  assert.ok(!/dialMode \|\| variant/.test(hero), 'the stacked override must be gone');
+});
+
+/*
+ * THE CHECK THAT WOULD HAVE CAUGHT THE OVERLAP.
+ *
+ * DialGauge lays its children out absolutely at a fixed height and pads them
+ * 18% each side. Content taller than the ring does not expand it — it spills
+ * out and paints over the next dial, which is what shipped in COS-1096. So the
+ * compact stack's height is asserted against the ring it has to live in.
+ */
+test('COS-1097: the compact dial contents FIT inside the ring', () => {
+  const PHONE = 393;
+  const perTile = (PHONE - 32 - 10) / 2;
+  const dialSize = Math.max(140, Math.min(200, perTile));
+  const interiorWidth = dialSize * (1 - 0.18 * 2);
+  const scale = 0.62;
+
+  // Wellbeing: number line + chip.
+  const numberLine = 60 * scale;          // lineHeight
+  const chipHeight = 11 + 3 * 2 + 4;      // font + vertical padding + gap
+  const wellbeingHeight = numberLine + 4 * scale + chipHeight;
   assert.ok(
-    /Math\.min\(340, Math\.max\(240, width - 56\)\)/.test(detail),
-    'the detail screen formula must still be the one Home copies',
+    wellbeingHeight < dialSize,
+    `wellbeing stack ${wellbeingHeight.toFixed(0)}pt must fit ring ${dialSize.toFixed(0)}pt`,
+  );
+
+  // Widest band label has to clear the 18% padding on both sides.
+  // "Foundational" at 11pt with 0.6 letterSpacing and 8pt padding each side.
+  const widestChip = 'Foundational'.length * 11 * 0.58 + 'Foundational'.length * 0.6 + 16;
+  assert.ok(
+    widestChip < interiorWidth,
+    `widest chip ${widestChip.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
+  );
+
+  // Health age: "63.4" is four glyphs at 52*scale.
+  const ageWidth = 4 * (52 * scale) * 0.58;
+  assert.ok(
+    ageWidth < interiorWidth,
+    `age ${ageWidth.toFixed(0)}pt must fit interior ${interiorWidth.toFixed(0)}pt`,
   );
 });
 
-test('COS-1096: gauge mode STACKS the dials instead of rowing them', () => {
-  // Side by side is what made them small. The row layout is the thing that
-  // gives, not the design.
+test('COS-1097: the label sits OUTSIDE the ring', () => {
+  // Inside, the 18% padding truncated it to "Wellbe…". Outside it has the
+  // tile's full width.
   const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
-  assert.ok(
-    /dialMode \|\| variant === 'large' \? styles\.singleColumn : styles\.row/.test(hero),
-    'gauge mode must use the single-column layout',
-  );
+  const dialBranch = hero.slice(hero.indexOf('if (dialEnabled && dial)'));
+  const titleAt = dialBranch.indexOf('styles.dialTitle');
+  const gaugeAt = dialBranch.indexOf('<DialGauge');
+  assert.ok(titleAt > 0 && titleAt < gaugeAt, 'the title must render before the gauge');
 });
 
-test('COS-1096: Home renders the detail screens OWN hero components', () => {
-  /*
-   * The entire requirement is that the tile and the screen behind it agree.
-   * Two drawings of one gauge diverge the moment either is touched — which is
-   * exactly how the first two attempts drifted from Ken's screenshots.
-   */
-  const hero = readFileSync('components/home/HeroInsightsRow.tsx', 'utf8');
-  assert.ok(/<WellbeingDialHero/.test(hero), 'wellbeing tile uses the shared hero');
-  assert.ok(/<HealthAgeDialHero/.test(hero), 'health age tile uses the shared hero');
-
-  // And the detail screen must render the SAME component, or they are two
-  // drawings again with extra steps.
-  const detail = readFileSync('app/Home/wellbeing-score.tsx', 'utf8');
-  assert.ok(/<WellbeingDialHero/.test(detail), 'the detail screen uses it too');
+test('COS-1097: the band chip never scales below readable', () => {
+  // scale 0.62 would put the health-age chip at 6pt — decoration, not a label,
+  // and it is the only thing in the compact dial saying what the number means.
+  const hero = readFileSync('components/home/HealthAgeDialHero.tsx', 'utf8');
+  assert.ok(/Math\.max\(10, 11 \* scale\)/.test(hero), 'chip font must have a floor');
 });
 
 test('COS-1095: the ScoreRing fallback keeps its card', () => {

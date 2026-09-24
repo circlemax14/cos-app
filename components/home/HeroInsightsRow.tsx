@@ -156,15 +156,16 @@ function HeroInsightsRowBase(): React.JSX.Element | null {
 
   return (
     /*
-     * COS-1096 — in gauge mode the dials STACK, full width.
+     * COS-1097 — back to a ROW. Vishal: "there should be two circles in
+     * parallel with proper data."
      *
-     * Ken's screenshots are full-width heroes. Two of them side by side gives
-     * each a ~176px ring with a ~110pt interior, and the stack that goes
-     * inside is six elements deep. It does not fit, at any font size — which
-     * is why two attempts at "the same thing but smaller" both came back
-     * wrong. The row layout is the thing that has to give, not the design.
+     * COS-1096 stacked them full-width on the reasoning that the detail
+     * screen's six-element stack cannot fit a half-width ring. The premise was
+     * right and the conclusion was wrong: the answer is not to make the screen
+     * taller, it is to put inside the ring only what fits there and move the
+     * rest outside it.
      */
-    <View style={dialMode || variant === 'large' ? styles.singleColumn : styles.row}>
+    <View style={variant === 'large' ? styles.singleColumn : styles.row}>
       {wellbeingPerm && <WellbeingTile variant={variant} />}
       {healthAgeEnabled && <HealthAgeTile variant={variant} />}
     </View>
@@ -303,17 +304,16 @@ function WellbeingTile({ variant }: { variant: Variant }): React.JSX.Element {
              * `trend` comes from useWellbeingDerivation, whose query Home
              * already warms, so this is a cache read rather than a new fetch.
              */
+            dialTitle="Wellbeing"
             dialContent={
               <WellbeingDialHero
-                title="Wellbeing"
+                compact
                 composite={composite as number}
-                trend={wbDerivation?.trend ?? null}
                 band={band}
-                computedAt={endpoint?.computedAt}
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.82}
+                scale={0.62}
               />
             }
           />
@@ -422,20 +422,21 @@ function HealthAgeTile({ variant }: { variant: Variant }): React.JSX.Element {
                   }
                 : null
             }
+            dialTitle="Health Age"
             dialContent={
               <HealthAgeDialHero
+                compact
                 overall={overall}
                 gap={
                   typeof overall === 'number' && typeof chrono === 'number'
                     ? overall - chrono
                     : null
                 }
-                asOf={healthAgeAsOf}
                 tokens={bandTokens}
                 textColor="#11181C"
                 subtextColor="#687076"
                 getScaledFontSize={(n) => n}
-                scale={0.82}
+                scale={0.62}
               />
             }
           />
@@ -643,23 +644,30 @@ function Ready({
      * first layout.
      */
     /*
-     * COS-1096 — the SAME formula wellbeing-score.tsx uses:
-     *   min(340, max(240, width - 56))
+     * COS-1097 — sized to the half-width tile, because the circles sit in
+     * parallel again.
      *
-     * Two-across was the mistake behind both rejected attempts. At half width
-     * the ring is ~176px and its usable interior ~110pt, and six stacked
-     * elements — title, date, a 56pt number, /100, the trend, the band chip —
-     * do not fit in 110pt at any legible size. It was never a styling problem.
-     *
-     * So the dials are full-width and stacked. Same size as the screen they
-     * open, which is what Ken asked for.
+     * DialGauge pads its interior by 18% each side, so a ring of D gives
+     * 0.64*D of usable width and lays its children out ABSOLUTELY at a fixed
+     * height — content taller than the ring does not expand it, it spills out
+     * and paints over the next dial. That is precisely what shipped in
+     * COS-1096, and it is why only the number and the chip go inside now.
      */
+    const perTile = screenWidth > 0 ? (screenWidth - 32 - 10) / 2 : 0
     const dialSize =
-      screenWidth > 0
-        ? Math.round(Math.min(340, Math.max(240, screenWidth - 56)))
-        : Math.round(ringSize * 1.5)
+      perTile > 0 ? Math.round(Math.max(140, Math.min(200, perTile))) : Math.round(ringSize * 1.5)
     return (
       <View style={styles.body}>
+        {/*
+          COS-1097 — the label lives OUTSIDE the ring.
+          Inside, an 18% padding left ~112pt and truncated it to "Wellbe…".
+          Out here it has the tile's whole width.
+        */}
+        {dialTitle ? (
+          <Text style={styles.dialTitle} numberOfLines={1}>
+            {dialTitle}
+          </Text>
+        ) : null}
         <DialGauge
           value={dial.value}
           center={dial.center}
@@ -907,10 +915,11 @@ const styles = StyleSheet.create({
    * width and the row takes its height from that.
    */
   dialTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#687076',
-    marginBottom: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#11181C',
+    marginBottom: 2,
+    textAlign: 'center',
   },
   tileBare: {
     flex: 1,
