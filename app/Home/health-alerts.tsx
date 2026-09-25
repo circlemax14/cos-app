@@ -1,12 +1,12 @@
 /**
- * COS-1112 — Health Alerts detail.
+ * COS-1112 / COS-1118 — Health Alerts detail.
  *
- * The tap-through from the corner badge. Ken: "the yellow steers you to that
+ * The tap-through from the corner emblem. Ken: "the yellow steers you to that
  * list and helps you identify exactly what is critical, what's at the moderate
  * bubble", and "when you press on the i it gives you the references, so people
  * see that you're not just pulling a rabbit out of a hat."
  *
- * So this screen answers three questions in order:
+ * The screen answers three questions in order:
  *   1. what is firing, worst first
  *   2. what was measured and is fine
  *   3. what we are NOT watching, and why
@@ -14,6 +14,11 @@
  * Point 3 is not padding. A crisis indicator covering seven metrics while
  * looking like it covers Ken's full document would be actively misleading, and
  * the patient has no way to know the difference unless we say so.
+ *
+ * COS-1118 — the top bar is a three-cell row: back button, title, and a spacer
+ * the SAME WIDTH as the button. The spacer is what centres the title on the
+ * screen rather than in the space left over beside the arrow; without it the
+ * heading sits visibly right of centre, which is what Vishal saw.
  */
 
 import React from 'react'
@@ -29,45 +34,55 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { useHealthAlerts } from '@/hooks/use-health-alerts'
 import { useHealthAlertsFlag } from '@/hooks/use-health-alerts-flag'
 import { dismissTo } from '@/lib/dismiss-to'
+import { MedicalAlertIcon } from '@/components/ui/medical-alert-icon'
 import {
   ALERT_COLOR,
+  ALERT_COLOR_UNKNOWN,
   PENDING_THRESHOLDS,
   UNMONITORED,
   alertColor,
+  alertShouldFlash,
   alertWord,
 } from '@/lib/health-alert-rules'
 import type { AlertVerdict } from '@/lib/health-alert-rules'
 
+type Themed = (typeof Colors)['light']
+
+/** Width of the back button, mirrored on the right so the title centres. */
+const NAV_SLOT = 44
+
 function Row({
   verdict,
   colors,
-  getScaledFontSize,
-  getScaledFontWeight,
+  fs,
+  fw,
 }: {
   verdict: AlertVerdict
-  colors: (typeof Colors)['light']
-  getScaledFontSize: (n: number) => number
-  getScaledFontWeight: (n: number) => string
+  colors: Themed
+  fs: (n: number) => number
+  fw: (n: number) => string
 }): React.JSX.Element {
-  const tint = verdict.level === 'none' ? ALERT_COLOR.none : ALERT_COLOR[verdict.level]
+  const tint = ALERT_COLOR[verdict.level]
   return (
-    <View style={[styles.row, { borderColor: colors.border }]}>
+    <View style={[styles.row, { borderTopColor: colors.border }]}>
       <View style={[styles.dot, { backgroundColor: tint }]} />
-      <View style={styles.rowText}>
+      <View style={styles.rowBody}>
         <Text
           style={{
             color: colors.text,
-            fontSize: getScaledFontSize(15),
-            fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+            fontSize: fs(15),
+            fontWeight: fw(600) as TextStyle['fontWeight'],
           }}
         >
           {verdict.metric}
         </Text>
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+        <Text style={{ color: colors.subtext, fontSize: fs(13), marginTop: 1 }}>
           {verdict.reason}
         </Text>
         {/* Ken's "i": the citation travels with the number it justifies. */}
-        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), fontStyle: 'italic' }}>
+        <Text
+          style={{ color: colors.subtext, fontSize: fs(11), fontStyle: 'italic', marginTop: 3 }}
+        >
           {verdict.source}
         </Text>
       </View>
@@ -75,163 +90,176 @@ function Row({
   )
 }
 
+function Card({
+  title,
+  colors,
+  fs,
+  fw,
+  children,
+}: {
+  title: string
+  colors: Themed
+  fs: (n: number) => number
+  fw: (n: number) => string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: fs(13),
+          fontWeight: fw(700) as TextStyle['fontWeight'],
+          letterSpacing: 0.3,
+          textTransform: 'uppercase',
+        }}
+      >
+        {title}
+      </Text>
+      {children}
+    </View>
+  )
+}
+
 export default function HealthAlertsScreen(): React.JSX.Element {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
+  const { settings, getScaledFontSize: fs, getScaledFontWeight: fw } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const enabled = useHealthAlertsFlag()
-  const { level, firing, clear, measuredCount, isLoading } = useHealthAlerts()
+  const { level, firing, clear, measuredCount, isLoading } = useHealthAlerts(enabled)
 
-  const tint = alertColor(level)
+  const tint = isLoading ? ALERT_COLOR_UNKNOWN : alertColor(level)
 
   return (
     <AppWrapper>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Top bar — back, centred title, matching spacer. */}
+      <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         <Pressable
           onPress={() => dismissTo('/Home/plan')}
           accessibilityRole="button"
           accessibilityLabel="Back"
-          style={styles.back}
-          hitSlop={8}
+          hitSlop={10}
+          style={styles.navSlot}
         >
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
-
         <Text
           style={{
+            flex: 1,
             color: colors.text,
-            fontSize: getScaledFontSize(22),
-            fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-            marginBottom: 4,
+            fontSize: fs(18),
+            fontWeight: fw(700) as TextStyle['fontWeight'],
+            textAlign: 'center',
           }}
           accessibilityRole="header"
+          numberOfLines={1}
         >
-          Health alerts
+          Health Alerts
         </Text>
+        {/* Mirrors the back button so the title centres on the SCREEN. */}
+        <View style={styles.navSlot} />
+      </View>
 
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {!enabled ? (
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}>
+          <Text style={{ color: colors.subtext, fontSize: fs(14) }}>
             Health alerts are not switched on for your account.
-          </Text>
-        ) : isLoading ? (
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14) }}>
-            Checking your latest readings…
           </Text>
         ) : (
           <>
-            <Text
-              style={{
-                color: tint,
-                fontSize: getScaledFontSize(16),
-                fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-                marginBottom: 16,
-              }}
-            >
-              {alertWord(level)}
-            </Text>
-
-            {/* The honest headline. "Nothing flagged" over two metrics is a
-                different statement from "nothing flagged" over twelve, and the
-                patient is entitled to know which one they are reading. */}
-            <Text
-              style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(13),
-                marginBottom: 16,
-              }}
-            >
-              {measuredCount === 0
-                ? 'We have no recent readings to check. This is not a clear result — it means we have nothing to look at.'
-                : `Based on ${measuredCount} measure${measuredCount === 1 ? '' : 's'} with a recent reading.`}
-            </Text>
+            {/* Hero — the answer, before any list. */}
+            <View style={styles.hero}>
+              <MedicalAlertIcon
+                size={72}
+                color={tint}
+                hollow={colors.background}
+                flashing={!isLoading && alertShouldFlash(level)}
+              />
+              <Text
+                style={{
+                  color: tint,
+                  fontSize: fs(20),
+                  fontWeight: fw(700) as TextStyle['fontWeight'],
+                  marginTop: 10,
+                  textAlign: 'center',
+                }}
+              >
+                {isLoading ? 'Checking…' : alertWord(level)}
+              </Text>
+              {/*
+                "Nothing flagged" over two metrics is a different statement from
+                "nothing flagged" over twelve, and the patient is entitled to
+                know which one they are reading.
+              */}
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: fs(13),
+                  marginTop: 6,
+                  textAlign: 'center',
+                  paddingHorizontal: 8,
+                  lineHeight: fs(19),
+                }}
+              >
+                {isLoading
+                  ? 'Reading your most recent measurements.'
+                  : measuredCount === 0
+                    ? 'We have no recent readings to check. This is not a clear result — it means we have nothing to look at.'
+                    : `Based on ${measuredCount} measure${measuredCount === 1 ? '' : 's'} with a recent reading.`}
+              </Text>
+            </View>
 
             {firing.length > 0 && (
-              <View style={styles.section}>
-                <Text
-                  style={[styles.h2, { color: colors.text, fontSize: getScaledFontSize(15) }]}
-                >
-                  Needs attention
-                </Text>
+              <Card title="Needs attention" colors={colors} fs={fs} fw={fw}>
                 {firing.map((v) => (
-                  <Row
-                    key={v.metric}
-                    verdict={v}
-                    colors={colors}
-                    getScaledFontSize={getScaledFontSize}
-                    getScaledFontWeight={getScaledFontWeight}
-                  />
+                  <Row key={v.metric} verdict={v} colors={colors} fs={fs} fw={fw} />
                 ))}
-              </View>
+              </Card>
             )}
 
             {clear.length > 0 && (
-              <View style={styles.section}>
-                <Text
-                  style={[styles.h2, { color: colors.text, fontSize: getScaledFontSize(15) }]}
-                >
-                  Measured and in range
-                </Text>
+              <Card title="Measured and in range" colors={colors} fs={fs} fw={fw}>
                 {clear.map((v) => (
-                  <Row
-                    key={v.metric}
-                    verdict={v}
-                    colors={colors}
-                    getScaledFontSize={getScaledFontSize}
-                    getScaledFontWeight={getScaledFontWeight}
-                  />
+                  <Row key={v.metric} verdict={v} colors={colors} fs={fs} fw={fw} />
                 ))}
-              </View>
+              </Card>
             )}
 
-            <View style={styles.section}>
-              <Text style={[styles.h2, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
-                Not covered by this alert
-              </Text>
+            <Card title="Not covered by this alert" colors={colors} fs={fs} fw={fw}>
               {UNMONITORED.map((u) => (
-                <View key={u.metric} style={[styles.row, { borderColor: colors.border }]}>
+                <View key={u.metric} style={[styles.row, { borderTopColor: colors.border }]}>
                   <View style={[styles.dot, { backgroundColor: colors.border }]} />
-                  <View style={styles.rowText}>
-                    <Text style={{ color: colors.text, fontSize: getScaledFontSize(14) }}>
-                      {u.metric}
-                    </Text>
-                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12) }}>
+                  <View style={styles.rowBody}>
+                    <Text style={{ color: colors.text, fontSize: fs(14) }}>{u.metric}</Text>
+                    <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 1 }}>
                       {u.why}
                     </Text>
                   </View>
                 </View>
               ))}
-            </View>
+            </Card>
 
             {PENDING_THRESHOLDS.length > 0 && (
-              <View style={styles.section}>
-                <Text style={[styles.h2, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
-                  Thresholds still being confirmed
-                </Text>
+              <Card title="Thresholds being confirmed" colors={colors} fs={fs} fw={fw}>
                 {PENDING_THRESHOLDS.map((t) => (
-                  <Text
-                    key={t}
-                    style={{
-                      color: colors.subtext,
-                      fontSize: getScaledFontSize(12),
-                      marginBottom: 6,
-                    }}
-                  >
+                  <Text key={t} style={{ color: colors.subtext, fontSize: fs(12), marginTop: 8 }}>
                     {t}
                   </Text>
                 ))}
-              </View>
+              </Card>
             )}
 
             <Text
               style={{
                 color: colors.subtext,
-                fontSize: getScaledFontSize(12),
+                fontSize: fs(12),
                 fontStyle: 'italic',
-                marginTop: 8,
+                marginTop: 16,
+                lineHeight: fs(18),
               }}
             >
-              These are general adult thresholds, not personalised to you. They do not
-              replace advice from your care team. If you feel unwell, contact your
-              provider or emergency services.
+              These are general adult thresholds, not personalised to you. They do not replace
+              advice from your care team. If you feel unwell, contact your provider or emergency
+              services.
             </Text>
           </>
         )}
@@ -241,18 +269,39 @@ export default function HealthAlertsScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  navSlot: {
+    width: NAV_SLOT,
+    height: NAV_SLOT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   container: { flex: 1 },
   content: { padding: 20, paddingBottom: 48 },
-  back: { alignSelf: 'flex-start', marginBottom: 12 },
-  section: { marginTop: 20, gap: 8 },
-  h2: { fontWeight: '700' },
+  hero: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  card: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 10,
+    marginTop: 8,
   },
   dot: { width: 10, height: 10, borderRadius: 5, marginTop: 5 },
-  rowText: { flex: 1, gap: 2 },
+  rowBody: { flex: 1 },
 })

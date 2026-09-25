@@ -205,38 +205,44 @@ function HealthSummaryScreenInner() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/*
-          COS-1112 — Ken's health-alert indicator, "up in the top of the page in
-          the corner". Gated: it mounts an animated SVG in a screen body, which
-          is outside the envelope ADR-0003 draws after the 2026-08-18 cold-mount
-          crash. Flag off ⇒ this subtree does not exist and the header is
-          byte-identical to today.
-        */}
-        {healthAlertsEnabled && (
-          <View style={styles.alertCorner}>
-            <HealthAlertBadge
-              level={healthAlerts.level}
-              firingCount={healthAlerts.firing.length}
-              isLoading={healthAlerts.isLoading}
-              onPress={() => router.push('/Home/health-alerts')}
-            />
-          </View>
-        )}
         {/* Header — anchors the tab. */}
         <View style={styles.headerSection}>
           <Text style={{ fontSize: getScaledFontSize(40), marginBottom: 12 }}>🩺</Text>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: getScaledFontSize(22),
-              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-              textAlign: 'center',
-              marginBottom: 4,
-            }}
-            accessibilityRole="header"
-          >
-            Health Status
-          </Text>
+          {/*
+            COS-1118 — the indicator sits on the TITLE's line, at the right
+            edge, not in the empty space above it. Vishal: "it should come to
+            the right corner of this Health Status text."
+
+            ABSOLUTELY positioned rather than a third flex child, so the title
+            stays centred on the SCREEN. Laying them out as a row would centre
+            the pair and shove "Health Status" left by half the badge's width —
+            a title that drifts when a feature flag flips is worse than one
+            that is simply beside something.
+          */}
+          <View style={styles.titleRow}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(22),
+                fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                textAlign: 'center',
+                marginBottom: 4,
+              }}
+              accessibilityRole="header"
+            >
+              Health Status
+            </Text>
+            {healthAlertsEnabled && (
+              <View style={styles.alertCorner} pointerEvents="box-none">
+                <HealthAlertBadge
+                  level={healthAlerts.level}
+                  firingCount={healthAlerts.firing.length}
+                  isLoading={healthAlerts.isLoading}
+                  onPress={() => router.push('/Home/health-alerts')}
+                />
+              </View>
+            )}
+          </View>
           <Text
             style={{
               color: colors.subtext,
@@ -326,10 +332,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  titleRow: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   alertCorner: {
+    position: 'absolute',
+    right: 0,
+    // Pulled up so the emblem's centre lands on the title's cap height rather
+    // than its baseline — the caption hangs below, and centring on the text box
+    // would leave the mark looking low.
+    top: -18,
     alignItems: 'flex-end',
-    paddingHorizontal: 4,
-    marginBottom: 4,
   },
   headerSection: {
     alignItems: 'center',
