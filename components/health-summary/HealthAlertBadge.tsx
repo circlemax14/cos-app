@@ -35,7 +35,12 @@ import { Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native'
 import { HealthStatusIcon } from '@/components/ui/health-status-icon'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { Colors } from '@/constants/theme'
-import { alertColor, alertShouldFlash, alertWord } from '@/lib/health-alert-rules'
+import {
+  ALERT_COLOR_UNKNOWN,
+  alertColor,
+  alertShouldFlash,
+  alertWord,
+} from '@/lib/health-alert-rules'
 import type { AlertLevel } from '@/lib/health-alert-rules'
 
 export interface HealthAlertBadgeProps {
@@ -51,24 +56,35 @@ export function HealthAlertBadge({
   firingCount,
   isLoading,
   onPress,
-}: HealthAlertBadgeProps): React.JSX.Element | null {
+}: HealthAlertBadgeProps): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
-  // Never render a colour while the answer is still in flight — a green that
-  // becomes red a second later is worse than a beat of nothing.
-  if (isLoading) return null
-
-  const tint = alertColor(level)
-  const flashing = alertShouldFlash(level)
-  const word = alertWord(level)
+  /*
+   * COS-1115 — while the answer is in flight, render GREY "Checking…", never
+   * nothing.
+   *
+   * This returned null, and that was wrong twice over. As UX, a crisis
+   * indicator that is simply absent for a beat teaches people it is sometimes
+   * not there, so its absence stops meaning anything. As engineering, a
+   * component that renders nothing on a state it reaches in the normal course
+   * of events is untestable from the outside: "I don't see it" cannot be told
+   * apart from "the flag is off", "the build is stale", or "it crashed".
+   *
+   * It is still never GREEN while loading — a green that becomes red a second
+   * later is the one transition worth preventing. Grey covers both loading and
+   * no-data, which are honestly the same statement: we cannot tell you yet.
+   */
+  const tint = isLoading ? ALERT_COLOR_UNKNOWN : alertColor(level)
+  const flashing = !isLoading && alertShouldFlash(level)
+  const word = isLoading ? 'Checking…' : alertWord(level)
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Health alerts: ${word}${
-        firingCount > 0 ? `, ${firingCount} flagged` : ''
+        firingCount > 0 && !isLoading ? `, ${firingCount} flagged` : ''
       }. Tap for detail.`}
       hitSlop={8}
       style={({ pressed }) => [
@@ -88,7 +104,7 @@ export function HealthAlertBadge({
         >
           {word}
         </Text>
-        {firingCount > 0 ? (
+        {firingCount > 0 && !isLoading ? (
           <Text
             style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}
             numberOfLines={1}
