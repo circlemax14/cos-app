@@ -67,18 +67,38 @@ test('both sections on the screen are grouped, not just one', () => {
   assert.match(code, /groupTrendsByBodySystem\(clinicSliderTrends\)/, 'From Your Clinic section');
 });
 
-test('a heading is only rendered when the group HAS one', () => {
-  // The ungrouped fallback returns label ''. Rendering it unguarded would put
-  // an empty heading band above the flat carousel.
+test('an unlabelled group is NOT wrapped in an accordion', () => {
+  /*
+   * The ungrouped fallback returns label ''. COS-1130 turned each labelled
+   * group into a SummaryCardShell; an accordion titled "" would be a control
+   * that says nothing about what it hides, so the flat carousel is returned
+   * directly instead.
+   *
+   * The guard used to be duplicated at both render sites. It now lives once,
+   * inside SystemAccordion, which is why this asserts one occurrence rather
+   * than two.
+   */
   const code = codeOnly(SCREEN);
-  const guards = code.match(/\{group\.label \? \(/g) ?? [];
-  assert.equal(guards.length, 2, 'both sections must guard the heading on a non-empty label');
+  assert.match(code, /if \(!group\.label\) return cards/);
+  const shells = code.match(/<SummaryCardShell/g) ?? [];
+  assert.equal(shells.length, 1, 'both sections must share ONE accordion component');
 });
 
 test('cards still open the trend modal from inside a group', () => {
-  // The regrouping moved the .map() one level deeper; losing onPress here would
-  // make every card on the screen inert.
+  // Losing onPress would make every card on the screen inert. COS-1130 moved
+  // the map into SystemAccordion, so the tap is wired once and BOTH render
+  // sites must pass the handler down.
   const code = codeOnly(SCREEN);
-  const presses = code.match(/group\.metrics\.map\(\(t\) => \(\s*<AppleHealthMiniCard[\s\S]*?onPress=\{\(\) => setActiveTrend\(t\)\}/g) ?? [];
-  assert.equal(presses.length, 2, 'both grouped carousels must keep onPress');
+  assert.match(code, /onPress=\{\(\) => onSelect\(t\)\}/);
+  const wired = code.match(/onSelect=\{setActiveTrend\}/g) ?? [];
+  assert.equal(wired.length, 2, 'both sections must pass setActiveTrend to the accordion');
+});
+
+test('COS-1130: the accordion is the SAME component Health Status uses', () => {
+  // A lookalike would drift — different caret, different tap target, and a fix
+  // to one would silently not reach the other.
+  assert.match(
+    codeOnly(SCREEN),
+    /import SummaryCardShell from '@\/components\/health-summary\/SummaryCardShell'/,
+  );
 });

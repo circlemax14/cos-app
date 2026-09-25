@@ -41,6 +41,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { todayLocalIso } from '@/lib/day-key';
 import { groupTrendsByBodySystem } from '@/lib/body-system-grouping';
+import type { BodySystemGroup } from '@/lib/body-system-grouping';
+import { lookForSystem, measuresPreview } from '@/lib/body-system-presentation';
+import SummaryCardShell from '@/components/health-summary/SummaryCardShell';
 import { useCanRender } from '@/hooks/use-entitlement'
 import { useQuery } from '@tanstack/react-query'
 
@@ -393,40 +396,14 @@ export default function HealthTrendsScreen() {
                 when it recognises nothing, which renders exactly the flat row
                 that shipped before. */}
             {groupTrendsByBodySystem(appleHealthTrends).map((group) => (
-              <View key={group.label || 'ungrouped'}>
-                {group.label ? (
-                  <Text
-                    accessibilityRole="header"
-                    style={[
-                      styles.systemGroupLabel,
-                      {
-                        color: colors.subtext as string,
-                        fontSize: getScaledFontSize(12),
-                        fontWeight: getScaledFontWeight(700) as any,
-                      },
-                    ]}
-                  >
-                    {group.label.toUpperCase()}
-                  </Text>
-                ) : null}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.carouselContent}
-                  decelerationRate="fast"
-                >
-                  {group.metrics.map((t) => (
-                    <AppleHealthMiniCard
-                      key={t.id}
-                      trend={t}
-                      colors={colors}
-                      fontSize={getScaledFontSize}
-                      fontWeight={getScaledFontWeight}
-                      onPress={() => setActiveTrend(t)}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
+              <SystemAccordion
+                key={group.label || 'ungrouped'}
+                group={group}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onSelect={setActiveTrend}
+              />
             ))}
           </View>
         ) : null}
@@ -483,40 +460,14 @@ export default function HealthTrendsScreen() {
         {clinicTrends.length > 0 ? (
           <View>
             {groupTrendsByBodySystem(clinicSliderTrends).map((group) => (
-              <View key={group.label || 'ungrouped'}>
-                {group.label ? (
-                  <Text
-                    accessibilityRole="header"
-                    style={[
-                      styles.systemGroupLabel,
-                      {
-                        color: colors.subtext as string,
-                        fontSize: getScaledFontSize(12),
-                        fontWeight: getScaledFontWeight(700) as any,
-                      },
-                    ]}
-                  >
-                    {group.label.toUpperCase()}
-                  </Text>
-                ) : null}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.carouselContent}
-                  decelerationRate="fast"
-                >
-                  {group.metrics.map((t) => (
-                    <AppleHealthMiniCard
-                      key={t.id}
-                      trend={t}
-                      colors={colors}
-                      fontSize={getScaledFontSize}
-                      fontWeight={getScaledFontWeight}
-                      onPress={() => setActiveTrend(t)}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
+              <SystemAccordion
+                key={group.label || 'ungrouped'}
+                group={group}
+                colors={colors}
+                getScaledFontSize={getScaledFontSize}
+                getScaledFontWeight={getScaledFontWeight}
+                onSelect={setActiveTrend}
+              />
             ))}
           </View>
         ) : null}
@@ -797,6 +748,77 @@ const METRIC_VISUAL: Record<string, { icon: keyof typeof MaterialIcons.glyphMap;
 
 function metricVisual(metricCode: string): { icon: keyof typeof MaterialIcons.glyphMap; accent: string } {
   return METRIC_VISUAL[metricCode] ?? { icon: 'show-chart', accent: '#008080' }
+}
+
+/**
+ * COS-1130 — one body system, as an accordion.
+ *
+ * Vishal: "in health trends we are showing all the data directly, like Apple
+ * Health — Heart & Circulation, Lungs & Breathing, Activity & Fitness. Can we
+ * change them to accordions like we are doing in the health status, so the
+ * accordion is a wrapper for the cards."
+ *
+ * Deliberately the SAME SummaryCardShell the Health Status cards use, not a
+ * lookalike. The two screens then behave identically — same caret, same tap
+ * target, same collapsed preview — and a change to the accordion lands on both
+ * rather than drifting into two similar things.
+ *
+ * The carousel inside is untouched. One horizontal scroller per group is a
+ * COS-967 decision: a single scroller with headings interleaved puts a heading
+ * mid-scroll, where it reads as a label for whatever card happens to sit beside
+ * it.
+ *
+ * THE UNLABELLED GROUP IS NOT WRAPPED. groupTrendsByBodySystem returns one
+ * group with an empty label when it recognises nothing, which is the flat row
+ * that shipped before. An accordion titled "" would be a control that says
+ * nothing about what it hides.
+ */
+function SystemAccordion({
+  group,
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+  onSelect,
+}: {
+  group: BodySystemGroup<LongitudinalTrend>
+  colors: Palette
+  getScaledFontSize: (n: number) => number
+  getScaledFontWeight: (n: number) => number | string
+  onSelect: (t: LongitudinalTrend) => void
+}) {
+  const cards = (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.carouselContent}
+      decelerationRate="fast"
+    >
+      {group.metrics.map((t) => (
+        <AppleHealthMiniCard
+          key={t.id}
+          trend={t}
+          colors={colors}
+          fontSize={getScaledFontSize}
+          fontWeight={getScaledFontWeight}
+          onPress={() => onSelect(t)}
+        />
+      ))}
+    </ScrollView>
+  )
+
+  if (!group.label) return cards
+
+  const look = lookForSystem(group.system)
+  return (
+    <SummaryCardShell
+      title={group.label}
+      icon={look.icon}
+      accentColor={look.accent}
+      preview={measuresPreview(group.metrics.length)}
+    >
+      {cards}
+    </SummaryCardShell>
+  )
 }
 
 function AppleHealthMiniCard({
