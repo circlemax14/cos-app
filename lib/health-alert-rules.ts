@@ -254,6 +254,25 @@ export const UNMONITORED: readonly UnmonitoredMetric[] = [
 export const PENDING_THRESHOLDS: readonly string[] = [
   'Severe hypotension — the BP table reads "OR Severe Hypotension:" with no value.',
   'Severe hyperglycaemia — the glucose cell reads ">30" and is cut off; >300 mg/dL is used pending confirmation.',
+  'Severe hypothermia — the temperature table ends "OR Severe …" with the value missing.',
+  'The critical fever threshold is written ">104°F WITH confusion or seizures". We can read the temperature; we cannot observe confusion or seizures, so temperature alone decides here.',
+]
+
+/**
+ * Every threshold source, for Ken's "i". Derived by hand from the constants
+ * above rather than collected at runtime, because the list must be complete
+ * even for metrics this patient has no reading for — "what do you check
+ * against" is a different question from "what did you check today".
+ */
+export const SOURCES: readonly string[] = [
+  ACC_AHA,
+  ADA,
+  WHO_SPO2,
+  RCP_NEWS2,
+  SEPSIS_TEMP,
+  PHQ9,
+  GAD7,
+  VAS,
 ]
 
 const ORDER: Record<AlertLevel, number> = { none: 0, moderate: 1, critical: 2 }

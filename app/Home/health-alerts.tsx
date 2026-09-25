@@ -37,6 +37,7 @@ import { dismissTo } from '@/lib/dismiss-to'
 import { MedicalAlertIcon } from '@/components/ui/medical-alert-icon'
 import {
   ALERT_COLOR,
+  SOURCES,
   ALERT_COLOR_UNKNOWN,
   PENDING_THRESHOLDS,
   UNMONITORED,
@@ -122,6 +123,19 @@ function Card({
 }
 
 export default function HealthAlertsScreen(): React.JSX.Element {
+  /*
+   * COS-1119 — Ken's "i".
+   *
+   * "When you press on the i it gives you the references, so people see that
+   * you're not just pulling a rabbit out of a hat." Each row already carries
+   * the source for its own number; this is the whole list in one place, which
+   * is what he actually described.
+   *
+   * It lives in the right-hand nav slot — the cell that was an empty spacer
+   * holding the title centred. One element doing two jobs, and the title stays
+   * centred either way.
+   */
+  const [showSources, setShowSources] = React.useState(false)
   const { settings, getScaledFontSize: fs, getScaledFontWeight: fw } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const enabled = useHealthAlertsFlag()
@@ -155,8 +169,24 @@ export default function HealthAlertsScreen(): React.JSX.Element {
         >
           Health Alerts
         </Text>
-        {/* Mirrors the back button so the title centres on the SCREEN. */}
-        <View style={styles.navSlot} />
+        {/* Mirrors the back button so the title centres on the SCREEN — and
+            carries Ken's "i". */}
+        <Pressable
+          onPress={() => setShowSources((v) => !v)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showSources }}
+          accessibilityLabel={
+            showSources ? 'Hide where these thresholds come from' : 'Where these thresholds come from'
+          }
+          hitSlop={10}
+          style={styles.navSlot}
+        >
+          <MaterialIcons
+            name={showSources ? 'info' : 'info-outline'}
+            size={22}
+            color={colors.text}
+          />
+        </Pressable>
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -166,6 +196,30 @@ export default function HealthAlertsScreen(): React.JSX.Element {
           </Text>
         ) : (
           <>
+            {showSources && (
+              <Card title="Where these thresholds come from" colors={colors} fs={fs} fw={fw}>
+                {SOURCES.map((src) => (
+                  <Text
+                    key={src}
+                    style={{ color: colors.subtext, fontSize: fs(12), marginTop: 8, lineHeight: fs(17) }}
+                  >
+                    {src}
+                  </Text>
+                ))}
+                <Text
+                  style={{
+                    color: colors.subtext,
+                    fontSize: fs(12),
+                    marginTop: 10,
+                    fontStyle: 'italic',
+                    lineHeight: fs(17),
+                  }}
+                >
+                  Every reading below also names the source it was judged against.
+                </Text>
+              </Card>
+            )}
+
             {/* Hero — the answer, before any list. */}
             <View style={styles.hero}>
               <MedicalAlertIcon
