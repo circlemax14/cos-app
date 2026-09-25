@@ -53,17 +53,18 @@ describe('COS-1063/COS-1124 — the Social tab reaches people-search, in place',
    *
    * A presence assertion cannot catch that. This one pins the POSITION.
    */
-  test('THE POINT: the entry is OUTSIDE the showEmptyNonMedical ternary', () => {
-    const entryAt = modalCode.indexOf("category.id === 'social' && <SocialPanel");
-    const ternaryAt = modalCode.indexOf('{showEmptyNonMedical ? (');
-    assert.ok(entryAt > -1, 'entry not found at all');
+  test('THE POINT: Social SHORT-CIRCUITS the empty-state ternary entirely', () => {
+    /*
+     * COS-1113 hoisted the entry above the ternary because Social always took
+     * the empty branch and the entry lived in the other one. COS-1126 goes
+     * further: Social does not enter the ternary at all, so the add-member
+     * form cannot render underneath the panel.
+     */
+    const socialAt = modalCode.indexOf("category.id === 'social' ? (");
+    const ternaryAt = modalCode.indexOf('showEmptyNonMedical ? (');
+    assert.ok(socialAt > -1, 'Social must be its own branch, not a condition inside the ternary');
     assert.ok(ternaryAt > -1, 'the empty-state ternary moved — re-check this guard');
-    assert.ok(
-      entryAt < ternaryAt,
-      'SocialPanel must render BEFORE the empty-state ternary. Inside it, ' +
-        'the Social tab can never reach people-search, because Social always ' +
-        'takes the empty branch.',
-    );
+    assert.ok(socialAt < ternaryAt, 'the Social branch must be tested first');
   });
 
   test("it renders for the 'social' category only", () => {
@@ -72,7 +73,7 @@ describe('COS-1063/COS-1124 — the Social tab reaches people-search, in place',
      * person is not what they are for, and an entry on all three would imply
      * the feature does something different in each.
      */
-    assert.match(modalCode, /category\.id === 'social' && <SocialPanel/);
+    assert.match(modalCode, /category\.id === 'social' \? \(/);
   });
 
   test('COS-1124 THE POINT: it does the work in place and navigates NOWHERE', () => {
@@ -234,19 +235,25 @@ describe('COS-1125 — regional suggestions, and the consent that guards them', 
     'utf8',
   );
 
-  test('THE POINT: suggestions are their own consent, never implied by search', () => {
-    // Being findable if someone types your name, and being offered to
-    // strangers nearby, are different disclosures. The switch is separate and
-    // additionally requires `discoverable` — you cannot be suggested while
-    // hidden.
-    assert.match(panel, /Suggest me to people in my area/);
-    assert.match(panel, /visibilityQ\.data\?\.discoverable !== true/);
+  test('THE POINT: suggestions follow discoverability, and require it', () => {
+    /*
+     * COS-1126 removed the second switch on Vishal's instruction — suggestions
+     * are on by default now. The narrowing that remains is the load-bearing
+     * one: someone who is not findable is neither suggested nor shown
+     * suggestions, so this is never a browse of the patient list.
+     */
+    assert.doesNotMatch(panel, /Suggest me to people in my area/);
+    assert.match(panel, /enabled: canFind && visibilityQ\.data\?\.discoverable === true/);
+    assert.match(panel, /\{discoverable && \(suggestionsQ\.data\?\.length \?\? 0\) > 0/);
   });
 
-  test('the switch is DISABLED with a reason, not hidden, when we hold no area', () => {
-    // A control that vanishes reads as a bug; the reason is worth saying.
-    assert.match(panel, /visibilityQ\.data\?\.hasRegion !== true/);
-    assert.match(panel, /do not have an area on file/);
+  test('COS-1126: visibility is an icon beside the pills, and its COLOUR carries the state', () => {
+    // The switch is one tap away instead of in front of you, so the icon has
+    // to say which way it is set at a glance — and with a distinct glyph, not
+    // one shape in two tints.
+    assert.match(panel, /setShowVisibility/);
+    assert.match(panel, /discoverable \? 'visibility' : 'visibility-off'/);
+    assert.match(panel, /color=\{discoverable \? colors\.tint : colors\.icon\}/);
   });
 
   test('suggestions show only while the search box is empty', () => {

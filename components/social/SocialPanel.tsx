@@ -57,7 +57,6 @@ import {
   requestConnection,
   searchDirectory,
   setDiscoverability,
-  setRegionSuggestions,
   type Connection,
   type DirectoryEntry,
 } from '@/services/api/conversations'
@@ -128,6 +127,18 @@ export function SocialPanel(): React.JSX.Element | null {
   const canRequests = canShow('connection-requests')
 
   const [mode, setMode] = React.useState<Mode>('find')
+  /*
+   * COS-1126 — "let others find me" moved off the body and onto an icon beside
+   * the pills. Vishal: "add some icon, when I click on it a dropdown will open
+   * with this message and then toggle it, and when it is enabled change that
+   * colour to some colourful icon so that everyone is aware of that."
+   *
+   * The colour is the point: the switch is now one tap away instead of in
+   * front of you, so the icon has to carry the state at a glance. It is also
+   * why the icon is never ambiguous — a filled eye when on, a struck-through
+   * eye when off, not one glyph in two tints.
+   */
+  const [showVisibility, setShowVisibility] = React.useState(false)
   const [query, setQuery] = React.useState('')
   const [requested, setRequested] = React.useState<Record<string, boolean>>({})
 
@@ -160,7 +171,9 @@ export function SocialPanel(): React.JSX.Element | null {
     queryKey: ['social-suggestions'],
     queryFn: fetchSuggestions,
     staleTime: 60_000,
-    enabled: canFind && visibilityQ.data?.suggestRegion === true,
+    // COS-1126 — no second switch. Suggestions follow discoverability, which
+    // is the only consent there is now.
+    enabled: canFind && visibilityQ.data?.discoverable === true,
   })
 
   const pendingQ = useQuery({
@@ -175,13 +188,6 @@ export function SocialPanel(): React.JSX.Element | null {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['social-visibility'] }),
   })
 
-  const toggleSuggest = useMutation({
-    mutationFn: (next: boolean) => setRegionSuggestions(next),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['social-visibility'] })
-      void qc.invalidateQueries({ queryKey: ['social-suggestions'] })
-    },
-  })
 
   const connect = useMutation({
     mutationFn: (userId: string) => requestConnection(userId),
@@ -206,6 +212,7 @@ export function SocialPanel(): React.JSX.Element | null {
   if (!canFind && !canRequests) return null
 
   const pendingCount = pendingQ.data?.length ?? 0
+  const discoverable = visibilityQ.data?.discoverable === true
 
   const ModeButton = ({
     id,
@@ -260,7 +267,55 @@ export function SocialPanel(): React.JSX.Element | null {
         {canRequests && (
           <ModeButton id="requests" icon="mark-email-unread" label="Requests" badge={pendingCount} />
         )}
+        <View style={{ flex: 1 }} />
+        {canFind && (
+          <Pressable
+            onPress={() => setShowVisibility((v) => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showVisibility }}
+            accessibilityLabel={
+              discoverable
+                ? 'You are findable by others. Change who can find you.'
+                : 'You are not findable by others. Change who can find you.'
+            }
+            hitSlop={8}
+            style={[
+              styles.visBtn,
+              {
+                borderColor: discoverable ? colors.tint : colors.border,
+                backgroundColor: discoverable ? `${colors.tint}1A` : 'transparent',
+              },
+            ]}
+          >
+            <MaterialIcons
+              name={discoverable ? 'visibility' : 'visibility-off'}
+              size={fs(20)}
+              color={discoverable ? colors.tint : colors.icon}
+            />
+          </Pressable>
+        )}
       </View>
+
+      {showVisibility && canFind && (
+        <View style={[styles.visPanel, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+            <Text style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as TextStyle['fontWeight'] }}>
+              Let other people find me
+            </Text>
+            <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+              {discoverable
+                ? 'People can find you by name, and you will see suggestions from your area.'
+                : 'You can still search. Nobody can find you, and you will see no suggestions.'}
+            </Text>
+          </View>
+          <Switch
+            value={discoverable}
+            onValueChange={(v) => toggleDiscoverable.mutate(v)}
+            disabled={visibilityQ.isLoading || toggleDiscoverable.isPending}
+            accessibilityLabel="Let other people find me"
+          />
+        </View>
+      )}
 
       {mode === 'find' && canFind ? (
         <>
@@ -289,59 +344,6 @@ export function SocialPanel(): React.JSX.Element | null {
             and being findable are the same decision seen from two sides, and
             someone searching is exactly who is wondering whether they show up.
           */}
-          <View style={[styles.switchRow, { borderColor: colors.border }]}>
-            <View style={{ flex: 1, paddingRight: Spacing.sm }}>
-              <Text style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as TextStyle['fontWeight'] }}>
-                Let others find me
-              </Text>
-              <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2 }}>
-                When this is off you can still search, but nobody can find you.
-              </Text>
-            </View>
-            <Switch
-              value={visibilityQ.data?.discoverable === true}
-              onValueChange={(v) => toggleDiscoverable.mutate(v)}
-              disabled={visibilityQ.isLoading || toggleDiscoverable.isPending}
-              accessibilityLabel="Let others find me"
-            />
-          </View>
-
-          {/*
-            COS-1125 — the SECOND consent, and it is deliberately its own
-            switch. Being findable if someone types your name, and being
-            offered to strangers nearby, are different disclosures; the first
-            must never quietly imply the second.
-
-            It is unavailable rather than hidden when we hold no region: a
-            control that vanishes reads as a bug, and the reason is worth
-            saying.
-          */}
-          <View style={[styles.switchRow, { borderColor: colors.border }]}>
-            <View style={{ flex: 1, paddingRight: Spacing.sm }}>
-              <Text style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as TextStyle['fontWeight'] }}>
-                Suggest me to people in my area
-              </Text>
-              <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2 }}>
-                {visibilityQ.data && !visibilityQ.data.hasRegion
-                  ? 'We do not have an area on file for you yet, so this is unavailable.'
-                  : visibilityQ.data?.discoverable === false
-                    ? 'Turn on “Let others find me” first.'
-                    : 'You will see people near you, and they will see you. Only your state is used — never your address.'}
-              </Text>
-            </View>
-            <Switch
-              value={visibilityQ.data?.suggestRegion === true}
-              onValueChange={(v) => toggleSuggest.mutate(v)}
-              disabled={
-                visibilityQ.isLoading ||
-                toggleSuggest.isPending ||
-                visibilityQ.data?.hasRegion !== true ||
-                visibilityQ.data?.discoverable !== true
-              }
-              accessibilityLabel="Suggest me to people in my area"
-            />
-          </View>
-
           {trimmed.length < MIN_QUERY ? (
             <>
               <Text style={[styles.hint, { color: colors.subtext, fontSize: fs(13) }]}>
@@ -354,7 +356,7 @@ export function SocialPanel(): React.JSX.Element | null {
                 looking for, and a "you may know" list under their own results
                 is noise.
               */}
-              {visibilityQ.data?.suggestRegion === true && (suggestionsQ.data?.length ?? 0) > 0 && (
+              {discoverable && (suggestionsQ.data?.length ?? 0) > 0 && (
                 <>
                   <Text
                     style={{
@@ -481,11 +483,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
   },
-  switchRow: {
+  visBtn: {
+    borderWidth: 1,
+    borderRadius: Radii.full,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visPanel: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: Spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    padding: Spacing.sm,
   },
   hint: { paddingVertical: Spacing.md, lineHeight: 19 },
   row: {
