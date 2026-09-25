@@ -64,3 +64,35 @@ test('"all" and no selection both show everyone', () => {
   assert.strictEqual(filterByRecency(some, 'all').length, 2);
   assert.strictEqual(filterByRecency(some, null).length, 2);
 });
+
+// ─── COS-1121 — the filter must not hide data the user never filtered ────
+const { readFileSync: readSrc } = require('node:fs');
+const { join } = require('node:path');
+const MODAL = readSrc(join(__dirname, '..', '..', 'app', 'modal.tsx'), 'utf8');
+
+test('THE POINT: the recency filter opens on EVERYONE, not a pre-applied band', () => {
+  // Defaulting to 'current-acute' silently removed anyone last seen over a
+  // year ago. On the pilot record that is almost everyone, so every Medical
+  // sub-category rendered empty and the founder reported "I can see provider
+  // bubbles but no providers under Medical".
+  assert.match(
+    MODAL,
+    /useState<string \| null>\('all'\)/,
+    'the filter must default to all — a filter the user did not set must not hide their data',
+  );
+});
+
+test('the "showing everyone" banner reads the providers the category ACTUALLY holds', () => {
+  // category.doctors is hard-coded [] at construction, so anyRecencyData()
+  // over it was always false and the banner rendered on every filtered view —
+  // asserting "Showing everyone" at the moment the filter was hiding people.
+  assert.match(MODAL, /!anyRecencyData\(providersInCategory\(category\)\)/);
+  assert.doesNotMatch(MODAL, /!anyRecencyData\(category\.doctors\)/);
+});
+
+test('an empty sub-category distinguishes filtered-out from genuinely empty', () => {
+  // "You have no providers" is false when the truth is "a control you never
+  // touched removed them", and the patient had no way to discover which.
+  assert.match(MODAL, /const hiddenByFilter =/);
+  assert.match(MODAL, /Show everyone/);
+});

@@ -88,7 +88,21 @@ export default function ModalScreen() {
    * Defaulting to a VALUE rather than null is the whole point: on his real
    * account the unfiltered list is 83 providers and the default band is 8.
    */
-  const [recencyFilter, setRecencyFilter] = React.useState<string | null>('current-acute');
+  /*
+   * COS-1121 — opens on EVERYONE, not on 'current-acute'.
+   *
+   * The filter used to be pre-applied before the patient had touched the
+   * control, and it silently removed anyone last seen more than a year ago.
+   * On the pilot patient's record that is almost all of them: his newest
+   * provider contact is from February 2025, so a default of 'current-acute'
+   * emptied every Medical sub-category and he reported "I can see provider
+   * bubbles but no providers under Medical".
+   *
+   * A filter the user did not set must not hide their data. Opening on
+   * everyone and letting them narrow is the honest order — and it is the only
+   * default under which "the list is empty" means something true.
+   */
+  const [recencyFilter, setRecencyFilter] = React.useState<string | null>('all');
   // COS-1103 — which category tab is open, so the header can show the filter
   // only where it applies. Index rather than id: that is what TabsProvider
   // reports, and deriving the id from categoryGroups keeps one source of truth.
@@ -180,6 +194,19 @@ export default function ModalScreen() {
    */
   const anyRecencyData = (providers: SelectedProvider[]) =>
     providers.some(p => p.recencyBand != null);
+
+  /*
+   * COS-1121 — a category's providers live in its SUB-CATEGORIES.
+   *
+   * `category.doctors` is hard-coded `[]` at construction, so
+   * `anyRecencyData(category.doctors)` was `[].some(...)` — always false. The
+   * banner below it therefore rendered on EVERY filtered view, telling the
+   * patient "Showing everyone — we do not have visit dates" at the exact
+   * moment the filter was hiding people. It did not merely fail to explain the
+   * control, it asserted the opposite of what was happening.
+   */
+  const providersInCategory = (category: CategoryGroup): SelectedProvider[] =>
+    (category.subCategories ?? []).flatMap(sub => sub.doctors as SelectedProvider[]);
 
   const filterProvidersByRecency = (providers: SelectedProvider[]) => {
     if (!recencyFilter || recencyFilter === 'all') return providers;
@@ -1018,7 +1045,7 @@ export default function ModalScreen() {
                       */}
                       {(category.id === 'medical' || category.id === 'integrative') &&
                         recencyFilter !== 'all' &&
-                        !anyRecencyData(category.doctors) && (
+                        !anyRecencyData(providersInCategory(category)) && (
                           <Text
                             style={{
                               color: colors.text + 'AA',
@@ -1080,6 +1107,19 @@ export default function ModalScreen() {
                                 (provider.relationship && provider.relationship.toLowerCase().includes(query))
                               );
                             }
+                            /*
+                             * COS-1121 — "empty" has two very different causes
+                             * and the screen could not tell them apart.
+                             *
+                             * A sub-category with providers that the recency
+                             * filter removed looked identical to one that has
+                             * nobody in it. The patient is then told they have
+                             * no providers, which is false, and given no way to
+                             * discover that a control they never touched did it.
+                             */
+                            const hiddenByFilter =
+                              subCategory.doctors.length + manualProviders.length -
+                              combinedProviders.length;
                             const canAddMember = category.id !== 'medical';
                             const isFormOpen = openManualFormKey === subCategoryKey;
                             const manualSubCategoryLabel = manualSubCategoryId
@@ -1092,6 +1132,27 @@ export default function ModalScreen() {
                                 label={subCategory.name}
                               >
                                 <ScrollView contentContainerStyle={styles.cardsContainer}>
+                                  {combinedProviders.length === 0 && hiddenByFilter > 0 && (
+                                    <TouchableOpacity
+                                      onPress={() => setRecencyFilter('all')}
+                                      accessibilityRole="button"
+                                      accessibilityLabel={`${hiddenByFilter} hidden by the current filter. Tap to show everyone.`}
+                                      style={{ paddingHorizontal: 16, paddingBottom: 12 }}
+                                    >
+                                      <Text
+                                        style={{
+                                          color: colors.text,
+                                          fontSize: getScaledFontSize(13),
+                                          lineHeight: getScaledFontSize(19),
+                                        }}
+                                      >
+                                        {`${hiddenByFilter} ${hiddenByFilter === 1 ? 'person is' : 'people are'} hidden by the “${activeRecencyLabel}” filter. `}
+                                        <Text style={{ color: colors.tint, fontWeight: '700' }}>
+                                          Show everyone
+                                        </Text>
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )}
                                   <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
                                     <PaperTextInput
                                       label="Search providers"
