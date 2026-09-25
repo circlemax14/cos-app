@@ -50,6 +50,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   acceptConnection,
+  cancelConnection,
   declineConnection,
   fetchConnections,
   fetchSocialVisibility,
@@ -211,6 +212,31 @@ export function SocialPanel(): React.JSX.Element | null {
     enabled: canRequests,
   })
 
+  /*
+   * COS-1129 — requests you SENT.
+   *
+   * Vishal: "how do I check the account which I already requested?" Until now
+   * a sent request vanished: the row disappeared from suggestions (correctly —
+   * they are excluded) and the Connect button reverted to "Connect" because
+   * the only record was component state, lost when the modal closed. The
+   * server knew the whole time; nothing asked it.
+   *
+   * Fetched in BOTH modes, because it answers two questions: what can I cancel,
+   * and which of these search results have I already written to.
+   */
+  const sentQ = useQuery({
+    queryKey: ['connections', 'pending-out'],
+    queryFn: () => fetchConnections('pending-out'),
+    staleTime: 15_000,
+    enabled: canFind || canRequests,
+  })
+
+  /** Peers with a request already in flight, straight from the server. */
+  const alreadyRequested = React.useMemo(
+    () => new Set((sentQ.data ?? []).map((c) => c.peerId)),
+    [sentQ.data],
+  )
+
   const toggleDiscoverable = useMutation({
     mutationFn: (next: boolean) => setDiscoverability(next),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['social-visibility'] }),
@@ -219,7 +245,27 @@ export function SocialPanel(): React.JSX.Element | null {
 
   const connect = useMutation({
     mutationFn: (userId: string) => requestConnection(userId),
-    onSuccess: (_d, userId) => setRequested((r) => ({ ...r, [userId]: true })),
+    onSuccess: (_d, userId) => {
+      setRequested((r) => ({ ...r, [userId]: true }))
+      // So the Sent list and the button state agree without a reopen.
+      void qc.invalidateQueries({ queryKey: ['connections', 'pending-out'] })
+      void qc.invalidateQueries({ queryKey: ['social-suggestions'] })
+    },
+  })
+
+  const cancel = useMutation({
+    mutationFn: (peerId: string) => cancelConnection(peerId),
+    onSuccess: (_d, peerId) => {
+      // Drop the local optimistic flag too, or the row would still read
+      // "Requested" after the request it refers to has gone.
+      setRequested((r) => {
+        const next = { ...r }
+        delete next[peerId]
+        return next
+      })
+      void qc.invalidateQueries({ queryKey: ['connections', 'pending-out'] })
+      void qc.invalidateQueries({ queryKey: ['social-suggestions'] })
+    },
   })
 
   /* Both actions refresh the same keys, so the Inbox banner clears too. */
@@ -251,6 +297,7 @@ export function SocialPanel(): React.JSX.Element | null {
 
   const pendingCount = pendingQ.data?.length ?? 0
   const discoverable = visibilityQ.data?.discoverable === true
+  const sentCount = sentQ.data?.length ?? 0
 
   const ModeButton = ({
     id,
@@ -414,7 +461,7 @@ export function SocialPanel(): React.JSX.Element | null {
                       item={item}
                       colors={colors}
                       fs={fs}
-                      requested={requested[item.userId] === true}
+                      requested={requested[item.userId] === true || alreadyRequested.has(item.userId)}
                       sending={connect.isPending && connect.variables === item.userId}
                       onConnect={() => connect.mutate(item.userId)}
                     />
@@ -435,7 +482,7 @@ export function SocialPanel(): React.JSX.Element | null {
                 item={item}
                 colors={colors}
                 fs={fs}
-                requested={requested[item.userId] === true}
+                requested={requested[item.userId] === true || alreadyRequested.has(item.userId)}
                 sending={connect.isPending && connect.variables === item.userId}
                 onConnect={() => connect.mutate(item.userId)}
               />
@@ -447,9 +494,9 @@ export function SocialPanel(): React.JSX.Element | null {
       {mode === 'requests' && canRequests ? (
         pendingQ.isLoading ? (
           <ActivityIndicator style={{ marginTop: Spacing.md }} color={colors.tint} />
-        ) : pendingCount === 0 ? (
+        ) : pendingCount === 0 && sentCount === 0 ? (
           <Text style={[styles.hint, { color: colors.subtext, fontSize: fs(13) }]}>
-            No requests waiting.
+            No requests waiting, and none sent.
           </Text>
         ) : (
           (pendingQ.data ?? []).map((item: Connection) => (
@@ -506,6 +553,64 @@ export function SocialPanel(): React.JSX.Element | null {
           ))
         )
       ) : null}
+
+      {/*
+        COS-1129 — requests you SENT, so they can be withdrawn.
+        Rendered under the incoming list rather than as a third mode: they are
+        both "requests", and a tab you have to discover to find out what you
+        already did is the problem being fixed.
+      */}
+      {mode === 'requests' && canRequests && sentCount > 0 && (
+        <>
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: fs(13),
+              fontWeight: fw(700) as TextStyle['fontWeight'],
+              textTransform: 'uppercase',
+              letterSpacing: 0.3,
+              marginTop: Spacing.md,
+            }}
+          >
+            {`Sent by you (${sentCount})`}
+          </Text>
+          {(sentQ.data ?? []).map((item: Connection) => {
+            const busyRow = cancel.isPending && cancel.variables === item.peerId
+            return (
+              <View key={`sent-${item.peerId}`} style={[styles.row, { borderColor: colors.border }]}>
+                <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.border }]}>
+                  <MaterialIcons name="schedule" size={fs(18)} color={colors.icon} />
+                </View>
+                <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                  <Text style={{ color: colors.text, fontSize: fs(15) }} numberOfLines={1}>
+                    {item.displayName || 'Waiting for a reply'}
+                  </Text>
+                  <Text style={{ color: colors.subtext, fontSize: fs(11), marginTop: 2 }}>
+                    {`Sent ${new Date(item.createdAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                    })}`}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => cancel.mutate(item.peerId)}
+                  disabled={busyRow}
+                  accessibilityRole="button"
+                  accessibilityState={{ busy: busyRow }}
+                  accessibilityLabel="Cancel this request"
+                  style={[styles.actionBtn, { borderColor: colors.border, opacity: busyRow ? 0.5 : 1 }]}
+                >
+                  {busyRow ? (
+                    <ActivityIndicator size="small" color={colors.subtext} />
+                  ) : (
+                    <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Cancel</Text>
+                  )}
+                </Pressable>
+              </View>
+            )
+          })}
+        </>
+      )}
     </View>
   )
 }
