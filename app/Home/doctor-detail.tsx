@@ -539,9 +539,28 @@ export default function DoctorDetailScreen() {
    * "Progress Notes" -> "Notes" is his too: "it may not be progress, right?
    * How about notes? ... Make it simple."
    */
+  /*
+   * COS-1132 — Appointments is its own tab again.
+   *
+   * Vishal: "at the bottom of Notes I can see Past visits and Recommended.
+   * Ideally we already have a separate tab where we had these two tabs within
+   * them. Why did we move it under Notes? Please move it back."
+   *
+   * It was folded into Notes by COS-1090, which collapsed five tabs to the
+   * three Ken named — Conditions, Notes, Shared Data. Medications went into
+   * Conditions, Appointments went into Notes. Folding Medications in was
+   * sound: they belong to the conditions they treat. Appointments was the
+   * weaker half of that move — it is scheduling, not a note, and it arrived
+   * carrying its OWN two-way switch, so the Notes tab ended in a nested set of
+   * tabs that belonged to something else.
+   *
+   * ⚠️ THIS MAKES FOUR TABS, where Ken asked for three. Flagged to Vishal
+   * rather than decided here; reverting is this array and the two lines below.
+   */
   const tabs = [
     { id: 'treatment', label: 'Conditions' },
     { id: 'progress', label: 'Notes' },
+    { id: 'appointments', label: 'Appointments' },
     { id: 'share', label: 'Shared Data' },
   ];
 
@@ -1754,12 +1773,8 @@ export default function DoctorDetailScreen() {
           {renderProviderMedications()}
         </>
       )}
-      {activeTab === 'progress' && (
-        <>
-          {renderProgressNotes()}
-          {renderAppointments()}
-        </>
-      )}
+      {activeTab === 'progress' && renderProgressNotes()}
+      {activeTab === 'appointments' && renderAppointments()}
       {activeTab === 'share' && renderShareData()}
     </ScrollView>
 

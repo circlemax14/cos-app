@@ -62,9 +62,24 @@ test('formatDate is shared rather than redefined per section', () => {
   assert.equal(defs.length, 1, 'one date formatter for the screen');
 });
 
-test("the three tabs keep Ken's names", () => {
+test("the tabs keep Ken's names", () => {
   // "Progress Notes" -> "Notes" was his: "it may not be progress, right?"
   assert.match(code, /\{ id: 'treatment', label: 'Conditions' \}/);
   assert.match(code, /\{ id: 'progress', label: 'Notes' \}/);
   assert.match(code, /\{ id: 'share', label: 'Shared Data' \}/);
+});
+
+test('COS-1132: Appointments is its own tab, not a section inside Notes', () => {
+  /*
+   * It arrived under Notes when COS-1090 collapsed five tabs to three. It
+   * carries its OWN past/recommended switch, so nesting it left the Notes tab
+   * ending in a set of tabs belonging to something else.
+   *
+   * NOTE: this makes FOUR tabs where Ken asked for three. Restored on Vishal's
+   * instruction; if Ken wants three again, this assertion is the first thing
+   * to delete.
+   */
+  assert.match(code, /\{ id: 'appointments', label: 'Appointments' \}/);
+  assert.match(code, /\{activeTab === 'appointments' && renderAppointments\(\)\}/);
+  assert.match(code, /\{activeTab === 'progress' && renderProgressNotes\(\)\}/);
 });
