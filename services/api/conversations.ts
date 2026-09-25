@@ -45,6 +45,9 @@ export interface DirectoryEntry {
 export type ConnectionStatus = 'pending-out' | 'pending-in' | 'accepted' | 'declined';
 
 export interface Connection {
+  /** COS-1129 — present only on 'pending-out'; see the server note. */
+  displayName?: string;
+  photoUrl?: string | null;
   userId: string;
   peerId: string;
   status: ConnectionStatus;
@@ -182,6 +185,16 @@ export async function searchDirectory(query: string): Promise<DirectoryEntry[]> 
     if (status === 400) return [];
     throw err;
   }
+}
+
+/**
+ * COS-1129 — withdraw a request you sent.
+ *
+ * Symmetric by design on the server: both rows are deleted, so neither side is
+ * left holding a record of a request that no longer exists.
+ */
+export async function cancelConnection(userId: string): Promise<void> {
+  await apiClient.delete(`/v1/patients/me/social/connections/${encodeURIComponent(userId)}`);
 }
 
 export async function fetchConnections(status?: ConnectionStatus): Promise<Connection[]> {

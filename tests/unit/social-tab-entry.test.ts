@@ -313,3 +313,38 @@ describe('COS-1128 — in-flight state belongs to the row that owns it', () => {
     assert.match(panel, /accessibilityState=\{\{ disabled: requested \|\| sending, busy: sending \}\}/);
   });
 });
+
+describe('COS-1129 — requests you sent, and withdrawing them', () => {
+  const panel = readFileSync(
+    new URL('../../components/social/SocialPanel.tsx', import.meta.url),
+    'utf8',
+  );
+
+  test('THE POINT: "Requested" comes from the SERVER, not just local state', () => {
+    // A sent request used to vanish: the row left suggestions (correctly — they
+    // are excluded) and the button reverted to "Connect" because the only
+    // record was component state, lost when the modal closed. The server knew
+    // the whole time; nothing asked it.
+    assert.match(panel, /queryKey: \['connections', 'pending-out'\]/);
+    assert.match(panel, /alreadyRequested\.has\(item\.userId\)/);
+  });
+
+  test('sent requests are listed under Requests, with Cancel', () => {
+    assert.match(panel, /Sent by you/);
+    assert.match(panel, /cancel\.mutate\(item\.peerId\)/);
+  });
+
+  test('cancelling clears the optimistic flag as well as refetching', () => {
+    // Otherwise the row still reads "Requested" after the request it refers to
+    // has gone.
+    assert.match(panel, /delete next\[peerId\]/);
+  });
+
+  test('the cancel spinner is per-row, like every other action here', () => {
+    assert.match(panel, /cancel\.isPending && cancel\.variables === item\.peerId/);
+  });
+
+  test('the empty state covers BOTH directions', () => {
+    assert.match(panel, /No requests waiting, and none sent\./);
+  });
+});
