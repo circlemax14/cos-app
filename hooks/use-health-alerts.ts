@@ -18,6 +18,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { useHealthKitTrends } from '@/hooks/use-healthkit-trends'
+import { useMetricHistory } from '@/hooks/use-metric-history'
 import { fetchAssessments } from '@/services/api/assessments'
 import type { AssessmentRecord } from '@/services/api/assessments'
 import type { LongitudinalTrend } from '@/services/api/types'
@@ -25,6 +26,7 @@ import {
   evaluateBloodPressure,
   evaluateGad7,
   evaluateGlucoseMgDl,
+  evaluatePainScore,
   evaluatePhq9,
   evaluateRespirationRate,
   evaluateSpo2Percent,
@@ -104,6 +106,18 @@ export function useHealthAlerts(enabled = true): HealthAlertsState {
    */
   const { data: trends, isLoading: trendsLoading } = useHealthKitTrends(90)
 
+  /*
+   * COS-1119 — pain is SELF-REPORTED, so it comes from the metric store rather
+   * than from HealthKit or an instrument.
+   *
+   * Ken's document asks for it explicitly (0–10 VAS, moderate 4–6, critical
+   * 7–10) and the rule was written on day one — but nothing called it, and pain
+   * was not in UNMONITORED either. So it was absent from the roll-up while
+   * looking covered in the code and green in the tests, which is the worst
+   * shape a gap can take.
+   */
+  const { history: painHistory, isLoading: painLoading } = useMetricHistory('pain_level', 30)
+
   const { data: assessments = [], isLoading: assessmentsLoading } = useQuery<AssessmentRecord[]>({
     queryKey: ['assessments'],
     queryFn: fetchAssessments,
@@ -128,11 +142,14 @@ export function useHealthAlerts(enabled = true): HealthAlertsState {
       evaluateTemperatureCelsius(v(METRIC.bodyTemp)),
       evaluatePhq9(latestTotal(assessments, 'phq-9')),
       evaluateGad7(latestTotal(assessments, 'gad-7')),
+      // points are OLDEST-first (the backend reads ScanIndexForward: true), so
+      // the most recent reading is the last one. Do not reverse the series.
+      evaluatePainScore(painHistory?.points?.[painHistory.points.length - 1]?.value),
     ])
-  }, [byMetric, assessments])
+  }, [byMetric, assessments, painHistory])
 
   if (!enabled) {
     return { level: null, firing: [], clear: [], measuredCount: 0, isLoading: false }
   }
-  return { ...rollup, isLoading: trendsLoading || assessmentsLoading }
+  return { ...rollup, isLoading: trendsLoading || assessmentsLoading || painLoading }
 }

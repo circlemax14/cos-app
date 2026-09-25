@@ -10,6 +10,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  PENDING_THRESHOLDS,
+  SOURCES,
+  UNMONITORED,
   alertColor,
   alertShouldFlash,
   evaluateBloodPressure,
@@ -159,6 +162,10 @@ test('one unusable reading among good ones does not drag the roll-up to unknown'
 // ─── COS-1115 — the badge must never be invisible ────────────────────────
 import { readFileSync } from 'node:fs';
 
+const RULES = readFileSync(
+  new URL('../../lib/health-alert-rules.ts', import.meta.url),
+  'utf8',
+);
 const BADGE = readFileSync(
   new URL('../../components/health-summary/HealthAlertBadge.tsx', import.meta.url),
   'utf8',
@@ -248,4 +255,52 @@ test('the emblem sits on the Health Status title line, absolutely positioned', (
 
 test('the detail screen shows the same emblem as the badge', () => {
   assert.match(SCREEN, /MedicalAlertIcon/);
+});
+
+// ─── COS-1119 — coverage against Ken's document ──────────────────────────
+const HOOK = readFileSync(
+  new URL('../../hooks/use-health-alerts.ts', import.meta.url),
+  'utf8',
+);
+
+test('THE POINT: every rule that exists is actually CALLED', () => {
+  // evaluatePainScore existed, was tested, and nothing invoked it — pain was
+  // absent from the roll-up while looking covered in code and green in tests.
+  // That is the worst shape a gap can take, so the guard is mechanical.
+  const defined = [...RULES.matchAll(/export function (evaluate\w+)/g)].map((m) => m[1]);
+  assert.ok(defined.length >= 8, `only found ${defined.length} rules — the scan broke`);
+  const uncalled = defined.filter((fn) => !HOOK.includes(`${fn}(`));
+  assert.deepEqual(uncalled, [], 'these rules are dead code — wire them or declare them uncovered');
+});
+
+test('pain reads the NEWEST point — the series is oldest-first', () => {
+  // The backend reads with ScanIndexForward: true. Taking points[0] would
+  // grade a month-old pain score as today's.
+  assert.match(HOOK, /painHistory\.points\.length - 1/);
+});
+
+test("the metrics Ken's document lists and we do NOT do are named to the patient", () => {
+  // The evaluated half is guarded by the no-dead-rules test above. This is the
+  // other half: a light that silently covers 8 of Ken's 12+ metrics, while
+  // looking like it covers all of them, is worse than no light.
+  const declared = UNMONITORED.map((u) => u.metric.toLowerCase()).join(' ');
+  for (const missing of ['lab', 'cognition', 'fall', 'daily living']) {
+    assert.ok(declared.includes(missing), `${missing} must be declared uncovered`);
+  }
+  // And each must say WHY, not just that it is absent.
+  for (const u of UNMONITORED) {
+    assert.ok(u.why.length > 10, `${u.metric} needs a reason`);
+  }
+});
+
+test('all three truncated cells in the PDF are recorded, not guessed', () => {
+  const joined = PENDING_THRESHOLDS.join(' ').toLowerCase();
+  assert.ok(joined.includes('hypotension'));
+  assert.ok(joined.includes('hyperglyc'));
+  assert.ok(joined.includes('hypothermia'));
+});
+
+test("the sources list covers every rule's citation", () => {
+  assert.ok(SOURCES.length >= 8, 'one citation per rule family');
+  assert.equal(new Set(SOURCES).size, SOURCES.length, 'no duplicate citations');
 });
