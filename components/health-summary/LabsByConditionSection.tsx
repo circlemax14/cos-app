@@ -217,7 +217,7 @@ function LabsByConditionSection() {
 
   return (
     <SummaryCardShell
-      title="Lab results"
+      title="Flagged Lab Results"
       icon="science"
       accentColor={ACCENT}
       preview={preview}
