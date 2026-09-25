@@ -554,8 +554,11 @@ export default function DoctorDetailScreen() {
    * carrying its OWN two-way switch, so the Notes tab ended in a nested set of
    * tabs that belonged to something else.
    *
-   * ⚠️ THIS MAKES FOUR TABS, where Ken asked for three. Flagged to Vishal
-   * rather than decided here; reverting is this array and the two lines below.
+   * FOUR TABS IS A DECISION, NOT A DRIFT. Ken asked for three; this makes four.
+   * Vishal, 2026-09-25: "I am fine with four tabs, I will discuss with them.
+   * Go ahead with four tabs." Recorded here because the three-tab request is
+   * written into COS-1090's commit message, and someone reading only that
+   * would reasonably 'restore' it.
    */
   const tabs = [
     { id: 'treatment', label: 'Conditions' },

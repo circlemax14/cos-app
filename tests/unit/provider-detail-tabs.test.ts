@@ -75,9 +75,10 @@ test('COS-1132: Appointments is its own tab, not a section inside Notes', () => 
    * carries its OWN past/recommended switch, so nesting it left the Notes tab
    * ending in a set of tabs belonging to something else.
    *
-   * NOTE: this makes FOUR tabs where Ken asked for three. Restored on Vishal's
-   * instruction; if Ken wants three again, this assertion is the first thing
-   * to delete.
+   * FOUR tabs where Ken originally asked for three. Vishal confirmed on
+   * 2026-09-25 — "I am fine with four tabs, go ahead" — so this is settled
+   * rather than pending. If Ken later wants three back, this assertion is the
+   * first thing to delete.
    */
   assert.match(code, /\{ id: 'appointments', label: 'Appointments' \}/);
   assert.match(code, /\{activeTab === 'appointments' && renderAppointments\(\)\}/);
