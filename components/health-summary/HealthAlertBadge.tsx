@@ -1,38 +1,56 @@
 /**
- * COS-1112 — the Health Alerts indicator.
+ * COS-1112 / COS-1116 — the Health Alerts indicator.
  *
  * Ken, 2026-09-24: "put it up in the top of the page in the corner, large
  * enough that you can see… green when there are no alert-worthy conditions,
  * yellow if we're seeing movement, red if a variable reaches a critical stage.
  * Green and yellow no flash. Red can be a flashing colour."
  *
+ * ─── HIS ARTWORK, HIS PLACEMENT ──────────────────────────────────────
+ *
+ * COS-1116: the mark is the medical-alert emblem Ken supplied, not the app's
+ * own Health Status icon, and it sits top-right with a caption beneath it as
+ * his mock-up shows. The emblem is deliberately not ours — it is the universal
+ * one, which is the reason he chose it: a carer or a paramedic recognises it
+ * without being taught.
+ *
  * ─── WHY IT IS NOT A PAGE ────────────────────────────────────────────
  *
- * He was explicit: "I don't want to open up another tab because you already
- * have vitals and red flags… I think it should not be a page, I think it
- * should be an icon." So this is a badge that sits beside the screen title and
- * opens a sheet, not a sixth tab.
+ * "I don't want to open up another tab because you already have vitals and red
+ * flags… I think it should not be a page, I think it should be an icon." So
+ * this opens a sheet, not a sixth tab.
+ *
+ * ─── ONE DEVIATION FROM THE MOCK-UP, STATED PLAINLY ──────────────────
+ *
+ * His mock-up captions the icon "CRITICAL HEALTH ALERTS" in every state. Over a
+ * green mark that is a contradiction, so the caption reads "HEALTH ALERTS"
+ * normally and becomes "CRITICAL HEALTH ALERTS" only when something critical is
+ * actually firing — which is the state his label describes.
+ *
+ * A second, smaller line always carries the state in words. Colour alone fails
+ * older patients, glare and colour-blindness, and this is the last surface in
+ * the app where that would be acceptable: a patient who cannot separate amber
+ * from green would otherwise be told nothing at all.
  *
  * ─── THE GREY STATE ──────────────────────────────────────────────────
  *
- * There is a fourth colour he did not ask for, and it is the one that matters
- * most. `level === null` means nothing was measured, and it renders GREY with
- * the words "Not enough data" — never green. A crisis indicator that shows a
- * reassuring green to a patient with no readings is worse than no indicator,
- * because it answers a question it never asked.
+ * `level === null` means nothing was measured and renders GREY, never green. A
+ * crisis indicator showing a reassuring green to a patient with no readings
+ * answers a question it was never asked. COS-1115: loading is grey too, and the
+ * component never returns null — an indicator that is sometimes simply absent
+ * teaches people that its absence means nothing.
  *
  * ─── RENDERING RISK ──────────────────────────────────────────────────
  *
- * This mounts HealthStatusIcon (react-native-svg + Animated) in a screen BODY.
- * Proven in the tab bar, but the tab bar is outside ADR-0003's envelope and a
- * screen body is a different mount path. The caller gates this on
- * useHealthAlertsFlag so one SSM write removes it without an OTA.
+ * This mounts react-native-svg + Animated in a screen BODY, outside ADR-0003's
+ * envelope. The caller gates it on useHealthAlertsFlag so one SSM write removes
+ * it without an OTA.
  */
 
 import React from 'react'
-import { Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native'
+import { Pressable, StyleSheet, Text, type TextStyle } from 'react-native'
 
-import { HealthStatusIcon } from '@/components/ui/health-status-icon'
+import { MedicalAlertIcon } from '@/components/ui/medical-alert-icon'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { Colors } from '@/constants/theme'
 import {
@@ -45,7 +63,7 @@ import type { AlertLevel } from '@/lib/health-alert-rules'
 
 export interface HealthAlertBadgeProps {
   level: AlertLevel | null
-  /** How many metrics are currently above `none`. Drives the count pill. */
+  /** How many metrics are currently above `none`. */
   firingCount: number
   isLoading: boolean
   onPress: () => void
@@ -60,79 +78,56 @@ export function HealthAlertBadge({
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
 
-  /*
-   * COS-1115 — while the answer is in flight, render GREY "Checking…", never
-   * nothing.
-   *
-   * This returned null, and that was wrong twice over. As UX, a crisis
-   * indicator that is simply absent for a beat teaches people it is sometimes
-   * not there, so its absence stops meaning anything. As engineering, a
-   * component that renders nothing on a state it reaches in the normal course
-   * of events is untestable from the outside: "I don't see it" cannot be told
-   * apart from "the flag is off", "the build is stale", or "it crashed".
-   *
-   * It is still never GREEN while loading — a green that becomes red a second
-   * later is the one transition worth preventing. Grey covers both loading and
-   * no-data, which are honestly the same statement: we cannot tell you yet.
-   */
   const tint = isLoading ? ALERT_COLOR_UNKNOWN : alertColor(level)
   const flashing = !isLoading && alertShouldFlash(level)
-  const word = isLoading ? 'Checking…' : alertWord(level)
+  const state = isLoading ? 'Checking…' : alertWord(level)
+  const caption = !isLoading && level === 'critical' ? 'CRITICAL HEALTH ALERTS' : 'HEALTH ALERTS'
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Health alerts: ${word}${
+      accessibilityLabel={`Health alerts: ${state}${
         firingCount > 0 && !isLoading ? `, ${firingCount} flagged` : ''
       }. Tap for detail.`}
-      hitSlop={8}
-      style={({ pressed }) => [
-        styles.wrap,
-        { borderColor: tint, opacity: pressed ? 0.7 : 1 },
-      ]}
+      hitSlop={10}
+      style={({ pressed }) => [styles.wrap, { opacity: pressed ? 0.7 : 1 }]}
     >
-      <HealthStatusIcon size={26} color={tint} animated={flashing} />
-      <View style={styles.text}>
-        <Text
-          style={{
-            color: tint,
-            fontSize: getScaledFontSize(12),
-            fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
-          }}
-          numberOfLines={1}
-        >
-          {word}
-        </Text>
-        {firingCount > 0 && !isLoading ? (
-          <Text
-            style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}
-            numberOfLines={1}
-          >
-            {firingCount} to review
-          </Text>
-        ) : null}
-      </View>
+      <MedicalAlertIcon size={44} color={tint} hollow={colors.background} flashing={flashing} />
+      <Text
+        style={{
+          color: tint,
+          fontSize: getScaledFontSize(9),
+          fontWeight: getScaledFontWeight(800) as TextStyle['fontWeight'],
+          letterSpacing: 0.3,
+          marginTop: 3,
+          textAlign: 'center',
+        }}
+        numberOfLines={2}
+      >
+        {caption}
+      </Text>
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: getScaledFontSize(9),
+          textAlign: 'center',
+        }}
+        numberOfLines={1}
+      >
+        {firingCount > 0 && !isLoading ? `${firingCount} to review` : state}
+      </Text>
     </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1.5,
     alignSelf: 'flex-end',
-  },
-  text: {
-    // The word carries the state for anyone who cannot separate the colours.
-    // Colour alone fails older patients, glare, and colour-blindness — and a
-    // crisis indicator is the last place to rely on it.
-    justifyContent: 'center',
+    // Narrow enough that the two-word caption wraps rather than stretching the
+    // header, wide enough that it never hyphenates.
+    maxWidth: 112,
   },
 })
 

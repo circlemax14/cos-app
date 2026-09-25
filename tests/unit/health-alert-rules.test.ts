@@ -179,3 +179,46 @@ test('loading is never rendered as green', () => {
   assert.match(BADGE, /isLoading \? ALERT_COLOR_UNKNOWN : alertColor\(level\)/);
   assert.match(BADGE, /!isLoading && alertShouldFlash\(level\)/);
 });
+
+// ─── COS-1116 — Ken's emblem, not ours ───────────────────────────────────
+const ICON = readFileSync(
+  new URL('../../components/ui/medical-alert-icon.tsx', import.meta.url),
+  'utf8',
+);
+
+test('THE POINT: the badge uses the medical-alert emblem Ken supplied', () => {
+  // He sent the artwork and asked for that mark specifically. Substituting the
+  // app's own Health Status icon loses the thing that makes it worth using:
+  // a paramedic or carer recognises the universal emblem untaught.
+  assert.match(BADGE, /MedicalAlertIcon/);
+  assert.doesNotMatch(BADGE, /HealthStatusIcon/);
+});
+
+test('the Star of Life has SIX arms — three bars at 60°, not eight', () => {
+  // Six is definitional (one per link in the chain of survival). An eight-arm
+  // star is a different symbol entirely.
+  assert.match(ICON, /ARM_ROTATIONS = \[0, 60, 120\]/);
+});
+
+test('the hexagon is stroked, not filled — the star sits on the page', () => {
+  assert.match(ICON, /d=\{HEX\}\s+fill="none"/);
+});
+
+test('colour is a parameter, so the three variants cannot drift apart', () => {
+  // Ken sent green/amber/red as separate images. Same geometry, three hues.
+  assert.match(ICON, /color: string/);
+  assert.doesNotMatch(ICON, /#(EF4444|FF0000|DC2626)/i);
+});
+
+test('only red flashes, and it never fades to invisible', () => {
+  // A hard on/off square wave is a migraine and seizure risk. The mark stays
+  // legible at every instant of the cycle.
+  assert.match(ICON, /outputRange: \[1, 0\.45\]/);
+  assert.match(BADGE, /flashing=\{flashing\}/);
+});
+
+test('the caption only claims CRITICAL when something critical is firing', () => {
+  // Ken's mock-up captions it "CRITICAL HEALTH ALERTS" in every state; over a
+  // green mark that is a contradiction.
+  assert.match(BADGE, /level === 'critical' \? 'CRITICAL HEALTH ALERTS' : 'HEALTH ALERTS'/);
+});
