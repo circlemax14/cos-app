@@ -45,6 +45,22 @@ import {
 export { ErrorBoundary } from '@/components/RouteErrorBoundary';
 
 
+/*
+ * COS-1122 — the chosen filter survives closing the modal, for this app run.
+ *
+ * `recencyFilter` was component state, and the Supports modal unmounts when it
+ * closes. So picking "Stable & resolved", closing, and reopening silently
+ * dropped the choice and reset the list to everyone — Vishal saw the active dot
+ * vanish, which was the indicator telling the truth about state he had lost.
+ *
+ * Deliberately module scope and NOT persisted storage. A choice made a minute
+ * ago should still be there when you come back; a choice made last week should
+ * not silently hide providers on a cold start, which is the exact failure
+ * COS-1121 fixed. Remembering it for the app session honours both: the filter
+ * survives a close, and a fresh launch always opens on everyone.
+ */
+let sessionRecencyFilter: string | null = 'all';
+
 interface CategoryGroup {
   id: string;
   /** The STORED value — see constants/categories.ts. Not the label. */
@@ -102,7 +118,15 @@ export default function ModalScreen() {
    * everyone and letting them narrow is the honest order — and it is the only
    * default under which "the list is empty" means something true.
    */
-  const [recencyFilter, setRecencyFilter] = React.useState<string | null>('all');
+  const [recencyFilter, setRecencyFilterState] = React.useState<string | null>(
+    sessionRecencyFilter,
+  );
+  // Every write goes through here so the module-scope memory and the render
+  // state can never disagree.
+  const setRecencyFilter = React.useCallback((next: string | null) => {
+    sessionRecencyFilter = next;
+    setRecencyFilterState(next);
+  }, []);
   // COS-1103 — which category tab is open, so the header can show the filter
   // only where it applies. Index rather than id: that is what TabsProvider
   // reports, and deriving the id from categoryGroups keeps one source of truth.

@@ -75,9 +75,12 @@ test('THE POINT: the recency filter opens on EVERYONE, not a pre-applied band', 
   // year ago. On the pilot record that is almost everyone, so every Medical
   // sub-category rendered empty and the founder reported "I can see provider
   // bubbles but no providers under Medical".
+  // COS-1122 moved the literal onto the module-scope session memory, which is
+  // what the useState initialiser now reads. The RULE is unchanged: a fresh
+  // launch opens on everyone.
   assert.match(
     MODAL,
-    /useState<string \| null>\('all'\)/,
+    /sessionRecencyFilter: string \| null = 'all'/,
     'the filter must default to all — a filter the user did not set must not hide their data',
   );
 });
@@ -105,4 +108,27 @@ test('no code path filters the always-empty category.doctors array', () => {
   // why it could sit wrong.
   assert.doesNotMatch(MODAL, /filterProvidersByLastVisited\(category\.doctors\)/);
   assert.doesNotMatch(MODAL, /category\.doctors\.length === 0/);
+});
+
+test('COS-1122: the chosen filter survives closing the modal', () => {
+  // The Supports modal unmounts on close, so component state lost the choice.
+  // Picking a band, closing, and reopening reset the list to everyone and the
+  // active dot vanished — the indicator was correctly reporting state that had
+  // been thrown away.
+  assert.match(MODAL, /let sessionRecencyFilter: string \| null = 'all'/);
+  assert.match(MODAL, /React\.useState<string \| null>\(\s*sessionRecencyFilter,?\s*\)/);
+});
+
+test('every write goes through the wrapper, so memory and render cannot diverge', () => {
+  // A stray setRecencyFilterState call would update the dot but not the memory,
+  // reintroducing the same bug in a harder-to-see form.
+  const direct = MODAL.match(/setRecencyFilterState\(/g) || [];
+  assert.equal(direct.length, 1, 'setRecencyFilterState may only be called inside setRecencyFilter');
+  assert.match(MODAL, /sessionRecencyFilter = next/);
+});
+
+test('a cold start still opens on everyone', () => {
+  // The module initialiser is 'all', so a fresh launch never opens pre-filtered
+  // — the COS-1121 rule survives.
+  assert.match(MODAL, /sessionRecencyFilter: string \| null = 'all'/);
 });
