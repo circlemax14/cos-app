@@ -17,7 +17,7 @@ import { useAppleHealthPreference } from '@/hooks/use-apple-health-preference'
 import { router, useFocusEffect } from 'expo-router'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import * as FileSystem from 'expo-file-system/legacy'
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -44,6 +44,8 @@ import { groupTrendsByBodySystem } from '@/lib/body-system-grouping';
 import type { BodySystemGroup } from '@/lib/body-system-grouping';
 import { lookForSystem, measuresPreview } from '@/lib/body-system-presentation';
 import SummaryCardShell from '@/components/health-summary/SummaryCardShell';
+import { HealthTrendSummaryCard } from '@/components/health/HealthTrendSummaryCard';
+import { fetchHealthTrendSummary } from '@/services/api/patient';
 import { useCanRender } from '@/hooks/use-entitlement'
 import { useQuery } from '@tanstack/react-query'
 
@@ -199,6 +201,57 @@ export default function HealthTrendsScreen() {
         .filter((t) => t.dataPoints.length > 0),
     [clinicTrends, timeFilter],
   )
+
+  /*
+   * COS-1133 — Ken's biopsychosocial summary.
+   *
+   * The biometric digest is built from the trends ALREADY on screen rather
+   * than fetched again. The backend cannot see HealthKit by design, so the
+   * device is the only place this half exists — and re-reading it would create
+   * a second source that could disagree with what the patient is looking at.
+   */
+  const [trendSummary, setTrendSummary] = useState({
+    summary: '',
+    notMeasured: [] as string[],
+    loading: true,
+    error: false,
+  })
+
+  const biometricDigest = useMemo(() => {
+    const bySystem = new Map<string, string[]>()
+    for (const group of groupTrendsByBodySystem(appleHealthTrends)) {
+      if (!group.system) continue
+      bySystem.set(
+        group.system,
+        group.metrics.slice(0, 8).map((t) => {
+          const pts = [...t.dataPoints].sort((a, b) => a.date.localeCompare(b.date))
+          const last = pts[pts.length - 1]
+          return last
+            ? `${t.metricName} latest ${last.value} (${pts.length} readings)`
+            : `${t.metricName} (no readings)`
+        }),
+      )
+    }
+    return [...bySystem.entries()].map(([system, lines]) => ({ system, lines }))
+  }, [appleHealthTrends])
+
+  const loadTrendSummary = useCallback(async () => {
+    setTrendSummary((p) => ({ ...p, loading: true, error: false }))
+    try {
+      const r = await fetchHealthTrendSummary(biometricDigest)
+      setTrendSummary({ summary: r.summary, notMeasured: r.notMeasured, loading: false, error: false })
+    } catch {
+      setTrendSummary({ summary: '', notMeasured: [], loading: false, error: true })
+    }
+  }, [biometricDigest])
+
+  useEffect(() => {
+    // Wait for the device trends to settle, so the digest is not built from an
+    // empty list on the first render and then never rebuilt.
+    if (isLoading) return
+    void loadTrendSummary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading])
 
   // Download results — build a CSV of everything currently on-screen
   // (Apple Health carousel + visible clinic trends) and hand it to the
@@ -377,6 +430,19 @@ export default function HealthTrendsScreen() {
             actually have data (iOS only; Android returns []), and the app
             preference is enabled (appleHealthDisabled gates the off-state
             above). */}
+        {/*
+          COS-1133 — the summary leads the screen. It is the answer to "how am
+          I doing"; the carousels below are the evidence for it, and a reader
+          who wants only the answer should not have to assemble it from twelve
+          sparklines.
+        */}
+        <HealthTrendSummaryCard
+          state={trendSummary}
+          colors={colors}
+          fs={getScaledFontSize}
+          fw={getScaledFontWeight}
+          onRetry={() => void loadTrendSummary()}
+        />
         {!appleHealthDisabled && appleHealthTrends.length > 0 ? (
           <View style={{ marginTop: 4 }}>
             <View style={styles.sectionHeaderRow}>

@@ -180,3 +180,36 @@ export async function fetchMedicationsSummary(
     return [];
   }
 }
+
+/**
+ * COS-1133 — Ken's biopsychosocial summary of the Health Trends page.
+ *
+ * POST, because the biometric half travels in the body: raw HealthKit values
+ * deliberately never reach the backend, so the digest is built on the device
+ * from the trends already on screen.
+ */
+export interface TrendBiometricDigest {
+  system: string;
+  lines: string[];
+}
+
+export interface HealthTrendSummaryResult {
+  summary: string;
+  generatedAt: string;
+  notMeasured: string[];
+}
+
+export async function fetchHealthTrendSummary(
+  biometrics: TrendBiometricDigest[],
+): Promise<HealthTrendSummaryResult> {
+  const res = await apiClient.post<{ data: HealthTrendSummaryResult }>(
+    '/v1/patients/me/health-trend-summary',
+    { biometrics },
+  );
+  const d = res.data?.data;
+  return {
+    summary: d?.summary ?? '',
+    generatedAt: d?.generatedAt ?? '',
+    notMeasured: Array.isArray(d?.notMeasured) ? d.notMeasured : [],
+  };
+}
