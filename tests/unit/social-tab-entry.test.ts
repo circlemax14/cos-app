@@ -23,7 +23,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const modal = readFileSync(new URL('../../app/modal.tsx', import.meta.url), 'utf8');
 const entry = readFileSync(
-  new URL('../../components/social/FindPeopleEntry.tsx', import.meta.url),
+  new URL('../../components/social/SocialPanel.tsx', import.meta.url),
   'utf8',
 );
 const layout = readFileSync(new URL('../../app/Home/_layout.tsx', import.meta.url), 'utf8');
@@ -33,10 +33,10 @@ const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\
 const modalCode = strip(modal);
 const entryCode = strip(entry);
 
-describe('COS-1063 — the Social tab reaches people-search', () => {
+describe('COS-1063/COS-1124 — the Social tab reaches people-search, in place', () => {
   test('THE POINT: the Supports modal renders the entry', () => {
-    assert.match(modalCode, /<FindPeopleEntry\s*\/>/);
-    assert.match(modalCode, /import \{ FindPeopleEntry \} from '@\/components\/social\/FindPeopleEntry'/);
+    assert.match(modalCode, /<SocialPanel\s*\/>/);
+    assert.match(modalCode, /import \{ SocialPanel \} from '@\/components\/social\/SocialPanel'/);
   });
 
   /*
@@ -54,13 +54,13 @@ describe('COS-1063 — the Social tab reaches people-search', () => {
    * A presence assertion cannot catch that. This one pins the POSITION.
    */
   test('THE POINT: the entry is OUTSIDE the showEmptyNonMedical ternary', () => {
-    const entryAt = modalCode.indexOf("category.id === 'social' && <FindPeopleEntry");
+    const entryAt = modalCode.indexOf("category.id === 'social' && <SocialPanel");
     const ternaryAt = modalCode.indexOf('{showEmptyNonMedical ? (');
     assert.ok(entryAt > -1, 'entry not found at all');
     assert.ok(ternaryAt > -1, 'the empty-state ternary moved — re-check this guard');
     assert.ok(
       entryAt < ternaryAt,
-      'FindPeopleEntry must render BEFORE the empty-state ternary. Inside it, ' +
+      'SocialPanel must render BEFORE the empty-state ternary. Inside it, ' +
         'the Social tab can never reach people-search, because Social always ' +
         'takes the empty branch.',
     );
@@ -72,12 +72,28 @@ describe('COS-1063 — the Social tab reaches people-search', () => {
      * person is not what they are for, and an entry on all three would imply
      * the feature does something different in each.
      */
-    assert.match(modalCode, /category\.id === 'social' && <FindPeopleEntry/);
+    assert.match(modalCode, /category\.id === 'social' && <SocialPanel/);
   });
 
-  test('it leads to BOTH screens, and to the same routes Inbox uses', () => {
-    assert.match(entryCode, /router\.push\('\/Home\/find-people'/);
-    assert.match(entryCode, /router\.push\('\/Home\/connection-requests'/);
+  test('COS-1124 THE POINT: it does the work in place and navigates NOWHERE', () => {
+    /*
+     * Vishal: "if I click on Find people another modal is opening, which is
+     * actually wrong — whatever we need to do is within the same screen."
+     *
+     * Leaving a modal to do the modal's job is strange anywhere, and worse
+     * here: the Supports modal UNMOUNTS when you go, so you return to a tab
+     * that has forgotten which category and which filter you were on.
+     */
+    assert.doesNotMatch(entryCode, /router\.push/);
+    assert.doesNotMatch(entryCode, /from 'expo-router'/);
+    // Both jobs are now modes on one panel.
+    assert.match(entryCode, /type Mode = 'find' \| 'requests'/);
+    assert.match(entryCode, /setMode\(id\)/);
+  });
+
+  test('the standalone routes remain, because Inbox still links to them', () => {
+    // COS-1124 removed the Social tab's navigation, not the screens. Inbox's
+    // header button and pending banner are a second, legitimate door.
     const inbox = readFileSync(new URL('../../app/Home/inbox.tsx', import.meta.url), 'utf8');
     assert.match(inbox, /'\/Home\/find-people'/);
     assert.match(inbox, /'\/Home\/connection-requests'/);
@@ -94,7 +110,7 @@ describe('COS-1063 — the Social tab reaches people-search', () => {
 });
 
 describe('COS-1063 — iOS 26: TabScreen keeps exactly ONE direct child', () => {
-  test('THE POINT: FindPeopleEntry is NESTED with TabsProvider, not a sibling of it', () => {
+  test('THE POINT: SocialPanel is NESTED with TabsProvider, not a sibling of it', () => {
     /*
      * The crashing shape is:
      *     <TabScreen>{cond && <X/>}<TabsProvider>…  <- two direct children
@@ -117,14 +133,14 @@ describe('COS-1063 — iOS 26: TabScreen keeps exactly ONE direct child', () => 
     assert.ok(close > open, 'TabsProvider must close inside the wrapper');
 
     const inside = modalCode.slice(open, close);
-    const entryAt = inside.indexOf('<FindPeopleEntry />');
+    const entryAt = inside.indexOf('<SocialPanel />');
     const providerAt = inside.indexOf('<TabsProvider');
 
-    assert.ok(entryAt > 0, 'FindPeopleEntry must be INSIDE the wrapper, not a sibling of it');
+    assert.ok(entryAt > 0, 'SocialPanel must be INSIDE the wrapper, not a sibling of it');
     assert.ok(providerAt > 0, 'TabsProvider must be inside the same wrapper');
     assert.ok(
       entryAt < providerAt,
-      'FindPeopleEntry must come before TabsProvider — after it, the entry renders ' +
+      'SocialPanel must come before TabsProvider — after it, the entry renders ' +
         'below the sub-tabs instead of above them',
     );
   });
@@ -151,7 +167,7 @@ describe('COS-1063 — iOS 26: TabScreen keeps exactly ONE direct child', () => 
       .filter((l) => l.trimStart().startsWith('import'))
       .join('\n');
     for (const b of banned) {
-      assert.ok(!imports.includes(b), `FindPeopleEntry must not import ${b} (iOS 26 envelope)`);
+      assert.ok(!imports.includes(b), `SocialPanel must not import ${b} (iOS 26 envelope)`);
     }
   });
 });
@@ -196,7 +212,10 @@ describe('COS-1064 — the Social entry is gated by the plan', () => {
      */
     assert.match(entryCode, /const canFind = canShow\('find-people'\)/);
     assert.match(entryCode, /const canRequests = canShow\('connection-requests'\)/);
-    assert.match(entryCode, /\{canFind && \(/);
+    // COS-1124 — the gate now selects a MODE rather than a navigation row, but
+    // the rule is unchanged: a plan could grant answering requests without
+    // granting directory search, and one shared flag makes that unexpressible.
+    assert.match(entryCode, /\{canFind && <ModeButton/);
     assert.match(entryCode, /\{canRequests && \(/);
   });
 
