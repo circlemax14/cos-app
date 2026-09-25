@@ -713,67 +713,28 @@ export default function DoctorDetailScreen() {
   // show diagnosis cards based on visits or recorded date, we lack
   // this in app"). Medications moved to their own provider tab in
   // SCRUM-155 so they're intentionally absent here.
-  const renderTreatmentPlan = () => {
-    const diagnoses = treatmentPlans.diagnoses;
-    const isEmpty = diagnoses.length === 0;
+  /** Shared by the visit list and the diagnosis cards. Empty string, never
+   *  "Invalid Date", when the record carries no usable date. */
+  const formatDate = (iso: string | null | undefined) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
 
-    const ACTIVE_STATUSES = new Set(['active', 'recurrence', 'relapse']);
-    const sortedDiagnoses = [...diagnoses].sort((a, b) => {
-      const aActive = ACTIVE_STATUSES.has((a.clinicalStatus ?? '').toLowerCase()) ? 0 : 1;
-      const bActive = ACTIVE_STATUSES.has((b.clinicalStatus ?? '').toLowerCase()) ? 0 : 1;
-      if (aActive !== bActive) return aActive - bActive;
-      const aDate = a.onsetDate ?? a.recordedDate;
-      const bDate = b.onsetDate ?? b.recordedDate;
-      const aTs = aDate ? new Date(aDate).getTime() : 0;
-      const bTs = bDate ? new Date(bDate).getTime() : 0;
-      return bTs - aTs;
-    });
-
-    const STATUS_PILL: Record<string, { label: string; bg: string; fg: string }> = {
-      active: { label: 'Active', bg: '#DCFCE7', fg: '#15803D' },
-      recurrence: { label: 'Recurrence', bg: '#FEF3C7', fg: '#92400E' },
-      relapse: { label: 'Relapse', bg: '#FEF3C7', fg: '#92400E' },
-      inactive: { label: 'Inactive', bg: '#E5E7EB', fg: '#374151' },
-      remission: { label: 'In Remission', bg: '#E0F2FE', fg: '#075985' },
-      resolved: { label: 'Resolved', bg: '#E5E7EB', fg: '#374151' },
-      unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
-    };
-
-    const formatDate = (iso: string | null | undefined) => {
-      if (!iso) return '';
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return '';
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    };
-
-    return (
-      <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-        {isLoadingData ? (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14) }}>
-              Loading diagnoses…
-            </Text>
-          </View>
-        ) : (
-          <>
-            {/*
-              * COS-1013 — one card per visit, newest first.
-              *
-              * Vishal: "the patient visited on 3 Feb 2025, then there will be
-              * one card. Patient visits multiple times, multiple cards."
-              *
-              * A card says what HAPPENED that day — what was prescribed, what
-              * was produced — and never what was diagnosed. No Condition in
-              * this data references an encounter (0 of 9), so putting a
-              * diagnosis inside a visit would assert a date the record does not
-              * support. The diagnosis cards stay below, undated by visit, which
-              * is the honest arrangement.
-              *
-              * Per-visit cards existed before and were removed on feedback; the
-              * difference now is that they carry the visit's actual contents
-              * rather than an aggregate.
-              */}
-            {visitCards.length > 0 ? (
+  /**
+   * COS-1131 — the visit list, drawn once and used by two tabs.
+   *
+   * Ken, on the provider screen: "remember conditions will have AI summary,
+   * notes will have visits with notes."
+   *
+   * So the visits moved OFF Conditions and ONTO Notes. They are the same cards
+   * either way, so they are built here rather than copied — the Apple Health
+   * carousel on Health Trends had exactly this duplication and it drifted.
+   */
+  const renderVisitList = (cards: VisitCard[], heading: string) => (
+    <>
+      {cards.length > 0 ? (
               <View style={{ marginBottom: 20 }}>
                 <Text
                   style={{
@@ -783,9 +744,9 @@ export default function DoctorDetailScreen() {
                     marginBottom: 10,
                   }}
                 >
-                  Your visits
+                  {heading}
                 </Text>
-                {visitCards.slice(0, 12).map((v) => (
+                {cards.slice(0, 12).map((v) => (
                   <View
                     key={v.encounter.id}
                     style={{
@@ -833,7 +794,72 @@ export default function DoctorDetailScreen() {
                 ))}
               </View>
             ) : visitsLoading ? null : null}
+    </>
+  );
+  const renderTreatmentPlan = () => {
+    const diagnoses = treatmentPlans.diagnoses;
+    const isEmpty = diagnoses.length === 0;
 
+    const ACTIVE_STATUSES = new Set(['active', 'recurrence', 'relapse']);
+    const sortedDiagnoses = [...diagnoses].sort((a, b) => {
+      const aActive = ACTIVE_STATUSES.has((a.clinicalStatus ?? '').toLowerCase()) ? 0 : 1;
+      const bActive = ACTIVE_STATUSES.has((b.clinicalStatus ?? '').toLowerCase()) ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      const aDate = a.onsetDate ?? a.recordedDate;
+      const bDate = b.onsetDate ?? b.recordedDate;
+      const aTs = aDate ? new Date(aDate).getTime() : 0;
+      const bTs = bDate ? new Date(bDate).getTime() : 0;
+      return bTs - aTs;
+    });
+
+    const STATUS_PILL: Record<string, { label: string; bg: string; fg: string }> = {
+      active: { label: 'Active', bg: '#DCFCE7', fg: '#15803D' },
+      recurrence: { label: 'Recurrence', bg: '#FEF3C7', fg: '#92400E' },
+      relapse: { label: 'Relapse', bg: '#FEF3C7', fg: '#92400E' },
+      inactive: { label: 'Inactive', bg: '#E5E7EB', fg: '#374151' },
+      remission: { label: 'In Remission', bg: '#E0F2FE', fg: '#075985' },
+      resolved: { label: 'Resolved', bg: '#E5E7EB', fg: '#374151' },
+      unknown: { label: 'Unknown', bg: '#E5E7EB', fg: '#374151' },
+    };
+
+    return (
+      <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+        {isLoadingData ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: colors.text, fontSize: getScaledFontSize(14) }}>
+              Loading diagnoses…
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/*
+              * COS-1013 — one card per visit, newest first.
+              *
+              * Vishal: "the patient visited on 3 Feb 2025, then there will be
+              * one card. Patient visits multiple times, multiple cards."
+              *
+              * A card says what HAPPENED that day — what was prescribed, what
+              * was produced — and never what was diagnosed. No Condition in
+              * this data references an encounter (0 of 9), so putting a
+              * diagnosis inside a visit would assert a date the record does not
+              * support. The diagnosis cards stay below, undated by visit, which
+              * is the honest arrangement.
+              *
+              * Per-visit cards existed before and were removed on feedback; the
+              * difference now is that they carry the visit's actual contents
+              * rather than an aggregate.
+              */}
+            {/*
+              COS-1131 — the AI summary LEADS this tab.
+              Ken: "conditions will have AI summary, notes will have visits
+              with notes."
+
+              It was already here, but below a visit list twelve cards long, so
+              the screenshot he sent opens on "Your visits" and the summary is
+              somewhere off the bottom. The visits moved to Notes; the summary
+              moved up. Nothing new was built — the thing he asked for existed
+              and could not be seen.
+            */}
             <WhatChangedCard
               state={insightFor('treatment')}
               colors={colors}
@@ -969,8 +995,24 @@ export default function DoctorDetailScreen() {
   // by structured DiagnosticReport cards so users can audit the source
   // clinical documents (SCRUM-187).
   const renderProgressNotes = () => {
+    /*
+     * COS-1131 — "notes will have visits with notes" (Ken).
+     *
+     * A visit earns a place here when it actually produced something: the
+     * cards already carry the reports grouped onto their encounter, so the
+     * filter is `reports.length > 0` rather than a second fetch. Visits that
+     * produced nothing stay out — listing a date with "no medicines or tests
+     * were recorded" under a heading called Notes is a row that says only that
+     * it has nothing to say.
+     */
+    const visitsWithNotes = visitCards.filter((v) => v.reports.length > 0);
+
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+        {visitsWithNotes.length > 0
+          ? renderVisitList(visitsWithNotes, 'Visits with notes')
+          : null}
+
         {providerReportsLoading && providerReports.length === 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 4 }}>
             <ActivityIndicator size="small" color={colors.tint} />
