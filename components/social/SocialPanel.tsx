@@ -77,14 +77,22 @@ function PersonRow({
   colors,
   fs,
   requested,
-  pending,
+  sending,
   onConnect,
 }: {
   item: DirectoryEntry
   colors: (typeof Colors)['light']
   fs: (n: number) => number
   requested: boolean
-  pending: boolean
+  /**
+   * THIS row's request is in flight — not "some request somewhere is".
+   *
+   * It used to be `connect.isPending`, which is true for every row while any
+   * one of them is sending, so tapping Connect on one person greyed out the
+   * whole list. The mutation's `variables` carries the userId being sent, so
+   * the state can be attributed to the row that owns it.
+   */
+  sending: boolean
   onConnect: () => void
 }): React.JSX.Element {
   return (
@@ -104,14 +112,34 @@ function PersonRow({
       </Text>
       <Pressable
         onPress={onConnect}
-        disabled={requested || pending}
+        disabled={requested || sending}
         accessibilityRole="button"
-        accessibilityLabel={`Send a request to ${item.displayName}`}
-        style={[styles.actionBtn, { borderColor: colors.border, opacity: requested ? 0.5 : 1 }]}
+        accessibilityState={{ disabled: requested || sending, busy: sending }}
+        accessibilityLabel={
+          requested
+            ? `Request already sent to ${item.displayName}`
+            : sending
+              ? `Sending a request to ${item.displayName}`
+              : `Send a request to ${item.displayName}`
+        }
+        style={[
+          styles.actionBtn,
+          { borderColor: colors.border, opacity: requested ? 0.5 : 1 },
+        ]}
       >
-        <Text style={{ color: colors.tint, fontSize: fs(13), fontWeight: '600' }}>
-          {requested ? 'Requested' : 'Connect'}
-        </Text>
+        {/*
+          The spinner replaces the label rather than sitting beside it, and the
+          button carries a minWidth, so the row does not reflow mid-tap. A
+          control that changes width while you are looking at it reads as a
+          glitch even when the outcome is correct.
+        */}
+        {sending ? (
+          <ActivityIndicator size="small" color={colors.tint} />
+        ) : (
+          <Text style={{ color: colors.tint, fontSize: fs(13), fontWeight: '600' }}>
+            {requested ? 'Requested' : 'Connect'}
+          </Text>
+        )}
       </Pressable>
     </View>
   )
@@ -207,7 +235,17 @@ export function SocialPanel(): React.JSX.Element | null {
     mutationFn: (peerId: string) => declineConnection(peerId),
     onSuccess: refresh,
   })
-  const busy = accept.isPending || decline.isPending
+  /*
+   * Which peer is being answered, and how. Same reasoning as PersonRow's
+   * `sending`: `accept.isPending` alone is true for every row while any one is
+   * in flight, so answering one request froze the whole list and gave no sign
+   * which one was working.
+   */
+  const answering = (peerId: string): 'accept' | 'decline' | null => {
+    if (accept.isPending && accept.variables === peerId) return 'accept'
+    if (decline.isPending && decline.variables === peerId) return 'decline'
+    return null
+  }
 
   if (!canFind && !canRequests) return null
 
@@ -377,7 +415,7 @@ export function SocialPanel(): React.JSX.Element | null {
                       colors={colors}
                       fs={fs}
                       requested={requested[item.userId] === true}
-                      pending={connect.isPending}
+                      sending={connect.isPending && connect.variables === item.userId}
                       onConnect={() => connect.mutate(item.userId)}
                     />
                   ))}
@@ -398,7 +436,7 @@ export function SocialPanel(): React.JSX.Element | null {
                 colors={colors}
                 fs={fs}
                 requested={requested[item.userId] === true}
-                pending={connect.isPending}
+                sending={connect.isPending && connect.variables === item.userId}
                 onConnect={() => connect.mutate(item.userId)}
               />
             ))
@@ -432,21 +470,37 @@ export function SocialPanel(): React.JSX.Element | null {
               </View>
               <Pressable
                 onPress={() => decline.mutate(item.peerId)}
-                disabled={busy}
+                disabled={answering(item.peerId) !== null}
                 accessibilityRole="button"
+                accessibilityState={{ busy: answering(item.peerId) === 'decline' }}
                 accessibilityLabel="Decline this request"
-                style={[styles.actionBtn, { borderColor: colors.border, opacity: busy ? 0.5 : 1 }]}
+                style={[
+                  styles.actionBtn,
+                  { borderColor: colors.border, opacity: answering(item.peerId) ? 0.5 : 1 },
+                ]}
               >
-                <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Decline</Text>
+                {answering(item.peerId) === 'decline' ? (
+                  <ActivityIndicator size="small" color={colors.subtext} />
+                ) : (
+                  <Text style={{ color: colors.subtext, fontSize: fs(13) }}>Decline</Text>
+                )}
               </Pressable>
               <Pressable
                 onPress={() => accept.mutate(item.peerId)}
-                disabled={busy}
+                disabled={answering(item.peerId) !== null}
                 accessibilityRole="button"
+                accessibilityState={{ busy: answering(item.peerId) === 'accept' }}
                 accessibilityLabel="Accept this request"
-                style={[styles.actionBtn, { borderColor: colors.tint as string, opacity: busy ? 0.5 : 1 }]}
+                style={[
+                  styles.actionBtn,
+                  { borderColor: colors.tint as string, opacity: answering(item.peerId) ? 0.5 : 1 },
+                ]}
               >
-                <Text style={{ color: colors.tint, fontSize: fs(13), fontWeight: '600' }}>Accept</Text>
+                {answering(item.peerId) === 'accept' ? (
+                  <ActivityIndicator size="small" color={colors.tint} />
+                ) : (
+                  <Text style={{ color: colors.tint, fontSize: fs(13), fontWeight: '600' }}>Accept</Text>
+                )}
               </Pressable>
             </View>
           ))
@@ -507,7 +561,18 @@ const styles = StyleSheet.create({
   },
   avatar: { width: 36, height: 36, borderRadius: 18 },
   avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  actionBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  actionBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    // Holds its size when the label swaps for a spinner, so the row cannot
+    // reflow under the finger that just tapped it.
+    minWidth: 86,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 })
 
 export default SocialPanel

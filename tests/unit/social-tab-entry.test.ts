@@ -279,3 +279,37 @@ describe('COS-1125 — regional suggestions, and the consent that guards them', 
     assert.doesNotMatch(panel, /regionCode/);
   });
 });
+
+describe('COS-1128 — in-flight state belongs to the row that owns it', () => {
+  const panel = readFileSync(
+    new URL('../../components/social/SocialPanel.tsx', import.meta.url),
+    'utf8',
+  );
+
+  test('THE POINT: a spinner shows on the row being sent, not on all of them', () => {
+    // `connect.isPending` alone is true for EVERY row while any one request is
+    // in flight, so tapping Connect on one person greyed out the whole list and
+    // gave no sign which one was working. The mutation's `variables` carries
+    // the id being sent, so the state can be attributed to its own row.
+    assert.match(panel, /connect\.isPending && connect\.variables === item\.userId/);
+    assert.doesNotMatch(panel, /pending=\{connect\.isPending\}/);
+  });
+
+  test('Accept and Decline are attributed the same way', () => {
+    // Identical defect one tab over, and the next one the tester would hit.
+    assert.match(panel, /accept\.isPending && accept\.variables === peerId/);
+    assert.match(panel, /decline\.isPending && decline\.variables === peerId/);
+    assert.doesNotMatch(panel, /const busy = accept\.isPending \|\| decline\.isPending/);
+  });
+
+  test('the button holds its size when the label becomes a spinner', () => {
+    // A control that changes width under the finger that just tapped it reads
+    // as a glitch even when the outcome is correct.
+    assert.match(panel, /minWidth: 86/);
+    assert.match(panel, /<ActivityIndicator size="small"/);
+  });
+
+  test('busy is announced to screen readers, not just drawn', () => {
+    assert.match(panel, /accessibilityState=\{\{ disabled: requested \|\| sending, busy: sending \}\}/);
+  });
+});
