@@ -96,3 +96,13 @@ test('an empty sub-category distinguishes filtered-out from genuinely empty', ()
   assert.match(MODAL, /const hiddenByFilter =/);
   assert.match(MODAL, /Show everyone/);
 });
+
+test('no code path filters the always-empty category.doctors array', () => {
+  // category.doctors is hard-coded [] at construction — every provider lives
+  // in a sub-category. Two call sites read it: the banner (fixed) and the
+  // no-subcategory fallback branch, which filtered [] and therefore always
+  // rendered "No providers in this category". Rarely reached, which is exactly
+  // why it could sit wrong.
+  assert.doesNotMatch(MODAL, /filterProvidersByLastVisited\(category\.doctors\)/);
+  assert.doesNotMatch(MODAL, /category\.doctors\.length === 0/);
+});

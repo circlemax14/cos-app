@@ -1334,7 +1334,21 @@ export default function ModalScreen() {
                           />
                         </View>
                         {(() => {
-                          let filteredDoctors = filterProvidersByLastVisited(category.doctors);
+                          /*
+                           * COS-1121 — read the providers the category ACTUALLY
+                           * holds. `category.doctors` is hard-coded `[]` at
+                           * construction (every provider lives in a
+                           * sub-category), so this branch filtered an empty
+                           * array and rendered "No providers in this category"
+                           * unconditionally, whatever the patient had.
+                           *
+                           * It is the fallback branch for a category with no
+                           * sub-categories, so it is rarely reached today —
+                           * which is exactly why it could sit wrong. Same
+                           * always-empty source as the banner above it.
+                           */
+                          const categoryProviders = providersInCategory(category);
+                          let filteredDoctors = filterProvidersByLastVisited(categoryProviders);
                           // Filter providers based on search query
                           if (providerSearchQuery.trim()) {
                             const query = providerSearchQuery.toLowerCase().trim();
@@ -1347,7 +1361,7 @@ export default function ModalScreen() {
                           return filteredDoctors.length === 0 ? (
                             <View style={styles.emptyDepartmentContainer}>
                               <Text style={[styles.emptyText, { color: colors.text, fontSize: getScaledFontSize(14), fontWeight: getScaledFontWeight(500) as any }]}>
-                                {category.doctors.length === 0 ? 'No providers in this category' : 'No providers match your search'}
+                                {categoryProviders.length === 0 ? 'No providers in this category' : 'No providers match your search'}
                               </Text>
                             </View>
                           ) : (
