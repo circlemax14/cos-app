@@ -20,17 +20,23 @@
  * flags… I think it should not be a page, I think it should be an icon." So
  * this opens a sheet, not a sixth tab.
  *
- * ─── ONE DEVIATION FROM THE MOCK-UP, STATED PLAINLY ──────────────────
+ * ─── THE CAPTION IS KEN'S, VERBATIM ──────────────────────────────────
  *
- * His mock-up captions the icon "CRITICAL HEALTH ALERTS" in every state. Over a
- * green mark that is a contradiction, so the caption reads "HEALTH ALERTS"
- * normally and becomes "CRITICAL HEALTH ALERTS" only when something critical is
- * actually firing — which is the state his label describes.
+ * COS-1123 — "CRITICAL HEALTH ALERTS" in every state, exactly as his mock-up
+ * captions it. Vishal, 2026-09-25: "let's call the alert CRITICAL HEALTH
+ * ALERT — go to the above message from Ken."
  *
- * A second, smaller line always carries the state in words. Colour alone fails
- * older patients, glare and colour-blindness, and this is the last surface in
- * the app where that would be acceptable: a patient who cannot separate amber
- * from green would otherwise be told nothing at all.
+ * I had made it conditional, on the reasoning that the word "CRITICAL" over a
+ * green mark contradicts itself. That was raised and overruled, and the
+ * objection is weaker than it first looks: the caption NAMES the instrument,
+ * it does not report a reading. A defibrillator cabinet is labelled for the
+ * emergency it exists to serve, not for the state of the room.
+ *
+ * What carries the state is the smaller line below, which always spells it out
+ * in words. That line is not optional: colour alone fails older patients,
+ * glare and colour-blindness, and this is the last surface in the app where
+ * that would be acceptable — a patient who cannot separate amber from green
+ * would otherwise be told nothing at all.
  *
  * ─── THE GREY STATE ──────────────────────────────────────────────────
  *
@@ -81,7 +87,7 @@ export function HealthAlertBadge({
   const tint = isLoading ? ALERT_COLOR_UNKNOWN : alertColor(level)
   const flashing = !isLoading && alertShouldFlash(level)
   const state = isLoading ? 'Checking…' : alertWord(level)
-  const caption = !isLoading && level === 'critical' ? 'CRITICAL HEALTH ALERTS' : 'HEALTH ALERTS'
+  const caption = 'CRITICAL HEALTH ALERTS'
 
   return (
     <Pressable

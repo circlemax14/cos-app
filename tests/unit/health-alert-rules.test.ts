@@ -224,10 +224,19 @@ test('only red flashes, and it never fades to invisible', () => {
   assert.match(BADGE, /flashing=\{flashing\}/);
 });
 
-test('the caption only claims CRITICAL when something critical is firing', () => {
-  // Ken's mock-up captions it "CRITICAL HEALTH ALERTS" in every state; over a
-  // green mark that is a contradiction.
-  assert.match(BADGE, /level === 'critical' \? 'CRITICAL HEALTH ALERTS' : 'HEALTH ALERTS'/);
+test("COS-1123: the caption is Ken's label in EVERY state", () => {
+  // I had made this conditional so the word "CRITICAL" never sat over a green
+  // mark. Overruled by Vishal, 2026-09-25, and the objection was weaker than it
+  // looked: the caption names the instrument, it does not report a reading.
+  assert.match(BADGE, /const caption = 'CRITICAL HEALTH ALERTS'/);
+  assert.doesNotMatch(BADGE, /\? 'CRITICAL HEALTH ALERTS' :/);
+});
+
+test('the state is still carried in WORDS, not by the caption or colour alone', () => {
+  // With a fixed caption, the small line below is the only textual signal of
+  // level. Losing it would leave colour as the sole carrier, which fails older
+  // patients, glare and colour-blindness.
+  assert.match(BADGE, /alertWord\(level\)/);
 });
 
 // ─── COS-1118 — placement ────────────────────────────────────────────────
