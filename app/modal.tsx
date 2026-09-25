@@ -6,7 +6,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { router } from 'expo-router';
 import { dismissTo } from '@/lib/dismiss-to';
-import { FindPeopleEntry } from '@/components/social/FindPeopleEntry';
+import { SocialPanel } from '@/components/social/SocialPanel';
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View , ActivityIndicator as RNActivityIndicator, Alert } from 'react-native';
 import { Button, Menu, Portal, Text, TextInput as PaperTextInput } from 'react-native-paper';
@@ -930,7 +930,7 @@ export default function ModalScreen() {
                       crashes the native snapshot on iOS 26, which is why this
                       wrapper exists rather than two siblings.
 
-                      FindPeopleEntry is hoisted ABOVE the ternary because it
+                      SocialPanel is hoisted ABOVE the ternary because it
                       used to sit only in the else branch, and that branch never
                       ran for Social. `showEmptyNonMedical` is true whenever a
                       non-medical category has no rows, and Social can never
@@ -943,7 +943,7 @@ export default function ModalScreen() {
                       which a patient most needs it.
                     */}
                     <View style={{ flex: 1 }}>
-                    {category.id === 'social' && <FindPeopleEntry />}
+                    {category.id === 'social' && <SocialPanel />}
                     {showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={styles.addMemberContainer}>
@@ -1144,7 +1144,18 @@ export default function ModalScreen() {
                             const hiddenByFilter =
                               subCategory.doctors.length + manualProviders.length -
                               combinedProviders.length;
-                            const canAddMember = category.id !== 'medical';
+                            /*
+                             * COS-1124 — Social does its own thing now.
+                             *
+                             * Vishal: "add member is not required, you can
+                             * remove it." SocialPanel above is how you add
+                             * someone here — you find them and send a request,
+                             * which is a different act from typing a name into
+                             * a list. Two ways to "add" on one tab, meaning
+                             * different things, is the confusion.
+                             */
+                            const canAddMember =
+                              category.id !== 'medical' && category.id !== 'social';
                             const isFormOpen = openManualFormKey === subCategoryKey;
                             const manualSubCategoryLabel = manualSubCategoryId
                               ? availableSubCategories.find(sub => sub.id === manualSubCategoryId)?.name
