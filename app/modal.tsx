@@ -943,8 +943,21 @@ export default function ModalScreen() {
                       which a patient most needs it.
                     */}
                     <View style={{ flex: 1 }}>
-                    {category.id === 'social' && <SocialPanel />}
-                    {showEmptyNonMedical ? (
+                    {/*
+                      COS-1126 — Social is SocialPanel and nothing else.
+                      Vishal: "still add member button is coming, please remove
+                      this one, that flow is not required — even when I click on
+                      it there is a form opening, name relationship phone email,
+                      please remove that one."
+
+                      The panel already covers adding someone here: you find
+                      them and send a request, and they accept. A form that
+                      types a name into a private list is a different act with
+                      the same word on it, which is the confusion.
+                    */}
+                    {category.id === 'social' ? (
+                      <SocialPanel />
+                    ) : showEmptyNonMedical ? (
                       <ScrollView contentContainerStyle={styles.cardsContainer}>
                         <View style={styles.addMemberContainer}>
                           {openManualFormKey === emptyFormKey ? (
