@@ -155,3 +155,27 @@ test('one unusable reading among good ones does not drag the roll-up to unknown'
   assert.equal(r.level, 'none');
   assert.equal(r.measuredCount, 1);
 });
+
+// ─── COS-1115 — the badge must never be invisible ────────────────────────
+import { readFileSync } from 'node:fs';
+
+const BADGE = readFileSync(
+  new URL('../../components/health-summary/HealthAlertBadge.tsx', import.meta.url),
+  'utf8',
+);
+
+test('THE POINT: the badge has no early return null — absence must be unambiguous', () => {
+  // It returned null while loading. A component that renders nothing on a
+  // state it reaches normally cannot be tested from the outside: "I don't see
+  // it" is then indistinguishable from a stale build, a flag being off, or a
+  // crash. Grey "Checking…" is a state you can point at.
+  assert.doesNotMatch(BADGE, /if \(isLoading\) return null/);
+  assert.match(BADGE, /React\.JSX\.Element \{/, 'return type must not admit null');
+});
+
+test('loading is never rendered as green', () => {
+  // The one transition worth preventing is a reassuring green that becomes red
+  // a second later.
+  assert.match(BADGE, /isLoading \? ALERT_COLOR_UNKNOWN : alertColor\(level\)/);
+  assert.match(BADGE, /!isLoading && alertShouldFlash\(level\)/);
+});
