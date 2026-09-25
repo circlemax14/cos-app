@@ -222,3 +222,30 @@ test('the caption only claims CRITICAL when something critical is firing', () =>
   // green mark that is a contradiction.
   assert.match(BADGE, /level === 'critical' \? 'CRITICAL HEALTH ALERTS' : 'HEALTH ALERTS'/);
 });
+
+// ─── COS-1118 — placement ────────────────────────────────────────────────
+const SCREEN = readFileSync(
+  new URL('../../app/Home/health-alerts.tsx', import.meta.url),
+  'utf8',
+);
+const PLAN = readFileSync(new URL('../../app/Home/plan.tsx', import.meta.url), 'utf8');
+
+test('THE POINT: the title is centred by a MIRRORED spacer, not by the leftover space', () => {
+  // With only a back button and a flex:1 title, the title centres in what is
+  // left beside the arrow — visibly right of the screen's centre. A spacer of
+  // the same width on the right is what actually centres it.
+  const slots = SCREEN.match(/style=\{styles\.navSlot\}/g) ?? [];
+  assert.equal(slots.length, 2, 'back button and its mirror must both use navSlot');
+  assert.match(SCREEN, /navSlot: \{\s*width: NAV_SLOT/);
+});
+
+test('the emblem sits on the Health Status title line, absolutely positioned', () => {
+  // Laying them out as a row would centre the PAIR and shove the title left by
+  // half the badge width — so the heading would move when a flag flips.
+  assert.match(PLAN, /alertCorner: \{\s*position: 'absolute'/);
+  assert.match(PLAN, /<View style=\{styles\.titleRow\}>/);
+});
+
+test('the detail screen shows the same emblem as the badge', () => {
+  assert.match(SCREEN, /MedicalAlertIcon/);
+});
