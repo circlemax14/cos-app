@@ -52,10 +52,12 @@ import {
   acceptConnection,
   declineConnection,
   fetchConnections,
-  fetchDiscoverability,
+  fetchSocialVisibility,
+  fetchSuggestions,
   requestConnection,
   searchDirectory,
   setDiscoverability,
+  setRegionSuggestions,
   type Connection,
   type DirectoryEntry,
 } from '@/services/api/conversations'
@@ -68,6 +70,53 @@ import { useCanShowScreen } from '@/hooks/use-feature-permissions'
 const MIN_QUERY = 2
 
 type Mode = 'find' | 'requests'
+
+/** One person, in search results or in suggestions — identical either way, so
+ *  a suggestion can never be made to look more endorsed than a search hit. */
+function PersonRow({
+  item,
+  colors,
+  fs,
+  requested,
+  pending,
+  onConnect,
+}: {
+  item: DirectoryEntry
+  colors: (typeof Colors)['light']
+  fs: (n: number) => number
+  requested: boolean
+  pending: boolean
+  onConnect: () => void
+}): React.JSX.Element {
+  return (
+    <View style={[styles.row, { borderColor: colors.border }]}>
+      {item.photoUrl ? (
+        <Image source={{ uri: item.photoUrl }} style={styles.avatar} />
+      ) : (
+        <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.border }]}>
+          <MaterialIcons name="person" size={fs(20)} color={colors.icon} />
+        </View>
+      )}
+      <Text
+        style={{ flex: 1, marginLeft: Spacing.sm, color: colors.text, fontSize: fs(15) }}
+        numberOfLines={1}
+      >
+        {item.displayName || 'Unnamed'}
+      </Text>
+      <Pressable
+        onPress={onConnect}
+        disabled={requested || pending}
+        accessibilityRole="button"
+        accessibilityLabel={`Send a request to ${item.displayName}`}
+        style={[styles.actionBtn, { borderColor: colors.border, opacity: requested ? 0.5 : 1 }]}
+      >
+        <Text style={{ color: colors.tint, fontSize: fs(13), fontWeight: '600' }}>
+          {requested ? 'Requested' : 'Connect'}
+        </Text>
+      </Pressable>
+    </View>
+  )
+}
 
 export function SocialPanel(): React.JSX.Element | null {
   const { settings, getScaledFontSize: fs, getScaledFontWeight: fw } = useAccessibility()
@@ -94,11 +143,24 @@ export function SocialPanel(): React.JSX.Element | null {
     staleTime: 15_000,
   })
 
-  const discoverableQ = useQuery({
-    queryKey: ['discoverability'],
-    queryFn: fetchDiscoverability,
+  const visibilityQ = useQuery({
+    queryKey: ['social-visibility'],
+    queryFn: fetchSocialVisibility,
     staleTime: 60_000,
     enabled: canFind,
+  })
+
+  /*
+   * COS-1125 — suggestions are people in your region who asked to be
+   * suggested. Fetched only while the search box is empty: the moment someone
+   * types, they have told us what they are looking for, and a "you may know"
+   * list underneath their own results is noise.
+   */
+  const suggestionsQ = useQuery({
+    queryKey: ['social-suggestions'],
+    queryFn: fetchSuggestions,
+    staleTime: 60_000,
+    enabled: canFind && visibilityQ.data?.suggestRegion === true,
   })
 
   const pendingQ = useQuery({
@@ -110,7 +172,15 @@ export function SocialPanel(): React.JSX.Element | null {
 
   const toggleDiscoverable = useMutation({
     mutationFn: (next: boolean) => setDiscoverability(next),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['discoverability'] }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['social-visibility'] }),
+  })
+
+  const toggleSuggest = useMutation({
+    mutationFn: (next: boolean) => setRegionSuggestions(next),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['social-visibility'] })
+      void qc.invalidateQueries({ queryKey: ['social-suggestions'] })
+    },
   })
 
   const connect = useMutation({
@@ -229,18 +299,89 @@ export function SocialPanel(): React.JSX.Element | null {
               </Text>
             </View>
             <Switch
-              value={discoverableQ.data === true}
+              value={visibilityQ.data?.discoverable === true}
               onValueChange={(v) => toggleDiscoverable.mutate(v)}
-              disabled={discoverableQ.isLoading || toggleDiscoverable.isPending}
+              disabled={visibilityQ.isLoading || toggleDiscoverable.isPending}
               accessibilityLabel="Let others find me"
             />
           </View>
 
+          {/*
+            COS-1125 — the SECOND consent, and it is deliberately its own
+            switch. Being findable if someone types your name, and being
+            offered to strangers nearby, are different disclosures; the first
+            must never quietly imply the second.
+
+            It is unavailable rather than hidden when we hold no region: a
+            control that vanishes reads as a bug, and the reason is worth
+            saying.
+          */}
+          <View style={[styles.switchRow, { borderColor: colors.border }]}>
+            <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+              <Text style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as TextStyle['fontWeight'] }}>
+                Suggest me to people in my area
+              </Text>
+              <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2 }}>
+                {visibilityQ.data && !visibilityQ.data.hasRegion
+                  ? 'We do not have an area on file for you yet, so this is unavailable.'
+                  : visibilityQ.data?.discoverable === false
+                    ? 'Turn on “Let others find me” first.'
+                    : 'You will see people near you, and they will see you. Only your state is used — never your address.'}
+              </Text>
+            </View>
+            <Switch
+              value={visibilityQ.data?.suggestRegion === true}
+              onValueChange={(v) => toggleSuggest.mutate(v)}
+              disabled={
+                visibilityQ.isLoading ||
+                toggleSuggest.isPending ||
+                visibilityQ.data?.hasRegion !== true ||
+                visibilityQ.data?.discoverable !== true
+              }
+              accessibilityLabel="Suggest me to people in my area"
+            />
+          </View>
+
           {trimmed.length < MIN_QUERY ? (
-            <Text style={[styles.hint, { color: colors.subtext, fontSize: fs(13) }]}>
-              Type a name to search. Only people who have turned on “Let others find me”
-              appear here.
-            </Text>
+            <>
+              <Text style={[styles.hint, { color: colors.subtext, fontSize: fs(13) }]}>
+                Type a name to search. Only people who have turned on “Let others find me”
+                appear here.
+              </Text>
+              {/*
+                Suggestions sit BELOW the prompt, and only while the box is
+                empty. The moment someone types they have said what they are
+                looking for, and a "you may know" list under their own results
+                is noise.
+              */}
+              {visibilityQ.data?.suggestRegion === true && (suggestionsQ.data?.length ?? 0) > 0 && (
+                <>
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: fs(13),
+                      fontWeight: fw(700) as TextStyle['fontWeight'],
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.3,
+                      marginTop: Spacing.sm,
+                    }}
+                  >
+                    People in your area
+                  </Text>
+                  {(suggestionsQ.data ?? []).map((item: DirectoryEntry) => (
+                    <PersonRow
+                      key={`sug-${item.userId}`}
+                      item={item}
+                      colors={colors}
+                      fs={fs}
+                      requested={requested[item.userId] === true}
+                      pending={connect.isPending}
+                      onConnect={() => connect.mutate(item.userId)}
+                    />
+                  ))}
+                </>
+              )}
+            </>
           ) : resultsQ.isLoading ? (
             <ActivityIndicator style={{ marginTop: Spacing.md }} color={colors.tint} />
           ) : (resultsQ.data?.length ?? 0) === 0 ? (
@@ -249,32 +390,15 @@ export function SocialPanel(): React.JSX.Element | null {
             </Text>
           ) : (
             (resultsQ.data ?? []).map((item: DirectoryEntry) => (
-              <View key={item.userId} style={[styles.row, { borderColor: colors.border }]}>
-                {item.photoUrl ? (
-                  <Image source={{ uri: item.photoUrl }} style={styles.avatar} />
-                ) : (
-                  <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.border }]}>
-                    <MaterialIcons name="person" size={fs(20)} color={colors.icon} />
-                  </View>
-                )}
-                <Text
-                  style={{ flex: 1, marginLeft: Spacing.sm, color: colors.text, fontSize: fs(15) }}
-                  numberOfLines={1}
-                >
-                  {item.displayName || 'Unnamed'}
-                </Text>
-                <Pressable
-                  onPress={() => connect.mutate(item.userId)}
-                  disabled={requested[item.userId] === true || connect.isPending}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Send a request to ${item.displayName}`}
-                  style={[styles.actionBtn, { borderColor: colors.border, opacity: requested[item.userId] ? 0.5 : 1 }]}
-                >
-                  <Text style={{ color: colors.tint, fontSize: fs(13), fontWeight: '600' }}>
-                    {requested[item.userId] ? 'Requested' : 'Connect'}
-                  </Text>
-                </Pressable>
-              </View>
+              <PersonRow
+                key={item.userId}
+                item={item}
+                colors={colors}
+                fs={fs}
+                requested={requested[item.userId] === true}
+                pending={connect.isPending}
+                onConnect={() => connect.mutate(item.userId)}
+              />
             ))
           )}
         </>
