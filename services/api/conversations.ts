@@ -106,6 +106,51 @@ export async function markConversationRead(conversationId: string): Promise<void
 // ── social ───────────────────────────────────────────────────────────
 
 /** Am I findable in the directory? */
+/**
+ * COS-1125 — both social consents, plus whether a region is on file.
+ *
+ * `hasRegion` says only WHETHER we hold one, never which. The screen needs it
+ * to explain why the suggestions switch is unavailable; the value itself is
+ * what the feature exists to protect.
+ */
+export interface SocialVisibility {
+  discoverable: boolean;
+  suggestRegion: boolean;
+  hasRegion: boolean;
+}
+
+export async function fetchSocialVisibility(): Promise<SocialVisibility> {
+  const res = await apiClient.get<{ data: SocialVisibility }>(
+    '/v1/patients/me/social/discoverability',
+  );
+  const d = res.data.data;
+  return {
+    discoverable: d?.discoverable === true,
+    suggestRegion: d?.suggestRegion === true,
+    hasRegion: d?.hasRegion === true,
+  };
+}
+
+/** Turn regional suggestions on or off. Throws with NO_REGION_ON_FILE when we
+ *  hold no address to match against. */
+export async function setRegionSuggestions(on: boolean): Promise<void> {
+  await apiClient.put('/v1/patients/me/social/suggest-region', { suggestRegion: on });
+}
+
+/** People near me who asked to be suggested. [] is a normal answer. */
+export async function fetchSuggestions(): Promise<DirectoryEntry[]> {
+  try {
+    const res = await apiClient.get<{ data: { results: DirectoryEntry[] } }>(
+      '/v1/patients/me/social/suggestions',
+    );
+    return res.data.data.results ?? [];
+  } catch {
+    // Suggestions are an extra, never the point of the screen — a failure here
+    // must not take the search down with it.
+    return [];
+  }
+}
+
 export async function fetchDiscoverability(): Promise<boolean> {
   const res = await apiClient.get<{ data: { discoverable: boolean } }>(
     '/v1/patients/me/social/discoverability',

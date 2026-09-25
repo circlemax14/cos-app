@@ -227,3 +227,48 @@ describe('COS-1064 — the Social entry is gated by the plan', () => {
     assert.match(entryCode, /import \{ useCanShowScreen \} from '@\/hooks\/use-feature-permissions'/);
   });
 });
+
+describe('COS-1125 — regional suggestions, and the consent that guards them', () => {
+  const panel = readFileSync(
+    new URL('../../components/social/SocialPanel.tsx', import.meta.url),
+    'utf8',
+  );
+
+  test('THE POINT: suggestions are their own consent, never implied by search', () => {
+    // Being findable if someone types your name, and being offered to
+    // strangers nearby, are different disclosures. The switch is separate and
+    // additionally requires `discoverable` — you cannot be suggested while
+    // hidden.
+    assert.match(panel, /Suggest me to people in my area/);
+    assert.match(panel, /visibilityQ\.data\?\.discoverable !== true/);
+  });
+
+  test('the switch is DISABLED with a reason, not hidden, when we hold no area', () => {
+    // A control that vanishes reads as a bug; the reason is worth saying.
+    assert.match(panel, /visibilityQ\.data\?\.hasRegion !== true/);
+    assert.match(panel, /do not have an area on file/);
+  });
+
+  test('suggestions show only while the search box is empty', () => {
+    // Once someone types they have said what they want; a "you may know" list
+    // under their own results is noise.
+    const sugAt = panel.indexOf('People in your area');
+    const minAt = panel.indexOf('trimmed.length < MIN_QUERY');
+    const elseAt = panel.indexOf('resultsQ.isLoading ?');
+    assert.ok(minAt > -1 && sugAt > minAt && sugAt < elseAt,
+      'the suggestions block must sit inside the below-minimum branch');
+  });
+
+  test('a suggestion renders identically to a search hit', () => {
+    // Same component for both, so a suggestion can never be made to look more
+    // endorsed than something the patient searched for themselves.
+    const rows = panel.match(/<PersonRow/g) ?? [];
+    assert.equal(rows.length, 2, 'search results and suggestions must share one row component');
+  });
+
+  test('the panel never names a region', () => {
+    // The screen says "in your area" and is told no more — the region code is
+    // the thing the feature exists to protect.
+    assert.doesNotMatch(panel, /regionCode/);
+  });
+});
