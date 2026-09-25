@@ -167,7 +167,7 @@ export default function HealthAlertsScreen(): React.JSX.Element {
           accessibilityRole="header"
           numberOfLines={1}
         >
-          Health Alerts
+          Critical Health Alerts
         </Text>
         {/* Mirrors the back button so the title centres on the SCREEN — and
             carries Ken's "i". */}
