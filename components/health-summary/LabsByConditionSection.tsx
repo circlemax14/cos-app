@@ -94,11 +94,22 @@ function flattenAndRank(
       flat.push({ ...r, reportDate: report.date, reportId: report.id });
     });
   });
+  /*
+   * COS-1136 — newest first, flagged only as the tiebreak.
+   *
+   * This sorted flagged-first, so a flagged result from 2023 sat above an
+   * in-range one from last month and read as the patient's current state. Ken
+   * screenshotted exactly that. A flag is worth surfacing, but not at the cost
+   * of claiming an old number is the latest one — and a flag that has since
+   * been re-tested and come back normal is the most misleading row on the
+   * screen.
+   */
   return flat.sort((a, b) => {
+    const byDate = (b.reportDate ?? '').localeCompare(a.reportDate ?? '');
+    if (byDate !== 0) return byDate;
     const af = isFlagged(a) ? 1 : 0;
     const bf = isFlagged(b) ? 1 : 0;
-    if (af !== bf) return bf - af;
-    return (b.reportDate ?? '').localeCompare(a.reportDate ?? '');
+    return bf - af;
   });
 }
 
@@ -186,7 +197,10 @@ function LabsByConditionSection() {
       const list = perCondition.get(c) ?? [];
       if (list.length > 0) out.push({ label: c, list });
     });
-    if (other.length > 0) out.push({ label: 'Other recent labs', list: other });
+    // COS-1136 — "Other labs", not "Other recent labs". This bucket is what
+    // matched no condition; recency has never had anything to do with which
+    // results land in it.
+    if (other.length > 0) out.push({ label: 'Other labs', list: other });
     return out;
   }, [bounded, conditions]);
 
