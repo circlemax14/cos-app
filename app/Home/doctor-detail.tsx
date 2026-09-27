@@ -196,9 +196,9 @@ export default function DoctorDetailScreen() {
     }
   }, [providerId, activeTab, isLoadingData, loadAiInsight]);
 
-  // Lazy-load the AI progress-notes narrative when the user lands on
-  // the Progress Notes tab. Cached server-side for 7 days, so subsequent
-  // tab visits return instantly with fromCache=true.
+  // Lazy-load the provider-focus narrative when the user lands on the
+  // Conditions tab (COS-1140 moved it there from Notes). Cached server-side
+  // for 7 days, so subsequent tab visits return instantly with fromCache=true.
   const loadAiProgressNotes = useCallback(
     async (refresh = false) => {
       if (!providerId) return;
@@ -216,8 +216,14 @@ export default function DoctorDetailScreen() {
     [providerId],
   );
 
+  /*
+   * COS-1140 — fetched for the tab that now RENDERS it, which is Conditions.
+   * Left pointing at 'progress' this would only load once the patient visited
+   * a tab the summary is no longer on, so opening straight to Conditions —
+   * the thing Ken asked for — would show the empty state forever.
+   */
   useEffect(() => {
-    if (!providerId || activeTab !== 'progress') return;
+    if (!providerId || activeTab !== 'treatment') return;
     if (aiProgressNotes || aiProgressLoading) return;
     loadAiProgressNotes();
   }, [providerId, activeTab, aiProgressNotes, aiProgressLoading, loadAiProgressNotes]);
@@ -882,6 +888,8 @@ export default function DoctorDetailScreen() {
               moved up. Nothing new was built — the thing he asked for existed
               and could not be seen.
             */}
+            {renderProviderFocusSummary()}
+
             <WhatChangedCard
               state={insightFor('treatment')}
               colors={colors}
@@ -1016,6 +1024,105 @@ export default function DoctorDetailScreen() {
   // narrative from /v1/patients/me/providers/:id/progress-notes, preceded
   // by structured DiagnosticReport cards so users can audit the source
   // clinical documents (SCRUM-187).
+  /*
+   * COS-1140 — the provider's focus, at the top of Conditions.
+   *
+   * Ken, 2026-09-26: "This AI summary at the bottom of the notes page should
+   * be the first thing you open to on the conditions page. The notes can stand
+   * alone but the conditions page should have a summary of what the provider's
+   * focus has been the past year or two."
+   *
+   * It was at the BOTTOM of Notes, under every lab report card, which on a
+   * provider with a long record is several screens down. Moved rather than
+   * copied: Ken was explicit that Notes stands alone, and two copies of a
+   * cached narrative is two places for it to disagree with itself.
+   *
+   * It does NOT replace "What changed" below it. That card is recent deltas;
+   * this is the longitudinal read Ken asked for — "the past year or two" — and
+   * they answer different questions. This one leads because it is the one he
+   * wants to open to.
+   */
+  const renderProviderFocusSummary = () => (
+        <Card style={[styles.progressNoteCard, { backgroundColor: colors.card }]}>
+          <Card.Content>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color={colors.tint} />
+              <Text
+                style={{
+                  flex: 1,
+                  color: colors.text,
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(700) as any,
+                }}
+              >
+                AI summary
+              </Text>
+              <TouchableOpacity
+                onPress={() => loadAiProgressNotes(true)}
+                disabled={aiProgressLoading}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Text
+                  style={{
+                    color: aiProgressLoading ? colors.subtext : colors.tint,
+                    fontSize: getScaledFontSize(12),
+                    fontWeight: getScaledFontWeight(600) as any,
+                  }}
+                >
+                  {aiProgressLoading ? 'Refreshing…' : 'Refresh'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {aiProgressLoading && !aiProgressNotes ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 }}>
+                <ActivityIndicator size="small" color={colors.tint} />
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                  Generating progress notes…
+                </Text>
+              </View>
+            ) : aiProgressError ? (
+              <View>
+                <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(13), marginBottom: 6 }}>
+                  Couldn&apos;t generate progress notes. Tap Refresh to try again.
+                </Text>
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
+                  {aiProgressError}
+                </Text>
+              </View>
+            ) : aiProgressNotes && aiProgressNotes.narrative ? (
+              <>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: getScaledFontSize(14),
+                    lineHeight: getScaledFontSize(22),
+                    fontWeight: getScaledFontWeight(400) as any,
+                  }}
+                >
+                  {aiProgressNotes.narrative}
+                </Text>
+                <Text
+                  style={{
+                    marginTop: 10,
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(400) as any,
+                  }}
+                >
+                  Generated {new Date(aiProgressNotes.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  {aiProgressNotes.fromCache ? ' · cached' : ''}
+                </Text>
+                <AICitationsFooter compact />
+              </>
+            ) : (
+              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
+                No progress notes yet for this provider.
+              </Text>
+            )}
+          </Card.Content>
+        </Card>
+  );
+
   const renderProgressNotes = () => {
     /*
      * COS-1131 — "notes will have visits with notes" (Ken).
@@ -1114,84 +1221,6 @@ export default function DoctorDetailScreen() {
           </Text>
         ) : null}
 
-        <Card style={[styles.progressNoteCard, { backgroundColor: colors.card }]}>
-          <Card.Content>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <MaterialIcons name="auto-awesome" size={getScaledFontSize(18)} color={colors.tint} />
-              <Text
-                style={{
-                  flex: 1,
-                  color: colors.text,
-                  fontSize: getScaledFontSize(15),
-                  fontWeight: getScaledFontWeight(700) as any,
-                }}
-              >
-                AI summary
-              </Text>
-              <TouchableOpacity
-                onPress={() => loadAiProgressNotes(true)}
-                disabled={aiProgressLoading}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <Text
-                  style={{
-                    color: aiProgressLoading ? colors.subtext : colors.tint,
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(600) as any,
-                  }}
-                >
-                  {aiProgressLoading ? 'Refreshing…' : 'Refresh'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {aiProgressLoading && !aiProgressNotes ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 }}>
-                <ActivityIndicator size="small" color={colors.tint} />
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
-                  Generating progress notes…
-                </Text>
-              </View>
-            ) : aiProgressError ? (
-              <View>
-                <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(13), marginBottom: 6 }}>
-                  Couldn&apos;t generate progress notes. Tap Refresh to try again.
-                </Text>
-                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11) }}>
-                  {aiProgressError}
-                </Text>
-              </View>
-            ) : aiProgressNotes && aiProgressNotes.narrative ? (
-              <>
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontSize: getScaledFontSize(14),
-                    lineHeight: getScaledFontSize(22),
-                    fontWeight: getScaledFontWeight(400) as any,
-                  }}
-                >
-                  {aiProgressNotes.narrative}
-                </Text>
-                <Text
-                  style={{
-                    marginTop: 10,
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(11),
-                    fontWeight: getScaledFontWeight(400) as any,
-                  }}
-                >
-                  Generated {new Date(aiProgressNotes.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                  {aiProgressNotes.fromCache ? ' · cached' : ''}
-                </Text>
-                <AICitationsFooter compact />
-              </>
-            ) : (
-              <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>
-                No progress notes yet for this provider.
-              </Text>
-            )}
-          </Card.Content>
-        </Card>
       </ScrollView>
     );
   };
