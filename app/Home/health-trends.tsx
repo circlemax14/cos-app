@@ -217,6 +217,19 @@ export default function HealthTrendsScreen() {
     error: false,
   })
 
+  /*
+   * COS-1139 — Ken: "Would be great to be able to integrate AI summary and BPS
+   * summary in download for sharing as well."
+   *
+   * SummarizeCard keeps its own state so the rest of the screen does not
+   * re-render while Bedrock is working (SCRUM-279). That is still true; this
+   * only mirrors the RESULT up so the download can include it. If the patient
+   * has not tapped Summarize, the download fetches one itself rather than
+   * shipping a file with a hole in it — a document you hand to a doctor should
+   * not silently omit the part that explains the numbers.
+   */
+  const [sharedSummary, setSharedSummary] = useState<TrendsSummary | null>(null)
+
   const biometricDigest = useMemo(() => {
     const bySystem = new Map<string, string[]>()
     for (const group of groupTrendsByBodySystem(appleHealthTrends)) {
@@ -263,7 +276,16 @@ export default function HealthTrendsScreen() {
       return
     }
     try {
-      const csv = buildTrendsCsv(allVisible)
+      /*
+       * Use what is already on screen; fetch only when it is missing. A
+       * download must not quietly cost a Bedrock call the patient did not ask
+       * for, and must not quietly omit the narrative either.
+       */
+      const ai = sharedSummary ?? (await fetchTrendsSummary().catch(() => null))
+      const csv = buildTrendsCsv(allVisible, {
+        ai,
+        bps: trendSummary.error || trendSummary.loading ? '' : trendSummary.summary,
+      })
       const filename = `trends-${todayLocalIso()}.csv`
       const path = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${filename}`
       await FileSystem.writeAsStringAsync(path, csv, {
@@ -280,7 +302,7 @@ export default function HealthTrendsScreen() {
       const msg = e instanceof Error ? e.message : 'Failed to export trends.'
       Alert.alert('Download failed', msg)
     }
-  }, [appleHealthTrends, clinicSliderTrends])
+  }, [appleHealthTrends, clinicSliderTrends, sharedSummary, trendSummary])
 
   if (isLoading) {
     return (
@@ -352,7 +374,7 @@ export default function HealthTrendsScreen() {
           testID="trend-source-bar"
         />
 
-        <SummarizeCard />
+        <SummarizeCard onLoaded={setSharedSummary} />
 
         {/* Time period filter chips */}
         {canFilterMetric && (
@@ -1123,11 +1145,68 @@ function formatRowDate(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function buildTrendsCsv(trends: LongitudinalTrend[]): string {
+/**
+ * COS-1139 — the download carries the narrative as well as the numbers.
+ *
+ * Ken: "Data download is useful. Would be great to be able to integrate AI
+ * summary and BPS summary in download for sharing as well."
+ *
+ * He is sharing this with clinicians, and a bare table of analyte values is
+ * the half of the picture a clinician can already get from the lab. The two
+ * summaries are the half that says what the platform made of it.
+ *
+ * Kept as ONE CSV rather than split into a document plus a table: a single
+ * file is a single thing to attach to a message, and both summaries survive
+ * as quoted single-column rows that open as readable text above the data in
+ * every spreadsheet app. Each is labelled and dated, and an absent one says
+ * so explicitly — "not generated" and "nothing to report" must not read the
+ * same on a page someone makes decisions from.
+ */
+function buildTrendsCsv(
+  trends: LongitudinalTrend[],
+  narrative?: { ai?: TrendsSummary | null; bps?: string },
+): string {
   const escape = (v: string | number | undefined | null): string => {
     if (v === undefined || v === null) return ''
     const s = String(v)
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  /* One CSV cell per line. Newlines inside a quoted field are legal CSV and
+     every spreadsheet handles them, but they make the preamble read as a
+     ragged block, so paragraphs become separate rows instead. */
+  const block = (title: string, body: string): string[] => {
+    const lines = body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    if (lines.length === 0) return []
+    return ['', escape(title), ...lines.map((l) => escape(l))]
+  }
+
+  const preamble: string[] = []
+  if (narrative) {
+    const { ai, bps } = narrative
+    if (ai) {
+      preamble.push(...block('SUMMARY', ai.summary))
+      if (ai.keyTakeaways.length > 0) {
+        preamble.push(...block('KEY TAKEAWAYS', ai.keyTakeaways.map((t) => `- ${t}`).join('\n')))
+      }
+      if (ai.nextSteps) preamble.push(...block('NEXT STEPS', ai.nextSteps))
+      preamble.push('', escape(`Summary generated ${new Date(ai.generatedAt).toLocaleString()}`))
+    } else {
+      preamble.push('', escape('SUMMARY'), escape('Not generated for this download.'))
+    }
+    if (bps) {
+      preamble.push(...block('YOUR HEALTH TRENDS (biological, psychological, social)', bps))
+    }
+    preamble.push(
+      '',
+      escape(
+        'AI-generated. Informational only — not a diagnosis or treatment plan. ' +
+          'Always consult your doctor before acting on this information.',
+      ),
+      '',
+    )
   }
   const header = [
     'Source',
@@ -1139,7 +1218,7 @@ function buildTrendsCsv(trends: LongitudinalTrend[]): string {
     'Normal High',
     'Interpretation',
   ].join(',')
-  const rows: string[] = [header]
+  const rows: string[] = [...preamble, header]
   for (const t of trends) {
     const source = t.source === 'apple-health' ? 'Apple Health' : 'Clinic'
     for (const p of t.dataPoints) {
@@ -1412,7 +1491,7 @@ const styles = StyleSheet.create({
  * key takeaways list, next-steps line. State stays in component so
  * the rest of the screen doesn't re-render while waiting.
  */
-function SummarizeCard() {
+function SummarizeCard({ onLoaded }: { onLoaded?: (s: TrendsSummary) => void }) {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const [summary, setSummary] = useState<TrendsSummary | null>(null)
@@ -1425,12 +1504,13 @@ function SummarizeCard() {
     try {
       const s = await fetchTrendsSummary()
       setSummary(s)
+      onLoaded?.(s)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate summary right now.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [onLoaded])
 
   return (
     <View style={[styles.summarizeCard, { backgroundColor: (colors.card as string) + 'D9', borderColor: colors.border }]}>
