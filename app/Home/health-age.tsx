@@ -629,7 +629,16 @@ function HeroTile({
     if (!newest) return null
     const d = new Date(newest)
     if (Number.isNaN(d.getTime())) return null
-    return `As of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+    /*
+     * COS-1144 — the YEAR is part of the date.
+     *
+     * This printed "As of Aug 2", which reads as a fortnight ago and can be
+     * fourteen months ago: the engine's lookback is 365 days, so any lab
+     * inside a year can land here and "Aug 2" is identical for 2026 and 2025.
+     * The comment above already says a wrong date on a health figure is worse
+     * than no date; an ambiguous one is the same problem wearing a disguise.
+     */
+    return `As of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
   })()
 
   /**
