@@ -3,7 +3,7 @@ import { AppState, AppStateStatus, PanResponder } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSecurity } from '@/stores/security-store';
-import { isAppLocked, setAppLocked, hasPendingSignIn, clearPendingSignIn } from '@/lib/lock-gate';
+import { isAppLocked, setAppLocked, hasPendingSignIn, clearPendingSignIn, setCurrentSegments } from '@/lib/lock-gate';
 import { computeResumeLockDecision } from '@/lib/resume-lock-decision';
 import { getLockTimeout, isPinSetup } from '@/services/pin-auth';
 
@@ -111,6 +111,16 @@ export function useAppLock() {
   useEffect(() => {
     currentPathRef.current = pathname ?? null;
   }, [pathname]);
+
+  /*
+   * COS-1149 — publish the raw segments so lib/lock-gate can tell whether the
+   * user is already on the sign-in screen. This hook is mounted at the root
+   * for the lifetime of the app process (SCRUM-235), which is what makes it
+   * the right place to own the mirror.
+   */
+  useEffect(() => {
+    setCurrentSegments(segments as readonly string[]);
+  }, [segments]);
 
   /**
    * BUG #18 FIX — re-entrancy guard. Even with the pathname fix, two

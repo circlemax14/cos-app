@@ -122,7 +122,57 @@ export async function requestSignIn(reason: SignInReason): Promise<void> {
     if (!_pendingReason) _pendingReason = reason;
     return;
   }
+  /*
+   * COS-1149 — never replace the sign-in screen with the sign-in screen.
+   *
+   * Vishal, on the dev build: "if I try to use the password from this saved
+   * password and the input box are filled with the email ID and password ...
+   * after they are filled in few seconds sign in screen is reloaded again ...
+   * I have to type it again."
+   *
+   * `router.replace` to the route you are ALREADY on remounts it, and a
+   * remount resets the screen's useState — which is where the autofilled
+   * username and password live. So the navigation looks like a no-op and is
+   * in fact the thing wiping the form.
+   *
+   * It fires because iOS Password AutoFill briefly backgrounds the app. On
+   * return, the root-level sync hooks re-run on AppState 'active'; any of them
+   * hitting an authed endpoint while signed out gets a 401, the refresh fails,
+   * and forceSignOut lands here — several seconds later, which is exactly the
+   * delay he described.
+   *
+   * Guarding here rather than in the hooks is deliberate: this is the single
+   * choke point every path to sign-in funnels through (see the header), so one
+   * guard covers the 401 interceptor, the splash gate and the lock screen
+   * alike. Fixing it at one caller would leave the others.
+   */
+  if (isOnSignInScreen()) return;
   router.replace('/(auth)/sign-in' as never);
+}
+
+/*
+ * COS-1149 — the current route, mirrored for a module that cannot use hooks.
+ *
+ * SEGMENTS, not pathname, and COS-942 is the reason: usePathname() strips
+ * group segments, so it returns '/sign-in' and never '/(auth)/sign-in'. That
+ * exact confusion made every group-prefixed guard in use-app-lock silently
+ * dead and produced a sign-in loop. Anything comparing routes in this codebase
+ * compares segments.
+ */
+let _currentSegments: readonly string[] = [];
+
+/** Called from the root-mounted useAppLock, which already has useSegments(). */
+export function setCurrentSegments(segments: readonly string[]): void {
+  _currentSegments = segments;
+}
+
+function isOnSignInScreen(): boolean {
+  return _currentSegments.includes('(auth)') && _currentSegments.includes('sign-in');
+}
+
+/** Test seam — reset the mirror between cases. */
+export function __resetCurrentSegmentsForTests(): void {
+  _currentSegments = [];
 }
 
 /**
