@@ -910,11 +910,21 @@ function AppleHealthMiniCard({
     latest?.interpretation === 'critical'
   const visual = metricVisual(trend.metricCode)
   const dir = trend.trendDirection
+  /*
+   * COS-1136 — this used to say "New", and it is the DEFAULT branch.
+   *
+   * Ken sent a screenshot of a February 2023 cholesterol reading labelled
+   * "New". The label never meant recent and never meant newly added: it is
+   * what prints when `trendDirection` is 'insufficient_data', i.e. there were
+   * too few points to compute a direction. So the one word on the card was
+   * false in exactly the case a stale value is most likely — a single old
+   * result with nothing to compare it to.
+   */
   const statusLabel =
     dir === 'improving' ? 'Improving' :
     dir === 'worsening' ? 'Worsening' :
     dir === 'stable' ? 'Stable' :
-    'New'
+    'Single result'
   const statusIcon: keyof typeof MaterialIcons.glyphMap =
     dir === 'improving' ? 'trending-down' :
     dir === 'worsening' ? 'trending-up' :
