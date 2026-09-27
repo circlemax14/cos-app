@@ -43,8 +43,33 @@ export default function DoctorDetailScreen() {
     diagnoses: [],
     medications: [],
   });
-  const [aiProgressNotes, setAiProgressNotes] = useState<ProviderProgressNotes | null>(null);
+  /*
+   * COS-1141 — the narrative is stored WITH the provider it describes.
+   *
+   * Ken, 2026-09-26: "This summary came in under notes for Rebecca. This
+   * should have come in under conditions for Christina the PT."
+   *
+   * He was right, and it was worse than a placement problem: Christina's
+   * summary was rendering on Rebecca's page. This was a bare `useState`, and
+   * the loader guards with `if (aiProgressNotes) return`. Expo Router reuses
+   * this screen when only `params.id` changes, so navigating provider ->
+   * provider kept the previous narrative in state, the guard then refused to
+   * fetch, and the old summary stayed on screen under the new provider's name.
+   *
+   * `aiInsights` next door already solved this by keying on providerId — "Key
+   * on providerId so switching providers re-triggers a fetch". This does the
+   * same, but by pairing the data with its owner rather than by keying a map:
+   * the ownership check then lives in the READ, so rendering another
+   * provider's narrative is not something a future caller can forget to guard.
+   *
+   * On a screen that shows one clinician's account of a patient's care, the
+   * wrong clinician's name on the wrong summary is not a cosmetic bug.
+   */
+  const [aiProgress, setAiProgress] = useState<
+    { providerId: string; data: ProviderProgressNotes } | null
+  >(null);
   const [aiProgressLoading, setAiProgressLoading] = useState(false);
+  const [aiProgressFor, setAiProgressFor] = useState<string | null>(null);
   const [aiProgressError, setAiProgressError] = useState<string | null>(null);
   // Structured DiagnosticReport cards rendered above the AI narrative (SCRUM-187).
   // Provides users a direct view of the source clinical documents — the AI
@@ -61,6 +86,13 @@ export default function DoctorDetailScreen() {
   
   // Get provider data from params or load by ID
   const providerId = params.id as string | undefined;
+  /*
+   * The ownership check lives HERE, in the read, so no render site can forget
+   * it. Everything below treats this exactly as it treated the old state.
+   */
+  const aiProgressNotes =
+    aiProgress && aiProgress.providerId === providerId ? aiProgress.data : null;
+
   /*
    * COS-1013 — one call that already joins by id.
    *
@@ -206,9 +238,11 @@ export default function DoctorDetailScreen() {
       setAiProgressError(null);
       try {
         const data = await fetchProviderProgressNotesNarrative(providerId, { refresh });
-        setAiProgressNotes(data);
+        setAiProgress({ providerId, data });
+        setAiProgressFor(providerId);
       } catch (err) {
         setAiProgressError(err instanceof Error ? err.message : 'Unable to generate progress notes');
+        setAiProgressFor(providerId);
       } finally {
         setAiProgressLoading(false);
       }
@@ -224,9 +258,13 @@ export default function DoctorDetailScreen() {
    */
   useEffect(() => {
     if (!providerId || activeTab !== 'treatment') return;
+    // `aiProgressNotes` is already null for another provider's narrative, so
+    // this no longer short-circuits after a provider switch. `aiProgressFor`
+    // keeps a FAILED load from retrying forever on the same provider.
     if (aiProgressNotes || aiProgressLoading) return;
+    if (aiProgressFor === providerId && aiProgressError) return;
     loadAiProgressNotes();
-  }, [providerId, activeTab, aiProgressNotes, aiProgressLoading, loadAiProgressNotes]);
+  }, [providerId, activeTab, aiProgressNotes, aiProgressLoading, aiProgressError, aiProgressFor, loadAiProgressNotes]);
 
   // Load raw DiagnosticReport cards for the Progress Notes tab. Filter by
   // performer name OR facility-name substring match against the provider's
