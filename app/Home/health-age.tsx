@@ -29,6 +29,8 @@
 
 import React from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+
+import { fetchHeartAge, FACTOR_LABELS, type HeartAge } from '@/services/api/heart-age'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router } from 'expo-router'
 
@@ -529,6 +531,13 @@ export default function HealthAgeScreen(): React.JSX.Element {
             )}
 
             <MethodologyAccordion
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+
+            {/* COS-1147 — below Health Age, never merged into it. */}
+            <HeartAgeCard
               colors={colors}
               getScaledFontSize={getScaledFontSize}
               getScaledFontWeight={getScaledFontWeight}
@@ -1757,3 +1766,145 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 })
+
+/**
+ * COS-1147 — Heart Age, sitting BELOW Health Age and never merged into it.
+ *
+ * Ken asked whether his health age should improve with a better A1c and lower
+ * triglycerides. Health Age structurally could not answer: PhenoAge has no
+ * lipid term. This is the separate published figure that responds to lipids —
+ * on his own numbers it moves 27 years — and the two must stay visibly
+ * distinct, because one is a biological-age estimate and the other is a
+ * cardiovascular risk equivalence.
+ *
+ * The card states its own inputs AND its exclusions in plain text. That is not
+ * boilerplate: the analyte he asked about, triglycerides, is not read by any
+ * published heart-age model, and a figure that moves for other reasons would
+ * otherwise let him conclude it was.
+ *
+ * Collapses to nothing when the backend flag is OFF or the model cannot apply.
+ * Subtractive by construction — no new wrapper components, no new react-native
+ * primitives, per the iOS 26 envelope on this screen.
+ */
+function HeartAgeCard({
+  colors,
+  getScaledFontSize,
+  getScaledFontWeight,
+}: {
+  colors: (typeof Colors)['light']
+  getScaledFontSize: (n: number) => number
+  getScaledFontWeight: (n: number) => string | number
+}): React.JSX.Element | null {
+  const [data, setData] = React.useState<HeartAge | null>(null)
+  const [hidden, setHidden] = React.useState(false)
+
+  React.useEffect(() => {
+    let alive = true
+    fetchHeartAge()
+      .then((d) => { if (alive) setData(d) })
+      .catch(() => { if (alive) setHidden(true) })
+    return () => { alive = false }
+  }, [])
+
+  if (hidden || !data) return null
+
+  const label =
+    data.heartAge === null ? null : data.capped ? '80+' : String(data.heartAge)
+
+  return (
+    <View style={styles.cardsBlock}>
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: getScaledFontSize(17),
+          fontWeight: getScaledFontWeight(700) as any,
+          marginBottom: 4,
+        }}
+      >
+        Heart Age
+      </Text>
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: getScaledFontSize(12),
+          lineHeight: 18,
+          marginBottom: 12,
+        }}
+      >
+        A separate estimate from Health Age — how old your heart looks based on
+        your cardiovascular risk.
+      </Text>
+
+      {label === null ? (
+        /* Say WHICH inputs are missing. "Not available" with no reason is the
+           thing a patient cannot act on. */
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), lineHeight: 20 }}>
+          {data.reason === 'age-out-of-range'
+            ? 'This estimate is only validated for ages 30 to 74.'
+            : `We need a few more results first: ${data.missing.join(', ')}.`}
+        </Text>
+      ) : (
+        <>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: getScaledFontSize(34),
+              fontWeight: getScaledFontWeight(700) as any,
+            }}
+          >
+            {label}
+          </Text>
+          {data.gapYears !== null && data.chronologicalAge !== null && (
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), marginTop: 2 }}>
+              {data.gapYears === 0
+                ? 'The same as your actual age.'
+                : `${Math.abs(data.gapYears).toFixed(1)} years ${data.gapYears < 0 ? 'younger' : 'older'} than your actual age.`}
+            </Text>
+          )}
+
+          {data.factors.length > 0 && (
+            <View style={{ marginTop: 14, gap: 6 }}>
+              {data.factors.map((f) => (
+                <View
+                  key={f.factor}
+                  style={{ flexDirection: 'row', justifyContent: 'space-between' }}
+                >
+                  <Text style={{ color: colors.text, fontSize: getScaledFontSize(13) }}>
+                    {FACTOR_LABELS[f.factor] ?? f.factor}
+                  </Text>
+                  <Text
+                    style={{
+                      color: f.years > 0 ? '#B3261E' : '#0F7A4A',
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    {f.years > 0 ? '+' : ''}
+                    {f.years.toFixed(1)} yrs
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      )}
+
+      {/* The exclusions, in plain words, on the card itself. */}
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: getScaledFontSize(11),
+          lineHeight: 16,
+          marginTop: 14,
+        }}
+      >
+        Uses total cholesterol, HDL, blood pressure, smoking and blood sugar. It
+        does not use {data.excludes.join(' or ')} — no published heart-age
+        estimate does.
+        {data.bpTreatmentAssumed
+          ? ' We have assumed you are not taking blood-pressure medication; answer that question in your intake to refine this.'
+          : ''}
+      </Text>
+    </View>
+  )
+}
