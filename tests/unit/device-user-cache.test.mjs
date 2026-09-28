@@ -82,5 +82,14 @@ test('the drawer no longer clobbers the photo it does not own', () => {
 })
 
 test('signing out still clears it', () => {
-  assert.match(code('services/auth.ts'), /clearCachedUserSummary\(\)/)
+  /*
+   * COS-1152 moved the purge out of services/auth.ts into
+   * lib/purge-local-phi.ts, so that api-client's forceSignOut — the
+   * INVOLUNTARY sign-out, which cleared tokens and nothing else — runs the
+   * same cleanup. The property this test cares about is unchanged; it lives
+   * one file over. Asserting both keeps it honest: the summary is still
+   * cleared, and auth.ts still routes through the shared purge.
+   */
+  assert.match(code('lib/purge-local-phi.ts'), /clearCachedUserSummary\(\)/)
+  assert.match(code('services/auth.ts'), /purgeLocalPhi\(\)/)
 })

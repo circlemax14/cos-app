@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { getAccessToken, getRefreshToken, storeTokens, clearTokens, readSessionPresence } from './auth-tokens';
 import { CLIENT_INFO_HEADERS } from './client-info';
 import { requestSignIn, SignInReason } from './lock-gate';
+import { purgeLocalPhi } from './purge-local-phi';
 import {
   settleWaitersWithToken,
   settleWaitersWithError,
@@ -33,6 +34,25 @@ async function forceSignOut(reason: SignInReason): Promise<void> {
   isSigningOut = true;
   await clearTokens();
   await SecureStore.deleteItemAsync('cos_username');
+  /*
+   * COS-1152 — forget the outgoing account's health data, not just its tokens.
+   *
+   * services/auth.ts signOut() has always done this, with a comment saying
+   * exactly why: PHI-bearing query responses "can't be observed by the next
+   * signed-in user". This path — a 401 whose refresh failed — cleared tokens
+   * and the username and stopped, so everything else stayed resident.
+   *
+   * And this is the COMMON path: an expired session, a revoked refresh token,
+   * a password change on another device. The patient hooks run a 10-minute
+   * staleTime against a 10-minute gcTime, so on a shared device the next
+   * account's mount is served the previous account's records FROM CACHE for
+   * up to ten minutes — no HTTP request to fail, nothing on screen to hint at
+   * it.
+   *
+   * Awaited before the navigation below, so the sign-in screen cannot mount
+   * over a cache that is still being emptied.
+   */
+  await purgeLocalPhi();
   try {
     await requestSignIn(reason);
   } finally {
