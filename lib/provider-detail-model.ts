@@ -13,6 +13,15 @@ export interface DetailCondition {
   severity?: string;
   onsetDate?: string;
   recordedDate?: string;
+  /**
+   * COS-1148 — the visit this diagnosis was recorded at, when the source says.
+   *
+   * Absent for about half the fleet, and absent by SOURCE rather than at
+   * random: athenahealth populates it on 81-100% of Conditions, Epic and the
+   * payer feeds on 0%. Undefined means the source did not say — never that we
+   * may infer one from dates.
+   */
+  encounterId?: string;
 }
 
 export interface DetailProcedure {
@@ -101,10 +110,15 @@ export interface VisitCard {
  * Vishal: "the patient visited on 3 Feb 2025, then there will be one card.
  * Patient visits multiple times, and there will be multiple cards."
  *
- * Only medications and reports are grouped, because only they carry the link —
- * 46 of 59 and 74 of 76 on a real record. CONDITIONS DELIBERATELY ARE NOT: none
- * of them reference an encounter, so placing a diagnosis inside a visit card
- * would assert it was made that day, which the record does not say.
+ * Medications, reports AND — since COS-1148 — conditions are grouped, each
+ * only where the record carries the link.
+ *
+ * The note this replaces said conditions never reference an encounter. That
+ * was measured on one Epic patient and generalised; across the datastore 179
+ * of 339 (53%) do. Where the link is ABSENT the original caution stands
+ * unchanged: a diagnosis with no encounter must not be placed inside a visit
+ * card, because that asserts it was made that day and the record does not say
+ * so.
  *
  * Anything with no visit attached is returned separately rather than dropped or
  * quietly folded into the nearest date.
@@ -139,5 +153,90 @@ export function toVisitCards(detail: ProviderDetail): {
     visits,
     unlinkedMedications: meds.filter((m) => !m.encounterId || !known.has(m.encounterId)),
     unlinkedReports: reports.filter((r) => !r.encounterId || !known.has(r.encounterId)),
+  };
+}
+
+export interface ConditionGroup {
+  condition: DetailCondition;
+  /** Visits where this diagnosis was recorded, newest first. */
+  visits: VisitCard[];
+}
+
+/**
+ * COS-1148 — Ken's provider-page spec, as data.
+ *
+ *   "Notes =. List only
+ *      1. Condition 1 - dates/notes
+ *         Condition 2 - date/notes"
+ *
+ * Groups a provider's visits UNDER the diagnoses recorded at them, using only
+ * `Condition.encounter` — the one link the data actually carries.
+ *
+ * ─── WHY THIS RETURNS A FALLBACK RATHER THAN ALWAYS GROUPING ─────────
+ *
+ * The link is populated by SOURCE, not at random: athenahealth records carry it
+ * on 81-100% of Conditions, Epic and the payer feeds on 0%. So for some
+ * patients this produces exactly the shape Ken drew — one athena record has 44
+ * distinct condition codes with 21 recurring across multiple encounters, which
+ * is "Condition 1 -> several dates" literally — and for others, nothing.
+ *
+ * `ungrouped` carries every visit no diagnosis claimed. A caller with an empty
+ * `groups` renders its flat list exactly as before. Nothing is hidden by being
+ * ungroupable, and nothing is invented to avoid an empty section.
+ *
+ * ─── ONE VISIT CAN APPEAR UNDER SEVERAL CONDITIONS ──────────────────
+ *
+ * Faithful, not a bug: 35-47% of notes on the linked records belong to an
+ * encounter carrying more than one diagnosis. A visit where two problems were
+ * addressed IS part of both stories, and picking one would silently drop the
+ * other.
+ */
+export function groupVisitsByCondition(
+  detail: ProviderDetail,
+  visits: VisitCard[],
+): { groups: ConditionGroup[]; ungrouped: VisitCard[] } {
+  // Active and resolved both: a resolved diagnosis still has visits worth
+  // reading, and Ken's spec draws a list of conditions, not a list of open ones.
+  const conditions = [
+    ...(detail.treatment?.activeConditions ?? []),
+    ...(detail.treatment?.resolvedConditions ?? []),
+  ];
+  const byEncounter = new Map<string, VisitCard>();
+  for (const v of visits) byEncounter.set(v.encounter.id, v);
+
+  const claimed = new Set<string>();
+  const groups: ConditionGroup[] = [];
+
+  for (const c of conditions) {
+    if (!c.encounterId) continue;
+    const visit = byEncounter.get(c.encounterId);
+    if (!visit) continue;
+    claimed.add(visit.encounter.id);
+    /*
+     * Merge by condition NAME, not by Condition.id. The same diagnosis recorded
+     * at three visits arrives as three Condition resources with three ids;
+     * keying on id would render the same problem three times as three one-visit
+     * groups, which is the opposite of what the spec asks for.
+     */
+    const key = c.name.trim().toLowerCase();
+    const existing = groups.find((g) => g.condition.name.trim().toLowerCase() === key);
+    if (existing) {
+      if (!existing.visits.some((v) => v.encounter.id === visit.encounter.id)) {
+        existing.visits.push(visit);
+      }
+    } else {
+      groups.push({ condition: c, visits: [visit] });
+    }
+  }
+
+  for (const g of groups) {
+    g.visits.sort((a, b) => (b.encounter.date ?? '').localeCompare(a.encounter.date ?? ''));
+  }
+  // Most-documented condition first — what a clinician scans for.
+  groups.sort((a, b) => b.visits.length - a.visits.length);
+
+  return {
+    groups,
+    ungrouped: visits.filter((v) => !claimed.has(v.encounter.id)),
   };
 }
