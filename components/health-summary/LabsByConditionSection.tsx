@@ -10,6 +10,7 @@ import type { LabReport, LabResultValue } from '@/services/api/types';
 import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { classifyFlag, flagStyle, isFlagged } from '../../lib/lab-flagging';
 
 // Neutral teal — Section 5 is not a BPS-domain section, so it takes a neutral
 // tint. Was purple #7C3AED, which read too close to the Psy bio-domain color
@@ -42,45 +43,6 @@ const CONDITION_LAB_KEYWORDS: Record<string, string[]> = {
   anemia: ['cbc', 'hemoglobin', 'hematocrit', 'ferritin', 'iron'],
 };
 
-// Interpretations that mean "this result is actually out of range". Anything
-// else — 'pending', 'not available', 'n/a', 'unknown', 'see comment', empty,
-// 'normal' — MUST NOT count as flagged. Match case-insensitively.
-const FLAGGED_INTERPRETATIONS = new Set(['high', 'low', 'abnormal', 'critical', 'h', 'l']);
-
-function isFlagged(v: LabResultValue): boolean {
-  const raw = v.interpretation?.trim().toLowerCase();
-  if (!raw) return false;
-  return FLAGGED_INTERPRETATIONS.has(raw);
-}
-
-// Palette for the small per-result badge shown in expanded buckets. Keyed by
-// the same lowercased interpretation strings FLAGGED_INTERPRETATIONS recognizes
-// (plus 'hh', 'll', 'aa' aliases some EHRs emit). Returns null for anything
-// else (normal, pending, unknown, empty) so we don't paint a misleading badge.
-function flagStyle(
-  interpretation?: string,
-): { fg: string; bg: string; label: string } | null {
-  const raw = interpretation?.trim().toLowerCase();
-  if (!raw) return null;
-  switch (raw) {
-    case 'critical':
-      return { fg: '#DC2626', bg: '#DC262620', label: 'Critical' };
-    case 'high':
-    case 'hh':
-    case 'h':
-      return { fg: '#DC2626', bg: '#DC262620', label: 'High' };
-    case 'low':
-    case 'll':
-    case 'l':
-      return { fg: '#2563EB', bg: '#2563EB20', label: 'Low' };
-    case 'abnormal':
-    case 'aa':
-    case 'a':
-      return { fg: '#D97706', bg: '#D9770620', label: 'Abnormal' };
-    default:
-      return null;
-  }
-}
 
 // Flatten every report in a bucket into a single per-analyte list, tagging each
 // row with its parent report's date + id, then sort flagged-first (so abnormal
@@ -311,7 +273,7 @@ function LabsByConditionSection() {
               {isExpanded && visible.length > 0 && (
                 <View style={styles.expandedList}>
                   {visible.map((row, idx) => {
-                    const badge = flagStyle(row.interpretation);
+                    const badge = flagStyle(row);
                     const valueColor = badge?.fg ?? colors.text;
                     return (
                       <View
