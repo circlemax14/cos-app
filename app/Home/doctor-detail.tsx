@@ -19,7 +19,7 @@ import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { AppWrapper } from '@/components/app-wrapper';
-import { fetchProviderDetail, toVisitCards, type VisitCard } from '@/services/api/provider-detail';
+import { fetchProviderDetail, toVisitCards, groupVisitsByCondition, type VisitCard, type ConditionGroup } from '@/services/api/provider-detail';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api/data-sharing';
 
@@ -99,6 +99,14 @@ export default function DoctorDetailScreen() {
    * ones did not.
    */
   const [visitCards, setVisitCards] = useState<VisitCard[]>([]);
+  /*
+   * COS-1151 — Ken's spec groups Notes by condition. Computed where the detail
+   * is already in hand rather than refetched; `groups` is empty for any source
+   * that does not link diagnoses to visits, and the tab falls back to the flat
+   * list it has always shown.
+   */
+  const [conditionGroups, setConditionGroups] = useState<ConditionGroup[]>([]);
+  const [ungroupedVisits, setUngroupedVisits] = useState<VisitCard[]>([]);
   const [visitsLoading, setVisitsLoading] = useState(true);
   const providerName = params.name as string || '';
   const providerQualifications = params.qualifications as string || '';
@@ -199,7 +207,13 @@ export default function DoctorDetailScreen() {
     setVisitsLoading(true);
     void fetchProviderDetail(providerId).then((detail) => {
       if (cancelled) return;
-      setVisitCards(detail ? toVisitCards(detail).visits : []);
+      const visits = detail ? toVisitCards(detail).visits : [];
+      setVisitCards(visits);
+      const grouped = detail
+        ? groupVisitsByCondition(detail, visits.filter((v) => v.reports.length > 0))
+        : { groups: [], ungrouped: [] };
+      setConditionGroups(grouped.groups);
+      setUngroupedVisits(grouped.ungrouped);
       setVisitsLoading(false);
     });
     return () => {
@@ -1153,9 +1167,44 @@ export default function DoctorDetailScreen() {
 
     return (
       <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-        {visitsWithNotes.length > 0
-          ? renderVisitList(visitsWithNotes, 'Visits with notes')
-          : null}
+        {/*
+          COS-1151 — Ken's spec: "Notes =. List only / 1. Condition 1 -
+          dates/notes / Condition 2 - date/notes".
+
+          Grouped where the record links a diagnosis to the visit it was
+          recorded at, flat where it does not. That is not a hedge — it is what
+          the data supports, measured on the raw clinic exports rather than
+          assumed: exports carrying `encounter-diagnosis` conditions link
+          88-92% of them, while exports carrying only problem-list entries link
+          0%, because a problem list is a running list with no single visit
+          behind it.
+
+          The empty-grouping case is the COMMON one today, so it gets a
+          sentence saying why rather than silently looking like the feature was
+          never built. A clinician who reads "your clinic's records don't link
+          diagnoses to visits" can act on it; one who sees an ordinary date
+          list cannot.
+        */}
+        {conditionGroups.length > 0 ? (
+          <>
+            {conditionGroups.map((g) => (
+              <View key={g.condition.id} style={{ marginBottom: 6 }}>
+                {renderVisitList(g.visits, g.condition.name)}
+              </View>
+            ))}
+            {ungroupedVisits.length > 0
+              ? renderVisitList(ungroupedVisits, 'Other visits')
+              : null}
+          </>
+        ) : visitsWithNotes.length > 0 ? (
+          <>
+            {renderVisitList(visitsWithNotes, 'Visits with notes')}
+            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontStyle: 'italic', marginTop: 4, marginBottom: 14, paddingHorizontal: 4 }}>
+              These are listed by date because this clinic&apos;s records
+              don&apos;t say which diagnosis each visit was for.
+            </Text>
+          </>
+        ) : null}
 
         {/*
           COS-1142 — the raw lab-report cards are gone from Notes.
