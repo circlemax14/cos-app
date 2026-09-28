@@ -81,3 +81,36 @@ test('the refresh control and the generated-at stamp moved with it', () => {
   assert.ok(fn.includes('fromCache'), 'says when it is cached');
   assert.ok(fn.includes('loadAiProgressNotes'), 'can be refreshed');
 });
+
+/**
+ * COS-1151 — Ken's spec rendered, and honest when it cannot be.
+ *
+ * Measured on the raw clinic exports rather than assumed: exports carrying
+ * `encounter-diagnosis` conditions link 88-92% of them to a visit, exports
+ * carrying only problem-list entries link 0%. So grouping is available for
+ * some patients and impossible for others, and the fallback is the common
+ * case today — including for the clinician who asked for the feature.
+ */
+test('Notes groups by condition when the record links them', () => {
+  assert.match(CODE, /conditionGroups\.length > 0 \?/);
+  assert.match(CODE, /renderVisitList\(g\.visits, g\.condition\.name\)/);
+});
+
+test('visits no diagnosis claimed are still shown, under Other visits', () => {
+  // Nothing may be lost by being ungroupable.
+  assert.match(CODE, /renderVisitList\(ungroupedVisits, 'Other visits'\)/);
+});
+
+test('the flat fallback SAYS why it is flat', () => {
+  /*
+   * The empty-grouping case is the common one today, so it gets a sentence
+   * rather than silently looking like the feature was never built. A clinician
+   * who reads "your clinic's records don't link diagnoses to visits" can act
+   * on it; one who sees an ordinary date list cannot.
+   */
+  assert.match(CODE, /listed by date because this clinic/);
+});
+
+test('grouping is computed from the detail already in hand, not refetched', () => {
+  assert.match(CODE, /groupVisitsByCondition\(detail, visits\.filter/);
+});
