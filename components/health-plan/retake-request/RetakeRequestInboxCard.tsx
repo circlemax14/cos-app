@@ -47,6 +47,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router } from 'expo-router'
 
 import { getColors, Radii, Spacing } from '@/constants/design-system'
+import { retakeStartRoute } from '@/lib/retake-routes'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
 import type { PatientRetakeRequestView } from '@/services/api/retake-requests'
@@ -98,16 +99,13 @@ export function composeRetakeCardAccessibilityLabel(row: PatientRetakeRequestVie
 }
 
 /**
- * Deep-link target for "Start now". Full-intake routes to the intake
- * wizard; every other instrument routes to the shared assessment stepper
- * (matches the deep-links AssessmentCatalogContent + BpsWellbeingScoreCard
- * already use — see grep for `/Home/assessment-stepper`).
+ * Deep-link target for "Start now".
+ *
+ * COS-1166 — the definition moved to lib/retake-routes.ts so the push
+ * router can use it too (a pure module cannot import this .tsx). Re-exported
+ * here so every existing import and test keeps working against one source.
  */
-export function retakeStartRoute(instrumentKey: string): string {
-  if (instrumentKey === 'full-intake') return '/Home/patient-intake?source=retake-request'
-  const q = encodeURIComponent(instrumentKey)
-  return `/Home/assessment-stepper?instrumentId=${q}&source=retake-request`
-}
+export { retakeStartRoute } from '@/lib/retake-routes'
 
 export interface RetakeRequestInboxCardProps {
   /**

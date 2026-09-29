@@ -1,3 +1,7 @@
+// COS-1166 — one definition of where a retake sends the patient, shared
+// with the inbox card's "Start now". See lib/retake-routes.ts.
+import { retakeStartRoute } from './retake-routes.ts';
+
 /**
  * Pure mapping from a push-notification `content.data` payload to the
  * in-app route a tap should open.
@@ -90,13 +94,11 @@ export const NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED = true;
  * patient to redo an assessment via the retake-request feature). Follows
  * the chunk-64/70 pattern:
  *
- *   - true (default): the push lands on `/Home`, where the inbox card at
- *     the top of the Home surface renders the pending request. The card
- *     silent-drops when there are no pending items, so a stale-cache tap
- *     that races the row's completion never lands on empty chrome.
- *   - false: fall back to Home (null → Home) — same destination in the
- *     shipped version but documented as the pre-flag state so an OTA
- *     revert is unambiguous.
+ *   - true (default): COS-1166 — the push opens the assessment itself, via
+ *     retakeStartRoute(instrumentKey). Falls back to the plan surface (where
+ *     the inbox card lives) when the payload carries no instrumentKey.
+ *   - false: null → Home, the Phase-1 behaviour, kept as the one-line OTA
+ *     revert if opening the stepper straight from a push misbehaves.
  *
  * Kept as a static const so the flip does not require a runtime SSM
  * round-trip — one-line OTA revert is the incident lever, same as the
@@ -193,9 +195,37 @@ export function routeForNotificationData(
     // sub-route is intentional: the card is the destination, not a
     // dedicated screen — matches the "durable inbox on Home" contract
     // Ken approved for Phase 1.
-    case 'ASSESSMENT_RETAKE_REQUESTED':
+    /*
+     * COS-1166 — the tap now OPENS THE ASSESSMENT.
+     *
+     * Vishal, 2026-09-29: "if we get the notification, we will take the user
+     * to the plan screen and we will start the assessment directly. There
+     * will be a deep link."
+     *
+     * Phase 1 deliberately returned null (→ Home) and let the inbox card be
+     * the destination. That decision is now reversed: a patient who taps a
+     * push that says "redo your PHQ-2" has already decided to do it, and
+     * making them land on Home, find a card and press a second button loses
+     * most of them.
+     *
+     * Everything needed was already on the wire — the backend has stamped
+     * `instrumentKey` into this payload since COS-482 — and
+     * retakeStartRoute() is the exact route the card's own "Start now"
+     * button uses. This is the same shape as the SUPPORT_TICKET_STATUS case
+     * below, which sat dead for the same reason.
+     *
+     * Falls back to the plan surface when the payload has no usable
+     * instrumentKey: the card lives there, so the request is still
+     * actionable. Never Home — Home is where this got lost.
+     */
+    case 'ASSESSMENT_RETAKE_REQUESTED': {
       if (!NOTIFICATION_RETAKE_ROUTE_ENABLED) return null;
-      return null;
+      const instrumentKey =
+        typeof data.instrumentKey === 'string' && data.instrumentKey.trim() !== ''
+          ? data.instrumentKey.trim()
+          : null;
+      return instrumentKey ? retakeStartRoute(instrumentKey) : '/Home/plan';
+    }
 
     // ── Existing mappings (unchanged behavior) ──────────────────────
     case 'APPOINTMENT_REMINDER':

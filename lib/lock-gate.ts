@@ -170,6 +170,23 @@ function isOnSignInScreen(): boolean {
   return _currentSegments.includes('(auth)') && _currentSegments.includes('sign-in');
 }
 
+/**
+ * COS-1166 — has the router left the splash gate yet?
+ *
+ * `app/index.tsx` is the root index route, so while the splash pipeline is
+ * still deciding a destination `useSegments()` is EMPTY. The moment it routes
+ * — '/Home', '/(auth)/sign-in', '/(security)/lock-screen', onboarding —
+ * there is at least one segment.
+ *
+ * Used by the push handler to refuse to navigate before splash has settled,
+ * because a push that lands first is silently wiped by splash's
+ * `router.replace` (COS-437), and the old code had already marked the tap
+ * handled by then.
+ */
+export function hasSettledRoute(): boolean {
+  return _currentSegments.length > 0;
+}
+
 /** Test seam — reset the mirror between cases. */
 export function __resetCurrentSegmentsForTests(): void {
   _currentSegments = [];

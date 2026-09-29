@@ -7,7 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { routeForNotificationData } from '@/lib/notification-routing';
 import { queryClient } from '@/providers/QueryProvider';
 // COS-778 — the lock check and the replay queue for inbound navigation.
-import { isAppLocked } from '@/lib/lock-gate';
+import { isAppLocked, hasSettledRoute } from '@/lib/lock-gate';
 import { consumeDeferredNavigation, deferNavigation } from '@/lib/locked-nav-queue';
 import { ensureAndroidNotificationChannels } from '@/lib/android-notification-channels';
 
@@ -193,7 +193,28 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
   try {
     const id = response.notification.request.identifier;
     if (id && id === lastNavigatedNotificationId) return; // already handled this tap
-    if (id) lastNavigatedNotificationId = id;
+
+    /*
+     * COS-1166 — DO NOT claim the tap before we can act on it.
+     *
+     * On a cold launch the OS delivers the launching response to BOTH the
+     * response listener (registered on mount, ungated) and
+     * useLastNotificationResponse (gated on `isOnHome` by COS-437). The
+     * listener wins the race, and this function used to mark the id handled
+     * on its very first line — so when the gated cold-start path fired a
+     * moment later, at the correct time, the dedupe turned it into a no-op.
+     *
+     * Meanwhile the listener's own navigation happened before SplashGate had
+     * routed, and splash's `router.replace` wiped it. That is exactly the
+     * failure COS-437 describes ("dropping the user on the plain Home tab,
+     * or, worse ... on the plain splash") — its gate was added to the
+     * cold-start path but the dedupe below it kept that gate from ever
+     * running.
+     *
+     * So the gate sits lower down, immediately before the navigation — NOT
+     * here. Queueing the intent (COS-947) must still happen on a cold start,
+     * which is exactly when a session may have expired underneath us.
+     */
 
     const data = response.notification.request.content.data;
 
@@ -264,8 +285,23 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
 
     if (isAppLocked()) return;
 
+    /*
+     * COS-1166 — nothing may navigate before SplashGate has settled.
+     *
+     * Deliberately AFTER deferNavigation above: the intent must be queued on
+     * a cold start even when we cannot act on it yet, or COS-947's fix (a tap
+     * surviving a sign-in) is lost for exactly the launches that need it.
+     *
+     * Returning WITHOUT claiming the id is the whole point — the gated
+     * cold-start effect re-invokes us once the app is on a real route, and
+     * the dedupe below must not have swallowed the tap by then.
+     */
+    if (!hasSettledRoute()) return;
+
     // null → Home default (back-compat for unknown/new/data-ready types).
     router.push(target as never);
+    // COS-1166 — claimed only now, after a navigation that actually happened.
+    if (id) lastNavigatedNotificationId = id;
     // Navigated, so the intent is spent. Leaving it queued would replay this
     // route at the NEXT unlock, minutes later and out of context.
     consumeDeferredNavigation();

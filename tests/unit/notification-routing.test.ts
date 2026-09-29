@@ -31,35 +31,66 @@ test('NOTIFICATION_RETAKE_ROUTE_ENABLED default is ON (COS-482 Phase 1)', () => 
   assert.equal(NOTIFICATION_RETAKE_ROUTE_ENABLED, true);
 });
 
-// ─── ASSESSMENT_RETAKE_REQUESTED (COS-482 Phase 1) ────────────────────
+// ─── ASSESSMENT_RETAKE_REQUESTED (COS-1166, was COS-482 Phase 1) ──────
+/*
+ * These tests used to assert `null` (→ Home). That was Phase 1's deliberate
+ * decision: land on Home and let the inbox card be the destination.
+ *
+ * Vishal reversed it on 2026-09-29 — "if we get the notification, we will
+ * take the user to the plan screen and we will start the assessment
+ * directly. There will be a deep link." A patient who taps a push that says
+ * "redo your PHQ-2" has already decided to do it; Home plus a card plus a
+ * second button loses most of them.
+ *
+ * The payload has carried `instrumentKey` since COS-482, and
+ * retakeStartRoute() is the same builder the card's own "Start now" uses.
+ */
 
-test('ASSESSMENT_RETAKE_REQUESTED → Home (null) so the inbox card renders at top', () => {
-  // Explicit null (not undefined / not throw): the card at the top of Home
-  // is the destination. Returning null lands the tap on Home per the
-  // shared `route ?? "/Home"` fallback in hooks/use-notifications.ts.
+test('ASSESSMENT_RETAKE_REQUESTED opens the assessment for the requested instrument', () => {
   assert.equal(
     routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', requestId: 'r1', instrumentKey: 'phq-9' }),
-    null,
+    '/Home/assessment-stepper?instrumentId=phq-9&source=retake-request',
   );
 });
 
-test('ASSESSMENT_RETAKE_REQUESTED: bpsEnabled has no effect (card is agency-agnostic)', () => {
+test('ASSESSMENT_RETAKE_REQUESTED: the full intake opens the wizard, not the stepper', () => {
   assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED' }, { bpsEnabled: true }),
-    null,
-  );
-  assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED' }, { bpsEnabled: false }),
-    null,
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'full-intake' }),
+    '/Home/patient-intake?source=retake-request',
   );
 });
 
-test('ASSESSMENT_RETAKE_REQUESTED: malformed data still routes safely to Home', () => {
+test('ASSESSMENT_RETAKE_REQUESTED: an instrument key is url-encoded', () => {
   assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', requestId: null as unknown as string }),
-    null,
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'who-5 / short' }),
+    '/Home/assessment-stepper?instrumentId=who-5%20%2F%20short&source=retake-request',
   );
 });
+
+test('ASSESSMENT_RETAKE_REQUESTED: no instrumentKey falls back to the plan surface, NOT Home', () => {
+  // The card lives on the plan screen, so the request stays actionable.
+  // Home is where this feature got lost in Phase 1.
+  for (const bad of [undefined, null, '', '   ', 42]) {
+    assert.equal(
+      routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: bad as unknown as string }),
+      '/Home/plan',
+      `instrumentKey=${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test('ASSESSMENT_RETAKE_REQUESTED: bpsEnabled has no effect (the instrument decides)', () => {
+  const expected = '/Home/assessment-stepper?instrumentId=adl&source=retake-request';
+  assert.equal(
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'adl' }, { bpsEnabled: true }),
+    expected,
+  );
+  assert.equal(
+    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'adl' }, { bpsEnabled: false }),
+    expected,
+  );
+});
+
 
 // ─── HEALTH_PLAN_REMINDER (COS-361) ───────────────────────────────────
 

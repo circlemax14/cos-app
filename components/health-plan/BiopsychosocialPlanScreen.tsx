@@ -65,7 +65,7 @@ import { MedicationsBanner } from './MedicationsBanner';
 // so the linter doesn't flag it as unused; add back if a future change
 // mounts it standalone again.
 import { BpsAiSummaryBanner } from './BpsAiSummaryBanner';
-import { RetakeRequestInboxCard } from './retake-request/RetakeRequestInboxCard';
+import { RetakeRequiredGate } from './retake-request/RetakeRequiredGate';
 import { BpsNotificationCategoriesCard } from './BpsNotificationCategoriesCard';
 import { AssessmentDueBanner } from './AssessmentDueBanner';
 import IntakeCtaCard from './patient-intake/IntakeCtaCard';
@@ -1773,6 +1773,19 @@ export function BiopsychosocialPlanScreen({
 
   return (
     <AppWrapper>
+      {/*
+        COS-1166 — a pending assessment blocks the plan.
+
+        Vishal, 2026-09-29: "even if the patient doesn't open the notification
+        and directly open the app and then go to the plan screen, then there
+        the patient has to complete the assessment first."
+
+        Inside AppWrapper so the screen chrome stays, and wrapping the whole
+        body so nothing behind the gate is reachable. Renders children
+        untouched when nothing is pending, which is the overwhelming majority
+        of renders — see the gate for why loading is NOT treated as gated.
+      */}
+      <RetakeRequiredGate>
       <ScrollView
         ref={scrollRef}
         // Live offset for revealAddedTask: measureInWindow gives SCREEN
@@ -2319,34 +2332,21 @@ export function BiopsychosocialPlanScreen({
           `BPS_AI_SUMMARY_ENABLED` at module top. Component itself
           null-renders when summary is empty (two-layer defense).
         */}
-        {/* ─── Pending retake, SCRUM-687 ────────────────────────────────────
-            Vishal, 2026-08-15, on the retake work: "if patient go to plan page
+        {/* ─── Pending retake ───────────────────────────────────────────
+            SCRUM-687 put RetakeRequestInboxCard here, inline above the AI
+            summary, on Vishal's 2026-08-15 ask: "if patient go to plan page
             without clicking notification then there should be message to its
-            time to take your assessment SO BOTH ARE DIFFERENT FEATURES".
+            time to take your assessment".
 
-            They are, and only one of them existed. The notification deep-link
-            is one path; this is the other, and it is the one that catches the
-            patient who never tapped the notification — dismissed it, missed
-            it, or has notifications off entirely. That is most patients, so a
-            retake feature reachable only from a notification reaches almost
-            nobody.
+            COS-1166 promotes that from a card to a GATE, because the data
+            said the card was being scrolled past — on production the same
+            three instruments were re-requested for the same accounts on
+            09-19, 09-28 and 09-29, unanswered each time. The card now renders
+            inside RetakeRequiredGate at the top of this component.
 
-            SAME CARD AS HOME, DELIBERATELY. A second differently-worded
-            "time to reassess" surface would read as a second, separate
-            request, and a patient who acts on one would still see the other
-            sitting there unanswered. One component, one source of truth, one
-            request — it disappears from both places when answered.
-
-            Mounted ABOVE the AI summary because a request the care team is
-            waiting on outranks a generated recap. It null-renders when there
-            is nothing pending (silent-drop, same as Home), so the plan screen
-            is unchanged for a patient with no outstanding assessment.
-
-            iOS 26.5 envelope is satisfied by the card itself: View / Text /
-            Pressable / StyleSheet / MaterialIcons, no Modal or Animated. Its
-            "Not now" path opens a sheet SCREEN, not an overlay, for the same
-            reason — see the card's header. Safe on this surface. */}
-        <RetakeRequestInboxCard />
+            Nothing is mounted here any more: when a request is pending the
+            gate replaces this whole subtree, so an inline card could never
+            render. It still lives on Home, which is not gated. */}
 
         {BPS_AI_SUMMARY_ENABLED && canAiSummary && (
           // CHUNK 48 fix (adversarial-verify major): reserve fixed-height
@@ -2912,6 +2912,7 @@ export function BiopsychosocialPlanScreen({
           />
         </>
       )}
+      </RetakeRequiredGate>
     </AppWrapper>
   );
 }
