@@ -45,7 +45,7 @@
 export type QuantityKind =
   | 'energy-kcal'
   | 'length-miles'
-  | 'temperature-f'
+  | 'temperature-c'
   | 'pressure-mmhg'
   | 'mass-lb'
   | 'glucose-mgdl';
@@ -68,11 +68,11 @@ const CONVERSIONS: Record<QuantityKind, Record<string, number>> = {
     feet: 1 / 5280,
     inches: 1 / 63360,
   },
-  'temperature-f': {
+  'temperature-c': {
     // Handled specially below — temperature is an OFFSET scale, so a plain
     // multiplier would be wrong. Present so the kind validates.
-    fahrenheit: 1,
-    celsius: Number.NaN,
+    celsius: 1,
+    fahrenheit: Number.NaN,
   },
   'pressure-mmhg': {
     millimetersOfMercury: 1,
@@ -108,9 +108,9 @@ export function readQuantity(raw: unknown, kind: QuantityKind): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   if (typeof unit !== 'string') return null;
 
-  if (kind === 'temperature-f') {
-    if (unit === 'fahrenheit') return value;
-    if (unit === 'celsius') return (value * 9) / 5 + 32;
+  if (kind === 'temperature-c') {
+    if (unit === 'celsius') return value;
+    if (unit === 'fahrenheit') return ((value - 32) * 5) / 9;
     return null;
   }
 

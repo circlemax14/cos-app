@@ -1134,8 +1134,16 @@ export const VITAL_SPECS: Record<HealthKitVitalMetric, VitalSpec> = {
     metricCode: 'hk-weight',
     metricName: 'Weight',
     permission: 'Weight',
-    unit: 'kg',
-    refRange: { low: 50, high: 100 },
+    /*
+     * COS-1155 — POUNDS, on both platforms. react-native-health defaults to
+     * poundUnit (RCTAppleHealthKit+Methods_Body.m) and no hkUnit overrides it
+     * here; the Health Connect reader converts to 'mass-lb' to match. Labelled
+     * 'kg' against a kg reference range, every normal-weight adult was graded
+     * 'high' by interpretPoint. The BMI trend already divides by 2.20462, so
+     * it was reading these points as pounds all along.
+     */
+    unit: 'lb',
+    refRange: { low: 110, high: 220 },
   },
   'body-mass-index': {
     metricCode: 'hk-bmi',

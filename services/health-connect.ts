@@ -552,11 +552,21 @@ const TREND_SOURCES: Partial<
   },
   'body-temperature': {
     recordType: 'BodyTemperature',
-    // iOS reports Fahrenheit. readQuantity handles the offset scale, which a
-    // plain multiplier would get wrong.
+    /*
+     * COS-1155 — CELSIUS, because that is what iOS reads and what VITAL_SPECS
+     * labels this metric. react-native-health defaults to degreeCelsiusUnit
+     * (RCTAppleHealthKit+Methods_Vitals.m:321); the old "iOS reports
+     * Fahrenheit" note here was wrong — only the SAVE path defaults
+     * Fahrenheit. Converting to °F and then stamping it '°C' made
+     * evaluateTemperatureCelsius(98.6) take its >40 branch, so every
+     * normothermic Android reading raised a critical-hyperthermia red flag.
+     *
+     * Keep the decimal: rounding to a whole degree loses a 37.4 fever against
+     * the 36.1–37.2 reference range.
+     */
     read: (r) => {
-      const v = readQuantity(r.temperature, 'temperature-f');
-      return v === null ? null : Math.round(v);
+      const v = readQuantity(r.temperature, 'temperature-c');
+      return v === null ? null : Math.round(v * 10) / 10;
     },
   },
   weight: {

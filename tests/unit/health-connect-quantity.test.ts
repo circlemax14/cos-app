@@ -41,9 +41,14 @@ test('THE POINT: the unit is read, never assumed', () => {
 test('temperature converts on the offset scale, not by a factor', () => {
   // A multiplier is wrong for temperature and would be wrong by ~32 at body
   // temperature — plausible enough to ship.
-  assert.equal(readQuantity({ value: 0, unit: 'celsius' }, 'temperature-f'), 32);
-  assert.equal(readQuantity({ value: 37, unit: 'celsius' }, 'temperature-f'), 98.6);
-  assert.equal(readQuantity({ value: 98.6, unit: 'fahrenheit' }, 'temperature-f'), 98.6);
+  assert.equal(readQuantity({ value: 0, unit: 'celsius' }, 'temperature-c'), 0);
+  assert.equal(readQuantity({ value: 37, unit: 'celsius' }, 'temperature-c'), 37);
+  assert.equal(readQuantity({ value: 32, unit: 'fahrenheit' }, 'temperature-c'), 0);
+  // COS-1155 — the target is CELSIUS, matching iOS and the '°C' the spec
+  // stamps. Read as Fahrenheit, 37°C became 98.6 and graded as critical
+  // hyperthermia. The float division does not land on 37 exactly.
+  const bodyTemp = readQuantity({ value: 98.6, unit: 'fahrenheit' }, 'temperature-c');
+  assert.ok(bodyTemp !== null && Math.abs(bodyTemp - 37) < 1e-9, `${String(bodyTemp)}`);
 });
 
 test('each kind converts to the unit iOS reports', () => {
@@ -69,7 +74,7 @@ test('THE POINT: an unknown unit is a GAP, not a raw number', () => {
    * adds the conversion.
    */
   assert.equal(readQuantity({ value: 78, unit: 'stones' }, 'mass-lb'), null);
-  assert.equal(readQuantity({ value: 78, unit: 'kelvin' }, 'temperature-f'), null);
+  assert.equal(readQuantity({ value: 78, unit: 'kelvin' }, 'temperature-c'), null);
   assert.equal(readQuantity({ value: 78 }, 'mass-lb'), null, 'a missing unit reads as unknown');
 });
 
