@@ -324,8 +324,26 @@ export default function DoctorDetailScreen() {
     }
   }, [doctorData, provider, providerSpecialty]);
 
-  // Load provider details and related data if ID is provided
+  /*
+   * COS-1161 — this screen is REUSED, not remounted, when only params.id
+   * changes (expo-router keeps one route entry per name, and every entry
+   * point is a router.push from a list). So two runs of this effect can be in
+   * flight at once, and without a guard the slower one wins: provider A's
+   * diagnoses, medications, appointments and care plans land on provider B's
+   * page, under B's name, with isLoadingData already flipped to false.
+   *
+   * The effect was always keyed on providerId — it re-runs correctly. What it
+   * lacked was cancellation. The sibling effect above (visit cards) has had
+   * the guard all along, which is why that section shows the right provider
+   * while the rest of the page does not.
+   *
+   * Same class as COS-1141, different mechanism: that one was a stale-state
+   * short-circuit refusing to refetch, fixed by pairing state with its owner.
+   * This one refetches and then writes the loser's answer.
+   */
   useEffect(() => {
+    let cancelled = false;
+
     const loadProviderData = async () => {
       const effectiveProviderId = providerId || 'unknown';
       
@@ -334,6 +352,7 @@ export default function DoctorDetailScreen() {
         setIsLoadingData(true);
         try {
           const providerData = await fetchProviderById(providerId);
+          if (cancelled) return;
           if (providerData) {
             setProvider(providerData);
           }
@@ -345,14 +364,20 @@ export default function DoctorDetailScreen() {
             fetchCarePlans(),
           ]);
 
+          if (cancelled) return;
+
           setTreatmentPlans(plans);
           setAppointments(apts);
           setCarePlans(carePlanData);
         } catch (error) {
           console.error('Error loading provider data:', error);
         } finally {
-          setIsLoadingProvider(false);
-          setIsLoadingData(false);
+          // Also guarded: an abandoned run must not clear the spinner for the
+          // provider now on screen, or B renders empty as though it were done.
+          if (!cancelled) {
+            setIsLoadingProvider(false);
+            setIsLoadingData(false);
+          }
         }
       } else {
         // Use params data if available
@@ -371,7 +396,10 @@ export default function DoctorDetailScreen() {
       }
     };
     
-    loadProviderData();
+    void loadProviderData();
+    return () => {
+      cancelled = true;
+    };
   }, [providerId, providerName, providerQualifications, providerSpecialty, params.email, params.phone]);
 
   // Load other providers and existing data shares for Share Data tab

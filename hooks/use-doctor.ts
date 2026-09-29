@@ -37,8 +37,17 @@ export function useDoctor(providerId: string) {
       setIsLoading(true);
       try {
         const stored = await AsyncStorage.getItem(storageKey(providerId));
-        if (stored && !cancelled) {
-          setDoctor(JSON.parse(stored));
+        /*
+         * COS-1161 — clear when there is nothing stored for THIS provider.
+         * `doctor` outlives a providerId change (the screen is reused, not
+         * remounted), so leaving it untouched meant switching from a provider
+         * with a saved row to one without kept the previous provider's name,
+         * phone, email and photo — and doctor-detail renders
+         * `doctorData?.name` first, so that stale name became the header.
+         * No race needed for this one; it is deterministic.
+         */
+        if (!cancelled) {
+          setDoctor(stored ? JSON.parse(stored) : null);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e : new Error('Failed to load doctor data'));
@@ -101,9 +110,8 @@ export function useDoctor(providerId: string) {
     setIsLoading(true);
     try {
       const stored = await AsyncStorage.getItem(storageKey(providerId));
-      if (stored) {
-        setDoctor(JSON.parse(stored));
-      }
+      // COS-1161 — same reason as the loader above: absent means absent.
+      setDoctor(stored ? JSON.parse(stored) : null);
     } catch (e) {
       setError(e instanceof Error ? e : new Error('Failed to refresh doctor data'));
     } finally {
