@@ -96,3 +96,13 @@ test('hasSettledRoute reads SEGMENTS, not a pathname', () => {
   const fn = gate.slice(gate.indexOf('export function hasSettledRoute'))
   assert.match(fn.slice(0, 200), /_currentSegments/)
 })
+
+test('COS-1167: the full-intake route carries retake=1, the param the wizard reads', () => {
+  // The wizard gates on `params.retake === '1'`. `source=retake-request` is
+  // read by NOTHING in the app — it was decorative, and on its own it left a
+  // completed-intake patient staring at IntakeCompleteView.
+  const routes = read('lib', 'retake-routes.ts')
+  const wizard = read('components', 'health-plan', 'patient-intake', 'IntakeWizardScreen.tsx')
+  assert.match(wizard, /params\.retake === '1'/, 'the wizard still gates on retake=1')
+  assert.match(routes, /patient-intake\?retake=1/, 'the route must send retake=1')
+})

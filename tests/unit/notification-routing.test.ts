@@ -53,10 +53,17 @@ test('ASSESSMENT_RETAKE_REQUESTED opens the assessment for the requested instrum
   );
 });
 
-test('ASSESSMENT_RETAKE_REQUESTED: the full intake opens the wizard, not the stepper', () => {
+test('ASSESSMENT_RETAKE_REQUESTED: the full intake opens the wizard IN RETAKE MODE', () => {
+  /*
+   * COS-1167 — `retake=1` is load-bearing. IntakeWizardScreen gates on
+   * `params.retake === '1'`; without it the wizard sees the patient's
+   * COMPLETED intake and renders IntakeCompleteView instead of restarting.
+   * A retake is only ever asked of someone who already finished, so that
+   * branch could never work for the only people who reach it.
+   */
   assert.equal(
     routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'full-intake' }),
-    '/Home/patient-intake?source=retake-request',
+    '/Home/patient-intake?retake=1&source=retake-request',
   );
 });
 
