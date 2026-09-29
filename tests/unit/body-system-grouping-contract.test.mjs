@@ -51,7 +51,15 @@ test('ANTI-ROT: every backend tracked LOINC is classified', () => {
   } catch {
     return;
   }
-  const codes = [...src.matchAll(/\{ code: '([0-9-]+)', name: '([^']+)'/g)].map((m) => ({ code: m[1], name: m[2] }));
+  /*
+   * COS-1158 — a panel metric carries an optional componentCode, and THAT is
+   * what the backend stores as metricCode (85354-9 has no value of its own,
+   * so blood pressure is written as 8480-6 / 8462-4). Check the code the app
+   * actually receives, not the one used to select the observation.
+   */
+  const codes = [
+    ...src.matchAll(/\{ code: '([0-9-]+)',(?: componentCode: '([0-9-]+)',)? name: '([^']+)'/g),
+  ].map((m) => ({ code: m[2] ?? m[1], name: m[3] }));
   assert.ok(codes.length >= 9, `expected the tracked metric list, found ${codes.length}`);
   const unclassified = codes.filter((c) => bodySystemForMetric({ metricCode: c.code }) === null);
   assert.deepEqual(

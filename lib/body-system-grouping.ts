@@ -136,7 +136,13 @@ const BY_CODE: Readonly<Record<string, BodySystem>> = {
   '4548-4': 'metabolic',   // Hemoglobin A1C
   '1558-6': 'metabolic',   // Fasting glucose
   '2345-7': 'metabolic',   // Glucose
-  '85354-9': 'heart',      // Blood pressure (systolic)
+  // COS-1158 — the backend stores BP as two rows keyed by COMPONENT code
+  // (8480-6 / 8462-4), because 85354-9 is the panel and carries no value of
+  // its own. The panel code is kept: it is what the trends writer used to
+  // emit, and an older row must not fall out of the heart group.
+  '85354-9': 'heart',      // Blood pressure panel
+  '8480-6': 'heart',       // Blood pressure — systolic
+  '8462-4': 'heart',       // Blood pressure — diastolic
   '2093-3': 'heart',       // Total cholesterol   ← JUDGEMENT (see above)
   '2085-9': 'heart',       // HDL                 ← JUDGEMENT
   '13457-7': 'heart',      // LDL                 ← JUDGEMENT
