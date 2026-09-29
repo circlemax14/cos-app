@@ -668,7 +668,29 @@ export interface LabResultValue {
   value?: string;
   unit?: string;
   referenceRange?: string;
+  /** The lab's printed interpretation. FREE TEXT — never match on it. */
   interpretation?: string;
+  /**
+   * COS-1162 — the HL7 v3 ObservationInterpretation code (H, HH, L, LL, A, AA,
+   * N...), uppercased. This is the field to test for abnormality;
+   * `interpretation` above varies per EHR.
+   */
+  interpretationCode?: string;
+  /**
+   * COS-1120 — set when the value crosses a panic threshold, computed on the
+   * server from the LOINC and the RAW unit, neither of which reaches the
+   * client. The server has sent this since 2026-09-25; nothing read it until
+   * COS-1162.
+   *
+   * ABSENT IS NOT "NORMAL": it also covers an unknown LOINC, an unrecognised
+   * unit, and a reading outside the physiological guard. Never render its
+   * absence as reassurance.
+   */
+  alertLevel?: 'critical';
+  /** Which side of the threshold, when alertLevel is set. */
+  alertDirection?: 'low' | 'high';
+  /** True when the threshold came from a RANGE and we took the earlier bound. */
+  alertApproximate?: boolean;
 }
 
 export interface LabReport {
