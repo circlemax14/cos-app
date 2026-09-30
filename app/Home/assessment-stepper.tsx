@@ -58,7 +58,22 @@ type Palette = typeof Colors['light'] | typeof Colors['dark']
  * accept an arbitrary pathname to prevent open-redirect-style deep-link
  * abuse in URL sharing paths.
  */
-function resolveReturnHref(returnTo: string | undefined): string {
+function resolveReturnHref(returnTo: string | undefined, source?: string): string {
+  /*
+   * COS-1186 — a check-in opened FROM a retake returns to the gate.
+   *
+   * Vishal: "when I click on the back I should be taken back to the plan screen
+   * but I am taken back to the home screen."
+   *
+   * The retake deep link carries no `returnTo` — the queue and `source` are all
+   * it needs — so Close fell to `default`, the assessments catalog. Wherever
+   * that lands, it is not where he came from.
+   *
+   * Checked before the switch so an explicit `returnTo` still wins: the
+   * nutrition card and the Plan+ gate both name their own destination and must
+   * keep it.
+   */
+  if (!returnTo && source === 'retake-request') return RETAKE_GATE_ROUTE;
   switch (returnTo) {
     case 'domain-checkins-bio':
       return '/Home/wellbeing-domain-checkins?domain=bio'
@@ -70,7 +85,16 @@ function resolveReturnHref(returnTo: string | undefined): string {
     // dietary screener; without this they land in the assessments catalog
     // afterwards instead of back at the plan they were building.
     case 'plan':
-      return '/Home/health-plan'
+      /*
+       * COS-1186 — the VISIBLE plan tab.
+       *
+       * This said '/Home/health-plan', which was right when Vishal asked for it
+       * (2026-08-10) and is not now: COS-915 retired that route from the tab bar
+       * and it branches across three plan screens, one of which
+       * (PlanScreenRedesignedV2) has neither the retake card nor the gate. Same
+       * correction as COS-1180 made for the push.
+       */
+      return RETAKE_GATE_ROUTE
     // COS-814: the Plan+ assessment gate sends people here to satisfy their
     // plan's requirements. Without this case they finished a screener and
     // landed in the catalog — a wall of cards with no relationship to the
@@ -134,7 +158,11 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
    * escape hatch.
    */
   const required = params.required === '1'
-  const returnHref = React.useMemo(() => resolveReturnHref(returnTo), [returnTo])
+  const source = typeof params.source === 'string' ? params.source : undefined
+  const returnHref = React.useMemo(
+    () => resolveReturnHref(returnTo, source),
+    [returnTo, source],
+  )
 
   const instrumentsQuery = useQuery({
     queryKey: ['instruments'],
@@ -276,9 +304,9 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
         planHref: RETAKE_GATE_ROUTE,
         // COS-1177 — a single-instrument retake has no queue but must still end
         // on the plan, not back on the catalog's "Build my plan".
-        source: typeof params.source === 'string' ? params.source : undefined,
+        source,
       }),
-    [params.queue, params.source, instrumentId, returnHref],
+    [params.queue, source, instrumentId, returnHref],
   )
 
   // Auto-dismiss the celebration and route on when it ends.
@@ -508,19 +536,43 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
             {/* COS-829 — no Close on a required check-in. Leaving mid-way loses
                 the draft (it is local state) and lands back on the gate having
                 answered nothing. */}
-            {required ? null : (
-              <Pressable
-                onPress={() => router.replace(returnHref as never)}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Close check-in"
-              >
-                <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
-              </Pressable>
-            )}
-            <Text style={[styles.headerTitle, { color: colors.text, fontSize: getScaledFontSize(15), fontWeight: getScaledFontWeight(600) as any, marginLeft: 12 }]} numberOfLines={1}>
+            {/*
+              COS-1186 — the title is CENTRED, so it needs equal gutters.
+              Vishal: "the title should be in the center".
+
+              A fixed-width slot on each side rather than `justifyContent:
+              'center'`: the left slot holds the Close button (absent on a
+              required run), and without a matching right slot the title centres
+              in the REMAINING space, which is off-centre by exactly the icon's
+              width — and jumps sideways between required and optional runs.
+            */}
+            <View style={styles.headerSlot}>
+              {required ? null : (
+                <Pressable
+                  onPress={() => router.replace(returnHref as never)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close check-in"
+                >
+                  <MaterialIcons name="close" size={getScaledFontSize(24)} color={colors.text} />
+                </Pressable>
+              )}
+            </View>
+            <Text
+              style={[
+                styles.headerTitle,
+                {
+                  color: colors.text,
+                  fontSize: getScaledFontSize(15),
+                  fontWeight: getScaledFontWeight(600) as any,
+                },
+              ]}
+              numberOfLines={1}
+            >
               {getWarmerInstrumentLabel(instrument.instrumentId, instrument.name)}
             </Text>
+            {/* Mirrors the left slot. Empty on purpose — it only reserves width. */}
+            <View style={styles.headerSlot} />
           </View>
 
           <ProgressBar current={stepIdx + 1} total={total} colors={colors} />
@@ -974,7 +1026,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16 },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 12 },
-  headerTitle: { flex: 1 },
+  headerTitle: { flex: 1, textAlign: 'center' },
+  // Equal gutters either side of the centred title; 24 is the icon's size.
+  headerSlot: { width: 24, alignItems: 'flex-start' },
   title: { marginTop: 12, textAlign: 'center' },
   primaryBtn: { marginTop: 18, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 999 },
   stepLabel: { marginTop: 10, marginBottom: 6, letterSpacing: 0.4 },

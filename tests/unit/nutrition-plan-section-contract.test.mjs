@@ -151,7 +151,20 @@ test('returnTo=plan exists, so the screener returns to the plan', () => {
   // nutrition card they were trying to build.
   assert.match(BPS, /returnTo=plan/);
   assert.match(STEPPER, /case 'plan':/);
-  assert.match(STEPPER, /return '\/Home\/health-plan'/);
+  /*
+   * COS-1186 — the DESTINATION changed, the guarantee did not.
+   *
+   * This asserted the literal '/Home/health-plan', which was the plan when
+   * Vishal asked for this on 2026-08-10. COS-915 has since retired that route
+   * from the tab bar, and it branches across three plan screens — one of which
+   * (PlanScreenRedesignedV2) has neither the retake card nor the gate. The
+   * visible plan tab is care-plan-plus.
+   *
+   * What matters here is unchanged and still asserted: `case 'plan'` exists, so
+   * the screener does NOT fall through to the catalog.
+   */
+  assert.match(STEPPER, /case 'plan':[\s\S]{0,700}?return RETAKE_GATE_ROUTE/);
+  assert.doesNotMatch(STEPPER, /case 'plan':[\s\S]{0,700}?return '\/Home\/assessments-catalog'/);
 });
 
 test('the screener prompt says what the screener IS', () => {
