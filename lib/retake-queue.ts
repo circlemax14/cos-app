@@ -216,10 +216,25 @@ export function resolveCompletionHref(args: {
   returnHref: string
   /** Where a finished walk goes; the gate renders the rebuild there. */
   planHref: string
+  /**
+   * COS-1177 — the route's `source` param.
+   *
+   * A SINGLE-instrument retake carries no queue: `retakeStartRoute('phq-9')`
+   * goes straight to the stepper. Without this it fell to `returnHref` — the
+   * catalog — so answering a one-instrument request landed on "Build my plan"
+   * again, which is the whole complaint COS-1174 set out to fix, surviving in
+   * the case the dashboard produces most often.
+   *
+   * `source` was previously decorative; nothing read it. This is the one thing
+   * it is now good for: it says the run began as a retake, which is exactly
+   * what decides whether the plan or the catalog is the right ending.
+   */
+  source?: string | null
 }): string {
-  const { queueParam, instrumentId, returnHref, planHref } = args
+  const { queueParam, instrumentId, returnHref, planHref, source } = args
+  const fromRetake = source === 'retake-request'
   const queue = decodeRetakeQueue(queueParam)
-  if (queue.length === 0) return returnHref
+  if (queue.length === 0) return fromRetake ? planHref : returnHref
 
   const remaining = queue.filter((id) => id !== instrumentId)
   if (remaining.length === 0) return planHref

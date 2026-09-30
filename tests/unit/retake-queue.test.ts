@@ -395,3 +395,48 @@ describe('COS-1175 — retakeStartRoute skips the picker for a set', () => {
     assert.ok(!retakeStartRoute('gad-7').includes('queue='))
   })
 })
+
+describe('COS-1177 — a single-instrument retake also ends on the plan', () => {
+  const base = { returnHref: '/Home/assessments-catalog', planHref: '/Home/health-plan' }
+
+  it('THE POINT: no queue, but from a retake → the plan, not the catalog', () => {
+    // retakeStartRoute('phq-9') goes straight to the stepper with no queue.
+    // This is the shape the dashboard produces most often.
+    assert.equal(
+      resolveCompletionHref({
+        ...base,
+        queueParam: undefined,
+        instrumentId: 'phq-9',
+        source: 'retake-request',
+      }),
+      '/Home/health-plan',
+    )
+  })
+
+  it('a NON-retake run is untouched — still the caller destination', () => {
+    // patient-intake, the nutrition card, the Plan+ gate, plain deep links.
+    assert.equal(
+      resolveCompletionHref({ ...base, queueParam: undefined, instrumentId: 'phq-9' }),
+      base.returnHref,
+    )
+    assert.equal(
+      resolveCompletionHref({
+        ...base,
+        queueParam: undefined,
+        instrumentId: 'phq-9',
+        source: 'nutrition-card',
+      }),
+      base.returnHref,
+    )
+  })
+
+  it('a queue still wins — mid-walk goes to the next instrument', () => {
+    const href = resolveCompletionHref({
+      ...base,
+      queueParam: 'adl,iadl',
+      instrumentId: 'adl',
+      source: 'retake-request',
+    })
+    assert.ok(href.includes('instrumentId=iadl'))
+  })
+})

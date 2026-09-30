@@ -105,7 +105,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   const canAnswerQuestion = useCanRender('assessment-stepper.answer-question')
   const canGoBack = useCanRender('assessment-stepper.go-back')
   const queryClient = useQueryClient()
-  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string; required?: string; queue?: string }>()
+  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string; required?: string; queue?: string; source?: string }>()
   const instrumentId = typeof params.instrumentId === 'string' ? params.instrumentId : ''
   // CHUNK 67 (2026-07-23): stepper honors an optional `returnTo` param so
   // the four exit paths (celebration timer, Close button, Back-when-first,
@@ -269,8 +269,11 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
         instrumentId,
         returnHref,
         planHref: '/Home/health-plan',
+        // COS-1177 — a single-instrument retake has no queue but must still end
+        // on the plan, not back on the catalog's "Build my plan".
+        source: typeof params.source === 'string' ? params.source : undefined,
       }),
-    [params.queue, instrumentId, returnHref],
+    [params.queue, params.source, instrumentId, returnHref],
   )
 
   // Auto-dismiss the celebration and route on when it ends.
