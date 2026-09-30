@@ -75,6 +75,7 @@ import {
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments';
 import { resolveBuildGate } from '@/lib/build-plan-gate';
 import { useAssessmentStrategyV2Flag } from '@/hooks/use-assessment-strategy-v2-flag';
+import { isPhq9Eligible } from '@/lib/retake-queue';
 
 // SCRUM-230 parity — Build gate needs at least 2 completed check-ins on
 // the legacy (non-biopsychosocial) path. v2 delegates Build to the parent
@@ -212,13 +213,11 @@ export function InlineAssessmentCatalog({
     return m;
   }, [assessmentsQuery.data]);
 
-  // PHQ-9 hidden until PHQ-2 completed AND positive (sum ≥ 3) — VERBATIM
-  // legacy skip-logic.
-  const phq2 = completedById.get('phq-2');
-  const phq2Sum =
-    (typeof phq2?.responses?.q1 === 'number' ? phq2.responses.q1 : 0) +
-    (typeof phq2?.responses?.q2 === 'number' ? phq2.responses.q2 : 0);
-  const phq9Eligible = phq2Sum >= 3;
+  // PHQ-9 hidden until PHQ-2 completed AND positive (sum ≥ 3).
+  // COS-1174: shared with the main catalog and the retake queue rather than
+  // hand-copied a third time — a clinical skip rule that drifts between
+  // surfaces auto-advances someone into an instrument we meant to hide.
+  const phq9Eligible = isPhq9Eligible(completedById.get('phq-2')?.responses);
 
   const rationaleById = instrumentsQuery.data?.rationale ?? {};
 

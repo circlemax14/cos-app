@@ -36,6 +36,7 @@ import {
 import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsentModal'
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
 import { shouldOfferImmediateSupport } from '@/lib/crisis-support'
+import { resolveCompletionHref } from '@/lib/retake-queue'
 import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -104,7 +105,7 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   const canAnswerQuestion = useCanRender('assessment-stepper.answer-question')
   const canGoBack = useCanRender('assessment-stepper.go-back')
   const queryClient = useQueryClient()
-  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string; required?: string }>()
+  const params = useLocalSearchParams<{ instrumentId?: string; returnTo?: string; required?: string; queue?: string }>()
   const instrumentId = typeof params.instrumentId === 'string' ? params.instrumentId : ''
   // CHUNK 67 (2026-07-23): stepper honors an optional `returnTo` param so
   // the four exit paths (celebration timer, Close button, Back-when-first,
@@ -243,14 +244,43 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
     },
   })
 
-  // Auto-dismiss the celebration and route back when it ends.
+  /*
+   * COS-1174 — on a requested retake, completing one check-in goes straight to
+   * the NEXT one, and the last one ends at the plan.
+   *
+   * Vishal, 2026-09-30: "Once I complete one assessment, then I should be taken
+   * to the next one. Until I complete all of them and after that there should
+   * be just a message that we are rebuilding your plan[.] this in between
+   * middleware is not required".
+   *
+   * Only this exit changes. Close and Back-from-first-step still use
+   * `returnHref`: abandoning a walk part-way is legitimate, and dropping
+   * someone on the plan they were told to reassess would hide the remaining
+   * check-ins from them.
+   *
+   * With no `queue` param this resolves to `returnHref`, so every non-retake
+   * caller — patient-intake, the nutrition card, the Plan+ gate, plain deep
+   * links — is byte-for-byte unchanged.
+   */
+  const completionHref = React.useMemo(
+    () =>
+      resolveCompletionHref({
+        queueParam: typeof params.queue === 'string' ? params.queue : undefined,
+        instrumentId,
+        returnHref,
+        planHref: '/Home/health-plan',
+      }),
+    [params.queue, instrumentId, returnHref],
+  )
+
+  // Auto-dismiss the celebration and route on when it ends.
   React.useEffect(() => {
     if (!celebrating) return
     const t = setTimeout(() => {
-      router.replace(returnHref as never)
+      router.replace(completionHref as never)
     }, 1500)
     return () => clearTimeout(t)
-  }, [celebrating, returnHref])
+  }, [celebrating, completionHref])
 
   // SCRUM-527: the stepper is a single reused screen instance — navigating to a
   // different instrumentId doesn't remount it, so clear the completion overlay +
