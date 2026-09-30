@@ -166,3 +166,38 @@ test('COS-1175: still silent-drops when there is nothing pending and no rebuild'
   const branch = cardSrc.match(/if \(!first\) \{[\s\S]*?\n  \}/)
   assert.match(branch[0], /: null/)
 })
+
+// ─── COS-1176 ──────────────────────────────────────────────────────────────
+
+const hookSrc = read('hooks', 'use-retake-requests.ts')
+const notifSrc = read('hooks', 'use-notifications.ts')
+
+test('COS-1176: a new request reaches the patient without a push', () => {
+  /*
+   * Vishal: "if I am on the plan screen and if I re-initiate a retake
+   * assessment ... ideally it should automatically change."
+   *
+   * It did, but by exactly one route — the foregrounded push invalidating the
+   * key. With notifications denied or a dropped push, nothing else ever looked
+   * again, and the gate is BLOCKING.
+   */
+  assert.match(hookSrc, /refetchInterval:\s*60_000/)
+  assert.match(hookSrc, /refetchOnMount:\s*true/)
+})
+
+test('COS-1176: the push stays the fast path', () => {
+  // Polling is the floor under it, not a replacement — the invalidation is
+  // immediate and must not be removed in favour of the interval.
+  assert.match(notifSrc, /ASSESSMENT_RETAKE_REQUESTED/)
+  assert.match(
+    notifSrc,
+    /invalidateQueries\(\{\s*queryKey:\s*\['retake-requests',\s*'me'\]\s*\}\)/,
+  )
+})
+
+test('COS-1176: the interval is not so tight it becomes a live feed', () => {
+  // This query mounts on Home, the plan screen and the gate at once.
+  const m = hookSrc.match(/refetchInterval:\s*([0-9_]+)/)
+  assert.ok(m)
+  assert.ok(Number(m[1].replace(/_/g, '')) >= 30_000, 'polling faster than 30s is a battery bug')
+})
