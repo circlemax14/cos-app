@@ -37,6 +37,7 @@ import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsent
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
 import { shouldOfferImmediateSupport } from '@/lib/crisis-support'
 import { resolveCompletionHref } from '@/lib/retake-queue'
+import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
 import { useCanRender } from '@/hooks/use-entitlement'
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -268,7 +269,11 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
         queueParam: typeof params.queue === 'string' ? params.queue : undefined,
         instrumentId,
         returnHref,
-        planHref: '/Home/health-plan',
+        // COS-1180 — the GATED plan tab. '/Home/health-plan' is retired from the
+        // tab bar and can render PlanScreenRedesignedV2, which has no retake
+        // card and no gate, so a finished walk would land somewhere that cannot
+        // show the rebuild.
+        planHref: RETAKE_GATE_ROUTE,
         // COS-1177 — a single-instrument retake has no queue but must still end
         // on the plan, not back on the catalog's "Build my plan".
         source: typeof params.source === 'string' ? params.source : undefined,

@@ -51,6 +51,18 @@ export interface PatientRetakeRequestView {
   dismissReason?: RetakeDismissReason
   reminderCount?: number
   /**
+   * COS-1179 — #10b: a mandatory request refuses snooze AND dismiss server-side
+   * (MandatoryRequestError → 409).
+   *
+   * The backend has written this since #10b and the DASHBOARD's type has always
+   * declared it. This type did not, which is the whole reason no app surface
+   * read it: the card went on offering "Not now" for a request the server would
+   * never let anyone defer.
+   *
+   * Absent on rows created before #10b, so read it as false.
+   */
+  mandatory?: boolean
+  /**
    * COS-1168 — kept for back-compat only. DO NOT RENDER: naming a member of
    * staff to a patient leaks who is looking at their record. Use
    * `requesterPhrase`.

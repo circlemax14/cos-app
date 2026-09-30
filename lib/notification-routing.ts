@@ -107,6 +107,15 @@ export const NOTIFICATION_PLAN_READY_ROUTE_BPS_ENABLED = true;
 export const NOTIFICATION_RETAKE_ROUTE_ENABLED = true;
 
 /**
+ * COS-1180 — the one screen a pending retake is answered from.
+ *
+ * The visible Plan tab. Deliberately not '/Home/health-plan': COS-915 retired
+ * that from the tab bar and it branches across three plan screens, one of which
+ * (PlanScreenRedesignedV2) renders neither the retake card nor the gate.
+ */
+export const RETAKE_GATE_ROUTE = '/Home/care-plan-plus';
+
+/**
  * Eligibility hints for the caller. Pure/optional — every field defaults
  * to conservative (legacy-preserving) behavior so back-compat with older
  * callers (and the unit-test contract) holds.
@@ -220,11 +229,33 @@ export function routeForNotificationData(
      */
     case 'ASSESSMENT_RETAKE_REQUESTED': {
       if (!NOTIFICATION_RETAKE_ROUTE_ENABLED) return null;
-      const instrumentKey =
-        typeof data.instrumentKey === 'string' && data.instrumentKey.trim() !== ''
-          ? data.instrumentKey.trim()
-          : null;
-      return instrumentKey ? retakeStartRoute(instrumentKey) : '/Home/plan';
+      /*
+       * COS-1180 — land on the GATE, not on the work.
+       *
+       * Vishal, 2026-09-30: "I received this notification that your care team
+       * requested you to retake the assessment. When I clicked on it, it took
+       * me to that check-in screen again. I don't know why. Ideally it should
+       * take me to that screen that I was seeing when I click on the plan nav
+       * button."
+       *
+       * COS-1166 pointed this at retakeStartRoute, which for a SCOPE request
+       * (`all-assessments`, `domain:*`) resolves to the CATALOG — a wall of
+       * cards whose primary action is "Build my plan". So the push and the Plan
+       * tab disagreed about where a pending retake lives.
+       *
+       * One destination now: the gate. It names who asked and what for, and its
+       * "Start now" is the single launcher — which for a `set:` goes straight
+       * into the first check-in (COS-1175). The instrumentKey is no longer read
+       * here; the gate reads the pending list itself, so it cannot go stale
+       * against a payload.
+       *
+       * ⚠️ care-plan-plus, NOT '/Home/plan' (that is the Health Status screen)
+       * and NOT '/Home/health-plan' (retired from the tab bar by COS-915, and
+       * it can render PlanScreenRedesignedV2, which has no retake card and no
+       * gate). care-plan-plus renders BiopsychosocialPlanScreen unconditionally,
+       * which is where RetakeRequiredGate actually lives.
+       */
+      return RETAKE_GATE_ROUTE;
     }
 
     // ── Existing mappings (unchanged behavior) ──────────────────────
