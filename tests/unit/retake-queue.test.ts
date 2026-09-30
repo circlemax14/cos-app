@@ -24,6 +24,7 @@ import {
   rollUpDomain,
   type QueueInstrument,
 } from '../../lib/retake-queue.ts'
+import { retakeStartRoute } from '../../lib/retake-routes.ts'
 
 const INSTRUMENTS: QueueInstrument[] = [
   { instrumentId: 'phq-2', domain: 'psychological' },
@@ -294,5 +295,103 @@ describe('resolveCompletionHref — the walk', () => {
     })
     // Still advances rather than looping on gad-7.
     assert.ok(href.includes('instrumentId=adl'))
+  })
+})
+
+describe('COS-1175 — set: scopes (the scheduled sweeper batch)', () => {
+  it('parses its members', () => {
+    assert.deepEqual(parseRetakeScopeKey('set:falls-12,hope,ohio-leisure-interest'), {
+      kind: 'set',
+      instrumentIds: ['falls-12', 'hope', 'ohio-leisure-interest'],
+    })
+  })
+
+  it('an empty or malformed set is not a scope', () => {
+    // Would otherwise create a request that can never be satisfied.
+    assert.equal(parseRetakeScopeKey('set:'), null)
+    assert.equal(parseRetakeScopeKey('set:,,'), null)
+  })
+
+  it('THE POINT: one walk covering exactly the instruments that were due', () => {
+    // Exactly the three the sweeper found due on dev at 05:32:30.
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['falls-12', 'hope', 'ohio-leisure-interest'] },
+      instruments: [
+        ...INSTRUMENTS,
+        { instrumentId: 'falls-12', domain: 'biological' },
+        { instrumentId: 'hope', domain: 'spiritual' },
+        { instrumentId: 'ohio-leisure-interest', domain: 'social' },
+      ],
+      completedIds: none,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['falls-12', 'hope', 'ohio-leisure-interest'])
+  })
+
+  it('walks in the SET order, not the catalog order', () => {
+    // The sweeper sorts stalest-first; the catalog sorts by AI recommendation.
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['lsns-6', 'adl'] },
+      instruments: INSTRUMENTS, // adl appears before lsns-6 here
+      completedIds: none,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['lsns-6', 'adl'])
+  })
+
+  it('ignores a member the patient is not assigned', () => {
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['adl', 'not-assigned-to-them'] },
+      instruments: INSTRUMENTS,
+      completedIds: none,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['adl'])
+  })
+
+  it('still skips completed and comingSoon members', () => {
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['adl', 'pcl-5', 'iadl'] },
+      instruments: INSTRUMENTS,
+      completedIds: new Set(['adl']),
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['iadl'])
+  })
+
+  it('an emptied set ends the walk at the plan', () => {
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['adl', 'iadl'] },
+      instruments: INSTRUMENTS,
+      completedIds: new Set(['adl', 'iadl']),
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, [])
+  })
+})
+
+describe('COS-1175 — retakeStartRoute skips the picker for a set', () => {
+  it('THE POINT: goes straight into the first check-in, carrying the queue', () => {
+    const href = retakeStartRoute('set:falls-12,hope,ohio-leisure-interest')
+    assert.equal(
+      href,
+      '/Home/assessment-stepper?instrumentId=falls-12&source=retake-request' +
+        '&queue=falls-12%2Chope%2Cohio-leisure-interest',
+    )
+    assert.ok(!href.includes('assessments-catalog'))
+  })
+
+  it('a malformed set falls back to the catalog, not an empty stepper', () => {
+    assert.ok(retakeStartRoute('set:').includes('assessments-catalog'))
+  })
+
+  it('domain and all-assessments still use the catalog — only it knows the members', () => {
+    assert.ok(retakeStartRoute('all-assessments').includes('assessments-catalog'))
+    assert.ok(retakeStartRoute('domain:social').includes('assessments-catalog'))
+  })
+
+  it('a single instrument is unchanged', () => {
+    assert.ok(retakeStartRoute('gad-7').includes('instrumentId=gad-7'))
+    assert.ok(!retakeStartRoute('gad-7').includes('queue='))
   })
 })

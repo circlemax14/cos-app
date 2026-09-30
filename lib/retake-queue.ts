@@ -55,6 +55,14 @@ export type RetakeScopeDomain = 'biological' | 'psychological' | 'social'
 export type RetakeScope =
   | { kind: 'all' }
   | { kind: 'domain'; domain: RetakeScopeDomain }
+  /**
+   * COS-1175 — an explicit set of instruments, named by the request itself.
+   *
+   * The scheduled sweeper had no way to say "these three", so it created one
+   * request per due check-in and each fired the plan gate separately. `set:`
+   * is one ask the patient walks end to end.
+   */
+  | { kind: 'set'; instrumentIds: string[] }
 
 /**
  * Parse a request's `instrumentKey` into a scope, or null when it names a
@@ -63,6 +71,14 @@ export type RetakeScope =
  */
 export function parseRetakeScopeKey(key: string): RetakeScope | null {
   if (key === 'all-assessments') return { kind: 'all' }
+  if (key.startsWith('set:')) {
+    const ids = key
+      .slice('set:'.length)
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+    return ids.length > 0 ? { kind: 'set', instrumentIds: ids } : null
+  }
   if (!key.startsWith('domain:')) return null
   const domain = rollUpDomain(key.slice('domain:'.length))
   return domain === null ? null : { kind: 'domain', domain }
@@ -130,7 +146,18 @@ export function buildRetakeQueue(args: BuildQueueArgs): string[] {
   const { scope, instruments, completedIds, phq9Eligible } = args
   const out: string[] = []
   const seen = new Set<string>()
-  for (const it of instruments) {
+  /*
+   * A set carries its OWN order — the sweeper sorts stalest-first — so walk it
+   * in that order rather than the catalog's. Every other scope defers to the
+   * catalog ordering it was handed.
+   */
+  const ordered =
+    scope.kind === 'set'
+      ? scope.instrumentIds
+          .map((id) => instruments.find((i) => i.instrumentId === id))
+          .filter((i): i is QueueInstrument => i !== undefined)
+      : instruments
+  for (const it of ordered) {
     const id = it.instrumentId
     if (!id || seen.has(id)) continue
     if (completedIds.has(id)) continue
@@ -139,6 +166,7 @@ export function buildRetakeQueue(args: BuildQueueArgs): string[] {
     if (it.comingSoon === true) continue
     if (id === 'phq-9' && !phq9Eligible) continue
     if (scope.kind === 'domain' && rollUpDomain(it.domain) !== scope.domain) continue
+    if (scope.kind === 'set' && !scope.instrumentIds.includes(id)) continue
     seen.add(id)
     out.push(id)
   }

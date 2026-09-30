@@ -121,3 +121,48 @@ test('the PHQ-9 skip rule has exactly ONE definition', () => {
     )
   }
 })
+
+// ─── COS-1175 ──────────────────────────────────────────────────────────────
+
+const cardSrc = read('components', 'health-plan', 'retake-request', 'RetakeRequestInboxCard.tsx')
+const routesSrc = read('lib', 'retake-routes.ts')
+
+test('COS-1175: a set: request skips the picker entirely', () => {
+  // Vishal: "this in between middleware is not required". The sweeper's
+  // requests are now the common case, and a set names its own members, so
+  // there is nothing for a picker to resolve.
+  assert.match(routesSrc, /instrumentKey\.startsWith\('set:'\)/)
+  assert.match(
+    routesSrc,
+    /\/Home\/assessment-stepper\?instrumentId=\$\{first\}&source=retake-request&queue=\$\{queue\}/,
+  )
+})
+
+test('COS-1175: a malformed set falls back to the catalog, never an empty stepper', () => {
+  const block = routesSrc.match(/if \(instrumentKey\.startsWith\('set:'\)\)[\s\S]{0,700}?\n  \}/)
+  assert.ok(block, 'set branch not found')
+  assert.match(block[0], /assessments-catalog/)
+})
+
+test('COS-1175: the inbox card shows rebuild status instead of a stale ask', () => {
+  // He finished every check-in, returned to Home, and the card still read
+  // "time to reassess" — the app asking for work he had just done.
+  assert.match(cardSrc, /if \(!first\) \{/, 'the nothing-pending branch must be a block, not a bare return null')
+  assert.match(cardSrc, /return rebuilding \?/)
+  assert.match(cardSrc, /Rebuilding your plan/)
+  assert.match(cardSrc, /useBiopsychosocialPlan\(\)/)
+})
+
+test('COS-1175: the rebuild notice carries NO actions', () => {
+  // It replaces the ask; a second thing to tap during a rebuild is the loop
+  // he was stuck in.
+  const branch = cardSrc.match(/if \(!first\) \{[\s\S]*?\n  \}/)
+  assert.ok(branch, 'nothing-pending branch not found')
+  assert.doesNotMatch(branch[0], /<Pressable/)
+  assert.doesNotMatch(branch[0], /onPress/)
+})
+
+test('COS-1175: still silent-drops when there is nothing pending and no rebuild', () => {
+  const branch = cardSrc.match(/if \(!first\) \{[\s\S]*?\n  \}/)
+  assert.match(branch[0], /: null/)
+})

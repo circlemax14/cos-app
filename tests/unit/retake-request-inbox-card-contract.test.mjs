@@ -80,9 +80,14 @@ test('inbox card does NOT import react-native-reanimated, gesture-handler, or bo
 
 // ── Silent-drop pattern (never render empty chrome) ─────────────────────
 test('inbox card silent-drops when no pending row exists (returns null)', () => {
-  // The `if (!first) return null` guard MUST exist so we never render
-  // a card with no content. Regex forgives whitespace variance.
-  assert.match(src, /if\s*\(\s*!\s*first\s*\)\s*return\s+null/)
+  // The `!first` guard MUST exist so we never render a card with no content.
+  //
+  // COS-1175: the guard is now a block — nothing pending AND a plan rebuilding
+  // shows a status line, nothing pending and no rebuild still renders nothing.
+  // The rule is unchanged; only its shape is.
+  const branch = src.match(/if\s*\(\s*!\s*first\s*\)\s*\{[\s\S]*?\n  \}/)
+  assert.ok(branch, 'the !first guard is gone — the card can now render empty')
+  assert.match(branch[0], /:\s*null/)
 })
 
 // ── Deep links ─────────────────────────────────────────────────────────
