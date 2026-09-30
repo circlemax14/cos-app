@@ -35,11 +35,12 @@
  */
 
 import React from 'react'
-import { ScrollView, StyleSheet, Text } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { getColors, Spacing } from '@/constants/design-system'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
+import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 import { RetakeRequestInboxCard } from './RetakeRequestInboxCard'
 
 export interface RetakeRequiredGateProps {
@@ -49,18 +50,84 @@ export interface RetakeRequiredGateProps {
    * pending count so the contract can be exercised without a QueryClient.
    */
   __testPendingCount?: number
+  /** Test-only override for the rebuild-in-flight branch. */
+  __testRebuilding?: boolean
 }
 
 export function RetakeRequiredGate({
   children,
   __testPendingCount,
+  __testRebuilding,
 }: RetakeRequiredGateProps): React.JSX.Element {
   // Hook order is stable regardless of the override — React must never see a
   // changing hook count across renders.
   const query = usePendingRetakeRequests()
   const pendingCount = __testPendingCount ?? query.data?.length ?? 0
+  const plan = useBiopsychosocialPlan()
+  const rebuilding = __testRebuilding ?? plan.data?.generating === true
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = getColors(settings.isDarkTheme)
+
+  /*
+   * COS-1171 — the plan is being rebuilt, so do not show a stale one.
+   *
+   * Vishal, 2026-09-30: "it should show a loader … we are rebuilding your plan
+   * … until the plan is actually ready. Even if I close the app and come back
+   * again, then I should see this loader."
+   *
+   * Checked BEFORE the pending count, because the order matters at exactly the
+   * moment that matters: answering the last check-in of a request both clears
+   * the request AND starts the rebuild. Pending-first would flash the OLD plan
+   * in the gap between those two facts — which is what he saw.
+   *
+   * `generating` is server state on the plan record, so this survives closing
+   * the app: a cold start refetches it and lands straight back here. It is not
+   * a local spinner.
+   *
+   * It clears two ways — the BIOPSYCHOSOCIAL_PLAN_READY push invalidates the
+   * query, and the hook polls every 10s while generating in case that push
+   * never arrives.
+   */
+  if (rebuilding) {
+    return (
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text
+          accessibilityRole="header"
+          style={[
+            styles.heading,
+            {
+              color: colors.text,
+              fontSize: getScaledFontSize(22),
+              fontWeight: getScaledFontWeight(700) as never,
+            },
+          ]}
+        >
+          Rebuilding your plan
+        </Text>
+        <Text style={[styles.body, { color: colors.secondary, fontSize: getScaledFontSize(15) }]}>
+          Thanks — we have your answers. We are working them into your plan now. This usually takes
+          a minute, and we will let you know the moment it is ready.
+        </Text>
+        <View
+          style={styles.spinnerRow}
+          accessibilityRole="progressbar"
+          accessibilityLabel="Rebuilding your plan"
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+        <Text
+          style={[styles.footnote, { color: colors.secondary, fontSize: getScaledFontSize(13) }]}
+        >
+          You can close the app — this carries on without you, and you will get a notification when
+          your plan is ready.
+        </Text>
+      </ScrollView>
+    )
+  }
 
   // Nothing outstanding — the plan renders exactly as it did before.
   if (pendingCount <= 0) return <>{children}</>
@@ -110,4 +177,5 @@ const styles = StyleSheet.create({
   heading: { marginTop: Spacing.xl },
   body: { lineHeight: 22 },
   footnote: { lineHeight: 19 },
+  spinnerRow: { paddingVertical: Spacing.lg, alignItems: 'center' },
 })

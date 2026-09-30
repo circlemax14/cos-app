@@ -126,6 +126,26 @@ export function useBiopsychosocialPlan() {
     queryKey: ['biopsychosocial-plan'],
     queryFn: fetchBiopsychosocialPlan,
     staleTime: 5 * 60 * 1000,
+    /*
+     * COS-1171 — poll ONLY while a rebuild is in flight.
+     *
+     * Vishal, 2026-09-30: "it should show a loader … we are rebuilding your
+     * plan … until the plan is actually ready. Even if I close the app and
+     * come back again, then I should see this loader."
+     *
+     * The old unconditional refetchInterval was removed in favour of
+     * push-driven invalidation (BIOPSYCHOSOCIAL_PLAN_READY / FAILED /
+     * CANCELLED, see use-notifications). That is the right primary mechanism
+     * and it is NOT sufficient on its own: a patient with notifications off,
+     * or one whose push is dropped, would sit on the rebuilding state forever
+     * with nothing left to converge it.
+     *
+     * Conditional, so it costs nothing in the normal case — the interval is
+     * `false` unless the server says a job is running, and the push still
+     * clears it faster than the poll would. Same shape as the fasten-status
+     * poll in use-patient.ts.
+     */
+    refetchInterval: (query) => (query.state.data?.generating === true ? 10_000 : false),
   })
 }
 
