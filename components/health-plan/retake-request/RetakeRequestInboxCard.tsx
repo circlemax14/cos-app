@@ -51,6 +51,7 @@ import { retakeStartRoute } from '@/lib/retake-routes'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
+import { useRetakeQueue } from '@/hooks/use-retake-queue'
 import type { PatientRetakeRequestView } from '@/services/api/retake-requests'
 
 /*
@@ -136,10 +137,44 @@ export function RetakeRequestInboxCard({
   const first = rows[0]
   const moreCount = Math.max(0, rows.length - 1)
 
+  /*
+   * COS-1181 — START THE WORK, never a picker.
+   *
+   * Vishal, 2026-09-30, third report of the same thing: "if I click on the start
+   * now it is taking me to health check-ins ... Why can't I start the assessment
+   * directly? I told you multiple times. When I click on start, assessments
+   * should start one by one."
+   *
+   * `retakeStartRoute` sends a `domain:*` / `all-assessments` key to the CATALOG,
+   * because until COS-1181 only the catalog could resolve a scope into the
+   * patient's actual instruments. useRetakeQueue does that here now, so Start now
+   * deep-links into the FIRST owed check-in carrying the rest of the queue, and
+   * the stepper walks it to the end (COS-1174).
+   *
+   * Falls back to retakeStartRoute only when there is genuinely nothing to
+   * resolve: a single instrument (it already opens directly), the health-status
+   * intake (its own wizard), or a scope whose queue came back empty — which means
+   * the patient has already answered everything, and the catalog is then the
+   * honest destination rather than a stepper with no instrument.
+   *
+   * `queue.ready` matters: tapping while the three queries are still loading must
+   * NOT fall through to the picker. Start now is disabled until it resolves.
+   */
+  const queue = useRetakeQueue(first?.instrumentKey ?? null)
+
   const onStartNow = useCallback(() => {
     if (!first) return
+    if (!queue.ready) return
+    if (queue.ids.length > 0) {
+      const next = encodeURIComponent(queue.ids[0])
+      const rest = encodeURIComponent(queue.ids.join(','))
+      router.push(
+        `/Home/assessment-stepper?instrumentId=${next}&source=retake-request&queue=${rest}` as never,
+      )
+      return
+    }
     router.push(retakeStartRoute(first.instrumentKey) as never)
-  }, [first])
+  }, [first, queue.ready, queue.ids])
 
   const onNotNow = useCallback(() => {
     if (!first) return
@@ -342,14 +377,18 @@ export function RetakeRequestInboxCard({
       <View style={styles.ctaRow}>
         <Pressable
           onPress={onStartNow}
+          // COS-1181 — a tap before the queue resolves would fall through to the
+          // picker, which is the exact screen this change exists to remove.
+          disabled={!queue.ready}
           accessibilityRole="button"
           accessibilityLabel={`Start ${first.instrumentDisplayName} now`}
+          accessibilityState={{ disabled: !queue.ready, busy: !queue.ready }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
             styles.primaryBtn,
             {
               backgroundColor: colors.tint || '#008080',
-              opacity: pressed ? 0.85 : 1,
+              opacity: !queue.ready ? 0.6 : pressed ? 0.85 : 1,
             },
           ]}
         >

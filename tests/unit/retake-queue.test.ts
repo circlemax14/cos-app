@@ -19,6 +19,7 @@ import {
   decodeRetakeQueue,
   encodeRetakeQueue,
   isPhq9Eligible,
+  orderAssignedInstruments,
   parseRetakeScopeKey,
   resolveCompletionHref,
   rollUpDomain,
@@ -438,5 +439,98 @@ describe('COS-1177 — a single-instrument retake also ends on the plan', () => 
       source: 'retake-request',
     })
     assert.ok(href.includes('instrumentId=iadl'))
+  })
+})
+
+describe('COS-1181 — orderAssignedInstruments (lifted out of the catalog)', () => {
+  const ALL: QueueInstrument[] = [
+    { instrumentId: 'gad-7', domain: 'psychological' },
+    { instrumentId: 'phq-2', domain: 'psychological' },
+    { instrumentId: 'phq-9', domain: 'psychological' },
+    { instrumentId: 'wellbeing-5', domain: 'psychological' },
+    { instrumentId: 'not-assigned', domain: 'social' },
+  ]
+  const assigned = (...ids: string[]) => new Set(ids)
+
+  it('THE POINT: only what the plan asks for', () => {
+    const out = orderAssignedInstruments({
+      all: ALL,
+      assignedIds: assigned('gad-7', 'phq-2'),
+      assignmentsKnown: true,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(out.map((i) => i.instrumentId), ['gad-7', 'phq-2'])
+  })
+
+  it('the AI order leads; INSTRUMENT_ORDER only backfills', () => {
+    // `all` arrives in backend order (gad-7 before phq-2), which must survive —
+    // INSTRUMENT_ORDER lists phq-2 first and must NOT reorder it.
+    const out = orderAssignedInstruments({
+      all: ALL,
+      assignedIds: assigned('gad-7', 'phq-2', 'wellbeing-5'),
+      assignmentsKnown: true,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(out.map((i) => i.instrumentId), ['gad-7', 'phq-2', 'wellbeing-5'])
+  })
+
+  it('the backfill cannot reintroduce the library', () => {
+    // INSTRUMENT_ORDER names many ids; only assigned ones may come back.
+    const out = orderAssignedInstruments({
+      all: ALL,
+      assignedIds: assigned('gad-7'),
+      assignmentsKnown: true,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(out.map((i) => i.instrumentId), ['gad-7'])
+  })
+
+  it('"not loaded" is EMPTY, not everything', () => {
+    // Flashing the full library and then removing most of it reads as a glitch —
+    // and in the retake card it would auto-advance into an unassigned instrument.
+    const out = orderAssignedInstruments({
+      all: ALL,
+      assignedIds: assigned('gad-7'),
+      assignmentsKnown: false,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(out, [])
+  })
+
+  it('honours the PHQ-9 skip rule', () => {
+    const out = orderAssignedInstruments({
+      all: ALL,
+      assignedIds: assigned('phq-2', 'phq-9'),
+      assignmentsKnown: true,
+      phq9Eligible: false,
+    })
+    assert.deepEqual(out.map((i) => i.instrumentId), ['phq-2'])
+  })
+
+  it('never repeats an instrument', () => {
+    const out = orderAssignedInstruments({
+      all: [...ALL, { instrumentId: 'gad-7', domain: 'psychological' }],
+      assignedIds: assigned('gad-7'),
+      assignmentsKnown: true,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(out.map((i) => i.instrumentId), ['gad-7'])
+  })
+
+  it('END TO END: an all-assessments scope now resolves without the catalog', () => {
+    // This is the whole point of COS-1181 — the card can do this itself.
+    const ordered = orderAssignedInstruments({
+      all: ALL,
+      assignedIds: assigned('gad-7', 'phq-2', 'wellbeing-5'),
+      assignmentsKnown: true,
+      phq9Eligible: true,
+    })
+    const q = buildRetakeQueue({
+      scope: { kind: 'all' },
+      instruments: ordered,
+      completedIds: new Set(['phq-2']),
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['gad-7', 'wellbeing-5'])
   })
 })

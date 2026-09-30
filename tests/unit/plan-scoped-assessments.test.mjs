@@ -91,6 +91,9 @@ test('the banner says WHY the old plan is not shown', () => {
 // ── COS-828: the catalog is the plan's too ───────────────────────────────
 
 const catalog = read('components/health-plan/AssessmentCatalogContent.tsx')
+// COS-1181 — the scoping logic moved out of the catalog into this module so
+// the retake card can resolve a scope without routing through the catalog.
+const queueLib = read('lib/retake-queue.ts')
 
 test('THE POINT: the catalog offers only what the plan asks for', () => {
   // COS-822 scoped the section on the care plan and stopped there. Its "Take a
@@ -98,20 +101,34 @@ test('THE POINT: the catalog offers only what the plan asks for', () => {
   // 31 instruments to a patient on a plan that names none. A patient could
   // complete twenty check-ins their plan never wanted, and none would satisfy
   // its gate.
-  assert.match(catalog, /raw\.filter\(\(it\) => assignedIds\.has\(it\.instrumentId\)\)/)
+  //
+  // COS-1181 moved this filter into lib/retake-queue's orderAssignedInstruments
+  // so the retake card can resolve a scope too. Behaviour is unchanged; these
+  // assertions follow it to its new home, and the catalog must now be shown to
+  // CALL it rather than re-implement it.
+  assert.match(queueLib, /all\.filter\(\(it\) => assignedIds\.has\(it\.instrumentId\)\)/)
+  assert.match(catalog, /orderAssignedInstruments\(\{/)
+  assert.doesNotMatch(
+    catalog,
+    /raw\.filter\(\(it\) => assignedIds\.has/,
+    'the catalog must not keep a second copy of the scoping filter',
+  )
 })
 
 test('the ORDER backfill cannot put the library back', () => {
   // It re-adds ids from a static list to fix ordering. Built from the RAW
   // list it would undo the scoping one line later.
-  const at = catalog.indexOf('for (const id of ORDER)')
-  const byId = catalog.indexOf('const byId = new Map(all.map(')
-  assert.ok(byId > -1 && at > byId, 'byId must be built from the scoped list before the backfill')
+  const at = queueLib.indexOf('for (const id of INSTRUMENT_ORDER)')
+  const byId = queueLib.indexOf('const byId = new Map(assigned.map(')
+  assert.ok(byId > -1, 'byId must be built from the SCOPED list (assigned), not the raw one')
+  assert.ok(at > byId, 'the backfill must come after the scoped byId')
 })
 
 test('it waits for the assignments rather than flashing 31', () => {
+  // "not loaded yet" must render nothing, not everything — and in the retake
+  // card the same guard stops an auto-advance into an unassigned instrument.
   assert.match(catalog, /const assignmentsKnown = assignmentsQuery\.data !== undefined/)
-  assert.match(catalog, /assignmentsKnown\s*\n?\s*\? raw\.filter/)
+  assert.match(queueLib, /if \(!assignmentsKnown\) return \[\]/)
 })
 
 test('THE POINT: "asks for none" is a different empty from "not loaded"', () => {
