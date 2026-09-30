@@ -52,11 +52,23 @@ export interface RetakeQueueResult {
    * False while any input is still loading. Callers MUST NOT treat an empty
    * queue as "nothing to do" until this is true, or a tap during load silently
    * falls back to the picker.
+   *
+   * COS-1185: also true once the inputs have ERRORED. A button that waits
+   * forever on a failed query is a dead button, which is the same "nothing
+   * happens" this whole change set has been chasing. `resolved` is what
+   * distinguishes the two.
    */
   ready: boolean
+  /**
+   * COS-1185 — true only when the queue was actually COMPUTED from loaded data.
+   *
+   * `ready && !resolved` means "we gave up". An empty queue then means nothing,
+   * so the caller must fall back rather than conclude the request is satisfied.
+   */
+  resolved: boolean
 }
 
-const EMPTY: RetakeQueueResult = { ids: [], ready: false }
+const EMPTY: RetakeQueueResult = { ids: [], ready: false, resolved: false }
 
 /**
  * @param instrumentKey the pending request's key, or null when there is none.
@@ -102,7 +114,19 @@ export function useRetakeQueue(
   const assignmentsQuery = useHealthPlanAssignments()
 
   return useMemo<RetakeQueueResult>(() => {
-    if (!scope) return { ids: [], ready: true }
+    if (!scope) return { ids: [], ready: true, resolved: true }
+
+    /*
+     * COS-1185 — give up rather than hang.
+     *
+     * React Query retries before it errors, so this is a persistent failure. The
+     * caller falls back to retakeStartRoute on `ready && !resolved`: a worse
+     * destination than the walk, but the tap does SOMETHING, which a disabled
+     * button never does.
+     */
+    if (instrumentsQuery.isError || assessmentsQuery.isError || assignmentsQuery.isError) {
+      return { ids: [], ready: true, resolved: false }
+    }
 
     const assignmentsKnown = assignmentsQuery.data !== undefined
     if (!instrumentsQuery.data || !assessmentsQuery.data || !assignmentsKnown) {
@@ -150,6 +174,16 @@ export function useRetakeQueue(
     return {
       ids: buildRetakeQueue({ scope, instruments: ordered, completedIds, phq9Eligible }),
       ready: true,
+      resolved: true,
     }
-  }, [scope, since, instrumentsQuery.data, assessmentsQuery.data, assignmentsQuery.data])
+  }, [
+    scope,
+    since,
+    instrumentsQuery.data,
+    instrumentsQuery.isError,
+    assessmentsQuery.data,
+    assessmentsQuery.isError,
+    assignmentsQuery.data,
+    assignmentsQuery.isError,
+  ])
 }
