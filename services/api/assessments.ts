@@ -144,3 +144,31 @@ export async function fetchAssessmentHistory(
     return []
   }
 }
+
+/**
+ * COS-1189 — the AI reading of one check-in's whole history.
+ *
+ * `null` means they have never completed it, and the caller renders no card at
+ * all. A FAILED generation is different: it arrives with `available: false` and
+ * its own copy, because "nothing to report" about someone's mental health must
+ * never be how a failure looks.
+ *
+ * Deliberately NOT swallowed to null on error, unlike fetchAssessmentHistory:
+ * that swallow is why a 403 renders as "you haven't completed this yet". A
+ * thrown error here lets the card say it could not load.
+ */
+export interface AssessmentHistorySummary {
+  summary: string
+  generatedAt: string
+  available: boolean
+}
+
+export async function fetchAssessmentHistorySummary(
+  instrumentId: InstrumentId,
+): Promise<AssessmentHistorySummary | null> {
+  const res = await apiClient.get<{
+    success: boolean
+    data: { summary: AssessmentHistorySummary | null }
+  }>(`/v1/patients/me/assessments/${instrumentId}/summary`)
+  return res.data.data.summary ?? null
+}
