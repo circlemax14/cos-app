@@ -202,12 +202,15 @@ export function RetakeRequestInboxCard({
      * single instrument, which it opens directly, and the health-status intake,
      * which has its own wizard.
      */
-    if (parseRetakeScopeKey(first.instrumentKey)) {
+    // COS-1185 — only when the queue was genuinely RESOLVED and came back empty.
+    // `ready && !resolved` means the inputs failed, and an empty queue then means
+    // nothing at all; fall through so the tap still does something.
+    if (queue.resolved && parseRetakeScopeKey(first.instrumentKey)) {
       router.push(RETAKE_GATE_ROUTE as never)
       return
     }
     router.push(retakeStartRoute(first.instrumentKey) as never)
-  }, [first, queue.ready, queue.ids])
+  }, [first, queue.ready, queue.resolved, queue.ids])
 
   const onNotNow = useCallback(() => {
     if (!first) return

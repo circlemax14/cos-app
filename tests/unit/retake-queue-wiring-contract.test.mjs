@@ -396,13 +396,18 @@ test('COS-1184: the hook uses the request WATERMARK, not ever-completed', () => 
 
 test('COS-1184: the watermark is part of the memo deps', () => {
   // Otherwise a new request with the same key reuses the previous queue.
-  assert.match(queueHookSrc, /\[scope, since, instrumentsQuery\.data/)
+  // COS-1185 reformatted the deps to multiline when it added the error flags;
+  // assert membership rather than the exact single-line shape.
+  assert.match(queueHookSrc, /^\s*since,$/m)
+  assert.match(queueHookSrc, /^\s*scope,$/m)
 })
 
 test('COS-1184 THE POINT: a satisfied SCOPE goes to the gate, never the catalog', () => {
   const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   assert.ok(handler)
-  assert.match(handler[0], /if \(parseRetakeScopeKey\(first\.instrumentKey\)\) \{/)
+  // COS-1185 additionally requires the queue to have RESOLVED — an empty queue
+  // from a failed read means nothing and must not read as "satisfied".
+  assert.match(handler[0], /if \(queue\.resolved && parseRetakeScopeKey\(first\.instrumentKey\)\) \{/)
   assert.match(handler[0], /router\.push\(RETAKE_GATE_ROUTE as never\)/)
   // retakeStartRoute survives only for keys with nowhere to walk.
   const scopeAt = handler[0].indexOf('parseRetakeScopeKey')
@@ -413,4 +418,34 @@ test('COS-1184 THE POINT: a satisfied SCOPE goes to the gate, never the catalog'
 test('COS-1184: PHQ-9 eligibility reads the LATEST phq-2, watermark or not', () => {
   // It is a clinical skip rule about the patient, not about this request.
   assert.match(queueHookSrc, /if \(at >= phq2At\)/)
+})
+
+// ─── COS-1185 ──────────────────────────────────────────────────────────────
+
+test('COS-1185: a failed query gives up rather than disabling the button forever', () => {
+  /*
+   * `ready` gates the button. Without this the three queries erroring leaves it
+   * disabled permanently — a dead button, which is the same "nothing happens"
+   * this whole change set has been chasing.
+   */
+  assert.match(
+    queueHookSrc,
+    /if \(instrumentsQuery\.isError \|\| assessmentsQuery\.isError \|\| assignmentsQuery\.isError\) \{/,
+  )
+  assert.match(queueHookSrc, /return \{ ids: \[\], ready: true, resolved: false \}/)
+})
+
+test('COS-1185: an empty queue only means "satisfied" when it was RESOLVED', () => {
+  // ready && !resolved means we gave up; an empty queue then means nothing.
+  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  assert.ok(handler)
+  assert.match(handler[0], /if \(queue\.resolved && parseRetakeScopeKey\(first\.instrumentKey\)\)/)
+  // …and the fallback is still reachable below it.
+  assert.match(handler[0], /retakeStartRoute\(first\.instrumentKey\)/)
+})
+
+test('COS-1185: the error flags are in the memo deps', () => {
+  // Otherwise a recovered query never recomputes the queue.
+  assert.match(queueHookSrc, /instrumentsQuery\.isError,/)
+  assert.match(queueHookSrc, /assignmentsQuery\.isError,/)
 })
