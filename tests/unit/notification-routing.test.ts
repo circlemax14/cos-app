@@ -81,16 +81,46 @@ test('THE BUG: a SCOPE key no longer lands on the catalog', () => {
   }
 });
 
-test('the full intake goes to the gate too — one door, not two', () => {
-  // The gate's Start now still sends full-intake to the wizard in retake mode
-  // (COS-1167), so the retake=1 param is not lost, only deferred a tap.
+test('COS-1182: the full intake goes to the HEALTH STATUS gate, not the plan gate', () => {
+  /*
+   * COS-1180 sent this to the plan gate — one door for everything. COS-1182
+   * splits it, because the two asks are answered on different screens and the
+   * plan gate now counts ONLY the assessment track. Left pointing at the plan,
+   * an intake ask would land on a gate that no longer counts it and show nothing.
+   *
+   * The key is read ONLY to pick between two gates, never to build a route into
+   * the work, so COS-1180's stale-payload concern does not return: whichever gate
+   * it lands on reads the pending list itself.
+   */
   assert.equal(
     routeForNotificationData({
       type: 'ASSESSMENT_RETAKE_REQUESTED',
       instrumentKey: 'full-intake',
     }),
-    '/Home/care-plan-plus',
+    '/Home/plan',
   );
+});
+
+test('COS-1182: alias spellings of the intake key still reach Health Status', () => {
+  // The backend normalises these before persisting, but a push payload is not
+  // guaranteed to have been through that path.
+  for (const key of ['full-intake', 'fullIntake', 'full_intake', '  FULL-INTAKE  ']) {
+    assert.equal(
+      routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: key }),
+      '/Home/plan',
+      key,
+    );
+  }
+});
+
+test('COS-1182: every assessment-track key still reaches the plan gate', () => {
+  for (const key of ['phq-9', 'all-assessments', 'domain:social', 'set:adl,iadl', '', 'junk']) {
+    assert.equal(
+      routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: key }),
+      '/Home/care-plan-plus',
+      key,
+    );
+  }
 });
 
 test('a missing or junk instrumentKey is now harmless', () => {

@@ -25,7 +25,7 @@
  */
 
 import React, { useCallback, useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router, Stack, useLocalSearchParams } from 'expo-router'
 
@@ -181,8 +181,43 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
   return (
     <AppWrapper>
       <Stack.Screen options={{ title: 'Not now', headerBackTitle: 'Home' }} />
-      {canView && (
-      <View style={styles.container}>
+      {/*
+        COS-1183 — a gated body must still be escapable and explainable.
+        This route is registered with `headerShown: false`, so there is no back
+        button. Everything used to sit inside `{canView && …}` — including the
+        error banner — so any entitlement deny produced app chrome, a blank page,
+        no explanation and no way out. That is indistinguishable from the bug
+        Vishal reported, and it would hide the real cause if it ever fired.
+      */}
+      {!canView ? (
+        <View style={styles.container}>
+          <Text
+            style={{ color: colors.text, fontSize: getScaledFontSize(15), padding: Spacing.md }}
+          >
+            This isn&apos;t available on your plan.
+          </Text>
+          <Pressable
+            onPress={closeAndReturn}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={[styles.dismissBtn, { borderColor: colors.tint || '#008080' }]}
+          >
+            <Text style={{ color: colors.tint || '#008080', fontSize: getScaledFontSize(15) }}>
+              Close
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+      /*
+        COS-1183 — SCROLLABLE. Three 56pt presets, a dismiss row and an error
+        banner in a plain View: at large accessibility text scaling the dismiss
+        row and the banner fall off the bottom with no way to reach them, which
+        reads as "I can't click it" and is literally true.
+      */
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: Spacing.lg }}
+      >
         <Text
           style={{
             color: colors.text,
@@ -244,7 +279,19 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
                   {p.sublabel}
                 </Text>
               </View>
-              <MaterialIcons name="chevron-right" size={22} color={colors.text + '99'} />
+              {/*
+                COS-1183 — SHOW the in-flight state.
+                `busy` was rendered as opacity 0.85 and nothing else. The API
+                client's timeout is 30s and a 401 adds a refresh round-trip, so a
+                slow or hanging POST was up to half a minute of a 15% dim —
+                indistinguishable from a dead button, and one of the ways "nothing
+                happens" can be literally true even when everything is wired.
+              */}
+              {busy ? (
+                <ActivityIndicator size="small" color={colors.text + '99'} />
+              ) : (
+                <MaterialIcons name="chevron-right" size={22} color={colors.text + '99'} />
+              )}
             </Pressable>
           ))}
         </View>
@@ -300,7 +347,7 @@ export default function RetakeSnoozeSheetRoute(): React.JSX.Element {
             </Text>
           </View>
         ) : null}
-      </View>
+      </ScrollView>
       )}
     </AppWrapper>
   )

@@ -22,6 +22,7 @@ import {
   orderAssignedInstruments,
   parseRetakeScopeKey,
   resolveCompletionHref,
+  retakeTrackOf,
   rollUpDomain,
   type QueueInstrument,
 } from '../../lib/retake-queue.ts'
@@ -532,5 +533,27 @@ describe('COS-1181 — orderAssignedInstruments (lifted out of the catalog)', ()
       phq9Eligible: true,
     })
     assert.deepEqual(q, ['gad-7', 'wellbeing-5'])
+  })
+})
+
+describe('COS-1182 — retakeTrackOf mirrors the backend', () => {
+  it('the intake key and its aliases are the health-status track', () => {
+    for (const k of ['full-intake', 'fullIntake', 'full_intake', '  FULL-INTAKE  ']) {
+      assert.equal(retakeTrackOf(k), 'health-status-intake', k)
+    }
+  })
+
+  it('everything else is the assessment track', () => {
+    for (const k of ['phq-9', 'all-assessments', 'domain:social', 'set:adl,iadl', 'gad-7']) {
+      assert.equal(retakeTrackOf(k), 'assessment', k)
+    }
+  })
+
+  it('an absent or empty key defaults to assessment, never health-status', () => {
+    // Defaulting the other way would let a junk payload gate the Health Status
+    // screen on a request that is not an intake ask.
+    assert.equal(retakeTrackOf(undefined), 'assessment')
+    assert.equal(retakeTrackOf(null), 'assessment')
+    assert.equal(retakeTrackOf(''), 'assessment')
   })
 })

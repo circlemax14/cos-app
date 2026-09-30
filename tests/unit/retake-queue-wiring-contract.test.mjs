@@ -130,6 +130,7 @@ test('the PHQ-9 skip rule has exactly ONE definition', () => {
 // ─── COS-1175 ──────────────────────────────────────────────────────────────
 
 const cardSrc = read('components', 'health-plan', 'retake-request', 'RetakeRequestInboxCard.tsx')
+const gateSrc = read('components', 'health-plan', 'retake-request', 'RetakeRequiredGate.tsx')
 const routesSrc = read('lib', 'retake-routes.ts')
 
 test('COS-1175: a set: request skips the picker entirely', () => {
@@ -300,4 +301,79 @@ test('COS-1181: the hook does not fetch for a non-scope request', () => {
 test('COS-1181: the catalog no longer owns the scoping logic', () => {
   assert.match(catalogSrc, /orderAssignedInstruments\(\{/)
   assert.doesNotMatch(catalogSrc, /const ORDER: readonly string\[\]/)
+})
+
+// ─── COS-1182 / COS-1183 — the health-status workflow ──────────────────────
+
+const intakeGateSrc = read('components', 'health-summary', 'IntakeRequiredGate.tsx')
+const healthStatusSrc = read('app', 'Home', 'plan.tsx')
+const wizardSrc = read('components', 'health-plan', 'patient-intake', 'IntakeWizardScreen.tsx')
+const intakeHookSrc = read('hooks', 'use-patient-intake.ts')
+const sheetSrc = read('app', 'Home', 'retake-snooze-sheet.tsx')
+
+test('COS-1182: the plan gate counts ONLY assessment requests', () => {
+  // It used to count every track, so a "redo your Health Status" ask blocked the
+  // CARE PLAN under assessment copy.
+  assert.match(gateSrc, /retakeTrackOf\(r\.instrumentKey\) === 'assessment'/)
+})
+
+test('COS-1182: the Health Status screen has its own gate, on its own track', () => {
+  assert.match(intakeGateSrc, /retakeTrackOf\(r\.instrumentKey\) === 'health-status-intake'/)
+  assert.match(healthStatusSrc, /<IntakeRequiredGate rebuilding=\{summaryData\?\.rebuilding === true\}>/)
+  assert.match(healthStatusSrc, /<\/IntakeRequiredGate>/)
+})
+
+test('COS-1182: the gate is INSIDE AppWrapper, so it keeps a way out', () => {
+  // The snooze sheet's own bug was a gated body with no chrome and no exit.
+  const i = healthStatusSrc.indexOf('<AppWrapper>')
+  const j = healthStatusSrc.indexOf('<IntakeRequiredGate')
+  assert.ok(i > -1 && j > i, 'the gate must be nested inside AppWrapper')
+})
+
+test('COS-1182 THE ORDERING: rebuild is checked BEFORE pending', () => {
+  // Completing the intake both clears the request AND starts the rebuild;
+  // pending-first would flash the OLD health status in the gap.
+  const reb = intakeGateSrc.indexOf('if (rebuilding === true)')
+  const pend = intakeGateSrc.indexOf('if (pendingCount <= 0)')
+  assert.ok(reb > -1 && pend > -1 && reb < pend)
+})
+
+test('COS-1182: the card can be asked for one track, so the wrong ask cannot show', () => {
+  assert.match(cardSrc, /track \? rows\.find\(\(r\) => retakeTrackOf\(r\.instrumentKey\) === track\) : rows\[0\]/)
+  assert.match(intakeGateSrc, /<RetakeRequestInboxCard track="health-status-intake" \/>/)
+})
+
+test('COS-1182: completing the intake invalidates the summary and the pending list', () => {
+  const block = intakeHookSrc.match(/export function useCompleteIntake\(\)[\s\S]*?\n\}/)
+  assert.ok(block)
+  assert.match(block[0], /queryKey: \['health-summary'\]/)
+  assert.match(block[0], /queryKey: \['retake-requests', 'me'\]/)
+})
+
+test('COS-1182: Skip is visible, and only where skipping is real', () => {
+  // Not one intake question sets required:true, so every one was already
+  // skippable via Next-on-blank — undiscoverable, not impossible.
+  assert.match(wizardSrc, /Skip this question/)
+  // Never on the last step ("Skip" beside "Finish" reads as finish-without-saving),
+  // and never on a required question if one ever appears.
+  assert.match(wizardSrc, /current && !current\.required && stepIdx < total - 1/)
+})
+
+test('COS-1183: a gated snooze sheet can explain itself and be closed', () => {
+  // Everything, including the error banner, used to sit inside {canView && …} on
+  // a route with headerShown:false — a blank page with no exit.
+  assert.match(sheetSrc, /\{!canView \? \(/)
+  const denied = sheetSrc.match(/\{!canView \? \([\s\S]{0,900}?\) : \(/)
+  assert.ok(denied)
+  assert.match(denied[0], /Close/)
+  assert.match(denied[0], /closeAndReturn/)
+})
+
+test('COS-1183: the sheet scrolls, so the dismiss row cannot fall off-screen', () => {
+  assert.match(sheetSrc, /<ScrollView/)
+  assert.match(sheetSrc, /import \{ ActivityIndicator, Pressable, ScrollView/)
+})
+
+test('COS-1183: an in-flight tap is visible, not a 15% dim for 30 seconds', () => {
+  assert.match(sheetSrc, /busy \? \(\s*\n?\s*<ActivityIndicator/)
 })

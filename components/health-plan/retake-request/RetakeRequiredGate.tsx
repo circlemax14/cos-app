@@ -40,6 +40,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { getColors, Spacing } from '@/constants/design-system'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
+import { retakeTrackOf } from '@/lib/retake-queue'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 import { RetakeRequestInboxCard } from './RetakeRequestInboxCard'
 
@@ -62,7 +63,22 @@ export function RetakeRequiredGate({
   // Hook order is stable regardless of the override — React must never see a
   // changing hook count across renders.
   const query = usePendingRetakeRequests()
-  const pendingCount = __testPendingCount ?? query.data?.length ?? 0
+  /*
+   * COS-1182 — ASSESSMENT requests only. The health-status intake is not ours.
+   *
+   * This counted every pending row, so a "please redo your Health Status
+   * questionnaire" ask blocked the CARE PLAN tab, under assessment-flavoured
+   * copy ("Before we show your plan… waiting on one assessment"), and its Start
+   * now opened the intake wizard from the plan screen.
+   *
+   * The two are separate tracks server-side (COS-1178) precisely because they
+   * are answered on different surfaces and can be outstanding at the same time.
+   * The intake ask belongs to the Health Status screen, which now has its own
+   * gate (IntakeRequiredGate).
+   */
+  const pendingCount =
+    __testPendingCount ??
+    (query.data ?? []).filter((r) => retakeTrackOf(r.instrumentKey) === 'assessment').length
   const plan = useBiopsychosocialPlan()
   const rebuilding = __testRebuilding ?? plan.data?.generating === true
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
