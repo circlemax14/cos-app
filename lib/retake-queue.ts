@@ -331,3 +331,22 @@ export function orderAssignedInstruments(args: {
   for (const id of INSTRUMENT_ORDER) push(byId.get(id))
   return ordered
 }
+
+/**
+ * COS-1182 — which surface answers this request.
+ *
+ * Mirrors the backend's `retakeTrack` (cos-backend retake-scopes.ts). The two
+ * tracks are answered on different screens and can be outstanding at the same
+ * time, so a gate must only ever count its OWN track — otherwise a health-status
+ * ask blocks the care plan, and an assessment ask blocks the health summary.
+ */
+export type RetakeTrackName = 'assessment' | 'health-status-intake'
+
+export function retakeTrackOf(instrumentKey: string | undefined | null): RetakeTrackName {
+  const key = String(instrumentKey ?? '').trim()
+  // The same alias-tolerance the backend applies before persisting.
+  const normalised = key.toLowerCase().replace(/[\s_]+/g, '-')
+  return normalised === 'full-intake' || normalised === 'fullintake'
+    ? 'health-status-intake'
+    : 'assessment'
+}

@@ -1,6 +1,7 @@
 // COS-1166 — one definition of where a retake sends the patient, shared
 // with the inbox card's "Start now". See lib/retake-routes.ts.
 import { retakeStartRoute } from './retake-routes.ts';
+import { retakeTrackOf } from './retake-queue.ts';
 
 /**
  * Pure mapping from a push-notification `content.data` payload to the
@@ -114,6 +115,14 @@ export const NOTIFICATION_RETAKE_ROUTE_ENABLED = true;
  * (PlanScreenRedesignedV2) renders neither the retake card nor the gate.
  */
 export const RETAKE_GATE_ROUTE = '/Home/care-plan-plus';
+
+/**
+ * COS-1182 — where a HEALTH-STATUS ask is answered.
+ *
+ * The 'plan' route is the Health Status tab (renamed by COS-964); it is NOT the
+ * care plan. IntakeRequiredGate lives there.
+ */
+export const HEALTH_STATUS_GATE_ROUTE = '/Home/plan';
 
 /**
  * Eligibility hints for the caller. Pure/optional — every field defaults
@@ -255,7 +264,25 @@ export function routeForNotificationData(
        * gate). care-plan-plus renders BiopsychosocialPlanScreen unconditionally,
        * which is where RetakeRequiredGate actually lives.
        */
-      return RETAKE_GATE_ROUTE;
+      /*
+       * COS-1182 — which gate depends on the TRACK.
+       *
+       * COS-1180 stopped reading instrumentKey entirely, which was right for the
+       * question it was answering (never route into the catalog) and wrong for
+       * this one: a "redo your Health Status questionnaire" ask is answered on
+       * the Health Status screen, not the care plan. Sending it to the plan gate
+       * put an intake ask behind assessment copy on a screen that no longer even
+       * counts it (that gate is assessment-only now), so it would have shown
+       * nothing at all.
+       *
+       * The key is used ONLY to pick between two gates — never to build a route
+       * into the work — so the stale-payload risk COS-1180 removed does not come
+       * back: whichever gate it lands on reads the pending list itself.
+       */
+      const track = retakeTrackOf(
+        typeof data.instrumentKey === 'string' ? data.instrumentKey : null,
+      );
+      return track === 'health-status-intake' ? HEALTH_STATUS_GATE_ROUTE : RETAKE_GATE_ROUTE;
     }
 
     // ── Existing mappings (unchanged behavior) ──────────────────────

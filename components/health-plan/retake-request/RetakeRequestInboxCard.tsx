@@ -48,6 +48,7 @@ import { router } from 'expo-router'
 
 import { getColors, Radii, Spacing } from '@/constants/design-system'
 import { retakeStartRoute } from '@/lib/retake-routes'
+import { retakeTrackOf, type RetakeTrackName } from '@/lib/retake-queue'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
@@ -114,6 +115,9 @@ function requesterPhraseFor(row: PatientRetakeRequestView): string {
 export { retakeStartRoute } from '@/lib/retake-routes'
 
 export interface RetakeRequestInboxCardProps {
+  /** COS-1182 — render only a request on this track. Omitted: the first of any. */
+  track?: RetakeTrackName
+
   /**
    * Test-only override so contract tests can render with a fixed row list
    * without wiring the React Query hook + a QueryClientProvider. Prod
@@ -123,6 +127,7 @@ export interface RetakeRequestInboxCardProps {
 }
 
 export function RetakeRequestInboxCard({
+  track,
   __testRows,
 }: RetakeRequestInboxCardProps = {}): React.JSX.Element | null {
   // Hooks always run in the same order regardless of the test override so
@@ -134,7 +139,16 @@ export function RetakeRequestInboxCard({
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = getColors(settings.isDarkTheme)
 
-  const first = rows[0]
+  /*
+   * COS-1182 — `track` lets a caller ask for ITS OWN request.
+   *
+   * The assessment and health-status tracks can both be outstanding at once
+   * (COS-1178), and `rows[0]` is whichever the server listed first. Unfiltered,
+   * the Health Status gate could render the assessment ask — naming the wrong
+   * work and opening the wrong screen. Home still passes no track and shows
+   * whatever is most pressing, which is the behaviour it has always had.
+   */
+  const first = track ? rows.find((r) => retakeTrackOf(r.instrumentKey) === track) : rows[0]
   const moreCount = Math.max(0, rows.length - 1)
 
   /*

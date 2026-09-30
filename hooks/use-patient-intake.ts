@@ -104,6 +104,17 @@ export function useCompleteIntake() {
       void qc.invalidateQueries({ queryKey: ['ai-health-plan'] })
       void qc.invalidateQueries({ queryKey: ['health-plan'] })
       void qc.invalidateQueries({ queryKey: INTAKE_VERSIONS_QUERY_KEY })
+      /*
+       * COS-1182 — the two the Health Status screen actually needs.
+       *
+       * Completing the intake now enqueues an eager health-summary rebuild and
+       * clears any pending "redo your Health Status" request. Without these the
+       * screen keeps its cached summary and the gate keeps its cached pending
+       * row, so the patient finishes the wizard and lands back on a screen still
+       * telling them to complete it — until a cold start or a poll catches up.
+       */
+      void qc.invalidateQueries({ queryKey: ['health-summary'] })
+      void qc.invalidateQueries({ queryKey: ['retake-requests', 'me'] })
     },
   })
 }

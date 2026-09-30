@@ -473,6 +473,46 @@ export default function IntakeWizardScreen() {
               </Text>
             </Pressable>
           </View>
+          {/*
+            COS-1182 — SKIP, made visible.
+
+            Vishal: "either they skip every query or they complete every query."
+
+            Skipping was already possible and completely undiscoverable. NOT ONE
+            of the ~30 intake questions carries `required: true` (five carry
+            `required: false`, the rest say nothing), so `currentAnswered` is
+            already true on every question and `advance()` already omits the PATCH
+            for a blank optional answer. The only way to find that out was to tap
+            "Next" on an empty field and notice it worked.
+
+            So this adds no new capability — it names one the patient already had.
+            Hidden on the LAST step: "Skip" next to "Finish" reads as "finish
+            without saving", which is not what it does.
+
+            If anything ever sets `required: true`, `currentAnswered` goes false,
+            the primary button disables, and this must not become the way around
+            it — hence the same `currentAnswered` condition guards both.
+          */}
+          {current && !current.required && stepIdx < total - 1 ? (
+            <Pressable
+              onPress={advance}
+              disabled={patchMut.isPending || completeMut.isPending}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Skip this question"
+              style={{ alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+            >
+              <Text
+                style={{
+                  color: colors.subtext,
+                  fontSize: getScaledFontSize(14),
+                  textDecorationLine: 'underline',
+                }}
+              >
+                Skip this question
+              </Text>
+            </Pressable>
+          ) : null}
           {(patchMut.isError || completeMut.isError) && (
             <Text
               style={{

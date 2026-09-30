@@ -12,6 +12,7 @@ import { AppWrapper } from '@/components/app-wrapper';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useHealthSummary } from '@/hooks/use-health-summary';
+import { IntakeRequiredGate } from '@/components/health-summary/IntakeRequiredGate';
 import IntakeCtaCard from '@/components/health-plan/patient-intake/IntakeCtaCard';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import BpsHistorySection from '@/components/health-summary/BpsHistorySection';
@@ -93,7 +94,7 @@ function HealthSummaryScreenInner() {
   const canRecommendations = useCanRender('plan.recommendations');
   const canShare = useCanRender('plan.share-summary');
 
-  const { isLoading, isError, refetch } = useHealthSummary();
+  const { isLoading, isError, refetch, data: summaryData } = useHealthSummary();
 
   // HS-3b overlay: mount the vitals red-flag observer. Rules-of-hooks — called
   // unconditionally, before any early returns. The hook itself no-ops when the
@@ -200,6 +201,23 @@ function HealthSummaryScreenInner() {
 
   return (
     <AppWrapper>
+      {/*
+        COS-1182 — a pending "redo your Health Status" ask blocks this screen,
+        and a regeneration replaces it.
+
+        Vishal: "It should show a message complete your health status and once
+        the check-ins are complete, then we will again generate the health
+        summary and then send a notification and update the health status
+        screen."
+
+        Wrapped INSIDE AppWrapper so the gate keeps the app chrome — the snooze
+        sheet's own bug was a gated body with no way out.
+
+        The screen's pre-existing `intakeGateOpen` check is a different question
+        ("has this patient ever completed an intake?") and stays as it is. This
+        one is about a care manager's ask.
+      */}
+      <IntakeRequiredGate rebuilding={summaryData?.rebuilding === true}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -305,6 +323,7 @@ function HealthSummaryScreenInner() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </IntakeRequiredGate>
     </AppWrapper>
   );
 }
