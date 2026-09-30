@@ -47,16 +47,37 @@ function navBody() {
     .replace(/^\s*\/\/.*$/gm, '')
 }
 
-test('the retake case reaches the shared route builder, not a literal', () => {
-  // One definition of the destination, shared with the card's "Start now".
-  // Asserted on the CASE BODY — matching the file would also match the
-  // import line, which is true even when the case returns null.
+test('the retake case routes to the shared GATE constant, not a literal', () => {
+  /*
+   * COS-1180 reversed what this asserted. It used to require
+   * `retakeStartRoute(instrumentKey)` in the case body — open the work itself.
+   *
+   * Vishal, 2026-09-30: tapping the push "took me to that check-in screen
+   * again ... ideally it should take me to that screen that I was seeing when I
+   * click on the plan nav button." For a SCOPE key retakeStartRoute resolves to
+   * the catalog, so the push and the Plan tab disagreed about where a pending
+   * retake lives.
+   *
+   * Still one shared definition, still not a literal — the constant is just
+   * the gate now, and the gate's own "Start now" calls retakeStartRoute.
+   */
   const code = ROUTING.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   const i = code.indexOf("case 'ASSESSMENT_RETAKE_REQUESTED'")
   assert.ok(i > 0, 'the retake case must be named, not left to the default')
   const body = code.slice(i, code.indexOf('case ', i + 10))
-  assert.match(body, /retakeStartRoute\(/, 'the case must build the route, not return Home')
-  assert.match(body, /instrumentKey/, 'the case must read the instrumentKey the backend sends')
+  assert.match(body, /RETAKE_GATE_ROUTE/, 'the case must return the shared gate constant')
+  assert.doesNotMatch(
+    body,
+    /assessments-catalog/,
+    'never hard-code the catalog here — that is the screen he was dumped on',
+  )
+})
+
+test('COS-1180: the gate constant is the VISIBLE plan tab', () => {
+  // '/Home/plan' is the Health Status screen. '/Home/health-plan' is retired
+  // from the tab bar (COS-915) and can render PlanScreenRedesignedV2, which has
+  // neither the retake card nor the gate.
+  assert.match(ROUTING, /RETAKE_GATE_ROUTE = '\/Home\/care-plan-plus'/)
 })
 
 test('THE ORDERING: the tap is claimed only AFTER a navigation happens', () => {

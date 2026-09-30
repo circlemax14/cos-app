@@ -364,29 +364,60 @@ export function RetakeRequestInboxCard({
           </Text>
         </Pressable>
 
-        <Pressable
-          onPress={onNotNow}
-          accessibilityRole="button"
-          accessibilityLabel="Not now — choose to snooze or dismiss"
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={({ pressed }) => [
-            styles.secondaryBtn,
-            {
-              borderColor: colors.tint || '#008080',
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <Text
-            style={{
-              color: colors.tint || '#008080',
-              fontSize: getScaledFontSize(14),
-              fontWeight: getScaledFontWeight(600) as any,
-            }}
+        {/*
+          * COS-1179 — no "Not now" on a MANDATORY request.
+          *
+          * Vishal, 2026-09-30, on a mandatory all-assessments request: "when I
+          * clicked on not now it took me to a screen that when would you like to
+          * be reminded ... But I'm not able to click on any[,] so what is the use
+          * of this screen if I cannot click on anything".
+          *
+          * Every option on that sheet was guaranteed to fail. The server has
+          * refused snooze AND dismiss on mandatory rows since #10b
+          * (MandatoryRequestError → 409), the row has carried the flag since
+          * then, and NO client surface read it — so the card kept offering a
+          * door the server keeps locked. Same shape as COS-1162's alertLevel:
+          * computed, serialised, and read by nothing.
+          *
+          * Mandatory is bounded by the 14-day expiry sweeper (COS-762), so
+          * removing the escape hatch does not strand anyone indefinitely.
+          */}
+        {first.mandatory === true ? (
+          <View style={styles.secondaryBtn}>
+            <Text
+              style={{
+                color: colors.text + '99',
+                fontSize: getScaledFontSize(12),
+              }}
+            >
+              Required — can&apos;t be postponed
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            onPress={onNotNow}
+            accessibilityRole="button"
+            accessibilityLabel="Not now — choose to snooze or dismiss"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={({ pressed }) => [
+              styles.secondaryBtn,
+              {
+                borderColor: colors.tint || '#008080',
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
           >
-            {'Not now ▾'}
-          </Text>
-        </Pressable>
+            <Text
+              style={{
+                color: colors.tint || '#008080',
+                fontSize: getScaledFontSize(14),
+                fontWeight: getScaledFontWeight(600) as any,
+              }}
+            >
+              {'Not now ▾'}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </View>
   )

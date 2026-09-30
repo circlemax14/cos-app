@@ -31,71 +31,105 @@ test('NOTIFICATION_RETAKE_ROUTE_ENABLED default is ON (COS-482 Phase 1)', () => 
   assert.equal(NOTIFICATION_RETAKE_ROUTE_ENABLED, true);
 });
 
-// ─── ASSESSMENT_RETAKE_REQUESTED (COS-1166, was COS-482 Phase 1) ──────
+// ─── ASSESSMENT_RETAKE_REQUESTED (COS-1180, was COS-1166, was COS-482) ──
 /*
- * These tests used to assert `null` (→ Home). That was Phase 1's deliberate
- * decision: land on Home and let the inbox card be the destination.
+ * This mapping has now been decided three times, and the history is the point.
  *
- * Vishal reversed it on 2026-09-29 — "if we get the notification, we will
- * take the user to the plan screen and we will start the assessment
- * directly. There will be a deep link." A patient who taps a push that says
- * "redo your PHQ-2" has already decided to do it; Home plus a card plus a
- * second button loses most of them.
+ *   Phase 1 (COS-482): null → Home, let the inbox card be the destination.
+ *   COS-1166:          retakeStartRoute(instrumentKey) → open the work itself.
+ *   COS-1180:          the GATE, always.
  *
- * The payload has carried `instrumentKey` since COS-482, and
- * retakeStartRoute() is the same builder the card's own "Start now" uses.
+ * Vishal, 2026-09-30, on a mandatory all-assessments request: "I received this
+ * notification ... When I clicked on it, it took me to that check-in screen
+ * again. I don't know why. Ideally it should take me to that screen that I was
+ * seeing when I click on the plan nav button."
+ *
+ * COS-1166 was not wrong about wanting one tap to the work — it was wrong about
+ * where retakeStartRoute LANDS for a scope. `all-assessments` and `domain:*`
+ * resolve to the CATALOG, a wall of cards whose primary action is "Build my
+ * plan". So the push and the Plan tab disagreed about where a pending retake
+ * lives, which is the confusion he reported.
+ *
+ * One destination now. The gate names who asked and what for, and its "Start
+ * now" is the single launcher — and for a `set:` that goes straight into the
+ * first check-in (COS-1175), so the "one tap to the work" intent survives.
+ *
+ * instrumentKey is deliberately NOT read here any more: the gate reads the
+ * pending list itself, so it cannot go stale against a push payload.
  */
 
-test('ASSESSMENT_RETAKE_REQUESTED opens the assessment for the requested instrument', () => {
+test('ASSESSMENT_RETAKE_REQUESTED goes to the GATE, not to the work', () => {
   assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', requestId: 'r1', instrumentKey: 'phq-9' }),
-    '/Home/assessment-stepper?instrumentId=phq-9&source=retake-request',
+    routeForNotificationData({
+      type: 'ASSESSMENT_RETAKE_REQUESTED',
+      requestId: 'r1',
+      instrumentKey: 'phq-9',
+    }),
+    '/Home/care-plan-plus',
   );
 });
 
-test('ASSESSMENT_RETAKE_REQUESTED: the full intake opens the wizard IN RETAKE MODE', () => {
-  /*
-   * COS-1167 — `retake=1` is load-bearing. IntakeWizardScreen gates on
-   * `params.retake === '1'`; without it the wizard sees the patient's
-   * COMPLETED intake and renders IntakeCompleteView instead of restarting.
-   * A retake is only ever asked of someone who already finished, so that
-   * branch could never work for the only people who reach it.
-   */
+test('THE BUG: a SCOPE key no longer lands on the catalog', () => {
+  // This is exactly what he tapped into: all-assessments → assessments-catalog.
+  for (const key of ['all-assessments', 'domain:psychological', 'set:adl,iadl']) {
+    const route = routeForNotificationData({
+      type: 'ASSESSMENT_RETAKE_REQUESTED',
+      instrumentKey: key,
+    });
+    assert.equal(route, '/Home/care-plan-plus', key);
+    assert.ok(!String(route).includes('assessments-catalog'), key);
+  }
+});
+
+test('the full intake goes to the gate too — one door, not two', () => {
+  // The gate's Start now still sends full-intake to the wizard in retake mode
+  // (COS-1167), so the retake=1 param is not lost, only deferred a tap.
   assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'full-intake' }),
-    '/Home/patient-intake?retake=1&source=retake-request',
+    routeForNotificationData({
+      type: 'ASSESSMENT_RETAKE_REQUESTED',
+      instrumentKey: 'full-intake',
+    }),
+    '/Home/care-plan-plus',
   );
 });
 
-test('ASSESSMENT_RETAKE_REQUESTED: an instrument key is url-encoded', () => {
-  assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'who-5 / short' }),
-    '/Home/assessment-stepper?instrumentId=who-5%20%2F%20short&source=retake-request',
-  );
-});
-
-test('ASSESSMENT_RETAKE_REQUESTED: no instrumentKey falls back to the plan surface, NOT Home', () => {
-  // The card lives on the plan screen, so the request stays actionable.
-  // Home is where this feature got lost in Phase 1.
+test('a missing or junk instrumentKey is now harmless', () => {
+  // It used to decide the destination, and the fallback was '/Home/plan' —
+  // which is the Health STATUS screen, not the plan at all.
   for (const bad of [undefined, null, '', '   ', 42]) {
     assert.equal(
-      routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: bad as unknown as string }),
-      '/Home/plan',
+      routeForNotificationData({
+        type: 'ASSESSMENT_RETAKE_REQUESTED',
+        instrumentKey: bad as unknown as string,
+      }),
+      '/Home/care-plan-plus',
       `instrumentKey=${JSON.stringify(bad)}`,
     );
   }
 });
 
-test('ASSESSMENT_RETAKE_REQUESTED: bpsEnabled has no effect (the instrument decides)', () => {
-  const expected = '/Home/assessment-stepper?instrumentId=adl&source=retake-request';
-  assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'adl' }, { bpsEnabled: true }),
-    expected,
-  );
-  assert.equal(
-    routeForNotificationData({ type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'adl' }, { bpsEnabled: false }),
-    expected,
-  );
+test('NOT the retired /Home/health-plan, which can render an ungated screen', () => {
+  // COS-915 took health-plan out of the tab bar, and it branches across three
+  // plan screens — PlanScreenRedesignedV2 has neither the retake card nor the
+  // gate, so a patient could land there and see no request at all.
+  const route = routeForNotificationData({
+    type: 'ASSESSMENT_RETAKE_REQUESTED',
+    instrumentKey: 'adl',
+  });
+  assert.notEqual(route, '/Home/health-plan');
+  assert.notEqual(route, '/Home/plan');
+});
+
+test('bpsEnabled still has no effect', () => {
+  for (const bpsEnabled of [true, false]) {
+    assert.equal(
+      routeForNotificationData(
+        { type: 'ASSESSMENT_RETAKE_REQUESTED', instrumentKey: 'adl' },
+        { bpsEnabled },
+      ),
+      '/Home/care-plan-plus',
+    );
+  }
 });
 
 
