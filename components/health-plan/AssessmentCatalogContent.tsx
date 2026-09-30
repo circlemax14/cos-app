@@ -29,37 +29,13 @@ import {
   buildRetakeQueue,
   encodeRetakeQueue,
   isPhq9Eligible,
+  orderAssignedInstruments,
   parseRetakeScopeKey,
+  type QueueInstrument,
 } from '@/lib/retake-queue'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
-
-const ORDER: readonly string[] = [
-  'wellbeing-5',
-  'phq-2',
-  'phq-9',
-  'gad-7',
-  'sleep-4',
-  'pain-4',
-  'loneliness-3',
-  'alcohol-3',
-  'physical-function-4',
-  'adl',
-  'iadl',
-  'falls-12',
-  'nutrition-5',
-  'cognition-8',
-  // Wave 2 additions — placed after the core screeners so the AI
-  // ordering still leads with mood/anxiety/wellbeing. The catalog
-  // renders whatever the BE returns first; ORDER is just the backstop
-  // for ids the AI didn't include.
-  'pss-4',
-  'du-resilience-13',
-  'fica',
-  'hope',
-  'ohio-leisure-interest',
-]
 
 const ICON_BY_ID: Record<string, { name: keyof typeof MaterialIcons.glyphMap; color: string }> = {
   'wellbeing-5':           { name: 'sentiment-satisfied', color: '#10B981' },
@@ -339,34 +315,29 @@ export function AssessmentCatalogContent({
   // beat and then removing most of it reads as a glitch, so wait.
   const assignmentsKnown = assignmentsQuery.data !== undefined
 
-  const visible = React.useMemo<InstrumentSummary[]>(() => {
-    const raw = instrumentsQuery.data?.instruments ?? []
-    const all = assignmentsKnown
-      ? raw.filter((it) => assignedIds.has(it.instrumentId))
-      : []
-    const byId = new Map(all.map((it) => [it.instrumentId, it]))
-    const ordered: InstrumentSummary[] = []
-    // The backend returns AI-ordered ids; preserve that ordering by
-    // iterating `all` first, then applying client-side skip-logic for
-    // PHQ-9. ORDER is no longer the primary sort — it's a backstop for
-    // ids the AI didn't include but that still exist (e.g. agency
-    // additions that weren't in the recommendation context).
-    for (const it of all) {
-      if (it.instrumentId === 'phq-9' && !phq9Eligible) continue
-      ordered.push(it)
-    }
-    // Any in-order ids we haven't already shown — keep them visible so a
-    // patient with no AI recommendation still gets everything their plan asks
-    // for. COS-828: `byId` is built from the SCOPED list, so this backfills
-    // ordering without reintroducing the library.
-    for (const id of ORDER) {
-      if (id === 'phq-9' && !phq9Eligible) continue
-      if (!byId.has(id)) continue
-      if (ordered.find((o) => o.instrumentId === id)) continue
-      ordered.push(byId.get(id) as InstrumentSummary)
-    }
-    return ordered
-  }, [instrumentsQuery.data, phq9Eligible, assignedIds, assignmentsKnown])
+  /*
+   * COS-1181 — this computation moved to lib/retake-queue.
+   *
+   * It is unchanged in behaviour: assigned-only, AI order first with
+   * INSTRUMENT_ORDER as the backstop, PHQ-9 obeying the PHQ-2 skip rule, and an
+   * EMPTY list until assignments are known.
+   *
+   * It moved because the retake inbox card needs exactly this to resolve a
+   * `domain:*` / `all-assessments` request into the patient's real check-ins. As
+   * long as it lived in here, a scope request had to route to this screen to be
+   * resolved — which is why "Start now" kept landing on the catalog, three times
+   * reported. One definition, both surfaces.
+   */
+  const visible = React.useMemo<InstrumentSummary[]>(
+    () =>
+      orderAssignedInstruments({
+        all: (instrumentsQuery.data?.instruments ?? []) as unknown as QueueInstrument[],
+        assignedIds,
+        assignmentsKnown,
+        phq9Eligible,
+      }) as unknown as InstrumentSummary[],
+    [instrumentsQuery.data, phq9Eligible, assignedIds, assignmentsKnown],
+  )
 
   /*
    * COS-1174 — if a requested retake names a SCOPE, tapping any check-in in it

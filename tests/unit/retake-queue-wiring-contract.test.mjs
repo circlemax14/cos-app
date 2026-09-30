@@ -241,3 +241,63 @@ test('COS-1179: the app type declares mandatory, or nothing can read it', () => 
   // type declared it, but the APP type did not — so no app surface could.
   assert.match(apiTypeSrc, /mandatory\?: boolean/)
 })
+
+// ─── COS-1181 ──────────────────────────────────────────────────────────────
+
+const queueHookSrc = read('hooks', 'use-retake-queue.ts')
+
+test('COS-1181 THE FIX: "Start now" deep-links into the stepper, never the picker', () => {
+  /*
+   * Vishal, third report: "if I click on the start now it is taking me to health
+   * check-ins ... Why can't I start the assessment directly? I told you multiple
+   * times."
+   *
+   * The card must resolve the scope ITSELF and navigate to the first owed
+   * check-in. retakeStartRoute stays only as the fallback for things with
+   * nothing to walk.
+   */
+  assert.match(cardSrc, /useRetakeQueue\(first\?\.instrumentKey \?\? null\)/)
+  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  assert.ok(handler, 'onStartNow not found')
+  assert.match(
+    handler[0],
+    /\/Home\/assessment-stepper\?instrumentId=\$\{next\}&source=retake-request&queue=\$\{rest\}/,
+  )
+  // The queue must be carried, or the stepper cannot walk past the first one.
+  assert.match(handler[0], /queue\.ids\.join\(','\)/)
+})
+
+test('COS-1181: a tap before the queue resolves cannot fall through to the picker', () => {
+  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  assert.match(handler[0], /if \(!queue\.ready\) return/)
+  // And the button says so rather than silently ignoring the tap.
+  assert.match(cardSrc, /disabled=\{!queue\.ready\}/)
+})
+
+test('COS-1181: retakeStartRoute survives as the fallback, not the default', () => {
+  // Single instruments open directly, full-intake has its own wizard, and an
+  // already-satisfied scope has no instrument to open.
+  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  const stepperAt = handler[0].indexOf('assessment-stepper')
+  const fallbackAt = handler[0].indexOf('retakeStartRoute')
+  assert.ok(stepperAt > -1 && fallbackAt > stepperAt, 'the walk must be tried FIRST')
+})
+
+test('COS-1181: the hook reuses the shared query keys, adding no new fetch surface', () => {
+  // Same keys and same staleTimes as the catalog — two surfaces disagreeing
+  // about freshness would show two different queues.
+  assert.match(queueHookSrc, /queryKey: \['instruments-recommended'\]/)
+  assert.match(queueHookSrc, /queryKey: \['assessments'\]/)
+  assert.match(queueHookSrc, /useHealthPlanAssignments\(\)/)
+})
+
+test('COS-1181: the hook does not fetch for a non-scope request', () => {
+  // A single instrument or full-intake has nothing to resolve.
+  assert.match(queueHookSrc, /const enabled = scope !== null/)
+  assert.match(queueHookSrc, /enabled,/)
+})
+
+test('COS-1181: the catalog no longer owns the scoping logic', () => {
+  assert.match(catalogSrc, /orderAssignedInstruments\(\{/)
+  assert.doesNotMatch(catalogSrc, /const ORDER: readonly string\[\]/)
+})

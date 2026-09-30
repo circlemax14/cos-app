@@ -243,3 +243,91 @@ export function resolveCompletionHref(args: {
   const rest = encodeURIComponent(encodeRetakeQueue(remaining))
   return `/Home/assessment-stepper?instrumentId=${next}&source=retake-request&queue=${rest}`
 }
+
+/**
+ * COS-1181 — the catalog's instrument ORDER, lifted so it is not the catalog's
+ * private property any more.
+ *
+ * A backstop, not the primary sort: the backend returns an AI-recommended order
+ * per patient and that leads. This covers ids the recommendation left out (an
+ * agency addition, say) so a patient still meets everything their plan asks for.
+ */
+export const INSTRUMENT_ORDER: readonly string[] = [
+  'wellbeing-5',
+  'phq-2',
+  'phq-9',
+  'gad-7',
+  'sleep-4',
+  'pain-4',
+  'loneliness-3',
+  'alcohol-3',
+  'physical-function-4',
+  'adl',
+  'iadl',
+  'falls-12',
+  'nutrition-5',
+  'cognition-8',
+  // Wave 2 — after the core screeners so the AI ordering still leads with
+  // mood/anxiety/wellbeing.
+  'pss-4',
+  'du-resilience-13',
+  'fica',
+  'hope',
+  'ohio-leisure-interest',
+]
+
+/**
+ * COS-1181 — which instruments this patient can actually be asked, in order.
+ *
+ * ─── WHY THIS IS HERE AND NOT IN THE CATALOG ──────────────────────────
+ *
+ * Vishal, 2026-09-30, for the third time: "if I click on the start now it is
+ * taking me to health check-ins ... why the hell I have to go to the Health
+ * check-in screen again. Why can't I start the assessment directly? I told you
+ * multiple times."
+ *
+ * He is right, and the reason it kept happening is a decision I made twice: a
+ * `domain:*` or `all-assessments` request routed to the CATALOG because "only
+ * the catalog knows which instruments the patient is assigned". That was true
+ * only because this function lived inside the catalog component. It needs three
+ * react-query results, all on shared keys — nothing about it is the catalog's
+ * to own.
+ *
+ * Lifting it means the inbox card can resolve the queue itself and deep-link
+ * straight into the first check-in, for EVERY scope kind, with no picker in
+ * between.
+ *
+ * ─── THE RULES, IN ONE PLACE ──────────────────────────────────────────
+ *
+ * 1. ASSIGNED ONLY. `assignedIds` is the patient's plan battery (COS-828).
+ *    Offering the whole library was the bug that scoping fixed.
+ * 2. AI ORDER FIRST, then INSTRUMENT_ORDER as a backstop for ids the
+ *    recommendation omitted.
+ * 3. PHQ-9 obeys the PHQ-2 skip rule.
+ *
+ * `assignmentsKnown === false` returns EMPTY, not everything: offering the full
+ * library for a beat and then removing most of it reads as a glitch, and here it
+ * would mean auto-advancing someone into an instrument they were never assigned.
+ */
+export function orderAssignedInstruments(args: {
+  all: readonly QueueInstrument[]
+  assignedIds: ReadonlySet<string>
+  assignmentsKnown: boolean
+  phq9Eligible: boolean
+}): QueueInstrument[] {
+  const { all, assignedIds, assignmentsKnown, phq9Eligible } = args
+  if (!assignmentsKnown) return []
+  const assigned = all.filter((it) => assignedIds.has(it.instrumentId))
+  const byId = new Map(assigned.map((it) => [it.instrumentId, it]))
+  const ordered: QueueInstrument[] = []
+  const seen = new Set<string>()
+  const push = (it: QueueInstrument | undefined) => {
+    if (!it || seen.has(it.instrumentId)) return
+    if (it.instrumentId === 'phq-9' && !phq9Eligible) return
+    seen.add(it.instrumentId)
+    ordered.push(it)
+  }
+  for (const it of assigned) push(it)
+  for (const id of INSTRUMENT_ORDER) push(byId.get(id))
+  return ordered
+}
