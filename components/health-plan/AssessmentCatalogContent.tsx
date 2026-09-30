@@ -24,6 +24,13 @@ import { useAssessmentStrategyV2Flag } from '@/hooks/use-assessment-strategy-v2-
 import { useRegenerateBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { useCanRender } from '@/hooks/use-entitlement'
+import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
+import {
+  buildRetakeQueue,
+  encodeRetakeQueue,
+  isPhq9Eligible,
+  parseRetakeScopeKey,
+} from '@/lib/retake-queue'
 
 // SCRUM-230: lowered from 3 → 2 so users get to a personalized plan faster.
 const MIN_TO_BUILD_PLAN = 2
@@ -297,12 +304,10 @@ export function AssessmentCatalogContent({
     return m
   }, [assessmentsQuery.data])
 
-  // PHQ-9 hidden until PHQ-2 completed AND positive (sum ≥ 3)
-  const phq2 = completedById.get('phq-2')
-  const phq2Sum =
-    (typeof phq2?.responses?.q1 === 'number' ? phq2.responses.q1 : 0) +
-    (typeof phq2?.responses?.q2 === 'number' ? phq2.responses.q2 : 0)
-  const phq9Eligible = phq2Sum >= 3
+  // PHQ-9 hidden until PHQ-2 completed AND positive (sum ≥ 3).
+  // COS-1174: the rule now lives in lib/retake-queue so this catalog, the
+  // inline catalog and the retake queue cannot drift on a clinical skip rule.
+  const phq9Eligible = isPhq9Eligible(completedById.get('phq-2')?.responses)
 
   // COS-828 — declared here rather than beside the build gate below, because
   // the scoped instrument list now needs it too. Same single query either way.
@@ -362,6 +367,34 @@ export function AssessmentCatalogContent({
     }
     return ordered
   }, [instrumentsQuery.data, phq9Eligible, assignedIds, assignmentsKnown])
+
+  /*
+   * COS-1174 — if a requested retake names a SCOPE, tapping any check-in in it
+   * starts a walk: the stepper advances to the next one on completion instead
+   * of returning here.
+   *
+   * The queue is computed ONCE, here, and travels in the deep link. The
+   * alternative — re-deriving it after every submit — races the very caches the
+   * submit just invalidated, and a queue that re-derives mid-walk can reorder or
+   * repeat itself.
+   *
+   * Single-instrument and full-intake requests parse to no scope, so they get no
+   * queue and behave exactly as before.
+   */
+  const pendingRetakes = usePendingRetakeRequests()
+  const retakeQueueParam = React.useMemo(() => {
+    const scoped = (pendingRetakes.data ?? [])
+      .map((r) => parseRetakeScopeKey(String(r.instrumentKey ?? '')))
+      .find((sc) => sc !== null)
+    if (!scoped) return undefined
+    const ids = buildRetakeQueue({
+      scope: scoped,
+      instruments: visible,
+      completedIds: new Set(completedById.keys()),
+      phq9Eligible,
+    })
+    return ids.length > 0 ? encodeRetakeQueue(ids) : undefined
+  }, [pendingRetakes.data, visible, completedById, phq9Eligible])
 
   const completedCount = React.useMemo(
     () => visible.filter((it) => completedById.has(it.instrumentId)).length,
@@ -514,6 +547,7 @@ export function AssessmentCatalogContent({
                   item={it}
                   record={completedById.get(it.instrumentId)}
                   rationale={rationaleById[it.instrumentId]}
+                  queueParam={retakeQueueParam}
                   colors={colors}
                   fontSize={getScaledFontSize}
                   fontWeight={getScaledFontWeight}
@@ -531,6 +565,7 @@ export function AssessmentCatalogContent({
               item={it}
               record={completedById.get(it.instrumentId)}
               rationale={rationaleById[it.instrumentId]}
+              queueParam={retakeQueueParam}
               colors={colors}
               fontSize={getScaledFontSize}
               fontWeight={getScaledFontWeight}
@@ -602,6 +637,7 @@ function CatalogCard({
   item,
   record,
   rationale,
+  queueParam,
   colors,
   fontSize,
   fontWeight,
@@ -610,6 +646,11 @@ function CatalogCard({
   record: AssessmentRecord | undefined
   /** AI-generated reason this check-in was recommended for this user (SCRUM-231). */
   rationale: string | undefined
+  /**
+   * COS-1174 — the instruments still owed in a pending scope retake. Present
+   * only during one; the stepper walks it instead of returning to the catalog.
+   */
+  queueParam: string | undefined
   colors: Palette
   fontSize: (n: number) => number
   fontWeight: (n: number) => number | string
@@ -630,7 +671,9 @@ function CatalogCard({
         if (isComingSoon) return
         router.push({
           pathname: '/Home/assessment-stepper' as never,
-          params: { instrumentId: item.instrumentId } as never,
+          params: (queueParam
+            ? { instrumentId: item.instrumentId, source: 'retake-request', queue: queueParam }
+            : { instrumentId: item.instrumentId }) as never,
         })
       }}
       disabled={isComingSoon}
