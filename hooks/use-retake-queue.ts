@@ -40,6 +40,7 @@ import {
   buildRetakeQueue,
   isPhq9Eligible,
   orderAssignedInstruments,
+  satisfiedSince,
   parseRetakeScopeKey,
   type QueueInstrument,
 } from '@/lib/retake-queue'
@@ -62,7 +63,15 @@ const EMPTY: RetakeQueueResult = { ids: [], ready: false }
  *   A single-instrument key parses to no scope and returns an empty queue —
  *   there is nothing to walk, and `retakeStartRoute` already opens it directly.
  */
-export function useRetakeQueue(instrumentKey: string | null): RetakeQueueResult {
+export function useRetakeQueue(
+  request: { instrumentKey: string; createdAt?: string } | null,
+): RetakeQueueResult {
+  const instrumentKey = request?.instrumentKey ?? null
+  /*
+   * COS-1184 — the watermark. Only completions at or after the request was
+   * raised satisfy it.
+   */
+  const since = request?.createdAt
   const scope = useMemo(
     () => (instrumentKey ? parseRetakeScopeKey(instrumentKey) : null),
     [instrumentKey],
@@ -100,11 +109,32 @@ export function useRetakeQueue(instrumentKey: string | null): RetakeQueueResult 
       return EMPTY
     }
 
-    const completedIds = new Set<string>()
+    /*
+     * COS-1184 — SATISFIED FOR THIS REQUEST, not ever-completed.
+     *
+     * This is the bug that survived COS-1181. A retake is raised precisely
+     * against someone WITH history, so ever-completed emptied the queue for
+     * exactly the patients the request is for, the card fell through to its
+     * catalog fallback, and they landed on "1 of 1 completed / Build my plan".
+     *
+     * Measured on dev before fixing: the pending all-assessments request was
+     * created 11:50:56 and ALL TWELVE of the patient's completions predate it.
+     * Every one was filtered out; the queue was empty every time.
+     *
+     * Matches completeSatisfiedScopes on the backend, which has always used the
+     * watermark — so the walk now ends exactly when the request clears.
+     */
+    const completedIds = satisfiedSince(assessmentsQuery.data, since)
+
+    // PHQ-9 eligibility reads the LATEST phq-2 regardless of the watermark: it
+    // is a clinical skip rule about the patient, not about this request.
     let phq2Responses: Record<string, unknown> | undefined
+    let phq2At = ''
     for (const r of assessmentsQuery.data) {
-      completedIds.add(r.instrumentId)
-      if (r.instrumentId === 'phq-2') {
+      if (r.instrumentId !== 'phq-2') continue
+      const at = String(r.completedAt ?? '')
+      if (at >= phq2At) {
+        phq2At = at
         phq2Responses = r.responses as Record<string, unknown> | undefined
       }
     }
@@ -121,5 +151,5 @@ export function useRetakeQueue(instrumentKey: string | null): RetakeQueueResult 
       ids: buildRetakeQueue({ scope, instruments: ordered, completedIds, phq9Eligible }),
       ready: true,
     }
-  }, [scope, instrumentsQuery.data, assessmentsQuery.data, assignmentsQuery.data])
+  }, [scope, since, instrumentsQuery.data, assessmentsQuery.data, assignmentsQuery.data])
 }

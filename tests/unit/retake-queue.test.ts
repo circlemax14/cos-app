@@ -22,6 +22,7 @@ import {
   orderAssignedInstruments,
   parseRetakeScopeKey,
   resolveCompletionHref,
+  satisfiedSince,
   retakeTrackOf,
   rollUpDomain,
   type QueueInstrument,
@@ -555,5 +556,83 @@ describe('COS-1182 — retakeTrackOf mirrors the backend', () => {
     assert.equal(retakeTrackOf(undefined), 'assessment')
     assert.equal(retakeTrackOf(null), 'assessment')
     assert.equal(retakeTrackOf(''), 'assessment')
+  })
+})
+
+describe('COS-1184 — satisfiedSince: the watermark that was missing', () => {
+  /*
+   * MEASURED ON DEV: the pending all-assessments request was created at
+   * 11:50:56 and ALL TWELVE of the patient's completions predate it. With an
+   * ever-completed filter every one was removed, the queue was empty every
+   * time, and "Start now" fell through to the catalog — the screen Vishal
+   * reported four times.
+   */
+  const REQ = '2026-09-30T11:50:56.408Z'
+  const HISTORY = [
+    { instrumentId: 'adl', completedAt: '2026-09-30T02:53:44.000Z' },
+    { instrumentId: 'phq-2', completedAt: '2026-09-30T09:18:33.000Z' },
+    { instrumentId: 'falls-12', completedAt: '2026-09-30T09:19:08.000Z' },
+  ]
+
+  it('THE POINT: history BEFORE the request does not satisfy it', () => {
+    assert.deepEqual([...satisfiedSince(HISTORY, REQ)], [])
+  })
+
+  it('a completion after the request satisfies it', () => {
+    const done = satisfiedSince(
+      [...HISTORY, { instrumentId: 'adl', completedAt: '2026-09-30T12:05:00.000Z' }],
+      REQ,
+    )
+    assert.deepEqual([...done], ['adl'])
+  })
+
+  it('exactly at the watermark counts — the rule is "at or after"', () => {
+    assert.ok(satisfiedSince([{ instrumentId: 'adl', completedAt: REQ }], REQ).has('adl'))
+  })
+
+  it('takes the LATEST completion per instrument, not the first seen', () => {
+    // phq-2 has five rows on dev; an older one must not mask a newer one.
+    const done = satisfiedSince(
+      [
+        { instrumentId: 'phq-2', completedAt: '2026-09-30T12:10:00.000Z' },
+        { instrumentId: 'phq-2', completedAt: '2026-09-25T06:21:13.000Z' },
+      ],
+      REQ,
+    )
+    assert.ok(done.has('phq-2'))
+  })
+
+  it('no watermark falls back to ever-completed', () => {
+    // Safe direction: it can only shorten a queue, never route someone into a
+    // check-in nobody asked for.
+    assert.equal(satisfiedSince(HISTORY, undefined).size, 3)
+    assert.equal(satisfiedSince(HISTORY, '').size, 3)
+  })
+
+  it('a missing completedAt never satisfies a real watermark', () => {
+    assert.deepEqual([...satisfiedSince([{ instrumentId: 'adl' }], REQ)], [])
+  })
+
+  it('END TO END: the dev case now yields a walkable queue', () => {
+    const instruments: QueueInstrument[] = [
+      { instrumentId: 'adl', domain: 'biological' },
+      { instrumentId: 'falls-12', domain: 'biological' },
+      { instrumentId: 'phq-2', domain: 'psychological' },
+    ]
+    const before = buildRetakeQueue({
+      scope: { kind: 'all' },
+      instruments,
+      completedIds: new Set(HISTORY.map((h) => h.instrumentId)), // the old rule
+      phq9Eligible: true,
+    })
+    assert.deepEqual(before, [], 'the old ever-completed rule emptied it')
+
+    const after = buildRetakeQueue({
+      scope: { kind: 'all' },
+      instruments,
+      completedIds: satisfiedSince(HISTORY, REQ), // the watermark rule
+      phq9Eligible: true,
+    })
+    assert.deepEqual(after, ['adl', 'falls-12', 'phq-2'])
   })
 })
