@@ -50,7 +50,18 @@ export interface PatientRetakeRequestView {
   dismissedAt?: string
   dismissReason?: RetakeDismissReason
   reminderCount?: number
+  /**
+   * COS-1168 — kept for back-compat only. DO NOT RENDER: naming a member of
+   * staff to a patient leaks who is looking at their record. Use
+   * `requesterPhrase`.
+   */
   requesterFirstName: string
+  /**
+   * COS-1168 — the whole "who asked" clause, composed server-side so the push
+   * and this card cannot word it differently. Optional because an older
+   * backend does not send it.
+   */
+  requesterPhrase?: string
   agencyName: string | null
   instrumentDisplayName: string
   estMinutes: number

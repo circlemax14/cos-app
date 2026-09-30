@@ -52,34 +52,15 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
 import type { PatientRetakeRequestView } from '@/services/api/retake-requests'
 
-/**
- * Map the BE-emitted requester role string to a human label the patient
- * will actually understand. Falls back to a title-cased version of the
- * raw role for unknown values so a future BE-added role never renders as
- * "your care team member" — the patient still sees a reasonable word.
+/*
+ * COS-1168 — humanRole() deleted.
+ *
+ * It mapped the BE role token to a patient-facing word ("CARE_MANAGER" →
+ * "Care Manager", "SUPER_ADMIN" → "Admin") so the card could print
+ * "Admin BrightFuture asked you to...". The patient is no longer told which
+ * member of staff asked, or in what role, so there is nothing left to map.
+ * See requesterPhraseFor below.
  */
-function humanRole(role: string): string {
-  switch (role) {
-    case 'CARE_MANAGER':
-      return 'Care Manager'
-    case 'ADMIN':
-      return 'Admin'
-    case 'SUPER_ADMIN':
-      return 'Admin'
-    case 'PROVIDER':
-      return 'Provider'
-    case 'CARE_GIVER':
-      return 'Caregiver'
-    default:
-      // Title-case: "SOMETHING_NEW" → "Something New".
-      return role
-        .toLowerCase()
-        .split(/[_\s]+/)
-        .filter(Boolean)
-        .map((w) => w[0]?.toUpperCase() + w.slice(1))
-        .join(' ')
-  }
-}
 
 function estMinutesLabel(n: number): string {
   if (n <= 1) return '~1 minute'
@@ -91,11 +72,34 @@ function estMinutesLabel(n: number): string {
  * the routing + contract tests can pin the exact utterance shape.
  */
 export function composeRetakeCardAccessibilityLabel(row: PatientRetakeRequestView): string {
-  const role = humanRole(row.requesterRole)
-  const who = `${role} ${row.requesterFirstName}`
+  const who = requesterPhraseFor(row)
   const what = `asked you to retake ${row.instrumentDisplayName}`
   const time = `Takes ${estMinutesLabel(row.estMinutes)}`
   return `${who} ${what}. ${time}.`
+}
+
+/**
+ * COS-1168 — who the patient is told asked.
+ *
+ * The server composes this now (retake-request.service composeRequesterPhrase)
+ * so the push and this card cannot word it differently, and so the wording can
+ * change without an app release:
+ *
+ *   platform asks, patient has an agency → "Your care team, on behalf of X,"
+ *   platform asks, no agency             → "Your care team"
+ *   the patient's own agency asks        → "Your care team at X"
+ *
+ * The local fallback exists only for a binary talking to a backend that
+ * predates the field. It deliberately does NOT reproduce the old
+ * "Care Manager Sarah" / "Admin BrightFuture" wording: naming a member of
+ * staff to a patient leaks who is looking at their record, which is half of
+ * why this changed.
+ */
+function requesterPhraseFor(row: PatientRetakeRequestView): string {
+  const fromServer = row.requesterPhrase?.trim()
+  if (fromServer) return fromServer
+  const agency = row.agencyName?.trim()
+  return agency ? `Your care team at ${agency}` : 'Your care team'
 }
 
 /**
@@ -151,10 +155,8 @@ export function RetakeRequestInboxCard({
   // says "nothing to nudge you about" is anti-value.
   if (!first) return null
 
-  const role = humanRole(first.requesterRole)
-  const whoLine = first.agencyName
-    ? `${first.requesterFirstName} (${role} · ${first.agencyName})`
-    : `${first.requesterFirstName} (${role})`
+  // COS-1168 — one server-composed clause; no staff name, no raw role token.
+  const whoLine = requesterPhraseFor(first)
 
   return (
     <View
