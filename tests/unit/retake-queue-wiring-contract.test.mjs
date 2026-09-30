@@ -449,3 +449,42 @@ test('COS-1185: the error flags are in the memo deps', () => {
   assert.match(queueHookSrc, /instrumentsQuery\.isError,/)
   assert.match(queueHookSrc, /assignmentsQuery\.isError,/)
 })
+
+// ─── COS-1186 — the stepper header and its exits ───────────────────────────
+
+test('COS-1186: a retake run returns to the GATE, not the catalog', () => {
+  // The retake deep link carries no returnTo — the queue and source are all it
+  // needs — so Close fell to `default`, the assessments catalog.
+  assert.match(
+    stepperSrc,
+    /if \(!returnTo && source === 'retake-request'\) return RETAKE_GATE_ROUTE;/,
+  )
+})
+
+test('COS-1186: an explicit returnTo still wins over the retake default', () => {
+  // The nutrition card and the Plan+ gate name their own destination.
+  const fn = stepperSrc.match(/function resolveReturnHref\([\s\S]*?\n\}/)
+  assert.ok(fn)
+  const guardAt = fn[0].indexOf("source === 'retake-request'")
+  const switchAt = fn[0].indexOf('switch (returnTo)')
+  assert.ok(guardAt > -1 && guardAt < switchAt, 'the guard must precede the switch')
+  assert.match(fn[0], /if \(!returnTo &&/, 'and must only apply when returnTo is absent')
+})
+
+test('COS-1186: returnTo=plan goes to the VISIBLE plan tab', () => {
+  // It said '/Home/health-plan', which COS-915 retired from the tab bar and
+  // which can render PlanScreenRedesignedV2 — no retake card, no gate.
+  const fn = stepperSrc.match(/function resolveReturnHref\([\s\S]*?\n\}/)
+  assert.match(fn[0], /case 'plan':[\s\S]{0,700}?return RETAKE_GATE_ROUTE/)
+  assert.doesNotMatch(fn[0], /return '\/Home\/health-plan'/)
+})
+
+test('COS-1186: the header title is centred with equal gutters', () => {
+  // justifyContent:'center' would centre it in the space LEFT OVER beside the
+  // icon — off by the icon's width, and it would jump between required and
+  // optional runs.
+  assert.match(stepperSrc, /headerTitle: \{ flex: 1, textAlign: 'center' \}/)
+  assert.match(stepperSrc, /headerSlot: \{ width: 24/)
+  const slots = stepperSrc.match(/style=\{styles\.headerSlot\}/g) ?? []
+  assert.equal(slots.length, 2, 'both gutters must exist or the title is off-centre')
+})
