@@ -55,6 +55,33 @@ export function retakeStartRoute(instrumentKey: string): string {
    * `social`. Reusing it means the patient sees the same three groups here as
    * everywhere else in the app.
    */
+  /*
+   * COS-1175 — a `set:` names its members, so there is nothing to look up and
+   * no reason to show a picker. Walk straight into the first one carrying the
+   * whole queue.
+   *
+   * Vishal, 2026-09-30: "this in between middleware is not required" — for the
+   * scheduled sweeper's requests, which are now the common case, this removes
+   * it entirely. A domain or all-assessments scope still routes to the catalog,
+   * because the members depend on the patient's assigned instruments and only
+   * the catalog knows those.
+   */
+  if (instrumentKey.startsWith('set:')) {
+    const ids = instrumentKey
+      .slice('set:'.length)
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+    if (ids.length > 0) {
+      const first = encodeURIComponent(ids[0])
+      const queue = encodeURIComponent(ids.join(','))
+      return `/Home/assessment-stepper?instrumentId=${first}&source=retake-request&queue=${queue}`
+    }
+    // A malformed key with no members falls through to the catalog rather than
+    // deep-linking into an empty stepper.
+    return '/Home/assessments-catalog?source=retake-request'
+  }
+
   if (instrumentKey === 'all-assessments') {
     return '/Home/assessments-catalog?source=retake-request'
   }

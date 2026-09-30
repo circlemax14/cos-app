@@ -50,6 +50,7 @@ import { getColors, Radii, Spacing } from '@/constants/design-system'
 import { retakeStartRoute } from '@/lib/retake-routes'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
+import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
 import type { PatientRetakeRequestView } from '@/services/api/retake-requests'
 
 /*
@@ -145,15 +146,69 @@ export function RetakeRequestInboxCard({
     router.push(`/Home/retake-snooze-sheet?id=${encodeURIComponent(first.id)}` as never)
   }, [first])
 
+  // COS-1175 — only consulted for the nothing-pending branch below.
+  const plan = useBiopsychosocialPlan()
+  const rebuilding = plan.data?.generating === true
+
   const a11yLabel = useMemo(
     () => (first ? composeRetakeCardAccessibilityLabel(first) : ''),
     [first],
   )
 
-  // Silent-drop when there's nothing pending. NEVER render an empty card,
-  // a loading spinner, or an error banner from this surface — a nudge that
-  // says "nothing to nudge you about" is anti-value.
-  if (!first) return null
+  /*
+   * Silent-drop when there's nothing pending. NEVER render an empty card,
+   * a loading spinner, or an error banner from this surface — a nudge that
+   * says "nothing to nudge you about" is anti-value.
+   *
+   * COS-1175 — with ONE exception. Vishal, 2026-09-30: "when the assessments
+   * are completed and plan generation is happening then we need to show some
+   * other message there". He answered everything, came back to Home, and the
+   * card still read "time to reassess" — so the app was asking him to do work
+   * he had just finished.
+   *
+   * This is status, not a nudge: it replaces the ask rather than adding a
+   * second thing to act on, and it carries no buttons. On the plan screen
+   * RetakeRequiredGate intercepts a rebuild before this renders, so the notice
+   * appears where the ask used to be and nowhere else.
+   */
+  if (!first) {
+    return rebuilding ? (
+      <View
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        accessibilityRole="summary"
+        accessibilityLabel="Rebuilding your plan. We will let you know as soon as it is ready."
+      >
+        <View style={styles.header} importantForAccessibility="no-hide-descendants">
+          <View
+            style={[styles.iconWrap, { backgroundColor: (colors.tint || '#008080') + '22' }]}
+          >
+            <MaterialIcons name="autorenew" size={20} color={colors.tint || '#008080'} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              numberOfLines={1}
+              style={{
+                color: colors.text,
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(600) as any,
+              }}
+            >
+              Rebuilding your plan
+            </Text>
+            <Text
+              style={{
+                color: colors.text + 'CC',
+                fontSize: getScaledFontSize(11),
+                marginTop: 1,
+              }}
+            >
+              That is everything we needed — we will let you know as soon as it is ready.
+            </Text>
+          </View>
+        </View>
+      </View>
+    ) : null
+  }
 
   // COS-1168 — one server-composed clause; no staff name, no raw role token.
   const whoLine = requesterPhraseFor(first)
