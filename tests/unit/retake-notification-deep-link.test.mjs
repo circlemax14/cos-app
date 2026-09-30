@@ -106,3 +106,26 @@ test('COS-1167: the full-intake route carries retake=1, the param the wizard rea
   assert.match(wizard, /params\.retake === '1'/, 'the wizard still gates on retake=1')
   assert.match(routes, /patient-intake\?retake=1/, 'the route must send retake=1')
 })
+
+test('COS-1169: a domain scope opens the catalog on that domain bucket', () => {
+  // No new screen — the catalog's CHUNK-69 ?focus= deep link already does this,
+  // and its grouping already obeys the COS-851 single oracle.
+  const routes = read('lib', 'retake-routes.ts')
+  // CODE only — the comments in that file name the spiritual roll-up in prose,
+  // and the last assertion here would otherwise flag its own explanation.
+  const code = routes.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  for (const [key, focus] of [
+    ["'domain:biological'", 'bio'],
+    ["'domain:psychological'", 'psy'],
+    ["'domain:social'", 'soc'],
+  ]) {
+    assert.ok(code.includes(`${key}: '${focus}'`), `${key} must map to ${focus}`)
+  }
+  // spiritual rolls up to social; a fourth bucket must not appear here either.
+  assert.doesNotMatch(code, /domain:spiritual/)
+})
+
+test('COS-1169: all-assessments opens the catalog unfiltered', () => {
+  const routes = read('lib', 'retake-routes.ts')
+  assert.match(routes, /all-assessments'\)\s*\{[\s\S]{0,120}assessments-catalog\?source=retake-request/)
+})

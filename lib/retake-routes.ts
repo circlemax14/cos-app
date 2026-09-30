@@ -40,6 +40,42 @@ export function retakeStartRoute(instrumentKey: string): string {
    * from if anything ever wants to read it.
    */
   if (instrumentKey === 'full-intake') return '/Home/patient-intake?retake=1&source=retake-request'
+
+  /*
+   * COS-1169 — a request can name a SCOPE rather than one instrument.
+   *
+   * Vishal, 2026-09-29: domains, "all assessments", and the health-status
+   * intake kept separate from them — "full intake doesn't mean that they have
+   * to take the full intake of the health status".
+   *
+   * No new screen. The catalog already groups by domain and already accepts
+   * `?focus=bio|psy|soc` to open on a bucket (CHUNK 69, added for the
+   * wellbeing-card tap), and that grouping already obeys the COS-851 single
+   * oracle — the instrument's stored `domain`, with `spiritual` rolled into
+   * `social`. Reusing it means the patient sees the same three groups here as
+   * everywhere else in the app.
+   */
+  if (instrumentKey === 'all-assessments') {
+    return '/Home/assessments-catalog?source=retake-request'
+  }
+  const focus = DOMAIN_FOCUS[instrumentKey]
+  if (focus) {
+    return `/Home/assessments-catalog?focus=${focus}&source=retake-request`
+  }
+
   const q = encodeURIComponent(instrumentKey)
   return `/Home/assessment-stepper?instrumentId=${q}&source=retake-request`
+}
+
+/**
+ * Scope key → the catalog's existing focus token.
+ *
+ * Only the three canonical domains appear. `spiritual` is deliberately absent:
+ * it rolls up to `social` on every surface, so a `domain:spiritual` key is not
+ * something the dashboard can produce.
+ */
+const DOMAIN_FOCUS: Record<string, 'bio' | 'psy' | 'soc' | undefined> = {
+  'domain:biological': 'bio',
+  'domain:psychological': 'psy',
+  'domain:social': 'soc',
 }
