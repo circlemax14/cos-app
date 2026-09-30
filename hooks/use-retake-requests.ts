@@ -37,6 +37,29 @@ export function usePendingRetakeRequests() {
     queryKey: RETAKE_REQUESTS_QUERY_KEY,
     queryFn: fetchPendingRetakeRequests,
     staleTime: 30_000,
+    /*
+     * COS-1176 — a new request must reach the patient WITHOUT a push.
+     *
+     * Vishal, 2026-09-30: "if I am on the plan screen and if I re-initiate a
+     * retake assessment ... ideally it should automatically change".
+     *
+     * It already did, but by exactly one route: use-notifications invalidates
+     * this key on an ASSESSMENT_RETAKE_REQUESTED push while the app is
+     * foregrounded. With notifications denied, a dropped push, or a simulator
+     * without a token, nothing else ever looked again — `staleTime` with no
+     * interval means a patient can sit on the plan screen indefinitely while a
+     * BLOCKING gate waits on data the app is not fetching.
+     *
+     * 60s while mounted, and only while mounted. The push stays the fast path
+     * (it invalidates, so it is immediate); this is the floor under it.
+     * Deliberately not shorter: the gate is a nudge, not a live feed, and this
+     * query is mounted on Home, the plan screen and the gate at once.
+     */
+    refetchInterval: 60_000,
+    // A request issued while the app was backgrounded should be waiting when
+    // the patient comes back, not 60s after.
+    refetchOnMount: true,
+    refetchOnReconnect: true,
     // The BE is flag-gated OFF by default; fetchPendingRetakeRequests swallows
     // the 404 to [] so this query never enters an error state during dark
     // ship — the card just silent-drops. Belt-and-braces: also disable retry
