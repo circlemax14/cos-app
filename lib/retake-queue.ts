@@ -132,8 +132,57 @@ export interface BuildQueueArgs {
   scope: RetakeScope
   /** Catalog order — AI recommendation first, then `ORDER`. Preserved. */
   instruments: readonly QueueInstrument[]
+  /**
+   * Instruments already SATISFIED FOR THIS REQUEST — i.e. completed at or after
+   * the request was raised. NOT "ever completed".
+   *
+   * COS-1184: this used to be ever-completed, and it is the reason "Start now"
+   * still landed on the catalog after COS-1181. A retake is raised precisely
+   * against a patient WITH history, so ever-completed empties the queue on the
+   * very people the request is for, the card falls through to its catalog
+   * fallback, and they arrive at a screen reading "1 of 1 completed".
+   *
+   * The backend has always used the watermark rule — completeSatisfiedScopes:
+   * "every member instrument has a completion dated at or after the request was
+   * created ... Not 'ever completed' either, or a request would clear itself the
+   * moment it was raised against a patient with history." The app disagreed with
+   * it, and the app was wrong.
+   *
+   * `useRetakeQueue` computes this; see `satisfiedSince`.
+   */
   completedIds: ReadonlySet<string>
   phq9Eligible: boolean
+}
+
+/**
+ * COS-1184 — which instruments count as done FOR A REQUEST raised at `since`.
+ *
+ * Takes the latest completion per instrument and keeps only those at or after
+ * the watermark. Exported and pure so the rule the app walks by is the same one
+ * the backend clears by, and so it can be tested without a QueryClient.
+ */
+export function satisfiedSince(
+  completions: readonly { instrumentId: string; completedAt?: string | null }[],
+  since: string | undefined | null,
+): Set<string> {
+  const latest = new Map<string, string>()
+  for (const c of completions) {
+    if (!c.instrumentId) continue
+    const at = String(c.completedAt ?? '')
+    const prev = latest.get(c.instrumentId)
+    if (!prev || at > prev) latest.set(c.instrumentId, at)
+  }
+  const watermark = typeof since === 'string' ? since : ''
+  const out = new Set<string>()
+  for (const [id, at] of latest) {
+    /*
+     * No watermark → fall back to ever-completed. That is the old behaviour and
+     * the safe one for a caller with no request context: it can only ever make
+     * the queue SHORTER, never route someone into a check-in nobody asked for.
+     */
+    if (!watermark || at >= watermark) out.add(id)
+  }
+  return out
 }
 
 /**

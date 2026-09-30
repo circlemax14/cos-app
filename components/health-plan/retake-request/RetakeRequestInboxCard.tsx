@@ -48,7 +48,8 @@ import { router } from 'expo-router'
 
 import { getColors, Radii, Spacing } from '@/constants/design-system'
 import { retakeStartRoute } from '@/lib/retake-routes'
-import { retakeTrackOf, type RetakeTrackName } from '@/lib/retake-queue'
+import { parseRetakeScopeKey, retakeTrackOf, type RetakeTrackName } from '@/lib/retake-queue'
+import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
@@ -174,7 +175,7 @@ export function RetakeRequestInboxCard({
    * `queue.ready` matters: tapping while the three queries are still loading must
    * NOT fall through to the picker. Start now is disabled until it resolves.
    */
-  const queue = useRetakeQueue(first?.instrumentKey ?? null)
+  const queue = useRetakeQueue(first ?? null)
 
   const onStartNow = useCallback(() => {
     if (!first) return
@@ -185,6 +186,24 @@ export function RetakeRequestInboxCard({
       router.push(
         `/Home/assessment-stepper?instrumentId=${next}&source=retake-request&queue=${rest}` as never,
       )
+      return
+    }
+    /*
+     * COS-1184 — a SCOPE with an empty queue must NOT fall to the catalog.
+     *
+     * With the watermark in place an empty scope queue means one thing: every
+     * member is already satisfied, so the request is about to clear. The catalog
+     * is the worst possible destination for that — its primary action is "Build
+     * my plan", which is the screen Vishal has now reported four times.
+     *
+     * Send them to the gate instead. It re-reads the pending list, sees the
+     * request clearing (or the rebuild starting) and shows the right thing.
+     * `retakeStartRoute` stays only for keys with genuinely nowhere to walk: a
+     * single instrument, which it opens directly, and the health-status intake,
+     * which has its own wizard.
+     */
+    if (parseRetakeScopeKey(first.instrumentKey)) {
+      router.push(RETAKE_GATE_ROUTE as never)
       return
     }
     router.push(retakeStartRoute(first.instrumentKey) as never)

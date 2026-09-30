@@ -257,7 +257,9 @@ test('COS-1181 THE FIX: "Start now" deep-links into the stepper, never the picke
    * check-in. retakeStartRoute stays only as the fallback for things with
    * nothing to walk.
    */
-  assert.match(cardSrc, /useRetakeQueue\(first\?\.instrumentKey \?\? null\)/)
+  // COS-1184 passes the whole request, not just the key — the queue needs its
+  // createdAt as the watermark.
+  assert.match(cardSrc, /useRetakeQueue\(first \?\? null\)/)
   const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   assert.ok(handler, 'onStartNow not found')
   assert.match(
@@ -376,4 +378,39 @@ test('COS-1183: the sheet scrolls, so the dismiss row cannot fall off-screen', (
 
 test('COS-1183: an in-flight tap is visible, not a 15% dim for 30 seconds', () => {
   assert.match(sheetSrc, /busy \? \(\s*\n?\s*<ActivityIndicator/)
+})
+
+// ─── COS-1184 ──────────────────────────────────────────────────────────────
+
+test('COS-1184: the hook uses the request WATERMARK, not ever-completed', () => {
+  /*
+   * The bug that survived COS-1181. A retake is raised against someone WITH
+   * history, so ever-completed emptied the queue for exactly the patients the
+   * request is for — and the card then fell through to the catalog.
+   */
+  assert.match(queueHookSrc, /satisfiedSince\(assessmentsQuery\.data, since\)/)
+  assert.match(queueHookSrc, /const since = request\?\.createdAt/)
+  // The card must hand over the whole request, not just the key.
+  assert.match(cardSrc, /useRetakeQueue\(first \?\? null\)/)
+})
+
+test('COS-1184: the watermark is part of the memo deps', () => {
+  // Otherwise a new request with the same key reuses the previous queue.
+  assert.match(queueHookSrc, /\[scope, since, instrumentsQuery\.data/)
+})
+
+test('COS-1184 THE POINT: a satisfied SCOPE goes to the gate, never the catalog', () => {
+  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  assert.ok(handler)
+  assert.match(handler[0], /if \(parseRetakeScopeKey\(first\.instrumentKey\)\) \{/)
+  assert.match(handler[0], /router\.push\(RETAKE_GATE_ROUTE as never\)/)
+  // retakeStartRoute survives only for keys with nowhere to walk.
+  const scopeAt = handler[0].indexOf('parseRetakeScopeKey')
+  const fallbackAt = handler[0].lastIndexOf('retakeStartRoute')
+  assert.ok(scopeAt < fallbackAt, 'the scope branch must precede the fallback')
+})
+
+test('COS-1184: PHQ-9 eligibility reads the LATEST phq-2, watermark or not', () => {
+  // It is a clinical skip rule about the patient, not about this request.
+  assert.match(queueHookSrc, /if \(at >= phq2At\)/)
 })
