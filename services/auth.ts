@@ -5,49 +5,17 @@ import { cognitoSignOut } from '@/lib/cognito';
 import { storeTokens, clearTokens, hasStoredSession } from '@/lib/auth-tokens';
 import { apiClient } from '@/lib/api-client';
 import { setCachedProfile, clearCachedProfile } from '@/lib/cached-profile';
-import { clearCachedUserSummary } from '@/lib/cached-user-summary';
+import { purgeLocalPhi } from '@/lib/purge-local-phi';
 import { queryClient } from '@/providers/QueryProvider';
 
-/**
- * Key prefixes that hold per-user, PHI-bearing state in AsyncStorage and
- * MUST be purged on sign-out. Audit SCRUM-365 STORAGE-003/004 found these
- * keys leaking between users on a shared device.
+/*
+ * COS-1152 — the PHI purge moved to lib/purge-local-phi.ts.
  *
- *  - 'doctor_data_<providerId>' — cached doctor lookups (PHI: who the user sees).
- *  - 'assessment-draft:<instrumentId>' — in-flight PROMIS / PHQ-9 / etc. drafts.
- *  - 'assessment_' — defensive: catches any legacy/alternate assessment key naming.
+ * It lived here and was called from this file's signOut() alone, while
+ * api-client's forceSignOut — the involuntary path, and the common one —
+ * cleared tokens and nothing else. Two sign-outs, one cleanup. Moving it to a
+ * module both can import is what stops them drifting apart again.
  */
-export const PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT = [
-  'doctor_data_',
-  'assessment-draft:',
-  'assessment_',
-] as const;
-
-/**
- * Best-effort sweep of all AsyncStorage keys whose prefix matches one of
- * PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT. Exported for testability.
- *
- * Returns the list of keys it removed (handy for tests / debugging).
- */
-export async function purgePhiAsyncStorageKeys(
-  storage: Pick<typeof AsyncStorage, 'getAllKeys' | 'multiRemove'> = AsyncStorage,
-): Promise<string[]> {
-  try {
-    const all = await storage.getAllKeys();
-    const matches = all.filter((k) =>
-      PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT.some((prefix) => k.startsWith(prefix)),
-    );
-    if (matches.length > 0) {
-      await storage.multiRemove(matches);
-    }
-    return [...matches];
-  } catch {
-    // Sign-out cleanup is best-effort — a storage failure must not block
-    // the user from signing out (auth tokens are already cleared by the
-    // caller before this runs).
-    return [];
-  }
-}
 
 export type SignInPayload = { username: string; password: string };
 export type SignUpPayload = {
@@ -216,8 +184,14 @@ export async function checkSession(): Promise<SessionCheckResult> {
     // cached data on the startup path instead.
     const status = err instanceof AxiosError ? err.response?.status : undefined;
     if (status === 401 || status === 403) {
+      /*
+       * COS-1152 — the third partial purge. This verdict means the session is
+       * gone, so the outgoing account's cached responses must go with it. It
+       * used to clear the profile alone and leave the React Query cache
+       * whole.
+       */
       await clearTokens();
-      await clearCachedProfile();
+      await purgeLocalPhi();
       return { authenticated: false, reason: 'unauthenticated' };
     }
     // Everything else — NETWORK_ERROR (thrown as a plain Error by the
@@ -250,20 +224,17 @@ export async function signOut(): Promise<void> {
 
   cognitoSignOut();
   await clearTokens();
-  await clearCachedProfile();
-  await clearCachedUserSummary();
   await SecureStore.deleteItemAsync('cos_username');
 
-  // Nuke the React Query cache so PHI-bearing query responses (patients,
-  // health plans, providers, etc.) can't be observed by the next signed-in
-  // user. .clear() removes all queries + mutations and resets internal state.
-  try {
-    queryClient.clear();
-  } catch { /* non-fatal — never block sign-out */ }
-
-  // Sweep PHI-bearing AsyncStorage keys (doctor_data_*, assessment-draft:*,
-  // assessment_*) — see PHI_KEY_PREFIXES_TO_PURGE_ON_SIGNOUT above.
-  await purgePhiAsyncStorageKeys();
+  /*
+   * COS-1152 — the same purge the involuntary path now runs.
+   *
+   * This used to be three inline steps here and nothing at all in
+   * api-client's forceSignOut. Sharing one function is what stops the two
+   * paths drifting apart again: the next thing worth forgetting gets added
+   * once, and both sign-outs get it.
+   */
+  await purgeLocalPhi();
 
   if (outgoingSub) {
     // Lazy-import to avoid pulling AsyncStorage into every consumer of
