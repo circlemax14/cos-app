@@ -2,23 +2,25 @@
  * AI nutrition plan API client (Ken 2026-08-07).
  *
  * Talks to:
- *   POST /v1/patients/me/nutrition-plan
+ *   GET /v1/patients/me/nutrition-plan
  *
- * ── WHY POST, AND WHY THERE IS NO GET ────────────────────────────────
- * The backend generates on demand and does not persist the result, so
- * there is nothing to read back. Every call is a fresh Bedrock
- * generation, which is why the UI puts it behind an explicit button
- * rather than fetching on mount — nobody should pay for a model call by
- * scrolling past a section.
+ * ── READ-ONLY SINCE COS-1217/1218/1222 ───────────────────────────────
+ * The plan is now generated server-side ALONGSIDE the care plan, and a
+ * nightly sweeper backfills anyone missing one. Nobody taps anything,
+ * so the app only ever READS. `plan: null` means "the care plan has not
+ * produced one yet" — never "tap to build".
  *
- * ── THE FOUR OUTCOMES THE UI HAS TO HANDLE ───────────────────────────
+ * POST still exists so old installed builds do not 404. This client no
+ * longer offers it: a second generation path would be a Bedrock call the
+ * patient did not ask for and a plan the care plan does not know about.
+ *
+ * ── THE OUTCOMES THE UI HAS TO HANDLE ────────────────────────────────
+ *   200 { plan: null }        → not generated yet; nothing to do
  *   404 FEATURE_DISABLED      → flag off; render nothing at all
  *   403 ENTITLEMENT_DENIED    → not on a plan that includes it
- *   409 SCREENER_NOT_TAKEN    → take the dietary screener first
- *   409 SCREENER_INCOMPLETE   → finish the screener
- *   503 AI_INVALID_OUTPUT     → transient; worth retrying
- * Each gets its own error class so the section can say something true
- * instead of collapsing everything into "something went wrong".
+ * The 409 screener codes and the 503 generation error belonged to POST.
+ * Their classes are kept — `rethrowTyped` is shared and the backend may
+ * still emit them — but no read path produces them today.
  *
  * Response envelope: cos-backend `sendSuccess` wraps payloads as
  * `{ success: true, data: ... }`. Defensive unwrap mirrors daily-read.ts.
@@ -27,6 +29,7 @@
 import axios from 'axios'
 
 import { apiClient } from '@/lib/api-client'
+import type { PlanHabit } from '@/services/api/types'
 
 // ─── Errors ──────────────────────────────────────────────────────────
 
@@ -80,10 +83,31 @@ export type NutritionFactor =
   | 'calcium'
   | 'redAndProcessedMeat'
 
+/**
+ * Which part of the plan an accepted suggestion belongs to.
+ *
+ * Deliberately the HABIT vocabulary rather than a parallel nutrition one:
+ * COS-1219 routes accepted suggestions to routines, so `suggestion.domain`
+ * is handed straight to `UpsertHabitInput.bpsDomain` with no mapping. Typing
+ * it as the same thing is what makes that passthrough checkable — if the two
+ * vocabularies ever diverge, this line fails to compile rather than the call
+ * site silently sending a value the backend rejects.
+ */
+export type NutritionDomain = PlanHabit['bpsDomain']
+
 export interface NutritionSuggestion {
   factor: NutritionFactor
   title: string
   rationale: string
+  /**
+   * REQUIRED, and there is no app-side default.
+   *
+   * The backend sends it on every suggestion including older stored plans
+   * (COS-1222), so absence is a contract break, not a legacy shape. Guessing
+   * a domain here would file a nutrition routine under whichever part of the
+   * plan this file happened to pick.
+   */
+  domain: NutritionDomain
 }
 
 export interface NutritionPlan {
@@ -110,14 +134,27 @@ function unwrap<T>(body: any): T {
   return body as T
 }
 
+const DOMAINS: readonly NutritionDomain[] = ['bio', 'psycho', 'social', 'spiritual']
+
 function normalize(shaped: Partial<NutritionPlan> | undefined): NutritionPlan {
   const raw = Array.isArray(shaped?.suggestions) ? shaped!.suggestions! : []
   const suggestions = raw
-    .filter((s): s is NutritionSuggestion => !!s && typeof s.title === 'string' && s.title !== '')
+    // DROPPED, not defaulted, when `domain` is missing or unrecognised. This
+    // rebuild is field-by-field, so a new field that is not named here simply
+    // vanishes — which is how a suggestion would reach the UI with nothing to
+    // route it by. A suggestion we cannot file is one we must not offer.
+    .filter(
+      (s): s is NutritionSuggestion =>
+        !!s &&
+        typeof s.title === 'string' &&
+        s.title !== '' &&
+        DOMAINS.includes(s.domain as NutritionDomain),
+    )
     .map((s) => ({
       factor: s.factor,
       title: s.title,
       rationale: typeof s.rationale === 'string' ? s.rationale : '',
+      domain: s.domain,
     }))
   return {
     instrument: 'dsq-nci',
@@ -152,34 +189,19 @@ function rethrowTyped(err: unknown): never {
 // ─── Endpoints ───────────────────────────────────────────────────────
 
 /**
- * Read the LAST GENERATED plan. One DynamoDB read, zero Bedrock calls, so
- * this is safe to call on mount — unlike generate.
+ * Read the patient's stored nutrition plan. One DynamoDB read, zero Bedrock
+ * calls — the only call this client makes.
  *
- * Resolves to `null` when the patient has not built one yet: the backend
+ * Resolves to `null` when the care plan has not produced one yet: the backend
  * returns 200 with `plan: null` for that, deliberately, so it is
- * distinguishable from the feature being disabled (404).
+ * distinguishable from the feature being disabled (404). Null is a WAITING
+ * state, not an invitation to build one.
  */
 export async function fetchNutritionPlan(): Promise<NutritionPlan | null> {
   try {
     const res = await apiClient.get('/v1/patients/me/nutrition-plan')
     const body = unwrap<{ plan: Partial<NutritionPlan> | null }>(res.data)
     return body?.plan ? normalize(body.plan) : null
-  } catch (err) {
-    rethrowTyped(err)
-  }
-}
-
-
-/**
- * Generate a nutrition plan from the patient's latest dietary screener.
- *
- * Costs a Bedrock call every time — only invoke from an explicit user
- * action, never on mount or on focus.
- */
-export async function generateNutritionPlan(): Promise<NutritionPlan> {
-  try {
-    const res = await apiClient.post('/v1/patients/me/nutrition-plan')
-    return normalize(unwrap<Partial<NutritionPlan>>(res.data))
   } catch (err) {
     rethrowTyped(err)
   }

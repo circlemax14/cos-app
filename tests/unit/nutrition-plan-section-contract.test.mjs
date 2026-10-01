@@ -5,17 +5,28 @@
  * part of the plan. The properties worth pinning here are the ones that cost
  * money or make a clinical claim if they regress:
  *
- *   - it must NOT generate on mount (every build is a Bedrock call the
- *     backend does not persist),
+ *   - it must never generate — COS-1217/1218/1222 moved generation server-side
+ *     alongside the care plan, so the app only READS,
  *   - it must never present a frequency as an amount (the NCI coefficients
  *     are not loaded, so cups/grams/servings would be fiction),
  *   - the care-team-review notice must not be dismissible or conditional,
  *   - a disabled flag or a missing entitlement must render nothing, not an
- *     error.
+ *     error,
+ *   - an accepted suggestion must land in ROUTINES, which survive a care-plan
+ *     regeneration, and must carry the domain the backend assigned it.
+ *
+ * ── WHAT COS-1219/1220 REWROTE IN THIS FILE ──────────────────────────
+ * Every assertion that pinned the "Build it" affordance is gone, because the
+ * affordance is gone: `plan: null` now means "the care plan has not produced
+ * one yet", not "tap to build". The invariant those tests protected (no
+ * unbidden Bedrock call) is now stronger and asserted differently — the app
+ * cannot generate at all, because it no longer knows how to POST. The
+ * 409 screener states went with it: only POST returned them.
  *
  * Source-reading, matching the convention of the other screen-level tests
  * here — rendering needs the whole theme + icon harness, and these are
- * structural facts.
+ * structural facts. The one piece of real LOGIC in this feature, the
+ * add-latch, is pure and unit-tested in lib/add-latch.test.mjs.
  */
 
 import { test } from 'node:test';
@@ -31,10 +42,11 @@ const SCREEN = readFileSync(join(ROOT, 'components/health-plan/PlanScreenRedesig
 const BPS = readFileSync(join(ROOT, 'components/health-plan/BiopsychosocialPlanScreen.tsx'), 'utf8');
 const HOST = readFileSync(join(ROOT, 'app/Home/health-plan.tsx'), 'utf8');
 const STEPPER = readFileSync(join(ROOT, 'app/Home/assessment-stepper.tsx'), 'utf8');
-const TASKLIST = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskListSection.tsx'), 'utf8');
 const TASKROW = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskRow.tsx'), 'utf8');
 const HOOKS = readFileSync(join(ROOT, 'hooks/use-plan-tasks.ts'), 'utf8');
 const DETAIL = readFileSync(join(ROOT, 'components/health-plan/tasks/TaskDetailModal.tsx'), 'utf8');
+const HABITS = readFileSync(join(ROOT, 'hooks/use-plan-habits.ts'), 'utf8');
+const LATCH = readFileSync(join(ROOT, 'lib/add-latch.ts'), 'utf8');
 
 /**
  * Source with comments stripped.
@@ -49,41 +61,52 @@ function codeOnly(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-test('does NOT generate on mount — each build costs a Bedrock call', () => {
-  // A useEffect calling generate would bill a model call for every patient
-  // who scrolls past the section.
-  // The invariant is about COST, not about hooks. A mount effect that READS
-  // the stored plan (one DynamoDB read) is required — without it every app
-  // open re-generates. What must never happen on mount or focus is a
-  // GENERATION, which is a Bedrock call.
+test('the app cannot generate a nutrition plan at all — COS-1219', () => {
+  // The old guarantee was "no generation on mount or focus", enforced by
+  // inspecting each effect. The new one is stronger and needs no inspection:
+  // there is no client function to call. The backend generates the plan with
+  // the care plan and a nightly sweeper backfills the gaps.
   //
-  // Earlier revisions of this test banned useEffect outright and would have
-  // blocked both correct fixes. Assert the cost, not the mechanism.
-  const code = codeOnly(SECTION);
-  const mount = code.match(/React\.useEffect\([\s\S]*?\n  \}, \[\]\)/);
-  if (mount) {
-    assert.doesNotMatch(mount[0], /generateNutritionPlan|onGenerate/,
-      'the mount effect must READ the stored plan, never generate one');
-    assert.match(mount[0], /fetchNutritionPlan/,
-      'the mount effect exists to load the stored plan');
-  }
-  const focus = code.match(/useFocusEffect\([\s\S]*?\n  \)/);
-  if (focus) {
-    assert.doesNotMatch(focus[0], /onGenerate|generateNutritionPlan/,
-      'the focus effect must never generate — that is a Bedrock call per focus');
-  }
-  // The handler is now a per-state variable bound to the card's onPress,
-  // so assert the binding rather than one literal inline arrow.
-  assert.match(codeOnly(SECTION), /onPress\s*[:=][^\n]*onGenerate\(\)/,
-    'generation must be reachable only from a press handler');
+  // POST /v1/patients/me/nutrition-plan still EXISTS so old installed builds
+  // do not 404 — which is exactly why this has to be asserted rather than
+  // assumed. A re-added call would compile and work.
+  assert.doesNotMatch(codeOnly(CLIENT), /apiClient\.post/,
+    'the client must not POST — generation is the care plan\'s job');
+  assert.doesNotMatch(codeOnly(CLIENT), /export async function generateNutritionPlan/);
+  assert.doesNotMatch(codeOnly(SECTION), /generateNutritionPlan|onGenerate/,
+    'the section must not reference a generate path');
+  // And the read is still a read: one GET, nothing else.
+  assert.match(CLIENT, /apiClient\.get\('\/v1\/patients\/me\/nutrition-plan'\)/);
+});
+
+test('no build affordance survives anywhere in the card', () => {
+  // "Build it" implied the patient was the trigger. Nothing they tap produces
+  // a plan now, so no copy may suggest otherwise.
+  const copy = codeOnly(SECTION);
+  assert.doesNotMatch(copy, /Build it|Build practical|Building your plan|Rebuild/i);
+  assert.doesNotMatch(copy, /nutrition-plan\.generate/,
+    'the generate entitlement gate guarded a control that no longer exists');
 });
 
 test('never presents a frequency as an amount', () => {
   // The screener measures how OFTEN, not how much. A quantity unit in the
   // user-visible copy would be a fabricated measurement, because the NCI
   // regression coefficients are not loaded.
+  // STEMS, not plurals (COS-1224 re-audit): the old list was ['cups','grams',
+  // 'servings','ounces','calorie'], which "half a cup" and "5 grams of fibre"
+  // both walk straight past. A stem catches singular, plural and compound.
   const copy = codeOnly(SECTION).toLowerCase();
-  for (const unit of ['cups', 'grams', 'servings', 'ounces', 'calorie']) {
+  for (const unit of [
+    'cup',
+    'gram',
+    'serving',
+    'ounce',
+    'calorie',
+    'portion',
+    'teaspoon',
+    'tablespoon',
+    'millilit',
+  ]) {
     assert.ok(!copy.includes(unit), `user-visible copy must not mention "${unit}"`);
   }
   assert.match(SECTION, /how often, not how\s+much/, 'must state what the numbers are');
@@ -127,9 +150,21 @@ test('each backend outcome has its own typed error', () => {
   }
 });
 
-test('a screener-required response offers the screener, not a retry', () => {
-  assert.match(SECTION, /kind: 'needs-screener'/);
-  assert.match(SECTION, /Take the dietary screener/);
+test('the null state absorbs the no-screener case', () => {
+  // The 409 SCREENER_NOT_TAKEN path is unreachable now — only POST returned
+  // it, and GET answers 200 with `plan: null` whether or not the screener was
+  // answered. So the null state has to carry both meanings, and the one thing
+  // the patient actually controls has to be reachable from it.
+  assert.doesNotMatch(codeOnly(SECTION), /needs-screener/,
+    'a state that cannot be reached must not be rendered');
+  const empty = SECTION.slice(
+    SECTION.indexOf("status.kind === 'empty' && ("),
+    SECTION.indexOf("status.kind === 'error' && ("),
+  );
+  assert.ok(empty.length > 0, 'expected a rendered empty state');
+  assert.match(empty, /onPress=\{onTakeScreener\}/,
+    'the empty state must offer the screener via the prop the parent passes');
+  assert.match(empty, /dietary screener/);
 });
 
 test('the screener link goes to the DSQ ITSELF, not the catalog', () => {
@@ -151,6 +186,9 @@ test('returnTo=plan exists, so the screener returns to the plan', () => {
   // nutrition card they were trying to build.
   assert.match(BPS, /returnTo=plan/);
   assert.match(STEPPER, /case 'plan':/);
+  // This repo's stepper has not taken COS-1186 (the care-plan-plus retake
+  // gate), so the destination here is still the literal plan route. Left as it
+  // was deliberately — COS-1219/1220 did not touch the stepper.
   assert.match(STEPPER, /return '\/Home\/health-plan'/);
 });
 
@@ -163,14 +201,20 @@ test('the screener prompt says what the screener IS', () => {
 });
 
 test('stays inside the iOS 26.5 primitive envelope', () => {
-  const rn = /import \{([^}]+)\} from 'react-native'/.exec(SECTION);
-  assert.ok(rn, 'expected a react-native import');
+  // EVERY value import from react-native, not just the first one `exec` happens
+  // to find (COS-1224 re-audit): a second `import { ActivityIndicator } from
+  // 'react-native'` line satisfied the old single-match version of this.
+  // `import type { ... }` lines are skipped — a type cannot render.
+  const lines = [...SECTION.matchAll(/import (?!type )\{([^}]+)\} from 'react-native'/g)];
+  assert.ok(lines.length > 0, 'expected a react-native value import');
   // ActivityIndicator deliberately EXCLUDED — BiopsychosocialPlanScreen
   // records that it was scrubbed from these surfaces for iOS 26.5 and that
   // the sanctioned pending affordance is static.
   const allowed = new Set(['View', 'Text', 'Pressable', 'StyleSheet']);
-  for (const n of rn[1].split(',').map((s) => s.trim()).filter(Boolean)) {
-    assert.ok(allowed.has(n), `${n} is outside the primitive envelope`);
+  for (const line of lines) {
+    for (const n of line[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+      assert.ok(allowed.has(n), `${n} is outside the primitive envelope`);
+    }
   }
   assert.doesNotMatch(SECTION, /Alert|LayoutAnimation|Animated/);
 });
@@ -229,14 +273,24 @@ test('is ALSO in V2, so a TAB_SWAP_BPS rollback does not lose it', () => {
 });
 
 
-test('returning from the screener clears the needs-screener state', () => {
+test('returning to the screen re-reads an empty or failed card', () => {
   // Vishal 2026-08-10: after completing the screener the card still read
   // "Take the dietary screener" and tapping it re-opened the finished
   // stepper. `status` is local state and this component does not remount on
-  // return, so focus has to reset it.
+  // return, so focus has to act.
+  //
+  // It re-READS rather than resetting to a tappable state: there is nothing to
+  // tap, and one DynamoDB read is the cheapest call on this screen.
   assert.match(SECTION, /useFocusEffect/);
-  assert.match(SECTION, /prev\.kind === 'needs-screener' \|\| prev\.kind === 'error'/);
-  assert.match(SECTION, /\{ kind: 'idle' \}/);
+  const focus = SECTION.match(/useFocusEffect\([\s\S]*?\n  \)/);
+  assert.ok(focus, 'expected a focus effect');
+  assert.match(focus[0], /kind === 'empty' \|\| kind === 'error'/);
+  assert.match(focus[0], /void load\(\)/);
+  // Read from a ref, never from a closed-over `status`: useFocusEffect re-runs
+  // its callback when the identity changes while focused, so a status
+  // dependency turns one re-read into two.
+  assert.match(focus[0], /statusRef\.current/);
+  assert.match(focus[0], /\}, \[load\]\)/);
 });
 
 test('a ready plan survives tabbing away and back', () => {
@@ -248,13 +302,20 @@ test('a ready plan survives tabbing away and back', () => {
   assert.doesNotMatch(focus[0], /'loading'/, "must not reset the 'loading' state");
 });
 
-test('the two screener codes do not share copy', () => {
-  // Telling someone to "take" a screener they already took sends them in a
-  // circle — which is exactly what was reported.
-  assert.match(SECTION, /SCREENER_NOT_TAKEN/);
-  assert.match(SECTION, /Take the dietary screener/);
-  assert.match(SECTION, /Finish the dietary screener/);
-  assert.match(SECTION, /A few more answers needed/);
+test('the empty state never asks for something already done', () => {
+  // The old card could tell someone to "take" a screener they had already
+  // taken, because the 409 code told it which. The GET cannot tell them apart
+  // any more, so ONE string has to be true in both cases — and it has to say
+  // explicitly that an answered screener needs nothing further, or the card
+  // reads as a chore that will not go away.
+  assert.match(SECTION, /Take or update the dietary screener/,
+    '"take" alone is a lie to someone who already answered it');
+  assert.match(SECTION, /nothing else is needed from\s+you/,
+    'must state that an answered screener needs nothing more');
+  assert.match(SECTION, /after your next care-plan update/,
+    'must say what actually produces the plan');
+  // And it must not pretend the patient is the trigger.
+  assert.doesNotMatch(codeOnly(SECTION), /Tap to (build|try again)/i);
 });
 
 test('the focus hook runs BEFORE the early return', () => {
@@ -269,29 +330,119 @@ test('the focus hook runs BEFORE the early return', () => {
 
 // ── Tracking (Vishal 2026-08-10: "how patients will be able to track it") ──
 
-test('suggestions can be turned into PLAN TASKS, not routines', () => {
-  // Routines were the obvious-looking home and are the wrong one: the API is
-  // behind plan_routines_enabled (UNSET in production, so every route 404s)
-  // and has NO completion endpoint — POST, GET, GET/:id, PATCH/:id,
-  // DELETE/:id and nothing else. Plan tasks have complete/skip live plus
-  // getTaskAnalytics, which Daily Read reads in production today.
-  assert.match(SECTION, /createPlanTask/);
-  assert.doesNotMatch(SECTION, /createRoutine|\/routines/);
+test('suggestions become ROUTINES, not tasks — COS-1219', () => {
+  // REVERSED from the 2026-08-10 ruling, which chose tasks because the
+  // routines API was behind plan_routines_enabled and had no completion
+  // endpoint. Both facts changed: habits_in_plan_enabled is true in
+  // production, and POST .../plan/habits/:id/complete plus GET /completions
+  // both exist.
+  //
+  // The reason it HAD to change: tasks are wiped on every care-plan
+  // regeneration — mergeEditedPatientTasks is referenced in four comments and
+  // does not exist, and all 225 production tasks are source:'ai'. An item the
+  // patient accepted cannot be something the next regeneration deletes.
+  // Routines merge (care-plan-normalizer.ts:518) and have patient CRUD.
+  assert.match(SECTION, /useAddHabit/);
+  assert.match(SECTION, /addHabit\.mutateAsync/);
+  assert.doesNotMatch(codeOnly(SECTION), /createPlanTask/);
 });
 
-test('the created task is completable — simple style, daily', () => {
-  // completionStyle 'simple' is what makes it tickable; a measurable task
-  // would demand a logged value the screener cannot supply.
-  assert.match(SECTION, /completionStyle: 'simple'/);
-  assert.match(SECTION, /recurrence: 'daily'/);
-  assert.match(SECTION, /category: 'nutrition'/);
+test('the routine is completable, timed, and silent', () => {
+  // cadence daily: the screener measures how often food is eaten, and every
+  // suggestion it drives is a daily pattern.
+  // A time places it on Today's Schedule, which is the integration Ken asked
+  // for; 11:00 is actionable at lunch and clear of the pre-breakfast
+  // medication cluster.
+  const add = SECTION.slice(SECTION.indexOf('const onAddToPlan'));
+  assert.match(add, /cadence: 'daily'/);
+  assert.match(add, /scheduledTime: '11:00'/);
+  // remindersEnabled absent reads as TRUE on the backend, so silence has to be
+  // explicit. The patient asked to track this, not to be buzzed at an hour
+  // THIS FILE chose for them.
+  assert.match(add, /remindersEnabled: false/);
 });
 
-test('add state is per-suggestion and survives nothing but a rebuild', () => {
-  // A rebuild replaces the suggestion list wholesale, so index-keyed state
-  // must be cleared or row 2 inherits row 2's old "added" tick.
-  assert.match(SECTION, /setAdded\(\{\}\)/, 'generate must reset the added map');
-  assert.match(SECTION, /'saving' \| 'done' \| 'failed'/);
+test('the domain passes straight through, with no mapping and no default', () => {
+  // suggestion.domain and UpsertHabitInput.bpsDomain are the same four-value
+  // vocabulary by ruling, so anything resembling a lookup table here is a
+  // chance to file a routine under the wrong part of the plan.
+  const add = SECTION.slice(SECTION.indexOf('const onAddToPlan'));
+  assert.match(add, /bpsDomain: suggestion\.domain/);
+  assert.doesNotMatch(add, /DOMAIN_MAP|domain === 'bio' \?|\?\? 'bio'/);
+});
+
+test('domain is REQUIRED on the suggestion type and in normalize()', () => {
+  // normalize() rebuilds every suggestion field-by-field, so a field it does
+  // not name silently vanishes — which is how domain would reach the UI as
+  // undefined and route a routine nowhere.
+  assert.match(CLIENT, /domain: NutritionDomain/, 'required, not optional');
+  assert.doesNotMatch(CLIENT, /domain\?: /, 'must not be optional');
+  assert.match(CLIENT, /domain: s\.domain/, 'normalize must carry it through');
+  // Dropped, never defaulted: we cannot invent the part of the plan an item
+  // belongs to.
+  assert.match(CLIENT, /DOMAINS\.includes\(s\.domain as NutritionDomain\)/);
+  assert.doesNotMatch(CLIENT, /domain: s\.domain \?\?|domain: typeof s\.domain/);
+});
+
+test('the add is hidden when routines are not live', () => {
+  // habits_in_plan_enabled is true in production, but when it is not the
+  // routines routes 404 — and a control that cannot do its job is the same
+  // defect as a reminder bell with dispatch dark.
+  assert.match(SECTION, /useHabitsInPlanFlag/);
+  assert.match(SECTION, /\) : routinesLive \? \(/, 'the add row is gated on the flag');
+});
+
+test('row state is per-suggestion and reset when a new plan arrives', () => {
+  // Index-keyed, and a fresh read replaces the suggestion list wholesale, so
+  // it must be cleared or row 2 inherits row 2's old spinner.
+  assert.match(SECTION, /setPending\(\{\}\)/, 'a loaded plan must reset the row map');
+});
+
+test('THE 2026-08-11 GUARD: no row state may mean ADDED — COS-1224', () => {
+  /*
+   * What this replaces, and why.
+   *
+   * The guard used to be two substring greps over this component:
+   *   assert.match(SECTION, /'saving' \| 'failed'/)
+   *   assert.doesNotMatch(codeOnly(SECTION), /'saving' \| 'done'/)
+   * A reviewer reproduced the "On your plan forever" bug with the suite green by
+   * widening the union to `'saving' | 'failed' | 'done'` and adding a
+   * setPending(... 'done'). The first grep is satisfied by any superset and the
+   * second does not match one — both permeable, and both pointless.
+   *
+   * The BEHAVIOURAL half of the guarantee — once the derived source stops
+   * reporting an item the row reverts — is asserted where the behaviour lives,
+   * in lib/add-latch.test.mjs ("REGRESSION 2026-08-11"). What is left for a
+   * source read is the shape that makes a local added-flag possible at all, and
+   * that is pinned as an EXACT SET so a superset FAILS.
+   */
+  const decl = /export type AddRowState =([^\n;]+)/.exec(codeOnly(LATCH));
+  assert.ok(decl, 'AddRowState must be declared in the latch module');
+  const members = decl[1].split('|').map((m) => m.trim()).filter(Boolean).sort();
+  assert.deepEqual(
+    members,
+    ["'capped'", "'failed'", "'no-plan'", "'saving'"],
+    'exact set: every member means NOT ADDED, and a new member has to argue for itself here',
+  );
+
+  // And the component must use that union verbatim — `AddRowState | 'done'`
+  // fails this, where a substring grep would not.
+  const generic = /useState<Record<number, ([^>]*)>>/.exec(codeOnly(SECTION));
+  assert.equal(generic?.[1], 'AddRowState', 'the row map may not widen the pinned union');
+});
+
+test('the row reads "added" from ONE expression, with nothing OR-ed in', () => {
+  // The 2026-08-11 bug was `done || derived.has(...)`. Whatever sits between the
+  // opening brace and the `?` IS the question the row asks, so pin it exactly.
+  const code = codeOnly(SECTION);
+  const at = code.indexOf('{isOnPlan(');
+  assert.ok(at > -1, 'the confirmed row must be gated by isOnPlan');
+  const cond = code.slice(at + 1, code.indexOf('?', at)).trim();
+  assert.equal(
+    cond,
+    'isOnPlan(normalizeTitle(s.title), latch, onPlanLabels, now)',
+    'the added answer comes from the latch module and nothing else',
+  );
 });
 
 test('a failed add offers a retry rather than dying silently', () => {
@@ -301,220 +452,267 @@ test('a failed add offers a retry rather than dying silently', () => {
 
 test('the add control is reachable by screen reader', () => {
   assert.match(SECTION, /accessibilityLabel=\{`Add "\$\{s\.title\}" to my plan`\}/);
-  assert.match(SECTION, /accessibilityHint="Adds a daily task you can tick off"/);
+  assert.match(SECTION, /accessibilityHint="Adds a daily routine you can tick off"/);
 });
 
 
-test('the stored plan is loaded on mount, so reopening does not re-generate', () => {
+test('the stored plan is read on mount', () => {
   // Vishal 2026-08-10: "whenever i close app and open again ... there is a
-  // loader and then some task". Generation was the only path.
+  // loader and then some task". The read is now the ONLY path, so this is
+  // simply the card's one job.
   assert.match(SECTION, /fetchNutritionPlan/);
-  assert.match(SECTION, /prev\.kind === 'idle' \? \{ kind: 'ready', plan \}/,
-    'a loaded plan must not stomp a state the patient is mid-way through');
+  assert.match(SECTION, /void load\(\)/);
+  // A plan with zero suggestions is the same nothing as a null plan — the
+  // empty state, not a card claiming a plan it cannot show.
+  assert.match(SECTION, /plan && plan\.suggestions\.length > 0\s*\?\s*\{ kind: 'ready', plan \}/);
 });
 
-test('a failed load leaves the card in its build state, not an error', () => {
-  // The patient has not asked for anything yet on mount; an error here would
-  // be noise about something they did not do.
-  const mount = SECTION.match(/React\.useEffect\([\s\S]*?\n  \}, \[\]\)/);
-  assert.ok(mount, 'expected a mount effect');
-  assert.match(mount[0], /\.catch\(\(\) => undefined\)/);
+test('a failed load says so quietly, and offers the one useful action', () => {
+  // This used to swallow the error, because the card still had a build state
+  // to fall back to and shouting about a network blip on mount was noise.
+  // There is no fallback state now — a silent failure would be a permanently
+  // blank accordion with no explanation, which is the thing COS-1219 forbids.
+  // It stays quiet by living inside the collapsed body, not by hiding.
+  assert.match(SECTION, /setStatus\(\{ kind: 'error' \}\)/);
+  assert.match(SECTION, /Could not load your nutrition plan just now/);
+  assert.match(SECTION, /Try again/);
+  // Flag-off and not-entitled still render nothing rather than an error.
+  const load = SECTION.slice(SECTION.indexOf('const load = React.useCallback'));
+  const hidden = load.indexOf("setStatus({ kind: 'hidden' })");
+  const error = load.indexOf("setStatus({ kind: 'error' })");
+  assert.ok(hidden > -1 && error > -1 && hidden < error,
+    'the hidden branch must be taken before the generic error');
 });
 
-test('the added-mark is derived from the plan, not local state', () => {
+test('the added-mark is derived from the ROUTINES on the plan', () => {
   // Local state resets every app launch, which made an already-added
-  // suggestion offer "Add to my plan" again — and tapping created a
-  // DUPLICATE task.
-  assert.match(SECTION, /existingTaskTitles/);
-  assert.match(SECTION, /existing\.has\(normalizeTitle\(s\.title\)\)/);
-  assert.match(BPS, /existingTaskTitles=\{allTasks\.map/);
+  // suggestion offer "Add to my plan" again — and tapping created a duplicate.
+  //
+  // The source moved with the destination: it used to be task titles handed
+  // down by the parent, which after COS-1219 would have been the wrong store
+  // entirely. The card reads plan.habits itself, which also means the surfaces
+  // that never passed the prop (PlanScreenRedesignedV2) get it for free.
+  assert.match(SECTION, /usePlanHabits/);
+  assert.match(SECTION, /habits\.map\(\(h\) => normalizeTitle\(h\.label\)\)/);
+  assert.doesNotMatch(codeOnly(SECTION), /existingTaskTitles/);
+  assert.doesNotMatch(codeOnly(BPS), /existingTaskTitles/);
 });
 
-test('adding a task refetches the plan so it actually appears', () => {
+test('the plan cache reflects the add without the card asking anyone', () => {
   // Otherwise the patient is told it was added and sees no change anywhere.
-  // The callback now carries the new task id so the parent can also reveal
-  // where it landed — see the reveal tests below.
-  assert.match(SECTION, /onTaskAdded\?\.\(created\.id\)/);
-  assert.match(BPS, /aiPlanQuery\.refetch\(\)/);
+  // The add's onSuccess splices the server's full habits[] into the cached plan,
+  // so the derived source is correct in the same commit — no callback up to the
+  // parent, and nothing for the parent to refetch.
+  const writer = HABITS.slice(
+    HABITS.indexOf('function writeHabits'),
+    HABITS.indexOf('// ─── Flag'),
+  );
+  assert.ok(writer.length > 0, 'the write hooks must share one cache writer');
+  assert.match(writer, /qc\.setQueryData<AiHealthPlan \| null>\(AI_HEALTH_PLAN_QUERY_KEY/);
+});
+
+test('a successful write is never DROPPED when the plan cache is empty — COS-1224', () => {
+  /*
+   * The hole: `(prev) => prev ? { ...prev, habits } : prev` is a SILENT NO-OP
+   * whenever the ai-health-plan cache holds null or undefined — and it does hold
+   * null, because `fetchAiHealthPlan` catches its own errors and resolves to
+   * null, so a failed plan GET is indistinguishable from "no plan". The nutrition
+   * card derives its entire "already added" answer from that cache, so the
+   * server's authoritative habits[] went on the floor and every accepted
+   * suggestion offered "Add to my plan" again. The second tap minted a duplicate.
+   *
+   * There is no honest AiHealthPlan to synthesise around a habits[] — version,
+   * goals, tasks and generatedAt would all be invented and other screens read
+   * them — so with nothing to splice into, RE-ASK. The answer is either written
+   * or fetched again; it is never dropped.
+   */
+  const writer = HABITS.slice(
+    HABITS.indexOf('function writeHabits'),
+    HABITS.indexOf('// ─── Flag'),
+  );
+  assert.match(
+    writer,
+    /qc\.invalidateQueries\(\{ queryKey: AI_HEALTH_PLAN_QUERY_KEY \}\)/,
+    'with no cached plan, the server must be asked again',
+  );
+
+  // All three write hooks had the identical hole, so all three go through the one
+  // writer: guarding only the add would leave update and delete dropping theirs.
+  for (const name of ['useAddHabit', 'useUpdateHabit', 'useDeleteHabit']) {
+    const start = HABITS.indexOf(`export function ${name}`);
+    assert.ok(start > -1, `${name} must exist`);
+    const after = HABITS.indexOf('export function ', start + 1);
+    const fn = HABITS.slice(start, after > -1 ? after : undefined);
+    assert.match(fn, /onSuccess: \(habits\) =>/, `${name} must handle success`);
+    assert.match(fn, /writeHabits\(qc, habits\)/, `${name} must use the shared writer`);
+    assert.doesNotMatch(
+      codeOnly(fn),
+      /prev \? \{ \.\.\.prev, habits \} : prev/,
+      `${name} must not reintroduce the silent no-op`,
+    );
+  }
+});
+
+test('the card does not claim what it cannot check — COS-1224', () => {
+  // The other half of the same bug, on the card. An empty derived set says
+  // "nothing is on your plan"; a failed plan read is not that answer, and
+  // "Add to my plan" is a confident claim that costs the patient a duplicate.
+  assert.match(HABITS, /known: !flag \|\| data != null/,
+    'the hook must distinguish "no routines" from "no answer"');
+  assert.match(SECTION, /known: planKnown/, 'the card must read it');
+  assert.match(SECTION, /planKnown \? new Set\(habits\.map/,
+    'unknown must be null, never an empty Set');
+
+  const unknown = SECTION.slice(
+    SECTION.indexOf('onPlanLabels === null ?'),
+    SECTION.indexOf(') : routinesLive ? ('),
+  );
+  assert.ok(unknown.length > 0, 'there must be a row state for "cannot know"');
+  assert.match(unknown, /Not sure yet whether this is on your plan/);
+  assert.doesNotMatch(unknown, /<Pressable/,
+    'it must offer nothing — a tap here is how the duplicate gets created');
+});
+
+test('the TTL ceiling has a clock, not just a comment — COS-1224', () => {
+  // `const now = Date.now()` is read in the render body, and nothing re-rendered
+  // the card, so LATCH_TTL_MS only took effect on the next incidental render —
+  // while the one case the TTL exists for (confirmation never arrives) is exactly
+  // the case where no other render is coming. The module documents the ceiling as
+  // a guarantee, so it has to be one. Behaviour: lib/add-latch.test.mjs.
+  assert.match(LATCH, /export function nextLatchExpiry/);
+  const eff = SECTION.slice(SECTION.indexOf('const due = nextLatchExpiry'), SECTION.length);
+  const body = eff.slice(0, 600);
+  assert.match(body, /if \(due === null\) return/, 'nothing pending ⇒ no timer');
+  assert.match(body, /setTimeout\(/);
+  assert.match(body, /settleLatch\(prev, onPlanLabels, Date\.now\(\)\)/);
+  assert.match(body, /return \(\) => clearTimeout\(timer\)/, 'and it cannot leak');
+});
+
+test('a failure that can never succeed does not offer a retry — COS-1224', () => {
+  // HABIT_CAP_REACHED (the 20-routine sanity cap — one production plan already
+  // carries 11 routines and every regeneration emits more) and NO_PLAN both fail
+  // identically on a second tap. "Couldn't add — tap to retry" on either is an
+  // instruction to do something futile.
+  assert.match(SECTION, /addFailureState\(err\)/, 'the catch must classify the failure');
+  const at = SECTION.indexOf("pending[i] === 'capped' || pending[i] === 'no-plan'");
+  // Bounded to THIS branch: reading on to the add button would sweep in its
+  // Pressable and the assertion below would be testing nothing.
+  const block = SECTION.slice(at, SECTION.indexOf(') : (', at));
+  assert.ok(block.length > 0, 'the two unretryable states need their own branch');
+  // codeOnly: the comment here legitimately explains why there is no retry, and
+  // would otherwise fail the assertion. Fifth time this trap has fired in this
+  // file — every negative assertion goes through codeOnly.
+  assert.doesNotMatch(codeOnly(block), /<Pressable/, 'no tap target on a futile retry');
+  assert.doesNotMatch(codeOnly(block), /retry/i);
+  assert.match(block, /as many routines as it can/, 'say the cap was reached');
+  assert.match(block, /care plan is not ready yet/, 'say the plan is missing');
+  // The retryable failure keeps its retry.
+  assert.match(SECTION, /Couldn't add — tap to retry/);
+  // And neither message is a dead end: both tell the patient to go do something
+  // elsewhere, so coming back drops the state and offers the add again.
+  const focus = SECTION.match(/useFocusEffect\([\s\S]*?\n  \)/);
+  assert.ok(focus, 'expected a focus effect');
+  assert.match(focus[0], /v === 'capped' \|\| v === 'no-plan'/,
+    'returning to the card must clear the two unretryable states');
+});
+
+test('two taps in one commit cannot mint two routines — COS-1224', () => {
+  // The only guard was `disabled={pending[i] === 'saving'}`, and `pending` is
+  // state set inside the same handler: two taps landing before React commits both
+  // read undefined and both call mutateAsync. A ref is written synchronously.
+  const add = SECTION.slice(SECTION.indexOf('const onAddToPlan'), SECTION.indexOf('[addHabit],'));
+  assert.match(SECTION, /React\.useRef<Set<number>>\(new Set\(\)\)/);
+  assert.match(add, /if \(inFlight\.current\.has\(index\)\) return/);
+  assert.ok(
+    add.indexOf('inFlight.current.add(index)') < add.indexOf('await addHabit.mutateAsync'),
+    'the latch must close before the request, or it is just slower state',
+  );
+  assert.match(add, /finally \{[\s\S]{0,80}inFlight\.current\.delete\(index\)/,
+    'released on success AND on failure, or the row is stuck for good');
+});
+
+test('the V2 call site does not describe a feature that was deleted — COS-1224', () => {
+  // This arm is the TAB_SWAP_BPS rollback path, and this file deliberately keeps
+  // the card in it, so its comment is a live instruction to the next reader. Both
+  // clauses of the old one ("Generates on tap, never on mount: each build is a
+  // Bedrock call the backend does not persist") became false at COS-1219.
+  const at = SCREEN.indexOf('<NutritionPlanSection');
+  assert.ok(at > -1);
+  const comment = SCREEN.slice(SCREEN.lastIndexOf('{/*', at), at);
+  assert.doesNotMatch(comment, /Generates on tap/, 'nothing generates on tap any more');
+  assert.doesNotMatch(comment, /does not persist/, 'the backend persists the plan');
+  assert.match(comment, /READS/);
+});
+
+test('the row that names Routines can reach Routines — COS-1224', () => {
+  // "On your plan — in Routines" sat in a plain View with no tap target, while
+  // the only navigation on the card was a bottom link labelled "Add your own".
+  // A patient told where their item went had no way to go and look at it.
+  const row = SECTION.slice(
+    SECTION.indexOf('{isOnPlan(normalizeTitle'),
+    SECTION.indexOf('onPlanLabels === null ?'),
+  );
+  assert.match(row, /<Pressable/, 'the confirmed row must be tappable');
+  assert.match(row, /router\.push\(ROUTINES_ROUTE as never\)/, 'to the place it names');
+  assert.match(row, /accessibilityRole="button"/);
+  assert.match(row, /accessibilityHint="Opens Routines, where this one now lives"/);
 });
 
 test('the added confirmation says WHERE it went', () => {
   // "Added to my plan" with no destination was reported as "where it is
-  // added don't know".
-  assert.match(SECTION, /On your plan — tick it off below/);
+  // added don't know". "below" was true while it was a task in the Biological
+  // section under this card; it is a routine now, and Routines is a different
+  // place — so the word changed with the destination.
+  assert.match(SECTION, /On your plan — in Routines/);
+  assert.doesNotMatch(codeOnly(SECTION), /tick it off below/);
 });
 
 
-// ── Show where it landed (Vishal 2026-08-11) ─────────────────────────
+// ── Where it landed (Vishal 2026-08-11, settled by COS-1224) ─────────
 
-test('the new task id is handed up, not just a bare notification', () => {
-  // "we are not giving user any info where its added". Revealing the
-  // destination needs the id; a void callback cannot highlight anything.
-  assert.match(SECTION, /onTaskAdded\?\.\(created\.id\)/);
-  assert.match(SECTION, /const created = await createPlanTask/);
-});
-
-test('the scroll targets the ROW, not the section', () => {
-  // Vishal 2026-08-11: "i was scrolled to beginning of task, ideally i should
-  // be scrolled to place of task". Scrolling to the section header leaves the
-  // new row below the fold, so the 3.5s flash happens off-screen.
-  assert.match(BPS, /measureInWindow/);
-  assert.match(BPS, /highlightNodeRef/);
-  assert.match(BPS, /scrollOffsetY\.current \+ \(rowY - svY\)/);
-  assert.match(TASKLIST, /onHighlightRef/);
-});
-
-test('does NOT use measureLayout — it fails silently', () => {
-  // Vishal 2026-08-11: "its not scrolling ... i can see highlight but it
-  // fixed, its not disappearing". measureLayout no-ops when the relative-to
-  // handle is not a valid ancestor and fires NEITHER callback, so the scroll
-  // never happened and the timer (then living inside those callbacks) never
-  // armed. Both symptoms, one dead callback.
-  assert.doesNotMatch(codeOnly(BPS), /measureLayout/);
-  assert.doesNotMatch(codeOnly(BPS), /getInnerViewNode/);
-});
-
-test('the highlight clears even if the scroll never happens', () => {
-  // THE invariant this regression taught. A visual cue must not depend on a
-  // measurement succeeding — startHighlightTimer runs before any measuring.
-  const fn = BPS.slice(
-    BPS.indexOf('const revealAddedTask'),
-    BPS.indexOf('const scrollToHighlightedRow'),
+test('the in-screen task reveal is DELETED, not parked', () => {
+  // Vishal 2026-08-11 asked to be shown where an accepted suggestion landed, and
+  // the answer then was an in-screen reveal: scroll to the Biological TASK list,
+  // open its accordion and flash the new row — plus a JS-eased scroll ramp and a
+  // measure-with-fallback chain to drive it.
+  //
+  // COS-1219 made accepted suggestions ROUTINES, so the row that reveal aimed at
+  // stopped existing and the whole path sat here behind an eslint-disable with no
+  // caller. ELEVEN tests in this file asserted its internals, so they passed or
+  // failed independently of anything a patient could do — which is not a test.
+  // Both are gone.
+  //
+  // Deleted rather than re-pointed: the item is a routine on /Home/habits now, a
+  // different screen, so there is nothing on THIS screen to reveal. Pointing it
+  // at the nearest surviving list would name the wrong place on purpose, and
+  // building a routine list here to reveal would be a new surface, not a fix.
+  const bps = codeOnly(BPS);
+  for (const dead of [
+    'revealAddedTask',
+    'startHighlightTimer',
+    'highlightNodeRef',
+    'highlightTaskId',
+    'openTasksSignal',
+    'smoothScrollTo',
+    'scrollOffsetY',
+    'scrollAnimRef',
+    'measureInWindow',
+  ]) {
+    assert.ok(!bps.includes(dead), `${dead} has no caller — it must not survive as code`);
+  }
+  // The suppression that kept it compiling went with it. Asserted on the RAW
+  // source: codeOnly strips // lines, so an eslint directive is invisible there
+  // and the assertion would pass vacuously.
+  assert.doesNotMatch(
+    BPS,
+    /eslint-disable-next-line @typescript-eslint\/no-unused-vars/,
+    'no unused-vars suppression should be needed on this screen any more',
   );
-  assert.match(fn, /startHighlightTimer\(\)/, 'timer must arm before any measurement');
+  // The destination is still named — and now reachable from the row that names
+  // it, which is what replaces the reveal (see MINOR 7 below).
+  assert.match(SECTION, /On your plan — in Routines/);
+  assert.match(SECTION, /router\.push\(ROUTINES_ROUTE as never\)/);
 });
-
-test('a scroll is attempted even if measurement callbacks never fire', () => {
-  // Same failure mode, other half: a belt timeout falls back to the section
-  // scroll so the patient always ends up somewhere sensible.
-  const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
-  assert.match(fn, /let settled = false/);
-  assert.match(fn, /if \(!settled\) scrollToSection\('biological'\)/);
-  assert.match(fn, /clearTimeout\(fallback\)/);
-});
-
-test('the live scroll offset is tracked without causing renders', () => {
-  // measureInWindow returns SCREEN coordinates; converting one to a scroll
-  // target needs the current offset. Writing a ref keeps it render-free.
-  assert.match(BPS, /scrollOffsetY\.current = e\.nativeEvent\.contentOffset\.y/);
-  assert.match(BPS, /scrollEventThrottle=\{16\}/);
-});
-
-test('the scroll waits for the accordion to lay out', () => {
-  // "scroll wasn't smooth": the old code scrolled 120ms after opening the
-  // accordion, so the animation ran while content was still growing beneath
-  // it. Two frames — one to commit the state change, one to lay out.
-  assert.match(BPS, /requestAnimationFrame\(\(\) => requestAnimationFrame\(/);
-  assert.doesNotMatch(codeOnly(BPS), /setTimeout\(\(\) => scrollToSection/);
-});
-
-test('a failed measure still moves the patient somewhere useful', () => {
-  // Two ways this can go wrong — the node/scroller is missing, or the
-  // measure callbacks never fire. Both fall back to the section scroll;
-  // landing roughly right beats not moving at all.
-  const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
-  const fallbacks = fn.match(/scrollToSection\('biological'\)/g) ?? [];
-  assert.equal(fallbacks.length, 2, 'both failure paths need a fallback scroll');
-});
-
-test('the highlight timer is armed unconditionally, not inside a callback', () => {
-  // Reversed deliberately. An earlier revision started this AFTER the scroll
-  // so a slow layout could not eat the window — but that put it inside
-  // measureLayout's callbacks, which never fired, and the highlight stuck
-  // forever. Correctness (it always clears) beats the smaller nicety.
-  assert.match(BPS, /const startHighlightTimer = React\.useCallback/);
-  const fn = BPS.slice(BPS.indexOf('const scrollToHighlightedRow'));
-  assert.doesNotMatch(fn, /startHighlightTimer\(\)/,
-    'must not live inside the scroll path');
-});
-
-test('the reveal refetches BEFORE scrolling', () => {
-  // Scrolling first lands on a task list that does not contain the new row
-  // yet, and the flash highlights nothing.
-  const fn = BPS.slice(BPS.indexOf('const revealAddedTask'));
-  const refetch = fn.indexOf('await aiPlanQuery.refetch()');
-  const scroll = fn.indexOf('scrollToHighlightedRow');
-  assert.ok(refetch > -1 && scroll > -1);
-  assert.ok(refetch < scroll, 'refetch must resolve before the scroll');
-});
-
-test('only the section the task landed in reacts', () => {
-  // Adding a nutrition task must not expand Psychological or Social.
-  assert.match(BPS, /openTasksSignal=\{key === 'biological' \? openTasksSignal : undefined\}/);
-  assert.match(BPS, /highlightTaskId=\{key === 'biological' \? highlightTaskId : null\}/);
-});
-
-test('the accordion opens on a COUNTER, so a second add re-opens it', () => {
-  // A boolean would latch: collapse the section after the first add and the
-  // second add would silently do nothing.
-  assert.match(TASKLIST, /openSignal\?: number/);
-  assert.match(TASKLIST, /openSignal !== lastSignal\.current/);
-  assert.match(BPS, /setOpenTasksSignal\(\(n\) => n \+ 1\)/);
-});
-
-test('the signal only ever OPENS, never force-closes', () => {
-  // The patient's own toggle may only be overridden in the direction that
-  // reveals something.
-  const eff = TASKLIST.slice(TASKLIST.indexOf('const lastSignal'));
-  assert.match(eff, /setOpen\(true\)/);
-  assert.doesNotMatch(eff.slice(0, eff.indexOf('}, [openSignal])')), /setOpen\(false\)/);
-});
-
-test('the highlight clears itself and cannot leak a timer', () => {
-  assert.match(BPS, /setHighlightTaskId\(null\), 3500/);
-  assert.match(BPS, /clearTimeout\(highlightTimer\.current\)/);
-  assert.match(BPS, /React\.useEffect\(\s*\(\) => \(\) => \{/, 'needs an unmount cleanup');
-});
-
-test('the highlight uses no animation module', () => {
-  // This screen's iOS 26.5 envelope excludes Animated; a static flash on a
-  // timer reads just as clearly.
-  // codeOnly: the style comment legitimately explains WHY there is no
-  // Animated here, and would otherwise fail this assertion. Fourth time this
-  // trap has fired in this file — every negative assertion goes through
-  // codeOnly.
-  assert.doesNotMatch(codeOnly(TASKLIST), /Animated|LayoutAnimation/);
-  assert.match(TASKLIST, /highlight: \{/);
-});
-
-
-test('the scroll is JS-eased, not the fixed native animation', () => {
-  // Vishal 2026-08-11: "scroll is still too fast, it can be smooth".
-  // scrollTo({animated:true}) is a fixed ~250-300ms native ramp with no
-  // duration knob, which snaps on a long travel.
-  assert.match(BPS, /const smoothScrollTo = React\.useCallback/);
-  assert.match(BPS, /easeInOutCubic|4 \* t \* t \* t/);
-  assert.match(BPS, /DURATION = 700/);
-  assert.match(BPS, /smoothScrollTo\(Math\.max\(0, target\)\)/);
-});
-
-test('the eased scroll uses no animation module', () => {
-  // This screen's iOS 26.5 envelope excludes Animated / LayoutAnimation.
-  const fn = BPS.slice(BPS.indexOf('const smoothScrollTo'), BPS.indexOf('const revealAddedTask'));
-  assert.doesNotMatch(codeOnly(fn), /Animated|LayoutAnimation/);
-  assert.match(fn, /requestAnimationFrame/);
-});
-
-test('reduce-motion jumps instead of animating', () => {
-  // Motion that exists to orient someone is exactly the motion a
-  // vestibular-sensitive user needs skipped.
-  assert.match(BPS, /AccessibilityInfo\.isReduceMotionEnabled\(\)/);
-  const fn = BPS.slice(BPS.indexOf('const smoothScrollTo'));
-  assert.match(fn, /if \(reduceMotion\)[\s\S]{0,140}animated: false/);
-});
-
-test('the user\'s finger always wins', () => {
-  // A JS ramp that keeps stepping while someone is dragging feels broken.
-  assert.match(BPS, /onScrollBeginDrag=\{\(\) => \{/);
-  const drag = BPS.slice(BPS.indexOf('onScrollBeginDrag'));
-  assert.match(drag.slice(0, 300), /cancelAnimationFrame/);
-});
-
-test('an in-flight ramp cannot leak past unmount', () => {
-  const cleanup = BPS.slice(BPS.indexOf('React.useEffect(\n    () => () => {'));
-  assert.match(cleanup.slice(0, 300), /cancelAnimationFrame\(scrollAnimRef\.current\)/);
-});
-
 
 test('no ActivityIndicator on the iOS 26.5 plan surfaces', () => {
   // The screen that renders this card scrubbed ActivityIndicator deliberately
@@ -601,14 +799,40 @@ test('the row says which direction it is moving', () => {
   assert.match(TASKROW, /creating \? 'Adding…' : deleting \? 'Removing…'/);
 });
 
-test('the added flag defers to the plan once it catches up', () => {
-  // Vishal 2026-08-11: "once deleted routines is still saying on your plan".
-  // The local 'done' was OR'd with the derived check forever, so deleting the
-  // task cleared it from the plan but not from this card.
+test('the add is LATCHED until the plan catches up — COS-1220', () => {
+  // Reported: "Adding…" → "Add to my plan" → (1-2s) → "On your plan". The
+  // 2026-08-11 fix for "once deleted routines is still saying on your plan"
+  // dropped the local flag the moment the add was acknowledged and handed the
+  // answer to the derived source, which had not refetched yet — so for a
+  // moment neither said added.
+  //
+  // Neither keeping the flag nor dropping it is correct, so the decision is
+  // not made here at all: it is one pure function with its own tests.
+  assert.match(SECTION, /from '@\/lib\/add-latch'/);
   const fn = SECTION.slice(SECTION.indexOf('const onAddToPlan'));
-  assert.match(fn, /await onTaskAdded\?\.\(created\.id\)/,
-    'must wait for the parent refetch before dropping the local flag');
-  assert.match(fn, /delete next\[index\]/, 'local flag must be released');
+  assert.match(fn, /setLatch\(\(prev\) => latchAdd\(prev/,
+    'a successful add must latch');
+  // Ordering is the whole bug: latch first, then clear 'saving'. Between the
+  // two there must be no frame where the row shows neither.
+  assert.ok(
+    fn.indexOf('latchAdd') < fn.indexOf('delete next[index]'),
+    'the latch must be set BEFORE the saving flag is cleared',
+  );
+  // The row reads from one place, which consults the plan first.
+  assert.match(SECTION, /isOnPlan\(normalizeTitle\(s\.title\), latch, onPlanLabels, now\)/);
+  // And the latch is RELEASED on confirmation, or the delete bug is back.
+  assert.match(SECTION, /settleLatch\(prev, onPlanLabels, Date\.now\(\)\)/);
+});
+
+test('the latch decision lives in a pure module, not in the component', () => {
+  // The existing test file deliberately does not render, so logic that only
+  // exists inside a component is logic nothing can test. This is the one piece
+  // of real behaviour in the feature.
+  assert.match(LATCH, /export function isOnPlan/);
+  assert.match(LATCH, /export function settleLatch/);
+  assert.match(LATCH, /export function latchAdd/);
+  assert.doesNotMatch(LATCH, /from 'react/, 'must stay pure — no React, no hooks');
+  assert.match(LATCH, /now: number/, 'the clock is injected, or it is not testable');
 });
 
 
@@ -622,11 +846,22 @@ test('the nutrition card is an accordion', () => {
 
 test('no reload icon in the header', () => {
   // Vishal 2026-08-11: "reload icon is not required on nutrition". The
-  // chevron is purely the accordion affordance now; rebuilding is a worded
-  // action in the body so it cannot be hit while reaching for the chevron.
+  // chevron is the accordion affordance and now the only control up there —
+  // there is nothing left to rebuild.
   assert.doesNotMatch(codeOnly(SECTION), /name=\{isReady \? 'refresh'/);
   assert.match(SECTION, /name=\{open \? 'expand-less' : 'expand-more'\}/);
-  assert.match(SECTION, /Rebuild my plan/);
+});
+
+test('the patient can add their own item — COS-1220', () => {
+  // The cheap version on purpose: a link to the routines editor, which already
+  // has the Body / Mind / Social / Spiritual picker. An entry made there gets
+  // a domain the same way an accepted suggestion does, and the 965-line screen
+  // stays where it is.
+  assert.match(SECTION, /Add your own/);
+  assert.match(SECTION, /const ROUTINES_ROUTE = '\/Home\/habits'/);
+  assert.match(SECTION, /accessibilityLabel="Add your own nutrition routine"/);
+  // Says where it goes before it goes there.
+  assert.match(SECTION, /Opens Routines, where you name it and choose which part/);
 });
 
 test('collapsed costs one row in the stack', () => {
