@@ -531,7 +531,27 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
   return (
     <AppWrapper>
       {canView && (
-        <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 32 }}>
+        <ScrollView
+          style={[styles.container, { backgroundColor: colors.background }]}
+          contentContainerStyle={{ paddingBottom: 32 }}
+          /*
+           * COS-1192 — the first tap on Next must not be eaten by the keyboard.
+           *
+           * Vishal, on the hope reflection (free-text items): "after typing, if
+           * I try to click on next, then keyboard is actually closing and then I
+           * have to click on next again."
+           *
+           * RN's default is `keyboardShouldPersistTaps="never"`: with a
+           * TextInput focused, a tap anywhere in the ScrollView is consumed
+           * dismissing the keyboard and never reaches the child. So every
+           * free-text question costs two taps, and the first one looks broken.
+           *
+           * `handled` lets the tap through to Next while still dismissing on a
+           * tap that nothing else handles. Five other screens in the app already
+           * set exactly this.
+           */
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.header}>
             {/* COS-829 — no Close on a required check-in. Leaving mid-way loses
                 the draft (it is local state) and lands back on the gate having
@@ -602,7 +622,25 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
                 <ItemControl
                   item={item}
                   value={currentValue}
-                  onChange={setAnswer}
+                  /*
+                   * COS-1195 — the answer is LOCKED once Submit is in flight.
+                   *
+                   * Vishal: "when I click on submit the last query that I have
+                   * I'm still able to select any other option even I clicked on
+                   * submit."
+                   *
+                   * Submit sends the answers it had at the tap, so a change
+                   * afterwards is silently discarded — the screen shows one
+                   * answer and the record holds another. Guarded here rather
+                   * than inside each control, so it covers every item kind
+                   * (likert, choice, multi, number, text) in one place.
+                   *
+                   * `celebrating` is included: after a successful submit the
+                   * overlay is up and a tap behind it would edit a record that
+                   * is already written.
+                   */
+                  onChange={submit.isPending || celebrating ? noopAnswer : setAnswer}
+                  locked={submit.isPending || celebrating}
                   colors={colors}
                   fontSize={getScaledFontSize}
                   fontWeight={getScaledFontWeight}
@@ -934,10 +972,16 @@ function ProgressBar({
   )
 }
 
+/**
+ * COS-1195 — a stable no-op, so swapping it in does not remount every control.
+ */
+const noopAnswer = (): void => {}
+
 function ItemControl({
   item,
   value,
   onChange,
+  locked,
   colors,
   fontSize,
   fontWeight,
@@ -945,13 +989,15 @@ function ItemControl({
   item: InstrumentItem
   value: unknown
   onChange: (v: unknown) => void
+  /** COS-1195 — dim the controls so "inert" is visible, not just enforced. */
+  locked?: boolean
   colors: Palette
   fontSize: (n: number) => number
   fontWeight: (n: number) => number | string
 }): React.JSX.Element {
   if ((item.kind === 'likert' || item.kind === 'choice') && Array.isArray(item.options)) {
     return (
-      <View style={{ gap: 8 }}>
+      <View style={{ gap: 8, opacity: locked ? 0.6 : 1 }}>
         {item.options.map((opt) => (
           <AnimatedOptionRow
             key={String(opt.value)}
@@ -972,7 +1018,7 @@ function ItemControl({
   if (item.kind === 'multi' && Array.isArray(item.options)) {
     const selected = Array.isArray(value) ? (value as unknown[]) : []
     return (
-      <View style={{ gap: 8 }}>
+      <View style={{ gap: 8, opacity: locked ? 0.6 : 1 }}>
         {item.options.map((opt) => {
           const active = selected.includes(opt.value)
           return (

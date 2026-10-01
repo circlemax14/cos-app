@@ -185,9 +185,25 @@ export function RetakeRequestInboxCard({
    */
   const queue = useRetakeQueue(first ?? null)
 
-  const onStartNow = useCallback(() => {
+  /*
+   * COS-1192 — the FIRST tap counts, even before the queue resolves.
+   *
+   * Vishal: "still I have to click on start now twice."
+   *
+   * COS-1181 disabled the button until `queue.ready`, to stop a tap during load
+   * falling through to the picker. That fixed the wrong outcome and created a
+   * worse feel: the first tap lands on a disabled control, does nothing visible,
+   * and he taps again.
+   *
+   * The intent is now LATCHED. Tap while loading and it is remembered; the
+   * effect below fires it the moment the queue resolves. The button stays
+   * enabled and says "Starting…" so the tap is visibly acknowledged — which is
+   * the thing a disabled button never does.
+   */
+  const wantStartRef = React.useRef(false)
+
+  const startNow = useCallback(() => {
     if (!first) return
-    if (!queue.ready) return
     if (queue.ids.length > 0) {
       const next = encodeURIComponent(queue.ids[0])
       const rest = encodeURIComponent(queue.ids.join(','))
@@ -238,6 +254,22 @@ export function RetakeRequestInboxCard({
     }
     router.push(retakeStartRoute(first.instrumentKey) as never)
   }, [first, queue.ready, queue.resolved, queue.ids, onGateRoute])
+
+  const onStartNow = useCallback(() => {
+    if (!first) return
+    if (!queue.ready) {
+      // Latch it. The effect below picks it up when the data lands.
+      wantStartRef.current = true
+      return
+    }
+    startNow()
+  }, [first, queue.ready, startNow])
+
+  React.useEffect(() => {
+    if (!queue.ready || !wantStartRef.current) return
+    wantStartRef.current = false
+    startNow()
+  }, [queue.ready, startNow])
 
   const onNotNow = useCallback(() => {
     if (!first) return
@@ -440,18 +472,21 @@ export function RetakeRequestInboxCard({
       <View style={styles.ctaRow}>
         <Pressable
           onPress={onStartNow}
-          // COS-1181 — a tap before the queue resolves would fall through to the
-          // picker, which is the exact screen this change exists to remove.
-          disabled={!queue.ready}
+          /*
+           * COS-1192 — ENABLED while loading, so the first tap is not thrown
+           * away. COS-1181 disabled it to stop a tap falling through to the
+           * picker; the latch in onStartNow achieves that without eating the
+           * press.
+           */
           accessibilityRole="button"
           accessibilityLabel={`Start ${first.instrumentDisplayName} now`}
-          accessibilityState={{ disabled: !queue.ready, busy: !queue.ready }}
+          accessibilityState={{ busy: !queue.ready }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
             styles.primaryBtn,
             {
               backgroundColor: colors.tint || '#008080',
-              opacity: !queue.ready ? 0.6 : pressed ? 0.85 : 1,
+              opacity: pressed ? 0.85 : 1,
             },
           ]}
         >
@@ -462,7 +497,8 @@ export function RetakeRequestInboxCard({
               fontWeight: getScaledFontWeight(600) as any,
             }}
           >
-            Start now
+            {/* Acknowledges the tap, which a disabled button never did. */}
+            {queue.ready ? 'Start now' : 'Starting…'}
           </Text>
         </Pressable>
 
