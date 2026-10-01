@@ -128,8 +128,25 @@ test('inbox card composes a single accessibilityLabel on the outer view', () => 
 })
 
 test('Start now button carries accessibilityRole="button" + a composed accessibilityLabel', () => {
-  // Look for the specific pressable's a11y pair.
-  assert.match(src, /accessibilityLabel=\{`Start \$\{first\.instrumentDisplayName\} now`\}/)
+  /*
+   * COS-1203 — RE-PINNED DELIBERATELY, per the note at the top of this file.
+   *
+   * This wire used to pin `Start ${first.instrumentDisplayName} now`. That field
+   * is the backend's `scopeDisplayName()` — "check-in" / "check-ins" /
+   * "3 check-ins" — so the one control a screen-reader user actually activates
+   * was still the vague copy COS-1202 removed everywhere else: VoiceOver read
+   * the precise subtitle ("asked you to retake Anxiety check-in") and then
+   * "Start check-in now".
+   *
+   * The intent, not the string: the button announces the SAME named phrase the
+   * subtitle, the "What" cell and the card utterance announce, and it must never
+   * go back to the server's name for the scope.
+   */
+  assert.match(src, /accessibilityLabel=\{`Start \$\{askPhrase\} now`\}/)
+  assert.ok(
+    !/\$\{first\.instrumentDisplayName\}/.test(src),
+    'the Start button announces the server scope name again ("check-in" / "3 check-ins")',
+  )
 })
 
 test('Not now button carries accessibilityRole="button" + a composed accessibilityLabel', () => {
