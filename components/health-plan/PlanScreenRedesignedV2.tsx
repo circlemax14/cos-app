@@ -459,8 +459,18 @@ export function PlanScreenRedesignedV2(props: PlanScreenRedesignedProps) {
       )}
 
       {/* Nutrition plan & support (Ken 2026-08-07) — sits in the bio part of
-          the plan, next to medications. Generates on tap, never on mount:
-          each build is a Bedrock call the backend does not persist. */}
+          the plan, next to medications.
+
+          It READS, and only reads (COS-1219): the backend generates the plan
+          alongside the care plan, PERSISTS it, and a nightly sweeper backfills
+          anyone missing one. There is no build affordance and no Bedrock call on
+          this screen — the old comment here claimed both and was wrong on both.
+
+          This arm matters even though it does not normally render:
+          health-plan.tsx early-returns BiopsychosocialPlanScreen while
+          TAB_SWAP_BPS_ENABLED is true in production, so this is the rollback
+          path, and the contract test keeps the card here deliberately so a
+          rollback does not silently lose the feature. */}
       <NutritionPlanSection
         colors={{ card, border, text, subtext, tint }}
         getScaledFontSize={getScaledFontSize}

@@ -118,13 +118,18 @@ test('the plan-tasks cache key is derived the SAME way by every producer and con
   }
 });
 
-test('a task created today is dated today', () => {
-  // NutritionPlanSection sent a UTC startDate, so a task created after
-  // ~17:00 local was filed on tomorrow and did not appear in the list the
-  // patient was looking at when they created it.
+test('the nutrition card dates nothing at all now', () => {
+  // It used to create a plan TASK with a startDate, and sent a UTC one, so a
+  // task created after ~17:00 local was filed on tomorrow and did not appear in
+  // the list the patient was looking at.
+  //
+  // COS-1219 routes accepted suggestions to ROUTINES, which carry a cadence and
+  // an optional time but no start date. The bug class is gone from this file
+  // rather than fixed in it, so the assertion is that nothing here dates
+  // anything — a reintroduced startDate has to come past this test.
   const f = FILES.find((x) => x.path === 'components/health-plan/NutritionPlanSection.tsx');
   assert.ok(f);
-  assert.match(f.src, /startDate: todayLocalIso\(\)/);
+  assert.doesNotMatch(stripComments(f.src), /startDate/);
 });
 
 // ── The patient's local frame reaches the backend (2026-08-12) ────────
