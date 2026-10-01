@@ -348,3 +348,207 @@ describe('COS-1129 — requests you sent, and withdrawing them', () => {
     assert.match(panel, /No requests waiting, and none sent\./);
   });
 });
+
+describe('COS-1231 — invite someone to your care circle by email', () => {
+  const panel = readFileSync(
+    new URL('../../components/social/SocialPanel.tsx', import.meta.url),
+    'utf8',
+  );
+  const panelCode = strip(panel);
+  const inbox = readFileSync(new URL('../../app/Home/inbox.tsx', import.meta.url), 'utf8');
+
+  test('SCREEN 1 THE POINT: find mode offers the invitation, and says what it costs', () => {
+    /*
+     * The consent model is one sentence and it is on the card, not only inside
+     * the sheet, because this is the screen on which the patient decides
+     * whether to hand us somebody else's email address at all.
+     */
+    assert.match(panelCode, /Not on Circle Support yet\?/);
+    assert.match(panelCode, /Invite them by email\./);
+    assert.match(
+      panelCode,
+      /They choose whether to join — nothing is shared until they accept\./,
+    );
+    // It is reachable: the card calls the thing that opens the sheet.
+    assert.match(panelCode, /onPress=\{startInvite\}/);
+    assert.match(panelCode, /setMode\('invite'\)/);
+  });
+
+  test('SCREEN 2/3 are MODES — not a Modal, not a route, not an Alert', () => {
+    /*
+     * Each of the three alternatives is a known failure here:
+     *   - a react-native Modal stacked inside this presentation:'modal' screen
+     *     is the documented iOS 26.5 SIGABRT class;
+     *   - a pushed route unmounts the Supports modal, which is COS-1124;
+     *   - Alert.alert renders a Modal, so it is the first one again.
+     * The envelope assertions above already forbid the imports; this pins that
+     * the two new screens actually took the remaining shape.
+     */
+    assert.match(panelCode, /mode === 'invite' && canFind/);
+    assert.match(panelCode, /mode === 'invite-sent' && canFind/);
+    assert.doesNotMatch(panelCode, /Alert\.alert/);
+    assert.doesNotMatch(panelCode, /Portal/);
+  });
+
+  test('the Mode union APPENDS, because the regex above is unanchored', () => {
+    /*
+     * `/type Mode = 'find' \| 'requests'/` has no end anchor, so appending
+     * passes and inserting before 'requests' fails. That is easy to trip over
+     * when alphabetising, so the required order is pinned explicitly rather
+     * than left as a property of someone else's regex.
+     */
+    assert.match(
+      panelCode,
+      /type Mode = 'find' \| 'requests' \| 'invite' \| 'invite-sent'/,
+    );
+  });
+
+  test('THE POINT: the note cap is enforced in CODE, not only as maxLength', () => {
+    // maxLength on a TextInput does not survive a paste on every platform, and
+    // the note is the one free-text field that leaves the platform — it is read
+    // by a stranger, in an email, from a healthcare-branded From line.
+    assert.match(panelCode, /const MAX_NOTE = 280/);
+    assert.match(panelCode, /slice\(0, MAX_NOTE\)/);
+    // And the counter is live, so a patient sees the cut rather than meeting it
+    // in the mail their daughter receives.
+    assert.match(panelCode, /\$\{inviteNote\.length\}\/\$\{MAX_NOTE\}/);
+  });
+
+  test('the promise card says all four things it promises', () => {
+    assert.match(panelCode, /One email, and that&apos;s it\./);
+    assert.match(panelCode, /No marketing, no reminders\./);
+    assert.match(panelCode, /None of your health information is included\./);
+    assert.match(panelCode, /We will not email them again unless you send a new/);
+  });
+
+  test('SCREEN 3 THE POINT: the confirmation cannot claim a send that failed', () => {
+    /*
+     * A Resend 429 or 5xx is swallowed server-side into delivered:false with no
+     * retry, no backoff and no queue. This screen NAMES the recipient's
+     * address, so assuming success would be the app stating something untrue to
+     * a patient who then waits for a reply that can never come.
+     */
+    assert.match(panelCode, /sentInvite\.delivered/);
+    assert.match(panelCode, /We could not send that email/);
+    assert.match(panelCode, /We emailed \$\{sentInvite\.email\}/);
+    // The three "what happens next" steps, in the order the design sets.
+    assert.match(panelCode, /Their link works for 14 days/);
+    assert.match(panelCode, /they appear under Requests for you to confirm/);
+    assert.match(panelCode, /You choose what they can see later, and separately\./);
+    assert.match(panelCode, /We won&apos;t email them again unless you send a new invitation\./);
+  });
+
+  test('SCREEN 4 THE POINT: email invitations are their OWN section', () => {
+    /*
+     * Beside the in-app ones, never merged with them. One row is a request a
+     * real account has received and can answer today; the other is an email to
+     * an address that may belong to nobody. Merged, a typo looks like a person
+     * who is thinking about it.
+     */
+    assert.match(panelCode, /Invitations you sent \(/);
+    assert.match(panelCode, /Sent by you \(/);
+    assert.match(panelCode, /INVITED/);
+    assert.match(panelCode, /withdrawInvite\.mutate\(item\.inviteId\)/);
+    assert.match(panelCode, /Email invitations expire after 14 days\. We don&apos;t send reminders\./);
+  });
+
+  test('expiry comes from the SERVER, never recomputed on the device', () => {
+    /*
+     * 'expired' is derived server-side on every read because DynamoDB's TTL
+     * purge runs up to 48h late. Two clocks disagreeing about whether a link is
+     * dead is how a screen ends up offering Withdraw on something already gone.
+     */
+    assert.match(panelCode, /i\.status === 'invited'/);
+    assert.doesNotMatch(panelCode, /Date\.parse/);
+    assert.doesNotMatch(panelCode, /Date\.now\(\) > /);
+  });
+
+  test('the withdraw spinner is per-row, like every other action here', () => {
+    assert.match(panelCode, /withdrawInvite\.isPending && withdrawInvite\.variables === item\.inviteId/);
+  });
+
+  test('the empty state counts email invitations as "sent"', () => {
+    // Otherwise the panel said nothing had been sent directly above a list of
+    // invitations that had.
+    assert.match(panelCode, /openInvites\.length === 0 \?/);
+  });
+
+  test('THE POINT: the panel SCROLLS — it never has', () => {
+    /*
+     * Zero ScrollView/FlatList before this, while modal.tsx renders it bare and
+     * every sibling branch of that ternary wraps its content in one. Search
+     * results and the sent list already ran off the bottom unreachably; a
+     * 280-character note and four chips on top of that would put Send below the
+     * fold in accessibility mode. Same class as COS-1225, which cost the
+     * clinical lead two days locked out of the app on an iPad.
+     */
+    assert.match(panelCode, /<ScrollView/);
+    assert.match(panelCode, /keyboardShouldPersistTaps="handled"/);
+  });
+
+  test('THE POINT: teal LABELS use the AA accent, not colors.tint', () => {
+    /*
+     * colors.tint (#008080) is 4.38:1 on the card and 3.42:1 on the dark card —
+     * under AA for text, on an audience that is largely 60+ and partly visually
+     * impaired. The visibility ICON keeps it (non-text is a 3:1 bar, pinned by
+     * COS-1126 above); every label does not.
+     */
+    assert.match(panelCode, /const actionTint = settings\.isDarkTheme \? tokens\.primary : tokens\.primaryDark/);
+    assert.doesNotMatch(panelCode, /color: colors\.tint,/);
+  });
+
+  test('type steps with the SCREEN, through the one existing ladder', () => {
+    /*
+     * getScaledFontSize does not enlarge on a tablet — isTablet() only removes
+     * phone dampening — so fs(13) rendered at 13pt on a 10" iPad. The
+     * breakpoints are not redefined here: layoutForWidth owns the ladder and
+     * INTAKE_TYPE_STEP owns the step. A second set of thresholds is the drift
+     * this codebase keeps shipping.
+     */
+    assert.match(panelCode, /layoutForWidth\(width\)/);
+    assert.match(panelCode, /intakeFontSize\(base, breakpoint, getScaledFontSize\)/);
+  });
+
+  test('the email field reuses AccessibleInput, which had NO importers', () => {
+    // label + error + hint, real primitives, a target that already clears 44pt.
+    // Writing a fourth bordered TextInput beside it is how this codebase ends
+    // up with two of everything.
+    assert.match(panelCode, /import \{ AccessibleInput \} from '@\/components\/ui\/accessible-input'/);
+    assert.match(panelCode, /<AccessibleInput/);
+  });
+
+  test('one email validator, shared with the screen it was copied from', () => {
+    const proxy = readFileSync(new URL('../../app/Home/proxy-management.tsx', import.meta.url), 'utf8');
+    assert.match(panelCode, /import \{ isValidEmailFormat \} from '@\/lib\/email-format'/);
+    assert.match(proxy, /import \{ isValidEmailFormat \} from '@\/lib\/email-format'/);
+    // The inline copy it replaced must be gone, not merely unused.
+    assert.doesNotMatch(proxy, /const emailRegex = /);
+  });
+
+  test('SCREEN 5 THE POINT: Inbox is a second door, and the old two survive', () => {
+    /*
+     * Inbox is where someone notices a person is missing. It lands on the
+     * Social tab rather than opening a sheet of its own, because the sheet is a
+     * MODE of SocialPanel inside the Supports modal and a second copy here
+     * would be a second implementation of the same screen.
+     */
+    assert.match(inbox, /'\/modal\?tab=social'/);
+    assert.match(inbox, /Someone missing from here\? Invite them by email\./);
+    // Unchanged, and still pinned above — repeated here so a future edit to
+    // this screen sees all three doors in one place.
+    assert.match(inbox, /'\/Home\/find-people'/);
+    assert.match(inbox, /'\/Home\/connection-requests'/);
+  });
+
+  test('the deep link is read by modal.tsx — the panel still takes NO props', () => {
+    /*
+     * SocialPanel cannot be told which mode to open in: the assertions at the
+     * top of this file pin `<SocialPanel />` twice, once by regex and once by
+     * indexOf, and `from 'expo-router'` is banned inside it. So the param is
+     * resolved where the tabs are.
+     */
+    assert.match(modalCode, /useLocalSearchParams<\{ tab\?: string \}>\(\)/);
+    assert.match(modalCode, /defaultIndex=\{initialTabIndex\}/);
+    assert.doesNotMatch(modalCode, /<SocialPanel [a-zA-Z]/);
+  });
+});

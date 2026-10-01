@@ -7,6 +7,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useProxies, useCreateProxy, useUpdateProxy, useRevokeProxy, ProxyScope, Proxy } from '@/hooks/use-proxies';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { AppWrapper } from '@/components/app-wrapper';
+import { isValidEmailFormat } from '@/lib/email-format';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -60,10 +61,10 @@ export default function ProxyManagementScreen() {
     }
   }, [refetch]);
 
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
+  // COS-1231 — the regex that used to live here is now lib/email-format.ts,
+  // shared with the invite sheet. One validator, because two drift in one
+  // direction: one gets a fix and the other keeps rejecting a real address.
+  const validateEmail = isValidEmailFormat;
 
   const toggleScope = (scope: ProxyScope, scopes: ProxyScope[], setScopes: (s: ProxyScope[]) => void) => {
     if (scopes.includes(scope)) {
