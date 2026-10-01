@@ -51,6 +51,12 @@ import {
 interface SelfAssessmentTrendsProps {
   onOpenInstrument?: (instrumentId: InstrumentId) => void
   /**
+   * COS-1196 — which screen this is mounted on, so the detail screen's back
+   * button returns here. It mounts on both the plan and Health Trends, and the
+   * detail route is on the TABS navigator where back() pops to Home.
+   */
+  fromScreen?: 'plan' | 'health-trends'
+  /**
    * Ken 2026-08-14: "Possible for the self-assessments on the plan page
    * collapse like the other sections … Then the series of assessments in each
    * categories opens/closes with a touch."
@@ -163,6 +169,7 @@ function trendArrowPhrasing(direction: TrendResult['direction'] | undefined): st
 
 export function SelfAssessmentTrends({
   onOpenInstrument,
+  fromScreen = 'plan',
   collapsible = false,
 }: SelfAssessmentTrendsProps): React.JSX.Element | null {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
@@ -199,10 +206,18 @@ export function SelfAssessmentTrends({
         onOpenInstrument(instrumentId)
         return
       }
-      router.push({
-        pathname: '/Home/assessment-detail',
-        params: { instrumentId: String(instrumentId) },
-      } as never)
+          /*
+     * COS-1196 — tell the detail screen where it was opened FROM.
+     *
+     * This component mounts on BOTH the plan screen and Health Trends, and the
+     * detail route lives on the TABS navigator, where router.back() pops to the
+     * tab's initial route — Home. So the opener has to name its own screen or
+     * back lands somewhere the patient never was.
+     */
+    router.push({
+      pathname: '/Home/assessment-detail',
+      params: { instrumentId: String(instrumentId), from: fromScreen },
+    } as never)
     },
     [onOpenInstrument, router],
   )
