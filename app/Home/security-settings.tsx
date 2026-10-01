@@ -471,6 +471,25 @@ export default function SecuritySettingsScreen() {
             <View style={{ width: 50 }} />
           </View>
 
+          {/*
+           * COS-1225 — the change-PIN pad must be reachable too.
+           *
+           * This is the FOURTH NumberPad in the app. The other three
+           * (lock-screen, setup-pin, confirm-pin) were wrapped when a
+           * clinical lead spent two days locked out on an iPad: the column
+           * is taller than the viewport, React Native does not clip
+           * overflow, so the pad simply renders below the fold with no way
+           * to reach it. `pinModalContent` has no flex, so this modal has
+           * the same shape — and being able to enter the old PIN and then
+           * not reach the pad to set the new one is the same lockout one
+           * step later.
+           */}
+          <ScrollView
+            contentContainerStyle={styles.pinModalScroll}
+            showsVerticalScrollIndicator={true}
+            alwaysBounceVertical={false}
+            keyboardShouldPersistTaps="always"
+          >
           <View style={styles.pinModalContent}>
             <Text style={styles.pinEmoji}>🔑</Text>
             <Text
@@ -516,6 +535,7 @@ export default function SecuritySettingsScreen() {
 
           <NumberPad onDigit={handlePinDigit} onDelete={handlePinDelete} />
           <View style={{ height: 40 }} />
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     </AppWrapper>
@@ -599,6 +619,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
+  },
+  pinModalScroll: {
+    // flexGrow, not flex: the column keeps its natural height, so a phone
+    // that already fits is pixel-identical and only an overflowing screen
+    // gains scroll.
+    flexGrow: 1,
   },
   pinModalContent: {
     alignItems: 'center',
