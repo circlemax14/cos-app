@@ -12,10 +12,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
-import { Colors } from '@/constants/theme';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { Radii, Spacing } from '@/constants/design-system';
-import { useAccessibility } from '@/stores/accessibility-store';
 import {
   usePatientIntake,
   useStartIntake,
@@ -30,12 +28,18 @@ import IntakeProgressHeader from './IntakeProgressHeader';
 import IntakeQuestionRenderer from './IntakeQuestionRenderer';
 import IntakeCompleteView from './IntakeCompleteView';
 import { GROUP_SPECS, type GroupId } from './intake-report-builder';
-
-type ColorPalette = (typeof Colors)['light'];
+import { useIntakeLegibility, type IntakeLegibility } from './use-intake-legibility';
 
 export default function IntakeWizardScreen() {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  /*
+   * COS-1221 — the wizard chrome (buttons, Skip link, loader, error state) was
+   * still on the unstepped scaler while the question card inside it stepped to
+   * 1.25-1.35x on a tablet, so the frame shrank around the content it frames.
+   * `leg` is passed whole to the module-level render helpers below rather than
+   * re-threading four arguments through each.
+   */
+  const leg = useIntakeLegibility();
+  const { colors, fs, fw, muted, error } = leg;
   const canAnswerQuestion = useCanRender('patient-intake.answer-question');
   const params = useLocalSearchParams<{ retake?: string; section?: string; group?: string }>();
   const isRetakeRequest = params.retake === '1';
@@ -343,33 +347,23 @@ export default function IntakeWizardScreen() {
       intake?.status === 'complete' && lastFiredRetakeSigRef.current !== requestSig) ||
     (retakeMut.isSuccess && intake?.status === 'complete' && intakeQuery.isFetching)
   ) {
-    return renderLoader(colors);
+    return renderLoader(leg);
   }
   if (intakeQuery.isError) {
-    return renderError(
-      colors,
-      () => {
-        void intakeQuery.refetch();
-      },
-      getScaledFontSize,
-      getScaledFontWeight,
-    );
+    return renderError(leg, () => {
+      void intakeQuery.refetch();
+    });
   }
   // Retake mutation failed — otherwise we'd fall through and render the
   // wizard against the still-complete intake, and every Next tap would
   // silently 409 because there's no in-progress version to PATCH. Reset
   // the per-request signature so the retry actually re-fires the mutation.
   if (retakeMut.isError && intendsToRetakeRef.current) {
-    return renderError(
-      colors,
-      () => {
-        lastFiredRetakeSigRef.current = null;
-        retakeMut.reset();
-        retakeMut.mutate();
-      },
-      getScaledFontSize,
-      getScaledFontWeight,
-    );
+    return renderError(leg, () => {
+      lastFiredRetakeSigRef.current = null;
+      retakeMut.reset();
+      retakeMut.mutate();
+    });
   }
   // Ken 2026-08-05 — pendingRetakeArrival is TRUE when the URL says we
   // should be retaking but the retake mutation hasn't fired yet for
@@ -398,8 +392,8 @@ export default function IntakeWizardScreen() {
   ) {
     return <IntakeCompleteView />;
   }
-  if (!questions.length) return renderLoader(colors);
-  if (!current) return renderLoader(colors); // stale-index guard
+  if (!questions.length) return renderLoader(leg);
+  if (!current) return renderLoader(leg); // stale-index guard
 
   const isFinalStep = stepIdx === total - 1;
   const primaryLabel = isFinalStep ? 'Finish' : 'Next';
@@ -442,8 +436,8 @@ export default function IntakeWizardScreen() {
               <Text
                 style={{
                   color: colors.text,
-                  fontSize: getScaledFontSize(15),
-                  fontWeight: getScaledFontWeight(600) as any,
+                  fontSize: fs(15),
+                  fontWeight: fw(600) as any,
                 }}
               >
                 {stepIdx === 0 ? 'Close' : 'Back'}
@@ -455,7 +449,7 @@ export default function IntakeWizardScreen() {
               style={[
                 styles.primaryBtn,
                 {
-                  backgroundColor: currentAnswered ? colors.tint : colors.subtext + '60',
+                  backgroundColor: currentAnswered ? colors.tint : muted + '60',
                   opacity: patchMut.isPending || completeMut.isPending ? 0.6 : 1,
                 },
               ]}
@@ -465,8 +459,8 @@ export default function IntakeWizardScreen() {
               <Text
                 style={{
                   color: '#fff',
-                  fontSize: getScaledFontSize(15),
-                  fontWeight: getScaledFontWeight(700) as any,
+                  fontSize: fs(15),
+                  fontWeight: fw(700) as any,
                 }}
               >
                 {primaryLabel}
@@ -504,8 +498,8 @@ export default function IntakeWizardScreen() {
             >
               <Text
                 style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(14),
+                  color: muted,
+                  fontSize: fs(14),
                   textDecorationLine: 'underline',
                 }}
               >
@@ -516,9 +510,9 @@ export default function IntakeWizardScreen() {
           {(patchMut.isError || completeMut.isError) && (
             <Text
               style={{
-                color: '#DC2626',
-                fontSize: getScaledFontSize(12),
-                fontWeight: getScaledFontWeight(500) as any,
+                color: error,
+                fontSize: fs(12),
+                fontWeight: fw(500) as any,
                 textAlign: 'center',
                 marginTop: 10,
               }}
@@ -532,7 +526,7 @@ export default function IntakeWizardScreen() {
   );
 }
 
-function renderLoader(colors: ColorPalette) {
+function renderLoader({ colors, fs, muted }: IntakeLegibility) {
   return (
     <AppWrapper>
       <View
@@ -554,7 +548,9 @@ function renderLoader(colors: ColorPalette) {
             borderColor: colors.border,
           }}
         />
-        <Text style={{ marginTop: 12, color: colors.subtext, fontSize: 14 }}>
+        {/* COS-1221 — a bare `fontSize: 14` was the one size on this screen that
+            no scaler of any kind ever touched. */}
+        <Text style={{ marginTop: 12, color: muted, fontSize: fs(14) }}>
           Loading your intake…
         </Text>
       </View>
@@ -562,12 +558,7 @@ function renderLoader(colors: ColorPalette) {
   );
 }
 
-function renderError(
-  colors: ColorPalette,
-  retry: () => void,
-  gs: (n: number) => number,
-  gw: (n: number) => string,
-) {
+function renderError({ colors, fs, fw, muted }: IntakeLegibility, retry: () => void) {
   return (
     <AppWrapper>
       <View
@@ -579,13 +570,13 @@ function renderError(
           backgroundColor: colors.background,
         }}
       >
-        <MaterialIcons name="error-outline" size={56} color={colors.subtext} />
+        <MaterialIcons name="error-outline" size={fs(56)} color={muted} />
         <Text
           style={{
             color: colors.text,
             marginTop: 12,
-            fontSize: gs(18),
-            fontWeight: gw(700) as any,
+            fontSize: fs(18),
+            fontWeight: fw(700) as any,
             textAlign: 'center',
           }}
         >
@@ -606,8 +597,8 @@ function renderError(
           <Text
             style={{
               color: '#fff',
-              fontSize: gs(15),
-              fontWeight: gw(700) as any,
+              fontSize: fs(15),
+              fontWeight: fw(700) as any,
             }}
           >
             Try again

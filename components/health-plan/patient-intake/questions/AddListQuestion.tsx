@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
+import { useIntakeLegibility } from '../use-intake-legibility';
 
 interface Item {
   label: string;
@@ -35,8 +34,7 @@ export default function AddListQuestion({
   linkOptions,
   linkPickerLabel = 'Linked items',
 }: Props) {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { colors, fs, fw, muted } = useIntakeLegibility();
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
 
@@ -84,8 +82,8 @@ export default function AddListQuestion({
                 <Text
                   style={{
                     color: colors.text,
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(600) as any,
+                    fontSize: fs(15),
+                    fontWeight: fw(600) as any,
                   }}
                 >
                   {it.label}
@@ -93,10 +91,10 @@ export default function AddListQuestion({
                 {!!it.note && (
                   <Text
                     style={{
-                      color: colors.subtext,
+                      color: muted,
                       marginTop: 2,
-                      fontSize: getScaledFontSize(13),
-                      fontWeight: getScaledFontWeight(400) as any,
+                      fontSize: fs(13),
+                      fontWeight: fw(400) as any,
                     }}
                   >
                     {it.note}
@@ -109,16 +107,16 @@ export default function AddListQuestion({
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${it.label}`}
               >
-                <MaterialIcons name="close" size={20} color={colors.subtext} />
+                <MaterialIcons name="close" size={fs(20)} color={muted} />
               </Pressable>
             </View>
             {hasLinks && (
               <View style={styles.linkRow}>
                 <Text
                   style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(12),
-                    fontWeight: getScaledFontWeight(600) as any,
+                    color: muted,
+                    fontSize: fs(12),
+                    fontWeight: fw(600) as any,
                     marginRight: 6,
                     marginBottom: 4,
                   }}
@@ -132,6 +130,9 @@ export default function AddListQuestion({
                       <Pressable
                         key={opt}
                         onPress={() => toggleLink(idx, opt)}
+                        // COS-1216 — a 12pt pill is a ~22pt target. hitSlop
+                        // widens it past 44 without changing the layout.
+                        hitSlop={12}
                         accessibilityRole="button"
                         accessibilityState={{ selected: active }}
                         accessibilityLabel={`${active ? 'Unlink' : 'Link'} ${it.label} to ${opt}`}
@@ -145,8 +146,8 @@ export default function AddListQuestion({
                         <Text
                           style={{
                             color: active ? '#fff' : colors.text,
-                            fontSize: getScaledFontSize(12),
-                            fontWeight: getScaledFontWeight(active ? 600 : 500) as any,
+                            fontSize: fs(12),
+                            fontWeight: fw(active ? 600 : 500) as any,
                           }}
                         >
                           {opt}
@@ -166,7 +167,7 @@ export default function AddListQuestion({
           value={label}
           onChangeText={setLabel}
           placeholder={labelPlaceholder}
-          placeholderTextColor={colors.subtext}
+          placeholderTextColor={muted}
           maxLength={200}
           style={[
             styles.input,
@@ -174,7 +175,7 @@ export default function AddListQuestion({
               color: colors.text,
               borderColor: colors.border,
               backgroundColor: colors.background,
-              fontSize: getScaledFontSize(15),
+              fontSize: fs(15),
             },
           ]}
           accessibilityLabel="Item label"
@@ -184,7 +185,7 @@ export default function AddListQuestion({
           value={note}
           onChangeText={setNote}
           placeholder={notePlaceholder}
-          placeholderTextColor={colors.subtext}
+          placeholderTextColor={muted}
           maxLength={400}
           style={[
             styles.input,
@@ -192,7 +193,7 @@ export default function AddListQuestion({
               color: colors.text,
               borderColor: colors.border,
               backgroundColor: colors.background,
-              fontSize: getScaledFontSize(15),
+              fontSize: fs(15),
             },
           ]}
           accessibilityLabel="Optional note"
@@ -204,7 +205,7 @@ export default function AddListQuestion({
           disabled={!canAdd}
           style={[
             styles.addBtn,
-            { backgroundColor: canAdd ? colors.tint : colors.subtext + '60' },
+            { backgroundColor: canAdd ? colors.tint : muted + '60' },
           ]}
           accessibilityRole="button"
           accessibilityState={{ disabled: !canAdd }}
@@ -213,8 +214,8 @@ export default function AddListQuestion({
           <Text
             style={{
               color: '#fff',
-              fontSize: getScaledFontSize(14),
-              fontWeight: getScaledFontWeight(700) as any,
+              fontSize: fs(14),
+              fontWeight: fw(700) as any,
             }}
           >
             Add

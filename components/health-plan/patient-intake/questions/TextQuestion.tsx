@@ -1,8 +1,7 @@
 import React from 'react';
 import { StyleSheet, TextInput } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
+import { useIntakeLegibility } from '../use-intake-legibility';
 
 interface Props {
   value: string;
@@ -11,15 +10,14 @@ interface Props {
 }
 
 export default function TextQuestion({ value, onChange, placeholder }: Props) {
-  const { settings, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { colors, fs, muted } = useIntakeLegibility();
 
   return (
     <TextInput
       value={value}
       onChangeText={onChange}
       placeholder={placeholder ?? 'Type your answer…'}
-      placeholderTextColor={colors.subtext}
+      placeholderTextColor={muted}
       multiline
       textAlignVertical="top"
       style={[
@@ -28,7 +26,7 @@ export default function TextQuestion({ value, onChange, placeholder }: Props) {
           color: colors.text,
           borderColor: colors.border,
           backgroundColor: colors.background,
-          fontSize: getScaledFontSize(16),
+          fontSize: fs(16),
         },
       ]}
       accessibilityLabel="Answer"

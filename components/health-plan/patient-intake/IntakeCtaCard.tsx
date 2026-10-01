@@ -23,17 +23,33 @@ import {
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 
-import { Colors } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/design-system';
-import { useAccessibility } from '@/stores/accessibility-store';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import RetakeSectionSheet, { type RetakeGroupPick } from './RetakeSectionSheet';
+import { readableOn } from './intake-legibility';
+import { useIntakeLegibility } from './use-intake-legibility';
 
 function alpha(hex: string, hh: string): string {
   return hex.length === 7 ? hex + hh : hex;
 }
 
 const COMPLETED_ACCENT = '#199C4F';
+/*
+ * COS-1223 — COS-1221 claimed "the accent used AS text" had been found and
+ * derived everywhere. It had not: this file had two sites left, neither of them
+ * in that round's audit table.
+ *
+ *   'COMPLETED'        COMPLETED_ACCENT on colors.card    3.26:1 light / 4.60:1 dark
+ *   'View my intake'   a hardcoded white on the accent    3.55:1 in both themes
+ *
+ * Same derivation as the selected option row. The label on the accent FILL is
+ * measured against the accent (readableOn -> #11181C, 5.05:1). The status label
+ * has no fill, so it is measured against the surface it actually sits on rather
+ * than painted in the accent — no single accent-derived hue clears AA as text on
+ * both the light and the dark card. The hue still reads: it is the glyph chip
+ * immediately left of that label, the info box, and the primary button.
+ */
+const ON_COMPLETED_ACCENT = readableOn(COMPLETED_ACCENT);
 
 function formatFullDate(iso?: string): string {
   if (!iso) return '';
@@ -47,9 +63,27 @@ function formatFullDate(iso?: string): string {
 }
 
 export default function IntakeCtaCard(): React.JSX.Element | null {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-1221 — folder-wide conversion. Still the FIRST hook in this component:
+  // see the note below about the hook-count crash.
+  const { colors, isDark, fs, fw, muted } = useIntakeLegibility();
   const tint = colors.tint as string;
+  /*
+   * COS-1221 — a glyph chip is sized FROM its glyph, not pinned at a number:
+   * these were fixed numbers around a glyph that now carries the tablet step as
+   * well as the patient's own scale, so at the top of that range the icon
+   * spilled out of its own circle.
+   *
+   * COS-1223 — but the derivation was `glyph * 2`, and "already ~2x its glyph
+   * at scale 1" was false for three of the folder's six boxes. bannerIcon was a
+   * 40pt box around a 22pt glyph, so x2 silently grew it to 44 on the phone —
+   * where sizing is signed off and the comment two lines up says nothing may
+   * move. Each box now goes through the SAME pipeline as its glyph: at phone
+   * default scale `fs(n)` is exactly `n`, so these are the pre-COS-1216 numbers
+   * byte for byte, and at any larger scale box and glyph grow by one shared
+   * multiplier, which is what stops the clipping.
+   */
+  const bannerBox = fs(40); // styles.bannerIcon, around an fs(22) glyph
+  const chipBox = fs(44); // styles.iconChip, around the same fs(22) glyph
 
   const q = usePatientIntake();
 
@@ -108,12 +142,17 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           <View
             style={[
               styles.iconChip,
-              { backgroundColor: alpha(COMPLETED_ACCENT, '1A') },
+              {
+                backgroundColor: alpha(COMPLETED_ACCENT, '1A'),
+                width: chipBox,
+                height: chipBox,
+                borderRadius: chipBox / 2,
+              },
             ]}
           >
             <MaterialIcons
               name="assignment-turned-in"
-              size={getScaledFontSize(22)}
+              size={fs(22)}
               color={COMPLETED_ACCENT}
             />
           </View>
@@ -121,21 +160,21 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           <View style={{ flex: 1 }}>
             <Text
               accessibilityRole="header"
-              numberOfLines={2}
               style={{
                 color: colors.text,
-                fontSize: getScaledFontSize(17),
-                fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                fontSize: fs(17),
+                fontWeight: fw(700) as TextStyle['fontWeight'],
               }}
             >
               Health history intake
             </Text>
             <Text
               style={{
-                color: COMPLETED_ACCENT,
+                // Derived from the surface it sits on — see ON_COMPLETED_ACCENT.
+                color: readableOn(colors.card),
                 marginTop: 2,
-                fontSize: getScaledFontSize(12),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                fontSize: fs(12),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
                 letterSpacing: 0.2,
               }}
             >
@@ -148,9 +187,9 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           <View style={styles.metaCell}>
             <Text
               style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(11),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                color: muted,
+                fontSize: fs(11),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
                 letterSpacing: 0.3,
               }}
             >
@@ -160,8 +199,8 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
               style={{
                 color: colors.text,
                 marginTop: 4,
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                fontSize: fs(14),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
               }}
             >
               {dateStr || '—'}
@@ -170,9 +209,9 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           <View style={[styles.metaCell, styles.metaCellRight]}>
             <Text
               style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(11),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                color: muted,
+                fontSize: fs(11),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
                 letterSpacing: 0.3,
               }}
             >
@@ -182,8 +221,8 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
               style={{
                 color: colors.text,
                 marginTop: 4,
-                fontSize: getScaledFontSize(14),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                fontSize: fs(14),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
               }}
             >
               {answerCount} of 30
@@ -194,7 +233,7 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
         <View style={[styles.infoBox, { backgroundColor: alpha(COMPLETED_ACCENT, '10'), borderColor: alpha(COMPLETED_ACCENT, '33') }]}>
           <MaterialIcons
             name="info-outline"
-            size={getScaledFontSize(16)}
+            size={fs(16)}
             color={COMPLETED_ACCENT}
             style={{ marginRight: 8 }}
           />
@@ -202,9 +241,9 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
             style={{
               flex: 1,
               color: colors.text,
-              fontSize: getScaledFontSize(12),
-              fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
-              lineHeight: getScaledFontSize(17),
+              fontSize: fs(12),
+              fontWeight: fw(400) as TextStyle['fontWeight'],
+              lineHeight: fs(17),
             }}
           >
             Your intake powers the biopsychosocial summary, treatments, and recommendations shown below.
@@ -226,15 +265,15 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           >
             <MaterialIcons
               name="visibility"
-              size={getScaledFontSize(16)}
-              color="#fff"
+              size={fs(16)}
+              color={ON_COMPLETED_ACCENT}
               style={{ marginRight: 6 }}
             />
             <Text
               style={{
-                color: '#fff',
-                fontSize: getScaledFontSize(13),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                color: ON_COMPLETED_ACCENT,
+                fontSize: fs(13),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
               }}
             >
               View my intake
@@ -253,15 +292,15 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           >
             <MaterialIcons
               name="refresh"
-              size={getScaledFontSize(16)}
-              color={colors.subtext}
+              size={fs(16)}
+              color={muted}
               style={{ marginRight: 6 }}
             />
             <Text
               style={{
-                color: colors.subtext,
-                fontSize: getScaledFontSize(13),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                color: muted,
+                fontSize: fs(13),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
               }}
             >
               Retake
@@ -272,9 +311,6 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
           visible={retakeSheetOpen}
           onDismiss={() => setRetakeSheetOpen(false)}
           onPick={handleRetakePick}
-          colors={colors}
-          scale={getScaledFontSize}
-          weight={getScaledFontWeight}
         />
       </View>
     );
@@ -297,16 +333,21 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
       style={({ pressed }) => [
         styles.banner,
         {
-          backgroundColor: alpha(tint, settings.isDarkTheme ? '22' : '14'),
+          backgroundColor: alpha(tint, isDark ? '22' : '14'),
           borderColor: alpha(tint, '55'),
           opacity: pressed ? 0.85 : 1,
         },
       ]}
     >
-      <View style={[styles.bannerIcon, { backgroundColor: alpha(tint, '22') }]}>
+      <View
+        style={[
+          styles.bannerIcon,
+          { backgroundColor: alpha(tint, '22'), width: bannerBox, height: bannerBox },
+        ]}
+      >
         <MaterialIcons
           name={inProgress ? 'edit' : 'assignment'}
-          size={22}
+          size={fs(22)}
           color={tint}
         />
       </View>
@@ -314,24 +355,24 @@ export default function IntakeCtaCard(): React.JSX.Element | null {
         <Text
           style={{
             color: colors.text,
-            fontSize: getScaledFontSize(16),
-            fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+            fontSize: fs(16),
+            fontWeight: fw(700) as TextStyle['fontWeight'],
           }}
         >
           {title}
         </Text>
         <Text
           style={{
-            color: colors.subtext,
+            color: muted,
             marginTop: 2,
-            fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
+            fontSize: fs(13),
+            fontWeight: fw(400) as TextStyle['fontWeight'],
           }}
         >
           {body}
         </Text>
       </View>
-      <MaterialIcons name="chevron-right" size={22} color={colors.subtext} />
+      <MaterialIcons name="chevron-right" size={fs(22)} color={muted} />
     </Pressable>
   );
 }
@@ -352,8 +393,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   bannerIcon: {
-    width: 40,
-    height: 40,
+    // width/height are set inline — derived from the glyph.
     borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -376,9 +416,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   iconChip: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    // width/height/borderRadius are set inline — derived from the glyph.
     alignItems: 'center',
     justifyContent: 'center',
   },

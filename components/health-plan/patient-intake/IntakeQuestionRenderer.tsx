@@ -1,11 +1,10 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
 import type { IntakeAddListItem, IntakeAnswerValue, IntakeQuestion } from '@/types/patient-intake';
 
 import { SECTION_COLOR } from './IntakeProgressHeader';
+import { useIntakeLegibility } from './use-intake-legibility';
 import AddListQuestion from './questions/AddListQuestion';
 import MultiChoiceQuestion from './questions/MultiChoiceQuestion';
 import HeightQuestion from './questions/HeightQuestion';
@@ -29,27 +28,34 @@ interface Props {
 }
 
 export default function IntakeQuestionRenderer({ question, value, onChange, invalid, allAnswers }: Props) {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-  const borderColor = invalid ? '#DC2626' : colors.border;
+  /*
+   * COS-1216 — `fs()` is the breakpoint-stepped scaler, NOT getScaledFontSize.
+   * The bases below are unchanged phone sizes; the step is what makes them
+   * readable on the ~10" iPad the stakeholders are reviewing on.
+   */
+  const { colors, fs, fw, muted, error } = useIntakeLegibility();
+  const borderColor = invalid ? error : colors.border;
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor }]}>
       <Text
         style={{
           color: colors.text,
-          fontSize: getScaledFontSize(20),
-          fontWeight: getScaledFontWeight(700) as any,
+          fontSize: fs(20),
+          fontWeight: fw(700) as any,
         }}>
         {question.prompt}
       </Text>
       {!!question.hint && (
         <Text
           style={{
-            color: colors.subtext,
+            // 4.62:1 as the theme's subtext grey on #f5f5f5 — the "light gray
+            // font" the stakeholder could not read. 6.93:1 now, from the
+            // design-system `secondary` token. See use-intake-legibility.ts.
+            color: muted,
             marginTop: 6,
-            fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(400) as any,
+            fontSize: fs(13),
+            fontWeight: fw(400) as any,
           }}>
           {question.hint}
         </Text>
@@ -58,10 +64,14 @@ export default function IntakeQuestionRenderer({ question, value, onChange, inva
       {invalid && (
         <Text
           style={{
-            color: '#DC2626',
+            // This was a hardcoded red that FAILED AA on the card in both
+            // themes (4.43:1 light, 3.38:1 dark) at the smallest size on the
+            // screen. Now design-system `error`: 5.93:1 light, 5.91:1 dark —
+            // and the light token was fixed where it lives, not shadowed here.
+            color: error,
             marginTop: 8,
-            fontSize: getScaledFontSize(12),
-            fontWeight: getScaledFontWeight(500) as any,
+            fontSize: fs(12),
+            fontWeight: fw(500) as any,
           }}>
           That doesn’t look right. Please review your answer.
         </Text>

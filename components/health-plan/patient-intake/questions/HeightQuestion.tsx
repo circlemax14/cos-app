@@ -17,6 +17,14 @@
  * why that is not up for revisiting — BMI, health age and every existing
  * patient answer are all in inches. The toggle is an input affordance.
  *
+ * ─── PLACEHOLDERS ARE EXAMPLES, NOT VALUES (COS-1221) ────────────────
+ *
+ * They were "5", "11" and "180" — all plausible answers — rendered in AA
+ * secondary text, so an untouched height question read as pre-filled with
+ * 5 ft 11 in. "e.g." is the whole fix: it cannot be read as an entered value at
+ * any contrast. (`maxLength` governs the value, not the placeholder, so 1/2/3
+ * are unchanged.)
+ *
  * ─── iOS 26 ENVELOPE ─────────────────────────────────────────────────
  *
  * View / Text / Pressable / TextInput only, which is what the sibling question
@@ -26,8 +34,6 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
 import {
   cmToInches,
   ftInToInches,
@@ -37,6 +43,8 @@ import {
   type HeightUnit,
 } from '@/lib/height-units';
 
+import { useIntakeLegibility } from '../use-intake-legibility';
+
 interface Props {
   /** Total inches, as stored. Null when unanswered. */
   value: number | null;
@@ -44,8 +52,7 @@ interface Props {
 }
 
 export default function HeightQuestion({ value, onChange }: Props) {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { colors, fs, fw, muted } = useIntakeLegibility();
 
   const [unit, setUnit] = useState<HeightUnit>(() => preferredUnitFor(value));
 
@@ -104,7 +111,7 @@ export default function HeightQuestion({ value, onChange }: Props) {
     color: colors.text,
     borderColor: colors.border,
     backgroundColor: colors.background,
-    fontSize: getScaledFontSize(16),
+    fontSize: fs(16),
   };
 
   return (
@@ -136,8 +143,8 @@ export default function HeightQuestion({ value, onChange }: Props) {
               <Text
                 style={{
                   color: active ? '#FFFFFF' : colors.text,
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(active ? 600 : 400) as never,
+                  fontSize: fs(14),
+                  fontWeight: fw(active ? 600 : 400) as never,
                 }}
               >
                 {label}
@@ -158,13 +165,13 @@ export default function HeightQuestion({ value, onChange }: Props) {
                 commitFtIn(c, inches);
               }}
               keyboardType="number-pad"
-              placeholder="5"
-              placeholderTextColor={colors.subtext}
+              placeholder="e.g. 5"
+              placeholderTextColor={muted}
               maxLength={1}
               style={[styles.input, inputStyle]}
               accessibilityLabel="Height, feet"
             />
-            <Text style={[styles.suffix, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+            <Text style={[styles.suffix, { color: muted, fontSize: fs(14) }]}>
               ft
             </Text>
           </View>
@@ -177,13 +184,13 @@ export default function HeightQuestion({ value, onChange }: Props) {
                 commitFtIn(feet, c);
               }}
               keyboardType="number-pad"
-              placeholder="11"
-              placeholderTextColor={colors.subtext}
+              placeholder="e.g. 11"
+              placeholderTextColor={muted}
               maxLength={2}
               style={[styles.input, inputStyle]}
               accessibilityLabel="Height, inches"
             />
-            <Text style={[styles.suffix, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+            <Text style={[styles.suffix, { color: muted, fontSize: fs(14) }]}>
               in
             </Text>
           </View>
@@ -198,13 +205,13 @@ export default function HeightQuestion({ value, onChange }: Props) {
               commitCm(c);
             }}
             keyboardType="number-pad"
-            placeholder="180"
-            placeholderTextColor={colors.subtext}
+            placeholder="e.g. 180"
+            placeholderTextColor={muted}
             maxLength={3}
             style={[styles.input, inputStyle]}
             accessibilityLabel="Height in centimetres"
           />
-          <Text style={[styles.suffix, { color: colors.subtext, fontSize: getScaledFontSize(14) }]}>
+          <Text style={[styles.suffix, { color: muted, fontSize: fs(14) }]}>
             cm
           </Text>
         </View>
@@ -218,7 +225,7 @@ export default function HeightQuestion({ value, onChange }: Props) {
       */}
       {value != null && value > 0 ? (
         <Text
-          style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}
+          style={{ color: muted, fontSize: fs(13) }}
           accessibilityLabel={
             unit === 'cm'
               ? `That is ${String(inchesToFtIn(value)?.feet ?? 0)} feet ${String(inchesToFtIn(value)?.inches ?? 0)} inches.`

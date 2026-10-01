@@ -24,15 +24,14 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 
 import { AppWrapper } from '@/components/app-wrapper';
-import { Colors } from '@/constants/theme';
-import { Spacing, Radii } from '@/constants/design-system';
-import { useAccessibility } from '@/stores/accessibility-store';
+import { ScoreBands, Spacing, Radii } from '@/constants/design-system';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { useImmunizations } from '@/hooks/use-immunizations';
 import { immunizationToRow } from '@/services/api/patient-immunizations';
 import ShareIntakeReportSection from './ShareIntakeReportSection';
 import RetakeSectionSheet from './RetakeSectionSheet';
+import { useIntakeLegibility } from './use-intake-legibility';
 import {
   buildReport,
   IMMUNIZATIONS_EHR_ENABLED,
@@ -43,15 +42,28 @@ import {
   type ScoreInterpretation,
 } from './intake-report-builder';
 
-// Interpretation pill palette. Kept local to the report — the group icon
-// colors come from the builder itself; only screener pills need bucketed
-// clinical hues here.
-const POSITIVE_FG = '#DC2626';
+/*
+ * Interpretation pill palette — a patient reading their own screener result.
+ *
+ * COS-1221 fixed POSITIVE_FG (was #DC2626, 3.95:1 on POSITIVE_BG at 11pt bold;
+ * 5.30:1 now, the hex LightColors.error moved to) and left the other two
+ * sub-AA: moderate #D97706 on #FEF3C7 was 2.86:1 and strong #199C4F on #DCFCE7
+ * was 3.24:1 — both normal text at 11pt bold, on a patient's own screener
+ * interpretation.
+ *
+ * COS-1223 — those four hexes are gone rather than re-picked by hand.
+ * design-system's ScoreBands is the app's own WCAG-AA-verified fg/bg set and
+ * already carries the two buckets this needs, so the pills read from it:
+ *
+ *   moderate -> ScoreBands.foundational  #8A5100 on #FDF3E4   5.87:1
+ *   strong   -> ScoreBands.optimal       #0F6B36 on #E6F4EC   5.83:1
+ *
+ * A ScoreBands entry is `{ fg, bg, label }`, which is structurally what
+ * pillPalette already returned, so nothing downstream changes. Both pills carry
+ * their own background, so the ratio is theme-independent — as before.
+ */
+const POSITIVE_FG = '#B91C1C';
 const POSITIVE_BG = '#FEE2E2';
-const MODERATE_FG = '#D97706';
-const MODERATE_BG = '#FEF3C7';
-const STRONG_FG = '#199C4F';
-const STRONG_BG = '#DCFCE7';
 
 function pillPalette(
   interp: ScoreInterpretation,
@@ -63,9 +75,9 @@ function pillPalette(
     case 'low':
       return { fg: POSITIVE_FG, bg: POSITIVE_BG };
     case 'moderate':
-      return { fg: MODERATE_FG, bg: MODERATE_BG };
+      return ScoreBands.foundational;
     case 'strong':
-      return { fg: STRONG_FG, bg: STRONG_BG };
+      return ScoreBands.optimal;
     case 'below-threshold':
     case 'info':
     default:
@@ -74,8 +86,13 @@ function pillPalette(
 }
 
 export default function IntakeReportScreen() {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-1221 — folder-wide conversion to the stepped scaler + AA text tokens.
+  const { colors, fs, fw, muted, actionTint } = useIntakeLegibility();
+  // Glyph chips scaled through the same pipeline as their glyphs, from the
+  // pre-COS-1216 phone sizes — see the note in IntakeCtaCard. `fs(44)` was
+  // `fs(24) * 2` = 48, which moved the back button on the phone.
+  const backBtn = fs(44); // styles.iconBtn, around an fs(24) glyph
+  const groupBadge = fs(36); // styles.groupIconChip, around an fs(18) glyph
 
   // COS-849 entitlement gates. Hooks, so unconditional and above the early
   // returns for the loading / not-ready states below.
@@ -133,7 +150,8 @@ export default function IntakeReportScreen() {
               borderColor: colors.border,
             }}
           />
-          <Text style={{ marginTop: 12, color: colors.subtext, fontSize: 14 }}>
+          {/* COS-1221 — a bare `fontSize: 14`, scaled by nothing. */}
+          <Text style={{ marginTop: 12, color: muted, fontSize: fs(14) }}>
             Loading report…
           </Text>
         </View>
@@ -161,14 +179,14 @@ export default function IntakeReportScreen() {
         <View style={styles.centered}>
           <MaterialIcons
             name={inProgress ? 'edit-note' : 'error-outline'}
-            size={getScaledFontSize(48)}
-            color={colors.subtext}
+            size={fs(48)}
+            color={muted}
           />
           <Text
             style={{
               marginTop: 12,
               color: colors.text,
-              fontSize: getScaledFontSize(15),
+              fontSize: fs(15),
               textAlign: 'center',
               paddingHorizontal: 24,
             }}
@@ -183,8 +201,8 @@ export default function IntakeReportScreen() {
             <Text
               style={{
                 color: '#fff',
-                fontSize: getScaledFontSize(15),
-                fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                fontSize: fs(15),
+                fontWeight: fw(600) as TextStyle['fontWeight'],
               }}
             >
               {primaryLabel}
@@ -220,11 +238,14 @@ export default function IntakeReportScreen() {
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Back"
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [
+              styles.iconBtn,
+              { width: backBtn, height: backBtn, opacity: pressed ? 0.6 : 1 },
+            ]}
           >
             <MaterialIcons
               name="arrow-back"
-              size={getScaledFontSize(24)}
+              size={fs(24)}
               color={colors.text}
             />
           </Pressable>
@@ -234,13 +255,14 @@ export default function IntakeReportScreen() {
               flex: 1,
               textAlign: 'center',
               color: colors.text,
-              fontSize: getScaledFontSize(17),
-              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+              fontSize: fs(17),
+              fontWeight: fw(700) as TextStyle['fontWeight'],
             }}
           >
             Your intake
           </Text>
-          <View style={styles.iconBtn} />
+          {/* Balances the back button, so it tracks the same derived size. */}
+          <View style={[styles.iconBtn, { width: backBtn, height: backBtn }]} />
         </View>
 
         <View style={[styles.metaCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -248,9 +270,9 @@ export default function IntakeReportScreen() {
             <View style={styles.metaCell}>
               <Text
                 style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(11),
-                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                  color: muted,
+                  fontSize: fs(11),
+                  fontWeight: fw(600) as TextStyle['fontWeight'],
                   letterSpacing: 0.3,
                 }}
               >
@@ -260,8 +282,8 @@ export default function IntakeReportScreen() {
                 style={{
                   color: colors.text,
                   marginTop: 4,
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                  fontSize: fs(14),
+                  fontWeight: fw(600) as TextStyle['fontWeight'],
                 }}
               >
                 {completedAt || '—'}
@@ -270,9 +292,9 @@ export default function IntakeReportScreen() {
             <View style={[styles.metaCell, { alignItems: 'flex-end' }]}>
               <Text
                 style={{
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(11),
-                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                  color: muted,
+                  fontSize: fs(11),
+                  fontWeight: fw(600) as TextStyle['fontWeight'],
                   letterSpacing: 0.3,
                 }}
               >
@@ -282,8 +304,8 @@ export default function IntakeReportScreen() {
                 style={{
                   color: colors.text,
                   marginTop: 4,
-                  fontSize: getScaledFontSize(14),
-                  fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                  fontSize: fs(14),
+                  fontWeight: fw(600) as TextStyle['fontWeight'],
                 }}
               >
                 {answeredCount} of {questions.length}
@@ -321,9 +343,9 @@ export default function IntakeReportScreen() {
               {row.label ? (
                 <Text
                   style={{
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(13),
-                    lineHeight: getScaledFontSize(18),
+                    color: muted,
+                    fontSize: fs(13),
+                    lineHeight: fs(18),
                   }}
                 >
                   {row.label}
@@ -333,10 +355,10 @@ export default function IntakeReportScreen() {
                 <Text
                   style={{
                     marginTop: row.label ? 4 : 0,
-                    color: colors.subtext,
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
-                    lineHeight: getScaledFontSize(22),
+                    color: muted,
+                    fontSize: fs(15),
+                    fontWeight: fw(400) as TextStyle['fontWeight'],
+                    lineHeight: fs(22),
                     fontStyle: 'italic',
                   }}
                 >
@@ -347,9 +369,9 @@ export default function IntakeReportScreen() {
                   style={{
                     marginTop: row.label ? 4 : 0,
                     color: colors.text,
-                    fontSize: getScaledFontSize(15),
-                    fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
-                    lineHeight: getScaledFontSize(22),
+                    fontSize: fs(15),
+                    fontWeight: fw(600) as TextStyle['fontWeight'],
+                    lineHeight: fs(22),
                   }}
                 >
                   {row.value}
@@ -363,18 +385,28 @@ export default function IntakeReportScreen() {
               style={[styles.groupCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
               <View style={styles.groupHeader}>
-                <View style={[styles.groupIconChip, { backgroundColor: group.color + '1A' }]}>
+                <View
+                  style={[
+                    styles.groupIconChip,
+                    {
+                      backgroundColor: group.color + '1A',
+                      width: groupBadge,
+                      height: groupBadge,
+                      borderRadius: groupBadge / 2,
+                    },
+                  ]}
+                >
                   <MaterialIcons
                     name={group.icon as keyof typeof MaterialIcons.glyphMap}
-                    size={getScaledFontSize(18)}
+                    size={fs(18)}
                     color={group.color}
                   />
                 </View>
                 <Text
                   style={{
                     color: group.color,
-                    fontSize: getScaledFontSize(14),
-                    fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                    fontSize: fs(14),
+                    fontWeight: fw(700) as TextStyle['fontWeight'],
                     letterSpacing: 0.3,
                   }}
                 >
@@ -390,9 +422,9 @@ export default function IntakeReportScreen() {
                       style={[
                         styles.subheader,
                         {
-                          color: colors.subtext,
-                          fontSize: getScaledFontSize(12),
-                          fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                          color: muted,
+                          fontSize: fs(12),
+                          fontWeight: fw(600) as TextStyle['fontWeight'],
                         },
                       ]}
                     >
@@ -412,9 +444,9 @@ export default function IntakeReportScreen() {
                         styles.subheader,
                         styles.subheaderSecondary,
                         {
-                          color: colors.subtext,
-                          fontSize: getScaledFontSize(12),
-                          fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+                          color: muted,
+                          fontSize: fs(12),
+                          fontWeight: fw(600) as TextStyle['fontWeight'],
                         },
                       ]}
                     >
@@ -438,7 +470,7 @@ export default function IntakeReportScreen() {
                 : null}
 
               {scoreBlocks.map((block: ScoreBlock, i) => {
-                const palette = pillPalette(block.interpretation, colors.subtext, colors.border);
+                const palette = pillPalette(block.interpretation, muted, colors.border);
                 const isNeutralPill =
                   block.interpretation === 'below-threshold' || block.interpretation === 'info';
                 const showDivider = group.rows.length > 0 || i > 0;
@@ -453,8 +485,8 @@ export default function IntakeReportScreen() {
                     <Text
                       style={{
                         color: colors.text,
-                        fontSize: getScaledFontSize(14),
-                        fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                        fontSize: fs(14),
+                        fontWeight: fw(700) as TextStyle['fontWeight'],
                       }}
                     >
                       {block.name}: {block.sum}/{block.max}
@@ -468,8 +500,8 @@ export default function IntakeReportScreen() {
                       <Text
                         style={{
                           color: palette.fg,
-                          fontSize: getScaledFontSize(11),
-                          fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+                          fontSize: fs(11),
+                          fontWeight: fw(700) as TextStyle['fontWeight'],
                           letterSpacing: 0.2,
                         }}
                       >
@@ -480,10 +512,10 @@ export default function IntakeReportScreen() {
                       <Text
                         style={{
                           marginTop: 6,
-                          color: colors.subtext,
-                          fontSize: getScaledFontSize(12),
+                          color: muted,
+                          fontSize: fs(12),
                           fontStyle: 'italic',
-                          lineHeight: getScaledFontSize(16),
+                          lineHeight: fs(16),
                         }}
                       >
                         {block.footnote}
@@ -499,10 +531,10 @@ export default function IntakeReportScreen() {
         <View style={[styles.disclaimer, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <Text
             style={{
-              color: colors.subtext,
-              fontSize: getScaledFontSize(12),
+              color: muted,
+              fontSize: fs(12),
               fontStyle: 'italic',
-              lineHeight: getScaledFontSize(17),
+              lineHeight: fs(17),
               textAlign: 'center',
             }}
           >
@@ -525,15 +557,16 @@ export default function IntakeReportScreen() {
         >
           <MaterialIcons
             name="refresh"
-            size={getScaledFontSize(18)}
-            color={colors.tint}
+            size={fs(18)}
+            color={actionTint}
           />
           <Text
             style={{
               marginLeft: 8,
-              color: colors.tint,
-              fontSize: getScaledFontSize(15),
-              fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+              // COS-1223 — tint is an AA fill, not AA text: 4.38:1 on this card.
+              color: actionTint,
+              fontSize: fs(15),
+              fontWeight: fw(600) as TextStyle['fontWeight'],
             }}
           >
             Update my answers
@@ -545,9 +578,6 @@ export default function IntakeReportScreen() {
           visible={retakeSheetOpen}
           onDismiss={() => setRetakeSheetOpen(false)}
           onPick={goRetake}
-          colors={colors}
-          scale={getScaledFontSize}
-          weight={getScaledFontWeight}
         />
 
         <View style={{ height: 40 }} />
@@ -568,8 +598,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
+    // width/height are set inline — derived from the glyph (>= 44 at scale 1).
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -598,9 +627,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   groupIconChip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    // width/height/borderRadius are set inline — derived from the glyph.
     alignItems: 'center',
     justifyContent: 'center',
   },

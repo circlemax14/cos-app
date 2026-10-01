@@ -4,14 +4,14 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppWrapper } from '@/components/app-wrapper';
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
+
+import { useIntakeLegibility } from './use-intake-legibility';
 
 const CHECK_GREEN = '#22C55E';
 
 export default function IntakeCompleteView() {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-1221 — folder-wide conversion to the stepped scaler + AA text tokens.
+  const { colors, fs, fw, muted } = useIntakeLegibility();
 
   return (
     <AppWrapper>
@@ -21,13 +21,13 @@ export default function IntakeCompleteView() {
           { backgroundColor: colors.background },
         ]}
       >
-        <MaterialIcons name="check-circle" size={72} color={CHECK_GREEN} />
+        <MaterialIcons name="check-circle" size={fs(72)} color={CHECK_GREEN} />
         <Text
           style={{
             color: colors.text,
             marginTop: 16,
-            fontSize: getScaledFontSize(22),
-            fontWeight: getScaledFontWeight(700) as any,
+            fontSize: fs(22),
+            fontWeight: fw(700) as any,
             textAlign: 'center',
           }}
         >
@@ -35,10 +35,10 @@ export default function IntakeCompleteView() {
         </Text>
         <Text
           style={{
-            color: colors.subtext,
+            color: muted,
             marginTop: 8,
-            fontSize: getScaledFontSize(15),
-            fontWeight: getScaledFontWeight(400) as any,
+            fontSize: fs(15),
+            fontWeight: fw(400) as any,
             textAlign: 'center',
           }}
         >
@@ -46,12 +46,15 @@ export default function IntakeCompleteView() {
         </Text>
         <Text
           style={{
-            color: colors.subtext,
+            color: muted,
             marginTop: 8,
-            fontSize: getScaledFontSize(13),
-            fontWeight: getScaledFontWeight(400) as any,
+            fontSize: fs(13),
+            fontWeight: fw(400) as any,
             textAlign: 'center',
-            opacity: 0.85,
+            // COS-1221 — `opacity: 0.85` composited this AA secondary text back
+            // down to 5.10:1 on the #fff background (7.56:1 unfaded), and 4.80:1
+            // had it sat on a card. De-emphasise with size and weight, never by
+            // fading type for the one audience that cannot afford it.
           }}
         >
           You can retake your intake any time from Care Plan.
@@ -71,8 +74,8 @@ export default function IntakeCompleteView() {
           <Text
             style={{
               color: '#ffffff',
-              fontSize: getScaledFontSize(15),
-              fontWeight: getScaledFontWeight(600) as any,
+              fontSize: fs(15),
+              fontWeight: fw(600) as any,
             }}
           >
             Back to Health Status

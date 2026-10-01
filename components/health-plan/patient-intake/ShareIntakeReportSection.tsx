@@ -24,9 +24,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
-import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
-import { useAccessibility } from '@/stores/accessibility-store';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { usePatientIntake } from '@/hooks/use-patient-intake';
 import { useImmunizations } from '@/hooks/use-immunizations';
@@ -39,6 +37,7 @@ import {
   type Row,
   type ScoreBlock,
 } from './intake-report-builder';
+import { useIntakeLegibility } from './use-intake-legibility';
 
 const ACCENT = '#334155';
 
@@ -72,7 +71,9 @@ function scorePillFgHex(interp: ScoreBlock['interpretation']): string {
   switch (interp) {
     case 'positive':
     case 'low':
-      return '#DC2626';
+      // COS-1221 — was the sub-AA red: 3.95:1 on the #FEE2E2 pill. 5.30:1 now,
+      // the same hex LightColors.error moved to.
+      return '#B91C1C';
     case 'moderate':
       return '#D97706';
     case 'strong':
@@ -178,8 +179,12 @@ function htmlToText(html: string): string {
 }
 
 export default function ShareIntakeReportSection(): React.JSX.Element | null {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-1221 — folder-wide conversion to the stepped scaler + AA text tokens.
+  const { colors, fs, fw, muted } = useIntakeLegibility();
+  // Glyph chip scaled through the same pipeline as its glyph, from the
+  // pre-COS-1216 phone size — see the note in IntakeCtaCard. This one really was
+  // 2x its glyph already, so its phone value is unchanged at 40.
+  const badge = fs(40); // styles.iconChip, around an fs(20) glyph
   const [sharing, setSharing] = useState(false);
 
   const { data } = usePatientIntake();
@@ -300,10 +305,20 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
       style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
     >
       <View style={styles.headerRow}>
-        <View style={[styles.iconChip, { backgroundColor: ACCENT + '1A' }]}>
+        <View
+          style={[
+            styles.iconChip,
+            {
+              backgroundColor: ACCENT + '1A',
+              width: badge,
+              height: badge,
+              borderRadius: badge / 2,
+            },
+          ]}
+        >
           <MaterialIcons
             name="picture-as-pdf"
-            size={getScaledFontSize(20)}
+            size={fs(20)}
             color={ACCENT}
           />
         </View>
@@ -312,18 +327,18 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
             accessibilityRole="header"
             style={{
               color: colors.text,
-              fontSize: getScaledFontSize(17),
-              fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
+              fontSize: fs(17),
+              fontWeight: fw(700) as TextStyle['fontWeight'],
             }}
           >
             Share your intake
           </Text>
           <Text
             style={{
-              color: colors.subtext,
+              color: muted,
               marginTop: 2,
-              fontSize: getScaledFontSize(13),
-              fontWeight: getScaledFontWeight(400) as TextStyle['fontWeight'],
+              fontSize: fs(13),
+              fontWeight: fw(400) as TextStyle['fontWeight'],
             }}
           >
             {subtitle}
@@ -347,13 +362,13 @@ export default function ShareIntakeReportSection(): React.JSX.Element | null {
           },
         ]}
       >
-        <MaterialIcons name="share" size={getScaledFontSize(18)} color="#fff" />
+        <MaterialIcons name="share" size={fs(18)} color="#fff" />
         <Text
           style={{
             color: '#fff',
             marginLeft: 8,
-            fontSize: getScaledFontSize(15),
-            fontWeight: getScaledFontWeight(600) as TextStyle['fontWeight'],
+            fontSize: fs(15),
+            fontWeight: fw(600) as TextStyle['fontWeight'],
           }}
         >
           {sharing ? 'Preparing PDF…' : 'Share as PDF'}
@@ -378,9 +393,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   iconChip: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    // width/height/borderRadius are set inline — derived from the glyph.
     alignItems: 'center',
     justifyContent: 'center',
   },
