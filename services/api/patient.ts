@@ -142,9 +142,31 @@ export async function fetchMedications(): Promise<Medication[]> {
      * timing, and stays empty when the EHR sent none — an empty half renders as
      * nothing, which is correct, rather than as a duplicate.
      */
-    const frequency = timing
-      ? `${timing.frequency ?? 1}x per ${timing.period ?? 1} ${timing.periodUnit ?? 'day'}`
-      : '';
+    /*
+     * COS-1153 — this promise was only half kept, and the half that was
+     * missing invented a dose schedule.
+     *
+     * COS-1111 changed the source from the sig text to the structured timing,
+     * and the comment above says `frequency` "stays empty when the EHR sent
+     * none". But the guard only asked whether a `timing` block EXISTS, and a
+     * FHIR `repeat` legitimately carries nothing but `boundsPeriod` — a start
+     * and end date, no schedule at all. All three `??` defaults then fired and
+     * printed the literal string "1x per 1 day".
+     *
+     * Measured against real records: of 100 sampled active medications, 98
+     * carry a `timing.repeat` and ALL 98 of those carry no frequency and no
+     * period. Every one rendered "1x per 1 day". 62 of them have sig text
+     * reading "as needed" — so the screen was telling patients to take a PRN
+     * medication once a day, every day.
+     *
+     * Now the FREQUENCY field itself is the guard. A repeat without one
+     * produces an empty half, which renders as nothing — the outcome COS-1111
+     * intended.
+     */
+    const frequency =
+      typeof timing?.frequency === 'number'
+        ? `${timing.frequency}x per ${timing.period ?? 1} ${timing.periodUnit ?? 'day'}`
+        : '';
     return {
       name: m.medicationCodeableConcept?.text ?? 'Unknown',
       dosage: dosage?.text ?? '',
