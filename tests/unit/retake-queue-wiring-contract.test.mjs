@@ -260,7 +260,8 @@ test('COS-1181 THE FIX: "Start now" deep-links into the stepper, never the picke
   // COS-1184 passes the whole request, not just the key — the queue needs its
   // createdAt as the watermark.
   assert.match(cardSrc, /useRetakeQueue\(first \?\? null\)/)
-  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  // COS-1192 split these: onStartNow latches, startNow navigates.
+  const handler = cardSrc.match(/const startNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   assert.ok(handler, 'onStartNow not found')
   assert.match(
     handler[0],
@@ -270,17 +271,29 @@ test('COS-1181 THE FIX: "Start now" deep-links into the stepper, never the picke
   assert.match(handler[0], /queue\.ids\.join\(','\)/)
 })
 
-test('COS-1181: a tap before the queue resolves cannot fall through to the picker', () => {
+test('COS-1181/1192: a tap before the queue resolves is LATCHED, not dropped', () => {
+  /*
+   * COS-1181 disabled the button so a tap during load could not fall through to
+   * the picker. That fixed the outcome and created a worse feel — Vishal: "still
+   * I have to click on start now twice." COS-1192 latches the intent instead:
+   * the guarantee is the same, the first press is honoured.
+   */
   const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
-  assert.match(handler[0], /if \(!queue\.ready\) return/)
-  // And the button says so rather than silently ignoring the tap.
-  assert.match(cardSrc, /disabled=\{!queue\.ready\}/)
+  assert.ok(handler)
+  assert.match(handler[0], /wantStartRef\.current = true/)
+  // The effect fires it the moment the queue resolves.
+  assert.match(cardSrc, /if \(!queue\.ready \|\| !wantStartRef\.current\) return/)
+  // And the button is NOT disabled any more, or the press never arrives.
+  assert.doesNotMatch(cardSrc, /disabled=\{!queue\.ready\}/)
+  // The tap is visibly acknowledged.
+  assert.match(cardSrc, /queue\.ready \? 'Start now' : 'Starting…'/)
 })
 
 test('COS-1181: retakeStartRoute survives as the fallback, not the default', () => {
   // Single instruments open directly, full-intake has its own wizard, and an
   // already-satisfied scope has no instrument to open.
-  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  // COS-1192 split these: onStartNow latches, startNow navigates.
+  const handler = cardSrc.match(/const startNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   const stepperAt = handler[0].indexOf('assessment-stepper')
   const fallbackAt = handler[0].indexOf('retakeStartRoute')
   assert.ok(stepperAt > -1 && fallbackAt > stepperAt, 'the walk must be tried FIRST')
@@ -404,7 +417,8 @@ test('COS-1184: the watermark is part of the memo deps', () => {
 })
 
 test('COS-1184 THE POINT: a satisfied SCOPE goes to the gate, never the catalog', () => {
-  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  // COS-1192 split these: onStartNow latches, startNow navigates.
+  const handler = cardSrc.match(/const startNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   assert.ok(handler)
   // COS-1185 additionally requires the queue to have RESOLVED — an empty queue
   // from a failed read means nothing and must not read as "satisfied".
@@ -438,7 +452,8 @@ test('COS-1185: a failed query gives up rather than disabling the button forever
 
 test('COS-1185: an empty queue only means "satisfied" when it was RESOLVED', () => {
   // ready && !resolved means we gave up; an empty queue then means nothing.
-  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  // COS-1192 split these: onStartNow latches, startNow navigates.
+  const handler = cardSrc.match(/const startNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   assert.ok(handler)
   assert.match(handler[0], /if \(queue\.resolved && parseRetakeScopeKey\(first\.instrumentKey\)\)/)
   // …and the fallback is still reachable below it.
@@ -503,7 +518,8 @@ test('COS-1191 THE DEAD TAP: never navigate to the screen we are already on', ()
    * The card renders INSIDE the gate, so pushing the gate route from there was
    * a silent no-op — the failure reported more than any other.
    */
-  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  // COS-1192 split these: onStartNow latches, startNow navigates.
+  const handler = cardSrc.match(/const startNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
   assert.ok(handler)
   assert.match(handler[0], /if \(!onGateRoute\) \{/)
   assert.match(handler[0], /retakeStartRoute\(first\.instrumentKey\)/)
@@ -512,4 +528,36 @@ test('COS-1191 THE DEAD TAP: never navigate to the screen we are already on', ()
 test('COS-1191: both gates declare they ARE the gate route', () => {
   assert.match(gateSrc, /<RetakeRequestInboxCard onGateRoute \/>/)
   assert.match(intakeGateSrc, /onGateRoute/)
+})
+
+// ─── COS-1192 ──────────────────────────────────────────────────────────────
+
+test('COS-1192: the first Next tap is not eaten by the keyboard', () => {
+  /*
+   * Vishal, on the hope reflection's free-text items: "after typing, if I try to
+   * click on next, then keyboard is actually closing and then I have to click on
+   * next again."
+   *
+   * RN defaults to keyboardShouldPersistTaps="never", so with a TextInput
+   * focused the tap is consumed dismissing the keyboard and never reaches Next.
+   */
+  assert.match(stepperSrc, /keyboardShouldPersistTaps="handled"/)
+})
+
+test('COS-1195: answers are locked once Submit is in flight', () => {
+  /*
+   * Vishal: "when I click on submit ... I'm still able to select any other
+   * option." Submit sends the answers it had at the tap, so a later change is
+   * silently discarded — the screen shows one answer and the record holds
+   * another.
+   */
+  assert.match(stepperSrc, /onChange=\{submit\.isPending \|\| celebrating \? noopAnswer : setAnswer\}/)
+  // `celebrating` too: the overlay is up and the record is already written.
+  assert.match(stepperSrc, /locked=\{submit\.isPending \|\| celebrating\}/)
+  // Inert must be VISIBLE, not only enforced.
+  assert.match(stepperSrc, /opacity: locked \? 0\.6 : 1/)
+})
+
+test('COS-1195: the no-op is module-level, so swapping it does not remount', () => {
+  assert.match(stepperSrc, /^const noopAnswer = \(\): void => \{\}/m)
 })
