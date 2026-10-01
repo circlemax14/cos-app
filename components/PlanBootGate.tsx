@@ -44,27 +44,60 @@
  * The timeout is generous on purpose. It is not a performance budget — it is
  * the point past which waiting longer tells the patient nothing they cannot
  * already see.
+ *
+ * ─── COS-1226 — AND IT WAS ALL INVISIBLE ─────────────────────────────
+ *
+ * Every word above was true and none of it could be SEEN. The native splash is
+ * held at module load in app/_layout.tsx and was hidden only by app/index.tsx,
+ * which is a route inside the <Stack> this component wraps. So while the gate
+ * held, it drew its loader and its retry screen underneath the splash:
+ * invisible, and in the retry's case untappable, forever.
+ *
+ * Three changes, in order of how much they matter:
+ *
+ *   1. Both held states now hand the splash over (<BootSplash /> on paint, and
+ *      an explicit hide for the error screen, which has nothing to decode).
+ *   2. The decision moved to lib/boot-gate-decision.ts so every branch is
+ *      tested in node, without a renderer.
+ *   3. `readSessionPresence()` was called with NO ARGUMENTS, which returns
+ *      'absent' for a Keychain that has not woken up (lib/auth-tokens.ts) —
+ *      the COS-874 / COS-890 mistake, in the one place that decides whether to
+ *      open the app wide. It now corroborates exactly as app/index.tsx does.
+ *      That is why this gate's behaviour differed run to run.
  */
 
+import { useQueryClient } from '@tanstack/react-query';
+import * as SplashScreen from 'expo-splash-screen';
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import BootSplash from '@/components/BootSplash';
 import ConnectionErrorScreen from '@/components/ConnectionErrorScreen';
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
-import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
+import {
+  FEATURE_PERMISSIONS_QUERY_KEY,
+  useFeaturePermissions,
+} from '@/hooks/use-feature-permissions';
+import { readSessionPresence, type SessionPresence } from '@/lib/auth-tokens';
+import { decideBootGate, splashHandover } from '@/lib/boot-gate-decision';
+import { getCachedProfile } from '@/lib/cached-profile';
 import {
   hydrateScreenAccessCache,
   persistScreenAccess,
   readCachedScreenAccess,
 } from '@/lib/screen-access-cache';
-import { readSessionPresence } from '@/lib/auth-tokens';
+import { isPinSetup } from '@/services/pin-auth';
 
 /**
  * Twelve seconds. Long enough to cover a cold Lambda behind a slow connection
  * — the /feature-permissions call fans out to the entitlements resolver and a
  * DynamoDB read — and short enough that nobody sits staring at a spinner
  * wondering whether the app has hung.
+ *
+ * COS-1226 — this is also the app's one real ceiling on an unexplained boot,
+ * which is why no blanket "hide the splash after N seconds" timer was added.
+ * A blanket timer helps only when nothing presentable is mounted, and in that
+ * case all it can reveal is a blank screen. This path instead guarantees that
+ * something presentable IS mounted, and that by twelve seconds it is an error
+ * message with a working retry.
  */
 export const BOOT_TIMEOUT_MS = 12_000;
 
@@ -80,38 +113,62 @@ export const BOOT_TIMEOUT_MS = 12_000;
  * which are available."*
  *
  * So the cache is a FALLBACK, not a fast path. A normal fetch answers in a few
- * hundred milliseconds and the `data` branch above fires first, so this timer
- * is rarely reached — it bounds the wait for a slow network rather than adding
+ * hundred milliseconds and the `data` branch fires first, so this timer is
+ * rarely reached — it bounds the wait for a slow network rather than adding
  * one. Short enough that nobody stares at a spinner; long enough that a healthy
  * connection always gets the live answer.
  */
 export const CACHE_FALLBACK_MS = 2_500;
 
 export function PlanBootGate({ children }: { children: React.ReactNode }) {
-  const { settings, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
-
-  const [signedIn, setSignedIn] = React.useState<boolean | null>(null);
+  const [presence, setPresence] = React.useState<SessionPresence | null>(null);
   const [cacheReady, setCacheReady] = React.useState(false);
   const [timedOut, setTimedOut] = React.useState(false);
   /** COS-1069 — false until the live fetch has had CACHE_FALLBACK_MS to answer. */
   const [mayUseCache, setMayUseCache] = React.useState(false);
+  /** Bumped by a retry, so the clocks below start over rather than never again. */
+  const [attempt, setAttempt] = React.useState(0);
 
-  const { data, isError, isLoading, refetch } = useFeaturePermissions();
+  const queryClient = useQueryClient();
+  const { data, isError, isFetching, isLoading, refetch } = useFeaturePermissions();
 
-  // Is anyone signed in? An 'indeterminate' read means the Keychain has not
-  // woken up — treated as signed-in so the gate waits rather than waving an
-  // unauthenticated-looking user through, which is the COS-890 failure.
+  /*
+   * Is anyone signed in?
+   *
+   * COS-1226 — this was `readSessionPresence()` with no argument. Without
+   * `expectSession`, lib/auth-tokens.ts does NOT retry a null read and reports
+   * 'absent' rather than 'indeterminate' — so on a cold start, where the iOS
+   * Keychain returns nil without throwing, the gate concluded "signed out" and
+   * opened the app wide. That is the flash COS-1061 exists to remove, and it is
+   * why the gate behaved differently run to run.
+   *
+   * The corroboration is the same pair app/index.tsx uses (:204) and the same
+   * one services/pin-auth.ts and lib/api-client.ts settled on: a PIN on disk or
+   * a cached profile means this device HAS signed in, so an empty read is far
+   * more likely to be an unwoken Keychain than a sign-out.
+   *
+   * ponytail: isPinSetup() costs ~450ms of backoff on a device with no PIN
+   * (its own docstring), and app/index.tsx pays it again moments later. Both
+   * reads are behind this screen, which looks exactly like the splash that was
+   * already up, so the cost is invisible. Deduplicate it only if a launch
+   * profile says it matters.
+   */
   React.useEffect(() => {
     let alive = true;
-    void readSessionPresence()
-      .then((p) => {
-        if (alive) setSignedIn(p !== 'absent');
-      })
-      .catch(() => {
-        // Could not tell. Wait rather than skip — the live query settles it.
-        if (alive) setSignedIn(true);
+    void (async () => {
+      const [cachedProfile, pinConfigured] = await Promise.all([
+        getCachedProfile(),
+        isPinSetup().catch(() => false),
+      ]);
+      const read = await readSessionPresence({
+        expectSession: pinConfigured || cachedProfile !== null,
       });
+      if (alive) setPresence(read);
+    })().catch(() => {
+      // Could not tell. 'indeterminate' waits rather than skipping, and — unlike
+      // claiming 'present' — it will not blame the account when the wait fails.
+      if (alive) setPresence('indeterminate');
+    });
     return () => {
       alive = false;
     };
@@ -133,134 +190,85 @@ export function PlanBootGate({ children }: { children: React.ReactNode }) {
     void persistScreenAccess(data?.screens, data?.launched);
   }, [data]);
 
-  // The clock only runs while we are actually waiting, and is reset by a retry
-  // so the second attempt gets a full window rather than whatever was left.
-  const waiting = signedIn === true && !data && !isError;
+  /*
+   * The clocks only run while we are actually waiting.
+   *
+   * `attempt` is in the deps because without it a retry could never time out
+   * again: `waiting` does not change across a retry that is still waiting, so
+   * the effect never re-ran, the cleared timer was never replaced, and the
+   * second attempt spun forever. The comment here used to claim the retry got
+   * "a full window"; it got none.
+   *
+   * An in-flight retry counts as waiting even though `isError` is still true —
+   * react-query keeps the error status until the refetch resolves.
+   */
+  const signedIn = presence === null ? null : presence !== 'absent';
+  const waiting = signedIn === true && !data && (!isError || isFetching);
+
   React.useEffect(() => {
     if (!waiting) return;
     const t = setTimeout(() => setTimedOut(true), BOOT_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [waiting]);
+  }, [waiting, attempt]);
 
   React.useEffect(() => {
     if (!waiting) return;
     const t = setTimeout(() => setMayUseCache(true), CACHE_FALLBACK_MS);
     return () => clearTimeout(t);
-  }, [waiting]);
+  }, [waiting, attempt]);
 
   const retry = React.useCallback(() => {
     setTimedOut(false);
     setMayUseCache(false);
-    void refetch();
-  }, [refetch]);
+    setAttempt((n) => n + 1);
+    /*
+     * COS-1226 — cancel first, or the retry is a no-op.
+     *
+     * Verified in @tanstack/query-core/build/modern/query.js `fetch()`: when a
+     * fetch is already in flight it honours `cancelRefetch` only
+     * `if (this.state.data !== void 0`, and otherwise returns the EXISTING
+     * retryer promise. On this path data is undefined by definition, so on the
+     * case that matters most — timed out with the request still pending —
+     * `refetch()` alone re-rendered and waited on the same stuck request.
+     * (After a real error the retryer is 'rejected' and refetch does start a
+     * fresh one, which is why this looked like it worked.)
+     */
+    void queryClient
+      .cancelQueries({ queryKey: FEATURE_PERMISSIONS_QUERY_KEY, exact: true })
+      .catch(() => {})
+      .then(() => refetch());
+  }, [queryClient, refetch]);
 
-  // Not signed in — nothing to wait for. Sign-in, onboarding and the PIN screen
-  // render exactly as before.
-  if (signedIn === false) return <>{children}</>;
-
-  // A live answer is in hand.
-  if (data) return <>{children}</>;
+  const decision = decideBootGate({
+    presence,
+    hasPlan: !!data,
+    hasCachedPlan: readCachedScreenAccess() !== null,
+    cacheReady,
+    mayUseCache,
+    isError,
+    isFetching,
+    isLoading,
+    timedOut,
+  });
 
   /*
-   * No live answer yet. The device may have one from last time, but it is a
-   * FALLBACK for a slow or failed fetch — not a reason to skip the loader.
-   *
-   * Before COS-1069 this had no timer, so it fired on every launch after the
-   * first: the gate opened, `useCanShowScreen` still had no data, every screen
-   * fell through to its visible default, and the tab bar retracted a moment
-   * later. The exact flash this component exists to remove, caused by this
-   * component.
-   *
-   * `useCanShowScreen` now reads the same cached map (see
-   * use-feature-permissions), so when this DOES fire the gating is correct
-   * rather than wide open.
+   * COS-1226 — the error screen has nothing to decode, so its commit is its
+   * paint and the splash can go immediately. <BootSplash /> hides the splash
+   * itself, on image load, for the reason given in that file.
    */
-  if (mayUseCache && cacheReady && readCachedScreenAccess()) return <>{children}</>;
+  React.useEffect(() => {
+    if (splashHandover(decision) === 'now') SplashScreen.hideAsync().catch(() => {});
+  }, [decision]);
 
-  if (isError || timedOut) {
-    return <ConnectionErrorScreen variant="error" onRetry={retry} />;
-  }
+  if (decision === 'app') return <>{children}</>;
+  if (decision === 'error') return <ConnectionErrorScreen variant="error" onRetry={retry} />;
 
-  // Genuinely unknown: first run, still fetching. This is the loader.
-  if (signedIn === null || isLoading || !cacheReady || !mayUseCache) {
-    return (
-      /*
-       * COS-1072 — an overlay, not a bare screen. Vishal: "there should be a
-       * full screen loader with an overlay effect."
-       *
-       * The scrim is drawn rather than laid OVER the app, because the children
-       * are deliberately unmounted: rendering them behind would mount every
-       * route and start its queries, which is the cost this gate exists to
-       * avoid. So the effect is a dimmed ground with a raised card on it —
-       * the look of an overlay without the behaviour that defeats the point.
-       *
-       * Primitives only: View / Text / ActivityIndicator. No Modal (ADR-0003
-       * bans it on this path) and no Animated.
-       */
-      <View
-        style={[styles.scrim, { backgroundColor: colors.background }]}
-        accessibilityRole="progressbar"
-        accessibilityLabel="Loading your plan"
-      >
-        <View style={styles.scrimVeil} pointerEvents="none" />
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.background, borderColor: colors.border ?? 'rgba(127,127,127,0.25)' },
-          ]}
-        >
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.label, { color: colors.text, fontSize: getScaledFontSize(15) }]}>
-            Setting up your app…
-          </Text>
-          <Text style={[styles.sublabel, { color: colors.subtext, fontSize: getScaledFontSize(12.5) }]}>
-            Checking which features your plan includes
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Settled, signed in, no data and no error. Nothing left to wait for, so
-  // render rather than hold the app on a spinner forever.
-  return <>{children}</>;
+  return (
+    <BootSplash
+      label="Setting up your app…"
+      sublabel="Checking which features your plan includes"
+    />
+  );
 }
-
-const styles = StyleSheet.create({
-  scrim: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  /* A flat dim over the ground, so the card below reads as raised above it. */
-  scrimVeil: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.28)',
-  },
-  card: {
-    minWidth: 220,
-    maxWidth: 320,
-    alignItems: 'center',
-    paddingVertical: 26,
-    paddingHorizontal: 24,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  label: {
-    marginTop: 16,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  sublabel: {
-    marginTop: 6,
-    textAlign: 'center',
-  },
-});
 
 export default PlanBootGate;

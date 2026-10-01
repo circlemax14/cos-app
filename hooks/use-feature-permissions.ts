@@ -80,9 +80,18 @@ export interface FeaturePermissionsResponse {
   launched?: Record<string, boolean>
 }
 
+/**
+ * COS-1226 — exported so PlanBootGate's retry can CANCEL the in-flight boot
+ * fetch before refetching. react-query dedupes a refetch against a pending
+ * request when the query has no data yet, which is exactly the boot case, so
+ * without the cancel the retry button re-rendered and waited on the same stuck
+ * request. One key, one owner.
+ */
+export const FEATURE_PERMISSIONS_QUERY_KEY = ['feature-permissions'] as const
+
 export function useFeaturePermissions() {
   return useQuery({
-    queryKey: ['feature-permissions'],
+    queryKey: FEATURE_PERMISSIONS_QUERY_KEY,
     queryFn: async () => {
       const res = await apiClient.get('/v1/patients/me/feature-permissions')
       return res.data.data as FeaturePermissionsResponse
