@@ -67,7 +67,11 @@ test('COS-1189 THE SCORE: the screen finally renders a number', () => {
    * six words, with nothing to compare take to take.
    */
   assert.match(SCREEN, /latestScore !== null \?/)
-  assert.match(SCREEN, /accessibilityLabel=\{`Score \$\{latestScore\}`\}/)
+  // COS-1196 — the label now carries the DENOMINATOR, which is the whole point:
+  // "5" alone says nothing. Vishal: "it is saying elevated risk 5. What is the
+  // meaning of that?"
+  assert.match(SCREEN, /Score \$\{latestScore\} out of \$\{ceiling\}/)
+  assert.match(SCREEN, /of \{ceiling\}/)
   // Digits must not shift as they change.
   assert.match(SCREEN, /fontVariant: \['tabular-nums'\]/)
 })
@@ -113,10 +117,52 @@ test('COS-1189: the summary is its OWN query, so it cannot block the result', ()
   assert.match(SCREEN, /enabled: instrumentId !== '' && records\.length > 0/)
 })
 
-test('COS-1189: back does not land on Home when there is no history', () => {
-  // router.back() alone goes Home whenever the screen behind was reached by a
-  // replace.
-  assert.match(SCREEN, /router\.canGoBack\(\) \? router\.back\(\) : router\.replace\(RETAKE_GATE_ROUTE/)
+test('COS-1196: back goes to the OPENER, never Home', () => {
+  /*
+   * COS-1189 used `canGoBack() ? back() : replace(gate)`. canGoBack() is TRUE
+   * here, so it took back() — and this route is on the TABS navigator, where
+   * popping lands on the tab stack's initial route, which is Home. The history
+   * check was answering the wrong question.
+   */
+  assert.doesNotMatch(SCREEN, /router\.canGoBack\(\)/)
+  assert.match(SCREEN, /from === 'health-trends' \? '\/Home\/health-trends' : RETAKE_GATE_ROUTE/)
+  // The opener names itself, because SelfAssessmentTrends mounts on both.
+  assert.match(TRENDS, /from: fromScreen/)
+})
+
+test('COS-1196: the scale comes from the instrument riskBands', () => {
+  // The bands carry min/max/severity/careAction and the screen read none of it.
+  assert.match(SCREEN, /scoreCeiling\(riskBands\)/)
+  assert.match(SCREEN, /bandForScore\(riskBands, latestScore\)/)
+  assert.match(SCREEN, /humaniseBandLabel\(/)
+  // The raw kebab-case key must never reach the screen.
+  assert.doesNotMatch(SCREEN, /\{latest\.band\.label\}/)
+})
+
+test('COS-1196: every history row carries its score', () => {
+  // Vishal: "previous result ... it is saying just elevated risk. Why there was
+  // no number?" COS-1189 put the number on the latest card only.
+  const rows = SCREEN.match(/records\.slice\(1\)\.map\([\s\S]*?\n                  \)\)/)
+  assert.ok(rows, 'history rows not found')
+  assert.match(rows[0], /const sc = scoreOf\(r\)/)
+  assert.match(rows[0], /bandForScore\(riskBands, sc\)/)
+})
+
+test('COS-1196: severity colours the BAND and not the direction', () => {
+  /*
+   * Higher is worse on falls-12 and BETTER on wellbeing-5, so colouring the
+   * arrow would be wrong on half the catalogue.
+   */
+  assert.match(SCREEN, /backgroundColor: severityColor\(severity\)/)
+  const deltaBlock = SCREEN.match(/\{delta \? \([\s\S]*?\) : null\}/)
+  assert.ok(deltaBlock)
+  assert.doesNotMatch(deltaBlock[0], /severityColor/)
+})
+
+test('COS-1196: the loading state looks like loading', () => {
+  // It was one grey sentence, which reads as content rather than as waiting.
+  assert.match(SCREEN, /accessibilityRole="progressbar"/)
+  assert.doesNotMatch(SCREEN, /ActivityIndicator/)
 })
 
 test('COS-1189: the title is centred with a matching gutter', () => {

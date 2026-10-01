@@ -510,7 +510,8 @@ export default function HealthTrendsScreen() {
             Self-Assessments
           </Text>
         </View>
-        <SelfAssessmentTrends />
+        {/* COS-1196 — so the detail screen comes back HERE, not to the plan. */}
+      <SelfAssessmentTrends fromScreen="health-trends" />
 
         {/* From Your Clinic header. SCRUM-265 #13: replaced the
             select-components + full-card layout with a horizontal slider

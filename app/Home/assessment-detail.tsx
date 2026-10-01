@@ -44,6 +44,20 @@ import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { TrendDataPoint } from '@/services/api/types'
 import {
+  fetchInstruments,
+  fetchRecommendedInstruments,
+} from '@/services/api/instruments'
+import {
+  bandForScore,
+  bandRangeLabel,
+  careActionText,
+  humaniseBandLabel,
+  scoreCeiling,
+  scoreDelta,
+  severityColor,
+  type DisplayBand,
+} from '@/lib/assessment-band-display'
+import {
   fetchAssessmentHistory,
   fetchAssessmentHistorySummary,
   type AssessmentRecord,
@@ -66,8 +80,9 @@ function formatDate(iso?: string): string {
 export default function AssessmentDetailScreen(): React.JSX.Element {
   const canView = useCanRender('assessment-detail.view')
   const canViewHistory = useCanRender('assessment-detail.view-history')
-  const params = useLocalSearchParams<{ instrumentId?: string }>()
+  const params = useLocalSearchParams<{ instrumentId?: string; from?: string }>()
   const instrumentId = String(params.instrumentId ?? '')
+  const from = typeof params.from === 'string' ? params.from : undefined
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
   const fs = getScaledFontSize
@@ -114,6 +129,48 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
   }, [])
 
   const latestScore = scoreOf(latest)
+
+  /*
+   * COS-1196 — the SCALE, from the instrument's own riskBands.
+   *
+   * Vishal: "it is saying elevated risk 5. What is the meaning of that?" The
+   * bands carry min/max/severity/careAction and this screen read none of them,
+   * so 5 had no denominator and "elevated" had no definition.
+   *
+   * Reuses the ['instruments-recommended'] cache the catalog and the retake
+   * queue already populate — no new endpoint, and usually no new fetch. The
+   * route is plan-tier filtered (basic gets an empty list), so every helper
+   * below degrades to null and the screen simply omits the scale rather than
+   * inventing one.
+   */
+  const instrumentsQ = useQuery({
+    queryKey: ['instruments-recommended'],
+    queryFn: async () => {
+      try {
+        return await fetchRecommendedInstruments()
+      } catch {
+        const fallback = await fetchInstruments()
+        return { instruments: fallback, rationale: {}, cached: false }
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+  const riskBands = React.useMemo<DisplayBand[] | undefined>(() => {
+    const def = (instrumentsQ.data?.instruments ?? []).find(
+      (i) => i.instrumentId === instrumentId,
+    )
+    return def?.riskBands as DisplayBand[] | undefined
+  }, [instrumentsQ.data, instrumentId])
+
+  const ceiling = scoreCeiling(riskBands)
+  // Prefer the band the SCORE lands in over the stored snapshot: the snapshot
+  // carries no range, and a definition change would leave it stale.
+  const liveBand = bandForScore(riskBands, latestScore)
+  const bandLabel = humaniseBandLabel(liveBand?.label ?? latest?.band?.label)
+  const severity = liveBand?.severity ?? latest?.band?.severity
+  const bandRange = bandRangeLabel(liveBand)
+  const advice = careActionText(liveBand?.careAction ?? latest?.band?.careAction)
+  const delta = scoreDelta(latestScore, scoreOf(records[1]))
 
   // TrendLineChart takes explicit pixel dimensions — it measures nothing
   // itself. Same pattern glucose.tsx and health-trends.tsx use.
@@ -181,9 +238,27 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
             `replace`. Fall back to the plan tab, which is where the card that
             opens this lives. Same shape the snooze sheet uses.
           */}
+          {/*
+            COS-1196 — back goes to the PLAN TAB, not Home.
+            Vishal: "if I click on the back icon, I should be taken to the plan
+            screen again, but it is taking me to the home screen."
+
+            COS-1189 tried `canGoBack() ? back() : replace(gate)`. `canGoBack()`
+            is TRUE here, so it took the back() branch — and this route is
+            registered on the TABS navigator, where popping lands on the tab
+            stack's initial route, which is Home. The history check was answering
+            the wrong question.
+
+            `from` lets the opener name its own screen (SelfAssessmentTrends
+            mounts on BOTH the plan and Health Trends), and the plan tab is the
+            default because that is where the biological/psychological groups
+            that lead here live.
+          */}
           <Pressable
             onPress={() =>
-              router.canGoBack() ? router.back() : router.replace(RETAKE_GATE_ROUTE as never)
+              router.replace(
+                (from === 'health-trends' ? '/Home/health-trends' : RETAKE_GATE_ROUTE) as never,
+              )
             }
             accessibilityRole="button"
             accessibilityLabel="Go back"
@@ -277,9 +352,43 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
             ) : summaryQ.isLoading ? (
               <>
                 {sectionLabel('What this means')}
-                <Text style={{ color: colors.subtext, fontSize: fs(13) }}>
-                  Putting your summary together…
-                </Text>
+                {/*
+                  COS-1196 — a loading state that LOOKS like one.
+                  Vishal: "it is showing some summary, but there is no loader."
+                  It was a single grey sentence, which reads as content rather
+                  than as waiting. Placeholder bars in the card that will hold the
+                  text say "something is coming here" without a spinner —
+                  ActivityIndicator is outside this screen's iOS 26.5 envelope,
+                  and Animated is too, so these are plain static Views.
+                */}
+                <View
+                  style={[
+                    styles.card,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: (colors.card as string) + 'D9',
+                      paddingVertical: 16,
+                      gap: 8,
+                    },
+                  ]}
+                  accessibilityRole="progressbar"
+                  accessibilityLabel="Putting your summary together"
+                >
+                  {[1, 0.92, 0.66].map((w) => (
+                    <View
+                      key={String(w)}
+                      style={{
+                        height: fs(12),
+                        borderRadius: 6,
+                        width: `${w * 100}%`,
+                        backgroundColor: (colors.subtext as string) + '33',
+                      }}
+                    />
+                  ))}
+                  <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 4 }}>
+                    Putting your summary together…
+                  </Text>
+                </View>
               </>
             ) : null}
 
@@ -327,48 +436,130 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
               </>
             ) : null}
 
-            {/* Words before numbers: the band is what the patient can act on. */}
+            {/*
+              COS-1196 — THE HERO. Understandable at a glance, which is what was
+              missing.
+
+              Vishal: "it is saying elevated risk 5. What is the meaning of
+              that?" So the card now answers, in this order: what the number is
+              OUT OF, what the band it lands in is CALLED, what RANGE that band
+              covers, which way it MOVED, and what it suggests DOING.
+
+              Severity colours the band chip and nothing else. It must not colour
+              the number or the direction: higher is worse on falls-12 and BETTER
+              on wellbeing-5, so a coloured arrow would be wrong on half the
+              catalogue.
+            */}
             {sectionLabel('Your latest result')}
-            <View style={[styles.card, { borderColor: colors.border, backgroundColor: (colors.card as string) + 'D9' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingTop: 10 }}>
-                {latest?.band?.label ? (
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: fs(18),
-                      fontWeight: fw(700) as never,
-                      flex: 1,
-                    }}
-                  >
-                    {latest.band.label}
-                  </Text>
-                ) : null}
-                {/*
-                  COS-1189 — THE SCORE.
-                  This screen rendered no number anywhere. A patient could take
-                  PHQ-9 six times and read six words, with nothing to compare.
-                  Hidden when the instrument does not score (`scores` is {} for
-                  a definition-less row), because a blank is honest and a 0 is a
-                  real value.
-                */}
+            <View
+              style={[
+                styles.card,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: (colors.card as string) + 'D9',
+                  paddingVertical: 16,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6 }}>
                 {latestScore !== null ? (
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: fs(26),
-                      fontWeight: fw(700) as never,
-                      // Digits in a column must not shift as they change.
-                      fontVariant: ['tabular-nums'],
-                    }}
-                    accessibilityLabel={`Score ${latestScore}`}
-                  >
-                    {latestScore}
-                  </Text>
+                  <>
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: fs(44),
+                        fontWeight: fw(700) as never,
+                        lineHeight: fs(48),
+                        fontVariant: ['tabular-nums'],
+                      }}
+                      accessibilityLabel={
+                        ceiling !== null
+                          ? `Score ${latestScore} out of ${ceiling}`
+                          : `Score ${latestScore}`
+                      }
+                    >
+                      {latestScore}
+                    </Text>
+                    {/* The denominator is the whole point — 5 alone says nothing. */}
+                    {ceiling !== null ? (
+                      <Text
+                        style={{
+                          color: colors.subtext,
+                          fontSize: fs(16),
+                          marginBottom: fs(6),
+                          fontVariant: ['tabular-nums'],
+                        }}
+                      >
+                        of {ceiling}
+                      </Text>
+                    ) : null}
+                  </>
                 ) : null}
               </View>
-              <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 4 }}>
+
+              {bandLabel ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      backgroundColor: severityColor(severity) + '22',
+                      borderWidth: 1,
+                      borderColor: severityColor(severity) + '55',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: severityColor(severity),
+                        fontSize: fs(13),
+                        fontWeight: fw(700) as never,
+                      }}
+                    >
+                      {bandLabel}
+                    </Text>
+                  </View>
+                  {/* "Elevated" means nothing without its span. */}
+                  {bandRange ? (
+                    <Text style={{ color: colors.subtext, fontSize: fs(12) }}>
+                      {bandRange} of {ceiling ?? '—'}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {delta ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                  <MaterialIcons name={delta.icon} size={fs(18)} color={colors.subtext as string} />
+                  <Text style={{ color: colors.subtext, fontSize: fs(13) }}>{delta.text}</Text>
+                </View>
+              ) : null}
+
+              <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 10 }}>
                 {formatDate(latest?.completedAt)}
               </Text>
+
+              {/*
+                COS-1196 — careAction, surfaced at last. It has been written to
+                every record since the bands were seeded and read by nothing on
+                this screen — the same shape as alertLevel (COS-1162) and
+                subscales (COS-1189). An unknown key renders nothing rather than
+                a raw token.
+              */}
+              {advice ? (
+                <View
+                  style={{
+                    marginTop: 14,
+                    paddingTop: 12,
+                    borderTopWidth: 1,
+                    borderTopColor: colors.border as string,
+                  }}
+                >
+                  <Text style={{ color: colors.text, fontSize: fs(13), lineHeight: fs(19) }}>
+                    {advice}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             {subscales.length > 0 ? (
@@ -422,9 +613,49 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
                       <Text style={{ flex: 1, color: colors.subtext, fontSize: fs(13) }}>
                         {formatDate(r.completedAt)}
                       </Text>
-                      {r.band?.label ? (
-                        <Text style={{ color: colors.text, fontSize: fs(13) }}>{r.band.label}</Text>
-                      ) : null}
+                      {/*
+                        COS-1196 — the SCORE on every row.
+                        Vishal: "previous result, 30th September, it is saying
+                        just elevated risk. Why there was no number?" COS-1189
+                        put the number on the latest card only, so the history —
+                        the one place a patient compares takes — still had none.
+                      */}
+                      {(() => {
+                        const sc = scoreOf(r)
+                        const b = bandForScore(riskBands, sc) ?? r.band
+                        const lbl = humaniseBandLabel(b?.label)
+                        return (
+                          <>
+                            {sc !== null ? (
+                              <Text
+                                style={{
+                                  color: colors.text,
+                                  fontSize: fs(15),
+                                  fontWeight: fw(700) as never,
+                                  fontVariant: ['tabular-nums'],
+                                  minWidth: fs(28),
+                                  textAlign: 'right',
+                                }}
+                              >
+                                {sc}
+                              </Text>
+                            ) : null}
+                            {lbl ? (
+                              <Text
+                                style={{
+                                  color: severityColor(b?.severity),
+                                  fontSize: fs(12),
+                                  fontWeight: fw(600) as never,
+                                  minWidth: fs(84),
+                                  textAlign: 'right',
+                                }}
+                              >
+                                {lbl}
+                              </Text>
+                            ) : null}
+                          </>
+                        )
+                      })()}
                     </View>
                   ))}
                 </View>
