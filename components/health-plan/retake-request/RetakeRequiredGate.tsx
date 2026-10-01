@@ -176,7 +176,7 @@ export function RetakeRequiredGate({
       </Text>
 
       {/* The same card as Home and the plan — one request, one place to answer it. */}
-      <RetakeRequestInboxCard />
+      <RetakeRequestInboxCard onGateRoute />
 
       <Text
         style={[styles.footnote, { color: colors.secondary, fontSize: getScaledFontSize(13) }]}

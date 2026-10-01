@@ -126,7 +126,7 @@ export function IntakeRequiredGate({
         * its Start now opens the intake wizard in retake mode.
         */}
       <View style={{ marginTop: Spacing.md }}>
-        <RetakeRequestInboxCard track="health-status-intake" />
+        <RetakeRequestInboxCard track="health-status-intake" onGateRoute />
       </View>
     </ScrollView>
   )
