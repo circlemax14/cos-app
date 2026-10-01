@@ -14,7 +14,7 @@
  */
 
 import { useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api-client'
 import { fetchAiHealthPlan } from '@/services/api/ai-health-plan'
@@ -24,6 +24,33 @@ import { useFeatureFlags } from './use-feature-flags'
 const AI_HEALTH_PLAN_QUERY_KEY = ['ai-health-plan'] as const
 
 const HABITS_ROUTE = '/v1/patients/me/plan/habits'
+
+/**
+ * Put the server's authoritative habits[] where every reader will see it.
+ *
+ * COS-1224 — all three write hooks did `(prev) => prev ? { ...prev, habits } : prev`,
+ * which is a SILENT NO-OP when the plan cache holds null or undefined. And it
+ * does: `fetchAiHealthPlan` swallows its own errors and resolves to `null`, so a
+ * failed plan GET looks exactly like "no plan". The nutrition card derives its
+ * whole "already added" answer from this cache, so a dropped write meant an
+ * accepted suggestion offered "Add to my plan" again and a second tap minted a
+ * duplicate.
+ *
+ * There is no honest way to synthesise an AiHealthPlan around these habits —
+ * version / goals / tasks / generatedAt would all be invented, and other screens
+ * read them — so when there is nothing to splice into, mark the query stale and
+ * let the next read get the truth. The server's answer is never dropped: it is
+ * either written or re-asked for.
+ */
+function writeHabits(qc: QueryClient, habits: PlanHabit[]): void {
+  if (qc.getQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY)) {
+    qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, (prev) =>
+      prev ? { ...prev, habits } : prev,
+    )
+    return
+  }
+  void qc.invalidateQueries({ queryKey: AI_HEALTH_PLAN_QUERY_KEY })
+}
 
 // ─── Flag ────────────────────────────────────────────────────────────
 
@@ -61,6 +88,19 @@ export function usePlanHabits(): {
   habits: PlanHabit[]
   isLoading: boolean
   isError: boolean
+  /**
+   * Is `habits` the ANSWER, or just an empty default? COS-1224.
+   *
+   * `data?.habits ?? []` cannot tell "no routines" from "the plan read did not
+   * land" — and `fetchAiHealthPlan` catches its own errors and returns `null`,
+   * so `isError` never fires to tell you either. Any caller that makes a CLAIM
+   * about what is or is not on the plan has to check this first; a caller that
+   * merely lists routines can keep using `habits` as before.
+   *
+   * True when the flag is off: there are no routines at all then, so `[]` is the
+   * correct answer rather than a missing one.
+   */
+  known: boolean
 } {
   const flag = useHabitsInPlanFlag()
   const { data, isLoading, isError } = useQuery({
@@ -73,6 +113,10 @@ export function usePlanHabits(): {
     habits: data?.habits ?? [],
     isLoading,
     isError,
+    // `!= null` on purpose — undefined is "not fetched yet", null is "the fetch
+    // resolved to nothing", and a swallowed error is indistinguishable from the
+    // latter. Neither is a basis for telling the patient what they have.
+    known: !flag || data != null,
   }
 }
 
@@ -199,11 +243,10 @@ export function useAddHabit() {
       return res.data.data.habits
     },
     onSuccess: (habits) => {
-      // Optimistic-in-effect: server returns the full habits[] so we
-      // just splice it into the cached plan object.
-      qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, (prev) =>
-        prev ? { ...prev, habits } : prev,
-      )
+      // Optimistic-in-effect: the server returns the full habits[], so writeHabits
+      // splices it into the cached plan — or re-asks when there is no cached plan
+      // to splice into, rather than dropping it (COS-1224).
+      writeHabits(qc, habits)
     },
   })
 }
@@ -225,9 +268,7 @@ export function useUpdateHabit() {
       return res.data.data.habits
     },
     onSuccess: (habits) => {
-      qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, (prev) =>
-        prev ? { ...prev, habits } : prev,
-      )
+      writeHabits(qc, habits)
     },
   })
 }
@@ -242,9 +283,7 @@ export function useDeleteHabit() {
       return res.data.data.habits
     },
     onSuccess: (habits) => {
-      qc.setQueryData<AiHealthPlan | null>(AI_HEALTH_PLAN_QUERY_KEY, (prev) =>
-        prev ? { ...prev, habits } : prev,
-      )
+      writeHabits(qc, habits)
     },
   })
 }

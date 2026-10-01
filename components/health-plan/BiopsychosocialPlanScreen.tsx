@@ -1222,180 +1222,29 @@ export function BiopsychosocialPlanScreen({
       scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
     }
   }, []);
-  /**
-   * Reveal-where-it-landed, after a nutrition suggestion becomes a task.
-   *
-   * Vishal 2026-08-11: "we are not giving user any info where its added". Two
-   * options were on the table — a modal explaining the destination, or
-   * navigating to it. This is the second: scroll to the section, open its
-   * Tasks accordion, and flash the new row. It uses machinery that already
-   * exists here (scrollToSection, the section onLayout map) and leaves no
-   * dialog to dismiss.
-   *
-   * Order matters. The refetch has to RESOLVE first, or we scroll to a
-   * section whose task list does not contain the new row yet and the flash
-   * lands on nothing.
-   */
-  const [openTasksSignal, setOpenTasksSignal] = React.useState(0);
-  const [highlightTaskId, setHighlightTaskId] = React.useState<string | null>(null);
-  const highlightTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /**
-   * Start the clear timer only once the scroll has been issued.
-   *
-   * Previously the 3.5s began before the scroll, so a slow layout ate most of
-   * the window and Vishal never saw the flash. The row is on screen by the
-   * time this runs.
-   */
-  const startHighlightTimer = React.useCallback(() => {
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => setHighlightTaskId(null), 3500);
-  }, []);
-
-  /** The highlighted row's node, registered by TaskListSection. */
-  const highlightNodeRef = React.useRef<View | null>(null);
-
   /*
-   * A screen-level "saving…" banner used to live here. Vishal 2026-08-11:
-   * "this message idea is not good" — and he was right: it reported that
-   * SOMETHING was happening while saying nothing about WHICH row, so the eye
-   * had nowhere to go. Replaced by optimistic rows (see useCreatePlanTask /
-   * useDeletePlanTask onMutate): the task appears immediately marked
-   * 'creating', or stays put struck through marked 'deleting', and the
-   * feedback sits on the thing it is about.
+   * COS-1224 — the reveal-where-it-landed path is GONE, not parked.
+   *
+   * Vishal 2026-08-11 asked to be shown where an accepted nutrition suggestion
+   * landed, and the answer then was: scroll to the Biological TASK list, open
+   * its accordion and flash the new row. COS-1219 moved accepted suggestions to
+   * ROUTINES — tasks are wiped on every care-plan regeneration — so the row this
+   * aimed at stopped existing, and the whole path (revealAddedTask, the
+   * highlight state and timer, the row-measuring scroll and the eased-scroll
+   * ramp it drove) sat here behind an eslint-disable with no caller. Eleven
+   * contract tests still asserted its internals, so they passed or failed
+   * independently of anything a patient could do.
+   *
+   * Deleted rather than re-pointed: the item is now a routine on /Home/habits,
+   * a different screen, so there is nothing on THIS screen to reveal. Pointing
+   * it at the nearest surviving list would be telling the patient the wrong
+   * place on purpose, and building a routine list here to reveal would be a new
+   * surface, not a fix. The nutrition card's confirmed row is a link to Routines
+   * instead (COS-1224 MINOR 7), which is both the real destination and the
+   * cheaper affordance. SectionCard / TaskListSection keep their optional
+   * openSignal / highlightTaskId / onHighlightRef props — unused now, and a prop
+   * away if a reveal is ever wanted again.
    */
-  /** Live scroll offset, needed to convert a screen position into a scroll target. */
-  const scrollOffsetY = React.useRef(0);
-
-  /** Cancels an in-flight eased scroll. */
-  const scrollAnimRef = React.useRef<number | null>(null);
-
-  /**
-   * Scroll with a duration we control.
-   *
-   * Vishal 2026-08-11: "scroll is still too fast, it can be smooth".
-   * ScrollView.scrollTo({animated:true}) runs a fixed ~250-300ms native
-   * animation with no duration knob, which reads as a snap on a long travel.
-   *
-   * So drive it from JS: an easeInOutCubic ramp over 700ms, stepping with
-   * scrollTo({animated:false}) each frame. requestAnimationFrame only — no
-   * Animated / LayoutAnimation, which this screen's iOS 26.5 envelope
-   * excludes.
-   *
-   * Honours reduce-motion by jumping straight there (same precedent as
-   * components/home/ScoreCardGrid.tsx). Motion that exists to orient someone
-   * is exactly the motion a vestibular-sensitive user needs skipped.
-   */
-  const smoothScrollTo = React.useCallback((targetY: number) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-
-    if (scrollAnimRef.current !== null) {
-      cancelAnimationFrame(scrollAnimRef.current);
-      scrollAnimRef.current = null;
-    }
-
-    const from = scrollOffsetY.current;
-    const distance = targetY - from;
-    if (Math.abs(distance) < 2) return;
-
-    void AccessibilityInfo.isReduceMotionEnabled()
-      .catch(() => false)
-      .then((reduceMotion) => {
-        if (reduceMotion) {
-          scroller.scrollTo({ y: targetY, animated: false });
-          return;
-        }
-        const DURATION = 700;
-        const started = Date.now();
-        const step = () => {
-          const elapsed = Date.now() - started;
-          const t = Math.min(1, elapsed / DURATION);
-          // easeInOutCubic — slow at both ends, quick through the middle.
-          const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-          scroller.scrollTo({ y: from + distance * eased, animated: false });
-          if (t < 1) {
-            scrollAnimRef.current = requestAnimationFrame(step);
-          } else {
-            scrollAnimRef.current = null;
-          }
-        };
-        scrollAnimRef.current = requestAnimationFrame(step);
-      });
-  }, []);
-
-  const revealAddedTask = React.useCallback(
-    async (taskId: string) => {
-      await aiPlanQuery.refetch();
-      setOpenTasksSignal((n) => n + 1);
-      setHighlightTaskId(taskId);
-
-      // Start the clear timer HERE, unconditionally.
-      //
-      // Vishal 2026-08-11: "i can see highlight but it fixed, its not
-      // disappearing". My previous attempt started this inside measureLayout's
-      // success/failure callbacks — and measureLayout silently fired NEITHER
-      // (it no-ops when the relative-to handle is not a valid ancestor), so
-      // the timer never armed and the outline stayed forever. The same dead
-      // callback is why nothing scrolled.
-      //
-      // A visual cue must never depend on a measurement succeeding. The scroll
-      // may fail; the highlight still clears.
-      startHighlightTimer();
-
-      // Position the row using measureInWindow on both the row and the
-      // ScrollView, plus the live offset. Every input here is a value that
-      // reliably arrives for a mounted view — unlike measureLayout, which
-      // needs a valid ancestor handle and fails silently when it does not get
-      // one.
-      //
-      //   target = currentOffset + (rowScreenY - scrollViewScreenY) - headroom
-      const scrollToHighlightedRow = () => {
-        const node = highlightNodeRef.current;
-        const scroller = scrollRef.current;
-        if (!node || !scroller) {
-          scrollToSection('biological');
-          return;
-        }
-
-        // Belt: if either measure callback never fires, still move.
-        let settled = false;
-        const fallback = setTimeout(() => {
-          if (!settled) scrollToSection('biological');
-        }, 300);
-
-        node.measureInWindow((_rx: number, rowY: number) => {
-          (
-            scroller as unknown as {
-              measureInWindow?: (cb: (x: number, y: number) => void) => void;
-            }
-          ).measureInWindow?.((_sx: number, svY: number) => {
-            settled = true;
-            clearTimeout(fallback);
-            // 120px of headroom so the row lands below the section header
-            // rather than flush against the top edge.
-            const target = scrollOffsetY.current + (rowY - svY) - 120;
-            smoothScrollTo(Math.max(0, target));
-          });
-        });
-      };
-
-      // Two frames: one for the accordion's state change to commit, one for
-      // its children to lay out. rAF rather than a fixed timeout so this
-      // tracks the device rather than a guessed duration — scrolling while the
-      // accordion is still expanding is what made the motion stutter.
-      requestAnimationFrame(() => requestAnimationFrame(scrollToHighlightedRow));
-    },
-    [aiPlanQuery, scrollToSection, startHighlightTimer, smoothScrollTo],
-  );
-
-  React.useEffect(
-    () => () => {
-      if (scrollAnimRef.current !== null) cancelAnimationFrame(scrollAnimRef.current);
-      if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    },
-    [],
-  );
 
   // Value-keyed guard (not a boolean latch): stores the last focus VALUE
   // handled. Repeat identical value = no-op; a fresh value on route
@@ -1788,22 +1637,10 @@ export function BiopsychosocialPlanScreen({
       <RetakeRequiredGate>
       <ScrollView
         ref={scrollRef}
-        // Live offset for revealAddedTask: measureInWindow gives SCREEN
-        // coordinates, and converting one into a scroll target needs to know
-        // where we currently are. 16ms is one frame — cheap, and the handler
-        // only writes a ref so it never triggers a render.
-        onScroll={(e) => {
-          scrollOffsetY.current = e.nativeEvent.contentOffset.y;
-        }}
-        // A JS-driven scroll must never fight the user's finger. Touching the
-        // list cancels the ramp and hands control straight back.
-        onScrollBeginDrag={() => {
-          if (scrollAnimRef.current !== null) {
-            cancelAnimationFrame(scrollAnimRef.current);
-            scrollAnimRef.current = null;
-          }
-        }}
-        scrollEventThrottle={16}
+        // COS-1224: onScroll / onScrollBeginDrag / scrollEventThrottle lived
+        // here only to feed revealAddedTask's JS-eased scroll ramp (live offset
+        // in, finger-cancels-the-ramp out). That path is deleted, so these are
+        // too — the remaining scrolls are plain native scrollTo calls.
         // SCRUM-658 (2026-07-31): transparent scroll background per
         // user request ("i want to set plan screen background as
         // transparent because its cutting bubbles"). AppWrapper's
@@ -2429,16 +2266,16 @@ export function BiopsychosocialPlanScreen({
           }}
           getScaledFontSize={getScaledFontSize}
           getScaledFontWeight={getScaledFontWeight}
-          // Derived from the plan, so an already-added suggestion still reads
-          // as added after an app restart — local state alone reset every
-          // launch and invited duplicate tasks.
-          existingTaskTitles={allTasks.map((t) => t.title)}
-          // A nutrition task lands in the Biological section (category
-          // 'nutrition' falls through sectionForCategory to 'biological'),
-          // directly below this card. Refetch so it actually appears.
-          onTaskAdded={(taskId) => {
-            void revealAddedTask(taskId);
-          }}
+          // COS-1219: no existingTaskTitles and no onTaskAdded any more.
+          //
+          // Accepted suggestions are ROUTINES now, not tasks, so both props
+          // pointed at the wrong store. The card derives "already on your
+          // plan" from plan.habits itself, and the reveal below would have
+          // scrolled to the Biological TASK list and flashed a row that is
+          // not there — telling the patient the wrong place on purpose. There
+          // is no routine row on this screen to reveal instead, so the reveal
+          // is disconnected rather than repointed; the card's own copy names
+          // Routines and links to it.
           onTakeScreener={() =>
             // Straight to the DSQ stepper, NOT the assessments catalog.
             // Vishal 2026-08-10: the catalog shows the plan-generation
@@ -2448,7 +2285,7 @@ export function BiopsychosocialPlanScreen({
             // returns the full active set for any non-basic tier, so the
             // stepper resolves it even though the AI selector never assigns
             // it (it is in no TIER_POOL). returnTo=plan brings them back
-            // here to build the plan rather than to the catalog.
+            // here so the plan can pick the answers up.
             router.push(
               '/Home/assessment-stepper?instrumentId=dsq-nci&returnTo=plan' as never,
             )
@@ -2632,13 +2469,6 @@ export function BiopsychosocialPlanScreen({
               // focusSectionKey is undefined and this evaluates false
               // on every card — pill compiles out everywhere in one line.
               isFocus={focusSectionKey === key}
-              // Only the section the task landed in reacts, so adding a
-              // nutrition task never expands Psychological or Social.
-              openTasksSignal={key === 'biological' ? openTasksSignal : undefined}
-              highlightTaskId={key === 'biological' ? highlightTaskId : null}
-              onHighlightRef={(node) => {
-                if (key === 'biological') highlightNodeRef.current = node;
-              }}
               // CHUNK 53: intercept goal-edit locally when consolidation is ON
               // so the bio-goal editor renders inside the one consolidated
               // Modal owned by this screen. Under flag=false, forward to the
