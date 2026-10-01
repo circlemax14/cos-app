@@ -498,45 +498,86 @@ export default function LockScreen() {
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {/*
-         * COS-941 — on Android the column is TALLER than the safe-area box.
+         * COS-941 / COS-1225 — the column is TALLER than the safe-area box, on
+         * BOTH platforms. So it scrolls on both. One code path.
          *
-         * The nav bar is a real 144px window (measured: navigationBars frame
-         * [0,2196][1080,2340] on an S26) that iOS has no equivalent of — the
-         * home indicator costs ~34px. That extra ~110px pushes the LAST child
-         * past the bottom inset, and React Native does not clip overflow, so
-         * it renders UNDER the nav bar rather than being cut off. The nav-bar
-         * window sits on top and takes the touch, so the element looks almost
-         * present and is completely untappable.
+         * ANDROID (COS-941): the nav bar is a real 144px window (measured:
+         * navigationBars frame [0,2196][1080,2340] on an S26) that iOS has no
+         * equivalent of — the home indicator costs ~34px. That extra ~110px
+         * pushed the LAST child past the bottom inset, and React Native does
+         * not clip overflow, so it rendered UNDER the nav bar. The nav-bar
+         * window sits on top and takes the touch, so the element looked almost
+         * present and was completely untappable.
          *
-         * That last child is "Forgot PIN?", whose own comment (COS-376) states
-         * the guarantee it exists to provide: "always-visible recovery so a
-         * forgot-PIN user (esp. with no Face ID) is never permanently locked
-         * out." On Android that guarantee did not hold — a patient who forgets
-         * their PIN and has no biometric had no way back into the app.
+         * iOS (COS-1225): COS-941 left iOS unwrapped on the grounds that there
+         * was "no iOS symptom to fix and no reason to take the risk". There is
+         * a symptom, and it cost the clinical lead two days locked out.
          *
-         * ScrollView rather than shrinking the hero: the overflow depends on
-         * the device's nav-bar height AND the patient's font scale, so a fixed
-         * trim is right for one device and wrong for the next. With flexGrow
-         * the column lays out exactly as it does today when it fits, and
-         * becomes reachable when it does not.
+         * The column is ~720pt at font scale 1. That fits a phone in portrait
+         * and an iPad in portrait, which is why it was missed. It does not fit
+         * a PHONE in landscape (~390pt of viewport), and it does not fit an
+         * iPad in LANDSCAPE (iPad mini 744pt, 11" 834pt) once the text scales —
+         * and a tablet is the one form factor that scales all the way, because
+         * stores/accessibility-store.tsx deliberately does NOT dampen the
+         * system font scale there and multiplies by 1.3 on top ("Tablets keep
+         * the original 1.3 because they have room for it"), so an iPad reaches
+         * the 2x cap where a phone is held near 1.15x.
          *
-         * ANDROID ONLY, deliberately. iOS renders the identical tree it does
-         * today (a Fragment, not a new wrapper): production is iOS, this
-         * screen gates all PHI access, and cos-app/CLAUDE.md records that this
-         * app has crashed in production from cold-mount rendering. There is no
-         * iOS symptom to fix and no reason to take the risk.
+         * What overflows off the bottom is the NumberPad and then "Forgot
+         * PIN?" — and COS-376 exists to guarantee that link is reachable so a
+         * patient is "never permanently locked out". The escape hatch was the
+         * first thing to leave the screen. Worse, this screen renders the same
+         * logo.png as the splash and makes no network calls, so being stranded
+         * here is indistinguishable from a hung launch; and reinstalling does
+         * not help, because the PIN lives in expo-secure-store (the Keychain)
+         * and survives app deletion, so a fresh install lands right back here.
+         *
+         * WHY THE COLD-MOUNT RISK DOES NOT APPLY HERE. The crash COS-941 cited
+         * was diagnosed in COS-435 (project_ios26_biopsychosocial_parked,
+         * ADR-0003): legacy GoalCard rendered ~25 native primitives per goal,
+         * and an expanded GOALS accordion materialised 75-125 of them in ONE
+         * synchronous commit, which tripped iOS 26.5's TurboModule bridge. The
+         * fix was fewer primitives per card. The hazards the envelope names are
+         * SVG, LinearGradient, Modal, Reanimated and ActivityIndicator at
+         * mount. ScrollView is not one of them: it is mounted by 67 screens
+         * under app/, and the Home v2 tree ADR-0003 built under this same
+         * envelope has one as its root. This adds exactly ONE host view around
+         * an unchanged subtree — primitive count +1, not +75.
+         *
+         * ALWAYS scroll, never measured. A conditional "scroll only when it
+         * overflows" needs onLayout/onContentSizeChange -> setState at cold
+         * mount, i.e. a SECOND commit on the screen that gates all PHI, which
+         * is nearer the documented trigger than the wrapper is. And if the
+         * wrapper ever did fail it now fails identically on Android, where it
+         * has shipped since COS-941, instead of only on the platform nobody
+         * tests.
+         *
+         * flexGrow (not flex) keeps the column at its natural height, so when
+         * it already fits — every phone in portrait, the common case — this is
+         * pixel-identical to before and the pad is NOT re-anchored.
+         *
+         * bounces is left at its default (true). It was `false` here, which on
+         * Android did nothing at all — bounces is an iOS-only prop — so dropping
+         * it changes Android not at all and gives iOS the rubber-band. On the
+         * one screen whose entire failure is "the patient cannot tell there is
+         * anything below", a drag that does nothing is the worst answer
+         * available; a bounce says "this moves, and that is all of it".
+         *
+         * keyboardShouldPersistTaps="always" — the pad must register every tap
+         * FIRST time, and COS-1192 was the fourth report of a control on a
+         * scroll surface costing two taps because RN's default ("never") spends
+         * the first one dismissing the keyboard. This screen has no TextInput,
+         * so there is nothing here it should ever spend a tap dismissing — and
+         * the app can lock while a keyboard is up on the screen behind it.
          */}
-        {Platform.OS === 'android' ? (
-          <ScrollView
-            contentContainerStyle={styles.androidScrollContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            {lockColumn}
-          </ScrollView>
-        ) : (
-          lockColumn
-        )}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          alwaysBounceVertical={false}
+          keyboardShouldPersistTaps="always"
+        >
+          {lockColumn}
+        </ScrollView>
       </SafeAreaView>
 
       {/* SCRUM-279 (build 45): "Unlocking…" overlay during postUnlockNavigate.
@@ -575,9 +616,10 @@ const BLOB_SIZE = 360;
 const styles = StyleSheet.create({
   root: { flex: 1 },
   safeArea: { flex: 1 },
-  // COS-941 — see the ScrollView above. flexGrow (not flex) so the column keeps
-  // its natural height and only scrolls once it exceeds the viewport.
-  androidScrollContent: { flexGrow: 1 },
+  // COS-941 / COS-1225 — see the ScrollView above. flexGrow (not flex) so the
+  // column keeps its natural height and only scrolls once it exceeds the
+  // viewport, which leaves the fits-already case byte-identical.
+  scrollContent: { flexGrow: 1 },
   // Ambient backdrop blobs — large soft circles positioned off-screen
   // so only their feathered edges show through. backgroundColor is set
   // inline (uses theme + alpha).
