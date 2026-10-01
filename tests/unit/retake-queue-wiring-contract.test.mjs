@@ -342,7 +342,8 @@ test('COS-1182 THE ORDERING: rebuild is checked BEFORE pending', () => {
 
 test('COS-1182: the card can be asked for one track, so the wrong ask cannot show', () => {
   assert.match(cardSrc, /track \? rows\.find\(\(r\) => retakeTrackOf\(r\.instrumentKey\) === track\) : rows\[0\]/)
-  assert.match(intakeGateSrc, /<RetakeRequestInboxCard track="health-status-intake" \/>/)
+  // COS-1191 added onGateRoute alongside the track.
+  assert.match(intakeGateSrc, /<RetakeRequestInboxCard track="health-status-intake" onGateRoute \/>/)
 })
 
 test('COS-1182: completing the intake invalidates the summary and the pending list', () => {
@@ -487,4 +488,28 @@ test('COS-1186: the header title is centred with equal gutters', () => {
   assert.match(stepperSrc, /headerSlot: \{ width: 24/)
   const slots = stepperSrc.match(/style=\{styles\.headerSlot\}/g) ?? []
   assert.equal(slots.length, 2, 'both gutters must exist or the title is off-centre')
+})
+
+// ─── COS-1191 ──────────────────────────────────────────────────────────────
+
+test('COS-1191: the hook does NOT narrow a set: by the assignment', () => {
+  // The sweeper built it from what was due for this patient; narrowing again
+  // removed every member when the two lists had drifted.
+  assert.match(queueHookSrc, /scope\.kind === 'set'\s*\n?\s*\? all/)
+})
+
+test('COS-1191 THE DEAD TAP: never navigate to the screen we are already on', () => {
+  /*
+   * The card renders INSIDE the gate, so pushing the gate route from there was
+   * a silent no-op — the failure reported more than any other.
+   */
+  const handler = cardSrc.match(/const onStartNow = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\)/)
+  assert.ok(handler)
+  assert.match(handler[0], /if \(!onGateRoute\) \{/)
+  assert.match(handler[0], /retakeStartRoute\(first\.instrumentKey\)/)
+})
+
+test('COS-1191: both gates declare they ARE the gate route', () => {
+  assert.match(gateSrc, /<RetakeRequestInboxCard onGateRoute \/>/)
+  assert.match(intakeGateSrc, /onGateRoute/)
 })

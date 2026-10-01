@@ -118,6 +118,13 @@ export { retakeStartRoute } from '@/lib/retake-routes'
 export interface RetakeRequestInboxCardProps {
   /** COS-1182 — render only a request on this track. Omitted: the first of any. */
   track?: RetakeTrackName
+  /**
+   * COS-1191 — true when this card is rendered INSIDE the gate on the plan tab.
+   *
+   * Without it, a satisfied scope pushes the gate route from the gate itself,
+   * which is a silent no-op. The gate passes this; Home does not.
+   */
+  onGateRoute?: boolean
 
   /**
    * Test-only override so contract tests can render with a fixed row list
@@ -129,6 +136,7 @@ export interface RetakeRequestInboxCardProps {
 
 export function RetakeRequestInboxCard({
   track,
+  onGateRoute,
   __testRows,
 }: RetakeRequestInboxCardProps = {}): React.JSX.Element | null {
   // Hooks always run in the same order regardless of the test override so
@@ -202,15 +210,34 @@ export function RetakeRequestInboxCard({
      * single instrument, which it opens directly, and the health-status intake,
      * which has its own wizard.
      */
-    // COS-1185 — only when the queue was genuinely RESOLVED and came back empty.
-    // `ready && !resolved` means the inputs failed, and an empty queue then means
-    // nothing at all; fall through so the tap still does something.
+    /*
+     * COS-1191 — never navigate to the screen we are already on.
+     *
+     * COS-1184 sent a satisfied scope to the gate. But this card RENDERS INSIDE
+     * that gate on the plan tab, so pushing the gate route from there is a
+     * silent no-op — a tap that does visibly nothing, which is the single
+     * failure Vishal has reported more than any other.
+     *
+     * The catalog is a worse destination and he has said so. But it is a
+     * VISIBLE one, and with the set-narrowing fixed this branch is now only
+     * reached when the request really is satisfied — at which point the catalog
+     * showing "all complete" is the honest answer rather than a dead tap.
+     *
+     * `queue.resolved` still guards it: `ready && !resolved` means the inputs
+     * failed, so an empty queue means nothing and we must not read it as
+     * "satisfied".
+     */
     if (queue.resolved && parseRetakeScopeKey(first.instrumentKey)) {
-      router.push(RETAKE_GATE_ROUTE as never)
+      if (!onGateRoute) {
+        router.push(RETAKE_GATE_ROUTE as never)
+        return
+      }
+      // Already on the gate: fall through to the catalog rather than no-op.
+      router.push(retakeStartRoute(first.instrumentKey) as never)
       return
     }
     router.push(retakeStartRoute(first.instrumentKey) as never)
-  }, [first, queue.ready, queue.resolved, queue.ids])
+  }, [first, queue.ready, queue.resolved, queue.ids, onGateRoute])
 
   const onNotNow = useCallback(() => {
     if (!first) return

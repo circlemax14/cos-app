@@ -164,12 +164,36 @@ export function useRetakeQueue(
     }
     const phq9Eligible = isPhq9Eligible(phq2Responses)
 
-    const ordered = orderAssignedInstruments({
-      all: (instrumentsQuery.data.instruments ?? []) as unknown as QueueInstrument[],
-      assignedIds: new Set(assignmentsQuery.data.assignedInstrumentIds ?? []),
-      assignmentsKnown,
-      phq9Eligible,
-    })
+    const all = (instrumentsQuery.data.instruments ?? []) as unknown as QueueInstrument[]
+
+    /*
+     * COS-1191 — a `set:` is NOT narrowed by the assignment.
+     *
+     * The sweeper built that key from what was DUE FOR THIS PATIENT, so it is
+     * already patient-scoped. Narrowing it again against
+     * `assignedInstrumentIds` is a second filter on an already-filtered list —
+     * and when the two have drifted it removes every member.
+     *
+     * That is exactly what stranded Vishal: his pending
+     * `set:cognition-8,dsq-nci,fas` met an assigned list still reading
+     * ['phq-2','wellbeing','goals'], so all three members were filtered out,
+     * the queue came back EMPTY, and "Start now" pushed him to the screen he
+     * was already on — a silent no-op.
+     *
+     * The BACKEND already makes this exact carve-out, with this exact
+     * reasoning, in scopeMemberIds. The app did not, so the two disagreed
+     * about what a set means — the mirror image of the ever-completed-vs-
+     * watermark split in COS-1184.
+     */
+    const ordered =
+      scope.kind === 'set'
+        ? all
+        : orderAssignedInstruments({
+            all,
+            assignedIds: new Set(assignmentsQuery.data.assignedInstrumentIds ?? []),
+            assignmentsKnown,
+            phq9Eligible,
+          })
 
     return {
       ids: buildRetakeQueue({ scope, instruments: ordered, completedIds, phq9Eligible }),

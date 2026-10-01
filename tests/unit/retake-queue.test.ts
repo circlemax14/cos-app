@@ -636,3 +636,54 @@ describe('COS-1184 — satisfiedSince: the watermark that was missing', () => {
     assert.deepEqual(after, ['adl', 'falls-12', 'phq-2'])
   })
 })
+
+describe('COS-1191 — a set: is NOT narrowed by the assignment', () => {
+  /*
+   * THE BUG: the sweeper raised `set:cognition-8,dsq-nci,fas` while the
+   * patient's assignedInstrumentIds still read ['phq-2','wellbeing','goals'].
+   * Narrowing the set against that removed every member, the queue came back
+   * EMPTY, and "Start now" pushed him to the screen he was already on.
+   *
+   * The sweeper built the set from what was DUE FOR THIS PATIENT — it is
+   * already patient-scoped. The backend makes this carve-out in scopeMemberIds;
+   * the app did not, so the two disagreed about what a set means.
+   */
+  const CATALOG: QueueInstrument[] = [
+    { instrumentId: 'cognition-8', domain: 'biological' },
+    { instrumentId: 'dsq-nci', domain: 'biological' },
+    { instrumentId: 'fas', domain: 'social' },
+    { instrumentId: 'phq-2', domain: 'psychological' },
+  ]
+
+  it('THE POINT: the set walks its own members, assignment or not', () => {
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['cognition-8', 'dsq-nci', 'fas'] },
+      instruments: CATALOG,
+      completedIds: none,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['cognition-8', 'dsq-nci', 'fas'])
+  })
+
+  it('an assignment-narrowed list would have emptied it — the regression', () => {
+    // What the app actually passed: only the assigned instruments survived.
+    const narrowed = CATALOG.filter((i) => i.instrumentId === 'phq-2')
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['cognition-8', 'dsq-nci', 'fas'] },
+      instruments: narrowed,
+      completedIds: none,
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, [], 'this is the empty queue that produced the dead tap')
+  })
+
+  it('completed members still drop out of a set', () => {
+    const q = buildRetakeQueue({
+      scope: { kind: 'set', instrumentIds: ['cognition-8', 'dsq-nci', 'fas'] },
+      instruments: CATALOG,
+      completedIds: new Set(['dsq-nci']),
+      phq9Eligible: true,
+    })
+    assert.deepEqual(q, ['cognition-8', 'fas'])
+  })
+})
