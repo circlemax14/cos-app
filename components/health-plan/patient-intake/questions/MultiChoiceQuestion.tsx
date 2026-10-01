@@ -2,9 +2,9 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
 import type { IntakeQuestionOption } from '@/types/patient-intake';
+
+import { useIntakeLegibility } from '../use-intake-legibility';
 
 interface Props {
   options: IntakeQuestionOption[];
@@ -13,8 +13,7 @@ interface Props {
 }
 
 export default function MultiChoiceQuestion({ options, value, onChange }: Props) {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { colors, fs, fw, muted } = useIntakeLegibility();
 
   const toggle = (v: string | number) => {
     // Set preserves uniqueness cheaply; order of remaining items is preserved by insertion.
@@ -45,16 +44,17 @@ export default function MultiChoiceQuestion({ options, value, onChange }: Props)
           >
             <MaterialIcons
               name={selected ? 'check-box' : 'check-box-outline-blank'}
-              size={22}
-              color={selected ? colors.tint : colors.subtext}
+              // Was a hardcoded 22 — see SingleChoiceQuestion.
+              size={fs(22)}
+              color={selected ? colors.tint : muted}
             />
             <Text
               style={{
                 color: colors.text,
                 marginLeft: 10,
                 flex: 1,
-                fontSize: getScaledFontSize(15),
-                fontWeight: getScaledFontWeight(500) as any,
+                fontSize: fs(15),
+                fontWeight: fw(500) as any,
               }}
             >
               {opt.label}
@@ -71,6 +71,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
+    // Same reason as SingleChoiceQuestion's row: COS-1216 made the checkbox
+    // glyph scale, so padding alone no longer guarantees 44pt at the smallest
+    // system font scale. Explicit floor.
+    minHeight: 44,
     borderWidth: 1,
     borderRadius: 12,
   },

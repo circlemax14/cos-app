@@ -14,7 +14,12 @@ export const LightColors = {
   border: '#D1D5DB',
   card: '#F0FDFA',
   cardBorder: '#CCFBF1',
-  error: '#DC2626',
+  // COS-1221 — was '#DC2626', which did not clear AA as body text on any of
+  // the app's light surfaces: 4.43:1 on #f5f5f5 (Colors.light.card), 4.83:1 on
+  // #fff, and 3.95:1 on its own errorLight pill. Validation copy is the one
+  // string a patient must not miss. #B91C1C: 5.93 / 6.47 / 5.30.
+  // DarkColors.error (#F87171) already cleared AA and is unchanged.
+  error: '#B91C1C',
   errorLight: '#FEE2E2',
   errorBg: '#FEF2F2',
   success: '#059669',

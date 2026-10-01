@@ -32,24 +32,14 @@ import {
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Radii, Spacing } from '@/constants/design-system';
 import { GROUP_SPECS, type GroupId } from './intake-report-builder';
+import { useIntakeLegibility } from './use-intake-legibility';
 
 export type RetakeGroupPick = GroupId | undefined; // undefined = All
-
-type PaletteLike = {
-  text: string;
-  subtext: string;
-  card: string;
-  border: string;
-  tint: string;
-};
 
 interface Props {
   visible: boolean;
   onDismiss: () => void;
   onPick: (group: RetakeGroupPick) => void;
-  colors: PaletteLike;
-  scale: (n: number) => number;
-  weight: (n: number) => string;
 }
 
 // One-line hint per group so the picker communicates what's inside
@@ -70,10 +60,19 @@ export default function RetakeSectionSheet({
   visible,
   onDismiss,
   onPick,
-  colors,
-  scale,
-  weight,
 }: Props): React.JSX.Element {
+  /*
+   * COS-1221 — the palette and the two scalers used to arrive as props from
+   * IntakeCtaCard and IntakeReportScreen, which is how this sheet ended up the
+   * only intake surface still on the unstepped phone scaler after both callers
+   * were converted. It reads the same hook as every other component in this
+   * folder now, and the three props are gone from both call sites.
+   */
+  const { colors, fs: scale, fw: weight, muted } = useIntakeLegibility();
+  // Glyph chip scaled through the same pipeline as its glyph, from the
+  // pre-COS-1216 phone size — see the note in IntakeCtaCard. `scale(36)` was
+  // `scale(20) * 2` = 40, which moved rowIcon (36pt box, radius 18) on the phone.
+  const badge = scale(36); // styles.rowIcon, around a scale(20) glyph
   return (
     <Modal
       visible={visible}
@@ -105,7 +104,7 @@ export default function RetakeSectionSheet({
           </Text>
           <Text
             style={{
-              color: colors.subtext,
+              color: muted,
               fontSize: scale(13),
               marginBottom: 12,
             }}
@@ -131,7 +130,12 @@ export default function RetakeSectionSheet({
                 <View
                   style={[
                     styles.rowIcon,
-                    { backgroundColor: `${g.color}22` },
+                    {
+                      backgroundColor: `${g.color}22`,
+                      width: badge,
+                      height: badge,
+                      borderRadius: badge / 2,
+                    },
                   ]}
                 >
                   <MaterialIcons
@@ -152,11 +156,10 @@ export default function RetakeSectionSheet({
                   </Text>
                   <Text
                     style={{
-                      color: colors.subtext,
+                      color: muted,
                       fontSize: scale(12),
                       marginTop: 2,
                     }}
-                    numberOfLines={2}
                   >
                     {GROUP_DETAIL[g.id]}
                   </Text>
@@ -164,7 +167,7 @@ export default function RetakeSectionSheet({
                 <MaterialIcons
                   name="chevron-right"
                   size={scale(20)}
-                  color={colors.subtext}
+                  color={muted}
                 />
               </Pressable>
             ))}
@@ -192,7 +195,12 @@ export default function RetakeSectionSheet({
               <View
                 style={[
                   styles.rowIcon,
-                  { backgroundColor: `${colors.tint}22` },
+                  {
+                    backgroundColor: `${colors.tint}22`,
+                    width: badge,
+                    height: badge,
+                    borderRadius: badge / 2,
+                  },
                 ]}
               >
                 <MaterialIcons name="refresh" size={scale(20)} color={colors.tint} />
@@ -209,7 +217,7 @@ export default function RetakeSectionSheet({
                 </Text>
                 <Text
                   style={{
-                    color: colors.subtext,
+                    color: muted,
                     fontSize: scale(12),
                     marginTop: 2,
                   }}
@@ -220,7 +228,7 @@ export default function RetakeSectionSheet({
               <MaterialIcons
                 name="chevron-right"
                 size={scale(20)}
-                color={colors.subtext}
+                color={muted}
               />
             </Pressable>
           </ScrollView>
@@ -259,9 +267,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   rowIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    // width/height/borderRadius are set inline — derived from the glyph.
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,

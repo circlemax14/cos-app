@@ -2,13 +2,13 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
 import type {
   IntakeAnswerValue,
   IntakeQuestionOption,
   IntakeSingleWithSpecify,
 } from '@/types/patient-intake';
+
+import { useIntakeLegibility } from '../use-intake-legibility';
 
 interface Props {
   options: IntakeQuestionOption[];
@@ -25,9 +25,12 @@ function isSpecifyShape(v: IntakeAnswerValue | null | undefined): v is IntakeSin
   return typeof v === 'object' && v !== null && !Array.isArray(v) && 'choice' in v;
 }
 
+/** Radio glyph base size and the gap between it and the label. */
+const ICON = 22;
+const LABEL_GAP = 10;
+
 export default function SingleChoiceQuestion({ options, value, onChange }: Props) {
-  const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { colors, fs, fw, muted } = useIntakeLegibility();
 
   const currentChoice = isSpecifyShape(value)
     ? value.choice
@@ -69,16 +72,18 @@ export default function SingleChoiceQuestion({ options, value, onChange }: Props
             >
               <MaterialIcons
                 name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
-                size={22}
-                color={selected ? colors.tint : colors.subtext}
+                // Was a hardcoded 22: the radio stayed put while the label
+                // grew, on every screen size and every font scale.
+                size={fs(ICON)}
+                color={selected ? colors.tint : muted}
               />
               <Text
                 style={{
                   color: colors.text,
-                  marginLeft: 10,
+                  marginLeft: LABEL_GAP,
                   flex: 1,
-                  fontSize: getScaledFontSize(15),
-                  fontWeight: getScaledFontWeight(500) as any,
+                  fontSize: fs(15),
+                  fontWeight: fw(500) as any,
                 }}
               >
                 {opt.label}
@@ -89,7 +94,7 @@ export default function SingleChoiceQuestion({ options, value, onChange }: Props
                 value={currentSpecify}
                 onChangeText={emitSpecify}
                 placeholder="Please specify…"
-                placeholderTextColor={colors.subtext}
+                placeholderTextColor={muted}
                 maxLength={400}
                 style={[
                   styles.specify,
@@ -97,7 +102,12 @@ export default function SingleChoiceQuestion({ options, value, onChange }: Props
                     color: colors.text,
                     borderColor: colors.tint,
                     backgroundColor: colors.background,
-                    fontSize: getScaledFontSize(15),
+                    fontSize: fs(15),
+                    // COS-1221 — was a hardcoded marginLeft: 32, measured against
+                    // an icon that is no longer 22pt. Same two numbers the label
+                    // is laid out with, so the input stays under it at every
+                    // scale (the icon reaches 60pt at max accessibility scale).
+                    marginLeft: fs(ICON) + LABEL_GAP,
                   },
                 ]}
                 accessibilityLabel={`Specify ${opt.label}`}
@@ -115,12 +125,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
+    // COS-1216 scaled the radio glyph, so 12 + icon + 12 is no longer a fixed
+    // 46pt — at the smallest system font scale fs(22) shrinks and the row can
+    // fall under Apple's 44pt minimum. (The pre-COS-1216 row could not: its
+    // icon was a hardcoded 22.) The floor is explicit so the scaler cannot
+    // take the tap target below 44 for a patient with a tremor.
+    minHeight: 44,
     borderWidth: 1,
     borderRadius: 12,
   },
   specify: {
     marginTop: 8,
-    marginLeft: 32,
+    // marginLeft is set inline — it is derived from the scaled icon size.
     minHeight: 44,
     borderWidth: 1,
     borderRadius: 12,

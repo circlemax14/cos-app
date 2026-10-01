@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, TextInput } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
+import { useIntakeLegibility } from '../use-intake-legibility';
 
 interface Props {
   value: number | null;
@@ -10,8 +9,7 @@ interface Props {
 }
 
 export default function NumberQuestion({ value, onChange }: Props) {
-  const { settings, getScaledFontSize } = useAccessibility();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  const { colors, fs, muted } = useIntakeLegibility();
 
   // Local text mirror so the user can type intermediate states (e.g. "12.")
   // that don't yet coerce to a valid number.
@@ -39,15 +37,21 @@ export default function NumberQuestion({ value, onChange }: Props) {
       value={text}
       onChangeText={handle}
       keyboardType="numeric"
-      placeholder="0"
-      placeholderTextColor={colors.subtext}
+      /*
+       * COS-1221 — was "0". At the AA `muted` contrast a bare digit reads as an
+       * ANSWER, not a prompt, so an empty required field looked answered and the
+       * patient tapped a dead Next with nothing to explain it. An instruction
+       * cannot be mistaken for a value at any contrast.
+       */
+      placeholder="Enter a number"
+      placeholderTextColor={muted}
       style={[
         styles.input,
         {
           color: colors.text,
           borderColor: colors.border,
           backgroundColor: colors.background,
-          fontSize: getScaledFontSize(16),
+          fontSize: fs(16),
         },
       ]}
       accessibilityLabel="Numeric answer"
