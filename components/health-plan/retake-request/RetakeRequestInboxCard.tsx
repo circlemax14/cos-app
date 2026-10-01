@@ -22,34 +22,48 @@
  * primitives, so it's SIGABRT-safe by construction.
  *
  * On tap paths:
- *   - Start now → /Home/assessment-stepper?instrumentId=<key> (or the
- *     intake wizard when the key is `full-intake`).
- *   - Not now  → /Home/retake-snooze-sheet?id=<requestId>.
+ *   - Start now → the FIRST check-in the request still owes, with the rest
+ *     carried as a queue (COS-1181 — see `startNow`; a scope is resolved here,
+ *     not by sending the patient to the catalog to pick). `retakeStartRoute`
+ *     remains for the keys with nowhere to walk: a single instrument, which it
+ *     opens directly, and `full-intake`, which has its own wizard.
+ *   - Not now  → /Home/retake-snooze-sheet?id=<requestId>, and only when the
+ *     request is not mandatory (COS-1179).
  *   - Snooze/Dismiss are handled by the sheet screen (which owns the
  *     mutation hooks) — this card is READ-only for the row body.
  *
  * A11y contract:
  *   - Outer card carries a composed accessibilityLabel so a screen reader
- *     announces "Care Manager Sarah asked you to retake PHQ-9. Takes 4
- *     minutes." as one utterance. Inner Text nodes are hidden from a11y
+ *     announces "Your care team asked you to retake Anxiety check-in. Takes
+ *     ~4 minutes." as one utterance. No member of staff is named (COS-1168)
+ *     and the ask is the card's own named phrase (COS-1202/1203) — which is
+ *     always SAYABLE: before the catalog resolves it is the server's noun, never
+ *     a placeholder, because this utterance and the Start button's label are
+ *     built from it too. Inner Text nodes are hidden from a11y
  *     (importantForAccessibility="no-hide-descendants") so the reader
  *     doesn't repeat every fragment.
  *   - Both buttons have role="button" + composed accessibilityLabel.
  *
- * PII discipline: the render composes only the enriched fields the BE
- * ships (requesterFirstName, requesterRole, agencyName, instrumentDisplayName,
- * estMinutes, optional short note). No email, no last name.
+ * PII discipline: the render composes only the enriched fields the BE ships —
+ * requesterPhrase (agencyName is the local fallback), estMinutes, the optional
+ * short note, and instrumentKey, which is named from the catalog rather than
+ * printed. No email, no last name, and since COS-1168 no staff first name or
+ * role token either: both are still ON the row and are deliberately unread.
  */
 
 import React, { useCallback, useMemo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { router } from 'expo-router'
+import { useQuery } from '@tanstack/react-query'
 
 import { getColors, Radii, Spacing } from '@/constants/design-system'
 import { retakeStartRoute } from '@/lib/retake-routes'
 import { parseRetakeScopeKey, retakeTrackOf, type RetakeTrackName } from '@/lib/retake-queue'
+import { retakeAskPhrase, retakeAskPhraseNeedsTitles } from '@/lib/retake-request-copy'
+import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
+import { fetchInstruments, fetchRecommendedInstruments } from '@/services/api/instruments'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { usePendingRetakeRequests } from '@/hooks/use-retake-requests'
 import { useBiopsychosocialPlan } from '@/hooks/use-biopsychosocial-plan'
@@ -75,9 +89,21 @@ function estMinutesLabel(n: number): string {
  * Compose the a11y announcement for the whole card. Kept as a pure fn so
  * the routing + contract tests can pin the exact utterance shape.
  */
-export function composeRetakeCardAccessibilityLabel(row: PatientRetakeRequestView): string {
+export function composeRetakeCardAccessibilityLabel(
+  row: PatientRetakeRequestView,
+  askPhrase: string,
+): string {
   const who = requesterPhraseFor(row)
-  const what = `asked you to retake ${row.instrumentDisplayName}`
+  /*
+   * COS-1202 — `askPhrase`, not `row.instrumentDisplayName`.
+   *
+   * The server's name for a scope is `scopeDisplayName()`: "check-in",
+   * "check-ins", "3 check-ins". A screen-reader user heard "Your care team
+   * asked you to retake check-in" and had no more idea which one than a
+   * sighted user reading the subtitle did. Both now read the same named
+   * phrase, from one helper.
+   */
+  const what = `asked you to retake ${askPhrase}`
   const time = `Takes ${estMinutesLabel(row.estMinutes)}`
   return `${who} ${what}. ${time}.`
 }
@@ -181,7 +207,8 @@ export function RetakeRequestInboxCard({
    * honest destination rather than a stepper with no instrument.
    *
    * `queue.ready` matters: tapping while the three queries are still loading must
-   * NOT fall through to the picker. Start now is disabled until it resolves.
+   * NOT fall through to the picker. COS-1192 below is how that is now done — the
+   * tap is LATCHED and replayed, not refused. The button is never disabled.
    */
   const queue = useRetakeQueue(first ?? null)
 
@@ -280,9 +307,104 @@ export function RetakeRequestInboxCard({
   const plan = useBiopsychosocialPlan()
   const rebuilding = plan.data?.generating === true
 
+  /*
+   * COS-1202 — the catalog, so the card can NAME what it is asking for.
+   *
+   * Same key, queryFn and staleTime as AssessmentCatalogContent,
+   * InlineAssessmentCatalog, assessment-detail and useRetakeQueue — one cache
+   * entry between all five. For a SCOPE request useRetakeQueue above has
+   * already asked for it, so this is a cache read.
+   *
+   * For a BARE instrument key it is not: useRetakeQueue gates its copy on
+   * `scope !== null`, so nothing else on Home or the plan tab has asked, and
+   * this really is the fetch — so on the first render of the headline COS-1197
+   * card there is genuinely no title yet. `askPhrase` below names the request
+   * from the server's noun in that window and upgrades in place; it does not
+   * hold, and nothing on the card waits for this query.
+   *
+   * Titles must come from here and nowhere else; a hardcoded map on this card
+   * would drift from the catalog the patient is about to open.
+   */
+  const instrumentsQuery = useQuery({
+    queryKey: ['instruments-recommended'],
+    queryFn: async () => {
+      try {
+        return await fetchRecommendedInstruments()
+      } catch {
+        const fallback = await fetchInstruments()
+        return { instruments: fallback, rationale: {}, cached: false }
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    /*
+     * COS-1203 — GATED, like the identical query in useRetakeQueue above.
+     *
+     * This hook runs ABOVE `if (!first) return ... : null`, so unguarded it made
+     * every Home / plan-tab mount fetch the catalog for every patient — the
+     * overwhelming majority of whom have no pending retake and see no card at
+     * all, plus `basic`-plan patients for whom the route is tier-filtered to an
+     * empty list anyway. A card that renders nothing must fetch nothing.
+     *
+     * The second clause is the narrower truth: a domain scope, the whole
+     * battery, the health-status intake and an over-long set are all named from
+     * fixed copy, so even a rendering card only needs the catalog when the
+     * phrase will actually read a title out of it. The predicate lives next to
+     * those branches in lib/retake-request-copy.ts so the two cannot drift.
+     */
+    enabled: !!first && retakeAskPhraseNeedsTitles(first.instrumentKey),
+  })
+
+  /*
+   * COS-1202 — the one phrase that names the ask. FOUR surfaces read it:
+   * the subtitle, the "What" cell, `composeRetakeCardAccessibilityLabel`'s
+   * utterance, and the accessibilityLabel on "Start now".
+   *
+   * Which is why it must never be a placeholder with no words in it. Round 3 of
+   * COS-1203 held this value behind an ellipsis until `instrumentsQuery`
+   * resolved, reading it as "the subtitle only"; it is not, and for the length of
+   * that fetch VoiceOver announced "…" on the one control a screen-reader user
+   * activates. `retakeAskPhrase` therefore always returns the best READABLE name
+   * it has — the server's `instrumentDisplayName` on a cold cache — and this memo
+   * re-runs with the precise title when the query lands. The visible copy can
+   * change once as it upgrades; an unreadable card cannot be fixed by waiting.
+   *
+   * Nothing here gates a render or an interaction: the card paints and "Start
+   * now" is tappable before this query exists at all (COS-1192 — a
+   * disabled-then-enabled button is the two-tap bug, reported four times).
+   *
+   * The subtitle was a literal reading "an assessment" and the What cell
+   * showed the server's name for the scope, which is `scopeDisplayName()` —
+   * "check-in", "check-ins", "3 check-ins". So a request scoped to ONE newly
+   * added check-in (COS-1197) and one scoped to the whole battery rendered as
+   * the same card. The scope was right and the deep link was right; nothing on
+   * the card ever said WHICH, so COS-1197's acceptance criterion could not be
+   * observed from the UI at all.
+   *
+   * The title is the SAME one the catalog card shows —
+   * getWarmerInstrumentLabel over the BE name. If the two disagreed, the card
+   * would name one thing and the screen it opens would show another.
+   *
+   * The subtitle gets two lines for it: three named check-ins do not fit on
+   * one at an accessibility font scale, and truncating to "Anxiety check-in,
+   * Sleep chec…" is the vague copy all over again.
+   */
+  const askPhrase = useMemo(() => {
+    const defs = instrumentsQuery.data?.instruments ?? []
+    return first
+      ? retakeAskPhrase({
+          instrumentKey: first.instrumentKey,
+          titleOf: (id) => {
+            const def = defs.find((i) => i.instrumentId === id)
+            return def ? getWarmerInstrumentLabel(def.instrumentId, def.name) : undefined
+          },
+          fallback: first.instrumentDisplayName,
+        })
+      : ''
+  }, [first, instrumentsQuery.data])
+
   const a11yLabel = useMemo(
-    () => (first ? composeRetakeCardAccessibilityLabel(first) : ''),
-    [first],
+    () => (first ? composeRetakeCardAccessibilityLabel(first, askPhrase) : ''),
+    [first, askPhrase],
   )
 
   /*
@@ -373,15 +495,16 @@ export function RetakeRequestInboxCard({
           >
             {whoLine}
           </Text>
+          {/* COS-1202 — named, from the request's own key. See askPhrase. */}
           <Text
-            numberOfLines={1}
+            numberOfLines={2}
             style={{
               color: colors.text + 'CC',
               fontSize: getScaledFontSize(11),
               marginTop: 1,
             }}
           >
-            asked you to retake an assessment
+            {`asked you to retake ${askPhrase}`}
           </Text>
         </View>
       </View>
@@ -426,7 +549,7 @@ export function RetakeRequestInboxCard({
               marginTop: 2,
             }}
           >
-            {first.instrumentDisplayName}
+            {askPhrase}
           </Text>
         </View>
         <View style={styles.detailCell}>
@@ -479,7 +602,16 @@ export function RetakeRequestInboxCard({
            * press.
            */
           accessibilityRole="button"
-          accessibilityLabel={`Start ${first.instrumentDisplayName} now`}
+          /*
+           * COS-1203 — `askPhrase`, not `first.instrumentDisplayName`.
+           *
+           * This is the one control a screen-reader user actually activates, and
+           * it was the last thing on the card still reading the server's
+           * `scopeDisplayName()`. VoiceOver announced the precise subtitle and
+           * then "Start check-in now" — or "Start 3 check-ins now" for a whole
+           * battery. One phrase, every surface of the card.
+           */
+          accessibilityLabel={`Start ${askPhrase} now`}
           accessibilityState={{ busy: !queue.ready }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
