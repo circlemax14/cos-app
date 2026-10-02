@@ -275,7 +275,11 @@ function InboxScreenInner() {
                 ? 'Loading your conversations…'
                 : conversationsQ.isError
                   ? 'We could not load your conversations. Pull to try again.'
-                  : 'No conversations yet. Find someone to message.'}
+                  : canFind
+                    ? 'No conversations yet. Use the buttons above to find someone or invite them by email.'
+                    // COS-1237 — both header buttons are gated on `find-people`. Naming
+                    // an action the reader cannot see is worse than naming none.
+                    : 'No conversations yet.'}
             </Text>
           </View>
         }
