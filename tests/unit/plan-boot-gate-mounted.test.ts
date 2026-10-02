@@ -16,10 +16,19 @@ import { readFileSync } from 'node:fs';
 const layout = readFileSync(new URL('../../app/_layout.tsx', import.meta.url), 'utf8');
 const gate = readFileSync(new URL('../../components/PlanBootGate.tsx', import.meta.url), 'utf8');
 const tokens = readFileSync(new URL('../../lib/auth-tokens.ts', import.meta.url), 'utf8');
+/*
+ * COS-1226 — the branch chain moved to lib/boot-gate-decision.ts so that every
+ * arm is exercised in node without a renderer (boot-gate-decision.test.ts).
+ * What stays here is the WIRING: that the table says what it must, that the
+ * component obeys it, and that it is mounted in the right place — the failure
+ * mode of COS-1038, where a correct policy was read by nothing.
+ */
+const decision = readFileSync(new URL('../../lib/boot-gate-decision.ts', import.meta.url), 'utf8');
 
 /** Comments describe intent; only code proves it. */
 const layoutCode = layout.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const gateCode = gate.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const decisionCode = decision.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('COS-1061 — PlanBootGate is mounted', () => {
   test('THE POINT: it wraps the Stack, so no route mounts behind the loader', () => {
@@ -54,18 +63,28 @@ describe('COS-1061 — the gate cannot trap anyone', () => {
      * them would mean a signed-out patient waits for a 401 before the app
      * lets them sign in.
      */
-    assert.match(gateCode, /if \(signedIn === false\) return <>\{children\}<\/>/);
+    assert.match(decisionCode, /if \(s\.presence === 'absent'\) return 'app'/);
+    assert.match(gateCode, /if \(decision === 'app'\) return <>\{children\}<\/>/);
   });
 
   test('THE POINT: there is a timeout, and it leads to a retry — not a permanent spinner', () => {
     assert.match(gateCode, /BOOT_TIMEOUT_MS/);
-    assert.match(gateCode, /isError \|\| timedOut/);
+    assert.match(decisionCode, /s\.isError \|\| s\.timedOut/);
     assert.match(gateCode, /ConnectionErrorScreen/);
     assert.match(gateCode, /onRetry=\{retry\}/);
+    // COS-1226 — and it is now reachable: the splash is lifted for it.
+    assert.match(decisionCode, /if \(decision === 'error'\) return 'now'/);
   });
 
   test('the retry clears the timed-out state, so the second attempt gets a full window', () => {
-    assert.match(gateCode, /setTimedOut\(false\)[\s\S]{0,80}refetch\(\)/);
+    /*
+     * COS-1226 — it did not get one. `waiting` is unchanged across a retry that
+     * is still waiting, so the timer effect never re-ran and the fired timeout
+     * was never replaced. `attempt` is what re-arms it; see
+     * boot-splash-handover.test.mjs for the deps and the cancel-before-refetch.
+     */
+    assert.match(gateCode, /setTimedOut\(false\)[\s\S]{0,600}refetch\(\)/);
+    assert.match(gateCode, /setAttempt\(\(n\) => n \+ 1\)/);
   });
 
   test('a cached map is used when the fetch is slow — the patient is never stranded', () => {
@@ -76,7 +95,8 @@ describe('COS-1061 — the gate cannot trap anyone', () => {
      * plan was not resolved before screens drew. The cache is now a bounded
      * fallback; see the COS-1069 block below for the ordering that matters.
      */
-    assert.match(gateCode, /mayUseCache && cacheReady && readCachedScreenAccess\(\)\) return <>\{children\}<\/>/);
+    assert.match(decisionCode, /s\.mayUseCache && s\.cacheReady && s\.hasCachedPlan\) return 'app'/);
+    assert.match(gateCode, /hasCachedPlan: readCachedScreenAccess\(\) !== null/);
   });
 
   test('the timeout is generous enough for a cold Lambda', () => {
@@ -134,7 +154,7 @@ describe('COS-1069 — the cache is a fallback, not a fast path', () => {
      * requirement.
      */
     assert.match(gateCode, /CACHE_FALLBACK_MS/);
-    assert.match(gateCode, /mayUseCache && cacheReady && readCachedScreenAccess\(\)/);
+    assert.match(decisionCode, /s\.mayUseCache && s\.cacheReady && s\.hasCachedPlan/);
   });
 
   test('a live answer still short-circuits immediately — no artificial delay', () => {
@@ -143,8 +163,8 @@ describe('COS-1069 — the cache is a fallback, not a fast path', () => {
      * dismisses the loader the moment it lands. The timer bounds a slow
      * network; it must never add latency to a fast one.
      */
-    const dataAt = gateCode.indexOf('if (data) return');
-    const cacheAt = gateCode.indexOf('mayUseCache && cacheReady');
+    const dataAt = decisionCode.indexOf('if (s.hasPlan) return');
+    const cacheAt = decisionCode.indexOf('s.mayUseCache && s.cacheReady');
     assert.ok(dataAt > -1 && cacheAt > dataAt, 'the live-data branch must precede the cache branch');
   });
 

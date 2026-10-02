@@ -1,17 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import BootSplash from '@/components/BootSplash';
 import ConnectionErrorScreen from '@/components/ConnectionErrorScreen';
 import { checkSession, UserProfile } from '@/services/auth';
 import { readSessionPresence } from '@/lib/auth-tokens';
 import { getCachedProfile } from '@/lib/cached-profile';
 import { isPinSetup } from '@/services/pin-auth';
-import { Colors } from '@/constants/theme';
-import { useAccessibility } from '@/stores/accessibility-store';
 import { useSecurity } from '@/stores/security-store';
 import { requestSignIn } from '@/lib/lock-gate';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
@@ -162,9 +159,7 @@ function revalidateInBackground(previousDestination: string, isLocked: boolean) 
 }
 
 export default function SplashGate() {
-  const { settings, getScaledFontSize } = useAccessibility();
   const { isLocked } = useSecurity();
-  const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const [state, setState] = useState<GateState>('loading');
   const [retryKey, setRetryKey] = useState(0);
 
@@ -302,25 +297,17 @@ export default function SplashGate() {
     return <ConnectionErrorScreen variant={state} onRetry={() => setRetryKey((k) => k + 1)} />;
   }
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Image
-        source={require('@/assets/images/logo.png')}
-        style={{ width: getScaledFontSize(220), height: getScaledFontSize(140) }}
-        contentFit="contain"
-      />
-      <ActivityIndicator size="large" color={colors.primary} />
-    </View>
-  );
+  /*
+   * COS-1226 — the same screen PlanBootGate and security-store hold behind.
+   *
+   * This used to be its own arrangement: logo.png at 220x140 scaled by the
+   * in-app font setting, a spinner under it, on `colors.background` (#151718 in
+   * dark). Nobody ever saw it — the native splash was still up and only lifted
+   * in run()'s `finally`, after routing — which is also why the drift went
+   * unnoticed. Now that the states ABOVE this route hand the splash over as
+   * soon as they have painted, this screen is reached with the splash already
+   * gone, so any difference from it would read as a flicker on every launch.
+   * One boot screen, measured against the storyboard. See components/BootSplash.
+   */
+  return <BootSplash />;
 }
-
-const styles = StyleSheet.create({
-  // The error-state styles moved with the markup to ConnectionErrorScreen.
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 24,
-    paddingHorizontal: 24,
-  },
-});

@@ -222,3 +222,126 @@ export async function acceptConnection(requesterId: string): Promise<Connection>
 export async function declineConnection(requesterId: string): Promise<void> {
   await apiClient.post(`/v1/patients/me/social/connections/${requesterId}/decline`);
 }
+
+// ── invite by email (COS-1231) ────────────────────────────────────────
+
+/**
+ * COS-1231 — inviting someone who is NOT a user yet.
+ *
+ * Everything above acts on a userId that already exists. These three act on an
+ * email address that may belong to nobody, which is why the POST is the only
+ * social route with server-side entitlement enforcement.
+ *
+ * The field names and the status union below are character-identical to
+ * src/services/social-invite.service.ts's `Invite`. One shape, one vocabulary:
+ * the last time this area grew a second one it shipped two implementations of
+ * connections.
+ */
+export type InviteRelationship = 'family' | 'friend' | 'carer' | 'clinician';
+
+export interface Invite {
+  inviteId: string;
+  email: string;
+  relationship: InviteRelationship;
+  note: string | null;
+  /**
+   * 'expired' is DERIVED by the server on every read and never stored, because
+   * DynamoDB's TTL purge runs up to 48h late. Never compute it here from
+   * expiresAt — two clocks disagreeing about whether a link is dead is how a
+   * screen ends up offering Withdraw on something already gone.
+   */
+  status: 'invited' | 'claimed' | 'withdrawn' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+  /**
+   * What the mail transport actually returned. Propagated rather than assumed:
+   * a Resend 429 or 5xx is swallowed server-side into delivered:false with no
+   * retry and no queue, and the confirmation screen NAMES the address — so a
+   * false `true` here is the app telling a patient something untrue.
+   */
+  delivered: boolean;
+}
+
+/**
+ * The server's `code` on a 4xx, carried so the sheet can say which of five
+ * different things went wrong. Same shape as plan-type.ts:97.
+ */
+export type InviteErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'SELF_INVITE'
+  | 'INVITE_ALREADY_PENDING'
+  | 'ALREADY_CONNECTED'
+  | 'INVITE_RATE_LIMITED'
+  | 'INVITE_NOT_FOUND';
+
+export interface InviteError extends Error {
+  code?: InviteErrorCode;
+  /** Present on INVITE_ALREADY_PENDING: the invitation that already exists. */
+  existing?: Invite;
+}
+
+function wrapInviteError(err: unknown): never {
+  const res = (
+    err as {
+      response?: { data?: { code?: string; error?: string; details?: { invite?: Invite } } };
+    }
+  )?.response?.data;
+  if (!res?.code) throw err;
+  // The server's own message is used verbatim. It is written for a patient to
+  // read ("You can send 10 invitations a day…"), and a second copy of that
+  // copy in the app is one more string to keep in step with the email.
+  const wrapped = new Error(res.error || 'That did not work — please try again.') as InviteError;
+  wrapped.code = res.code as InviteErrorCode;
+  if (res.details?.invite) wrapped.existing = res.details.invite;
+  throw wrapped;
+}
+
+/**
+ * Invite an email address to my care circle.
+ *
+ * The response is IDENTICAL whether or not the address already has an account.
+ * That is deliberate and must stay that way: it used to come back 'claimed'
+ * only for a hit, which made this endpoint an oracle any entitled patient
+ * could use to learn that a named person is a patient of a healthcare product.
+ */
+export async function sendEmailInvite(input: {
+  email: string;
+  relationship: InviteRelationship;
+  note?: string;
+}): Promise<{ invite: Invite; delivered: boolean }> {
+  try {
+    const res = await apiClient.post<{ data: { invite: Invite; delivered: boolean } }>(
+      '/v1/patients/me/social/invites',
+      input,
+    );
+    const d = res.data?.data;
+    return { invite: d.invite, delivered: d.delivered === true };
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}
+
+/** Invitations I have sent. Withdrawn ones are excluded by the server. */
+export async function fetchEmailInvites(): Promise<Invite[]> {
+  const res = await apiClient.get<{ data: { invites: Invite[] } }>(
+    '/v1/patients/me/social/invites',
+  );
+  return res.data?.data?.invites ?? [];
+}
+
+/**
+ * Take an invitation back. The server REMOVEs the token hash, which drops the
+ * row out of a sparse GSI and kills the link in mail already delivered.
+ *
+ * NOT cancelConnection: there is no userId to route through
+ * DELETE /connections/:userId, and the invitee may not be a user at all.
+ */
+export async function withdrawEmailInvite(inviteId: string): Promise<void> {
+  try {
+    await apiClient.delete(
+      `/v1/patients/me/social/invites/${encodeURIComponent(inviteId)}`,
+    );
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}

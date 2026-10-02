@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,56 +47,83 @@ export default function ConfirmPinScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.content}>
-        <Image
-          source={require('@/assets/images/logo.png')}
-          style={{ width: getScaledFontSize(180), height: getScaledFontSize(110), marginBottom: Spacing.sm }}
-          contentFit="contain"
-          accessibilityLabel="Circle Support Health logo"
-        />
-        <Text style={styles.icon}>🔒</Text>
-        <Text
-          style={[
-            styles.title,
-            {
-              color: colors.text,
-              fontSize: getScaledFontSize(Typography.title2.fontSize),
-              fontWeight: getScaledFontWeight(600) as any,
-            },
-          ]}
-          accessibilityRole="header"
-        >
-          Confirm Your PIN
-        </Text>
-        <Text
-          style={[
-            styles.subtitle,
-            {
-              color: colors.secondary,
-              fontSize: getScaledFontSize(Typography.callout.fontSize),
-            },
-          ]}
-        >
-          Re-enter your 6-digit code
-        </Text>
-        <PinDots length={6} filled={pin.length} error={error} />
-        {error && (
+      {/*
+       * COS-1225 — same overflow, same screen family. See the long note in
+       * lock-screen.tsx for the full reasoning; the short version is that this
+       * column is ~790pt at font scale 1 and tablets take the system font scale
+       * undampened with a 1.3x accessibility multiplier on top
+       * (stores/accessibility-store.tsx), so on an iPad in landscape — and on
+       * any phone in landscape, ~390pt of viewport — the NumberPad runs off the
+       * bottom. React Native does not clip overflow, so it is drawn and
+       * unreachable. There is no "Forgot PIN?" escape hatch on THIS screen: if
+       * the pad is off-screen the patient cannot confirm the PIN they just
+       * chose, so setup never completes — and a PIN gates the whole app.
+       *
+       * flexGrow (not flex) so a column that already fits lays out exactly as
+       * before. keyboardShouldPersistTaps="always" so the pad never costs two
+       * taps (COS-1192). Not forked by platform: one path, and Android has
+       * shipped this wrapper on lock-screen since COS-941.
+       */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        alwaysBounceVertical={false}
+        keyboardShouldPersistTaps="always"
+      >
+        <View style={styles.content}>
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={{ width: getScaledFontSize(180), height: getScaledFontSize(110), marginBottom: Spacing.sm }}
+            contentFit="contain"
+            accessibilityLabel="Circle Support Health logo"
+          />
+          <Text style={styles.icon}>🔒</Text>
           <Text
-            style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(14) }]}
-            accessibilityRole="alert"
+            style={[
+              styles.title,
+              {
+                color: colors.text,
+                fontSize: getScaledFontSize(Typography.title2.fontSize),
+                fontWeight: getScaledFontWeight(600) as any,
+              },
+            ]}
+            accessibilityRole="header"
           >
-            PINs don&apos;t match. Try again.
+            Confirm Your PIN
           </Text>
-        )}
-      </View>
-      <NumberPad onDigit={handleDigit} onDelete={handleDelete} />
-      <View style={styles.bottomPadding} />
+          <Text
+            style={[
+              styles.subtitle,
+              {
+                color: colors.secondary,
+                fontSize: getScaledFontSize(Typography.callout.fontSize),
+              },
+            ]}
+          >
+            Re-enter your 6-digit code
+          </Text>
+          <PinDots length={6} filled={pin.length} error={error} />
+          {error && (
+            <Text
+              style={[styles.errorText, { color: colors.error, fontSize: getScaledFontSize(14) }]}
+              accessibilityRole="alert"
+            >
+              PINs don&apos;t match. Try again.
+            </Text>
+          )}
+        </View>
+        <NumberPad onDigit={handleDigit} onDelete={handleDelete} />
+        <View style={styles.bottomPadding} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  // COS-1225 — see the ScrollView above. flexGrow, not flex: the column keeps
+  // its natural height and only scrolls once it exceeds the viewport.
+  scrollContent: { flexGrow: 1 },
   content: { alignItems: 'center', paddingTop: 20, paddingHorizontal: Spacing.screenPadding },
   icon: { fontSize: 48, marginBottom: Spacing.md },
   title: { textAlign: 'center', marginBottom: Spacing.xs },

@@ -167,6 +167,44 @@ function InboxScreenInner() {
         </Pressable>
       )}
 
+      {/*
+        COS-1231 SCREEN 5 — the second door into the invite sheet.
+
+        Inbox is where someone notices a person is missing, so the invitation
+        has to be reachable from here and not only from the Supports modal's
+        Social tab. It lands on that tab rather than opening a sheet of its own:
+        the sheet is a MODE of SocialPanel, which lives inside the Supports
+        modal, and a second copy here would be a second implementation of the
+        same screen — the mistake this area has already made once with
+        connections.
+
+        One bordered row rather than the header icon the design sketches: a bare
+        person-add glyph in a header is not an invitation anyone reads, and this
+        audience is largely 60+ and partly visually impaired. The words are the
+        affordance.
+      */}
+      <Pressable
+        onPress={() => router.push('/modal?tab=social' as never)}
+        accessibilityRole="button"
+        accessibilityLabel="Invite someone by email"
+        accessibilityHint="Opens your care circle, where you can send one email invitation"
+        style={[styles.inviteRow, { borderColor: colors.border }]}
+      >
+        <MaterialIcons name="mail-outline" size={getScaledFontSize(18)} color={colors.tint} />
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: getScaledFontSize(13),
+            flex: 1,
+            marginLeft: 8,
+            lineHeight: getScaledFontSize(19),
+          }}
+        >
+          Someone missing from here? Invite them by email.
+        </Text>
+        <MaterialIcons name="chevron-right" size={getScaledFontSize(20)} color={colors.icon} />
+      </Pressable>
+
       <FlatList
         data={conversations}
         keyExtractor={(c) => c.conversationId}
@@ -252,6 +290,17 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.xs,
+  },
+  // COS-1231 — same shape as the pending banner above it, with a 44pt target.
+  inviteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    padding: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.xs,
+    minHeight: 44,
   },
   row: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: Radii.md, padding: Spacing.sm },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
