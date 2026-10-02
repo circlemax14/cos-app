@@ -590,3 +590,26 @@ test('the Play proof goes to the gateway the server registered, with the package
     assert.match(src, /gateway: 'google-play',\s*purchaseToken: proof\.receipt,\s*productId: proof\.productId,\s*\.\.\.\(proof\.packageName \? \{ packageName: proof\.packageName \} : \{\}\)/)
   }
 })
+
+test('THE POINT: a Play plan change replaces the live subscription instead of stacking a second', () => {
+  // Without this, plan B is bought BESIDE plan A: two renewals, two charges,
+  // and every renewal of A re-grants A over B on the server.
+  const code = stripComments(store)
+  const branch = code.slice(code.indexOf("let google: PlayRequest"), code.indexOf('.requestPurchase('))
+  assert.match(branch, /playSubscriptionToReplace\(\s*\(\(await iap\.getAvailablePurchases\(\)\) \?\? \[\]\) as RawPurchase\[\],\s*sub,\s*productId,\s*\)/)
+  assert.match(branch, /purchaseToken: replacing\.purchaseToken/)
+  assert.match(branch, /oldProductId: replacing\.productId,\s*replacementMode: 'with-time-proration'/)
+})
+
+test('a Google duplicate is the purchase already on this account — Google only, iOS unchanged', () => {
+  const api = read('services/api/payments.ts')
+  assert.match(
+    stripComments(api),
+    /if \(proof\.gateway === 'google-play' && data\?\.duplicateOf\) return \{ \.\.\.data, applied: true \};/,
+  )
+})
+
+test('the Play manage link only ever points at this patient\'s own subscription', () => {
+  const body = stripComments(store).slice(stripComments(store).indexOf('export async function playManageUrl'))
+  assert.match(body, /p\.obfuscatedAccountIdAndroid === sub/)
+})

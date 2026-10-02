@@ -32,6 +32,7 @@ import {
   isPlayPending,
   playBillingProblem,
   playSubscriptionsUrl,
+  playSubscriptionToReplace,
   selectPlayOfferToken,
   PLAY_PENDING_MESSAGE,
   type PlayOffer,
@@ -137,6 +138,9 @@ interface PlayRequest {
   skus: string[];
   subscriptionOffers?: { sku: string; offerToken: string }[];
   obfuscatedAccountId?: string;
+  /** The subscription being replaced (a plan change). See playSubscriptionToReplace. */
+  purchaseToken?: string;
+  subscriptionProductReplacementParams?: { oldProductId: string; replacementMode: 'with-time-proration' };
 }
 
 interface RawPurchase {
@@ -148,6 +152,8 @@ interface RawPurchase {
   purchaseState?: string;
   packageNameAndroid?: string | null;
   isAcknowledgedAndroid?: boolean | null;
+  /** Android: the sub this purchase was launched for (obfuscatedAccountId). */
+  obfuscatedAccountIdAndroid?: string | null;
 }
 
 /** A user cancelling is not an error to report — it is an outcome. */
@@ -263,10 +269,31 @@ export async function purchaseThroughStore(
             'We couldn’t confirm which account this purchase is for. Sign out and back in, then try again. Nothing has been charged.',
         };
       }
+      /*
+       * A plan CHANGE replaces the patient's live subscription instead of
+       * adding a second one beside it — see playSubscriptionToReplace for the
+       * double charge this prevents. with-time-proration: the change is
+       * immediate and the unused time is credited; unlike charge-prorated-
+       * price it is valid for a downgrade as well as an upgrade.
+       */
+      const replacing = playSubscriptionToReplace(
+        ((await iap.getAvailablePurchases()) ?? []) as RawPurchase[],
+        sub,
+        productId,
+      );
       google = {
         skus: [productId],
         subscriptionOffers: [{ sku: productId, offerToken }],
         obfuscatedAccountId: sub,
+        ...(replacing
+          ? {
+              purchaseToken: replacing.purchaseToken,
+              subscriptionProductReplacementParams: {
+                oldProductId: replacing.productId,
+                replacementMode: 'with-time-proration' as const,
+              },
+            }
+          : {}),
       };
     }
 
@@ -550,8 +577,14 @@ export async function playManageUrl(serverUrl: string): Promise<string> {
     return serverUrl;
   }
   try {
+    const sub = (await getCachedProfile())?.sub;
     const held = await withStore(async (iap) => ((await iap.getAvailablePurchases()) ?? []) as RawPurchase[]);
-    const mine = held?.find((p) => p.productId && p.packageNameAndroid);
+    // This patient's own subscription only. On a Google account shared with
+    // another of our accounts, the first one listed may be theirs — and this
+    // link is the page a patient presses Cancel on.
+    const mine = sub
+      ? held?.find((p) => p.productId && p.packageNameAndroid && p.obfuscatedAccountIdAndroid === sub)
+      : undefined;
     return mine ? playSubscriptionsUrl(mine.productId, mine.packageNameAndroid) : serverUrl;
   } catch {
     return serverUrl;

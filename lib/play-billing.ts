@@ -42,9 +42,11 @@ const PERIOD: Record<'monthly' | 'annual', string> = { monthly: 'P1M', annual: '
  *      are a trial or intro price — bills on this cycle;
  *   2. of those, the BASE PLAN (Google returns `id = basePlanId` when there is
  *      no offerId) — that is the price the shelf showed the patient;
- *   3. if no phase data matches but the product has exactly one base plan,
- *      that one: the server already picked a per-cycle product id, so there is
- *      nothing else it could mean.
+ *   3. if the product has exactly one base plan and Play sent NO phase data
+ *      for it, that one: the server already picked a per-cycle product id, so
+ *      there is nothing else it could mean. Phase data that names a DIFFERENT
+ *      cycle is a refusal, not a fallback — buying a P1M plan for an annual
+ *      order charges a price the shelf never showed (review of COS-1242).
  *
  * Deliberately the base plan over developer offers (free trial, intro price):
  * the shelf prices the base plan, and silently applying a trial would charge
@@ -67,8 +69,51 @@ export function selectPlayOfferToken(
   if (pick) return pick.offerTokenAndroid ?? null;
 
   const basePlans = new Set(usable.map((o) => o.basePlanIdAndroid ?? ''));
-  if (basePlans.size !== 1) return null;
+  if (basePlans.size !== 1 || usable.some((o) => recurringPeriod(o))) return null;
   return (usable.find(isBasePlan) ?? usable[0])?.offerTokenAndroid ?? null;
+}
+
+/** The bits of a react-native-iap 16.5 Android `Purchase` the replacement check reads. */
+export interface PlayHeldPurchase {
+  productId?: string | null;
+  purchaseToken?: string | null;
+  purchaseState?: string | null;
+  obfuscatedAccountIdAndroid?: string | null;
+}
+
+/**
+ * COS-1242 — the live Play subscription a new purchase must REPLACE, or null.
+ *
+ * Play is not an App Store subscription group: two product ids are two
+ * subscriptions. Buying plan B while holding plan A, without saying so, leaves
+ * BOTH renewing — the patient is charged twice, and every renewal of A
+ * re-grants A over B (google-play-notifications.ts applies any paid order it
+ * has not seen). The server already expects a change to arrive as a
+ * replacement (it ignores the old token's replacementCancellation), so the
+ * app launches one.
+ *
+ * Only a subscription THIS patient bought — obfuscatedAccountId is their sub.
+ * A Google account shared by two of our accounts must not let one patient's
+ * plan change cancel the other's subscription. The same product id is left
+ * alone: Play answers already-owned, and that sentence sends them to Restore.
+ */
+export function playSubscriptionToReplace(
+  held: readonly PlayHeldPurchase[] | null | undefined,
+  sub: string,
+  productId: string,
+): { productId: string; purchaseToken: string } | null {
+  for (const p of held ?? []) {
+    if (
+      p.purchaseState === 'purchased' &&
+      p.obfuscatedAccountIdAndroid === sub &&
+      p.purchaseToken &&
+      p.productId &&
+      p.productId !== productId
+    ) {
+      return { productId: p.productId, purchaseToken: p.purchaseToken };
+    }
+  }
+  return null;
 }
 
 const PLAY_SUBSCRIPTIONS = 'https://play.google.com/store/account/subscriptions';

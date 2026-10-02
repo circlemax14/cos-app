@@ -18,6 +18,7 @@ import {
   isPlayPending,
   playBillingProblem,
   playSubscriptionsUrl,
+  playSubscriptionToReplace,
   selectPlayOfferToken,
   type PlayOffer,
 } from '../../lib/play-billing.ts';
@@ -50,6 +51,13 @@ test('a per-cycle product with one base plan is used even without matching phase
   // The server already chose a per-cycle product id, so there is nothing else it could mean.
   const single = [{ id: 'base', basePlanIdAndroid: 'base', offerTokenAndroid: 'tok-only' }];
   assert.equal(selectPlayOfferToken(single, 'annual'), 'tok-only');
+});
+
+test('THE POINT: one base plan that bills on the OTHER cycle is refused, not bought', () => {
+  // An annual order on a product whose only base plan is monthly would charge
+  // a price the shelf never showed. Refuse; the caller names the product.
+  assert.equal(selectPlayOfferToken([offer('monthly', null, ['P1M'], 'tok-m')], 'annual'), null);
+  assert.equal(selectPlayOfferToken([offer('annual', null, ['P1Y'], 'tok-a')], 'monthly'), null);
 });
 
 test('nothing on this cycle across several base plans → null, never a guess', () => {
@@ -106,4 +114,40 @@ test('an unknown code falls through to the generic wording rather than inventing
   assert.equal(playBillingProblem('unknown'), null);
   assert.equal(playBillingProblem(undefined), null);
   assert.equal(playBillingProblem('user-cancelled'), null);
+});
+
+// ── a plan change replaces, never stacks ─────────────────────────────────
+const SUB = '00000000-0000-4000-8000-000000000001';
+const held = (productId: string, over: Record<string, unknown> = {}) => ({
+  productId,
+  purchaseToken: `token-${productId}`,
+  purchaseState: 'purchased',
+  obfuscatedAccountIdAndroid: SUB,
+  ...over,
+});
+
+test('THE POINT: buying plan B while holding plan A replaces A', () => {
+  assert.deepEqual(playSubscriptionToReplace([held('plan.a.monthly')], SUB, 'plan.b.monthly'), {
+    productId: 'plan.a.monthly',
+    purchaseToken: 'token-plan.a.monthly',
+  });
+});
+
+test('nothing to replace: no purchases, the same product, or a pending one', () => {
+  assert.equal(playSubscriptionToReplace([], SUB, 'plan.b.monthly'), null);
+  assert.equal(playSubscriptionToReplace(null, SUB, 'plan.b.monthly'), null);
+  // Same product → let Play answer already-owned (its sentence says Restore).
+  assert.equal(playSubscriptionToReplace([held('plan.b.monthly')], SUB, 'plan.b.monthly'), null);
+  assert.equal(playSubscriptionToReplace([held('plan.a.monthly', { purchaseState: 'pending' })], SUB, 'plan.b.monthly'), null);
+  assert.equal(playSubscriptionToReplace([held('plan.a.monthly', { purchaseToken: null })], SUB, 'plan.b.monthly'), null);
+});
+
+test('THE POINT: never replaces a subscription another of our accounts bought', () => {
+  // A shared Google account: the other patient's plan must not be cancelled.
+  const other = held('plan.a.monthly', { obfuscatedAccountIdAndroid: '00000000-0000-4000-8000-000000000002' });
+  assert.equal(playSubscriptionToReplace([other], SUB, 'plan.b.monthly'), null);
+  // A purchase with no account id was never granted by the server either.
+  assert.equal(playSubscriptionToReplace([held('plan.a.monthly', { obfuscatedAccountIdAndroid: null })], SUB, 'plan.b.monthly'), null);
+  // Theirs is skipped, this patient's is found.
+  assert.equal(playSubscriptionToReplace([other, held('plan.c.annual')], SUB, 'plan.b.monthly')?.productId, 'plan.c.annual');
 });
