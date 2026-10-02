@@ -24,6 +24,7 @@ import {
   getPaymentProvider,
   type PaymentChoice,
   type PaymentMethod,
+  type VerifyStoreReceipt,
 } from '@/services/payments-provider';
 import { launchPurchase, describeOutcome } from '@/lib/launch-purchase';
 import { startPurchase, verifyStorePurchase } from '@/services/api/payments';
@@ -150,7 +151,7 @@ export function usePaymentMethods(): UsePaymentMethods {
          * layer deciding for itself.
          */
         const provider = getPaymentProvider(method.id);
-        const result = await provider?.purchase(productId, async (proof) =>
+        const verifyOnServer: VerifyStoreReceipt = async (proof) =>
           verifyStorePurchase(
             proof.platform === 'ios'
               ? {
@@ -162,9 +163,11 @@ export function usePaymentMethods(): UsePaymentMethods {
                   gateway: 'google-play',
                   purchaseToken: proof.receipt,
                   productId: proof.productId,
+                  ...(proof.packageName ? { packageName: proof.packageName } : {}),
                 },
-          ),
-        );
+          );
+        // COS-1242 — the cycle picks the Play base plan; StoreKit never reads it.
+        const result = await provider?.purchase(productId, verifyOnServer, order.cycle);
 
         if (!result || result.status === 'unavailable') {
           return {
@@ -175,6 +178,9 @@ export function usePaymentMethods(): UsePaymentMethods {
         }
         // Distinct from success. The shelf must not refresh or close on this.
         if (result.status === 'cancelled') return { status: 'cancelled' };
+        // COS-1242 — Play is holding the money (Android only). Not a failure,
+        // and not to be retried: Restore settles it once it clears.
+        if (result.status === 'pending') return { status: 'pending', message: result.message };
 
         /*
          * COS-925 — 'pending' no longer promises a retry nobody performs.

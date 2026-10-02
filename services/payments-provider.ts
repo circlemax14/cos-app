@@ -65,6 +65,8 @@ export interface StoreBilling {
     productId: string,
     unavailableReason: string,
     verify: VerifyStoreReceipt,
+    /** COS-1242 — picks the Play base plan. StoreKit never reads it. */
+    cycle?: 'monthly' | 'annual',
   ): Promise<PurchaseResult>;
 }
 
@@ -74,6 +76,8 @@ export type VerifyStoreReceipt = (proof: {
   receipt: string;
   platform: 'ios' | 'android';
   transactionId?: string;
+  /** COS-1242 — Android only: the package Play says the purchase was made in. */
+  packageName?: string;
 }) => Promise<{ applied: boolean }>;
 
 let storeBilling: StoreBilling | null = null;
@@ -109,6 +113,8 @@ export type PurchaseResult =
       applied: boolean;
     }
   | { status: 'cancelled' }
+  /** COS-1242 — Play is holding the payment. Android only; see native-store-billing. */
+  | { status: 'pending'; message: string }
   | { status: 'unavailable'; reason: string };
 
 export interface PaymentProvider {
@@ -120,7 +126,11 @@ export interface PaymentProvider {
   /** Null when purchase() can genuinely complete. Set with the SDK, never before. */
   unavailableReason: string | null;
   /** The SDK call. Real StoreKit / Play Billing implementation replaces this body. */
-  purchase(productId: string, verify: VerifyStoreReceipt): Promise<PurchaseResult>;
+  purchase(
+    productId: string,
+    verify: VerifyStoreReceipt,
+    cycle?: 'monthly' | 'annual',
+  ): Promise<PurchaseResult>;
 }
 
 const NO_STOREKIT =
@@ -176,9 +186,9 @@ const PROVIDERS: Record<PaymentGatewayId, PaymentProvider> = {
     get unavailableReason() {
       return storeBilling?.isLinked() ? null : NO_PLAY_BILLING;
     },
-    purchase: (productId: string, verify: VerifyStoreReceipt) =>
+    purchase: (productId: string, verify: VerifyStoreReceipt, cycle?: 'monthly' | 'annual') =>
       storeBilling
-        ? storeBilling.purchase(productId, NO_PLAY_BILLING, verify)
+        ? storeBilling.purchase(productId, NO_PLAY_BILLING, verify, cycle)
         : Promise.resolve({ status: 'unavailable' as const, reason: NO_PLAY_BILLING }),
   },
 };

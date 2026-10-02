@@ -59,7 +59,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppWrapper } from '@/components/app-wrapper';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { refreshAfterPlanChange } from '@/lib/plan-change-refresh';
 import {
@@ -67,7 +67,9 @@ import {
   resumeSubscription,
   fetchPaymentHistory,
   formatPaymentAmount,
+  verifyStorePurchase,
 } from '@/services/api/payments';
+import { playManageUrl, restorePlayPurchases } from '@/services/native-store-billing';
 import { usePaymentGateways } from '@/hooks/use-payment-gateways';
 import { usePlanSelfSwitchFlag } from '@/hooks/use-plan-self-switch-flag';
 import { switchToPlan } from '@/services/api/patient-plans';
@@ -203,7 +205,7 @@ export default function BillingScreen() {
    * Same canPay rule as the shelf (COS-798): the gateway list is the truth
    * about whether anyone can pay, not the un-darkening flag.
    */
-  const { canPay } = usePaymentGateways();
+  const { canPay, gateways } = usePaymentGateways();
   const canSubscribe = upgradeEnabled && canPay;
   /*
    * COS-924 — `&& !canPay` dropped, exactly as on the shelf.
@@ -256,8 +258,12 @@ export default function BillingScreen() {
       // to finish in the store, so send them straight there rather than
       // leaving a message they have to act on later.
       if (!out.scheduled && out.manageUrl) {
-        const can = await Linking.canOpenURL(out.manageUrl);
-        if (can) await Linking.openURL(out.manageUrl);
+        // COS-1242 — on Android, straight to THIS subscription in Play rather
+        // than the list. iOS opens exactly the server's URL, as before.
+        const manageUrl =
+          Platform.OS === 'android' ? await playManageUrl(out.manageUrl) : out.manageUrl;
+        const can = await Linking.canOpenURL(manageUrl);
+        if (can) await Linking.openURL(manageUrl);
       }
       // COS-926 — the shared list. A switch, a cancel and a resume all change
       // which plan the patient holds, so all three refresh the same set.
@@ -266,6 +272,53 @@ export default function BillingScreen() {
       setNotice(serverMessage(err, 'Could not cancel. Please try again.'));
     } finally {
       setBusy(null);
+    }
+  }
+
+  /*
+   * COS-1242 / SCRUM-776 — Restore, Google Play only.
+   *
+   * The one way to settle a Play purchase the checkout could not: a pending
+   * payment that has since cleared, a verify lost to a bad connection, a new
+   * phone. Play refunds anything left unacknowledged for three days, so this
+   * is also how a patient avoids losing a payment. Offered only where the
+   * server lists Play — a switched-off gateway would refuse every verify.
+   *
+   * Android only. iOS renders nothing new.
+   */
+  const canRestorePlay = Platform.OS === 'android' && gateways.some((g) => g.id === 'google-play');
+  const [restoring, setRestoring] = useState(false);
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
+
+  async function onRestorePlay() {
+    if (restoring) return;
+    setRestoring(true);
+    setRestoreNotice(null);
+    try {
+      const out = await restorePlayPurchases((proof) =>
+        verifyStorePurchase({
+          gateway: 'google-play',
+          purchaseToken: proof.receipt,
+          productId: proof.productId,
+          ...(proof.packageName ? { packageName: proof.packageName } : {}),
+        }),
+      );
+      if (out.status === 'unavailable') {
+        setRestoreNotice(out.reason);
+      } else if (out.applied > 0) {
+        setRestoreNotice('Your Google Play subscription is restored.');
+        await refreshAfterPlanChange(queryClient);
+      } else if (out.found > 0) {
+        setRestoreNotice(
+          'We found a Google Play subscription but couldn\u2019t add it to this account. If you bought it while signed in to a different account, sign in to that one \u2014 or ask your care team.',
+        );
+      } else {
+        setRestoreNotice('There are no Google Play subscriptions to restore for the Google account on this device.');
+      }
+    } catch (err) {
+      setRestoreNotice(serverMessage(err, 'Could not restore. Please try again.'));
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -539,6 +592,27 @@ export default function BillingScreen() {
         <Text style={[styles.footnote, { color: colors.text, fontSize: getScaledFontSize(12) }]}>
           Prices are shown in USD. Your care team can answer any billing question.
         </Text>
+      )}
+
+      {canRestorePlay && (
+        <View style={{ marginBottom: 20 }}>
+          <Pressable
+            onPress={() => void onRestorePlay()}
+            disabled={restoring}
+            accessibilityRole="button"
+            accessibilityLabel="Restore Google Play purchases"
+            style={[styles.manageBtn, { borderColor: colors.border ?? '#E5E7EB', opacity: restoring ? 0.6 : 1 }]}
+          >
+            <Text style={[styles.manageText, { color: colors.text, fontSize: getScaledFontSize(14) }]}>
+              {restoring ? 'Checking Google Play\u2026' : 'Restore Google Play purchases'}
+            </Text>
+          </Pressable>
+          {restoreNotice !== null && (
+            <Text style={[styles.notice, { color: colors.text, fontSize: getScaledFontSize(13) }]}>
+              {restoreNotice}
+            </Text>
+          )}
+        </View>
       )}
 
       {/* COS-791 — what they have actually been charged. A subscription screen

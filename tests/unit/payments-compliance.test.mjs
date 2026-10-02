@@ -136,7 +136,14 @@ test('a store cancellation sends the patient to the store, not a dead message', 
   // Apple and Google cannot be cancelled server-side, so a message the patient
   // has to act on later is a subscription that never actually stops.
   assert.match(billing, /out\.manageUrl/)
-  assert.match(billing, /Linking\.openURL\(out\.manageUrl\)/)
+  // COS-1242 — on Android the link is pointed at THIS Play subscription first;
+  // iOS still opens exactly the server's URL. Either way it is Linking, out of
+  // process, and it is the server's link that seeds it.
+  assert.match(
+    billing,
+    /const manageUrl =\s*Platform\.OS === 'android' \? await playManageUrl\(out\.manageUrl\) : out\.manageUrl;/,
+  )
+  assert.match(billing, /Linking\.openURL\(manageUrl\)/)
 })
 
 // ── COS-794: the iOS external purchase link ───────────────────────────────
@@ -488,4 +495,126 @@ test('an empty shelf is not a wall', () => {
 
 test('the heading says Change, not Choose, once they have a plan', () => {
   assert.match(cards, /isDefaultPlan === false \? 'Change your plan' : 'Choose your plan'/)
+})
+
+// ── COS-1242 / SCRUM-776: Google Play Billing on Android ──────────────────
+//
+// The same three guards, applied to the Play path, plus the two Play-specific
+// ways a purchase is charged and then lost: a subscription launched without an
+// offer token, and one launched without the patient's account id (the server
+// attributes ONLY from obfuscatedExternalAccountId, so it would refuse it).
+
+const store = read('services/native-store-billing.ts')
+const play = read('lib/play-billing.ts')
+const checkout = read('app/Home/billing-checkout.tsx')
+const methods = read('hooks/use-payment-methods.ts')
+
+test('THE POINT: the Android payment path never opens a webview or in-app browser', () => {
+  for (const [name, src] of Object.entries({ store, play, billing, checkout, methods })) {
+    const code = stripComments(src)
+    assert.doesNotMatch(code, /['"]expo-web-browser['"]/, `${name} imports expo-web-browser`)
+    assert.doesNotMatch(code, /['"]react-native-webview['"]/, `${name} imports react-native-webview`)
+    assert.doesNotMatch(code, /openBrowserAsync|openAuthSessionAsync|WebView/, `${name} opens an in-app browser`)
+  }
+})
+
+test('the Play manage link is Play\'s own page, opened out of process', () => {
+  assert.match(play, /https:\/\/play\.google\.com\/store\/account\/subscriptions/)
+  assert.match(play, /\?sku=\$\{encodeURIComponent\(productId\)\}&package=\$\{encodeURIComponent\(packageName\)\}/)
+  // The billing screen is the one opener, and it uses Linking.
+  assert.match(stripComments(billing), /Linking\.openURL\(manageUrl\)/)
+})
+
+test('react-native-iap is still required lazily, never imported at module scope', () => {
+  // An OTA carries the JS and not the native half; a module-scope import of a
+  // native module crashes every device on load. lib/play-billing.ts is pure.
+  const code = stripComments(store)
+  assert.doesNotMatch(code, /from ['"]react-native-iap['"]/)
+  assert.doesNotMatch(stripComments(play), /^import /m, 'lib/play-billing.ts must have no runtime imports')
+})
+
+test('THE POINT: every Play-only branch is guarded on Android, so iOS is unchanged', () => {
+  const code = stripComments(store)
+  // The offer token + account id, the pending check, the error wording and
+  // the packageName on the proof — each behind Platform.OS === 'android'.
+  assert.match(code, /let google: PlayRequest = \{ skus: \[productId\] \};/)
+  assert.match(code, /appleAccountToken = sub;\s*\}\s*if \(Platform\.OS === 'android'\) \{/)
+  assert.match(code, /if \(Platform\.OS === 'android' && purchase\.purchaseState === 'pending'\)/)
+  assert.match(code, /if \(Platform\.OS === 'android'\) \{\s*const code = /)
+  assert.match(code, /Platform\.OS === 'android' && purchase\.packageNameAndroid/)
+  // iOS asks StoreKit for the sku AND names the buyer: apple-iap.gateway.ts
+  // refuses a transaction without appAccountToken, so leaving it off charged
+  // the patient and then failed verify. Missing/non-UUID sub refuses before
+  // the sheet opens.
+  assert.match(code, /request: \{ apple: \{ sku: productId, appAccountToken: appleAccountToken \}, google \}/)
+  assert.match(code, /if \(Platform\.OS === 'ios'\) \{\s*const sub = \(await getCachedProfile\(\)\)\?\.sub;\s*if \(typeof sub !== 'string' \|\| !UUID_RE\.test\(sub\)\) \{\s*return \{\s*status: 'unavailable'/)
+  // Restore and the manage link refuse to run anywhere but Android.
+  assert.match(code, /export async function restorePlayPurchases[\s\S]{0,120}if \(Platform\.OS !== 'android'\)/)
+  assert.match(code, /export async function playManageUrl[\s\S]{0,120}Platform\.OS !== 'android'/)
+  // And the Restore button only renders on Android, behind the server's list.
+  assert.match(billing, /const canRestorePlay = Platform\.OS === 'android' && gateways\.some\(\(g\) => g\.id === 'google-play'\);/)
+  assert.match(billing, /\{canRestorePlay && \(/)
+})
+
+test('THE POINT: a Play subscription is launched with an offer token AND the account id', () => {
+  const code = stripComments(store)
+  assert.match(code, /subscriptionOffers: \[\{ sku: productId, offerToken \}\]/)
+  assert.match(code, /obfuscatedAccountId: sub/)
+  // No token, or no account to attribute it to: refuse before the sheet opens.
+  const branch = code.slice(code.indexOf("if (Platform.OS === 'android') {"))
+  const refuseAt = branch.indexOf('if (!offerToken)')
+  const noSubAt = branch.indexOf("typeof sub !== 'string'")
+  const launchAt = branch.indexOf('.requestPurchase(')
+  assert.ok(refuseAt >= 0 && noSubAt >= 0 && launchAt > refuseAt && launchAt > noSubAt)
+})
+
+test('THE POINT: a pending Play purchase is neither verified nor acknowledged', () => {
+  // Google: grant and acknowledge only once PURCHASED. The pending return has
+  // to come before the server call and before finishTransaction.
+  const pendingAt = store.indexOf("purchase.purchaseState === 'pending'")
+  const verifyAt = store.indexOf('await verify(')
+  const finishAt = store.indexOf('finishTransaction({ purchase')
+  assert.ok(pendingAt >= 0 && pendingAt < verifyAt && pendingAt < finishAt)
+  // And the hook passes it on as 'pending' — never 'applied', never 'failed'.
+  assert.match(methods, /if \(result\.status === 'pending'\) return \{ status: 'pending', message: result\.message \};/)
+})
+
+test('Restore asks the server first and acknowledges only what it accepted', () => {
+  const body = store.slice(store.indexOf('export async function restorePlayPurchases'))
+  const verifyAt = body.indexOf('await verify(')
+  const finishAt = body.indexOf('finishTransaction(')
+  assert.ok(verifyAt >= 0 && finishAt > verifyAt)
+  assert.match(body, /if \(!ok\) continue;/)
+  // Pending purchases are skipped — they are not paid for.
+  assert.match(body, /purchase\.purchaseState !== 'purchased'/)
+})
+
+test('the Play proof goes to the gateway the server registered, with the package', () => {
+  // The server's VerifySchema discriminates on 'google-play' (hyphen).
+  for (const src of [methods, billing]) {
+    assert.match(src, /gateway: 'google-play',\s*purchaseToken: proof\.receipt,\s*productId: proof\.productId,\s*\.\.\.\(proof\.packageName \? \{ packageName: proof\.packageName \} : \{\}\)/)
+  }
+})
+
+test('THE POINT: a Play plan change replaces the live subscription instead of stacking a second', () => {
+  // Without this, plan B is bought BESIDE plan A: two renewals, two charges,
+  // and every renewal of A re-grants A over B on the server.
+  const code = stripComments(store)
+  const branch = code.slice(code.indexOf("let google: PlayRequest"), code.indexOf('.requestPurchase('))
+  assert.match(branch, /playSubscriptionToReplace\(\s*\(\(await iap\.getAvailablePurchases\(\)\) \?\? \[\]\) as RawPurchase\[\],\s*sub,\s*productId,\s*\)/)
+  assert.match(branch, /purchaseToken: replacing\.purchaseToken/)
+  assert.match(branch, /oldProductId: replacing\.productId,\s*replacementMode: 'with-time-proration'/)
+})
+
+test('a Google duplicate is the purchase already on this account — Google only, iOS unchanged', () => {
+  const api = read('services/api/payments.ts')
+  assert.match(
+    stripComments(api),
+    /if \(proof\.gateway === 'google-play' && data\?\.duplicateOf\) return \{ \.\.\.data, applied: true \};/,
+  )
+})
+
+test('the Play manage link only ever points at this patient\'s own subscription', () => {
+  const body = stripComments(store).slice(stripComments(store).indexOf('export async function playManageUrl'))
+  assert.match(body, /p\.obfuscatedAccountIdAndroid === sub/)
 })

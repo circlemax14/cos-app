@@ -108,10 +108,28 @@ export async function startPurchase(input: {
 export async function verifyStorePurchase(
   proof:
     | { gateway: 'apple-iap'; transactionId: string; signedPayload: string }
-    | { gateway: 'google-play'; purchaseToken: string; productId: string },
+    /*
+     * COS-1242 — packageName is optional and additive: the server reads its
+     * own configured package today and ignores unknown fields (zod strips
+     * them), so this is safe to send before and after the backend change.
+     */
+    | { gateway: 'google-play'; purchaseToken: string; productId: string; packageName?: string },
 ): Promise<{ applied: boolean; planKey: string }> {
   const res = await apiClient.post('/v1/payments/verify', proof);
-  return (res.data as { data: { applied: boolean; planKey: string } }).data;
+  const data = (res.data as { data: { applied: boolean; planKey: string; duplicateOf?: string } }).data;
+  /*
+   * COS-1242 — on Google Play a DUPLICATE is this purchase already on this
+   * account, not a failure. apply-purchase.ts answers `applied: false,
+   * duplicateOf` for an order it has already written, and on Android that is
+   * routine: Play's real-time notification often reaches the server before
+   * the app's own verify, and Restore re-posts a subscription that is live.
+   * Read as "not applied", the shelf told a patient whose plan HAD changed
+   * that it had not, and Restore said it could not add a subscription that
+   * was already theirs. The server checked it is this caller's (403
+   * otherwise) before answering. Google only, so iOS is exactly as before.
+   */
+  if (proof.gateway === 'google-play' && data?.duplicateOf) return { ...data, applied: true };
+  return data;
 }
 
 /* ── COS-792: managing an existing subscription ──────────────────────── */
