@@ -2,7 +2,7 @@
   "expo": {
     "name": "CSH",
     "slug": "cos",
-    "version": "1.5.3",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "cos",
@@ -11,7 +11,7 @@
       "supportsTablet": true,
       "requireFullScreen": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
-      "buildNumber": "66",
+      "buildNumber": "69",
       "associatedDomains": [
         "applinks:circlesupporthealth.ai",
         "applinks:*.circlesupporthealth.ai"
@@ -89,7 +89,7 @@
         "expo-channel-name": "production"
       }
     },
-    "runtimeVersion": "1.5.3",
+    "runtimeVersion": "1.6.0",
     "plugins": [
       "expo-router",
       "expo-updates",
