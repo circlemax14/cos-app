@@ -38,6 +38,17 @@ export interface UserProfile {
   firstName?: string | null;
   lastName?: string | null;
   hasSeenWelcome?: boolean;
+  /**
+   * COS-1235 — the server's word that this account is here for a CARE CIRCLE
+   * rather than for its own medical records (a live invitation, or any row in the
+   * social graph), so connecting a clinic is optional for them.
+   *
+   * It is what stops a brand-new invitee being funnelled into "connect your
+   * clinic" — a screen whose only two exits are connecting one and signing out —
+   * with their invitation on the far side of it. Read by lib/onboarding-gate.ts,
+   * and ABSENT on a profile cached by an older build, which reads as false.
+   */
+  ehrOnboardingOptional?: boolean;
 }
 
 /**

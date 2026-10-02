@@ -44,12 +44,24 @@ test('THE POINT: it is consumed BEFORE the onboarding gates, and used only AFTER
    * context; using it only on the terminal branch means a deep link can never
    * jump someone over terms acceptance or device permissions onto a PHI screen.
    */
+  /*
+   * COS-1235 — the gates themselves moved into lib/onboarding-gate.ts, which is
+   * the one ladder app/index.tsx and app/(onboarding)/permissions.tsx now share
+   * too; there were three hand-written copies and they had already drifted. So the
+   * anchor is the gate CALL rather than the terms route literal it used to be —
+   * the ordering argument is unchanged, and `if (gate.route)` is now every
+   * onboarding gate at once.
+   */
   const consumedAt = signIn.indexOf('consumeDeferredNavigation()');
-  const termsGate = signIn.indexOf("'/(onboarding)/usage-guidelines'");
+  const gateAt = signIn.indexOf('onboardingGate(user,');
+  const gateReturnsAt = signIn.indexOf('if (gate.route)');
   const usedAt = signIn.indexOf('deferredAfterSignIn ??');
-  assert.ok(consumedAt > 0 && termsGate > 0 && usedAt > 0, 'all three anchors must exist');
-  assert.ok(consumedAt < termsGate, 'must be consumed before the terms gate');
-  assert.ok(usedAt > termsGate, 'must only be USED after every onboarding gate');
+  assert.ok(
+    consumedAt > 0 && gateAt > 0 && gateReturnsAt > 0 && usedAt > 0,
+    'all four anchors must exist',
+  );
+  assert.ok(consumedAt < gateAt, 'must be consumed before the onboarding gate runs');
+  assert.ok(usedAt > gateReturnsAt, 'must only be USED after the gate has let them through');
 });
 
 test('THE POINT: signing out drops the queue — the PHI leak its own header names', () => {

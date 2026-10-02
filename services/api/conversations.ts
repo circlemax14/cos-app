@@ -45,9 +45,21 @@ export interface DirectoryEntry {
 export type ConnectionStatus = 'pending-out' | 'pending-in' | 'accepted' | 'declined';
 
 export interface Connection {
-  /** COS-1129 — present only on 'pending-out'; see the server note. */
+  /**
+   * COS-1129 — present on 'pending-out', and (COS-1235) on the 'pending-in' rows
+   * that exist because YOU invited that person by email. See the server note:
+   * naming a stranger who wrote to you is a disclosure you never asked for;
+   * naming the person you invited is your own input coming back.
+   */
   displayName?: string;
   photoUrl?: string | null;
+  /**
+   * COS-1235 — the address YOU typed into the invite form, on the incoming request
+   * their acceptance created. Absent on every other row, including every stranger's.
+   * It is what lets the inviter tell it is the right person: `displayName` is only
+   * written when somebody turns discoverability on, so a brand-new invitee has none.
+   */
+  invitedEmail?: string;
   userId: string;
   peerId: string;
   status: ConnectionStatus;
@@ -387,19 +399,39 @@ export interface ReceivedInvite {
 }
 
 /**
- * Invitations addressed to my verified address that are still live, newest
- * first.
+ * Invitations addressed to my verified address that are still live, newest first,
+ * plus whether an invitation could reach this account at all.
  *
- * `[]` is the NORMAL answer and means one of three things that must never be
- * rendered differently: no live invitation, OR my profile holds no email at all
- * (Apple relay sign-ups — 13 of 32 production rows), OR the address asked us to
- * stop. Telling those apart is an oracle, so the client does not try.
+ * `invites: []` is the NORMAL answer and still means two things that must never be
+ * rendered differently: no live invitation, OR the address asked us to stop.
+ * Telling THOSE apart is an oracle, so the client does not try.
+ *
+ * ─── COS-1235: `reachable` IS THE THIRD CASE, AND IT IS NOT AN ORACLE ──
+ *
+ * The third thing `[]` used to mean is that we hold NO EMAIL ADDRESS for this
+ * account — which is 13 of 32 production rows (Apple private-relay sign-ups). An
+ * invitation sent to those people can never arrive, and they were shown an empty
+ * list forever with no explanation. `reachable:false` is a fact about the caller's
+ * OWN account and says nothing about whether an invitation exists, so it discloses
+ * nothing; a suppressed address deliberately reads `true`.
+ *
+ * It defaults to `true` on a malformed or older response, because the honest
+ * fallback is the silence we had rather than telling somebody with a working
+ * address that invitations cannot find them.
  */
-export async function fetchReceivedInvites(): Promise<ReceivedInvite[]> {
-  const res = await apiClient.get<{ data: { invites: ReceivedInvite[] } }>(
+export interface ReceivedInvitesResult {
+  invites: ReceivedInvite[];
+  reachable: boolean;
+}
+
+export async function fetchReceivedInvites(): Promise<ReceivedInvitesResult> {
+  const res = await apiClient.get<{ data: { invites: ReceivedInvite[]; reachable?: boolean } }>(
     '/v1/patients/me/social/invites/received',
   );
-  return res.data?.data?.invites ?? [];
+  return {
+    invites: res.data?.data?.invites ?? [],
+    reachable: res.data?.data?.reachable !== false,
+  };
 }
 
 /**
@@ -412,17 +444,28 @@ export async function fetchReceivedInvites(): Promise<ReceivedInvite[]> {
  * it myself.
  *
  * `requested:false` means the invitation is spent but nothing reached the
- * inviter, because one of us had declined the other in-app. Propagated rather
- * than swallowed — see lib/received-invite-copy.ts.
+ * inviter, because one of us had declined the other in-app. `connected:true`
+ * (COS-1235) means the inviter had already asked in-app, so both of us had acted
+ * and this finished it. All three are propagated rather than swallowed — see
+ * lib/received-invite-copy.ts.
  */
 export async function acceptReceivedInvite(
   inviteId: string,
-): Promise<{ accepted: true; requested: boolean }> {
+): Promise<{ accepted: true; requested: boolean; connected: boolean }> {
   try {
-    const res = await apiClient.post<{ data: { accepted: true; requested: boolean } }>(
-      `/v1/patients/me/social/invites/received/${encodeURIComponent(inviteId)}/accept`,
-    );
-    return { accepted: true, requested: res.data?.data?.requested === true };
+    const res = await apiClient.post<{
+      data: { accepted: true; requested: boolean; connected?: boolean };
+    }>(`/v1/patients/me/social/invites/received/${encodeURIComponent(inviteId)}/accept`);
+    return {
+      accepted: true,
+      requested: res.data?.data?.requested === true,
+      /*
+       * COS-1235 — `connected:true` means the inviter had ALREADY sent an in-app
+       * request, so both people had acted and this completed the connection. There
+       * is no second step to wait for, and the copy must not promise one.
+       */
+      connected: res.data?.data?.connected === true,
+    };
   } catch (err) {
     wrapInviteError(err);
   }

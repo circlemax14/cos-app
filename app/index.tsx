@@ -14,6 +14,7 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useSecurity } from '@/stores/security-store';
 import { requestSignIn } from '@/lib/lock-gate';
+import { onboardingGate } from '@/lib/onboarding-gate';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -45,36 +46,36 @@ type GateState = 'loading' | 'no-internet' | 'session-unreadable' | 'done';
  * Reads permissions_requested and isPinSetup in parallel to avoid serial
  * AsyncStorage/SecureStore latency.
  *
- * Backend = source of truth: termsAccepted, fastenConnected, dataReady, and
- * hasSeenWelcome all come from /v1/auth/me. The only legitimately-local
- * gates are device-specific (PIN setup) or one-time UX prompts (notification
- * permission rationale). If the backend says a user is already fully
- * onboarded, an empty AsyncStorage (reinstall, "clear app data", device
- * migration) must NOT trap them in the onboarding loop. Backfill the local
- * flag so subsequent cold-starts behave normally too.
+ * Backend = source of truth: termsAccepted, fastenConnected, dataReady,
+ * ehrOnboardingOptional and hasSeenWelcome all come from /v1/auth/me. The only
+ * legitimately-local gates are device-specific (PIN setup) or one-time UX prompts
+ * (notification permission rationale).
+ *
+ * COS-1235 — THE ONBOARDING LADDER ITSELF LIVES IN lib/onboarding-gate.ts, and it
+ * is the same one app/(auth)/sign-in.tsx and app/(onboarding)/permissions.tsx now
+ * call. There were three hand-written copies of it and they had already drifted;
+ * one of them sent a brand-new care-circle invitee to "connect your clinic", from
+ * which the only two exits are connecting one and signing out — so the person who
+ * installed the app BECAUSE they were invited could never reach the invitation.
+ * See that module's header for the whole decision.
+ *
+ * What stays here is what is genuinely this screen's: the PIN/lock decision, and
+ * the one-time welcome.
  */
 async function getDestination(user: UserProfile, isLocked: boolean): Promise<string> {
-  // Terms acceptance is required for all users
-  if (!user.termsAccepted) return '/(onboarding)/usage-guidelines';
-
   const [permissionsRequested, pinConfigured] = await Promise.all([
     AsyncStorage.getItem('permissions_requested'),
     isPinSetup(),
   ]);
 
-  const fullyOnboardedServerSide =
-    user.fastenConnected && user.dataReady;
-
-  if (!permissionsRequested) {
-    if (fullyOnboardedServerSide) {
-      // Returning user with cleared local state — silently mark the
-      // permission prompt as already shown so we don't loop them through
-      // onboarding screens whose backend equivalents already say "done".
-      AsyncStorage.setItem('permissions_requested', 'true').catch(() => {});
-    } else {
-      return '/(onboarding)/permissions';
-    }
+  const gate = onboardingGate(user, { permissionsRequested: !!permissionsRequested });
+  if (gate.backfillPermissions) {
+    // Returning user with cleared local state — silently mark the permission
+    // prompt as already shown so we don't loop them through onboarding screens
+    // whose backend equivalents already say "done".
+    AsyncStorage.setItem('permissions_requested', 'true').catch(() => {});
   }
+  if (gate.route) return gate.route;
 
   const finalHome = (): string => {
     if (!pinConfigured) return '/(security)/setup-pin';
@@ -82,20 +83,7 @@ async function getDestination(user: UserProfile, isLocked: boolean): Promise<str
     return '/Home';
   };
 
-  // Users with data ready and welcome already seen → straight to Home.
-  if (user.fastenConnected && user.dataReady && user.hasSeenWelcome) {
-    return finalHome();
-  }
-
-  // Users without an EHR connection must go through Fasten — the widget
-  // itself renders a "Connect a Clinic" prompt if they dismiss it without
-  // connecting, so we don't need a separate route for that state.
-  if (!user.fastenConnected) return '/(onboarding)/fasten-connect';
-
-  // Fasten connected but FHIR export still processing.
-  if (!user.dataReady) return '/(onboarding)/data-processing';
-
-  // Data ready + welcome not yet seen → show it now (applies to existing users).
+  // Welcome not yet seen → show it now (applies to existing users too).
   if (!user.hasSeenWelcome) {
     // Pass firstName as a route param so the greeting renders correctly on
     // first paint — otherwise the screen flashes "Hi!" before the async

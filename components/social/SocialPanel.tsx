@@ -80,6 +80,7 @@ import {
   RECEIVED_INVITES_KEY,
 } from '@/components/social/ReceivedInvitations'
 import { isValidEmailFormat } from '@/lib/email-format'
+import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invite-copy'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCanShowScreen } from '@/hooks/use-feature-permissions'
 
@@ -472,7 +473,27 @@ export function SocialPanel(): React.JSX.Element | null {
     return null
   }
 
-  const receivedCount = receivedQ.data?.length ?? 0
+  const receivedCount = receivedQ.data?.invites.length ?? 0
+  /*
+   * ─── COS-1235: THE ACCOUNT NO INVITATION CAN REACH ───────────────────
+   *
+   * `reachable:false` means the server holds NO email address for this account —
+   * 13 of 32 production rows, which are Apple private-relay sign-ups. An
+   * invitation sent to those people can never be matched to them, and until now
+   * they were shown an empty list forever and told nothing about why.
+   *
+   * It is rendered HERE and not in ReceivedInvitations, which mounts on Home for
+   * every patient on every open: a permanent banner there, for 13 accounts that may
+   * never be invited by anybody, is unsolicited noise, and this panel's Requests
+   * mode is the place somebody goes LOOKING for an invitation. It is the answer to
+   * a question, so it belongs where the question is asked.
+   *
+   * It is NOT an oracle: it is a fact about the caller's own account and says
+   * nothing about whether an invitation exists. A SUPPRESSED address reads
+   * `reachable:true` on purpose, because their empty list is their own earlier
+   * decision and naming it would report a private "no" back at them.
+   */
+  const unreachable = receivedQ.data?.reachable === false
 
   /*
    * COS-1233 — the plan can take away finding and answering. It CANNOT take
@@ -496,6 +517,10 @@ export function SocialPanel(): React.JSX.Element | null {
     return (
       <ScrollView style={styles.scroll} contentContainerStyle={styles.wrap}>
         <ReceivedInvitations />
+        {/* COS-1235 — and the one thing an empty list cannot say for itself. This
+            branch is a brand-new invitee's only screen, so it is exactly where
+            somebody we hold no address for has to be told. */}
+        {unreachable ? <UnreachableNotice colors={colors} fs={fs} fw={fw} /> : null}
       </ScrollView>
     )
   }
@@ -1211,6 +1236,9 @@ export function SocialPanel(): React.JSX.Element | null {
           their care circle lives.
         */}
         <ReceivedInvitations />
+        {/* COS-1235 — the answer to "why is there nothing here for me?", in the
+            one place that question gets asked. */}
+        {unreachable ? <UnreachableNotice colors={colors} fs={fs} fw={fw} /> : null}
         {pendingQ.isLoading ? (
           <ActivityIndicator style={{ marginTop: Spacing.md }} color={colors.tint} />
         ) : pendingCount === 0 && sentCount === 0 && receivedCount === 0 && openInvites.length === 0 ? (
@@ -1247,9 +1275,27 @@ export function SocialPanel(): React.JSX.Element | null {
                 <MaterialIcons name="person" size={fs(20)} color={colors.icon} />
               </View>
               <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                {/*
+                  COS-1235 — THE SECOND CONSENT HAD NO NAME ON IT.
+
+                  Accepting an emailed invitation creates the request with the
+                  RECIPIENT as requester, so the INVITER lands here — and this line
+                  said "Someone would like to connect", with no name, about a person
+                  they had invited by email minutes earlier. They could not tell it
+                  was the right person, which is the whole job of a second consent.
+
+                  A STRANGER IS STILL ANONYMOUS, and that is the server's decision:
+                  it populates neither field for a peer this caller did not invite.
+                  The copy helper's fallback is the original sentence, unchanged.
+                */}
                 <Text style={{ color: colors.text, fontSize: fs(15) }} numberOfLines={1}>
-                  Someone would like to connect
+                  {incomingRequestLine(item)}
                 </Text>
+                {incomingRequestReason(item) ? (
+                  <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2 }} numberOfLines={1}>
+                    {incomingRequestReason(item)}
+                  </Text>
+                ) : null}
                 <Text style={{ color: colors.subtext, fontSize: fs(11), marginTop: 2 }}>
                   {new Date(item.createdAt).toLocaleDateString(undefined, {
                     month: 'short',
@@ -1262,7 +1308,7 @@ export function SocialPanel(): React.JSX.Element | null {
                 disabled={answering(item.peerId) !== null}
                 accessibilityRole="button"
                 accessibilityState={{ busy: answering(item.peerId) === 'decline' }}
-                accessibilityLabel="Decline this request"
+                accessibilityLabel={`Decline: ${incomingRequestLine(item)}`}
                 style={[
                   styles.actionBtn,
                   { borderColor: colors.border, opacity: answering(item.peerId) ? 0.5 : 1 },
@@ -1279,7 +1325,7 @@ export function SocialPanel(): React.JSX.Element | null {
                 disabled={answering(item.peerId) !== null}
                 accessibilityRole="button"
                 accessibilityState={{ busy: answering(item.peerId) === 'accept' }}
-                accessibilityLabel="Accept this request"
+                accessibilityLabel={`Accept: ${incomingRequestLine(item)}`}
                 style={[
                   styles.actionBtn,
                   { borderColor: colors.tint as string, opacity: answering(item.peerId) ? 0.5 : 1 },
@@ -1453,6 +1499,64 @@ export function SocialPanel(): React.JSX.Element | null {
   )
 }
 
+/**
+ * COS-1235 — the honest sentence for an account an email invitation cannot reach.
+ *
+ * WHAT IT MAY SAY: we hold no address for this account, so an invitation addressed
+ * to one cannot be matched. Nothing about whether anybody has tried.
+ *
+ * WHAT IT DELIBERATELY DOES NOT SAY is "turn on Let others find me so they can find
+ * you instead". That toggle only renders behind `canFind`, which a brand-new invitee
+ * on `starter` does not hold — so for the very population this notice exists for it
+ * would be pointing at a control that is not on their screen. The invite feature's
+ * whole history is instructions to go somewhere the reader cannot go.
+ *
+ * So it names a human, which is the one route that works from every plan. It does
+ * not promise a fix either: whether an address can be attached to an account after
+ * the fact is a product decision, not something this copy may assume.
+ *
+ * Plain primitives, like everything else in this file (ADR-0003): this renders
+ * inside a `presentation:'modal'` screen.
+ */
+function UnreachableNotice({
+  colors,
+  fs,
+  fw,
+}: {
+  colors: (typeof Colors)['light']
+  fs: (base: number) => number
+  fw: (weight: number) => number | string
+}): React.JSX.Element {
+  return (
+    <View
+      style={[styles.notice, { borderColor: colors.border, backgroundColor: colors.card }]}
+      accessibilityRole="summary"
+    >
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: fs(14),
+          lineHeight: fs(20),
+          fontWeight: fw(700) as TextStyle['fontWeight'],
+        }}
+      >
+        We do not have an email address for this account
+      </Text>
+      <Text
+        style={{
+          color: colors.subtext,
+          fontSize: fs(13),
+          lineHeight: fs(19),
+          marginTop: Spacing.xs,
+        }}
+      >
+        So an invitation sent to you by email cannot be matched to it. If you were
+        expecting one, email support@circlesupporthealth.ai and we will help.
+      </Text>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   wrap: {
@@ -1506,6 +1610,12 @@ const styles = StyleSheet.create({
   // breakpoint step a 13pt hint renders near 18pt on a tablet and a fixed 19
   // clips the descenders on exactly the device this epic widened the type for.
   hint: { paddingVertical: Spacing.md },
+  notice: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radii.md,
+    padding: Spacing.sm + 4,
+    marginTop: Spacing.sm,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -664,37 +664,67 @@ describe('COS-1233 — invitations addressed to YOU, and the two consents', () =
      * to cost no chrome and no layout shift — the same discipline as
      * RetakeRequestInboxCard, which it sits beside.
      *
-     * And `[]` IS the normal answer: no live invitation, OR no email on the
-     * profile at all (Apple relay sign-ups, 13 of 32 production rows), OR an
-     * address that asked us to stop. Those three must never be told apart on
-     * screen, so there is one empty branch and no error branch.
+     * And `[]` IS the normal answer: no live invitation, OR an address that asked
+     * us to stop. Those two must never be told apart on screen, so there is one
+     * empty branch and no error branch.
+     *
+     * COS-1235 — `[]` used to mean a THIRD thing as well, "we hold no email address
+     * for this account", which is 13 of 32 production rows (Apple private-relay
+     * sign-ups). Conflating that one was wrong: an invitation sent to those people
+     * can never arrive, and they were shown an empty list forever with no
+     * explanation. It is now `reachable:false` on the same response, and it is
+     * rendered by SocialPanel — NOT here, because this mounts on Home for every
+     * patient on every open and a permanent banner there is unsolicited noise. The
+     * empty branch stays exactly as strict.
      */
     assert.match(receivedCode, /if \(invites\.length === 0 && !status\) return null/);
     assert.doesNotMatch(receivedCode, /isError|No invitations|nothing here/i);
+    // ...and it must not grow the notice itself.
+    assert.doesNotMatch(receivedCode, /reachable|UnreachableNotice/);
   });
 
-  test('THE POINT: accept is the FIRST consent — never a connection', () => {
+  test('THE POINT: accept is the FIRST consent, unless the server says it finished', () => {
     /*
-     * The server claims the invitation and creates the connection request with
-     * the RECIPIENT as requester, so it lands on the inviter to confirm. The
-     * recipient holds their own 'pending-out' row and cannot finish it. So this
-     * may invalidate that list and nothing else: rendering a conversation or an
-     * accepted connection here would claim the second consent already happened.
+     * The server claims the invitation and creates the connection request with the
+     * RECIPIENT as requester, so it lands on the inviter to confirm. The recipient
+     * holds their own 'pending-out' row and cannot finish it — so that is the list
+     * the ordinary path refreshes, and nothing else: rendering a conversation or an
+     * accepted connection would claim the second consent already happened.
+     *
+     * COS-1235 — there is ONE case where it did happen, and the server is the only
+     * thing that knows: the inviter had already sent an in-app request, so both
+     * people had acted and the claim completed the connection. That case used to be
+     * a dead end reporting success. The conversation / incoming keys may therefore
+     * be touched, but ONLY inside `if (res.connected)` — a client that refreshed
+     * them unconditionally would be guessing about the second consent again.
      */
     assert.match(receivedCode, /queryKey: \['connections', 'pending-out'\]/);
-    assert.doesNotMatch(receivedCode, /'conversations'/);
-    assert.doesNotMatch(receivedCode, /'pending-in'|'accepted'/);
+    const connectedBranch = receivedCode.slice(
+      receivedCode.indexOf('if (res.connected)'),
+      receivedCode.indexOf('onError: onFail'),
+    );
+    assert.ok(connectedBranch.length > 0, 'the connected branch moved — re-check this guard');
+    for (const key of ["'conversations'", "'pending-in'"]) {
+      assert.ok(receivedCode.includes(key), `${key} must be refreshed when it connects`);
+      assert.ok(
+        connectedBranch.includes(key),
+        `${key} may only be refreshed inside if (res.connected)`,
+      );
+      // ...and nowhere else in the file.
+      assert.equal(receivedCode.split(key).length - 1, 1, `${key} appears more than once`);
+    }
   });
 
-  test('THE POINT: requested:false does not claim the inviter was told', () => {
+  test('THE POINT: the outcome sentence comes from the tested module, all three branches', () => {
     /*
      * `requested:false` means the invitation is spent but no request reached the
-     * inviter, because one of the two had declined the other in-app. The
-     * sentence comes from lib/received-invite-copy.ts, where BOTH branches are
-     * asserted at runtime — this pins that the component actually asks for it
-     * rather than writing its own string.
+     * inviter, because one of the two had declined the other in-app.
+     * `connected:true` (COS-1235) means there is no second step left at all. Both
+     * are states a screen can lie about, and the sentences live in
+     * lib/received-invite-copy.ts where every branch is asserted at runtime — this
+     * pins that the component asks for them rather than writing its own string.
      */
-    assert.match(receivedCode, /acceptOutcome\(name, res\.requested\)/);
+    assert.match(receivedCode, /acceptOutcome\(name, res\.requested, res\.connected\)/);
     assert.match(
       receivedCode,
       /import \{ acceptOutcome, invitationLine, INVITE_GONE \} from '@\/lib\/received-invite-copy'/,
@@ -844,5 +874,154 @@ describe('COS-1233 — invitations addressed to YOU, and the two consents', () =
       const src = strip(readFileSync(new URL(f, import.meta.url), 'utf8'));
       assert.ok(!/inviteToken/.test(src), `${f} must not send inviteToken`);
     }
+  });
+});
+
+/*
+ * ═══ COS-1235 — THE FOUR THINGS THAT STOPPED A REAL PERSON FINISHING ═══
+ */
+describe('COS-1235 — the invitation can be reached, and the people can be identified', () => {
+  const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
+  const panelCode = strip(read('components/social/SocialPanel.tsx'));
+  const receivedCode = strip(read('components/social/ReceivedInvitations.tsx'));
+
+  /*
+   * ─── THE BLOCKER: THREE COPIES OF ONE LADDER, ONE OF THEM A DEAD END ──
+   *
+   * `!fastenConnected` sent every account to /(onboarding)/fasten-connect, whose
+   * only two exits are "Connect a Clinic" and "Sign out". So the person who
+   * installed the app BECAUSE they were invited could never reach the invitation.
+   * And the rule was written out by hand in THREE places, which had already
+   * drifted. The branch logic is tested at runtime in lib/onboarding-gate.test.mjs;
+   * what is pinned here is that no call site has its own copy to drift again.
+   */
+  describe('the onboarding ladder is ONE function', () => {
+    const gateRoutes = /'\/\(onboarding\)\/(fasten-connect|data-processing|usage-guidelines|permissions)'/;
+
+    for (const file of [
+      'app/index.tsx',
+      'app/(auth)/sign-in.tsx',
+      'app/(onboarding)/permissions.tsx',
+    ]) {
+      test(`${file} asks lib/onboarding-gate and hard-codes no gate route`, () => {
+        const code = strip(read(file));
+        assert.match(code, /onboardingGate\(/, `${file} must call the shared ladder`);
+        assert.match(
+          code,
+          /from '@\/lib\/onboarding-gate'/,
+          `${file} must import it rather than re-deriving it`,
+        );
+        const stray = code.match(new RegExp(gateRoutes.source, 'g')) ?? [];
+        /*
+         * permissions.tsx keeps ONE literal: the fall-through when /me cannot be
+         * read at all, because an unreadable /me is not evidence that anything may
+         * be skipped. Every other hard-coded gate route is a fourth copy.
+         */
+        const allowed = file.endsWith('permissions.tsx') ? 1 : 0;
+        assert.equal(
+          stray.length,
+          allowed,
+          `${file} hard-codes ${stray.length} gate route(s): ${stray.join(', ')}`,
+        );
+      });
+    }
+
+    test('the gate is pure — no react-native and no expo-router in it', () => {
+      /*
+       * So node --test can drive every branch, which is where the blocker is pinned.
+       * Comments stripped first, like the banned-imports guard above: this module's
+       * own header names those packages in order to say it does not use them.
+       */
+      const gate = strip(read('lib/onboarding-gate.ts'));
+      assert.doesNotMatch(gate, /from 'react-native'|from 'expo-router'|AsyncStorage/);
+      // It imports nothing at all, in fact.
+      assert.doesNotMatch(gate, /^\s*import /m);
+    });
+
+    test('and it reads the SERVER flag, not a local "skip" the device invents', () => {
+      const gate = strip(read('lib/onboarding-gate.ts'));
+      assert.match(gate, /user\.ehrOnboardingOptional === true/);
+      // Strict equality, so an older cached profile's `undefined` is mandatory,
+      // never accidentally permissive.
+      assert.doesNotMatch(gate, /!!user\.ehrOnboardingOptional|user\.ehrOnboardingOptional \?\?/);
+    });
+  });
+
+  /*
+   * ─── THE SECOND CONSENT WAS ANONYMOUS ───────────────────────────────
+   *
+   * Accepting creates the request with the RECIPIENT as requester, so the INVITER
+   * is the one asked to confirm — about a person they had invited by email minutes
+   * earlier, under the words "Someone would like to connect".
+   */
+  describe('the inviter can tell who accepted', () => {
+    test('the incoming row asks the copy module instead of hard-coding the old line', () => {
+      assert.match(panelCode, /incomingRequestLine\(item\)/);
+      assert.match(panelCode, /incomingRequestReason\(item\)/);
+      // The literal must exist in exactly ONE place now — the helper's fallback —
+      // and not in the panel, or a stranger and an invitee read the same.
+      assert.doesNotMatch(panelCode, /Someone would like to connect/);
+    });
+
+    test('the accessibility labels name them too — VoiceOver gets the same consent', () => {
+      // "Accept this request" told a screen-reader user strictly less than the row
+      // above it, on a yes/no decision about a named person.
+      assert.match(panelCode, /accessibilityLabel=\{`Accept: \$\{incomingRequestLine\(item\)\}`\}/);
+      assert.match(panelCode, /accessibilityLabel=\{`Decline: \$\{incomingRequestLine\(item\)\}`\}/);
+    });
+  });
+
+  /*
+   * ─── THE ACCOUNT NO INVITATION CAN REACH ─────────────────────────────
+   *
+   * `reachable:false` means we hold no email address at all — 13 of 32 production
+   * rows (Apple private-relay sign-ups). They were shown an empty list forever and
+   * told nothing. It belongs in the panel, which is where somebody goes LOOKING,
+   * and NOT on Home, where it would be a permanent banner for accounts that may
+   * never be invited by anybody.
+   */
+  describe('an account with no address is told, in the place it is looked for', () => {
+    test('the panel renders the notice, and ReceivedInvitations does not', () => {
+      assert.match(panelCode, /const unreachable = receivedQ\.data\?\.reachable === false/);
+      assert.match(panelCode, /function UnreachableNotice\(/);
+      assert.doesNotMatch(receivedCode, /reachable/);
+    });
+
+    test('BOTH of the panel\'s branches show it — the no-keys one is the invitee\'s', () => {
+      // With neither find-people nor connections (which is `starter`, which is every
+      // brand-new invitee) the panel is just the invitations. That branch is the one
+      // screen that population has, so it is the one that must carry the sentence.
+      const mounts = panelCode.match(/<UnreachableNotice /g) ?? [];
+      assert.equal(mounts.length, 2, 'the no-keys branch and Requests mode');
+      const noKeys = panelCode.slice(
+        panelCode.indexOf('if (!canFind && !canRequests)'),
+        panelCode.indexOf('const pendingCount'),
+      );
+      assert.match(noKeys, /<UnreachableNotice /);
+    });
+
+    test('it says what it is and what to do, and claims NOTHING about an invitation', () => {
+      const notice = panelCode.slice(
+        panelCode.indexOf('function UnreachableNotice('),
+        panelCode.indexOf('const styles = StyleSheet.create'),
+      );
+      assert.ok(notice.length > 0, 'the notice moved — re-check this guard');
+      assert.match(notice, /do not have an email address for this account/);
+      // A route that works from EVERY plan. It must not point at "Let others find
+      // me", which renders only behind `canFind` — a key the brand-new invitee this
+      // notice exists for does not hold, so it would be another instruction to go
+      // somewhere the reader cannot go.
+      assert.match(notice, /support@circlesupporthealth\.ai/);
+      assert.doesNotMatch(notice, /Let others find me|find you in the app/);
+      // It must not imply anybody has or has not tried to invite them: that is the
+      // oracle the whole feature keeps having to be rescued from.
+      assert.doesNotMatch(notice, /invitation is waiting|someone invited|no invitations/i);
+    });
+
+    test('the count still reads the list, not the flag', () => {
+      // `receivedQ.data` is an object now; the badge must not become truthy-on-object.
+      assert.match(panelCode, /receivedQ\.data\?\.invites\.length \?\? 0/);
+      assert.match(panelCode, /badge=\{pendingCount \+ receivedCount\}/);
+    });
   });
 });

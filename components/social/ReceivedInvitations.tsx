@@ -115,15 +115,21 @@ export function ReceivedInvitations(): React.JSX.Element | null {
     queryKey: RECEIVED_INVITES_KEY,
     queryFn: fetchReceivedInvites,
     /*
-     * `[]` is the normal answer and it means three different things — no live
-     * invitation, no email on the profile at all (Apple relay sign-ups), or an
-     * address that asked us to stop. None of them is an error and none of them
-     * is rendered differently, so there is no error branch here either: a
+     * `[]` is the normal answer and it means two different things — no live
+     * invitation, or an address that asked us to stop. Neither is an error and
+     * neither is rendered differently, so there is no error branch here either: a
      * failed fetch shows nothing, exactly like an empty one.
+     *
+     * COS-1235 — the THIRD thing it used to mean, "we hold no email address for
+     * this account", is now `reachable:false` on the same response, and it is
+     * rendered by SocialPanel rather than here. See that file: this component
+     * mounts on Home for every patient on every open, and a permanent banner there
+     * for the 13-of-32 accounts with no address is unsolicited noise, where the
+     * Requests panel is the place somebody goes LOOKING for an invitation.
      */
     staleTime: 60_000,
   })
-  const invites = invitesQ.data ?? []
+  const invites = invitesQ.data?.invites ?? []
 
   /**
    * ONE failure path for both actions.
@@ -147,13 +153,15 @@ export function ReceivedInvitations(): React.JSX.Element | null {
     mutationFn: (inviteId: string) => acceptReceivedInvite(inviteId),
     onSuccess: (res, inviteId) => {
       /*
-       * `requested` decides the sentence. false means the invitation is spent
-       * but NO request reached the inviter (one of the two had declined the
-       * other in-app), so the copy must not say they were told — see
-       * lib/received-invite-copy.ts, where both branches are tested.
+       * `requested` and `connected` decide the sentence, and there are three of
+       * them. `requested:false` means the invitation is spent but NO request
+       * reached the inviter (one of the two had declined the other in-app), so the
+       * copy must not say they were told. `connected:true` (COS-1235) means the
+       * inviter had already asked in-app, so it is finished and there is no second
+       * step to promise. See lib/received-invite-copy.ts, where all three are tested.
        */
       const name = invites.find((i) => i.inviteId === inviteId)?.inviterName ?? ''
-      setStatus(acceptOutcome(name, res.requested))
+      setStatus(acceptOutcome(name, res.requested, res.connected))
       void qc.invalidateQueries({ queryKey: RECEIVED_INVITES_KEY })
       /*
        * The connection now exists as MY OWN 'pending-out' row, which the
@@ -162,6 +170,18 @@ export function ReceivedInvitations(): React.JSX.Element | null {
        * render, which is why neither of those keys is touched here.
        */
       void qc.invalidateQueries({ queryKey: ['connections', 'pending-out'] })
+      /*
+       * COS-1235 — and when it CONNECTED outright (the inviter had already asked
+       * in-app), the accepted list and the conversation inbox have both changed.
+       * Invalidated only on that branch, so the ordinary path still touches
+       * nothing it did not affect.
+       */
+      if (res.connected) {
+        // The same two keys SocialPanel's own accept refreshes, and for the same
+        // reason: a live connection means a conversation exists now.
+        void qc.invalidateQueries({ queryKey: ['connections', 'pending-in'] })
+        void qc.invalidateQueries({ queryKey: ['conversations'] })
+      }
     },
     onError: onFail,
   })

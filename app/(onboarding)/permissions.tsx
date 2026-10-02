@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
+import { onboardingGate } from '@/lib/onboarding-gate';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
@@ -79,21 +80,38 @@ export default function PermissionsScreen() {
     }
   }
 
+  /*
+   * COS-1235 — THE THIRD COPY OF THE LADDER, NOW THE SAME ONE.
+   *
+   * This read /me and re-derived the next screen by hand, and it ended with an
+   * unconditional fall-through to fasten-connect — so a brand-new care-circle
+   * invitee arrived here from terms and was sent to "connect your clinic", whose
+   * only two exits are connecting one and signing out. The invitation they
+   * installed the app for was on the other side of it. See lib/onboarding-gate.ts.
+   *
+   * `permissionsRequested: true` because the caller has just written that flag:
+   * whatever happens, this screen is not the answer twice.
+   */
   async function routeNext() {
-    // Check if user already has Fasten connected + data ready — if yes, skip Fasten screen
     try {
-      const res = await apiClient.get<{ success: boolean; data: { fastenConnected?: boolean; dataReady?: boolean } }>('/v1/auth/me');
+      const res = await apiClient.get<{
+        success: boolean;
+        data: {
+          termsAccepted?: boolean;
+          fastenConnected?: boolean;
+          dataReady?: boolean;
+          ehrOnboardingOptional?: boolean;
+        };
+      }>('/v1/auth/me');
       const user = res.data?.data;
-      if (user?.fastenConnected && user?.dataReady) {
-        router.replace('/Home' as never);
-        return;
-      }
-      if (user?.fastenConnected && !user?.dataReady) {
-        router.replace('/(onboarding)/data-processing' as never);
+      if (user) {
+        const { route } = onboardingGate(user, { permissionsRequested: true });
+        router.replace((route ?? '/Home') as never);
         return;
       }
     } catch {
-      // Fall through to Fasten connect
+      // Fall through to Fasten connect — unchanged, because a /me we could not
+      // read is not evidence that anything may be skipped.
     }
     router.replace('/(onboarding)/fasten-connect' as never);
   }
