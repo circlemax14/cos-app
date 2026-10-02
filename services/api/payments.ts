@@ -108,7 +108,12 @@ export async function startPurchase(input: {
 export async function verifyStorePurchase(
   proof:
     | { gateway: 'apple-iap'; transactionId: string; signedPayload: string }
-    | { gateway: 'google-play'; purchaseToken: string; productId: string },
+    /*
+     * COS-1242 — packageName is optional and additive: the server reads its
+     * own configured package today and ignores unknown fields (zod strips
+     * them), so this is safe to send before and after the backend change.
+     */
+    | { gateway: 'google-play'; purchaseToken: string; productId: string; packageName?: string },
 ): Promise<{ applied: boolean; planKey: string }> {
   const res = await apiClient.post('/v1/payments/verify', proof);
   return (res.data as { data: { applied: boolean; planKey: string } }).data;

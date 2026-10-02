@@ -27,6 +27,15 @@
  */
 
 import { Platform, TurboModuleRegistry } from 'react-native';
+import { getCachedProfile } from '@/lib/cached-profile';
+import {
+  isPlayPending,
+  playBillingProblem,
+  playSubscriptionsUrl,
+  selectPlayOfferToken,
+  PLAY_PENDING_MESSAGE,
+  type PlayOffer,
+} from '@/lib/play-billing';
 
 /**
  * COS-921 — react-native-iap 16.5 is a NITRO module, not a bridge module.
@@ -77,6 +86,8 @@ export type VerifyReceipt = (proof: {
   receipt: string;
   platform: 'ios' | 'android';
   transactionId?: string;
+  /** COS-1242 — Android only: the app package Play says the purchase was made in. */
+  packageName?: string;
 }) => Promise<{ applied: boolean }>;
 
 export type StorePurchase =
@@ -87,6 +98,12 @@ export type StorePurchase =
       applied: boolean;
     }
   | { status: 'cancelled' }
+  /**
+   * COS-1242 — Android only. Play is holding the payment (cash at a shop, a
+   * slow bank). Nothing is verified or acknowledged until it clears; Restore
+   * settles it afterwards. Never returned on iOS.
+   */
+  | { status: 'pending'; message: string }
   | { status: 'unavailable'; reason: string };
 
 /** Shape of the bits of react-native-iap this file uses. Kept local so the
@@ -104,13 +121,22 @@ interface IapLike {
    */
   fetchProducts(args: { skus: string[]; type: 'subs' | 'in-app' }): Promise<unknown[]>;
   requestPurchase(args: {
-    request: { apple?: { sku: string }; google?: { skus: string[] } };
+    request: { apple?: { sku: string }; google?: PlayRequest };
     type: 'subs' | 'in-app';
   }): Promise<unknown>;
   /** The purchase arrives HERE, not from requestPurchase's promise. */
   purchaseUpdatedListener(cb: (purchase: unknown) => void): IapSubscription;
   purchaseErrorListener(cb: (err: unknown) => void): IapSubscription;
   finishTransaction(args: { purchase: unknown; isConsumable: boolean }): Promise<unknown>;
+  /** COS-1242 — what this store account already holds (Restore, manage link). */
+  getAvailablePurchases(): Promise<unknown[]>;
+}
+
+/** react-native-iap 16.5 RequestSubscriptionAndroidProps, the fields we send. */
+interface PlayRequest {
+  skus: string[];
+  subscriptionOffers?: { sku: string; offerToken: string }[];
+  obfuscatedAccountId?: string;
 }
 
 interface RawPurchase {
@@ -118,6 +144,10 @@ interface RawPurchase {
   transactionReceipt?: string;
   purchaseToken?: string;
   transactionId?: string;
+  /** Android: 'pending' until the money clears. Only 'purchased' is paid for. */
+  purchaseState?: string;
+  packageNameAndroid?: string | null;
+  isAcknowledgedAndroid?: boolean | null;
 }
 
 /** A user cancelling is not an error to report — it is an outcome. */
@@ -143,6 +173,8 @@ export async function purchaseThroughStore(
   productId: string,
   unavailableReason: string,
   verify: VerifyReceipt,
+  /** COS-1242 — read on Android only, to pick the base plan. iOS ignores it. */
+  cycle: 'monthly' | 'annual' = 'monthly',
 ): Promise<StorePurchase> {
   if (!isStoreBillingLinked()) {
     return { status: 'unavailable', reason: unavailableReason };
@@ -167,6 +199,14 @@ export async function purchaseThroughStore(
     // with a store error the patient cannot act on.
     const products = await iap.fetchProducts({ skus: [productId], type: 'subs' });
     if (!products || products.length === 0) {
+      // COS-1242 — same diagnostic, Google's nouns. App Store Connect means
+      // nothing to whoever is fixing a Play product.
+      if (Platform.OS === 'android') {
+        return {
+          status: 'unavailable',
+          reason: `Google Play has no subscription called "${productId}". Check it exists and is active in Play Console, that this copy of the app was installed from Google Play (an internal-testing install counts), and that the id on the plan matches exactly.`,
+        };
+      }
       /*
        * COS-923 — naming the id is the whole diagnostic.
        *
@@ -180,6 +220,53 @@ export async function purchaseThroughStore(
       return {
         status: 'unavailable',
         reason: `The store has no product called "${productId}". Check it exists in App Store Connect, is Ready to Submit, that the Paid Applications Agreement is active, and that the id on the plan matches exactly.`,
+      };
+    }
+
+    /*
+     * COS-1242 / SCRUM-776 — Play needs two things StoreKit does not.
+     *
+     * 1. AN OFFER TOKEN. Play Billing 5+ will not launch a subscription without
+     *    one, and a product can carry a monthly AND an annual base plan. The
+     *    server picked the product; the cycle picks the base plan on it. See
+     *    selectPlayOfferToken for which offer wins and why.
+     *
+     * 2. WHO IS BUYING. google-play.gateway.ts attributes a purchase ONLY from
+     *    `obfuscatedExternalAccountId`, and /v1/payments/verify refuses it
+     *    unless that equals the caller's token sub — taking it from the request
+     *    body would let anyone claim anyone's purchase. Play fills that field
+     *    from `obfuscatedAccountId` here, so without it EVERY Android purchase
+     *    would be charged and then refused. The sub is the server's own answer
+     *    (/v1/auth/me, cached at sign-in), a UUID — no PII, within Play's 64.
+     *    Missing it, refuse BEFORE the sheet opens: nothing has been charged.
+     *
+     * iOS sends exactly the request it always has: `google` is ignored there,
+     * and stays `{ skus: [productId] }` so the iOS call is unchanged.
+     */
+    let google: PlayRequest = { skus: [productId] };
+    if (Platform.OS === 'android') {
+      const product = (products as { id?: string; subscriptionOffers?: PlayOffer[] | null }[]).find(
+        (p) => p?.id === productId,
+      );
+      const offerToken = selectPlayOfferToken(product?.subscriptionOffers, cycle);
+      if (!offerToken) {
+        return {
+          status: 'unavailable',
+          reason: `Google Play has "${productId}" but no ${cycle} plan on it that this account can buy. Check its base plan is active in Play Console. Nothing has been charged.`,
+        };
+      }
+      const sub = (await getCachedProfile())?.sub;
+      if (typeof sub !== 'string' || sub.length === 0 || sub.length > 64) {
+        return {
+          status: 'unavailable',
+          reason:
+            'We couldn’t confirm which account this purchase is for. Sign out and back in, then try again. Nothing has been charged.',
+        };
+      }
+      google = {
+        skus: [productId],
+        subscriptionOffers: [{ sku: productId, offerToken }],
+        obfuscatedAccountId: sub,
       };
     }
 
@@ -217,7 +304,7 @@ export async function purchaseThroughStore(
        */
       iap!
         .requestPurchase({
-          request: { apple: { sku: productId }, google: { skus: [productId] } },
+          request: { apple: { sku: productId }, google },
           type: 'subs',
         })
         .catch((err: unknown) => once({ kind: 'err', err }));
@@ -229,6 +316,17 @@ export async function purchaseThroughStore(
     }
 
     const purchase = outcome.purchase;
+    /*
+     * COS-1242 — a PENDING Play purchase has not been paid for yet.
+     *
+     * Google is explicit: do not grant or acknowledge until the state is
+     * PURCHASED. The server would refuse it anyway (the subscription is not
+     * ACTIVE), and telling the patient "payment received" would be false. Left
+     * alone, Play hands it back once it clears and Restore settles it then.
+     */
+    if (Platform.OS === 'android' && purchase.purchaseState === 'pending') {
+      return { status: 'pending', message: PLAY_PENDING_MESSAGE };
+    }
     // iOS hands back a base64 app receipt; Android a purchase token. The
     // server knows which it is from `platform` and verifies accordingly.
     const receipt = purchase.transactionReceipt ?? purchase.purchaseToken ?? '';
@@ -247,6 +345,10 @@ export async function purchaseThroughStore(
         receipt,
         platform,
         transactionId: purchase.transactionId,
+        // COS-1242 — Android only; adds nothing to the iOS proof.
+        ...(Platform.OS === 'android' && purchase.packageNameAndroid
+          ? { packageName: purchase.packageNameAndroid }
+          : {}),
       });
       applied = res.applied;
     } catch {
@@ -276,6 +378,20 @@ export async function purchaseThroughStore(
     return { status: 'purchased', productId: purchase.productId ?? productId, applied };
   } catch (err) {
     if (isUserCancelled(err)) return { status: 'cancelled' };
+    /*
+     * COS-1242 — Play's codes, in words a patient can act on.
+     *
+     * Play's own messages are developer debug strings ("Billing service
+     * unavailable on device", responseCode 3), not sentences for a person —
+     * unlike StoreKit's, below. Pending is not a failure at all. A code with no
+     * sentence of its own falls through to the same wording as iOS.
+     */
+    if (Platform.OS === 'android') {
+      const code = (err as { code?: string })?.code;
+      if (isPlayPending(code)) return { status: 'pending', message: PLAY_PENDING_MESSAGE };
+      const plain = playBillingProblem(code);
+      if (plain) return { status: 'unavailable', reason: plain };
+    }
     /*
      * COS-923 — say what the STORE said.
      *
@@ -318,5 +434,126 @@ export async function purchaseThroughStore(
     } catch {
       /* best effort */
     }
+  }
+}
+
+/* ── COS-1242: Restore and manage, Google Play only ──────────────────── */
+
+const NO_PLAY_BILLING =
+  'This version of the app can’t reach Google Play Billing. Update it from Google Play and try again.';
+
+/**
+ * Open a store connection, do one thing, close it — the same lifetime rule as
+ * a purchase (see purchaseThroughStore). Null when this binary has no store.
+ */
+async function withStore<T>(fn: (iap: IapLike) => Promise<T>): Promise<T | null> {
+  if (!isStoreBillingLinked()) return null;
+  let iap: IapLike;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- see the header: requiring at module scope is the bug this avoids
+    iap = require('react-native-iap') as IapLike;
+  } catch {
+    return null;
+  }
+  try {
+    await iap.initConnection();
+    return await fn(iap);
+  } finally {
+    try {
+      await iap.endConnection();
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+export type PlayRestore =
+  | { status: 'restored'; found: number; applied: number }
+  | { status: 'unavailable'; reason: string };
+
+/**
+ * COS-1242 — Restore: hand every paid Play purchase this Google account holds
+ * to the server, and acknowledge the ones it accepts.
+ *
+ * This is how the cases a single purchase cannot settle get settled: a
+ * pending payment that has since cleared, a verify that failed on a bad
+ * connection (left unacknowledged on purpose), a reinstall, a new phone.
+ * Play auto-refunds anything not acknowledged within three days, so "tap
+ * Restore" is also the patient's way of not losing a payment.
+ *
+ * Same order as a purchase: the server first, acknowledgement only after it
+ * says applied. A purchase the server refuses (another account's, expired) is
+ * left exactly as it was.
+ */
+export async function restorePlayPurchases(verify: VerifyReceipt): Promise<PlayRestore> {
+  if (Platform.OS !== 'android') return { status: 'unavailable', reason: NO_PLAY_BILLING };
+  try {
+    const result = await withStore(async (iap) => {
+      const purchases = ((await iap.getAvailablePurchases()) ?? []) as RawPurchase[];
+      let found = 0;
+      let applied = 0;
+      for (const purchase of purchases) {
+        // Pending is not paid for; Play returns it as purchased once it is.
+        if (purchase.purchaseState !== 'purchased' || !purchase.purchaseToken || !purchase.productId) continue;
+        found += 1;
+        let ok = false;
+        try {
+          ok = (
+            await verify({
+              productId: purchase.productId,
+              receipt: purchase.purchaseToken,
+              platform: 'android',
+              ...(purchase.packageNameAndroid ? { packageName: purchase.packageNameAndroid } : {}),
+            })
+          ).applied;
+        } catch {
+          /* refused or unreachable — leave it for the next Restore */
+        }
+        if (!ok) continue;
+        applied += 1;
+        if (!purchase.isAcknowledgedAndroid) {
+          try {
+            await iap.finishTransaction({ purchase, isConsumable: false });
+          } catch {
+            /* the server acknowledges too; the verify endpoint is idempotent */
+          }
+        }
+      }
+      return { status: 'restored' as const, found, applied };
+    });
+    return result ?? { status: 'unavailable', reason: NO_PLAY_BILLING };
+  } catch (err) {
+    return {
+      status: 'unavailable',
+      reason:
+        playBillingProblem((err as { code?: string })?.code) ??
+        'Google Play couldn’t list your purchases just now. Please try again.',
+    };
+  }
+}
+
+/**
+ * COS-1242 — the server's Play manage link, pointed at THIS subscription.
+ *
+ * google-play.gateway.ts cancelSubscription returns Play's subscription LIST,
+ * because the stored row has no product id. The device does know it — Play
+ * lists what this Google account holds — so ask, and deep-link straight to
+ * the one to cancel. Anything else (iOS, a non-Play URL, a link the server
+ * already made specific, any failure) returns the server's URL untouched.
+ */
+export async function playManageUrl(serverUrl: string): Promise<string> {
+  if (
+    Platform.OS !== 'android' ||
+    !serverUrl.startsWith('https://play.google.com/') ||
+    serverUrl.includes('sku=')
+  ) {
+    return serverUrl;
+  }
+  try {
+    const held = await withStore(async (iap) => ((await iap.getAvailablePurchases()) ?? []) as RawPurchase[]);
+    const mine = held?.find((p) => p.productId && p.packageNameAndroid);
+    return mine ? playSubscriptionsUrl(mine.productId, mine.packageNameAndroid) : serverUrl;
+  } catch {
+    return serverUrl;
   }
 }
