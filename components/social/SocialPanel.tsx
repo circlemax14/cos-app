@@ -56,6 +56,7 @@ import {
   declineConnection,
   fetchConnections,
   fetchEmailInvites,
+  fetchReceivedInvites,
   fetchSocialVisibility,
   fetchSuggestions,
   requestConnection,
@@ -74,6 +75,10 @@ import { Spacing, Radii, TouchTargets, getColors } from '@/constants/design-syst
 import { layoutForWidth } from '@/components/home/HomeResponsiveProvider'
 import { intakeFontSize } from '@/components/health-plan/patient-intake/intake-legibility'
 import { AccessibleInput } from '@/components/ui/accessible-input'
+import {
+  ReceivedInvitations,
+  RECEIVED_INVITES_KEY,
+} from '@/components/social/ReceivedInvitations'
 import { isValidEmailFormat } from '@/lib/email-format'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCanShowScreen } from '@/hooks/use-feature-permissions'
@@ -336,6 +341,25 @@ export function SocialPanel(): React.JSX.Element | null {
     enabled: canFind || canRequests,
   })
 
+  /*
+   * COS-1233 — invitations addressed to ME.
+   *
+   * The rows are rendered by ReceivedInvitations, which owns this same query
+   * key, so this observer costs no extra request. The COUNT is needed up here
+   * for two things the child cannot reach: the Requests badge (which is how
+   * somebody discovers an invitation at all) and the "nothing sent, nothing
+   * waiting" empty state, which otherwise claimed there was nothing to answer
+   * directly above an invitation.
+   *
+   * NOT gated on canFind/canRequests, unlike every other query in this file.
+   * See the note on the early return below.
+   */
+  const receivedQ = useQuery({
+    queryKey: RECEIVED_INVITES_KEY,
+    queryFn: fetchReceivedInvites,
+    staleTime: 60_000,
+  })
+
   /** Peers with a request already in flight, straight from the server. */
   const alreadyRequested = React.useMemo(
     () => new Set((sentQ.data ?? []).map((c) => c.peerId)),
@@ -448,7 +472,33 @@ export function SocialPanel(): React.JSX.Element | null {
     return null
   }
 
-  if (!canFind && !canRequests) return null
+  const receivedCount = receivedQ.data?.length ?? 0
+
+  /*
+   * COS-1233 — the plan can take away finding and answering. It CANNOT take
+   * away answering mail that was sent to you.
+   *
+   * This used to be `if (!canFind && !canRequests) return null`, which is the
+   * correct rule for the two things the plan grants and the wrong one for the
+   * thing it does not. A brand-new invitee lands on `starter`, which grants
+   * zero find-people.*, connections.* or conversation.* keys — so the one
+   * screen in the app that exists for them rendered nothing at all, while the
+   * feature looked deployed and reported zero accepts. That is this codebase's
+   * most repeated failure (COS-1019 Health Plans, COS-856 tab gating,
+   * find-people.* itself), and the three routes behind ReceivedInvitations are
+   * deliberately ungated on the server for exactly this reason.
+   *
+   * So with neither key the panel is JUST the invitations, with no mode row to
+   * switch between things that are not there — and still nothing at all when
+   * there is no invitation either, because ReceivedInvitations returns null.
+   */
+  if (!canFind && !canRequests) {
+    return (
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.wrap}>
+        <ReceivedInvitations />
+      </ScrollView>
+    )
+  }
 
   const pendingCount = pendingQ.data?.length ?? 0
   const discoverable = visibilityQ.data?.discoverable === true
@@ -575,7 +625,18 @@ export function SocialPanel(): React.JSX.Element | null {
       <View style={styles.modeRow}>
         {canFind && <ModeButton id="find" icon="person-search" label="Find people" />}
         {canRequests && (
-          <ModeButton id="requests" icon="mark-email-unread" label="Requests" badge={pendingCount} />
+          /*
+            COS-1233 — the badge counts invitations as well as requests, because
+            it is the only thing on this screen that says "there is something
+            here for you", and an invitation addressed to you is the most
+            important of the two.
+          */
+          <ModeButton
+            id="requests"
+            icon="mark-email-unread"
+            label="Requests"
+            badge={pendingCount + receivedCount}
+          />
         )}
         <View style={{ flex: 1 }} />
         {canFind && (
@@ -1020,10 +1081,25 @@ export function SocialPanel(): React.JSX.Element | null {
             </Text>
           </View>
 
+          {/*
+            COS-1233 — the failure line used to end "try sending it again from
+            Requests", and there is no resend anywhere: not on that screen, not
+            on any route, not in the service. Worse, a second POST to the same
+            address is refused with INVITE_ALREADY_PENDING, so a patient who
+            followed the instruction landed straight back here.
+
+            And delivered:false is not always a transport failure. A SUPPRESSED
+            address ("I was not expecting this") is written as an ordinary
+            undelivered invitation, deliberately indistinguishable from Resend
+            having a bad minute, so that this screen cannot be used to probe who
+            has opted out. For that address no retry will EVER succeed. So the
+            copy promises none: it says what is true in both cases and names the
+            one control that does exist.
+          */}
           <Text style={{ color: colors.text, fontSize: fs(15), lineHeight: fs(21) }}>
             {sentInvite.delivered
               ? `We emailed ${sentInvite.email}.`
-              : `${sentInvite.email} has not been emailed. Your invitation is saved — try sending it again from Requests.`}
+              : `${sentInvite.email} has not been emailed. Your invitation is saved under Requests, where you can withdraw it. There is nothing to resend.`}
           </Text>
 
           {sentInvite.delivered ? (
@@ -1038,9 +1114,25 @@ export function SocialPanel(): React.JSX.Element | null {
               >
                 What happens next
               </Text>
+              {/*
+                COS-1233 — step 1 used to read "Their link works for 14 days".
+
+                It is not a link any more, and for an address that already has an
+                account it never was one: that person signs in and finds the
+                invitation waiting under their own Requests, with no token and no
+                email to open. The patient cannot be told which case they are in
+                — telling them would make this screen an oracle for "is this
+                person already a patient here" — so the sentence has to be true
+                of both. The DEADLINE is what they actually need, and it is the
+                server's own expiresAt rather than a date computed here.
+
+                Step 2 for the same reason: "if they join" described a stranger
+                signing up, and the person who accepts may have had an account
+                for a year.
+              */}
               {[
-                `Their link works for 14 days, until ${dayLabel(sentInvite.expiresAt)}.`,
-                'If they join, they appear under Requests for you to confirm.',
+                `They have 14 days to accept, until ${dayLabel(sentInvite.expiresAt)}.`,
+                'When they accept, they appear under Requests for you to confirm.',
                 'You choose what they can see later, and separately.',
               ].map((step, i) => (
                 <View key={step} style={styles.stepRow}>
@@ -1104,17 +1196,52 @@ export function SocialPanel(): React.JSX.Element | null {
       ) : null}
 
       {mode === 'requests' && canRequests ? (
-        pendingQ.isLoading ? (
+        <>
+        {/*
+          COS-1233 — invitations addressed to YOU, at the TOP of Requests.
+
+          Above "Waiting for you" rather than below it, because this is the only
+          row on the screen that somebody else started and that nobody else can
+          finish: an in-app request can sit for a week, an invitation expires on
+          a 14-day clock. It renders nothing when there is none, so the order
+          costs the other 26 patients no space.
+
+          Also mounted on Home, which is the mount that matters — see the
+          component header. This one is for the patient who already knows where
+          their care circle lives.
+        */}
+        <ReceivedInvitations />
+        {pendingQ.isLoading ? (
           <ActivityIndicator style={{ marginTop: Spacing.md }} color={colors.tint} />
-        ) : pendingCount === 0 && sentCount === 0 && openInvites.length === 0 ? (
+        ) : pendingCount === 0 && sentCount === 0 && receivedCount === 0 && openInvites.length === 0 ? (
           // COS-1231 — email invitations count as "sent". Without them in this
           // condition the panel claimed nothing was sent while listing an
-          // invitation directly underneath.
+          // invitation directly underneath. COS-1233 adds received invitations
+          // for the same reason, in the other direction.
           <Text style={[styles.hint, { color: colors.subtext, fontSize: fs(13), lineHeight: fs(19) }]}>
             No requests waiting, and none sent.
           </Text>
-        ) : (
-          (pendingQ.data ?? []).map((item: Connection) => (
+        ) : pendingCount > 0 ? (
+          <>
+          {/*
+            COS-1233 — the incoming list gains the heading it never had. It was
+            the only one of the four sections in this mode without one, which
+            was readable while there were two and is not now that an invitation
+            can sit above it.
+          */}
+          <Text
+            style={{
+              color: colors.subtext,
+              fontSize: fs(13),
+              fontWeight: fw(700) as TextStyle['fontWeight'],
+              textTransform: 'uppercase',
+              letterSpacing: 0.3,
+              marginTop: Spacing.sm,
+            }}
+          >
+            {`Waiting for you (${pendingCount})`}
+          </Text>
+          {(pendingQ.data ?? []).map((item: Connection) => (
             <View key={item.peerId} style={[styles.row, { borderColor: colors.border }]}>
               <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.border }]}>
                 <MaterialIcons name="person" size={fs(20)} color={colors.icon} />
@@ -1165,8 +1292,10 @@ export function SocialPanel(): React.JSX.Element | null {
                 )}
               </Pressable>
             </View>
-          ))
-        )
+          ))}
+          </>
+        ) : null}
+        </>
       ) : null}
 
       {/*

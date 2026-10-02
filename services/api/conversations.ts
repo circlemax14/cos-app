@@ -345,3 +345,103 @@ export async function withdrawEmailInvite(inviteId: string): Promise<void> {
     wrapInviteError(err);
   }
 }
+
+// ── invitations addressed to ME (COS-1233) ────────────────────────────
+
+/**
+ * COS-1233 — the recipient's half of the double opt-in.
+ *
+ * Everything above this acts on invitations the caller SENT. These three act on
+ * invitations the caller RECEIVED, and they are what makes the feature complete
+ * at all: redemption used to be bound to the emailed token at confirm-signup,
+ * nothing could carry that token through an app install, and no client ever
+ * sent it — so an invited address signed up and nothing was ever claimed.
+ *
+ * ─── NO EMAIL ADDRESS IN ANY REQUEST ─────────────────────────────────
+ *
+ * The server resolves the recipient from the caller's own verified profile.
+ * There is deliberately no "invitations for <address>" shape to call, because
+ * that would be "accept the invitation addressed to anybody".
+ *
+ * ─── AND NO ENTITLEMENT CHECK IN FRONT OF THEM ────────────────────────
+ *
+ * None of the three is gated server-side, and that is load-bearing rather than
+ * an oversight — so nothing here may add a client-side gate either. A brand-new
+ * invitee lands on `starter`, which grants zero find-people.*, connections.* or
+ * conversation.* keys, so any gate makes the feature a permanent dead end for
+ * exactly the population it exists for. Sending (POST /invites) stays gated on
+ * find-people.send-request, unchanged.
+ */
+export interface ReceivedInvite {
+  inviteId: string;
+  /**
+   * A FIRST NAME, never empty — the server falls back to the literal 'Someone'.
+   * There is no inviter email and no inviter id in the payload, by design: the
+   * recipient has not connected to this person and may be about to ignore them.
+   */
+  inviterName: string;
+  relationship: InviteRelationship;
+  note: string | null;
+  sentAt: string;
+  expiresAt: string;
+}
+
+/**
+ * Invitations addressed to my verified address that are still live, newest
+ * first.
+ *
+ * `[]` is the NORMAL answer and means one of three things that must never be
+ * rendered differently: no live invitation, OR my profile holds no email at all
+ * (Apple relay sign-ups — 13 of 32 production rows), OR the address asked us to
+ * stop. Telling those apart is an oracle, so the client does not try.
+ */
+export async function fetchReceivedInvites(): Promise<ReceivedInvite[]> {
+  const res = await apiClient.get<{ data: { invites: ReceivedInvite[] } }>(
+    '/v1/patients/me/social/invites/received',
+  );
+  return res.data?.data?.invites ?? [];
+}
+
+/**
+ * Accept one. The FIRST of the two consents, not the last.
+ *
+ * The server claims the invitation AND creates the connection request with ME
+ * as the requester, so it lands on the inviter as 'pending-in' for them to
+ * confirm. It is therefore NOT an accepted connection and NOT a conversation:
+ * it shows up in my own GET /connections?status=pending-out and I cannot finish
+ * it myself.
+ *
+ * `requested:false` means the invitation is spent but nothing reached the
+ * inviter, because one of us had declined the other in-app. Propagated rather
+ * than swallowed — see lib/received-invite-copy.ts.
+ */
+export async function acceptReceivedInvite(
+  inviteId: string,
+): Promise<{ accepted: true; requested: boolean }> {
+  try {
+    const res = await apiClient.post<{ data: { accepted: true; requested: boolean } }>(
+      `/v1/patients/me/social/invites/received/${encodeURIComponent(inviteId)}/accept`,
+    );
+    return { accepted: true, requested: res.data?.data?.requested === true };
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}
+
+/**
+ * Ignore one. Terminal, and the inviter is told NOTHING — their list keeps
+ * showing an unanswered invitation that expires on its own 14-day clock,
+ * because telling them converts a private "no" into a social signal.
+ *
+ * A second Ignore is a 404 like any other row that is no longer live, so the UI
+ * treats INVITE_NOT_FOUND as success-equivalent and simply refreshes.
+ */
+export async function ignoreReceivedInvite(inviteId: string): Promise<void> {
+  try {
+    await apiClient.post(
+      `/v1/patients/me/social/invites/received/${encodeURIComponent(inviteId)}/ignore`,
+    );
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}

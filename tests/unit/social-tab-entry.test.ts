@@ -220,8 +220,54 @@ describe('COS-1064 — the Social entry is gated by the plan', () => {
     assert.match(entryCode, /\{canRequests && \(/);
   });
 
-  test('with neither granted it renders NOTHING, not an empty block', () => {
-    assert.match(entryCode, /if \(!canFind && !canRequests\) return null/);
+  /*
+   * COS-1233 CHANGED THIS RULE, deliberately, and narrowed it.
+   *
+   * It used to be `if (!canFind && !canRequests) return null`, which is right
+   * for the two things the plan grants and wrong for the one thing it does not.
+   * A brand-new invitee lands on `starter` — zero find-people.*, connections.*
+   * and conversation.* keys — so that line made the only screen in the app that
+   * exists for them render nothing at all, while the feature looked deployed
+   * and reported zero accepts.
+   *
+   * So with neither key the panel is JUST the received invitations, and still
+   * nothing at all when there is no invitation, because ReceivedInvitations
+   * itself returns null. The mode row must NOT render: there is nothing to
+   * switch between.
+   */
+  test('with neither granted it renders ONLY the invitations addressed to you', () => {
+    const branch = entryCode.slice(entryCode.indexOf('if (!canFind && !canRequests)'));
+    const close = branch.indexOf('const pendingCount');
+    assert.ok(close > 0, 'the early-return branch moved — re-check this guard');
+    const body = branch.slice(0, close);
+    assert.match(body, /<ReceivedInvitations \/>/);
+    assert.doesNotMatch(body, /ModeButton/);
+    // and nothing that would need a plan to answer
+    assert.doesNotMatch(body, /searchRow|openInvites|pendingQ/);
+  });
+
+  test('THE POINT: the received invitations carry NO entitlement check', () => {
+    /*
+     * None of the three recipient routes is gated server-side and that is
+     * load-bearing, not an oversight — a test in cos-backend pins it. A client
+     * gate would reintroduce the same dead end from this side, which is this
+     * codebase's most repeated failure (COS-1019 Health Plans, COS-856 tab
+     * gating, find-people.* itself).
+     */
+    const received = readFileSync(
+      new URL('../../components/social/ReceivedInvitations.tsx', import.meta.url),
+      'utf8',
+    );
+    const receivedCode = strip(received);
+    assert.doesNotMatch(receivedCode, /useCanShowScreen|canShow\(|useHasNamedGrant|requireEntitlement/);
+    // The panel's own query for the COUNT must not be gated either, or the
+    // badge goes dark for exactly the patient it is for.
+    const q = entryCode.slice(
+      entryCode.indexOf('queryKey: RECEIVED_INVITES_KEY'),
+      entryCode.indexOf('alreadyRequested'),
+    );
+    assert.ok(q.length > 0, 'the received query moved — re-check this guard');
+    assert.doesNotMatch(q, /enabled:/);
   });
 
   test("it reads the app's own gate, not a second copy of the rule", () => {
@@ -431,8 +477,31 @@ describe('COS-1231 — invite someone to your care circle by email', () => {
     assert.match(panelCode, /sentInvite\.delivered/);
     assert.match(panelCode, /We could not send that email/);
     assert.match(panelCode, /We emailed \$\{sentInvite\.email\}/);
+    /*
+     * COS-1233 — and it must not offer a retry that does not exist. The failure
+     * copy used to read "try sending it again from Requests": there is no resend
+     * on that screen, on any route or in the service, and a second POST to the
+     * same address is refused with INVITE_ALREADY_PENDING, so following the
+     * instruction landed the patient back on this screen.
+     *
+     * delivered:false is also not always a transport failure — a SUPPRESSED
+     * address is written as an ordinary undelivered invitation, deliberately
+     * indistinguishable from Resend having a bad minute — so no wording here may
+     * promise that trying again will work.
+     */
+    assert.doesNotMatch(panelCode, /try sending it again/);
+    assert.match(panelCode, /There is nothing to resend\./);
+    /*
+     * COS-1233 — this used to pin "Their link works for 14 days", and the review
+     * found that false: an address that already has an account is sent no link
+     * at all, it finds the invitation waiting under its own Requests. The
+     * sentence has to be true of BOTH cases, because the patient cannot be told
+     * which one they are in — telling them would make this screen an oracle for
+     * "is this person already a patient here".
+     */
+    assert.doesNotMatch(panelCode, /Their link works for 14 days/);
+    assert.match(panelCode, /They have 14 days to accept, until/);
     // The three "what happens next" steps, in the order the design sets.
-    assert.match(panelCode, /Their link works for 14 days/);
     assert.match(panelCode, /they appear under Requests for you to confirm/);
     assert.match(panelCode, /You choose what they can see later, and separately\./);
     assert.match(panelCode, /We won&apos;t email them again unless you send a new invitation\./);
@@ -550,5 +619,230 @@ describe('COS-1231 — invite someone to your care circle by email', () => {
     assert.match(modalCode, /useLocalSearchParams<\{ tab\?: string \}>\(\)/);
     assert.match(modalCode, /defaultIndex=\{initialTabIndex\}/);
     assert.doesNotMatch(modalCode, /<SocialPanel [a-zA-Z]/);
+  });
+});
+
+describe('COS-1233 — invitations addressed to YOU, and the two consents', () => {
+  const received = readFileSync(
+    new URL('../../components/social/ReceivedInvitations.tsx', import.meta.url),
+    'utf8',
+  );
+  const receivedCode = strip(received);
+  const panel = readFileSync(
+    new URL('../../components/social/SocialPanel.tsx', import.meta.url),
+    'utf8',
+  );
+  const panelCode = strip(panel);
+  const home = readFileSync(new URL('../../app/Home/index.tsx', import.meta.url), 'utf8');
+
+  test('THE POINT: it is reachable on HOME, on BOTH render paths', () => {
+    /*
+     * This is what makes the feature complete rather than merely deployed.
+     *
+     * A brand-new invitee signs up and lands on `starter`, which grants `home`
+     * and `support` and nothing social at all. The Supports modal's Requests
+     * mode is where somebody goes LOOKING for an invitation; Home is where they
+     * are. Before this, redemption was bound to the emailed token, nothing could
+     * carry that token through an app install into signup, and no client ever
+     * sent it — so they signed up and nothing was ever claimed.
+     *
+     * Both paths, because which one a patient sees is a flag they did not set:
+     * `isHomeV2Enabled()` picks one, and a mount in only one of them is a
+     * feature that works for half the fleet.
+     */
+    const mounts = home.match(/<ReceivedInvitations \/>/g) ?? [];
+    assert.equal(mounts.length, 2, 'Home has two render paths; mount it in both');
+    assert.match(
+      home,
+      /import \{ ReceivedInvitations \} from '@\/components\/social\/ReceivedInvitations'/,
+    );
+  });
+
+  test('it silent-drops when there is nothing to answer', () => {
+    /*
+     * It mounts on Home for every patient on every open, so the empty state has
+     * to cost no chrome and no layout shift — the same discipline as
+     * RetakeRequestInboxCard, which it sits beside.
+     *
+     * And `[]` IS the normal answer: no live invitation, OR no email on the
+     * profile at all (Apple relay sign-ups, 13 of 32 production rows), OR an
+     * address that asked us to stop. Those three must never be told apart on
+     * screen, so there is one empty branch and no error branch.
+     */
+    assert.match(receivedCode, /if \(invites\.length === 0 && !status\) return null/);
+    assert.doesNotMatch(receivedCode, /isError|No invitations|nothing here/i);
+  });
+
+  test('THE POINT: accept is the FIRST consent — never a connection', () => {
+    /*
+     * The server claims the invitation and creates the connection request with
+     * the RECIPIENT as requester, so it lands on the inviter to confirm. The
+     * recipient holds their own 'pending-out' row and cannot finish it. So this
+     * may invalidate that list and nothing else: rendering a conversation or an
+     * accepted connection here would claim the second consent already happened.
+     */
+    assert.match(receivedCode, /queryKey: \['connections', 'pending-out'\]/);
+    assert.doesNotMatch(receivedCode, /'conversations'/);
+    assert.doesNotMatch(receivedCode, /'pending-in'|'accepted'/);
+  });
+
+  test('THE POINT: requested:false does not claim the inviter was told', () => {
+    /*
+     * `requested:false` means the invitation is spent but no request reached the
+     * inviter, because one of the two had declined the other in-app. The
+     * sentence comes from lib/received-invite-copy.ts, where BOTH branches are
+     * asserted at runtime — this pins that the component actually asks for it
+     * rather than writing its own string.
+     */
+    assert.match(receivedCode, /acceptOutcome\(name, res\.requested\)/);
+    assert.match(
+      receivedCode,
+      /import \{ acceptOutcome, invitationLine, INVITE_GONE \} from '@\/lib\/received-invite-copy'/,
+    );
+  });
+
+  test('THE POINT: Ignore is silent in BOTH directions', () => {
+    /*
+     * Nothing goes to the inviter — their list keeps showing an unanswered
+     * invitation that expires on its own 14-day clock, because telling them
+     * converts a private "no" into a social signal. And nothing is announced
+     * here either: a "declined" confirmation makes a private no feel like a
+     * report filed. The row simply goes.
+     */
+    const ignoreBlock = receivedCode.slice(
+      receivedCode.indexOf('const ignore = useMutation'),
+      receivedCode.indexOf('if (invites.length === 0'),
+    );
+    assert.ok(ignoreBlock.length > 0, 'the ignore mutation moved — re-check this guard');
+    assert.match(ignoreBlock, /setStatus\(null\)/);
+    assert.doesNotMatch(ignoreBlock, /acceptOutcome|Declined|We have told|let them know/i);
+  });
+
+  test('ONE refusal covers all five reasons, and a second Ignore is not an error', () => {
+    /*
+     * The server returns a single 404 for a missing, expired, already-claimed,
+     * already-ignored or somebody-else's id and deliberately does not say which;
+     * a client that guessed would turn that into an oracle. A double-tapped
+     * Ignore lands there too, so INVITE_NOT_FOUND is success-equivalent:
+     * refresh the list, say the invitation has gone.
+     */
+    assert.match(receivedCode, /err\?\.code === 'INVITE_NOT_FOUND'/);
+    assert.match(receivedCode, /setStatus\(INVITE_GONE\)/);
+    assert.doesNotMatch(receivedCode, /expired|already claimed|belongs to/i);
+  });
+
+  test('expiry is the SERVER\'s, so nothing is recomputed on the device', () => {
+    // Same rule as the sender's list: DynamoDB's TTL purge runs up to 48h late,
+    // and two clocks disagreeing about whether an invitation is live is how a
+    // screen offers Accept on something already gone.
+    assert.doesNotMatch(receivedCode, /Date\.parse|Date\.now\(\)|new Date\(/);
+  });
+
+  test('it sits at the TOP of Requests, above "Waiting for you"', () => {
+    /*
+     * This is the only row in that mode somebody else started and nobody else
+     * can finish: an in-app request can sit for a week, an invitation expires on
+     * a 14-day clock.
+     */
+    const at = panelCode.indexOf("mode === 'requests' && canRequests ?");
+    const entryAt = panelCode.indexOf('<ReceivedInvitations />', at);
+    const waitingAt = panelCode.indexOf('Waiting for you', at);
+    assert.ok(at > -1 && entryAt > at, 'the received section must render inside Requests mode');
+    assert.ok(waitingAt > entryAt, 'it must come before the incoming-request list');
+  });
+
+  test('the Requests badge counts invitations, or nobody finds them', () => {
+    // The badge is the only thing on the panel that says "there is something
+    // here for you", and an invitation addressed to you is the more urgent of
+    // the two things it can be.
+    assert.match(panelCode, /badge=\{pendingCount \+ receivedCount\}/);
+  });
+
+  test('the empty state counts them too', () => {
+    // Otherwise the panel said "No requests waiting, and none sent." directly
+    // above an invitation. Same defect COS-1231 fixed for the sent ones.
+    assert.match(panelCode, /receivedCount === 0 && openInvites\.length === 0 \?/);
+  });
+
+  test('ONE query key, so the badge and the rows cannot disagree', () => {
+    // Two components read the same list. A second key would be a second fetch
+    // and a badge that outlives the row it counts.
+    assert.match(receivedCode, /export const RECEIVED_INVITES_KEY/);
+    assert.match(panelCode, /queryKey: RECEIVED_INVITES_KEY/);
+    assert.doesNotMatch(panelCode, /'social-invites-received'/);
+  });
+
+  test('iOS 26 envelope: it mounts on HOME, the cold-mount path that has crashed', () => {
+    // ADR-0003. Modal, Animated, LayoutAnimation and react-native-svg are the
+    // four that have crashed this app on a cold mount — and one of this
+    // component's two homes is inside a presentation:'modal' screen, where a
+    // stacked Modal is the documented iOS 26.5 SIGABRT class.
+    const imports = receivedCode
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('import'))
+      .join('\n');
+    for (const b of ['Animated', 'LayoutAnimation', 'react-native-svg', 'Modal']) {
+      assert.ok(!imports.includes(b), `ReceivedInvitations must not import ${b}`);
+    }
+    assert.doesNotMatch(receivedCode, /Alert\.alert|Portal/);
+  });
+
+  test('44pt targets, the tablet type step, and the AA teal', () => {
+    /*
+     * Audience is largely 60+ and partly visually impaired, and this is a
+     * yes/no decision about a stranger — the two buttons are the whole screen.
+     *
+     * colors.tint (#008080) is 4.38:1 on the card and 3.42:1 on the dark card,
+     * both under AA for text, so labels use the design system's own AA pair.
+     * getScaledFontSize does not enlarge on a tablet (isTablet() only removes
+     * phone dampening), so the breakpoint step is composed before it, through
+     * the one existing ladder rather than a second set of thresholds.
+     */
+    assert.match(receivedCode, /minHeight: TouchTargets\.minimum/);
+    assert.match(receivedCode, /layoutForWidth\(width\)/);
+    assert.match(receivedCode, /intakeFontSize\(base, breakpoint, getScaledFontSize\)/);
+    assert.match(
+      receivedCode,
+      /const actionTint = settings\.isDarkTheme \? tokens\.primary : tokens\.primaryDark/,
+    );
+    assert.doesNotMatch(receivedCode, /color: colors\.tint/);
+    // Real semantics, not styled Views.
+    assert.match(receivedCode, /accessibilityRole="header"/);
+    assert.match(receivedCode, /accessibilityLiveRegion="polite"/);
+    for (const label of ['Accept the invitation from', 'Ignore the invitation from']) {
+      assert.ok(receivedCode.includes(label), `missing accessibility label: ${label}`);
+    }
+  });
+
+  test('per-row spinners, like every other action in this feature', () => {
+    // `accept.isPending` alone is true for every row while any one is in
+    // flight, so answering one invitation would grey out all of them.
+    assert.match(receivedCode, /accept\.isPending && accept\.variables === item\.inviteId/);
+    assert.match(receivedCode, /ignore\.isPending && ignore\.variables === item\.inviteId/);
+  });
+
+  test('THE POINT: signup-time redemption is gone, and nothing sends a token', () => {
+    /*
+     * COS-1229 bound redemption to the emailed token at confirm-signup. Nothing
+     * could carry that token from the email, through an app install, into the
+     * signup form — universal links are declared and dead (no AASA, no
+     * assetlinks) — and no client ever sent it. The field is gone from the
+     * server's schema; this pins that the app never grows it back.
+     */
+    for (const f of [
+      '../../components/social/ReceivedInvitations.tsx',
+      '../../components/social/SocialPanel.tsx',
+      '../../services/api/conversations.ts',
+      '../../app/Home/index.tsx',
+    ]) {
+      /*
+       * Comments STRIPPED first, for the same reason the banned-imports guard
+       * above does it: ReceivedInvitations' own header names this field in order
+       * to forbid it, and a guard that trips on the documentation of its own
+       * rule is a guard nobody will keep.
+       */
+      const src = strip(readFileSync(new URL(f, import.meta.url), 'utf8'));
+      assert.ok(!/inviteToken/.test(src), `${f} must not send inviteToken`);
+    }
   });
 });
