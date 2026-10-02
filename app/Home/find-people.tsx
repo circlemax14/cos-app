@@ -20,7 +20,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, TextInput, Image, Switch } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppWrapper } from '@/components/app-wrapper';
 import {
@@ -33,6 +33,7 @@ import {
 import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
+import { socialReturnHref } from '@/lib/social-nav';
 
 /*
  * COS-1058 — required on every leaf route, and enforced by a test.
@@ -50,6 +51,9 @@ export default function FindPeopleScreen() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
   const qc = useQueryClient();
+  /** COS-1236 — where Back goes. A token, resolved by the shared allowlist. */
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const backHref = socialReturnHref(typeof returnTo === 'string' ? returnTo : undefined);
   const [query, setQuery] = useState('');
   const [requested, setRequested] = useState<Record<string, boolean>>({});
 
@@ -118,7 +122,19 @@ export default function FindPeopleScreen() {
   return (
     <AppWrapper>
       <View style={[styles.header, { borderColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" hitSlop={10}>
+        {/*
+          COS-1236 — Back goes where you CAME FROM.
+
+          Vishal: "if I click on the back icon, it is taking me to the home
+          screen. Ideally it should take me to the inbox screen." This screen is
+          an app/Home/* route hidden with href:null, so a push from the Inbox tab
+          is a push inside that tab's stack and `router.back()` pops to the tab's
+          initial route — Home. `replace`, not `back`, and the destination is a
+          TOKEN resolved by lib/social-nav rather than a pathname off the wire
+          (COS-1186's rule: an honoured pathname is an open redirect wearing a
+          Back button).
+        */}
+        <Pressable onPress={() => router.replace(backHref as never)} accessibilityRole="button" accessibilityLabel="Back" hitSlop={10}>
           <MaterialIcons name="arrow-back" size={getScaledFontSize(22)} color={colors.text} />
         </Pressable>
         <Text

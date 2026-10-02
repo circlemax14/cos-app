@@ -31,6 +31,7 @@ import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
+import { requestInviteSheet } from '@/lib/social-nav';
 
 /*
  * COS-1058 — required on every leaf route, and enforced by a test.
@@ -142,19 +143,60 @@ function InboxScreenInner() {
         >
           Inbox
         </Text>
-        <Pressable
-          onPress={() => router.push('/Home/find-people' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Find people to message"
-          style={[styles.newBtn, { borderColor: colors.border }]}
-        >
-          <MaterialIcons name="person-add" size={getScaledFontSize(18)} color={colors.tint} />
-        </Pressable>
+        {/*
+          COS-1236 — two icons, and they must not read as one thing twice.
+
+          Vishal: "rather than this big input box we should have some logical
+          icon next to this plus icon where we show this Find people." The big
+          bordered row that used to sit under the banner is gone; this is it.
+
+          GLYPH. `group-add` rather than `person-search`: the button beside it is
+          already a single silhouette with a plus, and at 18pt on the audience
+          this app has — largely 60+, partly visually impaired — two
+          one-person outlines side by side are the same picture twice.
+          `group-add` is a different shape at a glance and says what the thing
+          does, add someone to the circle. `person-search` is also already the
+          Find people MODE glyph inside SocialPanel, so spending it here would
+          name two different destinations with one icon. Neither is a pencil, a
+          paper plane or a speech bubble, so neither can be mistaken for a
+          second "send a message".
+        */}
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push('/Home/find-people?returnTo=inbox' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Find people to message"
+            style={[styles.newBtn, { borderColor: colors.border }]}
+          >
+            <MaterialIcons name="person-add" size={getScaledFontSize(18)} color={colors.tint} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              /*
+                COS-1236 — land IN the form, not merely on the tab.
+
+                Vishal: "it is opening the support modal and going to the social
+                tab, but it should also open that form where we are entering this
+                email invitation." The form is a mode of SocialPanel, which takes
+                no props and cannot read route params, so the intent is left in
+                lib/social-nav for the panel to pick up as it mounts.
+              */
+              requestInviteSheet();
+              router.push('/modal?tab=social' as never);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Invite someone by email"
+            accessibilityHint="Opens a form to send one email invitation to someone who is not here yet"
+            style={[styles.newBtn, { borderColor: colors.border }]}
+          >
+            <MaterialIcons name="group-add" size={getScaledFontSize(18)} color={colors.tint} />
+          </Pressable>
+        </View>
       </View>
 
       {pendingCount > 0 && (
         <Pressable
-          onPress={() => router.push('/Home/connection-requests' as never)}
+          onPress={() => router.push('/Home/connection-requests?returnTo=inbox' as never)}
           accessibilityRole="button"
           accessibilityLabel={`${pendingCount} connection requests waiting`}
           style={[styles.banner, { borderColor: colors.border }]}
@@ -166,44 +208,6 @@ function InboxScreenInner() {
           <MaterialIcons name="chevron-right" size={getScaledFontSize(20)} color={colors.icon} />
         </Pressable>
       )}
-
-      {/*
-        COS-1231 SCREEN 5 — the second door into the invite sheet.
-
-        Inbox is where someone notices a person is missing, so the invitation
-        has to be reachable from here and not only from the Supports modal's
-        Social tab. It lands on that tab rather than opening a sheet of its own:
-        the sheet is a MODE of SocialPanel, which lives inside the Supports
-        modal, and a second copy here would be a second implementation of the
-        same screen — the mistake this area has already made once with
-        connections.
-
-        One bordered row rather than the header icon the design sketches: a bare
-        person-add glyph in a header is not an invitation anyone reads, and this
-        audience is largely 60+ and partly visually impaired. The words are the
-        affordance.
-      */}
-      <Pressable
-        onPress={() => router.push('/modal?tab=social' as never)}
-        accessibilityRole="button"
-        accessibilityLabel="Invite someone by email"
-        accessibilityHint="Opens your care circle, where you can send one email invitation"
-        style={[styles.inviteRow, { borderColor: colors.border }]}
-      >
-        <MaterialIcons name="mail-outline" size={getScaledFontSize(18)} color={colors.tint} />
-        <Text
-          style={{
-            color: colors.text,
-            fontSize: getScaledFontSize(13),
-            flex: 1,
-            marginLeft: 8,
-            lineHeight: getScaledFontSize(19),
-          }}
-        >
-          Someone missing from here? Invite them by email.
-        </Text>
-        <MaterialIcons name="chevron-right" size={getScaledFontSize(20)} color={colors.icon} />
-      </Pressable>
 
       <FlatList
         data={conversations}
@@ -281,7 +285,19 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
   },
-  newBtn: { borderWidth: 1, borderRadius: Radii.md, padding: 8 },
+  // COS-1236 — a 44pt target, which neither of these had: 18pt of glyph in 8pt
+  // of padding is 34. Vishal's audience is largely 60+ and this is the row they
+  // tap to reach the whole feature.
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  newBtn: {
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    padding: 8,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -290,17 +306,6 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.xs,
-  },
-  // COS-1231 — same shape as the pending banner above it, with a 44pt target.
-  inviteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: Radii.md,
-    padding: Spacing.sm,
-    marginHorizontal: Spacing.md,
-    marginBottom: Spacing.xs,
-    minHeight: 44,
   },
   row: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: Radii.md, padding: Spacing.sm },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

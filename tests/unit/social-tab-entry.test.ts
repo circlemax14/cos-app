@@ -94,10 +94,14 @@ describe('COS-1063/COS-1124 — the Social tab reaches people-search, in place',
 
   test('the standalone routes remain, because Inbox still links to them', () => {
     // COS-1124 removed the Social tab's navigation, not the screens. Inbox's
-    // header button and pending banner are a second, legitimate door.
+    // header buttons and pending banner are a second, legitimate door.
+    //
+    // COS-1236 — and each link now NAMES where it was opened from, because Back
+    // on those screens used to land on Home. See the COS-1236 block at the foot
+    // of this file.
     const inbox = readFileSync(new URL('../../app/Home/inbox.tsx', import.meta.url), 'utf8');
-    assert.match(inbox, /'\/Home\/find-people'/);
-    assert.match(inbox, /'\/Home\/connection-requests'/);
+    assert.match(inbox, /'\/Home\/find-people\?returnTo=inbox'/);
+    assert.match(inbox, /'\/Home\/connection-requests\?returnTo=inbox'/);
   });
 
   test('both target routes still exist as files', () => {
@@ -503,7 +507,14 @@ describe('COS-1231 — invite someone to your care circle by email', () => {
     assert.match(panelCode, /They have 14 days to accept, until/);
     // The three "what happens next" steps, in the order the design sets.
     assert.match(panelCode, /they appear under Requests for you to confirm/);
-    assert.match(panelCode, /You choose what they can see later, and separately\./);
+    /*
+     * COS-1236 REPLACED STEP 3. It said "You choose what they can see later, and
+     * separately." Vishal: "why did you mention that you can approve what they
+     * can see?" There is no per-connection sharing model in this platform and no
+     * screen on which that choice is made — see the COS-1236 block at the foot of
+     * this file, which pins the sentence that replaced it and that no surface
+     * makes the promise again.
+     */
     assert.match(panelCode, /We won&apos;t email them again unless you send a new invitation\./);
   });
 
@@ -600,13 +611,16 @@ describe('COS-1231 — invite someone to your care circle by email', () => {
      * Social tab rather than opening a sheet of its own, because the sheet is a
      * MODE of SocialPanel inside the Supports modal and a second copy here
      * would be a second implementation of the same screen.
+     *
+     * COS-1236 — the DOOR moved from a bordered row to a header icon, and it now
+     * opens the sheet rather than the tab. The route is unchanged; what it means
+     * is pinned in the COS-1236 block at the foot of this file.
      */
     assert.match(inbox, /'\/modal\?tab=social'/);
-    assert.match(inbox, /Someone missing from here\? Invite them by email\./);
     // Unchanged, and still pinned above — repeated here so a future edit to
     // this screen sees all three doors in one place.
-    assert.match(inbox, /'\/Home\/find-people'/);
-    assert.match(inbox, /'\/Home\/connection-requests'/);
+    assert.match(inbox, /'\/Home\/find-people\?returnTo=inbox'/);
+    assert.match(inbox, /'\/Home\/connection-requests\?returnTo=inbox'/);
   });
 
   test('the deep link is read by modal.tsx — the panel still takes NO props', () => {
@@ -1050,6 +1064,223 @@ describe('COS-1235 — the invitation can be reached, and the people can be iden
       // `receivedQ.data` is an object now; the badge must not become truthy-on-object.
       assert.match(panelCode, /receivedQ\.data\?\.invites\.length \?\? 0/);
       assert.match(panelCode, /badge=\{pendingCount \+ receivedCount\}/);
+    });
+  });
+});
+
+/*
+ * ═══ COS-1236 — THE SEVEN THINGS THE PRODUCT OWNER FOUND ON DEV ═══════
+ *
+ * The flow works end to end now: the email sends, and it arrives. These are the
+ * seven things that were wrong with it once it did. Six are source-text pins,
+ * for the same reason as every assertion above — this file is React Native and
+ * `node --test` cannot load it. The two that are real logic (where Back goes,
+ * and the one-shot invite intent) are driven at runtime in lib/social-nav.test.mjs
+ * instead, because a regex cannot tell a working allowlist from a typo'd one.
+ */
+describe('COS-1236 — the invitation is reachable, honest, and one tap lighter', () => {
+  const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
+  const inboxSrc = read('app/Home/inbox.tsx');
+  const inboxCode = strip(inboxSrc);
+  const panelSrc = read('components/social/SocialPanel.tsx');
+  const panel = strip(panelSrc);
+
+  /* ─── 1. THE ENTRY POINT IS AN ICON, NOT A CARD ───────────────────── */
+  describe('the Inbox entry is an icon beside the existing one', () => {
+    test('THE POINT: the big bordered row is GONE', () => {
+      /*
+       * Vishal: "rather than this big input box we should have some logical icon
+       * next to this plus icon where we show this Find people." It was a
+       * full-width row of body copy between the pending banner and the
+       * conversation list, on the screen a patient opens to read their messages.
+       */
+      assert.doesNotMatch(inboxSrc, /Someone missing from here/);
+      assert.doesNotMatch(inboxCode, /styles\.inviteRow/);
+      // ...and its style went with it, rather than being left for dead.
+      assert.doesNotMatch(inboxCode, /inviteRow: \{/);
+    });
+
+    test('the two header buttons sit in one row, and BOTH clear 44pt', () => {
+      /*
+       * 18pt of glyph inside 8pt of padding is a 34pt target, which neither
+       * header button has ever cleared. One style, so the fix cannot land on the
+       * new button and miss the one beside it.
+       */
+      assert.match(inboxCode, /headerActions: \{/);
+      const btn = inboxCode.slice(inboxCode.indexOf('newBtn: {'), inboxCode.indexOf('banner: {'));
+      assert.ok(btn.length > 0, 'the newBtn style moved — re-check this guard');
+      assert.match(btn, /minWidth: 44/);
+      assert.match(btn, /minHeight: 44/);
+    });
+
+    test('the glyph is group-add, and cannot be read as a second Send', () => {
+      /*
+       * `person-search` was the other candidate and is already spent: it is the
+       * Find people MODE glyph inside SocialPanel, so using it here would name
+       * two destinations with one icon. `person-add` (the button beside it) is a
+       * single silhouette, and two one-person outlines at 18pt on a 60-plus
+       * audience are the same picture twice.
+       *
+       * And nothing in this header may be a pencil, a paper plane or a speech
+       * bubble: this icon sends no message, it opens a form.
+       */
+      assert.match(inboxCode, /name="group-add"/);
+      for (const sendish of ['"edit"', '"send"', '"chat"', '"add-comment"', '"rate-review"']) {
+        assert.ok(!inboxCode.includes(`name=${sendish}`), `${sendish} reads as a send button`);
+      }
+    });
+
+    test('it is labelled and hinted — the words moved into the a11y layer', () => {
+      // Removing the sentence from the screen removes it from the screen only.
+      // VoiceOver must still be told what this does, in the same words.
+      assert.match(inboxCode, /accessibilityLabel="Invite someone by email"/);
+      assert.match(inboxCode, /accessibilityHint="Opens a form to send one email invitation/);
+    });
+  });
+
+  /* ─── 2. BACK GOES WHERE YOU CAME FROM ───────────────────────────── */
+  describe('Back on the standalone screens returns to the caller', () => {
+    for (const file of ['app/Home/find-people.tsx', 'app/Home/connection-requests.tsx']) {
+      test(`${file} resolves Back through lib/social-nav, and router.back() is gone`, () => {
+        /*
+         * Vishal: "this Find people, if I go there, if I click on the back icon,
+         * it is taking me to the home screen. Ideally it should take me to the
+         * inbox screen."
+         *
+         * Both screens are app/Home/* routes hidden with href:null, so a push
+         * from the Inbox tab is a push inside that tab's stack and back() pops to
+         * the tab's initial route. connection-requests is fixed in the same
+         * commit although nobody reported it: it is pushed from the same header
+         * and had the identical line.
+         */
+        const code = strip(read(file));
+        assert.doesNotMatch(code, /router\.back\(\)/);
+        assert.match(code, /from '@\/lib\/social-nav'/);
+        assert.match(code, /socialReturnHref\(typeof returnTo === 'string' \? returnTo : undefined\)/);
+        assert.match(code, /router\.replace\(backHref as never\)/);
+        // No second copy of the rule. COS-1186's drift, in miniature.
+        assert.doesNotMatch(code, /'\/Home\/inbox'/);
+      });
+    }
+  });
+
+  /* ─── 3. THE ENTRY OPENS THE FORM, NOT THE TAB ───────────────────── */
+  describe('the Inbox icon lands IN the invite sheet', () => {
+    test('THE POINT: Inbox asks for the sheet BEFORE it navigates', () => {
+      /*
+       * Vishal: "it is opening the support modal and going to the social tab, but
+       * it should also open that form where we are entering this email
+       * invitation."
+       */
+      assert.match(inboxCode, /import \{ requestInviteSheet \} from '@\/lib\/social-nav'/);
+      const press = inboxCode.slice(
+        inboxCode.indexOf('requestInviteSheet()'),
+        inboxCode.indexOf('accessibilityLabel="Invite someone by email"'),
+      );
+      assert.ok(press.length > 0, 'the invite button moved — re-check this guard');
+      assert.match(press, /router\.push\('\/modal\?tab=social' as never\)/);
+    });
+
+    test('the panel reads it as it mounts, and STILL takes no props', () => {
+      /*
+       * Both constraints at once, which is the whole difficulty of this item:
+       * `<SocialPanel />` is pinned twice at the top of this file (once by regex,
+       * once by indexOf inside the flex wrapper) and `from 'expo-router'` is
+       * banned in the panel, so the mode can arrive neither as a prop nor as a
+       * route param. It arrives as a one-shot note in module scope — the same
+       * shape as modal.tsx's own sessionRecencyFilter.
+       */
+      assert.match(panel, /import \{ consumeInviteSheetIntent \} from '@\/lib\/social-nav'/);
+      assert.match(
+        panel,
+        /React\.useState<Mode>\(\(\) =>\s*consumeInviteSheetIntent\(\) && canFind \? 'invite' : 'find',\s*\)/,
+      );
+      // The two bans it had to survive.
+      assert.doesNotMatch(panel, /from 'expo-router'/);
+      const modalSrc = strip(read('app/modal.tsx'));
+      assert.doesNotMatch(modalSrc, /<SocialPanel [a-zA-Z]/);
+    });
+  });
+
+  /* ─── 4. THE SHEET'S BACK BUTTON IS GONE, AND THERE IS STILL A WAY OUT ─ */
+  describe('the invite sheet has no Back row', () => {
+    test('THE POINT: the row and its style are both gone', () => {
+      // Vishal: "why do we have this back button? It will not be required,
+      // because when I click on any pill I am already going to the proper screen."
+      assert.doesNotMatch(panel, /Back to find people/);
+      assert.doesNotMatch(panel, /name="arrow-back"/);
+      assert.doesNotMatch(panel, /backRow/);
+    });
+
+    test('and the pill that replaces it LOOKS like the way out', () => {
+      /*
+       * Removing the only exit would be worse than the button. The exit is the
+       * mode row, which renders above every mode — so the Find people pill stays
+       * lit while the sheet is open, because a dimmed pill does not read as the
+       * way back. (The Supports modal's own dismiss is the second exit.)
+       */
+      assert.match(
+        panel,
+        /const on = mode === id \|\| \(id === 'find' && \(mode === 'invite' \|\| mode === 'invite-sent'\)\)/,
+      );
+    });
+  });
+
+  /* ─── 5. THE RELATIONSHIP CHIPS SAY WHAT THEY ARE FOR ────────────── */
+  describe('the relationship field earns its place', () => {
+    test('THE POINT: the sender is shown what the RECIPIENT will read', () => {
+      /*
+       * Vishal: "what is the use of this 'how do we know them'? I don't know how
+       * it is useful."
+       *
+       * It was always used — cos-backend email.service.ts puts it in the email as
+       * "<name> … has invited you as their family" — and this screen never said
+       * so, so it read as a field collected for its own sake. The line is live and
+       * announced, because the whole point is that it changes with the chip.
+       */
+      assert.match(panel, /Their email will say you invited them as your \$\{RELATIONSHIPS\.find\(/);
+      assert.match(panel, /\?\.label\.toLowerCase\(\)\}\./);
+      assert.match(panel, /This goes in their email, so they know who is asking\./);
+    });
+
+    test('it is ONE line, not a second paragraph on an already long sheet', () => {
+      // The sheet had to start scrolling at COS-1231. A paragraph here is how it
+      // puts Send below the fold again in accessibility mode.
+      const chipsClose = panel.indexOf('</View>', panel.indexOf('styles.chipRow'));
+      const noteLabel = panel.indexOf('styles.noteLabelRow');
+      assert.ok(chipsClose > 0 && noteLabel > chipsClose, 'the chip row moved — re-check this guard');
+      const between = panel.slice(chipsClose, noteLabel);
+      assert.equal(
+        (between.match(/<Text/g) ?? []).length,
+        1,
+        'exactly one line between the chips and the note field',
+      );
+    });
+  });
+
+  /* ─── 6 & 7. THE TWO PROMISES: ONE MISSING, ONE IMPOSSIBLE ───────── */
+  describe('the promise we cannot keep is gone from EVERY surface', () => {
+    test('THE POINT: the app no longer offers a sharing screen that does not exist', () => {
+      /*
+       * Vishal: "why did you mention that you can approve what they can see?"
+       *
+       * There is no per-connection sharing model anywhere in this platform and no
+       * screen where a patient chooses what a connection sees. Confirming a
+       * connection grants exactly ONE thing: a direct conversation.
+       */
+      assert.doesNotMatch(panel, /You choose what they can see/);
+      assert.doesNotMatch(panel, /choose what they can see|approve what they can see/);
+      assert.match(
+        panel,
+        /Once you confirm, they are in your circle and you can message each other — your health information is not shared\./,
+      );
+    });
+
+    test('the in-app promise card is untouched — it was already true', () => {
+      // The sheet has promised this since COS-1231 and it is accurate; COS-1236
+      // adds it to the EMAIL (pinned in cos-backend), it does not move it.
+      assert.match(panel, /One email, and that&apos;s it\./);
+      assert.match(panel, /None of your health information is included\./);
     });
   });
 });

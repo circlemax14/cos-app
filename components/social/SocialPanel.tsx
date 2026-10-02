@@ -80,6 +80,7 @@ import {
   RECEIVED_INVITES_KEY,
 } from '@/components/social/ReceivedInvitations'
 import { isValidEmailFormat } from '@/lib/email-format'
+import { consumeInviteSheetIntent } from '@/lib/social-nav'
 import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invite-copy'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCanShowScreen } from '@/hooks/use-feature-permissions'
@@ -230,7 +231,22 @@ export function SocialPanel(): React.JSX.Element | null {
   const canFind = canShow('find-people')
   const canRequests = canShow('connection-requests')
 
-  const [mode, setMode] = React.useState<Mode>('find')
+  /*
+   * COS-1236 — the Inbox icon lands IN the form, not merely on this tab.
+   *
+   * Vishal: "it is opening the support modal and going to the social tab, but it
+   * should also open that form where we are entering this email invitation."
+   *
+   * Read once, as this mounts, from lib/social-nav — the panel takes no props
+   * (two assertions pin `<SocialPanel />`) and cannot import expo-router, so
+   * there is nothing else to read. The intent is consumed either way: if the
+   * plan does not grant find-people the sheet cannot render, and the note must
+   * not survive to open it on some later, unrelated open of this modal. Falling
+   * back to 'find' in that case is exactly the behaviour before this change.
+   */
+  const [mode, setMode] = React.useState<Mode>(() =>
+    consumeInviteSheetIntent() && canFind ? 'invite' : 'find',
+  )
   /*
    * COS-1126 — "let others find me" moved off the body and onto an icon beside
    * the pills. Vishal: "add some icon, when I click on it a dropdown will open
@@ -591,7 +607,14 @@ export function SocialPanel(): React.JSX.Element | null {
     label: string
     badge?: number
   }) => {
-    const on = mode === id
+    /*
+     * COS-1236 — invite and invite-sent are sub-screens OF find, so the Find
+     * people pill stays lit while they are open. With the Back row gone (Vishal:
+     * "why do we have this back button… when I click on any pill I am already
+     * going to the proper screen") this pill IS the way out, and a dimmed pill
+     * does not read as one.
+     */
+    const on = mode === id || (id === 'find' && (mode === 'invite' || mode === 'invite-sent'))
     return (
       <Pressable
         onPress={() => setMode(id)}
@@ -858,26 +881,18 @@ export function SocialPanel(): React.JSX.Element | null {
       */}
       {mode === 'invite' && canFind ? (
         <>
-          <Pressable
-            onPress={() => setMode('find')}
-            accessibilityRole="button"
-            accessibilityLabel="Back to find people"
-            hitSlop={8}
-            style={styles.backRow}
-          >
-            <MaterialIcons name="arrow-back" size={fs(20)} color={actionTint} />
-            <Text
-              style={{
-                color: actionTint,
-                fontSize: fs(14),
-                marginLeft: 6,
-                fontWeight: fw(600) as TextStyle['fontWeight'],
-              }}
-            >
-              Back
-            </Text>
-          </Pressable>
+          {/*
+            COS-1236 — there is no Back row here, deliberately.
 
+            Vishal: "in this invitation this looks good, but why do we have this
+            back button? It will not be required, because when I click on any
+            pill I am already going to the proper screen."
+
+            The way out is not removed, it is the one that was already there: the
+            mode pills render above every mode, Find people is lit while this
+            sheet is open, and the Supports modal keeps its own dismiss. A second
+            control that did the same thing as the pill beside it was the clutter.
+          */}
           <Text
             style={{
               color: colors.text,
@@ -963,6 +978,30 @@ export function SocialPanel(): React.JSX.Element | null {
               )
             })}
           </View>
+
+          {/*
+            COS-1236 — the chips tell the sender what they are FOR.
+
+            Vishal: "what is the use of this 'how do we know them — family,
+            friend, carer, clinician'? I don't know how it is useful."
+
+            It was always useful and never visible: the value goes into the email
+            as "<name> … has invited you as their family"
+            (cos-backend email.service.ts), and this screen never said so, so it
+            read as a form field collected for its own sake. One live line, under
+            the chips, in the recipient's words. Not a paragraph: this sheet is
+            already long, which is why it had to start scrolling.
+          */}
+          <Text
+            style={{ color: colors.subtext, fontSize: fs(13), lineHeight: fs(19) }}
+            accessibilityLiveRegion="polite"
+          >
+            {inviteRelationship
+              ? `Their email will say you invited them as your ${RELATIONSHIPS.find(
+                  (r) => r.key === inviteRelationship,
+                )?.label.toLowerCase()}.`
+              : 'This goes in their email, so they know who is asking.'}
+          </Text>
 
           <View style={styles.noteLabelRow}>
             <Text
@@ -1158,7 +1197,19 @@ export function SocialPanel(): React.JSX.Element | null {
               {[
                 `They have 14 days to accept, until ${dayLabel(sentInvite.expiresAt)}.`,
                 'When they accept, they appear under Requests for you to confirm.',
-                'You choose what they can see later, and separately.',
+                /*
+                  COS-1236 — THE PROMISE WE CANNOT KEEP IS GONE.
+
+                  Vishal: "why did you mention that you can approve what they
+                  can see?" He is right. This said "You choose what they can see
+                  later, and separately." There is no per-connection sharing
+                  model anywhere in this platform and no screen on which that
+                  choice is made: confirming a connection grants exactly ONE
+                  thing, a direct conversation. Saying otherwise set a patient up
+                  to hand over an address expecting a control that does not
+                  exist. The replacement is what the code actually does.
+                */
+                'Once you confirm, they are in your circle and you can message each other — your health information is not shared.',
               ].map((step, i) => (
                 <View key={step} style={styles.stepRow}>
                   <Text
@@ -1635,11 +1686,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     // 44pt even before the type scales: this is the entry point to the whole
     // feature on an audience that is largely 60+.
-    minHeight: TouchTargets.minimum,
-  },
-  backRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     minHeight: TouchTargets.minimum,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
