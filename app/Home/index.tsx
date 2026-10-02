@@ -38,6 +38,20 @@ import { BloomingOrbitItem } from '@/components/home/blooming-orbit-item';
 // Renders `null` when there are no pending items, so the mount is a no-op
 // on the flag-off / empty state — no chrome, no layout shift.
 import RetakeRequestInboxCard from '@/components/health-plan/retake-request/RetakeRequestInboxCard';
+/*
+ * COS-1233 — invitations to somebody's care circle that are addressed to THIS
+ * patient. Same discipline as RetakeRequestInboxCard above: it renders `null`
+ * when there is nothing to answer, so the mount is a no-op for everyone without
+ * a live invitation and costs no chrome and no layout shift.
+ *
+ * Home is the mount that makes the feature work. A brand-new invitee signs up,
+ * lands on `starter` (which grants `home` and `support` and nothing social at
+ * all), and has to be able to find the invitation on the first screen they ever
+ * see — the Supports modal's Requests mode is where somebody goes LOOKING for
+ * it, which is a different question. Deliberately ungated for that reason; the
+ * three routes behind it are ungated server-side to match.
+ */
+import { ReceivedInvitations } from '@/components/social/ReceivedInvitations';
 // SCRUM-638 — Bevel-inspired Daily Readiness score. Reads HealthKit
 // on-device, computes vs a rolling 14-day personal baseline. Gated
 // behind `readiness_score_enabled` flag; default OFF.
@@ -2864,6 +2878,11 @@ function HomeV2Layout(): React.JSX.Element {
           {/* RetakeRequestInboxCard — silent-drops on empty state, so
               mount at top matches the legacy Home discipline. */}
           <RetakeRequestInboxCard />
+          {/* COS-1233 — an invitation to someone's care circle. Silent-drops
+              the same way. Below the retake ask because that one is clinical
+              and time-boxed by a care manager; this one has its own 14-day
+              clock and no clinical content at all. */}
+          <ReceivedInvitations />
 
           <GreetingHeader userFirstName={isLoadingPatient ? '' : firstName} />
 
@@ -3489,6 +3508,9 @@ function HomeScreenInner() {
          * returns null), so no layout shift on the empty state.
          */}
         <RetakeRequestInboxCard />
+        {/* COS-1233 — see the note at the v2 mount above. Both render paths get
+            it, because which one a patient sees is a flag they did not set. */}
+        <ReceivedInvitations />
         {/* 2026-08-05 — Compact 3-tile row: Readiness · Health Age · Daily Read.
             Replaces the three stacked full-width cards that previously
             lived here (SCRUM-638 ReadinessScoreCard + SCRUM-642

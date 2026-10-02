@@ -45,9 +45,21 @@ export interface DirectoryEntry {
 export type ConnectionStatus = 'pending-out' | 'pending-in' | 'accepted' | 'declined';
 
 export interface Connection {
-  /** COS-1129 — present only on 'pending-out'; see the server note. */
+  /**
+   * COS-1129 — present on 'pending-out', and (COS-1235) on the 'pending-in' rows
+   * that exist because YOU invited that person by email. See the server note:
+   * naming a stranger who wrote to you is a disclosure you never asked for;
+   * naming the person you invited is your own input coming back.
+   */
   displayName?: string;
   photoUrl?: string | null;
+  /**
+   * COS-1235 — the address YOU typed into the invite form, on the incoming request
+   * their acceptance created. Absent on every other row, including every stranger's.
+   * It is what lets the inviter tell it is the right person: `displayName` is only
+   * written when somebody turns discoverability on, so a brand-new invitee has none.
+   */
+  invitedEmail?: string;
   userId: string;
   peerId: string;
   status: ConnectionStatus;
@@ -221,4 +233,258 @@ export async function acceptConnection(requesterId: string): Promise<Connection>
 
 export async function declineConnection(requesterId: string): Promise<void> {
   await apiClient.post(`/v1/patients/me/social/connections/${requesterId}/decline`);
+}
+
+// ── invite by email (COS-1231) ────────────────────────────────────────
+
+/**
+ * COS-1231 — inviting someone who is NOT a user yet.
+ *
+ * Everything above acts on a userId that already exists. These three act on an
+ * email address that may belong to nobody, which is why the POST is the only
+ * social route with server-side entitlement enforcement.
+ *
+ * The field names and the status union below are character-identical to
+ * src/services/social-invite.service.ts's `Invite`. One shape, one vocabulary:
+ * the last time this area grew a second one it shipped two implementations of
+ * connections.
+ */
+export type InviteRelationship = 'family' | 'friend' | 'carer' | 'clinician';
+
+export interface Invite {
+  inviteId: string;
+  email: string;
+  relationship: InviteRelationship;
+  note: string | null;
+  /**
+   * 'expired' is DERIVED by the server on every read and never stored, because
+   * DynamoDB's TTL purge runs up to 48h late. Never compute it here from
+   * expiresAt — two clocks disagreeing about whether a link is dead is how a
+   * screen ends up offering Withdraw on something already gone.
+   */
+  status: 'invited' | 'claimed' | 'withdrawn' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+  /**
+   * What the mail transport actually returned. Propagated rather than assumed:
+   * a Resend 429 or 5xx is swallowed server-side into delivered:false with no
+   * retry and no queue, and the confirmation screen NAMES the address — so a
+   * false `true` here is the app telling a patient something untrue.
+   */
+  delivered: boolean;
+}
+
+/**
+ * The server's `code` on a 4xx, carried so the sheet can say which of five
+ * different things went wrong. Same shape as plan-type.ts:97.
+ */
+export type InviteErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'SELF_INVITE'
+  | 'INVITE_ALREADY_PENDING'
+  | 'ALREADY_CONNECTED'
+  | 'INVITE_RATE_LIMITED'
+  | 'INVITE_NOT_FOUND';
+
+export interface InviteError extends Error {
+  code?: InviteErrorCode;
+  /** Present on INVITE_ALREADY_PENDING: the invitation that already exists. */
+  existing?: Invite;
+}
+
+function wrapInviteError(err: unknown): never {
+  const res = (
+    err as {
+      response?: { data?: { code?: string; error?: string; details?: { invite?: Invite } } };
+    }
+  )?.response?.data;
+  if (!res?.code) throw err;
+  // The server's own message is used verbatim. It is written for a patient to
+  // read ("You can send 10 invitations a day…"), and a second copy of that
+  // copy in the app is one more string to keep in step with the email.
+  const wrapped = new Error(res.error || 'That did not work — please try again.') as InviteError;
+  wrapped.code = res.code as InviteErrorCode;
+  if (res.details?.invite) wrapped.existing = res.details.invite;
+  throw wrapped;
+}
+
+/**
+ * Invite an email address to my care circle.
+ *
+ * The response is IDENTICAL whether or not the address already has an account.
+ * That is deliberate and must stay that way: it used to come back 'claimed'
+ * only for a hit, which made this endpoint an oracle any entitled patient
+ * could use to learn that a named person is a patient of a healthcare product.
+ */
+export async function sendEmailInvite(input: {
+  email: string;
+  relationship: InviteRelationship;
+  note?: string;
+}): Promise<{ invite: Invite; delivered: boolean }> {
+  try {
+    const res = await apiClient.post<{ data: { invite: Invite; delivered: boolean } }>(
+      '/v1/patients/me/social/invites',
+      input,
+    );
+    const d = res.data?.data;
+    return { invite: d.invite, delivered: d.delivered === true };
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}
+
+/** Invitations I have sent. Withdrawn ones are excluded by the server. */
+export async function fetchEmailInvites(): Promise<Invite[]> {
+  const res = await apiClient.get<{ data: { invites: Invite[] } }>(
+    '/v1/patients/me/social/invites',
+  );
+  return res.data?.data?.invites ?? [];
+}
+
+/**
+ * Take an invitation back. The server REMOVEs the token hash, which drops the
+ * row out of a sparse GSI and kills the link in mail already delivered.
+ *
+ * NOT cancelConnection: there is no userId to route through
+ * DELETE /connections/:userId, and the invitee may not be a user at all.
+ */
+export async function withdrawEmailInvite(inviteId: string): Promise<void> {
+  try {
+    await apiClient.delete(
+      `/v1/patients/me/social/invites/${encodeURIComponent(inviteId)}`,
+    );
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}
+
+// ── invitations addressed to ME (COS-1233) ────────────────────────────
+
+/**
+ * COS-1233 — the recipient's half of the double opt-in.
+ *
+ * Everything above this acts on invitations the caller SENT. These three act on
+ * invitations the caller RECEIVED, and they are what makes the feature complete
+ * at all: redemption used to be bound to the emailed token at confirm-signup,
+ * nothing could carry that token through an app install, and no client ever
+ * sent it — so an invited address signed up and nothing was ever claimed.
+ *
+ * ─── NO EMAIL ADDRESS IN ANY REQUEST ─────────────────────────────────
+ *
+ * The server resolves the recipient from the caller's own verified profile.
+ * There is deliberately no "invitations for <address>" shape to call, because
+ * that would be "accept the invitation addressed to anybody".
+ *
+ * ─── AND NO ENTITLEMENT CHECK IN FRONT OF THEM ────────────────────────
+ *
+ * None of the three is gated server-side, and that is load-bearing rather than
+ * an oversight — so nothing here may add a client-side gate either. A brand-new
+ * invitee lands on `starter`, which grants zero find-people.*, connections.* or
+ * conversation.* keys, so any gate makes the feature a permanent dead end for
+ * exactly the population it exists for. Sending (POST /invites) stays gated on
+ * find-people.send-request, unchanged.
+ */
+export interface ReceivedInvite {
+  inviteId: string;
+  /**
+   * A FIRST NAME, never empty — the server falls back to the literal 'Someone'.
+   * There is no inviter email and no inviter id in the payload, by design: the
+   * recipient has not connected to this person and may be about to ignore them.
+   */
+  inviterName: string;
+  relationship: InviteRelationship;
+  note: string | null;
+  sentAt: string;
+  expiresAt: string;
+}
+
+/**
+ * Invitations addressed to my verified address that are still live, newest first,
+ * plus whether an invitation could reach this account at all.
+ *
+ * `invites: []` is the NORMAL answer and still means two things that must never be
+ * rendered differently: no live invitation, OR the address asked us to stop.
+ * Telling THOSE apart is an oracle, so the client does not try.
+ *
+ * ─── COS-1235: `reachable` IS THE THIRD CASE, AND IT IS NOT AN ORACLE ──
+ *
+ * The third thing `[]` used to mean is that we hold NO EMAIL ADDRESS for this
+ * account — which is 13 of 32 production rows (Apple private-relay sign-ups). An
+ * invitation sent to those people can never arrive, and they were shown an empty
+ * list forever with no explanation. `reachable:false` is a fact about the caller's
+ * OWN account and says nothing about whether an invitation exists, so it discloses
+ * nothing; a suppressed address deliberately reads `true`.
+ *
+ * It defaults to `true` on a malformed or older response, because the honest
+ * fallback is the silence we had rather than telling somebody with a working
+ * address that invitations cannot find them.
+ */
+export interface ReceivedInvitesResult {
+  invites: ReceivedInvite[];
+  reachable: boolean;
+}
+
+export async function fetchReceivedInvites(): Promise<ReceivedInvitesResult> {
+  const res = await apiClient.get<{ data: { invites: ReceivedInvite[]; reachable?: boolean } }>(
+    '/v1/patients/me/social/invites/received',
+  );
+  return {
+    invites: res.data?.data?.invites ?? [],
+    reachable: res.data?.data?.reachable !== false,
+  };
+}
+
+/**
+ * Accept one. The FIRST of the two consents, not the last.
+ *
+ * The server claims the invitation AND creates the connection request with ME
+ * as the requester, so it lands on the inviter as 'pending-in' for them to
+ * confirm. It is therefore NOT an accepted connection and NOT a conversation:
+ * it shows up in my own GET /connections?status=pending-out and I cannot finish
+ * it myself.
+ *
+ * `requested:false` means the invitation is spent but nothing reached the
+ * inviter, because one of us had declined the other in-app. `connected:true`
+ * (COS-1235) means the inviter had already asked in-app, so both of us had acted
+ * and this finished it. All three are propagated rather than swallowed — see
+ * lib/received-invite-copy.ts.
+ */
+export async function acceptReceivedInvite(
+  inviteId: string,
+): Promise<{ accepted: true; requested: boolean; connected: boolean }> {
+  try {
+    const res = await apiClient.post<{
+      data: { accepted: true; requested: boolean; connected?: boolean };
+    }>(`/v1/patients/me/social/invites/received/${encodeURIComponent(inviteId)}/accept`);
+    return {
+      accepted: true,
+      requested: res.data?.data?.requested === true,
+      /*
+       * COS-1235 — `connected:true` means the inviter had ALREADY sent an in-app
+       * request, so both people had acted and this completed the connection. There
+       * is no second step to wait for, and the copy must not promise one.
+       */
+      connected: res.data?.data?.connected === true,
+    };
+  } catch (err) {
+    wrapInviteError(err);
+  }
+}
+
+/**
+ * Ignore one. Terminal, and the inviter is told NOTHING — their list keeps
+ * showing an unanswered invitation that expires on its own 14-day clock,
+ * because telling them converts a private "no" into a social signal.
+ *
+ * A second Ignore is a 404 like any other row that is no longer live, so the UI
+ * treats INVITE_NOT_FOUND as success-equivalent and simply refreshes.
+ */
+export async function ignoreReceivedInvite(inviteId: string): Promise<void> {
+  try {
+    await apiClient.post(
+      `/v1/patients/me/social/invites/received/${encodeURIComponent(inviteId)}/ignore`,
+    );
+  } catch (err) {
+    wrapInviteError(err);
+  }
 }

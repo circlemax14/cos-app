@@ -4,7 +4,7 @@ import { providerInactiveReason, inactiveLabel } from '@/utils/provider-direct-c
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { dismissTo } from '@/lib/dismiss-to';
 import { SocialPanel } from '@/components/social/SocialPanel';
 import React from 'react';
@@ -131,6 +131,32 @@ export default function ModalScreen() {
   // only where it applies. Index rather than id: that is what TabsProvider
   // reports, and deriving the id from categoryGroups keeps one source of truth.
   const [activeCategoryIndex, setActiveCategoryIndex] = React.useState(0);
+  /*
+   * COS-1231 — open on a named tab, so Inbox can reach the Social panel.
+   *
+   * Inbox's invite row pushes `/modal?tab=social`. The alternative was to tell
+   * SocialPanel which mode to open in, which is not available: the panel takes
+   * no props (tests/unit/social-tab-entry.test.ts pins `<SocialPanel />` in two
+   * separate assertions) and cannot read route params itself (importing
+   * expo-router there is banned by the same file). So the deep link lands on
+   * the tab and the invite card is one tap away, which costs an extra tap and
+   * no test edits.
+   */
+  const { tab: requestedTab } = useLocalSearchParams<{ tab?: string }>();
+  const initialTabIndex = React.useMemo(() => {
+    if (typeof requestedTab !== 'string' || !requestedTab) return 0;
+    const i = categoryGroups.findIndex((c) => c.id === requestedTab);
+    return i > 0 ? i : 0;
+  }, [requestedTab, categoryGroups]);
+  React.useEffect(() => {
+    /*
+     * TabsProvider reads defaultIndex ONCE, at mount, and does not fire
+     * onChangeIndex for it — so activeCategoryIndex has to be seeded here or
+     * the header offers the Medical recency filter over the Social tab, which
+     * is the complaint COS-1103 fixed.
+     */
+    if (initialTabIndex !== 0) setActiveCategoryIndex(initialTabIndex);
+  }, [initialTabIndex]);
   const [manualMembersBySubCategory, setManualMembersBySubCategory] = React.useState<Record<string, ManualMember[]>>({});
   const [openManualFormKey, setOpenManualFormKey] = React.useState<string | null>(null);
   const [manualName, setManualName] = React.useState('');
@@ -587,7 +613,7 @@ export default function ModalScreen() {
           </View>
         ) : (
           <TabsProvider
-            defaultIndex={0}
+            defaultIndex={initialTabIndex}
             onChangeIndex={(index) => {
               /*
                * COS-1103 — the header needs to know which category is open.

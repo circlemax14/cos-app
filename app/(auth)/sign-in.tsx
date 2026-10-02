@@ -30,6 +30,7 @@ import {
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
 import { clearPendingSignIn } from '@/lib/lock-gate';
 import { consumeDeferredNavigation } from '@/lib/locked-nav-queue';
+import { onboardingGate } from '@/lib/onboarding-gate';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -182,49 +183,44 @@ export default function SignInScreen() {
      */
     const deferredAfterSignIn = consumeDeferredNavigation();
 
-    if (!user.termsAccepted) {
-      router.replace('/(onboarding)/usage-guidelines' as never);
+    /*
+     * COS-1235 — ONE LADDER, SHARED WITH app/index.tsx AND THE PERMISSIONS SCREEN.
+     *
+     * This was a hand-written second copy of the same rules, and it had already
+     * drifted from the first: three `else if` branches that all land on
+     * data-processing, and no welcome step. Worse, both copies sent anybody with
+     * `!fastenConnected` to "connect your clinic" — which for a brand-new care
+     * circle invitee is a dead end, because that screen's only two exits are
+     * connecting a clinic and signing out, and the invitation is on the other side
+     * of it. See lib/onboarding-gate.ts.
+     *
+     * The `ehiExport*` fields are no longer read: all three of their branches
+     * resolved to the same screen as `!dataReady` does on its own.
+     */
+    const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
+    const gate = onboardingGate(user, { permissionsRequested: !!permissionsRequested });
+    if (gate.backfillPermissions) {
+      // Reinstall / "clear app data" / device migration: the server says they are
+      // done, so do not replay onboarding over a missing local flag.
+      AsyncStorage.setItem('permissions_requested', 'true').catch(() => {});
+    }
+    if (gate.route) {
+      router.replace(gate.route as never);
       return;
     }
 
-    // Check if device permissions have been requested. Skip when the
-    // backend already says the user is fully onboarded — otherwise a
-    // reinstall / "clear app data" / device migration would replay the
-    // entire onboarding flow even though their account is complete.
-    const permissionsRequested = await AsyncStorage.getItem('permissions_requested');
-    const fullyOnboardedServerSide = user.fastenConnected && user.dataReady;
-    if (!permissionsRequested) {
-      if (fullyOnboardedServerSide) {
-        AsyncStorage.setItem('permissions_requested', 'true').catch(() => {});
-      } else {
-        router.replace('/(onboarding)/permissions' as never);
-        return;
-      }
-    }
-
-    if (!user.fastenConnected) {
-      router.replace('/(onboarding)/fasten-connect' as never);
-    } else if (!user.dataReady && user.ehiExportPending) {
-      router.replace('/(onboarding)/data-processing' as never);
-    } else if (!user.dataReady && user.ehiExportFailed) {
-      router.replace('/(onboarding)/data-processing' as never);
-    } else if (!user.dataReady && user.fastenConnected) {
-      router.replace('/(onboarding)/data-processing' as never);
-    } else {
-      /*
-       * COS-947 — the deep link the notification asked for, if one is live.
-       *
-       * Only on this branch: every branch above is an onboarding gate, and a
-       * patient who has not accepted terms should not be dropped onto a PHI
-       * screen because a push happened to arrive. Reaching here means they are
-       * fully onboarded, so the route is safe to honour.
-       *
-       * consumeDeferredNavigation() already enforces the 5-minute TTL and the
-       * leading-slash check, and consuming CLEARS it, so a failed navigation
-       * cannot leave a route armed for someone else's session.
-       */
-      router.replace((deferredAfterSignIn ?? '/Home') as never);
-    }
+    /*
+     * COS-947 — the deep link the notification asked for, if one is live.
+     *
+     * Only once the gate is clear: every route it can return is an onboarding
+     * gate, and a patient who has not accepted terms should not be dropped onto a
+     * PHI screen because a push happened to arrive.
+     *
+     * consumeDeferredNavigation() already enforces the 5-minute TTL and the
+     * leading-slash check, and consuming CLEARS it, so a failed navigation cannot
+     * leave a route armed for someone else's session.
+     */
+    router.replace((deferredAfterSignIn ?? '/Home') as never);
   };
 
   const onSubmit = async () => {
