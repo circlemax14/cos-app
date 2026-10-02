@@ -656,10 +656,17 @@ export async function fetchProviderAppointments(
       date: a.date,
       time: a.time,
       type: a.type,
+      /*
+       * COS-1239 — 'planned' is how an EHR Encounter says "booked". Fasten
+       * records carry visits as Encounters, not Appointments (see the backend's
+       * getAppointments), so mapped to Pending a booked visit never reached
+       * Notes' "Booked visits" — and the past list rightly leaves planned
+       * encounters out, so it had no home on the provider page at all.
+       */
       status:
         a.status === 'fulfilled' || a.status === 'finished'
           ? ('Completed' as const)
-          : a.status === 'booked'
+          : a.status === 'booked' || a.status === 'planned'
             ? ('Confirmed' as const)
             : ('Pending' as const),
       encounterClass: a.encounterClassDisplay || a.encounterClass,

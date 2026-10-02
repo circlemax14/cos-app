@@ -51,7 +51,7 @@ test('"What changed" was not deleted to make room', () => {
 });
 
 test('Notes no longer renders the narrative — it stands alone', () => {
-  const notes = sliceBetween('const renderProgressNotes =', 'const renderAppointments =');
+  const notes = sliceBetween('const renderProgressNotes =', 'const handleSwitchChange =');
   assert.ok(!notes.includes('aiProgressNotes'), 'narrative is gone from Notes');
   assert.ok(!notes.includes('styles.progressNoteCard'), 'its card is gone from Notes');
 });
@@ -112,5 +112,5 @@ test('the flat fallback SAYS why it is flat', () => {
 });
 
 test('grouping is computed from the detail already in hand, not refetched', () => {
-  assert.match(CODE, /groupVisitsByCondition\(detail, visits\.filter/);
+  assert.match(CODE, /groupVisitsByCondition\(detail, visits\)/);
 });

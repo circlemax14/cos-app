@@ -49,11 +49,15 @@ function formatFileSize(bytes: number): string {
 // Tab definitions
 // ─────────────────────────────────────────────
 
+/*
+ * COS-1239 — no separate Appointments tab, matching the EHR provider page.
+ * Ken, 2026-10-02: "the appointment information again should be in the notes
+ * section." Visits now sit at the top of Notes.
+ */
 const TABS = [
     { id: 'focus', label: 'Focus of Support' },
     { id: 'notes', label: 'Notes' },
     { id: 'files', label: 'Uploaded Files' },
-    { id: 'appointments', label: 'Appointments' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -283,6 +287,12 @@ export default function NonEhrProviderDetailScreen() {
             new Date(b).getTime() - new Date(a).getTime()
         );
 
+        const sortedApts = [...(provider?.appointments ?? [])].sort((a, b) => {
+            const timeA = new Date(a.date).getTime();
+            const timeB = new Date(b.date).getTime();
+            return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+        });
+
         return (
             <View style={styles.tabContent}>
                 <View style={styles.tabActionRow}>
@@ -291,6 +301,14 @@ export default function NonEhrProviderDetailScreen() {
                     </Text>
                 </View>
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                    {sortedApts.length > 0 ? (
+                        <View style={{ marginBottom: 16 }}>
+                            <Text style={[styles.sectionLabel, { color: colors.text + '80', fontSize: getScaledFontSize(12), marginBottom: 8 }]}>
+                                VISITS
+                            </Text>
+                            {sortedApts.map(apt => renderAppointmentCard(apt))}
+                        </View>
+                    ) : null}
                     {notes.length === 0 ? (
                         <Text style={[styles.emptyText, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
                             No visit notes found. Upload health records to extract historical notes.
@@ -380,33 +398,6 @@ export default function NonEhrProviderDetailScreen() {
             </ScrollView>
         </View>
     );
-
-    const renderAppointmentsTab = () => {
-        const sortedApts = [...(provider?.appointments ?? [])].sort((a, b) => {
-            const timeA = new Date(a.date).getTime();
-            const timeB = new Date(b.date).getTime();
-            return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
-        });
-
-        return (
-            <View style={styles.tabContent}>
-                <View style={styles.tabActionRow}>
-                    <Text style={[styles.sectionLabel, { color: colors.text + '80', fontSize: getScaledFontSize(12) }]}>
-                        APPOINTMENTS
-                    </Text>
-                </View>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-                    {sortedApts.length === 0 ? (
-                        <Text style={[styles.emptyText, { color: colors.text + '60', fontSize: getScaledFontSize(14) }]}>
-                            No appointments recorded yet. Upload records to see your visit history.
-                        </Text>
-                    ) : (
-                        sortedApts.map(apt => renderAppointmentCard(apt))
-                    )}
-                </ScrollView>
-            </View>
-        );
-    };
 
     const renderAppointmentCard = (apt: NonEhrAppointment) => (
         <Card key={apt.id} style={[styles.aptCard, { backgroundColor: colors.background }]}>
@@ -552,7 +543,6 @@ export default function NonEhrProviderDetailScreen() {
                     {activeTab === 'focus' && renderFocusTab()}
                     {activeTab === 'notes' && renderNotesTab()}
                     {activeTab === 'files' && renderFilesTab()}
-                    {activeTab === 'appointments' && renderAppointmentsTab()}
                 </View>
             </ScrollView>
             )}
