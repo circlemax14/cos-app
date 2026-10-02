@@ -65,6 +65,21 @@ export interface DetailEncounter {
   location?: string;
   cancelationReason?: string;
   reason?: string;
+  /**
+   * COS-1239 — parsed from this visit's own Encounter Summary (C-CDA), never
+   * generated. Optional: absent when the backend flag is off or the visit has
+   * no summary document, and the screen must read the same either way.
+   */
+  visitSummary?: {
+    reasonsForVisit: string[];
+    diagnoses: string[];
+    note?: string;
+    noteTruncated?: boolean;
+    documentId: string;
+    documentDate?: string;
+  };
+  /** Where `reason` came from: the Encounter itself, or the visit summary. */
+  reasonSource?: 'encounter' | 'visit-summary';
 }
 
 export interface ProviderDetail {
@@ -239,4 +254,70 @@ export function groupVisitsByCondition(
     groups,
     ungrouped: visits.filter((v) => !claimed.has(v.encounter.id)),
   };
+}
+
+/*
+ * COS-1239 — Notes holds every visit, and each one says why you were there.
+ *
+ * Ken, 2026-10-02: "I'm thinking the appointments should detail perhaps why I
+ * was there for an appointment. But it seems that the appointment information
+ * again should be in the notes section."
+ *
+ * The derivations the visit card needs, kept here so they are testable.
+ */
+
+/**
+ * A visit the patient actually had. Booked-ahead and cancelled encounters are
+ * not visits you "were there" for, so they stay out of the Notes list; an
+ * undated encounter stays IN — the record says it happened, just not when.
+ *
+ * `todayYmd` is the LOCAL calendar day (lib/day-key `todayLocalIso`).
+ */
+export function isPastVisit(e: DetailEncounter, todayYmd: string): boolean {
+  if (e.normalizedStatus === 'cancelled' || e.normalizedStatus === 'planned') return false;
+  return !e.date || e.date.slice(0, 10) <= todayYmd;
+}
+
+/**
+ * Why you were there, in the clinic's words — or undefined, never invented.
+ *
+ * The Encounter's own reason first; the visit summary's "Reason for Visit"
+ * section when the Encounter has none. The backend already does this join
+ * when its flag is on; doing it here too costs one line and keeps the card
+ * right against an older server. `||`, not `??`: an empty string is no reason.
+ */
+export function visitReason(e: DetailEncounter): string | undefined {
+  return (
+    e.reason?.trim() ||
+    (e.visitSummary?.reasonsForVisit ?? []).map((r) => r.trim()).filter(Boolean).join('; ') ||
+    undefined
+  );
+}
+
+/**
+ * "No medicines or tests were recorded for this visit" is only worth saying
+ * when the card has nothing else to say. With a reason or a note on it, the
+ * line reads as though the visit were empty when it was not.
+ */
+export function recordedNothing(card: VisitCard): boolean {
+  return (
+    card.medications.length === 0 &&
+    card.reports.length === 0 &&
+    !visitReason(card.encounter) &&
+    !card.encounter.visitSummary?.note?.trim()
+  );
+}
+
+/**
+ * ponytail: a character count, not a measured line count. Below this the note
+ * renders in full with no toggle, so nothing is ever cut off without a way to
+ * read it — at any text size. Above it the card shows ~4 lines and "Read the
+ * full note". If short notes start showing a toggle that does nothing, measure
+ * with onTextLayout instead.
+ */
+export const NOTE_PREVIEW_CHARS = 200;
+
+/** A booked appointment that has not happened yet (status is the app's mapped one). */
+export function isUpcomingBooked(a: { date: string; status: string }, todayYmd: string): boolean {
+  return a.status === 'Confirmed' && a.date.slice(0, 10) >= todayYmd;
 }

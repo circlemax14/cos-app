@@ -19,7 +19,19 @@ import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { AppWrapper } from '@/components/app-wrapper';
-import { fetchProviderDetail, toVisitCards, groupVisitsByCondition, type VisitCard, type ConditionGroup } from '@/services/api/provider-detail';
+import {
+  fetchProviderDetail,
+  toVisitCards,
+  groupVisitsByCondition,
+  isPastVisit,
+  isUpcomingBooked,
+  visitReason,
+  recordedNothing,
+  NOTE_PREVIEW_CHARS,
+  type VisitCard,
+  type ConditionGroup,
+} from '@/services/api/provider-detail';
+import { todayLocalIso } from '@/lib/day-key';
 import { useCanRender } from '@/hooks/use-entitlement';
 import { fetchDataShares, grantDataShare, revokeDataShare } from '@/services/api/data-sharing';
 
@@ -108,6 +120,14 @@ export default function DoctorDetailScreen() {
   const [conditionGroups, setConditionGroups] = useState<ConditionGroup[]>([]);
   const [ungroupedVisits, setUngroupedVisits] = useState<VisitCard[]>([]);
   const [visitsLoading, setVisitsLoading] = useState(true);
+  /*
+   * COS-1239 — a failed fetch is not an empty record. fetchProviderDetail
+   * returns null on any error, and "no visits" would then be a claim about the
+   * patient we could not check.
+   */
+  const [visitsFailed, setVisitsFailed] = useState(false);
+  /** Visit notes the patient has expanded, by encounter id. */
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   const providerName = params.name as string || '';
   const providerQualifications = params.qualifications as string || '';
   const providerSpecialty = params.specialty as string || '';
@@ -128,7 +148,6 @@ export default function DoctorDetailScreen() {
   });
 
   const [activeTab, setActiveTab] = useState('treatment');
-  const [appointmentSubTab, setAppointmentSubTab] = useState<'past' | 'recommended'>('past');
   type AiInsightState = { summary: string; loading: boolean; empty: boolean };
   const [aiInsights, setAiInsights] = useState<Record<string, AiInsightState>>({});
 
@@ -144,30 +163,18 @@ export default function DoctorDetailScreen() {
     );
   }, [allRecommended, provider?.name]);
 
-  // Past Visits should describe the same set of encounters that the
-  // Treatment tab's diagnosis cards came from, so the two screens can't
-  // disagree on how many times the user has seen this provider. The
-  // appointments endpoint name-matches the provider, which can drag in
-  // scheduling stubs that have no clinical content. Filter them out by
-  // intersecting with the encounter IDs the diagnoses pointed at.
-  // If diagnoses haven't loaded yet (or this provider recorded none),
-  // fall back to the raw appointment list so we don't briefly flash an
-  // empty Past Visits panel.
-  const pastVisits = useMemo(() => {
-    const diagnosisEncounterIds = new Set(
-      treatmentPlans.diagnoses
-        .map((d) => d.encounterId)
-        .filter((id): id is string => !!id),
-    );
-    if (diagnosisEncounterIds.size === 0) return appointments;
-    return appointments.filter((a) => {
-      // Encounter rows: id IS the encounter id.
-      if (a.resourceType === 'Encounter') return diagnosisEncounterIds.has(a.id);
-      // Appointment rows have no encounterId surfaced today, so keep
-      // them out of the count once we know which encounters matter.
-      return false;
-    });
-  }, [appointments, treatmentPlans.diagnoses]);
+  /*
+   * COS-1239 — booked visits that have not happened yet. The past-visit list
+   * in Notes comes from /detail and only holds visits you were at, so without
+   * this a booked appointment would have no home on this screen once the
+   * Appointments tab went.
+   */
+  const upcomingForProvider = useMemo(() => {
+    const today = todayLocalIso();
+    return appointments
+      .filter((a) => isUpcomingBooked(a, today))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [appointments]);
 
   const loadAiInsight = useCallback(
     async (tab: 'treatment' | 'progress' | 'appointments' | 'carePlans') => {
@@ -205,15 +212,25 @@ export default function DoctorDetailScreen() {
     let cancelled = false;
     if (!providerId) return;
     setVisitsLoading(true);
+    setVisitsFailed(false);
     void fetchProviderDetail(providerId).then((detail) => {
       if (cancelled) return;
-      const visits = detail ? toVisitCards(detail).visits : [];
+      /*
+       * COS-1239 — EVERY visit you were at, not only the ones with reports.
+       * Ken: "the appointments should detail perhaps why I was there". The
+       * COS-1131 filter (reports.length > 0) hid exactly the visits whose only
+       * content is that reason. Booked-ahead and cancelled encounters stay out:
+       * you were not there.
+       */
+      const today = todayLocalIso();
+      const visits = detail
+        ? toVisitCards(detail).visits.filter((v) => isPastVisit(v.encounter, today))
+        : [];
       setVisitCards(visits);
-      const grouped = detail
-        ? groupVisitsByCondition(detail, visits.filter((v) => v.reports.length > 0))
-        : { groups: [], ungrouped: [] };
+      const grouped = detail ? groupVisitsByCondition(detail, visits) : { groups: [], ungrouped: [] };
       setConditionGroups(grouped.groups);
       setUngroupedVisits(grouped.ungrouped);
+      setVisitsFailed(!detail);
       setVisitsLoading(false);
     });
     return () => {
@@ -623,10 +640,31 @@ export default function DoctorDetailScreen() {
    * written into COS-1090's commit message, and someone reading only that
    * would reasonably 'restore' it.
    */
+  /*
+   * COS-1239 — back to three tabs. This REVERSES COS-1132, on Ken's word.
+   *
+   * Ken, 2026-10-02: "When I look at the appointments and notes for my
+   * providers. The appointment information should probably be in the note
+   * information section. I'm thinking the appointments should detail perhaps
+   * why I was there for an appointment. But it seems that the appointment
+   * information again should be in the notes section. You can look at these
+   * on all of my providers."
+   *
+   * COS-1132's objection to the first fold still holds, so this is not that
+   * fold again: the Past/Recommended switch is GONE rather than nested. Notes
+   * is now one list — recommended next visits (when there are any), booked
+   * visits (when there are any), then every visit you were at, newest first,
+   * each card leading with WHY you were there and the clinic's own visit note.
+   * Recommended and booked visits keep the cards they had (RecommendedCard,
+   * AppointmentCard). The one deliberate drop: cancelled visits are no longer
+   * listed — they are not visits you were at, and Notes is about those.
+   *
+   * Vishal's four-tab ruling (2026-09-25) was explicitly pending a talk with
+   * Ken; this is the answer. If a fourth tab is proposed again, read this first.
+   */
   const tabs = [
     { id: 'treatment', label: 'Conditions' },
     { id: 'progress', label: 'Notes' },
-    { id: 'appointments', label: 'Appointments' },
     { id: 'share', label: 'Shared Data' },
   ];
 
@@ -807,80 +845,182 @@ export default function DoctorDetailScreen() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  /** One heading style for every section on Notes. */
+  const renderSectionHeading = (text: string) => (
+    <Text
+      style={{
+        color: colors.text,
+        fontSize: getScaledFontSize(17),
+        fontWeight: getScaledFontWeight(700) as any,
+        marginBottom: 10,
+      }}
+    >
+      {text}
+    </Text>
+  );
+
+  /** The small caption above each part of a visit card. */
+  const renderCardLabel = (text: string) => (
+    <Text
+      style={{
+        color: colors.subtext,
+        fontSize: getScaledFontSize(13),
+        fontWeight: getScaledFontWeight(600) as any,
+        marginTop: 10,
+      }}
+    >
+      {text}
+    </Text>
+  );
+
   /**
-   * COS-1131 — the visit list, drawn once and used by two tabs.
+   * COS-1131 — the visit list, drawn once and used for every group on Notes.
    *
    * Ken, on the provider screen: "remember conditions will have AI summary,
    * notes will have visits with notes."
    *
-   * So the visits moved OFF Conditions and ONTO Notes. They are the same cards
-   * either way, so they are built here rather than copied — the Apple Health
-   * carousel on Health Trends had exactly this duplication and it drifted.
+   * They are the same cards in every group, so they are built here rather than
+   * copied — the Apple Health carousel on Health Trends had exactly this
+   * duplication and it drifted.
+   *
+   * COS-1239 — each card now answers the question Ken asked of it: "the
+   * appointments should detail perhaps why I was there". Date, then WHY, then
+   * where, then what the clinic wrote: the diagnoses recorded at that visit and
+   * its own visit note, both read from the clinic's Encounter Summary and never
+   * generated. Where the clinic recorded no reason the card says so in a line
+   * rather than leaving a gap that reads as a missing feature.
+   *
+   * No `slice(0, 12)` any more: Notes is the only place visits live, and a cap
+   * would hide a patient's older visits with no way to reach them.
    */
-  const renderVisitList = (cards: VisitCard[], heading: string) => (
-    <>
-      {cards.length > 0 ? (
-              <View style={{ marginBottom: 20 }}>
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontSize: getScaledFontSize(17),
-                    fontWeight: getScaledFontWeight(700) as any,
-                    marginBottom: 10,
-                  }}
-                >
-                  {heading}
-                </Text>
-                {cards.slice(0, 12).map((v) => (
-                  <View
-                    key={v.encounter.id}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.3)',
-                      borderRadius: 12,
-                      padding: 14,
-                      marginBottom: 10,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: colors.text,
-                        fontSize: getScaledFontSize(16),
-                        fontWeight: getScaledFontWeight(600) as any,
-                      }}
-                    >
-                      {formatDate(v.encounter.date) || 'Date not recorded'}
-                    </Text>
-                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 2 }}>
-                      {[v.encounter.type, v.encounter.location].filter(Boolean).join(' · ')}
-                    </Text>
-                    {v.encounter.reason ? (
-                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 4 }}>
-                        {v.encounter.reason}
-                      </Text>
-                    ) : null}
+  const renderVisitList = (cards: VisitCard[], heading: string) =>
+    cards.length > 0 ? (
+      <View style={{ marginBottom: 20 }}>
+        {renderSectionHeading(heading)}
+        {cards.map((v) => {
+          const id = v.encounter.id;
+          const reason = visitReason(v.encounter);
+          const where = [v.encounter.type, v.encounter.location].filter(Boolean).join(' · ');
+          const diagnoses = v.encounter.visitSummary?.diagnoses ?? [];
+          const note = v.encounter.visitSummary?.note?.trim();
+          const longNote = !!note && note.length > NOTE_PREVIEW_CHARS;
+          const noteOpen = !!openNotes[id];
+          return (
+            <View
+              key={id}
+              style={{
+                borderWidth: 1,
+                borderColor: (colors.border as string) ?? 'rgba(128,128,128,0.3)',
+                borderRadius: 12,
+                padding: 14,
+                marginBottom: 10,
+              }}
+            >
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: getScaledFontSize(16),
+                  fontWeight: getScaledFontWeight(600) as any,
+                }}
+              >
+                {formatDate(v.encounter.date) || 'Date not recorded'}
+              </Text>
 
-                    {v.medications.length > 0 ? (
-                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 10, lineHeight: getScaledFontSize(22) }}>
-                        Medicines started: {v.medications.map((m) => m.name).join(', ')}
+              {renderCardLabel('Why you were there')}
+              <Text
+                style={{
+                  color: reason ? colors.text : colors.subtext,
+                  fontSize: getScaledFontSize(15),
+                  lineHeight: getScaledFontSize(22),
+                  fontStyle: reason ? 'normal' : 'italic',
+                  marginTop: 2,
+                }}
+              >
+                {reason ?? "The clinic didn't record a reason for this visit."}
+              </Text>
+
+              {where ? (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 6 }}>
+                  {where}
+                </Text>
+              ) : null}
+
+              {diagnoses.length > 0 ? (
+                <>
+                  {renderCardLabel('Diagnoses at this visit')}
+                  {diagnoses.map((d, i) => (
+                    <Text
+                      key={i}
+                      style={{ color: colors.text, fontSize: getScaledFontSize(15), lineHeight: getScaledFontSize(22), marginTop: 2 }}
+                    >
+                      {`• ${d}`}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+
+              {note ? (
+                <>
+                  {renderCardLabel('Visit note')}
+                  <Text
+                    style={{ color: colors.text, fontSize: getScaledFontSize(15), lineHeight: getScaledFontSize(22), marginTop: 2 }}
+                    numberOfLines={longNote && !noteOpen ? 4 : undefined}
+                  >
+                    {note}
+                  </Text>
+                  {noteOpen && v.encounter.visitSummary?.noteTruncated ? (
+                    <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), fontStyle: 'italic', marginTop: 4 }}>
+                      The clinic&apos;s note is longer than we can show here.
+                    </Text>
+                  ) : null}
+                  {longNote ? (
+                    <TouchableOpacity
+                      onPress={() => setOpenNotes((prev) => ({ ...prev, [id]: !prev[id] }))}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: noteOpen }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{ alignSelf: 'flex-start', marginTop: 6, paddingVertical: 4 }}
+                    >
+                      <Text
+                        style={{
+                          color: colors.tint,
+                          fontSize: getScaledFontSize(14),
+                          fontWeight: getScaledFontWeight(600) as any,
+                        }}
+                      >
+                        {noteOpen ? 'Show less' : 'Read the full note'}
                       </Text>
-                    ) : null}
-                    {v.reports.length > 0 ? (
-                      <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 6, lineHeight: getScaledFontSize(22) }}>
-                        Tests and reports: {v.reports.map((r) => r.name).join(', ')}
-                      </Text>
-                    ) : null}
-                    {v.medications.length === 0 && v.reports.length === 0 ? (
-                      <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 10 }}>
-                        No medicines or tests were recorded for this visit.
-                      </Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            ) : visitsLoading ? null : null}
-    </>
-  );
+                    </TouchableOpacity>
+                  ) : null}
+                </>
+              ) : null}
+
+              {diagnoses.length > 0 || note ? (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 6 }}>
+                  From the clinic&apos;s visit summary
+                </Text>
+              ) : null}
+
+              {v.medications.length > 0 ? (
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 10, lineHeight: getScaledFontSize(22) }}>
+                  Medicines started: {v.medications.map((m) => m.name).join(', ')}
+                </Text>
+              ) : null}
+              {v.reports.length > 0 ? (
+                <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), marginTop: 6, lineHeight: getScaledFontSize(22) }}>
+                  Tests and reports: {v.reports.map((r) => r.name).join(', ')}
+                </Text>
+              ) : null}
+              {recordedNothing(v) ? (
+                <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(14), marginTop: 10 }}>
+                  No medicines or tests were recorded for this visit.
+                </Text>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+    ) : null;
   const renderTreatmentPlan = () => {
     const diagnoses = treatmentPlans.diagnoses;
     const isEmpty = diagnoses.length === 0;
@@ -979,7 +1119,7 @@ export default function DoctorDetailScreen() {
                   }}
                 >
                   {visitCards.length > 0
-                    ? `This provider did not record a diagnosis, but they saw you ${visitCards.length === 1 ? 'once' : `${visitCards.length} times`}. Those visits are listed above.`
+                    ? `This provider did not record a diagnosis, but they saw you ${visitCards.length === 1 ? 'once' : `${visitCards.length} times`}. Those visits are listed under Notes.`
                     : 'No diagnoses recorded by this provider in your EHR.'}
                 </Text>
               </View>
@@ -1180,86 +1320,117 @@ export default function DoctorDetailScreen() {
         </Card>
   );
 
-  const renderProgressNotes = () => {
-    /*
-     * COS-1131 — "notes will have visits with notes" (Ken).
-     *
-     * A visit earns a place here when it actually produced something: the
-     * cards already carry the reports grouped onto their encounter, so the
-     * filter is `reports.length > 0` rather than a second fetch. Visits that
-     * produced nothing stay out — listing a date with "no medicines or tests
-     * were recorded" under a heading called Notes is a row that says only that
-     * it has nothing to say.
-     */
-    const visitsWithNotes = visitCards.filter((v) => v.reports.length > 0);
+  /*
+   * COS-1239 — Notes is the home for visits: past, booked and recommended.
+   *
+   * Ken, 2026-10-02: "the appointment information again should be in the notes
+   * section." So the Appointments tab is gone and what it held lives here, in
+   * time order a patient reads naturally: what is recommended next, what is
+   * booked, then every visit you were at, newest first.
+   *
+   * COS-1131 listed only visits that produced a report ("visits with notes").
+   * That rule hid the very visits Ken is now asking about — a therapy session
+   * whose whole record is its reason — so it is gone. A visit with nothing
+   * attached still shows WHY you were there, which is the point of the card.
+   */
+  const renderProgressNotes = () => (
+    <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
+      {recommendedForProvider.length > 0 ? (
+        <View style={{ marginBottom: 20 }}>
+          {renderSectionHeading('Recommended next visits')}
+          {recommendedForProvider.map((rec) => (
+            <RecommendedCard
+              key={rec.id}
+              rec={rec}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          ))}
+        </View>
+      ) : null}
 
-    return (
-      <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-        {/*
-          COS-1151 — Ken's spec: "Notes =. List only / 1. Condition 1 -
-          dates/notes / Condition 2 - date/notes".
+      {upcomingForProvider.length > 0 ? (
+        <View style={{ marginBottom: 20 }}>
+          {renderSectionHeading('Booked visits')}
+          {upcomingForProvider.map((appointment) => (
+            <AppointmentCard
+              key={appointment.id}
+              appointment={appointment}
+              colors={colors}
+              getScaledFontSize={getScaledFontSize}
+              getScaledFontWeight={getScaledFontWeight}
+            />
+          ))}
+        </View>
+      ) : null}
 
-          Grouped where the record links a diagnosis to the visit it was
-          recorded at, flat where it does not. That is not a hedge — it is what
-          the data supports, measured on the raw clinic exports rather than
-          assumed: exports carrying `encounter-diagnosis` conditions link
-          88-92% of them, while exports carrying only problem-list entries link
-          0%, because a problem list is a running list with no single visit
-          behind it.
+      {/*
+        COS-1151 — Ken's spec: "Notes =. List only / 1. Condition 1 -
+        dates/notes / Condition 2 - date/notes".
 
-          The empty-grouping case is the COMMON one today, so it gets a
-          sentence saying why rather than silently looking like the feature was
-          never built. A clinician who reads "your clinic's records don't link
-          diagnoses to visits" can act on it; one who sees an ordinary date
-          list cannot.
-        */}
-        {conditionGroups.length > 0 ? (
-          <>
-            {conditionGroups.map((g) => (
-              <View key={g.condition.id} style={{ marginBottom: 6 }}>
-                {renderVisitList(g.visits, g.condition.name)}
-              </View>
-            ))}
-            {ungroupedVisits.length > 0
-              ? renderVisitList(ungroupedVisits, 'Other visits')
-              : null}
-          </>
-        ) : visitsWithNotes.length > 0 ? (
-          <>
-            {renderVisitList(visitsWithNotes, 'Visits with notes')}
-            <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontStyle: 'italic', marginTop: 4, marginBottom: 14, paddingHorizontal: 4 }}>
-              These are listed by date because this clinic&apos;s records
-              don&apos;t say which diagnosis each visit was for.
-            </Text>
-          </>
-        ) : null}
+        Grouped where the record links a diagnosis to the visit it was
+        recorded at, flat where it does not. That is not a hedge — it is what
+        the data supports, measured on the raw clinic exports rather than
+        assumed: exports carrying `encounter-diagnosis` conditions link
+        88-92% of them, while exports carrying only problem-list entries link
+        0%, because a problem list is a running list with no single visit
+        behind it.
 
-        {/*
-          COS-1142 — the raw lab-report cards are gone from Notes.
-
-          Ken, 2026-09-26: "These labs should remain in the health trend lab
-          information and reports. Labs can be summarized as an addition to the
-          primary conditions she is treating me for."
-
-          They were a second copy of what Health Trends and Reports already
-          show, stacked under the visit list — on his primary-care provider
-          that is a dozen cards of Lab Reports below the thing the tab is named
-          after. His provider-page spec makes it explicit: "Notes =. List only".
-
-          Nothing is lost. Every visit card above still names the tests that
-          visit produced ("Tests and reports: ..."), the full results live on
-          Health Trends and Reports, and the labs SUMMARY he asked for belongs
-          on Conditions, not here.
-        */}
-        {visitsWithNotes.length === 0 && !visitsLoading ? (
-          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontStyle: 'italic', marginBottom: 14, paddingHorizontal: 4 }}>
-            No visits with notes from this provider yet.
+        The empty-grouping case is the COMMON one today, so it gets a
+        sentence saying why rather than silently looking like the feature was
+        never built. A clinician who reads "your clinic's records don't link
+        diagnoses to visits" can act on it; one who sees an ordinary date
+        list cannot.
+      */}
+      {conditionGroups.length > 0 ? (
+        <>
+          {conditionGroups.map((g) => (
+            <View key={g.condition.id} style={{ marginBottom: 6 }}>
+              {renderVisitList(g.visits, g.condition.name)}
+            </View>
+          ))}
+          {ungroupedVisits.length > 0
+            ? renderVisitList(ungroupedVisits, 'Other visits')
+            : null}
+        </>
+      ) : visitCards.length > 0 ? (
+        <>
+          {renderVisitList(visitCards, 'Your visits')}
+          <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(12), fontStyle: 'italic', marginTop: 4, marginBottom: 14, paddingHorizontal: 4 }}>
+            These are listed by date because this clinic&apos;s records
+            don&apos;t say which diagnosis each visit was for.
           </Text>
-        ) : null}
+        </>
+      ) : null}
 
-      </ScrollView>
-    );
-  };
+      {/*
+        COS-1142 — the raw lab-report cards are gone from Notes.
+
+        Ken, 2026-09-26: "These labs should remain in the health trend lab
+        information and reports. Labs can be summarized as an addition to the
+        primary conditions she is treating me for."
+
+        Nothing is lost. Every visit card above still names the tests that
+        visit produced ("Tests and reports: ..."), the full results live on
+        Health Trends and Reports, and the labs SUMMARY belongs on Conditions.
+
+        COS-1239 — three different empties, three different sentences. Still
+        loading is not "none", and a failed fetch is not "none" either: saying
+        a patient has no visits when we could not check is a claim about them
+        we cannot back.
+      */}
+      {visitCards.length === 0 ? (
+        <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13), fontStyle: 'italic', marginBottom: 14, paddingHorizontal: 4 }}>
+          {visitsLoading
+            ? 'Loading your visits…'
+            : visitsFailed
+              ? "We couldn't load your visits with this provider just now."
+              : 'Your record has no past visits with this provider.'}
+        </Text>
+      ) : null}
+    </ScrollView>
+  );
 
   const handleSwitchChange = async (targetProviderId: string, targetProviderName: string, value: boolean) => {
     if (value) {
@@ -1523,84 +1694,6 @@ export default function DoctorDetailScreen() {
     );
   };
 
-  const renderAppointments = () => (
-    <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 24 }}>
-      {/* Past / Recommended sub-tab toggle */}
-      <View style={styles.subTabRow}>
-        {(['past', 'recommended'] as const).map((key) => {
-          const active = appointmentSubTab === key;
-          const count = key === 'past' ? pastVisits.length : recommendedForProvider.length;
-          const label = key === 'past' ? 'Past Visits' : 'Recommended';
-          return (
-            <TouchableOpacity
-              key={key}
-              onPress={() => setAppointmentSubTab(key)}
-              style={[
-                styles.subTabItem,
-                active && { backgroundColor: colors.primary },
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-            >
-              <Text
-                style={{
-                  color: active ? '#fff' : colors.text,
-                  fontSize: getScaledFontSize(13),
-                  fontWeight: getScaledFontWeight(600) as any,
-                }}
-              >
-                {label}
-                {count > 0 ? ` (${count})` : ''}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {isLoadingData ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.text, fontSize: getScaledFontSize(14) }]}>Loading…</Text>
-        </View>
-      ) : appointmentSubTab === 'past' ? (
-        <>
-          {pastVisits.length === 0 ? (
-            <View style={{ padding: 20, alignItems: 'center' }}>
-              <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13) }]}>
-                No appointments or encounters on record with this provider yet.
-              </Text>
-            </View>
-          ) : (
-            pastVisits.map((appointment) => (
-              <AppointmentCard
-                key={appointment.id}
-                appointment={appointment}
-                colors={colors}
-                getScaledFontSize={getScaledFontSize}
-                getScaledFontWeight={getScaledFontWeight}
-              />
-            ))
-          )}
-        </>
-      ) : recommendedForProvider.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[{ color: colors.subtext, fontSize: getScaledFontSize(13), textAlign: 'center' }]}>
-            No recommended appointments with this provider right now.
-          </Text>
-        </View>
-      ) : (
-        recommendedForProvider.map((rec) => (
-          <RecommendedCard
-            key={rec.id}
-            rec={rec}
-            colors={colors}
-            getScaledFontSize={getScaledFontSize}
-            getScaledFontWeight={getScaledFontWeight}
-          />
-        ))
-      )}
-    </ScrollView>
-  );
-
   const renderCarePlans = () => (
     <ScrollView style={styles.tabContent}>
       {isLoadingData ? (
@@ -1842,7 +1935,6 @@ export default function DoctorDetailScreen() {
         </>
       )}
       {activeTab === 'progress' && renderProgressNotes()}
-      {activeTab === 'appointments' && renderAppointments()}
       {activeTab === 'share' && renderShareData()}
     </ScrollView>
 
@@ -2648,22 +2740,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 3,
-  },
-  subTabRow: {
-    flexDirection: 'row',
-    gap: 8,
-    padding: 4,
-    borderRadius: 28,
-    backgroundColor: '#F3F4F6',
-    marginBottom: 14,
-    alignSelf: 'center',
-  },
-  subTabItem: {
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   recommendedCard: {
     marginBottom: 10,
