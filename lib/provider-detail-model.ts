@@ -295,6 +295,26 @@ export function visitReason(e: DetailEncounter): string | undefined {
 }
 
 /**
+ * When the clinic states no reason, what it treated at the visit is the next
+ * best answer to "why was I there" — and it is still the clinic's words.
+ *
+ * Measured on a real record before this was written: 25 of 48 Encounter
+ * Summaries carry a "Reason for Visit" section, 48 of 48 carry "Visit
+ * Diagnoses". Without this, a visit for an Achilles strain read "The clinic
+ * didn't record a reason for this visit" directly above "Strain of Achilles
+ * tendon, left".
+ *
+ * Epic marks the main diagnosis "Primary"; prefer that, else the first two.
+ */
+const PRIMARY_RE = /(?:\s+-\s+|\s*\()primary\)?$/i;
+export function visitReasonFromDiagnoses(e: DetailEncounter): string | undefined {
+  const dx = (e.visitSummary?.diagnoses ?? []).map((d) => d.trim()).filter(Boolean);
+  if (dx.length === 0) return undefined;
+  const primary = dx.filter((d) => PRIMARY_RE.test(d)).map((d) => d.replace(PRIMARY_RE, ''));
+  return (primary.length > 0 ? primary : dx.slice(0, 2)).join('; ');
+}
+
+/**
  * "No medicines or tests were recorded for this visit" is only worth saying
  * when the card has nothing else to say. With a reason, diagnoses or a note on
  * it, the line reads as though the visit were empty when it was not.

@@ -15,6 +15,7 @@ import {
   isPastVisit,
   isUpcomingBooked,
   visitReason,
+  visitReasonFromDiagnoses,
   recordedNothing,
   type DetailEncounter,
   type VisitCard,
@@ -101,4 +102,32 @@ test("a planned Encounter is a booked visit, not Pending", () => {
   // excluding planned, they vanished from the provider page entirely.
   const src = readFileSync(new URL('../../services/api/providers.ts', import.meta.url), 'utf8');
   assert.match(src, /a\.status === 'booked' \|\| a\.status === 'planned'\s*\?\s*\('Confirmed' as const\)/);
+});
+
+// Measured on a real record: 25 of 48 visit summaries state a reason, 48 of 48
+// list visit diagnoses. A visit with only a diagnosis must not read
+// "The clinic didn't record a reason" above that very diagnosis.
+test('visitReasonFromDiagnoses: the primary diagnosis, without its marker', () => {
+  const e = enc({ visitSummary: summary({ diagnoses: ['Knee pain, right - Primary', 'Status post knee replacement'] }) });
+  assert.equal(visitReasonFromDiagnoses(e), 'Knee pain, right');
+});
+
+test('visitReasonFromDiagnoses: "(primary)" form is read the same way', () => {
+  const e = enc({ visitSummary: summary({ diagnoses: ['Ankle sprain (primary)', 'Hypertension'] }) });
+  assert.equal(visitReasonFromDiagnoses(e), 'Ankle sprain');
+});
+
+test('visitReasonFromDiagnoses: no primary marker → first two, joined', () => {
+  const e = enc({ visitSummary: summary({ diagnoses: ['A', 'B', 'C'] }) });
+  assert.equal(visitReasonFromDiagnoses(e), 'A; B');
+});
+
+test('visitReasonFromDiagnoses: nothing recorded → undefined, never invented', () => {
+  assert.equal(visitReasonFromDiagnoses(enc()), undefined);
+  assert.equal(visitReasonFromDiagnoses(enc({ visitSummary: summary({ diagnoses: ['  '] }) })), undefined);
+});
+
+test('the card prefers a stated reason and only falls back to diagnoses', () => {
+  const src = readFileSync(new URL('../../app/Home/doctor-detail.tsx', import.meta.url), 'utf8');
+  assert.match(src, /statedReason \?\? visitReasonFromDiagnoses\(v\.encounter\)/);
 });

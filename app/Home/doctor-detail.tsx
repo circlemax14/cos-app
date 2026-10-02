@@ -26,6 +26,7 @@ import {
   isPastVisit,
   isUpcomingBooked,
   visitReason,
+  visitReasonFromDiagnoses,
   recordedNothing,
   NOTE_PREVIEW_CHARS,
   type VisitCard,
@@ -906,9 +907,14 @@ export default function DoctorDetailScreen() {
         {renderSectionHeading(heading)}
         {cards.map((v) => {
           const id = v.encounter.id;
-          const reason = visitReason(v.encounter);
+          const statedReason = visitReason(v.encounter);
+          const reason = statedReason ?? visitReasonFromDiagnoses(v.encounter);
           const where = [v.encounter.type, v.encounter.location].filter(Boolean).join(' · ');
-          const diagnoses = v.encounter.visitSummary?.diagnoses ?? [];
+          // When the reason IS the diagnosis, list only the diagnoses it does not
+          // already name, so the card never says the same thing twice.
+          const diagnoses = (v.encounter.visitSummary?.diagnoses ?? []).filter(
+            (d) => statedReason || !reason || !reason.includes(d.replace(/(?:\s+-\s+|\s*\()primary\)?$/i, '')),
+          );
           const note = v.encounter.visitSummary?.note?.trim();
           const longNote = !!note && note.length > NOTE_PREVIEW_CHARS;
           const noteOpen = !!openNotes[id];
