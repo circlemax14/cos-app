@@ -32,6 +32,7 @@ import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import { requestInviteSheet } from '@/lib/social-nav';
+import { useCanShowScreen } from '@/hooks/use-feature-permissions';
 
 /*
  * COS-1058 — required on every leaf route, and enforced by a test.
@@ -59,6 +60,30 @@ function whenLabel(iso: string): string {
 function InboxScreenInner() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+
+  /*
+   * COS-1237 — BOTH HEADER BUTTONS ARE GATED, with the gate SocialPanel uses.
+   *
+   * This screen imported no entitlement hook at all, so the `person-add` button
+   * has pushed every patient at /Home/find-people since COS-1058 and COS-1236 put
+   * an un-gated `group-add` beside it. SocialPanel reads `canShow('find-people')`
+   * (components/social/SocialPanel.tsx) and hides the same two affordances when it
+   * is absent; Inbox was the second door with no lock on it. Gating one and
+   * leaving its twin would have been the larger diff and the stranger screen.
+   *
+   * ONE key for both, because it is one feature: find-people is what
+   * /Home/find-people needs, and it is ALSO what the invite sheet needs — the
+   * panel initialises to 'invite' only `&& canFind`, so without the key the
+   * second button opens the modal onto the find mode it cannot use either.
+   *
+   * The pending banner below is deliberately NOT gated. It is a RECIPIENT surface
+   * — somebody is already waiting on this patient — and client-gating those is
+   * this codebase's most repeated failure (COS-1019 Health Plans, COS-856 tabs,
+   * find-people.* itself). ReceivedInvitations.tsx is ungated for the same reason,
+   * and a test pins that it stays so.
+   */
+  const canShow = useCanShowScreen();
+  const canFind = canShow('find-people');
 
   const conversationsQ = useQuery({
     queryKey: ['conversations'],
@@ -162,35 +187,40 @@ function InboxScreenInner() {
           second "send a message".
         */}
         <View style={styles.headerActions}>
-          <Pressable
-            onPress={() => router.push('/Home/find-people?returnTo=inbox' as never)}
-            accessibilityRole="button"
-            accessibilityLabel="Find people to message"
-            style={[styles.newBtn, { borderColor: colors.border }]}
-          >
-            <MaterialIcons name="person-add" size={getScaledFontSize(18)} color={colors.tint} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              /*
-                COS-1236 — land IN the form, not merely on the tab.
+          {canFind && (
+            <>
+              <Pressable
+                onPress={() => router.push('/Home/find-people?returnTo=inbox' as never)}
+                accessibilityRole="button"
+                accessibilityLabel="Find people to message"
+                style={[styles.newBtn, { borderColor: colors.border }]}
+              >
+                <MaterialIcons name="person-add" size={getScaledFontSize(18)} color={colors.tint} />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  /*
+                    COS-1236 — land IN the form, not merely on the tab.
 
-                Vishal: "it is opening the support modal and going to the social
-                tab, but it should also open that form where we are entering this
-                email invitation." The form is a mode of SocialPanel, which takes
-                no props and cannot read route params, so the intent is left in
-                lib/social-nav for the panel to pick up as it mounts.
-              */
-              requestInviteSheet();
-              router.push('/modal?tab=social' as never);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Invite someone by email"
-            accessibilityHint="Opens a form to send one email invitation to someone who is not here yet"
-            style={[styles.newBtn, { borderColor: colors.border }]}
-          >
-            <MaterialIcons name="group-add" size={getScaledFontSize(18)} color={colors.tint} />
-          </Pressable>
+                    Vishal: "it is opening the support modal and going to the
+                    social tab, but it should also open that form where we are
+                    entering this email invitation." The form is a mode of
+                    SocialPanel, which takes no props and cannot read route
+                    params, so the intent is left in lib/social-nav for the panel
+                    to pick up as it mounts.
+                  */
+                  requestInviteSheet();
+                  router.push('/modal?tab=social' as never);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Invite someone by email"
+                accessibilityHint="Opens a form to send one email invitation to someone who is not here yet"
+                style={[styles.newBtn, { borderColor: colors.border }]}
+              >
+                <MaterialIcons name="group-add" size={getScaledFontSize(18)} color={colors.tint} />
+              </Pressable>
+            </>
+          )}
         </View>
       </View>
 

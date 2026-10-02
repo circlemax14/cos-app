@@ -510,10 +510,16 @@ describe('COS-1231 — invite someone to your care circle by email', () => {
     /*
      * COS-1236 REPLACED STEP 3. It said "You choose what they can see later, and
      * separately." Vishal: "why did you mention that you can approve what they
-     * can see?" There is no per-connection sharing model in this platform and no
-     * screen on which that choice is made — see the COS-1236 block at the foot of
-     * this file, which pins the sentence that replaced it and that no surface
-     * makes the promise again.
+     * can see?" No screen in THIS flow makes that choice, and nothing is shared
+     * at the moment this sheet is read.
+     *
+     * ⚠️ COS-1237 — IT IS NOT TRUE that "there is no per-connection sharing model
+     * in this platform", which is what this comment used to say. There are two:
+     * app/Home/proxy-management.tsx (email address + view_records /
+     * view_medications / view_labs / view_care_plan / view_appointments behind a
+     * consent modal, backed by cos-backend /patients/me/proxies on the `family`
+     * and `agency-managed` plans) and cos-backend data-share.routes.ts. See the
+     * COS-1237 test at the foot of this file, which pins the narrowed sentence.
      */
     assert.match(panelCode, /We won&apos;t email them again unless you send a new invitation\./);
   });
@@ -1264,15 +1270,52 @@ describe('COS-1236 — the invitation is reachable, honest, and one tap lighter'
       /*
        * Vishal: "why did you mention that you can approve what they can see?"
        *
-       * There is no per-connection sharing model anywhere in this platform and no
-       * screen where a patient chooses what a connection sees. Confirming a
+       * No screen in THIS flow lets a patient choose what a connection sees, and
+       * at the moment this sheet is read nothing is shared at all. Confirming a
        * connection grants exactly ONE thing: a direct conversation.
        */
       assert.doesNotMatch(panel, /You choose what they can see/);
       assert.doesNotMatch(panel, /choose what they can see|approve what they can see/);
       assert.match(
         panel,
-        /Once you confirm, they are in your circle and you can message each other — your health information is not shared\./,
+        /Once you confirm, they are in your circle and you can message each other\./,
+      );
+    });
+
+    test('COS-1237 — and does not over-correct into a claim the PLATFORM breaks', () => {
+      /*
+       * ⚠️ THE FACT THIS TEST USED TO STATE IS FALSE, and it stated it in a
+       * comment, which is how the next engineer inherited it as verified.
+       *
+       * A discovery pass asserted "there is no per-connection sharing model
+       * anywhere in this platform" and that was repeated to the product owner.
+       * TWO exist, and the first is in THIS repo:
+       *
+       *   • app/Home/proxy-management.tsx — a patient enters an email address and
+       *     grants view_records / view_medications / view_labs / view_care_plan /
+       *     view_appointments behind a consent modal, with editable scopes and
+       *     revoke. Backend: cos-backend/src/routes/index.ts →
+       *     /patients/me/proxies, catalogued in entitlements-catalog.ts, granted
+       *     by FAMILY_FEATURES on the `family` and `agency-managed` plans.
+       *   • cos-backend/src/routes/data-share.routes.ts + the dashboard's
+       *     ShareDataTab.tsx are a second, provider-side model.
+       *
+       * So the replacement copy — "your health information is not shared" — was a
+       * flat promise about a family-plan patient who can grant exactly that, to
+       * this same person, by this same email address. The claim is narrowed to
+       * what CONFIRMING does. The qualifier IS the fix, so this fails without it.
+       */
+      assert.match(
+        panel,
+        /Confirming does not, by itself, share any of your health information\./,
+      );
+      // ...and the narrowing must not reinstate the screen COS-1236 deleted.
+      assert.doesNotMatch(panel, /later,? and separately|separate choice/i);
+      // The screen that proves the old comment wrong is still here, and is still
+      // the place this feature is NOT.
+      assert.ok(
+        existsSync(new URL('../../app/Home/proxy-management.tsx', import.meta.url)),
+        'proxy-management.tsx is the per-connection sharing screen this copy must not deny',
       );
     });
 
@@ -1281,6 +1324,132 @@ describe('COS-1236 — the invitation is reachable, honest, and one tap lighter'
       // adds it to the EMAIL (pinned in cos-backend), it does not move it.
       assert.match(panel, /One email, and that&apos;s it\./);
       assert.match(panel, /None of your health information is included\./);
+    });
+  });
+});
+
+/*
+ * ═══ COS-1237 — THE FOUR SMALL THINGS THE INVITE WORK LEFT BEHIND ════
+ *
+ * Three of these are regressions the same work introduced and nobody saw,
+ * because each is a prop or a number rather than a sentence.
+ */
+describe('COS-1237 — the invite sheet and the Inbox header, finished', () => {
+  const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
+  const panelSrc = read('components/social/SocialPanel.tsx');
+  const panel = strip(panelSrc);
+  const inboxSrc = read('app/Home/inbox.tsx');
+  const inbox = strip(inboxSrc);
+
+  /* ─── 1. THE RELATIONSHIP LINE NEVER ANNOUNCED ON iOS ────────────── */
+  describe('the line that changes as you tap is spoken on the platform we ship', () => {
+    test('THE DEFECT: accessibilityLiveRegion is ANDROID-ONLY in React Native', () => {
+      /*
+       * COS-1236 added the line under the chips and marked it
+       * `accessibilityLiveRegion="polite"` — a prop iOS ignores outright. iOS is
+       * the only platform shipping (COS-720: Android is 35-45 days out), so the
+       * one sentence on this sheet that changes with the chip, and the only thing
+       * telling a sender what the recipient will read, has never been announced to
+       * a single VoiceOver user.
+       *
+       * The fix is the pattern already in this codebase — a ref holding the
+       * previous value plus an effect calling AccessibilityInfo, as
+       * BiopsychosocialPlanScreen.tsx does for regen start/end and
+       * app/Home/assessments-catalog.tsx does for deep-link focus. Not a new
+       * mechanism, and not a second one.
+       */
+      assert.match(panel, /AccessibilityInfo,/, 'AccessibilityInfo must be imported from react-native');
+      assert.match(panel, /prevInviteRelationshipRef/);
+      assert.match(
+        panel,
+        /AccessibilityInfo\.announceForAccessibilityWithOptions\(\s*`Their email will say you invited them as your \$\{label\}\.`,\s*\{ queue: true \},\s*\)/,
+      );
+      // The live-region prop stays: additive on Android, inert on iOS.
+      assert.match(panel, /accessibilityLiveRegion="polite"/);
+    });
+
+    test('it announces only on a real change, so mounting does not talk over the sheet', () => {
+      // The chip's own "selected" read comes first; queue:true puts this after it.
+      assert.match(panel, /if \(prev === inviteRelationship \|\| !inviteRelationship\) return/);
+    });
+
+    test('and it imports nothing outside the iOS 26 envelope to do it', () => {
+      // ADR-0003. AccessibilityInfo is a plain react-native export and contains
+      // none of the four banned substrings; the guard at the top of this file
+      // scans the same import lines and must keep passing.
+      const imports = panel
+        .split('\n')
+        .filter((l) => l.trimStart().startsWith('import'))
+        .join('\n');
+      for (const b of ['Animated', 'LayoutAnimation', 'react-native-svg', 'Modal']) {
+        assert.ok(!imports.includes(b), `SocialPanel must not import ${b}`);
+      }
+    });
+  });
+
+  /* ─── 2. THE WAY OUT WAS THE SMALLEST TARGET ON THE SHEET ────────── */
+  test('the mode pills clear 44pt, because one of them is now the way out', () => {
+    /*
+     * COS-1236 removed the invite sheet's Back row on Vishal's instruction and
+     * made the Find people pill the exit — then raised the INBOX buttons to 44pt
+     * in the same work and left this one at paddingVertical 8 around an fs(18)
+     * glyph, about 34pt. The control a 60-plus sender needs to leave a
+     * half-finished invitation cannot be the smallest target on the screen.
+     */
+    const modeBtn = panel.slice(panel.indexOf('modeBtn: {'), panel.indexOf('badge: {'));
+    assert.ok(modeBtn.length > 0, 'the modeBtn style moved — re-check this guard');
+    assert.match(modeBtn, /minHeight: 44/);
+    // A taller box must still centre its glyph + label rather than left-align them.
+    assert.match(modeBtn, /justifyContent: 'center'/);
+  });
+
+  /* ─── 3. THE SECOND DOOR HAD NO LOCK ON IT ───────────────────────── */
+  describe('both Inbox header buttons are gated, with the gate the panel uses', () => {
+    test('THE DEFECT: inbox.tsx imported no entitlement hook at all', () => {
+      /*
+       * SocialPanel hides find-people and the invite sheet behind
+       * `canShow('find-people')`. Inbox pushed straight at /Home/find-people from
+       * COS-1058 and COS-1236 put an equally ungated invite button beside it, so
+       * the Inbox header was a second door into a feature the plan may not grant.
+       * Gating one and leaving its twin is the larger diff AND the stranger screen.
+       */
+      assert.match(inbox, /import \{ useCanShowScreen \} from '@\/hooks\/use-feature-permissions'/);
+      assert.match(inbox, /const canFind = canShow\('find-people'\)/);
+      // The SAME key the panel reads — not a second copy of the rule.
+      assert.match(panel, /const canFind = canShow\('find-people'\)/);
+    });
+
+    test('ONE gate covers BOTH buttons, and nothing else moved under it', () => {
+      const actions = inbox.slice(
+        inbox.indexOf('<View style={styles.headerActions}>'),
+        inbox.indexOf('{pendingCount > 0 &&'),
+      );
+      assert.ok(actions.length > 0, 'the header actions moved — re-check this guard');
+      assert.equal((actions.match(/\{canFind && \(/g) ?? []).length, 1, 'one gate, not two');
+      assert.match(actions, /name="person-add"/);
+      assert.match(actions, /name="group-add"/);
+    });
+
+    test('the two route strings SURVIVE the gate — they are pinned elsewhere', () => {
+      // Tests at the top of this file assert both literals are present in this
+      // file. A gate that deleted one would pass its own test and break theirs.
+      assert.match(inbox, /'\/Home\/find-people\?returnTo=inbox'/);
+      assert.match(inbox, /'\/Home\/connection-requests\?returnTo=inbox'/);
+    });
+
+    test('the pending banner is NOT gated — it is a recipient surface', () => {
+      /*
+       * Somebody is already waiting on this patient. Client-gating a surface the
+       * RECIPIENT needs is this codebase's most repeated failure (COS-1019 Health
+       * Plans, COS-856 tab gating, find-people.* itself), and
+       * ReceivedInvitations.tsx is ungated for the same reason, pinned above.
+       */
+      const banner = inbox.slice(
+        inbox.indexOf('{pendingCount > 0 &&'),
+        inbox.indexOf('<FlatList'),
+      );
+      assert.ok(banner.length > 0, 'the pending banner moved — re-check this guard');
+      assert.doesNotMatch(banner, /canFind|canShow\(/);
     });
   });
 });

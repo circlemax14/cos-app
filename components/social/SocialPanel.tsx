@@ -35,6 +35,7 @@
 
 import React from 'react'
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Image,
   Pressable,
@@ -280,6 +281,37 @@ export function SocialPanel(): React.JSX.Element | null {
   const [inviteBanner, setInviteBanner] = React.useState<string | null>(null)
   /** The invitation screen 3 is confirming. Held so it can name the address. */
   const [sentInvite, setSentInvite] = React.useState<Invite | null>(null)
+
+  /*
+   * COS-1237 — THE RELATIONSHIP LINE NOW ANNOUNCES ON THE PLATFORM WE SHIP.
+   *
+   * COS-1236 added the line under the chips and marked it
+   * `accessibilityLiveRegion="polite"`. In React Native that prop is
+   * ANDROID-ONLY — iOS ignores it entirely — and iOS is the only platform
+   * shipping. So the one sentence on this sheet that CHANGES as you tap, and the
+   * only thing that tells a sender what the recipient will read, has never been
+   * announced to a single VoiceOver user.
+   *
+   * The fix is this codebase's own pattern, not a new one: a ref holding the
+   * previous value plus an effect calling AccessibilityInfo.announceForAccessibility
+   * on the edge — exactly as BiopsychosocialPlanScreen.tsx does for regen start/end
+   * and app/Home/assessments-catalog.tsx does for deep-link focus. It is the one
+   * primitive that fires on both VoiceOver and TalkBack. `queue: true` so it lands
+   * AFTER the chip's own "selected" read rather than preempting it. The live-region
+   * prop stays: additive on Android, inert on iOS.
+   */
+  const prevInviteRelationshipRef = React.useRef(inviteRelationship)
+  React.useEffect(() => {
+    const prev = prevInviteRelationshipRef.current
+    prevInviteRelationshipRef.current = inviteRelationship
+    // Only a real change, so mounting the sheet does not talk over the heading.
+    if (prev === inviteRelationship || !inviteRelationship) return
+    const label = RELATIONSHIPS.find((r) => r.key === inviteRelationship)?.label.toLowerCase()
+    AccessibilityInfo.announceForAccessibilityWithOptions(
+      `Their email will say you invited them as your ${label}.`,
+      { queue: true },
+    )
+  }, [inviteRelationship])
 
   const trimmed = query.trim()
 
@@ -1198,18 +1230,36 @@ export function SocialPanel(): React.JSX.Element | null {
                 `They have 14 days to accept, until ${dayLabel(sentInvite.expiresAt)}.`,
                 'When they accept, they appear under Requests for you to confirm.',
                 /*
-                  COS-1236 — THE PROMISE WE CANNOT KEEP IS GONE.
+                  COS-1236/COS-1237 — THE PROMISE WE CANNOT KEEP, AND ITS
+                  OVER-CORRECTION.
 
-                  Vishal: "why did you mention that you can approve what they
-                  can see?" He is right. This said "You choose what they can see
-                  later, and separately." There is no per-connection sharing
-                  model anywhere in this platform and no screen on which that
-                  choice is made: confirming a connection grants exactly ONE
-                  thing, a direct conversation. Saying otherwise set a patient up
-                  to hand over an address expecting a control that does not
-                  exist. The replacement is what the code actually does.
+                  COS-1236: Vishal, "why did you mention that you can approve
+                  what they can see?" He is right. This said "You choose what
+                  they can see later, and separately", and no screen in THIS flow
+                  makes that choice — confirming a connection grants one thing, a
+                  direct conversation. That deletion stands.
+
+                  COS-1237 fixes what replaced it. "your health information is not
+                  shared" was written as a flat fact about the two of you, on the
+                  word of a discovery pass that claimed no per-connection sharing
+                  model exists anywhere in this platform. TWO DO:
+
+                    • app/Home/proxy-management.tsx — this same patient types an
+                      email address and grants view_records / view_medications /
+                      view_labs / view_care_plan / view_appointments behind a
+                      consent modal, with editable scopes and revoke
+                      (cos-backend /patients/me/proxies, FAMILY_FEATURES on the
+                      `family` and `agency-managed` plans).
+                    • cos-backend data-share.routes.ts + the dashboard's
+                      ShareDataTab.tsx are a second model.
+
+                  Telling a family-plan patient their health information "is not
+                  shared" is the mirror image of the original error: a sentence
+                  about a screen they can open in this very app. So it is narrowed
+                  to what CONFIRMING does, which is the only thing this sheet is
+                  about — and it still does not promise a later consent screen.
                 */
-                'Once you confirm, they are in your circle and you can message each other — your health information is not shared.',
+                'Once you confirm, they are in your circle and you can message each other. Confirming does not, by itself, share any of your health information.',
               ].map((step, i) => (
                 <View key={step} style={styles.stepRow}>
                   <Text
@@ -1619,13 +1669,23 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   modeRow: { flexDirection: 'row', gap: Spacing.sm },
+  // COS-1237 — 44pt, like the Inbox header buttons COS-1236 raised.
+  //
+  // fs(18) of glyph inside 8pt of padding is a ~34pt target. That was tolerable
+  // while this row was navigation; it is not now that COS-1236 removed the invite
+  // sheet's Back row and made the Find people pill THE way out of it. The one
+  // control a 60-plus sender needs to leave a half-finished invitation cannot be
+  // the smallest target on the sheet. justifyContent so the taller box does not
+  // left-align its contents.
   modeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderRadius: Radii.full,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 44,
   },
   badge: {
     marginLeft: 6,
