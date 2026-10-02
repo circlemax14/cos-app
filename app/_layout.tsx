@@ -8,7 +8,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { rootIdleActivityHandlers, useAppLock } from '@/hooks/use-app-lock';
 import { useGlobalCalendarSync } from '@/hooks/use-global-calendar-sync';
@@ -29,7 +29,7 @@ import { useHealthDataSync } from '@/hooks/use-health-data-sync';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/hooks/use-notifications';
-import { AccessibilityProvider } from '@/stores/accessibility-store';
+import { AccessibilityProvider, useAccessibility } from '@/stores/accessibility-store';
 import { SecurityProvider } from '@/stores/security-store';
 import { ProviderSelectionProvider } from '@/stores/provider-selection-store';
 import { QueryProvider } from '@/providers/QueryProvider';
@@ -220,6 +220,24 @@ function StackWithAppLock() {
   );
 }
 
+/*
+ * COS-1241 — on Android the status bar follows the APP's theme, not the phone's.
+ *
+ * `style="auto"` reads the SYSTEM colour scheme, but every screen draws from
+ * the in-app theme (settings.isDarkTheme, light by default). With the phone in
+ * dark mode the icons went white over a light screen: no clock, no battery, on
+ * every screen. Android 15+ draws edge-to-edge, so nothing behind the bar
+ * rescues it. Seen on an API 35 emulator, 2026-10-02.
+ *
+ * iOS keeps exactly what it had ('auto'). The same mismatch exists there, but
+ * changing a signed-off iOS surface belongs in its own ticket.
+ */
+function AppStatusBar() {
+  const { settings } = useAccessibility();
+  if (Platform.OS !== 'android') return <StatusBar style="auto" />;
+  return <StatusBar style={settings.isDarkTheme ? 'light' : 'dark'} />;
+}
+
 function RootLayout() {
   const colorScheme = useColorScheme();
   useNotifications();
@@ -282,7 +300,7 @@ function RootLayout() {
                 <PlanBootGate>
                   <StackWithAppLock />
                 </PlanBootGate>
-                <StatusBar style="auto" />
+                <AppStatusBar />
                 </View>
                 </GestureHandlerRootView>
                 </BadgeCelebrationProvider>
