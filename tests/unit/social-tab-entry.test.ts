@@ -963,11 +963,39 @@ describe('COS-1235 — the invitation can be reached, and the people can be iden
       assert.doesNotMatch(panelCode, /Someone would like to connect/);
     });
 
+    test('and so does the OTHER screen that lists the same rows', () => {
+      /*
+       * app/Home/connection-requests.tsx renders ['connections','pending-in'] too,
+       * and it carried its own copy of the anonymous sentence. Patching only the
+       * panel would have left the inviter identifying the person on one screen and
+       * not the other. One helper, both screens. (app/Home/inbox.tsx reads the same
+       * key but only COUNTS the rows, so it has nothing to name.)
+       */
+      const requestsScreen = strip(read('app/Home/connection-requests.tsx'));
+      assert.match(requestsScreen, /incomingRequestLine\(item\)/);
+      assert.match(requestsScreen, /incomingRequestReason\(item\)/);
+      assert.doesNotMatch(requestsScreen, /Someone would like to connect/);
+    });
+
+    test('the literal survives in exactly ONE place — the helper\'s own fallback', () => {
+      // Two copies is how a stranger ends up named on one screen and not the other.
+      const files = [
+        'components/social/SocialPanel.tsx',
+        'app/Home/connection-requests.tsx',
+        'app/Home/inbox.tsx',
+        'lib/received-invite-copy.ts',
+      ];
+      const carriers = files.filter((f) => strip(read(f)).includes('Someone would like to connect'));
+      assert.deepEqual(carriers, ['lib/received-invite-copy.ts']);
+    });
+
     test('the accessibility labels name them too — VoiceOver gets the same consent', () => {
       // "Accept this request" told a screen-reader user strictly less than the row
       // above it, on a yes/no decision about a named person.
-      assert.match(panelCode, /accessibilityLabel=\{`Accept: \$\{incomingRequestLine\(item\)\}`\}/);
-      assert.match(panelCode, /accessibilityLabel=\{`Decline: \$\{incomingRequestLine\(item\)\}`\}/);
+      for (const code of [panelCode, strip(read('app/Home/connection-requests.tsx'))]) {
+        assert.match(code, /accessibilityLabel=\{`Accept: \$\{incomingRequestLine\(item\)\}`\}/);
+        assert.match(code, /accessibilityLabel=\{`Decline: \$\{incomingRequestLine\(item\)\}`\}/);
+      }
     });
   });
 

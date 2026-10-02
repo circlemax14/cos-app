@@ -18,6 +18,7 @@ import {
   type Connection,
 } from '@/services/api/conversations';
 import { Colors } from '@/constants/theme';
+import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invite-copy';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 
@@ -75,9 +76,28 @@ export default function ConnectionRequestsScreen() {
         <MaterialIcons name="person" size={getScaledFontSize(20)} color={colors.icon} />
       </View>
       <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+        {/*
+          COS-1235 — the SECOND screen that renders this list, and it had the same
+          anonymous line as SocialPanel's. Accepting an emailed invitation creates
+          the request with the RECIPIENT as requester, so the INVITER lands here and
+          was asked to confirm "Someone would like to connect" — with no name — about
+          a person they had invited by email minutes earlier.
+
+          Through the same helper as the panel, not a second copy of the sentence: a
+          stranger is still anonymous (the server populates neither field for a peer
+          this caller did not invite) and the two screens cannot disagree.
+        */}
         <Text style={{ color: colors.text, fontSize: getScaledFontSize(15) }} numberOfLines={1}>
-          Someone would like to connect
+          {incomingRequestLine(item)}
         </Text>
+        {incomingRequestReason(item) ? (
+          <Text
+            style={{ color: colors.subtext, fontSize: getScaledFontSize(12), marginTop: 2 }}
+            numberOfLines={1}
+          >
+            {incomingRequestReason(item)}
+          </Text>
+        ) : null}
         <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(11), marginTop: 2 }}>
           {new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
         </Text>
@@ -86,7 +106,7 @@ export default function ConnectionRequestsScreen() {
         onPress={() => decline.mutate(item.peerId)}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel="Decline this request"
+        accessibilityLabel={`Decline: ${incomingRequestLine(item)}`}
         style={[styles.btn, { borderColor: colors.border, opacity: busy ? 0.5 : 1 }]}
       >
         <Text style={{ color: colors.subtext, fontSize: getScaledFontSize(13) }}>Decline</Text>
@@ -95,7 +115,7 @@ export default function ConnectionRequestsScreen() {
         onPress={() => accept.mutate(item.peerId)}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel="Accept this request"
+        accessibilityLabel={`Accept: ${incomingRequestLine(item)}`}
         style={[styles.btn, { borderColor: colors.tint as string, opacity: busy ? 0.5 : 1 }]}
       >
         <Text style={{ color: colors.tint, fontSize: getScaledFontSize(13), fontWeight: '600' }}>
