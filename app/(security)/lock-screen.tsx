@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, BackHandler, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { router } from 'expo-router';
@@ -158,6 +158,27 @@ export default function LockScreen() {
 
   useEffect(() => {
     checkBiometric();
+  }, []);
+
+  /*
+   * COS-1241 — Android back must not walk past the PIN pad.
+   *
+   * iOS closed this with gestureEnabled:false on the (security) group (COS-778).
+   * Android's equivalent is the hardware/gesture back, and nothing handled it:
+   * the (security) stack holds one route, so react-navigation bubbles GO_BACK
+   * to the root stack, which pops the lock screen and reveals whatever
+   * `router.replace` left mounted underneath (lib/lock-render-gate.ts, bypass
+   * #2 — "must be fixed BEFORE Android launch"). components/LockShield.tsx
+   * traps it too but is deliberately not wired yet, so the trap lives here, on
+   * the one screen it is needed on. Swallowing the event: back does nothing
+   * while locked; Home and the app switcher still leave the app normally.
+   *
+   * iOS has no hardware back, so this is inert there.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
   }, []);
 
   const checkBiometric = async () => {
