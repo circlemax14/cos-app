@@ -100,6 +100,44 @@ fi
 [ -f android/app/upload.keystore ] || { echo "!! android/app/upload.keystore is missing." >&2; exit 1; }
 
 # ── 2. set every version artifact + .env coherently ────────────────────────
+#
+# COS-1241 — and put them back on EXIT, as cos-app/CLAUDE.md requires of any
+# script that swaps .env (publish-ota.sh does the same, COS-1040).
+# prepare-build.sh with no build number bumps the iOS stamps (app.json, the
+# pbxproj, Info.plist: 69 -> 70) and, for dev/staging, leaves .env pointing at
+# that API. Left behind, the very next publish-ota.sh refuses the dirty tree,
+# and a `git add -A` or an iOS archive ships the wrong stamps. Restored from a
+# snapshot, not `git checkout`, so uncommitted edits to these files survive.
+# A versionCode passed on the command line is the one stamp meant to outlive a
+# successful build (Play has now seen it), so it is re-applied to BOTH files
+# the launch contract test keeps in agreement.
+STAMPED="app.json ios/CSH/Info.plist ios/CSH/Supporting/Expo.plist \
+ios/CSH.xcodeproj/project.pbxproj android/app/build.gradle \
+android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/strings.xml .env"
+SNAP="$(mktemp -d)"
+for f in $STAMPED; do
+  if [ -f "$f" ]; then mkdir -p "$SNAP/$(dirname "$f")"; cp "$f" "$SNAP/$f"; fi
+done
+set_version_code() {
+  sed -i '' -E "s/^([[:space:]]+versionCode )[0-9]+$/\1$1/" android/app/build.gradle
+  sed -i '' -E "s/(\"versionCode\": *)[0-9]+/\1$1/" app.json
+}
+_restore_stamps() {
+  local rc=$?
+  for f in $STAMPED; do
+    if [ -f "$SNAP/$f" ]; then cp "$SNAP/$f" "$f"; fi
+  done
+  rm -rf "$SNAP"
+  echo
+  echo "   restored .env and the version stamps."
+  if [ "$rc" -eq 0 ] && [ -n "$VERSION_CODE" ]; then
+    set_version_code "$VERSION_CODE"
+    echo "   versionCode $VERSION_CODE kept in android/app/build.gradle + app.json — commit both."
+  fi
+  return $rc
+}
+trap _restore_stamps EXIT
+
 echo "=== preparing $ENVIRONMENT $VERSION ==="
 ./scripts/prepare-build.sh "$ENVIRONMENT" "$VERSION" >/tmp/prep-android.log 2>&1 || {
   echo "!! prepare-build.sh failed:"; tail -20 /tmp/prep-android.log; exit 1; }
@@ -113,7 +151,7 @@ if [ -n "$VERSION_CODE" ]; then
     echo "   Play refuses a duplicate, but only AFTER the upload." >&2
     exit 1
   fi
-  sed -i '' "s/versionCode $CURRENT_CODE/versionCode $VERSION_CODE/" android/app/build.gradle
+  set_version_code "$VERSION_CODE"
   echo "  versionCode $CURRENT_CODE -> $VERSION_CODE"
 else
   echo "  versionCode stays $CURRENT_CODE — pass one explicitly to bump it"

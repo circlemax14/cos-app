@@ -67,3 +67,15 @@ test('no KeyboardAvoidingView is inert on Android', () => {
   const inert = files.filter((f) => /behavior=\{Platform\.OS === 'ios' \? 'padding' : undefined\}/.test(strip(read(f))));
   assert.deepEqual(inert, []);
 });
+
+test('the Android release script puts .env and the iOS stamps back on EXIT', () => {
+  // cos-app/CLAUDE.md: a script that swaps .env must trap the restore on EXIT.
+  // Without it the documented launch build left iOS at build 70 and the next
+  // publish-ota.sh refused the dirty tree.
+  const src = read('scripts/build-android-release.sh');
+  const trap = src.indexOf('trap _restore_stamps EXIT');
+  assert.ok(trap > 0 && trap < src.indexOf('./scripts/prepare-build.sh'), 'trap is set before prepare-build.sh runs');
+  for (const f of ['app.json', 'ios/CSH/Info.plist', 'ios/CSH.xcodeproj/project.pbxproj', '.env']) {
+    assert.match(src.match(/STAMPED="([^"]+)"/)[1], new RegExp(`(^|\\s)${f.replace(/[.]/g, '\\.')}(\\s|$)`), f);
+  }
+});
