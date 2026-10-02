@@ -59,7 +59,8 @@ test('COS-1239: Notes renders EVERY past visit, not only visits with reports', (
 
 test('COS-1239: every card says why you were there, or that the clinic did not', () => {
   assert.match(code, /renderCardLabel\('Why you were there'\)/);
-  assert.match(code, /const reason = visitReason\(v\.encounter\)/);
+  assert.match(code, /const statedReason = visitReason\(v\.encounter\)/);
+  assert.match(code, /const reason = statedReason \?\? visitReasonFromDiagnoses\(v\.encounter\)/);
   assert.match(code, /The clinic didn't record a reason for this visit\./);
   assert.match(code, /renderCardLabel\('Diagnoses at this visit'\)/);
   assert.match(code, /From the clinic&apos;s visit summary/);
