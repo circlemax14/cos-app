@@ -145,6 +145,27 @@ if echo "$SIGNER" | grep -qi "Android Debug"; then
   exit 1
 fi
 
+# ── 7. prove the environment really is inlined (COS-1241) ──────────────────
+#
+# Same check publish-ota.sh makes before every OTA, for the same 2026-08-18
+# reason: a bundle whose EXPO_PUBLIC_* baked in empty, or baked in another
+# environment's, installs and launches and talks to the wrong backend. Read the
+# HERMES BYTECODE inside the AAB — never a source map, which holds the original
+# `process.env.X` text and none of the values.
+HBC_TMP="$(mktemp -d)"
+unzip -p "$AAB" base/assets/index.android.bundle > "$HBC_TMP/index.android.bundle" 2>/dev/null || true
+HOST=$(grep '^EXPO_PUBLIC_API_BASE_URL' .env | cut -d= -f2- | sed -E 's#https?://##; s#/.*##')
+POOL=$(grep '^EXPO_PUBLIC_COGNITO_USER_POOL_ID' .env | cut -d= -f2-)
+n_host=$(strings -a "$HBC_TMP/index.android.bundle" | grep -c "$HOST" || true)
+n_pool=$(strings -a "$HBC_TMP/index.android.bundle" | grep -c "$POOL" || true)
+rm -rf "$HBC_TMP"
+echo "  API host in bundle    : $n_host  ($HOST)"
+echo "  Cognito pool in bundle: $n_pool  ($POOL)"
+if [ -z "$HOST" ] || [ -z "$POOL" ] || [ "$n_host" -lt 1 ] || [ "$n_pool" -lt 1 ]; then
+  echo "!! endpoints did NOT inline — this AAB cannot reach its API. Do not upload it." >&2
+  exit 1
+fi
+
 echo
 echo "READY TO UPLOAD"
 echo "  $AAB"
