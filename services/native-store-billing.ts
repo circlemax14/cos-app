@@ -38,6 +38,9 @@ import {
   type PlayOffer,
 } from '@/lib/play-billing';
 
+/** StoreKit's appAccountToken must be a UUID (a Cognito sub is one). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * COS-921 — react-native-iap 16.5 is a NITRO module, not a bridge module.
  *
@@ -122,7 +125,7 @@ interface IapLike {
    */
   fetchProducts(args: { skus: string[]; type: 'subs' | 'in-app' }): Promise<unknown[]>;
   requestPurchase(args: {
-    request: { apple?: { sku: string }; google?: PlayRequest };
+    request: { apple?: { sku: string; appAccountToken?: string }; google?: PlayRequest };
     type: 'subs' | 'in-app';
   }): Promise<unknown>;
   /** The purchase arrives HERE, not from requestPurchase's promise. */
@@ -250,6 +253,31 @@ export async function purchaseThroughStore(
      * and stays `{ skus: [productId] }` so the iOS call is unchanged.
      */
     let google: PlayRequest = { skus: [productId] };
+
+    /*
+     * COS-1242 review — the iOS twin of point 2 above, found while building it.
+     *
+     * apple-iap.gateway.ts attributes a StoreKit purchase ONLY from the signed
+     * transaction's `appAccountToken` and refuses one without it ("Apple
+     * transaction has no appAccountToken"). This request never set it, so a
+     * real iOS purchase would have been CHARGED, refused at verify, left
+     * unfinished, and the patient told "Payment received, but your plan has
+     * not updated yet". StoreKit requires the token to be a UUID; a Cognito
+     * sub is one. Missing or malformed, refuse before the sheet: nothing has
+     * been charged.
+     */
+    let appleAccountToken: string | undefined;
+    if (Platform.OS === 'ios') {
+      const sub = (await getCachedProfile())?.sub;
+      if (typeof sub !== 'string' || !UUID_RE.test(sub)) {
+        return {
+          status: 'unavailable',
+          reason:
+            'We couldn’t confirm which account this purchase is for. Sign out and back in, then try again. Nothing has been charged.',
+        };
+      }
+      appleAccountToken = sub;
+    }
     if (Platform.OS === 'android') {
       const product = (products as { id?: string; subscriptionOffers?: PlayOffer[] | null }[]).find(
         (p) => p?.id === productId,
@@ -331,7 +359,7 @@ export async function purchaseThroughStore(
        */
       iap!
         .requestPurchase({
-          request: { apple: { sku: productId }, google },
+          request: { apple: { sku: productId, appAccountToken: appleAccountToken }, google },
           type: 'subs',
         })
         .catch((err: unknown) => once({ kind: 'err', err }));

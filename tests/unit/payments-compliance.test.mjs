@@ -537,12 +537,17 @@ test('THE POINT: every Play-only branch is guarded on Android, so iOS is unchang
   const code = stripComments(store)
   // The offer token + account id, the pending check, the error wording and
   // the packageName on the proof — each behind Platform.OS === 'android'.
-  assert.match(code, /let google: PlayRequest = \{ skus: \[productId\] \};\s*if \(Platform\.OS === 'android'\) \{/)
+  assert.match(code, /let google: PlayRequest = \{ skus: \[productId\] \};/)
+  assert.match(code, /appleAccountToken = sub;\s*\}\s*if \(Platform\.OS === 'android'\) \{/)
   assert.match(code, /if \(Platform\.OS === 'android' && purchase\.purchaseState === 'pending'\)/)
   assert.match(code, /if \(Platform\.OS === 'android'\) \{\s*const code = /)
   assert.match(code, /Platform\.OS === 'android' && purchase\.packageNameAndroid/)
-  // iOS still asks StoreKit for exactly the sku it always did.
-  assert.match(code, /request: \{ apple: \{ sku: productId \}, google \}/)
+  // iOS asks StoreKit for the sku AND names the buyer: apple-iap.gateway.ts
+  // refuses a transaction without appAccountToken, so leaving it off charged
+  // the patient and then failed verify. Missing/non-UUID sub refuses before
+  // the sheet opens.
+  assert.match(code, /request: \{ apple: \{ sku: productId, appAccountToken: appleAccountToken \}, google \}/)
+  assert.match(code, /if \(Platform\.OS === 'ios'\) \{\s*const sub = \(await getCachedProfile\(\)\)\?\.sub;\s*if \(typeof sub !== 'string' \|\| !UUID_RE\.test\(sub\)\) \{\s*return \{\s*status: 'unavailable'/)
   // Restore and the manage link refuse to run anywhere but Android.
   assert.match(code, /export async function restorePlayPurchases[\s\S]{0,120}if \(Platform\.OS !== 'android'\)/)
   assert.match(code, /export async function playManageUrl[\s\S]{0,120}Platform\.OS !== 'android'/)
