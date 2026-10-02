@@ -296,14 +296,15 @@ export function visitReason(e: DetailEncounter): string | undefined {
 
 /**
  * "No medicines or tests were recorded for this visit" is only worth saying
- * when the card has nothing else to say. With a reason or a note on it, the
- * line reads as though the visit were empty when it was not.
+ * when the card has nothing else to say. With a reason, diagnoses or a note on
+ * it, the line reads as though the visit were empty when it was not.
  */
 export function recordedNothing(card: VisitCard): boolean {
   return (
     card.medications.length === 0 &&
     card.reports.length === 0 &&
     !visitReason(card.encounter) &&
+    !card.encounter.visitSummary?.diagnoses?.length &&
     !card.encounter.visitSummary?.note?.trim()
   );
 }

@@ -126,6 +126,12 @@ export default function DoctorDetailScreen() {
    * patient we could not check.
    */
   const [visitsFailed, setVisitsFailed] = useState(false);
+  /*
+   * Bumped by pull-to-refresh so the visit fetch retries too. Without it the
+   * "couldn't load your visits" line above had no way out but leaving the
+   * screen — onRefresh refetched every other section and not this one.
+   */
+  const [visitsReload, setVisitsReload] = useState(0);
   /** Visit notes the patient has expanded, by encounter id. */
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   const providerName = params.name as string || '';
@@ -236,7 +242,7 @@ export default function DoctorDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [providerId]);
+  }, [providerId, visitsReload]);
 
   useEffect(() => {
     if (!providerId || isLoadingData) return;
@@ -458,6 +464,7 @@ export default function DoctorDetailScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setVisitsReload((n) => n + 1);
     try {
       if (providerId && providerId !== 'unknown') {
         const providerData = await fetchProviderById(providerId);

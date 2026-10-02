@@ -130,6 +130,9 @@ test('COS-1239: an empty Notes says WHICH empty it is', () => {
   assert.match(code, /Loading your visits…/);
   assert.match(code, /We couldn't load your visits with this provider just now\./);
   assert.match(code, /Your record has no past visits with this provider\./);
+  // ...and "just now" must be retryable: pull-to-refresh re-runs the visit fetch.
+  assert.match(code, /setVisitsReload\(\(n\) => n \+ 1\)/);
+  assert.match(code, /\}, \[providerId, visitsReload\]\);/);
 });
 
 test('COS-1239: the non-EHR provider page folds Appointments into Notes too', () => {

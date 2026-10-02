@@ -9,6 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   isPastVisit,
@@ -77,6 +78,8 @@ test('"nothing was recorded" only when the card truly has nothing', () => {
   assert.equal(recordedNothing(card(enc())), true);
   assert.equal(recordedNothing(card(enc({ reason: 'Therapy Daily Treatment' }))), false);
   assert.equal(recordedNothing(card(enc({ visitSummary: summary({ note: 'Seen today.' }) }))), false);
+  // Diagnoses with no reason is a real shape — some summaries lack "Reason for Visit".
+  assert.equal(recordedNothing(card(enc({ visitSummary: summary({ diagnoses: ['Low back pain'] }) }))), false);
   assert.equal(
     recordedNothing(card(enc(), { reports: [{ id: 'r1', name: 'X-ray', status: 'final' }] })),
     false,
@@ -90,4 +93,12 @@ test('booked = Confirmed and not in the past', () => {
   // The app maps cancelled/proposed Appointments to Pending; those are not booked.
   assert.equal(isUpcomingBooked({ date: '2026-10-09', status: 'Pending' }, TODAY), false);
   assert.equal(isUpcomingBooked({ date: '2026-10-09', status: 'Completed' }, TODAY), false);
+});
+
+test("a planned Encounter is a booked visit, not Pending", () => {
+  // Fasten records carry booked visits as Encounters with status 'planned'.
+  // Mapped to Pending, isUpcomingBooked never saw them and, with the past list
+  // excluding planned, they vanished from the provider page entirely.
+  const src = readFileSync(new URL('../../services/api/providers.ts', import.meta.url), 'utf8');
+  assert.match(src, /a\.status === 'booked' \|\| a\.status === 'planned'\s*\?\s*\('Confirmed' as const\)/);
 });
