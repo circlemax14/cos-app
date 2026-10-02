@@ -184,9 +184,12 @@ export default function ConversationScreen() {
         </Text>
       </View>
 
+      {/* COS-1241 — 'height' on Android, as COS-1031b did for the other chat:
+          with edgeToEdgeEnabled the window no longer resizes for the keyboard,
+          so `undefined` left the composer under it. iOS unchanged. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
         <FlatList

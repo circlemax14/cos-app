@@ -73,8 +73,14 @@
         "android.permission.WRITE_CALENDAR",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
+      "blockedPermissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.READ_PHONE_STATE"
+      ],
       "allowBackup": false,
-      "versionCode": 2
+      "versionCode": 69
     },
     "web": {
       "output": "static",
