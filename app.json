@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "requireFullScreen": true,
       "bundleIdentifier": "ai.circlesupporthealth.csh",
       "buildNumber": "66",
       "associatedDomains": [
