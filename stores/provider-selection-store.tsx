@@ -62,7 +62,9 @@ export function ProviderSelectionProvider({ children }: { children: ReactNode })
     setSelectedProviders(prev => {
       if (prev.some(p => p.id === provider.id)) return prev;
       if (prev.length >= MAX_SELECTED_PROVIDERS) return prev;
-      const next = [...prev, provider];
+      // photoUrl from the provider list is presigned and dies within hours;
+      // the ring re-reads a fresh one, so it is never saved with the circle.
+      const next = [...prev, { ...provider, photoUrl: undefined }];
       // Persist after state update (use setTimeout to ensure state is set)
       setTimeout(() => {
         apiClient.put('/v1/auth/selected-providers', {

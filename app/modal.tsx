@@ -19,6 +19,7 @@ import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerA
 import { FilterMenu } from '@/components/ui/filter-menu';
 import { MAX_SELECTED_PROVIDERS, useProviderSelection, type SelectedProvider } from '@/stores/provider-selection-store';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
+import { providerPhotoUrl } from '@/lib/provider-photo-url';
 import * as DocumentPicker from 'expo-document-picker';
 // COS-930 — SafeAreaView root, because the app is EDGE-TO-EDGE on Android.
 //
@@ -1354,6 +1355,7 @@ export default function ModalScreen() {
                                       const inactiveReason = !provider.isManual && !isSelected
                                         ? providerInactiveReason(provider)
                                         : null;
+                                      const photo = providerPhotoUrl(doctorPhotos, provider);
                                       return (
                                         <DoctorCard
                                           key={provider.id}
@@ -1362,7 +1364,7 @@ export default function ModalScreen() {
                                           qualifications={provider.isManual
                                             ? (provider.relationship || provider.qualifications || 'Member')
                                             : (provider.qualifications || 'Healthcare Provider')}
-                                          image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
+                                          image={photo ? { uri: photo } : (provider.image || null)}
                                           inactive={!!inactiveReason}
                                           inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
                                           onPress={provider.isManual ? undefined : () => {
@@ -1447,6 +1449,7 @@ export default function ModalScreen() {
                               // NOT-yet-selected providers — selected ones must remain
                               // removable from the circle (build 38 regression).
                               const inactiveReason = !isSelected ? providerInactiveReason(provider) : null;
+                              const photo = providerPhotoUrl(doctorPhotos, provider);
                               return (
                                 <DoctorCard
                                   key={provider.id}
@@ -1457,7 +1460,7 @@ export default function ModalScreen() {
                                      filter acted on. Without it a working
                                      filter reads as the app guessing. */
                                   contextLine={providerContextLine(provider)}
-                                  image={doctorPhotos.get(provider.id) ? { uri: doctorPhotos.get(provider.id)! } : (provider.image || null)}
+                                  image={photo ? { uri: photo } : (provider.image || null)}
                                   inactive={!!inactiveReason}
                                   inactiveReason={inactiveReason ? inactiveLabel(inactiveReason) : undefined}
                                   onPress={() => {
