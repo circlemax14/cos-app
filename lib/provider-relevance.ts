@@ -1,4 +1,5 @@
 import { normalisePersonName } from './provider-identity.ts';
+import { withPhotoFrom } from './provider-photo-url.ts';
 
 /**
  * COS-1009 — which of these people actually took part in your care.
@@ -102,7 +103,7 @@ export function isCareProvider(p: RelevanceInput): boolean {
  * Of a merged pair we keep the row with more records, so the survivor is the one
  * that can actually show the patient something.
  */
-export function dedupeProviders<T extends RelevanceInput & { recordCount?: number }>(
+export function dedupeProviders<T extends RelevanceInput & { recordCount?: number; photoUrl?: string }>(
   rows: T[],
 ): T[] {
   const bestByKey = new Map<string, T>();
@@ -118,7 +119,9 @@ export function dedupeProviders<T extends RelevanceInput & { recordCount?: numbe
     const key = `${normalisePersonName(row.name)}|${credential}`;
     const held = bestByKey.get(key);
     if (!held || (row.recordCount ?? 0) > (held.recordCount ?? 0)) {
-      bestByKey.set(key, row);
+      bestByKey.set(key, withPhotoFrom(row, held));
+    } else {
+      bestByKey.set(key, withPhotoFrom(held, row));
     }
   }
 

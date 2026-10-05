@@ -18,6 +18,7 @@ import { useEncounterNarrative } from '@/hooks/use-encounter-narrative';
 import { useRecommendedAppointments } from '@/hooks/use-recommended-appointments';
 import { useDoctor } from '@/hooks/use-doctor';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
+import { providerPhotoUrl } from '@/lib/provider-photo-url';
 import { AppWrapper } from '@/components/app-wrapper';
 import {
   fetchProviderDetail,
@@ -1527,7 +1528,7 @@ export default function DoctorDetailScreen() {
                 <EntityIcon
                   type="provider"
                   specialty={provider.specialty ?? undefined}
-                  imageUrl={doctorPhotos.get(provider.id) ?? null}
+                  imageUrl={providerPhotoUrl(doctorPhotos, provider)}
                   iconUrl={provider.iconUrl ?? null}
                   name={provider.name ?? 'Provider'}
                   size={getScaledFontSize(56)}
@@ -1837,7 +1838,9 @@ export default function DoctorDetailScreen() {
             <EntityIcon
               type="provider"
               specialty={doctorSpecialty ?? undefined}
-              imageUrl={doctorData?.photoUrl ?? null}
+              // `||`, not `??`: saving the edit form stores photoUrl '' even when
+              // no photo was picked, and that must not hide the clinic photo.
+              imageUrl={doctorData?.photoUrl || provider?.photoUrl || null}
               iconUrl={doctorData?.iconUrl ?? null}
               name={doctorName ?? 'Provider'}
               size={getScaledFontSize(120)}

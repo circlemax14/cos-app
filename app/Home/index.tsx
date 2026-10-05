@@ -27,6 +27,8 @@ import { EntityIcon } from '@/components/icons';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
+import { providerPhotoUrl, withFreshPhotos } from '@/lib/provider-photo-url';
+import { useRefreshExpiringPhotos } from '@/hooks/use-refresh-expiring-photos';
 import {
   getNonEhrProviders,
   processAndStoreFiles,
@@ -502,7 +504,7 @@ function PhoneCircleView({ providers, userImg, colors, getScaledFontSize, getSca
                   <EntityIcon
                     type="provider"
                     specialty={item.specialty ?? undefined}
-                    imageUrl={doctorPhotos.get(item.id) ?? null}
+                    imageUrl={providerPhotoUrl(doctorPhotos, item)}
                     iconUrl={item.iconUrl ?? null}
                     name={item.name || 'Provider'}
                     size={getScaledFontSize(avatarSize)}
@@ -895,7 +897,7 @@ function TabletCircleView({ providers, userImg, colors, getScaledFontSize, getSc
                   <EntityIcon
                     type="provider"
                     specialty={item.specialty ?? undefined}
-                    imageUrl={doctorPhotos.get(item.id) ?? null}
+                    imageUrl={providerPhotoUrl(doctorPhotos, item)}
                     iconUrl={item.iconUrl ?? null}
                     name={item.name || 'Provider'}
                     size={getScaledFontSize(avatarSize)}
@@ -1043,7 +1045,7 @@ function CircleProvidersListView({ providers, userImg, colors, getScaledFontSize
               <EntityIcon
                 type="provider"
                 specialty={provider.specialty ?? undefined}
-                imageUrl={doctorPhotos.get(provider.id) ?? null}
+                imageUrl={providerPhotoUrl(doctorPhotos, provider)}
                 iconUrl={provider.iconUrl ?? null}
                 name={provider.name || 'Provider'}
                 size={getScaledFontSize(56)}
@@ -1163,6 +1165,10 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
   // Load doctor photos for all providers
   const doctorPhotos = useDoctorPhotos(allProviderIds);
+  // Clinic photos expire; keep this categorised copy's photos fresh in place.
+  const listedProviders = React.useMemo(() => [...providersBySubCategory.values()].flat(), [providersBySubCategory]);
+  useRefreshExpiringPhotos(listedProviders, (fresh) =>
+    setProvidersBySubCategory((prev) => new Map([...prev].map(([k, list]) => [k, withFreshPhotos(list, fresh)]))));
   const [manualName, setManualName] = useState('');
   const [manualRelationship, setManualRelationship] = useState('');
   const [manualPhone, setManualPhone] = useState('');
@@ -2294,7 +2300,7 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
                 <EntityIcon
                   type="provider"
                   specialty={provider.specialty ?? undefined}
-                  imageUrl={doctorPhotos.get(provider.id) ?? null}
+                  imageUrl={providerPhotoUrl(doctorPhotos, provider)}
                   iconUrl={provider.iconUrl ?? null}
                   name={provider.name || 'Provider'}
                   size={getScaledFontSize(56)}
@@ -2398,6 +2404,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
   // Load doctor photos for all providers in the list
   const providerIds = fastenProviders.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
+  useRefreshExpiringPhotos(fastenProviders, (fresh) => setFastenProviders((prev) => withFreshPhotos(prev, fresh)));
 
   // Load Fasten Health providers
   React.useEffect(() => {
@@ -2578,7 +2585,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
               <EntityIcon
                 type="provider"
                 specialty={doc.specialty ?? undefined}
-                imageUrl={doctorPhotos.get(doc.id) ?? null}
+                imageUrl={providerPhotoUrl(doctorPhotos, doc)}
                 iconUrl={doc.iconUrl ?? null}
                 name={doc.name ?? 'Provider'}
                 size={getScaledFontSize(56)}
@@ -3080,7 +3087,9 @@ function HomeScreenInner() {
   }, [readiness.score]);
 
   // Load Fasten Health providers for circle view
-  const [, setFastenProviders] = useState<FastenProvider[]>([]);
+  const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
+  // Home outlives the ~6h photo presign by days: re-sign the ring's photos on foreground.
+  useRefreshExpiringPhotos(fastenProviders, (fresh) => setFastenProviders((prev) => withFreshPhotos(prev, fresh)));
   const [, setIsLoadingProviders] = useState(false);
   const { selectedProviders, selectedCareManager, addProvider, removeProvider, validateAndCleanProviders, loadFromServer, setSelectedCareManager } = useProviderSelection();
   const [patientName, setPatientName] = useState('');
@@ -3126,9 +3135,11 @@ function HomeScreenInner() {
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
   const [recommendedAppointments, setRecommendedAppointments] = useState<RecommendedAppointment[]>([]);
 
+  // The selection is stored server-side, so its photoUrl may be long expired;
+  // the ring shows the clinic photo from the provider list just fetched.
   const circleProviders = React.useMemo(
-    () => selectedProviders.slice(0, MAX_SELECTED_PROVIDERS),
-    [selectedProviders]
+    () => withFreshPhotos(selectedProviders.slice(0, MAX_SELECTED_PROVIDERS), fastenProviders),
+    [selectedProviders, fastenProviders]
   );
   const selectedProviderIds = React.useMemo(
     () => new Set(circleProviders.map(provider => String(provider.id))),
