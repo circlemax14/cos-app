@@ -3,7 +3,7 @@ import { sameProvider } from '@/lib/provider-identity';
 import { classifyProvider, dedupeProviders } from '@/lib/provider-relevance';
 import { retryAsync, isTransientApiError } from '@/lib/retry-async';
 import { categorizeProvider } from '@/services/provider-categorization';
-import { remotePhotoUrl } from '@/lib/provider-photo-url';
+import { remotePhotoUrl, withPhotoFrom } from '@/lib/provider-photo-url';
 import type {
   Provider,
   TreatmentPlanItem,
@@ -199,7 +199,7 @@ function dedupeByPerson(providers: Provider[]): Provider[] {
     }
     const withData = group.filter((p) => p.hasData === true || (p.recordCount ?? 0) > 0);
     if (group.length === 2 && withData.length === 1) {
-      out.push(withData[0]);
+      out.push(withPhotoFrom(withData[0], group.find((p) => p !== withData[0])));
       continue;
     }
     out.push(...group);

@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { remotePhotoUrl, providerPhotoUrl, withFreshPhotos } from '../../lib/provider-photo-url.ts';
+import { dedupeProviders } from '../../lib/provider-relevance.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -115,4 +116,23 @@ test('a raster photo never reaches an SVG-only iconUrl prop', () => {
   for (const file of ['app/Home/index.tsx', 'app/Home/doctor-detail.tsx', 'app/(doctor-detail)/index.tsx', 'app/modal.tsx']) {
     assert.doesNotMatch(read(file), /iconUrl=\{[^}]*photoUrl/, file);
   }
+});
+
+test('collapsing a duplicate keeps the photo even when it was on the row that lost', () => {
+  // Same clinician under two connections: only one clinic's site was crawled.
+  for (const rows of [
+    [{ name: 'Lisa B, PT', recordCount: 0, photoUrl: SIGNED }, { name: 'Lisa B, PT', recordCount: 12 }],
+    [{ name: 'Lisa B, PT', recordCount: 12 }, { name: 'Lisa B, PT', recordCount: 0, photoUrl: SIGNED }],
+  ]) {
+    const [kept] = dedupeProviders(rows);
+    assert.equal(kept.recordCount, 12);
+    assert.equal(kept.photoUrl, SIGNED);
+  }
+  // No photo anywhere: the survivor is the very same object, as before.
+  const plain = [{ name: 'Lisa B, PT', recordCount: 0 }, { name: 'Lisa B, PT', recordCount: 12 }];
+  assert.equal(dedupeProviders(plain)[0], plain[1]);
+});
+
+test('the Epic-id/NPI pair collapse keeps the photo too', () => {
+  assert.match(read('services/api/providers.ts'), /out\.push\(withPhotoFrom\(withData\[0\], group\.find\(\(p\) => p !== withData\[0\]\)\)\)/);
 });

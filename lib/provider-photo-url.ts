@@ -26,6 +26,18 @@ export function remotePhotoUrl(raw: unknown): string | undefined {
 }
 
 /**
+ * Collapsing duplicate rows of one clinician keeps one row; the photo must not
+ * die with the other. The backend matches photos per row (each row's clinic),
+ * so the same person can arrive with the photo on the row dedupe drops.
+ */
+export function withPhotoFrom<T extends { photoUrl?: string }>(
+  kept: T,
+  dropped: { photoUrl?: string } | undefined,
+): T {
+  return !kept.photoUrl && dropped?.photoUrl ? { ...kept, photoUrl: dropped.photoUrl } : kept;
+}
+
+/**
  * A photo the patient chose on this device (the `doctor_data_<id>` map from
  * useDoctorPhotos) wins; the clinic photo fills in only when there is none.
  */
