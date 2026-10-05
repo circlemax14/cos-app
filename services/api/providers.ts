@@ -3,6 +3,7 @@ import { sameProvider } from '@/lib/provider-identity';
 import { classifyProvider, dedupeProviders } from '@/lib/provider-relevance';
 import { retryAsync, isTransientApiError } from '@/lib/retry-async';
 import { categorizeProvider } from '@/services/provider-categorization';
+import { remotePhotoUrl } from '@/lib/provider-photo-url';
 import type {
   Provider,
   TreatmentPlanItem,
@@ -32,6 +33,8 @@ interface FhirPractitioner {
   qualification?: { code?: { text?: string; coding?: { display?: string }[] } }[];
   hasData?: boolean;
   recordCount?: number;
+  /** Clinic-website staff photo, presigned and short-lived. See lib/provider-photo-url. */
+  photoUrl?: string;
 }
 
 /** COS-1007 — the grouping the server already stored, when it sends one. */
@@ -83,6 +86,7 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
   const name = buildName(practitioner.name);
   const qualifications = extractQualifications(practitioner);
   const specialty = extractSpecialty(role);
+  const photoUrl = remotePhotoUrl(practitioner.photoUrl);
 
   /*
    * COS-1007 — trust the server's grouping; guess only when it sends none.
@@ -124,6 +128,8 @@ function transformToProvider(practitioner: FhirPractitioner, role?: FhirPractiti
     // moving a boundary is a deploy, not an app release (COS-1014).
     lastSeenAt: server.lastSeenAt,
     recencyBand: server.recencyBand ?? null,
+    // Omitted, not undefined, when absent: the object is what it was before.
+    ...(photoUrl ? { photoUrl } : {}),
   };
 }
 
