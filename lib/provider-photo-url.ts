@@ -8,9 +8,21 @@
  * signature and render as a dead image.
  */
 
-/** Only an https string is a photo; anything else is dropped at the boundary. */
+/**
+ * The crawler bucket (cos-clinic-crawler-<stage>-<account>), virtual-hosted,
+ * with or without a region label — the only host a clinic photo comes from.
+ * Pinned because any other host — the clinic's own site, a scraped <img src> —
+ * would learn this patient's IP and that they see this provider. The `/` after
+ * the host stops `.evil.example` and `@evil.example` tails.
+ * ponytail: path-style (s3.<region>.amazonaws.com/<bucket>) is rejected; the
+ * backend's S3Client is not forcePathStyle and the bucket name is DNS-safe.
+ */
+const CRAWLER_BUCKET_URL =
+  /^https:\/\/cos-clinic-crawler-[a-z]+-676726973617\.s3(\.[a-z0-9-]+)?\.amazonaws\.com\//;
+
+/** Only a crawler-bucket https URL is a photo; anything else is dropped at the boundary. */
 export function remotePhotoUrl(raw: unknown): string | undefined {
-  return typeof raw === 'string' && raw.startsWith('https://') ? raw : undefined;
+  return typeof raw === 'string' && CRAWLER_BUCKET_URL.test(raw) ? raw : undefined;
 }
 
 /**

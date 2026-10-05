@@ -20,12 +20,31 @@ import { remotePhotoUrl, providerPhotoUrl, withFreshPhotos } from '../../lib/pro
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
-const SIGNED = 'https://cos-clinic-crawler-dev.s3.amazonaws.com/clinic-images/a.jpg?X-Amz-Signature=abc';
+const SIGNED = 'https://cos-clinic-crawler-dev-676726973617.s3.us-east-1.amazonaws.com/clinic-images/a.jpg?X-Amz-Signature=abc';
 
 test('remotePhotoUrl takes an https string and nothing else', () => {
   assert.equal(remotePhotoUrl(SIGNED), SIGNED);
   for (const bad of [undefined, null, '', 42, {}, 'http://x/a.jpg', 'clinic-images/a.jpg', 'file:///a.jpg']) {
     assert.equal(remotePhotoUrl(bad), undefined, String(bad));
+  }
+});
+
+test('remotePhotoUrl keeps only the crawler bucket: any other host would learn who this patient sees', () => {
+  for (const ok of [
+    SIGNED,
+    'https://cos-clinic-crawler-production-676726973617.s3.amazonaws.com/clinic-images/b.png?X-Amz-Signature=x',
+  ]) {
+    assert.equal(remotePhotoUrl(ok), ok, ok);
+  }
+  for (const bad of [
+    'https://clinic.example/staff.jpg',
+    'https://cos-documents-dev-676726973617.s3.us-east-1.amazonaws.com/clinic-images/a.jpg',
+    'https://cos-clinic-crawler-dev-111111111111.s3.amazonaws.com/clinic-images/a.jpg',
+    'https://cos-clinic-crawler-dev-676726973617.s3.amazonaws.com.evil.example/a.jpg',
+    'https://cos-clinic-crawler-dev-676726973617.s3.amazonaws.com@evil.example/a.jpg',
+    'https://evil.example/https://cos-clinic-crawler-dev-676726973617.s3.amazonaws.com/a.jpg',
+  ]) {
+    assert.equal(remotePhotoUrl(bad), undefined, bad);
   }
 });
 
