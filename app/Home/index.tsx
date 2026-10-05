@@ -28,6 +28,7 @@ import { useUserPhoto } from '@/stores/user-photo-store';
 import { getAllCareManagerAgencies, searchCareManagerAgencies, type CareManagerAgency } from '@/services/care-manager-agencies';
 import { useDoctorPhotos } from '@/hooks/use-doctor-photo';
 import { providerPhotoUrl, withFreshPhotos } from '@/lib/provider-photo-url';
+import { useRefreshExpiringPhotos } from '@/hooks/use-refresh-expiring-photos';
 import {
   getNonEhrProviders,
   processAndStoreFiles,
@@ -1164,6 +1165,10 @@ function ListView({ userImg, colors, getScaledFontSize, getScaledFontWeight, onI
 
   // Load doctor photos for all providers
   const doctorPhotos = useDoctorPhotos(allProviderIds);
+  // Clinic photos expire; keep this categorised copy's photos fresh in place.
+  const listedProviders = React.useMemo(() => [...providersBySubCategory.values()].flat(), [providersBySubCategory]);
+  useRefreshExpiringPhotos(listedProviders, (fresh) =>
+    setProvidersBySubCategory((prev) => new Map([...prev].map(([k, list]) => [k, withFreshPhotos(list, fresh)]))));
   const [manualName, setManualName] = useState('');
   const [manualRelationship, setManualRelationship] = useState('');
   const [manualPhone, setManualPhone] = useState('');
@@ -2399,6 +2404,7 @@ function ProviderDetailsList({ colors, getScaledFontSize, getScaledFontWeight, o
   // Load doctor photos for all providers in the list
   const providerIds = fastenProviders.map(p => p.id);
   const doctorPhotos = useDoctorPhotos(providerIds);
+  useRefreshExpiringPhotos(fastenProviders, (fresh) => setFastenProviders((prev) => withFreshPhotos(prev, fresh)));
 
   // Load Fasten Health providers
   React.useEffect(() => {
@@ -3082,6 +3088,8 @@ function HomeScreenInner() {
 
   // Load Fasten Health providers for circle view
   const [fastenProviders, setFastenProviders] = useState<FastenProvider[]>([]);
+  // Home outlives the ~6h photo presign by days: re-sign the ring's photos on foreground.
+  useRefreshExpiringPhotos(fastenProviders, (fresh) => setFastenProviders((prev) => withFreshPhotos(prev, fresh)));
   const [, setIsLoadingProviders] = useState(false);
   const { selectedProviders, selectedCareManager, addProvider, removeProvider, validateAndCleanProviders, loadFromServer, setSelectedCareManager } = useProviderSelection();
   const [patientName, setPatientName] = useState('');

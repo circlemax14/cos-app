@@ -15,7 +15,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { remotePhotoUrl, providerPhotoUrl, withFreshPhotos } from '../../lib/provider-photo-url.ts';
+import {
+  remotePhotoUrl,
+  providerPhotoUrl,
+  withFreshPhotos,
+  needsPhotoRefetch,
+  PHOTO_LIST_MAX_AGE_MS,
+} from '../../lib/provider-photo-url.ts';
 import { dedupeProviders } from '../../lib/provider-relevance.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -135,4 +141,31 @@ test('collapsing a duplicate keeps the photo even when it was on the row that lo
 
 test('the Epic-id/NPI pair collapse keeps the photo too', () => {
   assert.match(read('services/api/providers.ts'), /out\.push\(withPhotoFrom\(withData\[0\], group\.find\(\(p\) => p !== withData\[0\]\)\)\)/);
+});
+
+test('a photo list is refetched before its 6h presign runs out, and only if it holds a photo', () => {
+  const HOUR = 60 * 60 * 1000;
+  assert.ok(PHOTO_LIST_MAX_AGE_MS < 6 * HOUR, 'must refetch while the URLs still work');
+  const t0 = 1_000_000;
+  const withPhoto = [{ id: 'a' }, { id: 'b', photoUrl: SIGNED }];
+  assert.equal(needsPhotoRefetch(withPhoto, t0, t0 + PHOTO_LIST_MAX_AGE_MS - 1), false);
+  assert.equal(needsPhotoRefetch(withPhoto, t0, t0 + PHOTO_LIST_MAX_AGE_MS), true);
+  // No photos (backend flag off): never refetches, so nothing changes from today.
+  assert.equal(needsPhotoRefetch([{ id: 'a' }], t0, t0 + 48 * HOUR), false);
+  assert.equal(needsPhotoRefetch([], t0, t0 + 48 * HOUR), false);
+});
+
+test('every Home provider list re-signs its photos on foreground, keeping its rows', () => {
+  const src = read('app/Home/index.tsx');
+  // Home is the root tab and outlives the 6h presign by days: the ring's list,
+  // ListView's categorised copy and ProviderDetailsList's copy each refresh.
+  const uses = src.match(/useRefreshExpiringPhotos\(/g) ?? [];
+  assert.equal(uses.length, 3);
+  assert.match(src, /useRefreshExpiringPhotos\(fastenProviders, \(fresh\) => setFastenProviders\(\(prev\) => withFreshPhotos\(prev, fresh\)\)\)/);
+  assert.match(src, /useRefreshExpiringPhotos\(listedProviders, \(fresh\) =>\s+setProvidersBySubCategory\(\(prev\) => new Map\(\[\.\.\.prev\]\.map\(\(\[k, list\]\) => \[k, withFreshPhotos\(list, fresh\)\]\)\)\)/);
+  const hook = read('hooks/use-refresh-expiring-photos.ts');
+  assert.match(hook, /AppState\.addEventListener\('change'/);
+  assert.match(hook, /needsPhotoRefetch\(/);
+  // fetchProviders answers [] on failure: that must not wipe the photos held.
+  assert.match(hook, /if \(fresh\.length\) apply\(fresh\)/);
 });

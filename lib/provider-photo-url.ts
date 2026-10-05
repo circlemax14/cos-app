@@ -60,3 +60,19 @@ export function withFreshPhotos<T extends { id: string; photoUrl?: string }>(
   const fresh = new Map(fetched.map((p) => [p.id, p.photoUrl]));
   return saved.map((p) => ({ ...p, photoUrl: fresh.get(p.id) }));
 }
+
+/** Refetch a photo-bearing list this long after it arrived: under the 6h presign. */
+export const PHOTO_LIST_MAX_AGE_MS = 5 * 60 * 60 * 1000;
+
+/**
+ * Whether a provider list fetched at `fetchedAt` must be refetched to keep its
+ * photos loadable. A list without a photo never is, so with the backend flag
+ * off nothing new happens.
+ */
+export function needsPhotoRefetch(
+  providers: readonly { photoUrl?: string }[],
+  fetchedAt: number,
+  now: number,
+): boolean {
+  return now - fetchedAt >= PHOTO_LIST_MAX_AGE_MS && providers.some((p) => p.photoUrl);
+}
