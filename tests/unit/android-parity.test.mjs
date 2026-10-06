@@ -99,6 +99,27 @@ test('Android shows the CSH logo, not the Expo template, on the launcher and in 
   }
 })
 
+test('no Paper Button wraps a View — Android draws such a button as an empty, tappable box', () => {
+  // COS-1244. Paper renders a Button's children inside a one-line <Text>; a
+  // <View> there is an Android inline view, which Android drops when it
+  // ellipsizes the line. The drawer's "Delete Account" showed nothing on
+  // Android yet still opened the delete dialog. Use the label + textColor /
+  // labelStyle / loading / icon props instead.
+  const found = []
+  for (const dir of ['app', 'components']) {
+    for (const f of readdirSync(new URL(`../../${dir}`, import.meta.url), { recursive: true })) {
+      if (!/\.tsx$/.test(f)) continue
+      const s = strip(read(`${dir}/${f}`))
+      if (!/import \{[^}]*\bButton\b[^}]*\} from 'react-native-paper'/.test(s)) continue
+      for (let i = s.indexOf('<Button'); i >= 0; i = s.indexOf('<Button', i + 1)) {
+        const end = s.indexOf('</Button>', i)
+        if (end > 0 && s.slice(i, end).includes('<View')) found.push(`${dir}/${f}:${s.slice(0, i).split('\n').length}`)
+      }
+    }
+  }
+  assert.deepEqual(found, [], `Paper Button with a <View> inside: ${found.join(', ')}`)
+})
+
 test('THE POINT: an iPhone-only feature is a recorded decision, never an accident', () => {
   // One codebase ships to both phones. A gate that renders something only on
   // iOS leaves Android without it, silently — that is how readiness stayed

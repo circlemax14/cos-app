@@ -794,19 +794,15 @@ export function ProfileContent({
               accessibilityLabel={authBusy === 'signout' ? 'Signing out' : 'Sign out of your account'}
               accessibilityRole="button"
               accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'signout' }}
+              /* COS-1244 — plain-string label + Paper's own props. Paper renders
+                 children inside a one-line <Text>; a <View> nested there is an
+                 Android inline view, which Android drops when it ellipsizes the
+                 line — the button stays tappable but draws nothing. */
+              loading={authBusy === 'signout'}
+              textColor={colors.text}
+              labelStyle={{ fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                {authBusy === 'signout' ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={colors.text}
-                    style={{ marginRight: 8 }}
-                  />
-                ) : null}
-                <Text style={[{ color: colors.text, fontSize: getScaledFontSize(16), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(24) }]}>
-                  {authBusy === 'signout' ? 'Signing out…' : 'Sign Out'}
-                </Text>
-              </View>
+              {authBusy === 'signout' ? 'Signing out…' : 'Sign Out'}
             </Button>
           )}
 
@@ -879,15 +875,12 @@ export function ProfileContent({
               accessibilityLabel={authBusy === 'delete' ? 'Deleting account' : 'Permanently delete my account and all my data'}
               accessibilityRole="button"
               accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'delete' }}
+              /* COS-1244 — see Sign Out above: this one drew NOTHING on Android. */
+              loading={authBusy === 'delete'}
+              textColor="#DC2626"
+              labelStyle={{ fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                {authBusy === 'delete' ? (
-                  <ActivityIndicator size="small" color="#DC2626" style={{ marginRight: 6 }} />
-                ) : null}
-                <Text style={[{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: getScaledFontWeight(500) as any, lineHeight: getScaledFontSize(20) }]}>
-                  {authBusy === 'delete' ? 'Deleting…' : 'Delete Account'}
-                </Text>
-              </View>
+              {authBusy === 'delete' ? 'Deleting…' : 'Delete Account'}
             </Button>
           )}
         </View>
