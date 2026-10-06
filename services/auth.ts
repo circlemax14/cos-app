@@ -1,4 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cognitoSignOut } from '@/lib/cognito';
@@ -224,6 +226,26 @@ export async function checkSession(): Promise<SessionCheckResult> {
  * left React Query state and per-user AsyncStorage keys behind, so the
  * next user on a shared device could see the previous user's PHI.
  */
+const PUSH_PROJECT_ID =
+  Constants.expoConfig?.extra?.eas?.projectId ?? '30bc49bd-ee12-4a06-86b3-ee4f23690114';
+
+/**
+ * COS-1243 — forget this phone on the account, so a shared phone stops
+ * receiving the previous account's notifications (which can name medications).
+ *
+ * Best effort, capped at 3s so sign-out never hangs: no permission means no
+ * token was ever registered, and a backend without the route answers 404.
+ */
+async function unregisterPushToken(): Promise<void> {
+  const attempt = (async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: PUSH_PROJECT_ID });
+    await apiClient.post('/v1/notifications/unregister-token', { token });
+  })().catch(() => {});
+  await Promise.race([attempt, new Promise<void>((resolve) => setTimeout(resolve, 3000))]);
+}
+
 export async function signOut(): Promise<void> {
   // Capture the outgoing user's sub before clearing the cached profile
   // so we can scope the cache wipes correctly.
@@ -232,6 +254,9 @@ export async function signOut(): Promise<void> {
     const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me')
     outgoingSub = res.data?.data?.sub
   } catch { /* swallow — sign-out is best-effort cleanup */ }
+
+  // Needs the session the next two lines end, so it goes first.
+  await unregisterPushToken();
 
   cognitoSignOut();
   await clearTokens();
