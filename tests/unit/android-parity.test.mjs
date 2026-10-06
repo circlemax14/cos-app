@@ -14,7 +14,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 
 const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
@@ -44,13 +44,68 @@ test('THE POINT: neither Google auth hook can be handed an undefined client id',
   }
 })
 
-test('the Google entry points are gated to iOS while the Android round trip is impossible', () => {
-  // Three things are missing on Android and each alone breaks the flow: no
-  // Android OAuth client, no intent-filter for the applicationId scheme, and
-  // no Android audience on the backend. A button that opens a browser and
-  // silently returns is worse than no button.
-  assert.match(strip(read('app/(auth)/sign-in.tsx')), /canUseGoogleSignIn =[\s\S]{0,80}?Platform\.OS === 'ios'/)
-  assert.match(strip(read('app/Home/linked-accounts.tsx')), /canLinkGoogle =[\s\S]{0,120}?Platform\.OS === 'ios'/)
+test('Google on Android is native sign-in, shown only where the binary has the module', () => {
+  // Google refuses the custom-scheme redirect expo-auth-session needs on
+  // Android, so Android must never fall through to promptGoogleAsync.
+  for (const [f, gate] of [
+    ['app/(auth)/sign-in.tsx', 'canUseGoogleSignIn'],
+    ['app/Home/linked-accounts.tsx', 'canLinkGoogle'],
+  ]) {
+    const code = strip(read(f))
+    assert.match(
+      code,
+      new RegExp(`${gate} =[\\s\\S]{0,140}?Platform\\.OS === 'ios' \\|\\| isNativeGoogleSignInAvailable\\(\\)`),
+      `${f}: Android must be gated on the native module, not shown unconditionally`,
+    )
+    assert.match(code, /Platform\.OS === 'android'[\s\S]{0,80}?signInWithGoogleNative\(\)/, `${f}: Android must sign in natively`)
+  }
+})
+
+test('THE POINT: an iPhone-only feature is a recorded decision, never an accident', () => {
+  // One codebase ships to both phones. A gate that renders something only on
+  // iOS leaves Android without it, silently — that is how readiness stayed
+  // dark on Android. Adding one must come with a line here saying why Android
+  // goes without; the better answer is usually an Android branch instead.
+  const allowed = {
+    // Apple sign-in on Android needs Apple's web flow + a backend callback (not built).
+    'app/(auth)/sign-in.tsx': 2,
+    'app/Home/linked-accounts.tsx': 1,
+  }
+  // `x && Platform.OS === 'ios' ? a : b` is an either/or with an Android
+  // branch (a font, a label) — not a gate. Only count the ones with no `?`.
+  const iosOnly = /(&&\s*Platform\.OS === 'ios'|Platform\.OS === 'ios'\s*&&)(?![^\n]*\?)/g
+  const found = {}
+  for (const dir of ['app', 'components']) {
+    for (const f of readdirSync(new URL(`../../${dir}`, import.meta.url), { recursive: true })) {
+      if (!/\.tsx?$/.test(f)) continue
+      const n = (strip(read(`${dir}/${f}`)).match(iosOnly) ?? []).length
+      if (n) found[`${dir}/${f}`] = n
+    }
+  }
+  assert.deepEqual(found, allowed, 'an iOS-only gate was added or removed — give Android a branch, or record why not')
+})
+
+test('THE POINT: the native Google library is never imported eagerly, and never linked on iOS', () => {
+  // Its import calls TurboModuleRegistry.getEnforcing('RNGoogleSignin'), which
+  // throws on every iOS binary and on Android 1.6.0 (69). An OTA reaches those,
+  // so a static import anywhere would crash them on launch.
+  const lib = '@react-native-google-signin/google-signin'
+  const eager = new RegExp(`(from\\s+|require\\()\\s*['"]${lib}['"]`)
+  for (const dir of ['app', 'components', 'services', 'hooks', 'lib', 'stores', 'providers']) {
+    if (!existsSync(new URL(`../../${dir}`, import.meta.url))) continue
+    for (const f of readdirSync(new URL(`../../${dir}`, import.meta.url), { recursive: true })) {
+      if (!/\.(t|j)sx?$/.test(f)) continue
+      assert.doesNotMatch(strip(read(`${dir}/${f}`)), eager, `${dir}/${f} imports ${lib} eagerly`)
+    }
+  }
+  const svc = strip(read('services/social-auth.ts'))
+  assert.match(svc, /TurboModuleRegistry\.get\('RNGoogleSignin'\)/, 'availability must use the non-throwing get()')
+  assert.match(svc, new RegExp(`await import\\(\\s*'${lib}'`), 'the library must load lazily')
+  // Two linkers, two exclusions: react-native.config.js for the RN module, and
+  // package.json for its Expo adapter — which also hooks the iOS AppDelegate.
+  assert.match(read('react-native.config.js'), new RegExp(`'${lib}'[\\s\\S]{0,80}?ios: null`), 'iOS must not link the pod')
+  assert.ok(json('package.json').expo.autolinking.ios.exclude.includes(lib), 'iOS must not link the Expo adapter')
+  assert.doesNotMatch(read('ios/Podfile.lock'), /GoogleSignIn/, 'a pod install pulled Google Sign-In into iOS')
 })
 
 // ── Native identity and the HIPAA controls ───────────────────────────

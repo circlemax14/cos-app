@@ -1,23 +1,23 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  shouldFetchAppleHealthTrends,
+  shouldFetchHealthTrends,
   resolveAppleHealthTrendsState,
 } from '../../lib/apple-health-gate.ts'
 
-// ── shouldFetchAppleHealthTrends ─────────────────────────────────────────────
+// ── shouldFetchHealthTrends ─────────────────────────────────────────────
 
 test('iOS + preference enabled → fetch', () => {
-  assert.equal(shouldFetchAppleHealthTrends(true, true), true)
+  assert.equal(shouldFetchHealthTrends(true, true), true)
 })
 
 test('iOS + preference DISABLED → do not fetch (the repro: disabled is authoritative)', () => {
-  assert.equal(shouldFetchAppleHealthTrends(true, false), false)
+  assert.equal(shouldFetchHealthTrends(true, false), false)
 })
 
 test('non-iOS is never fetched, regardless of preference', () => {
-  assert.equal(shouldFetchAppleHealthTrends(false, true), false)
-  assert.equal(shouldFetchAppleHealthTrends(false, false), false)
+  assert.equal(shouldFetchHealthTrends(false, true), false)
+  assert.equal(shouldFetchHealthTrends(false, false), false)
 })
 
 // ── resolveAppleHealthTrendsState ────────────────────────────────────────────

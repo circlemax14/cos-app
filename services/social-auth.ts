@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform, TurboModuleRegistry } from 'react-native';
 import { apiClient } from '@/lib/api-client';
 import { storeTokens } from '@/lib/auth-tokens';
 import { isTransientApiError, retryAsync } from '@/lib/retry-async';
@@ -44,6 +45,40 @@ export async function signInWithApple(): Promise<{
         }
       : undefined,
   };
+}
+
+/*
+ * COS-928 — Android signs in to Google natively. Google no longer accepts the
+ * custom-scheme redirect expo-auth-session needs on Android ("Custom URI
+ * schemes are no longer supported on Android"), so that flow cannot work there
+ * whatever is configured. iOS keeps expo-auth-session and never links this
+ * library (react-native.config.js).
+ *
+ * The library's import calls TurboModuleRegistry.getEnforcing('RNGoogleSignin'),
+ * which THROWS on a binary built without it — every iOS build and Android
+ * 1.6.0 (69) — and an OTA can reach those. So: check with the non-throwing
+ * get() first, import lazily, and hide the button when the module is absent.
+ */
+export function isNativeGoogleSignInAvailable(): boolean {
+  return Platform.OS === 'android' && TurboModuleRegistry.get('RNGoogleSignin') != null;
+}
+
+/** The Google ID token, or null when the user closed the account picker. */
+export async function signInWithGoogleNative(): Promise<string | null> {
+  const { GoogleSignin, isSuccessResponse } = await import(
+    '@react-native-google-signin/google-signin'
+  );
+  // webClientId makes Google issue the token to the WEB client — an audience
+  // the backend already accepts, so the backend needs no Android client id.
+  GoogleSignin.configure({ webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID });
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  // ponytail: forget the last account so the picker always shows — otherwise a
+  // patient who signed out could never choose a different Google account.
+  await GoogleSignin.signOut();
+  const res = await GoogleSignin.signIn();
+  if (!isSuccessResponse(res)) return null;
+  if (!res.data.idToken) throw new Error('Google sign-in returned no ID token');
+  return res.data.idToken;
 }
 
 export interface SocialSignInResult {

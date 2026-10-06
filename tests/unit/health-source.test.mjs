@@ -326,6 +326,14 @@ test('the gate asks whether a SOURCE exists, not whether it is iOS', () => {
   const gate = strip(read('lib/apple-health-gate.ts'))
   assert.match(gate, /shouldFetchHealthTrends\(\s*hasHealthSource: boolean/)
   assert.match(gate, /resolveHealthTrendsState\(\s*hasHealthSource: boolean/)
+  // The definition being right was not enough: the readiness hook still
+  // passed isIos, so readiness stayed dark on Android. Pin every CALLER too.
+  for (const f of ['hooks/use-readiness-derivation.ts', 'hooks/use-healthkit-trends.ts']) {
+    const code = strip(read(f))
+    assert.match(code, /shouldFetchHealthTrends\(/, `${f} must use the source gate`)
+    assert.doesNotMatch(code, /shouldFetch\w*\(\s*(isIos|Platform\.OS)/, `${f} gates on iOS instead of on a health source`)
+  }
+  assert.doesNotMatch(gate, /shouldFetchAppleHealthTrends/, 'the iOS-named alias invited exactly this bug')
 })
 
 test('no screen still advertises Health Connect as "coming soon"', () => {

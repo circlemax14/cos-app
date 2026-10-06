@@ -54,7 +54,7 @@ import {
   type ReadinessScore,
 } from '@/lib/readiness-score'
 import { useAppleHealthPreference } from '@/hooks/use-apple-health-preference'
-import { shouldFetchAppleHealthTrends } from '@/lib/apple-health-gate'
+import { shouldFetchHealthTrends } from '@/lib/apple-health-gate'
 import {
   postReadinessSnapshot,
   type ReadinessDriverBreakdown,
@@ -518,7 +518,6 @@ export interface UseReadinessDerivationResult {
  * one "Connect Apple Health" branch — see ReadinessTileUiState docs).
  */
 export function useReadinessDerivation(enabled: boolean): UseReadinessDerivationResult {
-  const isIos = Platform.OS === 'ios'
   /*
    * COS-932 — availability, not platform.
    *
@@ -552,7 +551,9 @@ export function useReadinessDerivation(enabled: boolean): UseReadinessDerivation
   // not iOS's own auth status, is the source of truth.
   const preference = useAppleHealthPreference()
   const preferenceEnabled = preference.data === true
-  const gateOpen = shouldFetchAppleHealthTrends(isIos, preferenceEnabled)
+  // COS-932 — "has a health source", never "is iOS": isIos here kept the
+  // readiness check dark on Android even after Health Connect was connected.
+  const gateOpen = shouldFetchHealthTrends(sourceAvailable, preferenceEnabled)
 
   const query = useQuery({
     queryKey: ['readiness-score'],
