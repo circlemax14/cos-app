@@ -126,6 +126,21 @@ export async function readSessionPresence(
   return opts.expectSession ? 'indeterminate' : 'absent';
 }
 
+/*
+ * COS-1243 — "a session was just saved": password sign-in, Google/Apple
+ * sign-in and the 401 refresh all end in storeTokens(). Push registration
+ * listens for it. Registering only at app start missed every patient who
+ * signed in AFTER the app opened (fresh install, reinstall, signed out): the
+ * one attempt hit 401, was swallowed, and push stayed dead until a cold start.
+ */
+const sessionStoredListeners = new Set<() => void>();
+export function onSessionStored(listener: () => void): () => void {
+  sessionStoredListeners.add(listener);
+  return () => {
+    sessionStoredListeners.delete(listener);
+  };
+}
+
 export async function storeTokens(
   accessToken: string,
   refreshToken: string,
@@ -139,6 +154,13 @@ export async function storeTokens(
     SecureStore.setItemAsync(KEYS.refresh, refreshToken),
     SecureStore.setItemAsync(KEYS.id, idToken),
   ]);
+  for (const listener of sessionStoredListeners) {
+    try {
+      listener();
+    } catch {
+      // A listener must never break saving a session.
+    }
+  }
 }
 
 /*
