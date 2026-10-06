@@ -80,7 +80,7 @@
         "android.permission.READ_PHONE_STATE"
       ],
       "allowBackup": false,
-      "versionCode": 72
+      "versionCode": 73
     },
     "web": {
       "output": "static",
