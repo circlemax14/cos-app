@@ -35,3 +35,6 @@ dist/
 # these are not.
 android/app/upload.keystore
 android/keystore.properties
+# COS-1092 — Firebase config for Android push. Not a secret, but kept out of git
+# like the keystore; build-android-release.sh refuses a release without it.
+android/app/google-services.json

@@ -94,7 +94,7 @@ android {
         applicationId 'ai.circlesupporthealth.csh'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 71
+        versionCode 72
         versionName "1.6.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
@@ -203,4 +203,13 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+}
+
+// COS-1092 — Android push needs Firebase, configured by app/google-services.json
+// (download it from the Firebase console). Applied only when the file is there:
+// without it the build still succeeds push-less, and
+// scripts/build-android-release.sh refuses a release build so that is never shipped
+// by accident. The file is not a secret, but keep it out of shared logs.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
 }

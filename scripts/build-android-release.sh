@@ -47,8 +47,9 @@ export LANG="${LANG:-en_US.UTF-8}"
 # ── 0. refuse to ship an Android build whose push is silently dead ─────────
 #
 # COS-1092. `expo-notifications` needs FCM credentials on Android — a
-# google-services.json wired through app.json's `expo.android.googleServicesFile`.
-# Neither exists yet.
+# google-services.json in android/app/, which android/app/build.gradle applies
+# (this app builds from the committed android/ folder, so app.json's
+# `googleServicesFile` would never be read).
 #
 # Without them the build succeeds, installs, runs, and every push notification
 # is dropped on the floor with no error anywhere. That is the worst possible
@@ -58,7 +59,8 @@ export LANG="${LANG:-en_US.UTF-8}"
 #
 # So it is refused here, loudly, with the fix. Set ALLOW_NO_PUSH=1 to build
 # anyway when you knowingly want a no-push build for something else.
-if ! grep -q '"googleServicesFile"' app.json 2>/dev/null; then
+GSF=android/app/google-services.json
+if [ ! -f "$GSF" ]; then
   if [ "${ALLOW_NO_PUSH:-0}" != "1" ]; then
     cat >&2 <<'MSG'
 !! Android push is NOT configured, so this build would silently drop every
@@ -66,10 +68,14 @@ if ! grep -q '"googleServicesFile"' app.json 2>/dev/null; then
 
    expo-notifications requires FCM on Android. You need:
 
-     1. A Firebase project for ai.circlesupporthealth.csh
+     1. Firebase console -> add Firebase to the Google Cloud project that holds
+        the app's OAuth clients -> add an Android app, package
+        ai.circlesupporthealth.csh
      2. Download google-services.json into android/app/
-     3. Add to app.json under expo.android:
-          "googleServicesFile": "./android/app/google-services.json"
+        (android/app/build.gradle applies the google-services plugin as soon as
+        the file exists; nothing else to edit)
+     3. expo.dev -> project -> Credentials -> Android -> upload an FCM V1
+        service-account key, or Expo cannot deliver to Android at all
 
    google-services.json is NOT a secret in the usual sense, but it identifies
    the Firebase project — keep it out of screenshots and shared logs.
@@ -79,6 +85,9 @@ MSG
     exit 1
   fi
   echo "!! ALLOW_NO_PUSH=1 — building with push DISABLED. Notifications will not arrive." >&2
+elif ! grep -q '"package_name": *"ai.circlesupporthealth.csh"' "$GSF"; then
+  echo "!! $GSF is not for ai.circlesupporthealth.csh — it was downloaded for another app." >&2
+  exit 1
 fi
 
 # ── 1. refuse to build unsigned ────────────────────────────────────────────
