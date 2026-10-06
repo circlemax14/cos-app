@@ -61,6 +61,21 @@ test('Google on Android is native sign-in, shown only where the binary has the m
   }
 })
 
+test('Android push: google-services is wired, and a release cannot ship without it by accident', () => {
+  // COS-1092. FCM needs google-services.json processed by the Gradle plugin.
+  // This app builds from the committed android/ folder, so app.json's
+  // googleServicesFile is never read — the wiring has to live in Gradle.
+  assert.match(read('android/build.gradle'), /classpath\('com\.google\.gms:google-services:/)
+  assert.match(
+    read('android/app/build.gradle'),
+    /if \(file\('google-services\.json'\)\.exists\(\)\) \{\s*apply plugin: 'com\.google\.gms\.google-services'/,
+    'apply the plugin only when the file exists, so a fresh clone still builds',
+  )
+  const script = read('scripts/build-android-release.sh')
+  assert.match(script, /GSF=android\/app\/google-services\.json/, 'the release check must look for the real file')
+  assert.match(script, /package_name[^\n]*ai\.circlesupporthealth\.csh/, 'and refuse a file downloaded for another app')
+})
+
 test('THE POINT: an iPhone-only feature is a recorded decision, never an accident', () => {
   // One codebase ships to both phones. A gate that renders something only on
   // iOS leaves Android without it, silently — that is how readiness stayed
