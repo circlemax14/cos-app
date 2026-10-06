@@ -33,6 +33,7 @@ import { prefetchAfterAuth } from '@/services/auth-prefetch';
 import { clearPendingSignIn } from '@/lib/lock-gate';
 import { consumeDeferredNavigation } from '@/lib/locked-nav-queue';
 import { onboardingGate } from '@/lib/onboarding-gate';
+import { isPinSetup } from '@/services/pin-auth';
 
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -198,6 +199,20 @@ export default function SignInScreen() {
     }
     if (gate.route) {
       router.replace(gate.route as never);
+      return;
+    }
+
+    /*
+     * COS-1244 — the PIN rule app/index.tsx applies on every cold start
+     * (finalHome: no PIN on this device → setup-pin). This funnel went straight
+     * to Home, so a returning patient signing in after a reinstall or on a new
+     * phone skipped PIN and face unlock — and the NEXT launch demanded both.
+     * Same rule here, so it happens once, now. setup-pin → confirm-pin →
+     * enable-biometric → permissions → Home, exactly as on that cold start.
+     * A deep link waiting from a notification is dropped, as for any gate.
+     */
+    if (!(await isPinSetup())) {
+      router.replace('/(security)/setup-pin' as never);
       return;
     }
 
