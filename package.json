@@ -23,6 +23,7 @@
     "@fastenhealth/fasten-stitch-element-react-native": "^1.0.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.6.0",
+    "@react-native-google-signin/google-signin": "^16.1.5",
     "@react-native-vector-icons/material-design-icons": "^12.3.0",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
@@ -101,6 +102,13 @@
   },
   "private": true,
   "expo": {
+    "autolinking": {
+      "ios": {
+        "exclude": [
+          "@react-native-google-signin/google-signin"
+        ]
+      }
+    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [

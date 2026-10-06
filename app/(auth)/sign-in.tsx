@@ -24,7 +24,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { signIn, UserProfile } from '@/services/auth';
 import {
   fetchSocialSignInUser,
+  isNativeGoogleSignInAvailable,
   signInWithApple,
+  signInWithGoogleNative,
   socialSignInWithBackend,
 } from '@/services/social-auth';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
@@ -60,23 +62,14 @@ export default function SignInScreen() {
   const isAppleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_apple');
   const isGoogleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_google');
   /*
-   * COS-928 — Google sign-in is iOS-only for now, and this is not a policy
-   * choice; three things are missing on Android and each alone breaks it:
-   *
-   *   1. no Android OAuth client in Google Cloud (there is no
-   *      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID anywhere);
-   *   2. no intent-filter for the applicationId scheme, so Google's redirect
-   *      to `<applicationId>:/oauthredirect` has nothing to come back to —
-   *      Chrome shows ERR_UNKNOWN_URL_SCHEME and promptAsync resolves
-   *      'dismiss', which this screen shows no message for;
-   *   3. the backend's accepted-audience list has no Android client id, so
-   *      even a token that made it home would be rejected.
-   *
-   * A button that opens a browser and silently returns the user to the same
-   * screen is worse than no button. Delete this gate — not the fallback above
-   * — once all three exist.
+   * COS-928 — iOS uses expo-auth-session; Android uses Google's native sign-in
+   * (signInWithGoogleNative), because Google no longer accepts the browser
+   * redirect expo-auth-session needs on Android. The native module exists only
+   * in Android binaries built after it was added, so older installs (which an
+   * OTA can reach) keep the button hidden instead of crashing.
    */
-  const canUseGoogleSignIn = isGoogleSignInEnabled && Platform.OS === 'ios';
+  const canUseGoogleSignIn =
+    isGoogleSignInEnabled && (Platform.OS === 'ios' || isNativeGoogleSignInAvailable());
 
   // Google Sign-In via expo-auth-session/providers/google
   const [, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
@@ -94,10 +87,9 @@ export default function SignInScreen() {
      * Above the feature flag, so no flag flip avoided it: the hook is called
      * unconditionally and hooks cannot be conditional.
      *
-     * The fallback value is never USED for a real Android sign-in — the button
-     * is hidden on Android below, because there is no Android OAuth client, no
-     * matching intent-filter and no matching package name yet. It exists only
-     * so the hook can construct. invariantClientId rejects `undefined` and
+     * The fallback value is never USED for a real Android sign-in — Android
+     * never calls promptGoogleAsync; it signs in natively
+     * (signInWithGoogleNative). It exists only so the hook can construct. invariantClientId rejects `undefined` and
      * nothing else, so any defined string defuses it.
      *
      * Deliberately NOT an empty EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID= in .env:
@@ -281,6 +273,12 @@ export default function SignInScreen() {
     setGoogleLoading(true);
     setError(undefined);
     try {
+      if (Platform.OS === 'android') {
+        const idToken = await signInWithGoogleNative();
+        if (idToken) await handleGoogleToken(idToken);
+        else setGoogleLoading(false); // picker closed — not an error
+        return;
+      }
       const result = await promptGoogleAsync();
       if (result?.type !== 'success') {
         setGoogleLoading(false);

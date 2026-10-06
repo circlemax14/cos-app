@@ -9,8 +9,10 @@ import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import {
   getLinkedProviders,
+  isNativeGoogleSignInAvailable,
   linkProvider,
   signInWithApple,
+  signInWithGoogleNative,
 } from '@/services/social-auth';
 import { useCanRender } from '@/hooks/use-entitlement';
 
@@ -25,17 +27,16 @@ export default function LinkedAccountsScreen() {
   const canViewLinkedAccounts = useCanRender('linked-accounts.view');
   const canLinkGoogleEntitlement = useCanRender('linked-accounts.link-google');
   /*
-   * COS-928 — same three missing pieces as the sign-in screen (no Android
-   * OAuth client, no intent-filter for the applicationId scheme, no Android
-   * audience on the backend). Linking would open a browser and silently
-   * return here having done nothing, and this screen's only feedback for a
-   * dismissed flow is no feedback at all.
+   * COS-928 — same split as the sign-in screen: iOS uses expo-auth-session,
+   * Android uses native Google sign-in, and Android binaries built before the
+   * native module was added keep the row hidden instead of crashing.
    *
    * Kept as a separate const from the entitlement so the two reasons a row can
    * be hidden stay legible: "your plan does not include it" and "this platform
    * cannot do it yet" are different answers.
    */
-  const canLinkGoogle = canLinkGoogleEntitlement && Platform.OS === 'ios';
+  const canLinkGoogle =
+    canLinkGoogleEntitlement && (Platform.OS === 'ios' || isNativeGoogleSignInAvailable());
   const canLinkApple = useCanRender('linked-accounts.link-apple');
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
@@ -63,10 +64,9 @@ export default function LinkedAccountsScreen() {
      * Above the feature flag, so no flag flip avoided it: the hook is called
      * unconditionally and hooks cannot be conditional.
      *
-     * The fallback value is never USED for a real Android sign-in — the button
-     * is hidden on Android below, because there is no Android OAuth client, no
-     * matching intent-filter and no matching package name yet. It exists only
-     * so the hook can construct. invariantClientId rejects `undefined` and
+     * The fallback value is never USED for a real Android sign-in — Android
+     * never calls promptGoogleAsync; it signs in natively
+     * (signInWithGoogleNative). It exists only so the hook can construct. invariantClientId rejects `undefined` and
      * nothing else, so any defined string defuses it.
      *
      * Deliberately NOT an empty EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID= in .env:
@@ -133,6 +133,12 @@ export default function LinkedAccountsScreen() {
     setGoogleLinking(true);
     setStatusMessage(null);
     try {
+      if (Platform.OS === 'android') {
+        const idToken = await signInWithGoogleNative();
+        if (idToken) await handleLinkGoogleToken(idToken);
+        else setGoogleLinking(false); // picker closed — not an error
+        return;
+      }
       const result = await promptGoogleAsync();
       // If user canceled the iOS system prompt or dismissed the web session,
       // reset the button immediately. Success is handled in the useEffect.

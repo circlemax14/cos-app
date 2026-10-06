@@ -28,13 +28,6 @@ export function shouldFetchHealthTrends(
   return hasHealthSource && preferenceEnabled
 }
 
-/**
- * @deprecated COS-932 — the parameter is "does this platform have a health
- * source", not "is this iOS". Kept so an unconverted caller still compiles,
- * but passing Platform.OS === 'ios' here is now a BUG on Android: it closes
- * the gate for a device that has Health Connect. Use shouldFetchHealthTrends.
- */
-export const shouldFetchAppleHealthTrends = shouldFetchHealthTrends
 
 /**
  * Resolves how the Health Trends UI should treat Apple Health for the current
