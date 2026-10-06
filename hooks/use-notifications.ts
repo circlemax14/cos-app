@@ -10,6 +10,8 @@ import { queryClient } from '@/providers/QueryProvider';
 import { isAppLocked, hasSettledRoute } from '@/lib/lock-gate';
 import { consumeDeferredNavigation, deferNavigation } from '@/lib/locked-nav-queue';
 import { ensureAndroidNotificationChannels } from '@/lib/android-notification-channels';
+import { hasStoredSession, onSessionStored } from '@/lib/auth-tokens';
+import { retryAsync } from '@/lib/retry-async';
 
 /**
  * CHUNK 64 (2026-07-22): read the biopsychosocial-plan eligibility off
@@ -166,13 +168,19 @@ export function useNotifications() {
      */
     void ensureAndroidNotificationChannels();
 
-    // Register token on mount
-    registerPushToken();
+    // Register on launch (asking for permission if the OS still can), and
+    // again every time a session is saved: sign-in, social sign-in, refresh.
+    // COS-1243 — launch alone missed anyone who signed in after the app opened.
+    void registerPushToken({ ask: true });
+    const stopListening = onSessionStored(() => {
+      void registerPushToken({ ask: false });
+    });
 
     // Clear badge when app opens
     Notifications.setBadgeCountAsync(0).catch(() => {});
 
     return () => {
+      stopListening();
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };
@@ -334,7 +342,15 @@ function navigateForNotification(response: Notifications.NotificationResponse): 
  * them on every app launch until the user makes an explicit choice.
  * `denied` users still no-op (we don't keep nagging them).
  */
-async function registerPushToken() {
+/*
+ * `ask` is true only at launch. A session refresh re-registers but never
+ * re-prompts — prompting on every token refresh would nag mid-session.
+ *
+ * ponytail: re-registers on every token refresh (about hourly while in use);
+ * the backend dedupes the same token, so it is one cheap POST. Track the last
+ * registered token+user if that ever matters.
+ */
+async function registerPushToken({ ask }: { ask: boolean }) {
   try {
     /*
      * COS-928 — ask when we CAN ask, rather than when the status string
@@ -353,11 +369,16 @@ async function registerPushToken() {
      */
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
-    if (status !== 'granted' && current.canAskAgain) {
+    if (ask && status !== 'granted' && current.canAskAgain) {
       const requested = await Notifications.requestPermissionsAsync();
       status = requested.status;
     }
     if (status !== 'granted') {
+      return;
+    }
+    // Nobody signed in yet: posting now is a guaranteed 401. onSessionStored
+    // calls back here the moment they sign in.
+    if (!(await hasStoredSession())) {
       return;
     }
 
@@ -369,14 +390,16 @@ async function registerPushToken() {
     const tokenData = await Promise.race([tokenPromise, timeoutPromise]);
 
     if (tokenData) {
-      await apiClient
-        .post('/v1/notifications/register-token', {
+      // Network blips and 5xx retry; a 401 is left to the API client's refresh,
+      // whose storeTokens() brings us back here with a fresh session.
+      await retryAsync(() =>
+        apiClient.post('/v1/notifications/register-token', {
           token: tokenData.data,
           platform: Platform.OS === 'ios' ? 'ios' : 'android',
-        })
-        .catch(() => {
-          // Non-critical — token registration failure doesn't block app startup
-        });
+        }),
+      ).catch(() => {
+        // Non-critical — token registration failure doesn't block app startup
+      });
     }
   } catch {
     // Silent — non-critical
