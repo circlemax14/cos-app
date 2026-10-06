@@ -41,7 +41,7 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png",
-        "backgroundColor": "#E6F4FE"
+        "backgroundColor": "#FFFFFF"
       },
       "predictiveBackGestureEnabled": false,
       "package": "ai.circlesupporthealth.csh",
@@ -80,7 +80,7 @@
         "android.permission.READ_PHONE_STATE"
       ],
       "allowBackup": false,
-      "versionCode": 72
+      "versionCode": 73
     },
     "web": {
       "output": "static",
@@ -116,6 +116,8 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#0D9488",
           "sounds": []
         }
       ],

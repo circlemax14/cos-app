@@ -14,6 +14,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 
 const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
@@ -74,6 +75,28 @@ test('Android push: google-services is wired, and a release cannot ship without 
   const script = read('scripts/build-android-release.sh')
   assert.match(script, /GSF=android\/app\/google-services\.json/, 'the release check must look for the real file')
   assert.match(script, /package_name[^\n]*ai\.circlesupporthealth\.csh/, 'and refuse a file downloaded for another app')
+})
+
+test('Android shows the CSH logo, not the Expo template, on the launcher and in notifications', () => {
+  // COS-1092. Builds up to 72 shipped Expo's placeholder "A" as the launcher
+  // icon and no notification icon at all, so Android drew the full-colour app
+  // icon as a white blob in the status bar. Neither is visible until a tester
+  // installs a release build, so pin both here.
+  const sha = (p) => createHash('sha256').update(readFileSync(new URL(`../../${p}`, import.meta.url))).digest('hex')
+  const TEMPLATE = new Set([
+    '9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391', // assets/images/android-icon-foreground.png
+    '9bf8d34e593642304891d175ff51e9b793e18bc4449eb0671c3481438a8bf1be', // mipmap-xxxhdpi/ic_launcher_foreground.webp
+  ])
+  for (const f of ['assets/images/android-icon-foreground.png', 'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.webp']) {
+    assert.ok(!TEMPLATE.has(sha(f)), `${f} is still Expo's template icon`)
+  }
+  const manifest = read('android/app/src/main/AndroidManifest.xml')
+  assert.match(manifest, /default_notification_icon" android:resource="@drawable\/notification_icon"/)
+  assert.match(manifest, /default_notification_color" android:resource="@color\/notification_icon_color"/)
+  assert.match(read('android/app/src/main/res/values/colors.xml'), /name="notification_icon_color"/)
+  for (const d of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+    assert.ok(existsSync(new URL(`../../android/app/src/main/res/drawable-${d}/notification_icon.png`, import.meta.url)), `no ${d} notification icon`)
+  }
 })
 
 test('THE POINT: an iPhone-only feature is a recorded decision, never an accident', () => {

@@ -94,7 +94,7 @@ android {
         applicationId 'ai.circlesupporthealth.csh'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 72
+        versionCode 73
         versionName "1.6.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
