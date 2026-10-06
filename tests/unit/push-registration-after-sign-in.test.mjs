@@ -42,3 +42,16 @@ test('no POST while signed out, and only the launch may prompt', () => {
   assert.match(reg, /if \(ask && status !== 'granted' && current\.canAskAgain\)/, 'a token refresh must not re-prompt')
   assert.match(reg, /retryAsync\(\(\) =>\s*apiClient\.post\('\/v1\/notifications\/register-token'/, 'retry network blips and 5xx')
 })
+
+test('sign-out forgets this phone on the account, before the session goes (SCRUM-783)', () => {
+  // On a shared phone the previous account kept receiving its notifications.
+  const auth = strip(read('services/auth.ts'))
+  const signOut = auth.slice(auth.indexOf('export async function signOut'))
+  const unreg = signOut.indexOf('await unregisterPushToken()')
+  assert.ok(unreg > 0, 'signOut must unregister the push token')
+  assert.ok(unreg < signOut.indexOf('cognitoSignOut()') && unreg < signOut.indexOf('await clearTokens()'),
+    'unregister needs the session, so it must run before the session is cleared')
+  const fn = auth.slice(auth.indexOf('async function unregisterPushToken'))
+  assert.match(fn, /'\/v1\/notifications\/unregister-token'/)
+  assert.match(fn, /Promise\.race\(\[attempt, new Promise<void>\(\(resolve\) => setTimeout\(resolve, 3000\)\)\]\)/, 'capped so sign-out never hangs')
+})
