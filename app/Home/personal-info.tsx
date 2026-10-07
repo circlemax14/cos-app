@@ -118,11 +118,7 @@ export default function PersonalInfoScreen() {
       {
         text: 'Choose from Library',
         onPress: async () => {
-          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Permission Required', 'Photo library permission is needed to choose a photo.');
-            return;
-          }
+          // COS-1257 — no library permission: the system photo picker needs none.
           const result = await ImagePicker.launchImageLibraryAsync({
             allowsEditing: true,
             aspect: [1, 1],

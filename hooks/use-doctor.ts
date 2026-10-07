@@ -83,14 +83,7 @@ export function useDoctor(providerId: string) {
   }, [providerId, doctor]);
 
   const pickImage = useCallback(async (): Promise<string | undefined> => {
-    // Request permission
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      throw new Error(
-        'Photo library access was denied. Please enable it in Settings to upload a photo.',
-      );
-    }
-
+    // COS-1257 — no library permission: the system photo picker needs none.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
