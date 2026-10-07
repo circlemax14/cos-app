@@ -53,11 +53,7 @@ export function EntityPhotoEditor({
   }
 
   async function pickFromLibrary() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to choose an image.')
-      return
-    }
+    // COS-1257 — no library permission: the system photo picker needs none.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.85,

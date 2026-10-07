@@ -200,11 +200,7 @@ export default function SupportScreen() {
   }, [stageFiles]);
 
   const handlePickPhoto = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setAttachmentError('Photo library access is needed to attach a photo.');
-      return;
-    }
+    // COS-1257 — no library permission: the system photo picker needs none.
     // quality < 1 makes iOS re-encode to JPEG, so a HEIC library photo arrives
     // as an allowed type instead of being rejected at the gate.
     const result = await ImagePicker.launchImageLibraryAsync({
