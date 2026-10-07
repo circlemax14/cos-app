@@ -5,6 +5,7 @@ import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
 import { useCanRender, useHasExplicitGrant } from '@/hooks/use-entitlement';
+import { useUser } from '@/hooks/use-user';
 import { usePlanShelfFlag } from '@/hooks/use-plan-shelf-flag';
 import { useHabitJournalFlag } from '@/hooks/use-habit-journal-flag';
 import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
@@ -113,7 +114,17 @@ export function ProfileContent({
   const { data: permissions } = useFeaturePermissions();
   // COS-735 — About moved onto the entitlements catalog so it is manageable
   // from a plan or feature group. Explicit-grant-only: see the note at the row.
-  const canSeeAbout = useHasExplicitGrant('about.view');
+  /*
+   * COS-1249 — super-admins see About by ROLE. The resolver short-circuits a
+   * super-admin to the wildcard before it reads any override
+   * (entitlements-resolver.service.ts), and the gate below rightly refuses the
+   * wildcard — so a super-admin could never see About, grant or no grant
+   * (Vishal, 2026-10-07: about.view granted, row still hidden). Role is its own
+   * /auth/me field, so this cannot open About to patients the way the
+   * plan_tier-off wildcard would.
+   */
+  const { data: me } = useUser();
+  const canSeeAbout = useHasExplicitGrant('about.view') || me?.role === 'SUPER_ADMIN';
   const canConnectClinic = permissions?.permissions?.CONNECT_CLINIC?.enabled === true;
 
   // Fine-grained entitlement gates. Hooks are unconditional and live here at
