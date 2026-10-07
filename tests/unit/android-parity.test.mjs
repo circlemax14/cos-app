@@ -125,11 +125,8 @@ test('THE POINT: an iPhone-only feature is a recorded decision, never an acciden
   // iOS leaves Android without it, silently — that is how readiness stayed
   // dark on Android. Adding one must come with a line here saying why Android
   // goes without; the better answer is usually an Android branch instead.
-  const allowed = {
-    // Apple sign-in on Android needs Apple's web flow + a backend callback (not built).
-    'app/(auth)/sign-in.tsx': 2,
-    'app/Home/linked-accounts.tsx': 1,
-  }
+  // COS-1251 — the last two (Apple sign-in) got their Android branch.
+  const allowed = {}
   // `x && Platform.OS === 'ios' ? a : b` is an either/or with an Android
   // branch (a font, a label) — not a gate. Only count the ones with no `?`.
   const iosOnly = /(&&\s*Platform\.OS === 'ios'|Platform\.OS === 'ios'\s*&&)(?![^\n]*\?)/g
