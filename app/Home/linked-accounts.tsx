@@ -14,6 +14,7 @@ import {
   signInWithApple,
   signInWithGoogleNative,
 } from '@/services/social-auth';
+import { useIsFeatureFlagEnabled } from '@/hooks/use-feature-flags';
 import { useCanRender } from '@/hooks/use-entitlement';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
@@ -37,7 +38,10 @@ export default function LinkedAccountsScreen() {
    */
   const canLinkGoogle =
     canLinkGoogleEntitlement && (Platform.OS === 'ios' || isNativeGoogleSignInAvailable());
-  const canLinkApple = useCanRender('linked-accounts.link-apple');
+  // COS-1251 — Android links Apple through Apple's web page, behind its own flag.
+  const isAppleAndroidEnabled = useIsFeatureFlagEnabled('sign_in_with_apple_android');
+  const canLinkApple =
+    useCanRender('linked-accounts.link-apple') && (Platform.OS === 'ios' || isAppleAndroidEnabled);
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
 
@@ -158,8 +162,8 @@ export default function LinkedAccountsScreen() {
     try {
       setAppleLinking(true);
       setStatusMessage(null);
-      const { identityToken } = await signInWithApple();
-      await linkProvider('apple', identityToken);
+      const { identityToken, nonce } = await signInWithApple();
+      await linkProvider('apple', identityToken, nonce);
       setAppleLinked(true);
       setStatusMessage({ text: 'Apple account connected successfully.', isError: false });
     } catch (err: unknown) {
@@ -282,8 +286,8 @@ export default function LinkedAccountsScreen() {
           </Card>
           )}
 
-          {/* Apple row — iOS only */}
-          {Platform.OS === 'ios' && canLinkApple && (
+          {/* Apple row */}
+          {canLinkApple && (
             <Card style={[styles.card, { backgroundColor: colors.card }]}>
               <List.Item
                 title={<Text style={textStyle}>Apple</Text>}

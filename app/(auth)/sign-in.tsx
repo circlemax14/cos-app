@@ -15,7 +15,7 @@ import { TextInput, Text } from 'react-native-paper';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -61,6 +61,9 @@ export default function SignInScreen() {
   // only useful action is retrying the load, not re-entering credentials.
   const [dataLoadError, setDataLoadError] = useState(false);
   const isAppleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_apple');
+  // COS-1251 — Android signs in through Apple's web page (services/social-auth.ts).
+  const isAppleAndroidEnabled = useIsFeatureFlagEnabled('sign_in_with_apple_android');
+  const canUseAppleSignIn = isAppleSignInEnabled && (Platform.OS === 'ios' || isAppleAndroidEnabled);
   const isGoogleSignInEnabled = useIsFeatureFlagEnabled('sign_in_with_google');
   /*
    * COS-928 — iOS uses expo-auth-session; Android uses Google's native sign-in
@@ -311,8 +314,8 @@ export default function SignInScreen() {
     try {
       setLoading(true);
       setError(undefined);
-      const { identityToken, fullName } = await signInWithApple();
-      const res = await socialSignInWithBackend('apple', { identityToken, fullName });
+      const { identityToken, fullName, nonce } = await signInWithApple();
+      const res = await socialSignInWithBackend('apple', { identityToken, fullName, nonce });
       setLoading(false);
       if (res.success && res.user) {
         await handleRoute(res.user as unknown as UserProfile);
@@ -537,7 +540,7 @@ export default function SignInScreen() {
                 </Text>
               </Pressable>
 
-              {(canUseGoogleSignIn || (isAppleSignInEnabled && Platform.OS === 'ios')) && (
+              {(canUseGoogleSignIn || canUseAppleSignIn) && (
                 <View style={styles.dividerRow}>
                   <View style={[styles.dividerLine, { backgroundColor: colors.border ?? '#E0E0E0' }]} />
                   <Text
@@ -587,7 +590,7 @@ export default function SignInScreen() {
                 </Pressable>
               )}
 
-              {isAppleSignInEnabled && Platform.OS === 'ios' && (
+              {canUseAppleSignIn && (Platform.OS === 'ios' ? (
                 <AppleAuthentication.AppleAuthenticationButton
                   buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
                   buttonStyle={
@@ -599,7 +602,34 @@ export default function SignInScreen() {
                   style={styles.appleButton}
                   onPress={handleAppleSignIn}
                 />
-              )}
+              ) : (
+                // Apple's kit draws the iOS button; Android draws its own, in Apple's colours.
+                <Pressable
+                  onPress={handleAppleSignIn}
+                  disabled={disabled}
+                  style={({ pressed }) => [
+                    styles.socialButton,
+                    {
+                      backgroundColor: settings.isDarkTheme ? '#FFFFFF' : '#000000',
+                      borderColor: settings.isDarkTheme ? '#FFFFFF' : '#000000',
+                      opacity: disabled ? 0.6 : pressed ? 0.85 : 1,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign in with Apple"
+                >
+                  <MaterialCommunityIcons name="apple" size={20} color={settings.isDarkTheme ? '#000000' : '#FFFFFF'} />
+                  <Text
+                    style={{
+                      color: settings.isDarkTheme ? '#000000' : '#FFFFFF',
+                      fontSize: getScaledFontSize(15),
+                      fontWeight: getScaledFontWeight(600) as any,
+                    }}
+                  >
+                    Sign in with Apple
+                  </Text>
+                </Pressable>
+              ))}
             </View>
 
             <View style={styles.footer}>

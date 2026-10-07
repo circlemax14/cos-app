@@ -59,6 +59,9 @@ export async function redirectSystemPath({
   // Anything we cannot reason about is passed through untouched rather than
   // guessed at — a malformed URL is expo-router's problem to reject, not ours
   // to interpret.
+  // COS-1251 — Apple's answer on Android (cos://auth/apple?id_token=…). It is
+  // not a screen: the sign-in that opened Apple's page is waiting for it.
+  if (typeof path === 'string' && /^(?:cos:\/\/|\/)auth\/apple(?:[/?#]|$)/.test(path)) return null;
   if (typeof path !== 'string' || !path.startsWith('/')) return path;
 
   if (initial) {

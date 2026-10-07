@@ -1,7 +1,8 @@
 import axios from 'axios';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
-import { Platform, TurboModuleRegistry } from 'react-native';
+import * as Crypto from 'expo-crypto';
+import { Linking, Platform, TurboModuleRegistry } from 'react-native';
 import { apiClient } from '@/lib/api-client';
 import { storeTokens } from '@/lib/auth-tokens';
 import { isTransientApiError, retryAsync } from '@/lib/retry-async';
@@ -22,11 +23,85 @@ export async function isAppleAuthAvailable(): Promise<boolean> {
   return AppleAuthentication.isAvailableAsync();
 }
 
-// Apple Sign-In — returns identity token and optional name from credential
-export async function signInWithApple(): Promise<{
+type AppleSignInResult = {
   identityToken: string;
   fullName?: { givenName?: string; familyName?: string };
-}> {
+  /** COS-1251 — Android only: the backend accepts that token only with this. */
+  nonce?: string;
+};
+
+const appleCancelled = () => Object.assign(new Error('Apple sign-in cancelled'), { code: 'ERR_REQUEST_CANCELED' });
+const APPLE_WEB_RETURN = 'cos://auth/apple';
+
+/*
+ * COS-1251 — Android has no Apple sign-in kit, so it uses Apple's web page.
+ *
+ * Apple only answers with a form POST to an https address, so it posts to the
+ * backend, which hands it straight back as a cos://auth/apple link. Another
+ * app could claim that link, so Apple stamps the token with sha256(nonce) and
+ * only this function knows the nonce — the backend refuses the token without
+ * it. `state` proves the link answers THIS request.
+ *
+ * Cancelling (Apple's Cancel, or closing the page) throws ERR_REQUEST_CANCELED,
+ * the same code the iOS kit uses, so the screens need no Android branch.
+ */
+async function signInWithAppleWeb(): Promise<AppleSignInResult> {
+  const nonce = Crypto.randomUUID();
+  const state = Crypto.randomUUID();
+  const query = {
+    client_id: 'ai.circlesupporthealth.csh.web',
+    redirect_uri: `${API_BASE.replace(/\/+$/, '')}/v1/auth/social/apple/callback`,
+    response_type: 'code id_token',
+    response_mode: 'form_post',
+    scope: 'name email',
+    state,
+    nonce: await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, nonce),
+  };
+  const authorizeUrl = `https://appleid.apple.com/auth/authorize?${Object.entries(query)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')}`;
+
+  // Android reports the app coming back to the front as a "dismiss", and that
+  // can beat the link itself — so catch the link here as well.
+  let answer: string | undefined;
+  const sub = Linking.addEventListener('url', ({ url }) => {
+    if (url.startsWith(APPLE_WEB_RETURN)) answer = url;
+  });
+  try {
+    const result = await WebBrowser.openAuthSessionAsync(authorizeUrl, APPLE_WEB_RETURN);
+    if (result.type === 'success') answer = result.url;
+    else if (!answer) await new Promise((resolve) => setTimeout(resolve, 500));
+  } finally {
+    sub.remove();
+  }
+  if (!answer) throw appleCancelled();
+
+  const p: Record<string, string> = {};
+  for (const pair of (answer.split('?')[1] ?? '').split('&')) {
+    const [k, v = ''] = pair.split('=');
+    if (k) p[k] = decodeURIComponent(v.replace(/\+/g, ' '));
+  }
+  if (p.state !== state) throw new Error('Apple sign-in failed: the answer was not for this request');
+  if (p.error === 'user_cancelled_authorize') throw appleCancelled();
+  if (p.error || !p.id_token) throw new Error(`Apple sign-in failed: ${p.error ?? 'no identity token received'}`);
+
+  // Apple sends the name once, on the first sign-in, as JSON.
+  let name: { firstName?: string; lastName?: string } | undefined;
+  try {
+    name = JSON.parse(p.user ?? '{}').name;
+  } catch {
+    // No name is fine — the backend falls back to the email.
+  }
+  return {
+    identityToken: p.id_token,
+    fullName: name ? { givenName: name.firstName, familyName: name.lastName } : undefined,
+    nonce,
+  };
+}
+
+// Apple Sign-In — returns identity token and optional name from credential
+export async function signInWithApple(): Promise<AppleSignInResult> {
+  if (Platform.OS === 'android') return signInWithAppleWeb();
   const credential = await AppleAuthentication.signInAsync({
     requestedScopes: [
       AppleAuthentication.AppleAuthenticationScope.EMAIL,
@@ -116,6 +191,7 @@ export async function socialSignInWithBackend(
     idToken?: string;
     identityToken?: string;
     fullName?: { givenName?: string; familyName?: string };
+    nonce?: string;
   },
 ): Promise<SocialSignInResult> {
   let tokensStored = false;
@@ -177,8 +253,9 @@ export async function socialSignInWithBackend(
 export async function linkProvider(
   provider: 'google' | 'apple',
   idToken: string,
+  nonce?: string,
 ): Promise<{ linked: boolean }> {
-  const res = await apiClient.post('/v1/auth/social/link', { provider, idToken });
+  const res = await apiClient.post('/v1/auth/social/link', { provider, idToken, nonce });
   return (res.data?.data as { linked: boolean }) ?? { linked: true };
 }
 
