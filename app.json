@@ -84,7 +84,7 @@
         "android.permission.RECORD_AUDIO"
       ],
       "allowBackup": false,
-      "versionCode": 74
+      "versionCode": 75
     },
     "web": {
       "output": "static",
