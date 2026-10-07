@@ -133,6 +133,35 @@ export function shouldOfferImmediateSupport(
 }
 
 /**
+ * COS-1259 — the stepper's question: does THIS step show support?
+ *
+ * PHQ-9 q9 on endorsement, as before. And, now that Ken has made ACE and
+ * PCL-5 answerable, the FINAL question of a heavy-subject instrument, whatever
+ * was answered. Completion never lands on the result screen that already
+ * offers support for them — it shows "Nicely done!" and returns to the caller
+ * — so without this, a patient who has just scored 4+ on ACE or above the
+ * PCL-5 cut-off is shown nothing.
+ *
+ * The final question rather than after Submit, for the reason in the header:
+ * NOT CONTINGENT ON SUBMITTING.
+ */
+export function shouldOfferSupportAtStep(
+  instrumentId: string,
+  itemId: string,
+  value: unknown,
+  isLastStep: boolean,
+): boolean {
+  return (
+    shouldOfferImmediateSupport(instrumentId, itemId, value) ||
+    (isLastStep && isHeavySubject(instrumentId))
+  )
+}
+
+/** Lead line for heavy-subject support — one copy, used by the stepper and the result screen. */
+export const HEAVY_SUBJECT_INTRO =
+  'That covered some hard ground. If any of it stayed with you, someone is available.'
+
+/**
  * True when a completed result should lead with support.
  *
  * Three independent reasons, any of which is enough:

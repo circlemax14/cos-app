@@ -209,9 +209,10 @@ test('the layout is deterministic — a patient sees the same map every visit', 
   assert.deepEqual(a, b);
 });
 
-test('the seven overlap items land in an intersection, not a pure lobe', () => {
+test('the six overlap items land in an intersection, not a pure lobe', () => {
   const overlaps = BPS_SUBDOMAINS.filter((s) => s.overlap);
-  assert.equal(overlaps.length, 7, 'taxonomy should declare 7 overlap subdomains');
+  // Six since COS-1259 — `emotions` left the Bio ∩ Psy overlap (see below).
+  assert.equal(overlaps.length, 6, 'taxonomy should declare 6 overlap subdomains');
   for (const s of overlaps) {
     const p = DOT_POSITION_BY_KEY[s.key];
     // Region label is carried through so the a11y string can name it.
@@ -237,4 +238,14 @@ test('the historically misplaced twelve are now correct', () => {
       `${key} is misplaced again — it was one of the original 12`,
     );
   }
+});
+
+test('COS-1259 — Ken: "Emotions = psychological", in the pure lobe', () => {
+  const emotions = BPS_SUBDOMAINS.find((s) => s.key === 'emotions');
+  assert.ok(emotions);
+  assert.equal(emotions.domain, 'psychological');
+  assert.equal(emotions.overlap, undefined, 'emotions must not sit in the Bio ∩ Psy overlap');
+  assert.equal(emotions.crossDomain, undefined);
+  const p = DOT_POSITION_BY_KEY.emotions;
+  assert.ok(isInRegion(p.x, p.y, 'psychological', undefined), 'derived dot must be in the pure Psychological lobe');
 });
