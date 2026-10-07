@@ -1,6 +1,7 @@
 import { Colors } from '@/constants/theme';
 import { fetchPatientInfo } from '@/services/api/patient';
 import { signOut } from '@/services/auth';
+import { BlockingLoader } from '@/components/BlockingLoader';
 import { queryClient } from '@/providers/QueryProvider';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
@@ -240,6 +241,11 @@ export function ProfileContent({
       style={[styles.container, { backgroundColor: colors.background }, containerStyle]}
       showsVerticalScrollIndicator={false}
     >
+      {/* COS-1255 — signing out (or deleting) takes the whole screen, not just the button. */}
+      <BlockingLoader
+        visible={authBusy !== null}
+        label={authBusy === 'delete' ? 'Deleting your account…' : 'Signing out…'}
+      />
       {showProfileHeader && (
         <View
           style={[

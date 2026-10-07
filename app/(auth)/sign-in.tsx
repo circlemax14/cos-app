@@ -38,6 +38,7 @@ import { isPinSetup } from '@/services/pin-auth';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useIsFeatureFlagEnabled } from '@/hooks/use-feature-flags';
+import { BlockingLoader } from '@/components/BlockingLoader';
 
 // COS-723: expo-router renders this in its `Try` boundary if the route throws,
 // so a crash costs this screen instead of the whole app. See
@@ -54,6 +55,10 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  // COS-1255 — signed in, now choosing the first screen. Every path below ends
+  // in router.replace, which unmounts this screen, so it is never cleared on
+  // success: clearing it would reopen the screen for a frame before it goes.
+  const [routing, setRouting] = useState(false);
   const [error, setError] = useState<string | undefined>();
   // COS-C6: set when the social token exchange succeeded but /v1/auth/me still
   // failed after its retries. Distinct from `error` (an inline red string next
@@ -127,6 +132,16 @@ export default function SignInScreen() {
   }, [googleResponse]);
 
   const handleRoute = async (user: UserProfile) => {
+    setRouting(true);
+    try {
+      await routeAfterSignIn(user);
+    } catch (err) {
+      setRouting(false);
+      throw err;
+    }
+  };
+
+  const routeAfterSignIn = async (user: UserProfile) => {
     /*
      * COS-942 — a deferred sign-out must not outlive the sign-in that answered it.
      *
@@ -351,7 +366,7 @@ export default function SignInScreen() {
     }
   };
 
-  const disabled = loading || googleLoading;
+  const disabled = loading || googleLoading || routing;
 
   if (dataLoadError) {
     return <ConnectionErrorScreen variant="error" onRetry={retrySocialDataLoad} />;
@@ -359,6 +374,8 @@ export default function SignInScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* COS-1255 — password, Google and Apple sign-in all take the whole screen. */}
+      <BlockingLoader visible={disabled} label="Signing in…" />
       {/* Decorative background blobs */}
       <View
         pointerEvents="none"
