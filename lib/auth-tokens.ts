@@ -30,6 +30,17 @@ let inFlightAccessRead: Promise<string | null> | null = null;
 let inFlightRefreshRead: Promise<string | null> | null = null;
 let inFlightIdRead: Promise<string | null> | null = null;
 
+/*
+ * COS-1248 — bumped by every storeTokens()/clearTokens(). A SecureStore read
+ * that STARTED before the latest save must not write its older value into the
+ * cache. On a cold start the Keychain/Keystore read is slow; a 401-refresh saves
+ * fresh tokens meanwhile; the stale read then resolved and put the EXPIRED
+ * access token back. Every request 401'd, refreshed and 401'd again — Vishal's
+ * Android, 2026-10-07: 14 successful refreshes and 89 rejected requests in 30s,
+ * all carrying one expired token, and sign-out could not reach the API.
+ */
+let tokenGeneration = 0;
+
 /**
  * Read a SecureStore key with a few short retries.
  *
@@ -111,11 +122,15 @@ export async function readSessionPresence(
   const read = opts.expectSession ? readSecureExpectingValue : (k: string) =>
     readSecureWithRetry(k).catch(() => null);
 
+  const generation = tokenGeneration;
   const [access, refresh] = await Promise.all([read(KEYS.access), read(KEYS.refresh)]);
   if ((refresh?.length ?? 0) > 0 || (access?.length ?? 0) > 0) {
-    // Warm the module cache so the very next getRefreshToken() is free.
-    if (refresh) cachedRefreshToken = refresh;
-    if (access) cachedAccessToken = access;
+    // Warm the module cache so the very next getRefreshToken() is free — unless
+    // tokens were saved or cleared while we read (COS-1248).
+    if (generation === tokenGeneration) {
+      if (refresh) cachedRefreshToken = refresh;
+      if (access) cachedAccessToken = access;
+    }
     return 'present';
   }
 
@@ -146,6 +161,7 @@ export async function storeTokens(
   refreshToken: string,
   idToken: string,
 ): Promise<void> {
+  tokenGeneration += 1;
   cachedAccessToken = accessToken;
   cachedRefreshToken = refreshToken;
   cachedIdToken = idToken;
@@ -180,8 +196,10 @@ export async function storeTokens(
 export async function getAccessToken(): Promise<string | null> {
   if (cachedAccessToken) return cachedAccessToken;
   if (inFlightAccessRead) return inFlightAccessRead;
+  const generation = tokenGeneration;
   inFlightAccessRead = readSecureWithRetry(KEYS.access)
     .then((value) => {
+      if (generation !== tokenGeneration) return cachedAccessToken ?? null; // a save/clear landed first
       if (value) cachedAccessToken = value;
       return value;
     })
@@ -219,8 +237,10 @@ export async function getAccessToken(): Promise<string | null> {
 export async function getRefreshToken(): Promise<string | null> {
   if (cachedRefreshToken) return cachedRefreshToken;
   if (inFlightRefreshRead) return inFlightRefreshRead;
+  const generation = tokenGeneration;
   inFlightRefreshRead = readSecureExpectingValue(KEYS.refresh)
     .then((value) => {
+      if (generation !== tokenGeneration) return cachedRefreshToken ?? null; // a save/clear landed first
       if (value) cachedRefreshToken = value;
       return value;
     })
@@ -233,8 +253,10 @@ export async function getRefreshToken(): Promise<string | null> {
 export async function getIdToken(): Promise<string | null> {
   if (cachedIdToken) return cachedIdToken;
   if (inFlightIdRead) return inFlightIdRead;
+  const generation = tokenGeneration;
   inFlightIdRead = readSecureWithRetry(KEYS.id)
     .then((value) => {
+      if (generation !== tokenGeneration) return cachedIdToken ?? null; // a save/clear landed first
       if (value) cachedIdToken = value;
       return value;
     })
@@ -245,6 +267,7 @@ export async function getIdToken(): Promise<string | null> {
 }
 
 export async function clearTokens(): Promise<void> {
+  tokenGeneration += 1;
   cachedAccessToken = null;
   cachedRefreshToken = null;
   cachedIdToken = null;
