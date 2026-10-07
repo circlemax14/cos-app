@@ -1,10 +1,11 @@
 import * as SecureStore from 'expo-secure-store';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { AxiosError } from 'axios';
+import { AxiosError, type AxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cognitoSignOut } from '@/lib/cognito';
-import { storeTokens, clearTokens, hasStoredSession } from '@/lib/auth-tokens';
+import { storeTokens, clearTokens, hasStoredSession, getAccessToken } from '@/lib/auth-tokens';
+import { clearPinData } from '@/services/pin-auth';
 import { apiClient } from '@/lib/api-client';
 import { setCachedProfile, clearCachedProfile } from '@/lib/cached-profile';
 import { purgeLocalPhi } from '@/lib/purge-local-phi';
@@ -236,28 +237,38 @@ const PUSH_PROJECT_ID =
  * Best effort, capped at 3s so sign-out never hangs: no permission means no
  * token was ever registered, and a backend without the route answers 404.
  */
-async function unregisterPushToken(): Promise<void> {
+async function unregisterPushToken(asOutgoingUser: AxiosRequestConfig): Promise<void> {
   const attempt = (async () => {
     const { status } = await Notifications.getPermissionsAsync();
     if (status !== 'granted') return;
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: PUSH_PROJECT_ID });
-    await apiClient.post('/v1/notifications/unregister-token', { token });
+    await apiClient.post('/v1/notifications/unregister-token', { token }, asOutgoingUser);
   })().catch(() => {});
   await Promise.race([attempt, new Promise<void>((resolve) => setTimeout(resolve, 3000))]);
 }
 
 export async function signOut(): Promise<void> {
-  // Capture the outgoing user's sub before clearing the cached profile
-  // so we can scope the cache wipes correctly.
-  let outgoingSub: string | undefined
-  try {
-    const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me')
-    outgoingSub = res.data?.data?.sub
-  } catch { /* swallow — sign-out is best-effort cleanup */ }
+  /*
+   * COS-1250 — the phone forgets the account FIRST, before any network call.
+   *
+   * Vishal, Android, 2026-10-07: tapped Sign Out, closed the app, reopened —
+   * PIN screen, then straight back in, signed in. Two holes:
+   *  - the wipe ran AFTER a GET /auth/me and the push unregister, a second or
+   *    two of spinner; closing the app then killed sign-out before it had
+   *    deleted anything.
+   *  - the PIN was never deleted. A PIN with no login is what the splash reads
+   *    as "the login is there, the Keychain is just slow" — so it opened on
+   *    the PIN screen, and the api-client never signs out an empty store
+   *    while a PIN exists (COS-1032).
+   * The PIN goes before the tokens: dying between the two must leave a plain
+   * signed-in phone, never a PIN with nothing behind it.
+   *
+   * The network calls still need the session, so they carry its token.
+   */
+  const token = await getAccessToken();
+  const asOutgoingUser: AxiosRequestConfig = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 
-  // Needs the session the next two lines end, so it goes first.
-  await unregisterPushToken();
-
+  await clearPinData();
   cognitoSignOut();
   await clearTokens();
   await SecureStore.deleteItemAsync('cos_username');
@@ -271,6 +282,15 @@ export async function signOut(): Promise<void> {
    * once, and both sign-outs get it.
    */
   await purgeLocalPhi();
+
+  // Best effort from here — the phone is already signed out.
+  let outgoingSub: string | undefined
+  try {
+    const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me', asOutgoingUser)
+    outgoingSub = res.data?.data?.sub
+  } catch { /* swallow — sign-out is best-effort cleanup */ }
+
+  await unregisterPushToken(asOutgoingUser);
 
   if (outgoingSub) {
     // Lazy-import to avoid pulling AsyncStorage into every consumer of

@@ -43,15 +43,14 @@ test('no POST while signed out, and only the launch may prompt', () => {
   assert.match(reg, /retryAsync\(\(\) =>\s*apiClient\.post\('\/v1\/notifications\/register-token'/, 'retry network blips and 5xx')
 })
 
-test('sign-out forgets this phone on the account, before the session goes (SCRUM-783)', () => {
+test('sign-out forgets this phone on the account, as the outgoing user (SCRUM-783)', () => {
   // On a shared phone the previous account kept receiving its notifications.
   const auth = strip(read('services/auth.ts'))
   const signOut = auth.slice(auth.indexOf('export async function signOut'))
-  const unreg = signOut.indexOf('await unregisterPushToken()')
-  assert.ok(unreg > 0, 'signOut must unregister the push token')
-  assert.ok(unreg < signOut.indexOf('cognitoSignOut()') && unreg < signOut.indexOf('await clearTokens()'),
-    'unregister needs the session, so it must run before the session is cleared')
+  assert.match(signOut, /await unregisterPushToken\(asOutgoingUser\)/, 'signOut must unregister the push token')
+  // COS-1250: it runs after the local wipe, so it carries the token captured before it.
+  assert.match(signOut, /const token = await getAccessToken\(\);\s*const asOutgoingUser: AxiosRequestConfig = token \? \{ headers: \{ Authorization: `Bearer \$\{token\}` \} \} : \{\};/)
   const fn = auth.slice(auth.indexOf('async function unregisterPushToken'))
-  assert.match(fn, /'\/v1\/notifications\/unregister-token'/)
+  assert.match(fn, /apiClient\.post\('\/v1\/notifications\/unregister-token', \{ token \}, asOutgoingUser\)/)
   assert.match(fn, /Promise\.race\(\[attempt, new Promise<void>\(\(resolve\) => setTimeout\(resolve, 3000\)\)\]\)/, 'capped so sign-out never hangs')
 })
