@@ -514,9 +514,10 @@ export function SelfAssessmentTrends({
         accessibilityRole="button"
         accessibilityLabel={composedA11yLabel}
       >
-        {/* Row 1: small-caps human label */}
+        {/* Row 1: small-caps human label. COS-1258: 3 lines — at 2, names such
+            as "Instrumental daily living" were cut to "INSTRUMENTAL DAILY LI…". */}
         <Text
-          numberOfLines={2}
+          numberOfLines={3}
           style={{
             color: colors.subtext,
             fontSize: fontSize(11),
@@ -551,8 +552,10 @@ export function SelfAssessmentTrends({
         >
           <View style={[styles.bandDot, { backgroundColor: pillColor }]} />
           <Text
-            numberOfLines={1}
+            // COS-1258 — wraps instead of "High nut…"; flexShrink keeps it in the card.
+            numberOfLines={2}
             style={{
+              flexShrink: 1,
               color: pillColor,
               fontSize: fontSize(13),
               fontWeight: fontWeight(700) as any,
@@ -820,6 +823,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    maxWidth: '100%',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,

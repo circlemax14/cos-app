@@ -511,7 +511,10 @@ export default function HealthTrendsScreen() {
           </Text>
         </View>
         {/* COS-1196 — so the detail screen comes back HERE, not to the plan. */}
-      <SelfAssessmentTrends fromScreen="health-trends" />
+      {/* COS-1258 — Ken 2026-10-07: "drop down and spell out assessments". The
+          collapsible variant (Biological / Psychological / Social & Faith
+          rows with a count) already existed and this screen never used it. */}
+      <SelfAssessmentTrends fromScreen="health-trends" collapsible />
 
         {/* From Your Clinic header. SCRUM-265 #13: replaced the
             select-components + full-card layout with a horizontal slider

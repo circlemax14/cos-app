@@ -138,6 +138,7 @@ import { todayLocalIso, eventDayKey } from '@/lib/day-key';
 import { useTodayWindow } from '@/hooks/use-local-day';
 import { formatDayLabel } from '@/lib/day-key';
 import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
+import { useUser } from '@/hooks/use-user';
 
 // ─── Small pure helpers ──────────────────────────────────────────────
 
@@ -204,6 +205,12 @@ function TodayScheduleScreenInner(): React.JSX.Element {
   const queryClient = useQueryClient();
 
   const [patientName, setPatientName] = useState('');
+  // COS-1258 — Ken: "the patient is still coming. It has to be user only."
+  // Their own name first; the account's name when the record has none; never
+  // the word "Patient".
+  const { data: me } = useUser();
+  const displayName =
+    patientName || [me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'User';
   const [patientPhotoUrl, setPatientPhotoUrl] = useState<string | null>(null);
   const [isLoadingPatient, setIsLoadingPatient] = useState(true);
   const [medications, setMedications] = useState<MedicationSummary[]>([]);
@@ -811,7 +818,7 @@ function TodayScheduleScreenInner(): React.JSX.Element {
               <EntityIcon
                 type="patient"
                 imageUrl={patientPhotoUrl ?? null}
-                name={patientName || 'Patient'}
+                name={displayName}
                 size={getScaledFontSize(44)}
               />
               <View style={styles.profileInfo}>
@@ -822,7 +829,7 @@ function TodayScheduleScreenInner(): React.JSX.Element {
                     color: colors.text,
                     marginBottom: 4,
                   }}>
-                  {patientName}
+                  {displayName}
                 </Text>
                 <Text
                   style={{
@@ -830,7 +837,7 @@ function TodayScheduleScreenInner(): React.JSX.Element {
                     fontWeight: getScaledFontWeight(400) as any,
                     color: colors.text + '80',
                   }}>
-                  Patient
+                  User
                 </Text>
               </View>
             </View>
