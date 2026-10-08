@@ -172,3 +172,23 @@ export async function fetchAssessmentHistorySummary(
   }>(`/v1/patients/me/assessments/${instrumentId}/summary`)
   return res.data.data.summary ?? null
 }
+
+/**
+ * COS-1261 — one AI reading across the check-ins in ONE category, for the
+ * opened domain card on Health Trends. Same shape and the same null / failure
+ * semantics as fetchAssessmentHistorySummary, and likewise NOT swallowed, so
+ * the card can offer Retry. 404 FEATURE_DISABLED when the backend flag is off.
+ */
+export async function fetchAssessmentDomainSummary(
+  domain: 'biological' | 'psychological' | 'social',
+  ids: readonly string[],
+): Promise<AssessmentHistorySummary | null> {
+  const res = await apiClient.get<{
+    success: boolean
+    data: { summary: AssessmentHistorySummary | null }
+  }>('/v1/patients/me/assessments/domain-summary', {
+    // 25 is the server's cap; past it the request is refused outright.
+    params: { domain, ids: ids.slice(0, 25).join(',') },
+  })
+  return res.data.data.summary ?? null
+}
