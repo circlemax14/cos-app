@@ -30,6 +30,7 @@ export const WARMER_INSTRUMENT_LABEL: Readonly<Record<string, string>> = {
 
   // ── Mood, anxiety, stress ───────────────────────────────────
   'phq-2':                  'Mood: quick check',
+  'gad-2':                  'Anxiety: quick check',
   'phq-9':                  'Mood: full check',
   'gad-7':                  'Anxiety check-in',
   'pss-4':                  'Stress check-in',
@@ -44,6 +45,16 @@ export const WARMER_INSTRUMENT_LABEL: Readonly<Record<string, string>> = {
   'physical-function-4':    'Physical function check-in',
   'falls-12':               'Falls-risk check-in',
   'nutrition-5':            'Nutrition check-in',
+  // COS-1258 — Ken 2026-10-07 "spell out assessments": these showed their raw
+  // ids (DSQ-NCI, RIS …) on Health Trends because they had no entry here.
+  'dsq-nci':                'Dietary screener',
+  'ris':                    'Insomnia check-in',
+  'fas':                    'Fatigue check-in',
+  'dabbs':                  'Death anxiety check-in',
+  'brief-cope':             'Coping strategies check-in',
+  'lsns-6':                 'Social network check-in',
+  'pcl-5':                  'Stress after trauma check-in',
+  'ace':                    'Childhood experiences check-in',
 
   // ── Function / daily living ─────────────────────────────────
   'adl':                    'Daily living basics',

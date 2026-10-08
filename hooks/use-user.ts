@@ -4,6 +4,10 @@ import { apiClient } from '@/lib/api-client';
 export interface UserProfile {
   sub: string;
   email: string;
+  // Sent by /v1/auth/me (see services/auth.ts UserProfile); absent for some
+  // social sign-ups.
+  firstName?: string | null;
+  lastName?: string | null;
   role: string;
   allowedServices: string[];
   termsAccepted: boolean;

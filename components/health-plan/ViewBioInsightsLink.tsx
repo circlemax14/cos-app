@@ -40,7 +40,9 @@ const bannerElevation = Platform.select({
     shadowOpacity: 0.07,
     shadowRadius: 5,
   },
-  android: { elevation: 2 },
+  // COS-1258 — no Android elevation: under this translucent tint it renders as a
+  // grey slab (Galaxy S26). The border carries the edge, as on iOS.
+  android: {},
   default: {},
 }) as object
 

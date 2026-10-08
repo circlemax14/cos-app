@@ -44,6 +44,10 @@ import { useHealthAlertsFlag } from '@/hooks/use-health-alerts-flag';
 function HealthSummaryScreenInner() {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility();
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light'];
+  // COS-1258 — the alert badge floats over the title's right edge; on a narrower
+  // phone (Galaxy S26) the centred title ran under it. Reserve its measured
+  // width on BOTH sides so the title stays centred and never reaches it.
+  const [alertBadgeWidth, setAlertBadgeWidth] = React.useState(0);
 
   // SCRUM-715 — per-section entitlement gates.
   //
@@ -245,13 +249,18 @@ function HealthSummaryScreenInner() {
                 fontWeight: getScaledFontWeight(700) as TextStyle['fontWeight'],
                 textAlign: 'center',
                 marginBottom: 4,
+                paddingHorizontal: healthAlertsEnabled ? alertBadgeWidth : 0,
               }}
               accessibilityRole="header"
             >
               Health Status
             </Text>
             {healthAlertsEnabled && (
-              <View style={styles.alertCorner} pointerEvents="box-none">
+              <View
+                style={styles.alertCorner}
+                pointerEvents="box-none"
+                onLayout={(e) => setAlertBadgeWidth(Math.ceil(e.nativeEvent.layout.width))}
+              >
                 <HealthAlertBadge
                   level={healthAlerts.level}
                   firingCount={healthAlerts.firing.length}

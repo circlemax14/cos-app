@@ -218,6 +218,10 @@ export function CustomScrollableTabBar({ state, descriptors, navigation }: Botto
                   backgroundColor: isFocused ? '#008080' : 'rgba(0,128,128,0.10)',
                   borderColor: isFocused ? 'transparent' : 'rgba(0,128,128,0.25)',
                   shadowOpacity: isFocused ? 0.25 : 0,
+                  // COS-1258 — Android's elevation ignores shadowOpacity and, under
+                  // the translucent unfocused fill, drew an octagon behind the disc
+                  // (Galaxy S26). Shadow only when focused, as on iOS.
+                  elevation: isFocused ? 4 : 0,
                 },
               ]}>
                 {icon}
@@ -393,7 +397,6 @@ const styles = StyleSheet.create({
     shadowColor: '#008080',
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 10,
-    elevation: 4,
   },
 });
 

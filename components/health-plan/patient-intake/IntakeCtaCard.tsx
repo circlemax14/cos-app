@@ -390,7 +390,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 2,
-    elevation: 1,
+    // COS-1258 — no `elevation`: the banner's fill is a translucent tint, and
+    // Android drew its shadow THROUGH it as a heavy grey frame (Galaxy S26).
+    // The iOS shadow above is 6% and stays.
   },
   bannerIcon: {
     // width/height are set inline — derived from the glyph.
