@@ -6,6 +6,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import {
+  fetchAssessmentDomainSummary,
   fetchAssessmentHistory,
   fetchAssessments,
   type AssessmentRecord,
@@ -18,6 +19,7 @@ import {
 // SCRUM-268; that copy was migrated verbatim into the shared helper.
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { groupAssessmentsByDomain } from '@/lib/assessment-grouping'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
 import { getSubdomain } from '@/lib/bps-subdomains'
 import {
@@ -295,6 +297,46 @@ export function SelfAssessmentTrends({
     })
     return map
   }, [records, historyQueries])
+
+  // Ken 2026-08-14: "the self-assessments by biopsychosocial". The domain
+  // comes from the instrument's own subdomains (joined on by the backend),
+  // resolved through the existing wellbeing-map taxonomy — no new mapping.
+  // Computed above the early returns because the summary queries below need it.
+  const groups = groupAssessmentsByDomain(records, (key) => getSubdomain(key)?.domain ?? null)
+
+  /*
+   * COS-1261 — "What your <Domain> check-ins show".
+   *
+   * Health Trends only in v1: on the Care Plan each section already carries its
+   * own frozen trendSummary, and a second AI paragraph beside it would be two
+   * readings of one thing.
+   *
+   * `=== true`, NOT useIsFeatureFlagEnabled: that hook defaults to ON while the
+   * flags load and when a key is absent, which would call a route an older
+   * backend does not have and show its error under every opened card.
+   *
+   * Fetched only when a domain is OPENED, for exactly the cards it shows. Each
+   * card's completedAt is in the key so a retake fetches a fresh reading.
+   */
+  const { data: flags } = useFeatureFlags()
+  const aiSummaries =
+    flags?.assessment_ai_summaries_enabled === true && collapsible && fromScreen === 'health-trends'
+  const summaryQueries = useQueries({
+    queries: groups.map((g) => ({
+      queryKey: [
+        'assessment-domain-summary',
+        g.domain,
+        g.records.map((r) => `${r.instrumentId}@${r.completedAt}`).join(','),
+      ] as const,
+      queryFn: () =>
+        fetchAssessmentDomainSummary(
+          g.domain ?? 'biological',
+          g.records.map((r) => String(r.instrumentId)),
+        ),
+      enabled: aiSummaries && g.domain !== null && openDomains.includes(g.label),
+      staleTime: 10 * 60 * 1000,
+    })),
+  })
 
   if (query.isLoading) {
     return (
@@ -616,11 +658,6 @@ export function SelfAssessmentTrends({
     )
   }
 
-  // Ken 2026-08-14: "the self-assessments by biopsychosocial". The domain
-  // comes from the instrument's own subdomains (joined on by the backend),
-  // resolved through the existing wellbeing-map taxonomy — no new mapping.
-  const groups = groupAssessmentsByDomain(records, (key) => getSubdomain(key)?.domain ?? null)
-
   // Nothing placeable ⇒ the flat carousel, byte-for-byte as it shipped
   // before this change. That is the state of every client running against a
   // backend that predates the subdomain join, so it is the common path
@@ -655,10 +692,68 @@ export function SelfAssessmentTrends({
     </ScrollView>
   )
 
+  /*
+   * COS-1261 — the summary block at the top of an opened domain card. Loading
+   * is one line of text: ActivityIndicator is outside the iOS 26 envelope.
+   * A failed request and a failed generation (`available: false`) look the
+   * same — an apology and Retry, never something that reads as a finding.
+   */
+  const renderDomainSummary = (label: string, q: (typeof summaryQueries)[number] | undefined) => {
+    // null = none of these cards is completed server-side: no block at all.
+    if (!q || (q.isSuccess && q.data === null)) return null
+    const failed = q.isError || q.data?.available === false
+    return (
+      <View style={styles.aiSummary}>
+        <Text
+          accessibilityRole="header"
+          style={{ color: colors.text, fontSize: fontSize(14), fontWeight: fontWeight(600) as any }}
+        >
+          {`What your ${label} check-ins show`}
+        </Text>
+        {failed ? (
+          <>
+            <Text style={{ color: colors.subtext, fontSize: fontSize(13) }}>
+              {"We couldn't put your summary together just now."}
+            </Text>
+            <Pressable
+              onPress={() => void q.refetch()}
+              hitSlop={12}
+              style={({ pressed }) => ({
+                alignSelf: 'flex-start',
+                minHeight: 44,
+                justifyContent: 'center',
+                opacity: pressed ? 0.6 : 1,
+              })}
+              accessibilityRole="button"
+              accessibilityLabel={`Retry your ${label} summary`}
+            >
+              <Text style={{ color: colors.tint as string, fontSize: fontSize(13), fontWeight: fontWeight(600) as any }}>
+                Retry
+              </Text>
+            </Pressable>
+          </>
+        ) : q.data ? (
+          <View accessible accessibilityLabel={`${q.data.summary} Written by AI, not a diagnosis.`}>
+            <Text style={{ color: colors.text, fontSize: fontSize(14), lineHeight: fontSize(21) }}>
+              {q.data.summary}
+            </Text>
+            <Text style={{ color: colors.subtext, fontSize: fontSize(11), marginTop: 6 }}>
+              Written by AI · not a diagnosis
+            </Text>
+          </View>
+        ) : (
+          <Text style={{ color: colors.subtext, fontSize: fontSize(13) }} accessibilityLabel="Putting your summary together">
+            Putting your summary together…
+          </Text>
+        )}
+      </View>
+    )
+  }
+
   if (collapsible) {
     return (
       <View>
-        {groups.map((group) => {
+        {groups.map((group, i) => {
           const isOpen = openDomains.includes(group.label)
           const count = group.records.length
           return (
@@ -720,6 +815,7 @@ export function SelfAssessmentTrends({
                   <View
                     style={[styles.accordionDivider, { backgroundColor: colors.border as string }]}
                   />
+                  {aiSummaries && group.domain ? renderDomainSummary(group.label, summaryQueries[i]) : null}
                   {renderCarousel(group, true)}
                 </>
               ) : null}
@@ -790,6 +886,10 @@ const styles = StyleSheet.create({
     // Full-bleed inside the card: cancels the card's own 14pt horizontal
     // padding so the rule spans edge to edge the way a card divider should.
     marginHorizontal: -14,
+  },
+  aiSummary: {
+    paddingTop: 12,
+    gap: 6,
   },
   carouselInCard: {
     paddingTop: 12,
