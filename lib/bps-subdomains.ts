@@ -61,10 +61,12 @@ export const BPS_SUBDOMAINS: readonly BpsSubdomain[] = [
   { key: 'physical_health', label: 'Physical Health', domain: 'biological' },
   { key: 'metabolic_disorders', label: 'Metabolic Disorders', domain: 'biological' },
   { key: 'immune_stress_response', label: 'Immune/Stress Response', domain: 'biological' },
-  // ── Biological ∩ Psychological overlap — 2 items ────────────────────
-  { key: 'emotions', label: 'Emotions', domain: 'psychological', crossDomain: true, overlap: 'bio_psy' },
+  // ── Biological ∩ Psychological overlap — 1 item ─────────────────────
   { key: 'response_to_reward', label: 'Response to Reward', domain: 'psychological', crossDomain: true, overlap: 'bio_psy' },
-  // ── Psychological (pure) — 5 items ──────────────────────────────────
+  // ── Psychological (pure) — 6 items ──────────────────────────────────
+  // COS-1259 — Ken: "Emotions = psychological". It sat in the Bio ∩ Psy
+  // overlap; cos-backend services/bps-domains.ts changed in the same story.
+  { key: 'emotions', label: 'Emotions', domain: 'psychological' },
   { key: 'attitudes_beliefs', label: 'Attitudes/Beliefs', domain: 'psychological' },
   { key: 'perceptions', label: 'Perceptions', domain: 'psychological' },
   { key: 'coping_skills', label: 'Coping Skills', domain: 'psychological' },

@@ -39,7 +39,7 @@ import { Colors } from '@/constants/theme'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
-import { isHeavySubject, shouldOfferSupportOnResult } from '@/lib/crisis-support'
+import { HEAVY_SUBJECT_INTRO, isHeavySubject, shouldOfferSupportOnResult } from '@/lib/crisis-support'
 import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { TrendDataPoint } from '@/services/api/types'
@@ -305,7 +305,7 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
               <CrisisSupportCard
                 intro={
                   heavySubject
-                    ? 'That covered some hard ground. If any of it stayed with you, someone is available.'
+                    ? HEAVY_SUBJECT_INTRO
                     : 'Support is available right now, any time of day.'
                 }
               />

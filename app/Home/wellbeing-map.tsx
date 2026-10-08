@@ -116,10 +116,14 @@ const SUBDOMAIN_POS: Record<string, LabelPos> = {
   immune_stress_response: { dx:  95, dy: 180, lx:  95, ly: 193, anchor: 'middle' },
 
   // ── Bio ∩ Psy overlap (top center intersection) ───────────────────
-  emotions:               { dx: 175, dy:  85, lx: 175, ly:  76, anchor: 'middle' },
   response_to_reward:     { dx: 175, dy: 110, lx: 175, ly: 122, anchor: 'middle' },
 
   // ── Psychological pure (top-right quadrant of Psy circle) ─────────
+  // COS-1259 — emotions moved out of the Bio ∩ Psy overlap (was 175, 85):
+  // Ken, "Emotions = psychological". 250,75 is inside the pure Psychological
+  // lobe per lib/wellbeing-map-layout isInRegion, 40 units from the nearest
+  // dot (attitudes_beliefs), so the r=12 hit circles stay clear.
+  emotions:               { dx: 250, dy:  75, lx: 250, ly:  66, anchor: 'middle' },
   attitudes_beliefs:      { dx: 285, dy:  55, lx: 290, ly:  57, anchor: 'start'  },
   perceptions:            { dx: 300, dy:  90, lx: 305, ly:  92, anchor: 'start'  },
   coping_skills:          { dx: 310, dy: 128, lx: 315, ly: 130, anchor: 'start'  },

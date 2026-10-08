@@ -35,7 +35,7 @@ import {
 } from '@/lib/spiritual-consent'
 import { SpiritualConsentModal } from '@/components/health-plan/SpiritualConsentModal'
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
-import { shouldOfferImmediateSupport } from '@/lib/crisis-support'
+import { HEAVY_SUBJECT_INTRO, isHeavySubject, shouldOfferSupportAtStep } from '@/lib/crisis-support'
 import { resolveCompletionHref } from '@/lib/retake-queue'
 import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
 import { useCanRender } from '@/hooks/use-entitlement'
@@ -503,10 +503,12 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
    * counts, including "Several days"; see lib/crisis-support for why the
    * threshold is not higher.
    */
-  const showCrisisSupport = shouldOfferImmediateSupport(
+  // COS-1259 — and on the final question of ACE / PCL-5 (see the helper).
+  const showCrisisSupport = shouldOfferSupportAtStep(
     instrument.instrumentId,
     item.id,
     currentValue,
+    isLast,
   )
 
   const advance = () => {
@@ -658,7 +660,11 @@ export default function AssessmentStepperScreen(): React.JSX.Element {
               flow and scrolls past. A patient who learns that honest answers
               trap them in a dialog learns to answer dishonestly, and then the
               instrument measures nothing. */}
-          {showCrisisSupport ? <CrisisSupportCard /> : null}
+          {showCrisisSupport ? (
+            <CrisisSupportCard
+              intro={isHeavySubject(instrument.instrumentId) ? HEAVY_SUBJECT_INTRO : undefined}
+            />
+          ) : null}
 
           <View style={styles.actions}>
             {canGoBack && (
