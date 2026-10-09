@@ -11,6 +11,7 @@ import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { classifyFlag, flagStyle, isFlagged } from '../../lib/lab-flagging';
+import { AboutThisTest } from '@/components/labs/AboutThisTest';
 
 // Neutral teal — Section 5 is not a BPS-domain section, so it takes a neutral
 // tint. Was purple #7C3AED, which read too close to the Psy bio-domain color
@@ -339,6 +340,7 @@ function LabsByConditionSection() {
                         >
                           {formatDate(row.reportDate)}
                         </Text>
+                        <AboutThisTest name={row.name} unit={row.unit} labHasRange={!!row.referenceRange} />
                       </View>
                     );
                   })}

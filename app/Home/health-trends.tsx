@@ -45,6 +45,7 @@ import type { BodySystemGroup } from '@/lib/body-system-grouping';
 import { lookForSystem, measuresPreview } from '@/lib/body-system-presentation';
 import SummaryCardShell from '@/components/health-summary/SummaryCardShell';
 import { HealthTrendSummaryCard } from '@/components/health/HealthTrendSummaryCard';
+import { AboutThisTest } from '@/components/labs/AboutThisTest';
 import { fetchHealthTrendSummary } from '@/services/api/patient';
 import { useCanRender } from '@/hooks/use-entitlement'
 import { useQuery } from '@tanstack/react-query'
@@ -647,7 +648,7 @@ export default function HealthTrendsScreen() {
                       marginTop: 2,
                     }}
                   >
-                    Apple Health · {activeTrend.dataPoints.length} {activeTrend.dataPoints.length === 1 ? 'reading' : 'readings'}
+                    {activeTrend.source === 'apple-health' ? 'Apple Health' : 'Clinic'} · {activeTrend.dataPoints.length} {activeTrend.dataPoints.length === 1 ? 'reading' : 'readings'}
                   </Text>
                 </View>
                 <Pressable
@@ -668,6 +669,15 @@ export default function HealthTrendsScreen() {
                   colors={colors}
                   fontSize={getScaledFontSize}
                   fontWeight={getScaledFontWeight}
+                />
+                )}
+                {activeTrend.source !== 'apple-health' && !activeTrend.metricCode.startsWith('hk-') && (
+                <AboutThisTest
+                  defaultExpanded
+                  name={activeTrend.metricName}
+                  code={activeTrend.metricCode}
+                  unit={activeTrend.dataPoints[0]?.unit}
+                  labHasRange={!!activeTrend.dataPoints[0]?.referenceRange}
                 />
                 )}
               </ScrollView>

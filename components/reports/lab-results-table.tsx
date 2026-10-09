@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import type { ReportResultEntry } from '@/services/api/types';
+import { AboutThisTest } from '@/components/labs/AboutThisTest';
 
 const ABNORMAL = new Set(['H', 'HH', 'L', 'LL', 'A', 'AA']);
 const LOW_CODES = new Set(['L', 'LL']);
@@ -64,66 +65,67 @@ export function LabResultsTable({ results }: Props) {
         const isAbnormal = !!r.interpretation && ABNORMAL.has(r.interpretation);
         const isLow = !!r.interpretation && LOW_CODES.has(r.interpretation);
         return (
+          // COS-1274: the row's hairline + tint moved to this wrapper so the
+          // explanation sits inside the row it belongs to.
           <View
             key={`${r.name}-${idx}`}
-            style={[
-              styles.row,
-              { borderBottomColor: '#F0F0F0' },
-              isAbnormal && styles.abnormalRow,
-            ]}
+            style={[styles.entry, { borderBottomColor: '#F0F0F0' }, isAbnormal && styles.abnormalRow]}
           >
-            <Text
-              style={[
-                styles.colTest,
-                {
-                  color: colors.text,
-                  fontSize: getScaledFontSize(13),
-                  fontWeight: getScaledFontWeight(600) as any,
-                },
-              ]}
-              numberOfLines={2}
-            >
-              {r.name || '—'}
-            </Text>
-            <Text
-              style={[
-                styles.colRange,
-                {
-                  color: colors.subtext,
-                  fontSize: getScaledFontSize(11),
-                  fontWeight: getScaledFontWeight(400) as any,
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {r.referenceRange ?? ''}
-            </Text>
-            <View style={styles.valueColumn}>
+            <View style={[styles.row, styles.rowInner]}>
               <Text
                 style={[
-                  styles.valueText,
+                  styles.colTest,
                   {
-                    color: isAbnormal ? '#DC2626' : colors.text,
+                    color: colors.text,
                     fontSize: getScaledFontSize(13),
-                    fontWeight: getScaledFontWeight(700) as any,
+                    fontWeight: getScaledFontWeight(600) as any,
                   },
                 ]}
+                numberOfLines={2}
               >
-                {r.value}{r.unit ? ` ${r.unit}` : ''}
+                {r.name || '—'}
               </Text>
-              {r.interpretation && ABNORMAL.has(r.interpretation) && (
-                <View style={[styles.flagPill, isLow && styles.flagPillLow]}>
-                  <Text
-                    style={[
-                      styles.flagPillText,
-                      { fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any },
-                    ]}
-                  >
-                    {r.interpretation}
-                  </Text>
-                </View>
-              )}
+              <Text
+                style={[
+                  styles.colRange,
+                  {
+                    color: colors.subtext,
+                    fontSize: getScaledFontSize(11),
+                    fontWeight: getScaledFontWeight(400) as any,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {r.referenceRange ?? ''}
+              </Text>
+              <View style={styles.valueColumn}>
+                <Text
+                  style={[
+                    styles.valueText,
+                    {
+                      color: isAbnormal ? '#DC2626' : colors.text,
+                      fontSize: getScaledFontSize(13),
+                      fontWeight: getScaledFontWeight(700) as any,
+                    },
+                  ]}
+                >
+                  {r.value}{r.unit ? ` ${r.unit}` : ''}
+                </Text>
+                {r.interpretation && ABNORMAL.has(r.interpretation) && (
+                  <View style={[styles.flagPill, isLow && styles.flagPillLow]}>
+                    <Text
+                      style={[
+                        styles.flagPillText,
+                        { fontSize: getScaledFontSize(10), fontWeight: getScaledFontWeight(700) as any },
+                      ]}
+                    >
+                      {r.interpretation}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
+            <AboutThisTest name={r.name} unit={r.unit} labHasRange={!!r.referenceRange} />
           </View>
         );
       })}
@@ -140,6 +142,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  entry: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  rowInner: {
+    borderBottomWidth: 0,
   },
   headerRow: {
     paddingVertical: 6,
