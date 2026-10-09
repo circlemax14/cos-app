@@ -34,6 +34,7 @@ import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { socialReturnHref } from '@/lib/social-nav';
+import { messagingDisabledText } from '@/lib/social-safety';
 
 /*
  * COS-1058 — required on every leaf route, and enforced by a test.
@@ -56,6 +57,8 @@ export default function FindPeopleScreen() {
   const backHref = socialReturnHref(typeof returnTo === 'string' ? returnTo : undefined);
   const [query, setQuery] = useState('');
   const [requested, setRequested] = useState<Record<string, boolean>>({});
+  // COS-1268 — set only when a reviewer turned messaging off for this account.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const trimmed = query.trim();
   const resultsQ = useQuery({
@@ -81,7 +84,11 @@ export default function FindPeopleScreen() {
 
   const connect = useMutation({
     mutationFn: (userId: string) => requestConnection(userId),
-    onSuccess: (_d, userId) => setRequested((r) => ({ ...r, [userId]: true })),
+    onSuccess: (_d, userId) => {
+      setNotice(null);
+      setRequested((r) => ({ ...r, [userId]: true }));
+    },
+    onError: (err) => setNotice(messagingDisabledText(err)),
   });
 
   const renderItem = ({ item }: { item: DirectoryEntry }) => (
@@ -177,6 +184,11 @@ export default function FindPeopleScreen() {
             accessibilityLabel="Let others find me in search"
           />
         </View>
+        {notice ? (
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(13) }} accessibilityRole="alert">
+            {notice}
+          </Text>
+        ) : null}
       </View>
 
       <FlatList

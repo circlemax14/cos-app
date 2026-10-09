@@ -22,6 +22,7 @@ import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invit
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { socialReturnHref } from '@/lib/social-nav';
+import { messagingDisabledText } from '@/lib/social-safety';
 
 /*
  * COS-1058 — required on every leaf route, and enforced by a test.
@@ -52,9 +53,14 @@ export default function ConnectionRequestsScreen() {
     void qc.invalidateQueries({ queryKey: ['conversations'] });
   };
 
+  // COS-1268 — set only when a reviewer turned messaging off for this account.
+  const [notice, setNotice] = React.useState<string | null>(null);
+
   const accept = useMutation({
     mutationFn: (peerId: string) => acceptConnection(peerId),
+    onError: (err) => setNotice(messagingDisabledText(err)),
     onSuccess: (conn) => {
+      setNotice(null);
       refresh();
       /*
        * Accepting opens the conversation server-side, so going straight there
@@ -165,6 +171,13 @@ export default function ConnectionRequestsScreen() {
         keyExtractor={(c) => c.peerId}
         renderItem={renderItem}
         contentContainerStyle={{ padding: Spacing.md, gap: Spacing.sm }}
+        ListHeaderComponent={
+          notice ? (
+            <Text style={{ color: colors.text, fontSize: getScaledFontSize(13) }} accessibilityRole="alert">
+              {notice}
+            </Text>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <MaterialIcons

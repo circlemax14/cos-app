@@ -64,6 +64,7 @@ import {
   searchDirectory,
   sendEmailInvite,
   setDiscoverability,
+  unblockUser,
   withdrawEmailInvite,
   type Connection,
   type DirectoryEntry,
@@ -85,6 +86,8 @@ import { consumeInviteSheetIntent } from '@/lib/social-nav'
 import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invite-copy'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCanShowScreen } from '@/hooks/use-feature-permissions'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { blockedPersonName, isSocialSafetyOn, messagingDisabledText, safetyErrorText } from '@/lib/social-safety'
 
 /** Matches MIN_QUERY_LENGTH on the server. Below this we do not even ask. */
 const MIN_QUERY = 2
@@ -279,6 +282,9 @@ export function SocialPanel(): React.JSX.Element | null {
   /** Inline, under the field that caused it. Alert.alert renders a Modal. */
   const [inviteFieldError, setInviteFieldError] = React.useState<string | null>(null)
   const [inviteBanner, setInviteBanner] = React.useState<string | null>(null)
+  // COS-1268 — set only when connect/accept failed because a reviewer turned
+  // messaging off for this account (invites already show the server's copy).
+  const [messagingNotice, setMessagingNotice] = React.useState<string | null>(null)
   /** The invitation screen 3 is confirming. Held so it can name the address. */
   const [sentInvite, setSentInvite] = React.useState<Invite | null>(null)
 
@@ -423,7 +429,9 @@ export function SocialPanel(): React.JSX.Element | null {
 
   const connect = useMutation({
     mutationFn: (userId: string) => requestConnection(userId),
+    onError: (err) => setMessagingNotice(messagingDisabledText(err)),
     onSuccess: (_d, userId) => {
+      setMessagingNotice(null)
       setRequested((r) => ({ ...r, [userId]: true }))
       // So the Sent list and the button state agree without a reopen.
       void qc.invalidateQueries({ queryKey: ['connections', 'pending-out'] })
@@ -503,7 +511,11 @@ export function SocialPanel(): React.JSX.Element | null {
   }
   const accept = useMutation({
     mutationFn: (peerId: string) => acceptConnection(peerId),
-    onSuccess: refresh,
+    onError: (err) => setMessagingNotice(messagingDisabledText(err)),
+    onSuccess: () => {
+      setMessagingNotice(null)
+      refresh()
+    },
   })
   const decline = useMutation({
     mutationFn: (peerId: string) => declineConnection(peerId),
@@ -569,6 +581,8 @@ export function SocialPanel(): React.JSX.Element | null {
             branch is a brand-new invitee's only screen, so it is exactly where
             somebody we hold no address for has to be told. */}
         {unreachable ? <UnreachableNotice colors={colors} fs={fs} fw={fw} /> : null}
+        {/* COS-1268 — a plan with neither key can still undo a block. */}
+        <BlockedPeople colors={colors} fs={fs} fw={fw} actionTint={actionTint} errorColor={errorColor} />
       </ScrollView>
     )
   }
@@ -767,6 +781,30 @@ export function SocialPanel(): React.JSX.Element | null {
           />
         </View>
       )}
+
+      {/* COS-1268 — Blocked people, beside the switch that decides who can find me. */}
+      {showVisibility && canFind && (
+        <BlockedPeople colors={colors} fs={fs} fw={fw} actionTint={actionTint} errorColor={errorColor} />
+      )}
+      {/* Without find-people there is no eye icon, so it sits under the mode row
+          instead: Unblock must never depend on the plan. */}
+      {!canFind && (
+        <BlockedPeople colors={colors} fs={fs} fw={fw} actionTint={actionTint} errorColor={errorColor} />
+      )}
+
+      {messagingNotice ? (
+        // Same inline banner as the invite failure — Alert.alert renders a Modal.
+        <View style={[styles.banner, { borderColor: errorColor, backgroundColor: colors.card }]}>
+          <MaterialIcons name="error-outline" size={fs(18)} color={errorColor} />
+          <Text
+            style={{ color: errorColor, fontSize: fs(13), flex: 1, marginLeft: 8 }}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {messagingNotice}
+          </Text>
+        </View>
+      ) : null}
 
       {mode === 'find' && canFind ? (
         <>
@@ -1654,6 +1692,115 @@ function UnreachableNotice({
         So an invitation sent to you by email cannot be matched to it. If you were
         expecting one, email support@circlesupporthealth.ai and we will help.
       </Text>
+    </View>
+  )
+}
+
+/**
+ * COS-1268 — people I blocked, with Unblock.
+ *
+ * Its own component so the panel can mount it OUTSIDE the find-people check:
+ * in the eye dropdown when the plan grants find-people, under the mode row or
+ * in the invitations-only branch when it does not. The server never gates
+ * Unblock or this list, on the plan or on the flag, and neither may the app —
+ * a block somebody cannot undo is the one outcome this must not produce.
+ *
+ * Shows when social_safety_enabled === true OR there is a block to undo, so
+ * with the flag off it is invisible to everyone who has never blocked anyone.
+ * Fetched whenever mounted; mounts only where it may render.
+ */
+function BlockedPeople({
+  colors,
+  fs,
+  fw,
+  actionTint,
+  errorColor,
+}: {
+  colors: (typeof Colors)['light']
+  fs: (base: number) => number
+  fw: (weight: number) => number | string
+  actionTint: string
+  errorColor: string
+}): React.JSX.Element | null {
+  const qc = useQueryClient()
+  const safetyOn = isSocialSafetyOn(useFeatureFlags().data)
+  const blockedQ = useQuery({
+    queryKey: ['connections', 'blocked'],
+    queryFn: () => fetchConnections('blocked'),
+    staleTime: 15_000,
+  })
+  const blocked = blockedQ.data ?? []
+  const unblock = useMutation({
+    mutationFn: (peerId: string) => unblockUser(peerId),
+    // Settled, not success: a NOT_BLOCKED means the row is already gone.
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['connections', 'blocked'] }),
+  })
+
+  if (!(safetyOn || blocked.length > 0)) return null
+
+  return (
+    <View style={[styles.notice, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 0 }]}>
+      <Text
+        style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as TextStyle['fontWeight'] }}
+        accessibilityRole="header"
+      >
+        Blocked people
+      </Text>
+      {blockedQ.isLoading ? (
+        <ActivityIndicator style={{ marginTop: Spacing.sm }} color={colors.tint} />
+      ) : blockedQ.isError ? (
+        // Never "nobody" when we could not ask: an empty list is a claim.
+        <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+          We couldn&apos;t load your blocked list. Close and reopen this to try again.
+        </Text>
+      ) : blocked.length === 0 ? (
+        <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+          You haven&apos;t blocked anyone. People you block can&apos;t message you or find you,
+          and they aren&apos;t told.
+        </Text>
+      ) : (
+        <>
+          {blocked.map((item: Connection) => {
+            const busyRow = unblock.isPending && unblock.variables === item.peerId
+            const name = blockedPersonName(item)
+            return (
+              <View key={`blocked-${item.peerId}`} style={[styles.row, { borderColor: colors.border }]}>
+                <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.border }]}>
+                  <MaterialIcons name="block" size={fs(18)} color={colors.icon} />
+                </View>
+                <Text
+                  style={{ flex: 1, marginLeft: Spacing.sm, color: colors.text, fontSize: fs(15) }}
+                  numberOfLines={1}
+                >
+                  {name}
+                </Text>
+                <Pressable
+                  onPress={() => unblock.mutate(item.peerId)}
+                  disabled={busyRow}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: busyRow, busy: busyRow }}
+                  accessibilityLabel={`Unblock ${name}`}
+                  style={[styles.actionBtn, { borderColor: colors.border, opacity: busyRow ? 0.5 : 1 }]}
+                >
+                  {busyRow ? (
+                    <ActivityIndicator size="small" color={colors.subtext} />
+                  ) : (
+                    <Text style={{ color: actionTint, fontSize: fs(13), fontWeight: '600' }}>Unblock</Text>
+                  )}
+                </Pressable>
+              </View>
+            )
+          })}
+          <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+            Unblocking doesn&apos;t reconnect you. They aren&apos;t told either way.
+          </Text>
+        </>
+      )}
+      {unblock.isError ? (
+        <Text style={{ color: errorColor, fontSize: fs(12), marginTop: 4 }} accessibilityLiveRegion="polite">
+          {safetyErrorText(unblock.error)}
+        </Text>
+      ) : null}
     </View>
   )
 }
