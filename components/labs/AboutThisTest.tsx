@@ -31,6 +31,14 @@ export interface AboutThisTestProps {
 
 const normUnit = (u?: string | null) => (u ?? '').replace(/\s+/g, '').toLowerCase()
 
+// api-client rethrows HTTP failures as AxiosError and turns no-response
+// failures into `code: 'NETWORK_ERROR'`.
+const httpStatus = (e: unknown) => (e as { response?: { status?: number } } | null)?.response?.status
+// Retry once only for what can clear on its own: 503 and the network. 400 (name
+// rejected), 404 (flag off server-side) and 429 (rate limit) never.
+const retryOnce = (failureCount: number, e: unknown) =>
+  failureCount < 1 && (httpStatus(e) === 503 || (e as { code?: string } | null)?.code === 'NETWORK_ERROR')
+
 export function AboutThisTest({ name, code, unit, labHasRange, defaultExpanded = false }: AboutThisTestProps) {
   const { data: flags } = useFeatureFlags()
   const [expanded, setExpanded] = useState(defaultExpanded)
@@ -48,10 +56,13 @@ export function AboutThisTest({ name, code, unit, labHasRange, defaultExpanded =
     queryFn: () => fetchLabExplanation(testName, code, unit),
     enabled: on && expanded,
     staleTime: 24 * 60 * 60 * 1000,
-    retry: 1,
+    retry: retryOnce,
   })
 
-  if (!on) return null
+  // 400 = the backend cannot use this name; 404 = FEATURE_DISABLED server-side.
+  // Either way the whole block goes, header included — even if it was showing.
+  const gone = q.isError && (httpStatus(q.error) === 400 || httpStatus(q.error) === 404)
+  if (!on || gone) return null
 
   const fs = getScaledFontSize
   const quiet = (t: string) => (

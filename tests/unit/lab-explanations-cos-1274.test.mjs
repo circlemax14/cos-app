@@ -24,7 +24,7 @@ test('the flag fails CLOSED — strict === true, never useIsFeatureFlagEnabled',
   assert.match(C, /const \{ data: flags \} = useFeatureFlags\(\)/)
   assert.match(C, /flags\?\.lab_explanations_enabled === true/)
   assert.doesNotMatch(C, /useIsFeatureFlagEnabled/)
-  assert.match(C, /if \(!on\) return null/)
+  assert.match(C, /if \(!on \|\| gone\) return null/)
 })
 
 test("Ken's exact label, headings and closing line", () => {
@@ -52,8 +52,27 @@ test('nothing is fetched while collapsed; lazy, cached, one retry', () => {
   assert.match(C, /const testName = \(name \?\? ''\)\.trim\(\)/)
   assert.match(C, /queryKey: \['lab-explanation', testName\.toLowerCase\(\), code \?\? '', unit \?\? ''\]/)
   assert.match(C, /staleTime: 24 \* 60 \* 60 \* 1000/)
-  assert.match(C, /retry: 1,/)
+  assert.match(C, /retry: retryOnce,/)
   assert.match(C, /accessibilityState=\{\{ expanded \}\}/)
+})
+
+test('400 and 404 hide the WHOLE block, header included; 429/503/network keep the quiet line', () => {
+  assert.match(C, /const httpStatus = \(e: unknown\) => \(e as \{ response\?: \{ status\?: number \} \} \| null\)\?\.response\?\.status/)
+  assert.match(C, /const gone = q\.isError && \(httpStatus\(q\.error\) === 400 \|\| httpStatus\(q\.error\) === 404\)/)
+  assert.match(C, /if \(!on \|\| gone\) return null/)
+  // Nothing else hides it: every other error is the quiet line.
+  assert.match(C, /q\.isError \? \(\s*quiet\("We couldn't load this right now\."\)/)
+  assert.doesNotMatch(C, /=== 429/)
+})
+
+test('retry once ONLY for 503 and network errors — never 400, 404 or 429', () => {
+  assert.match(
+    C,
+    /const retryOnce = \(failureCount: number, e: unknown\) =>\s*failureCount < 1 && \(httpStatus\(e\) === 503 \|\| \(e as \{ code\?: string \} \| null\)\?\.code === 'NETWORK_ERROR'\)/,
+  )
+  assert.doesNotMatch(C, /retry: 1\b/)
+  // The client really does tag no-response failures this way.
+  assert.match(read('lib/api-client.ts'), /networkErr\.code = 'NETWORK_ERROR'/)
 })
 
 test("typical range only when the lab gave none AND the units match", () => {
