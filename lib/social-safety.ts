@@ -44,7 +44,8 @@ export function alsoBlockToSend(reason: ReportReason, ticked: boolean): boolean 
   return reason === 'self_harm' ? false : ticked
 }
 
-/** Shown with the crisis card when the reason is self_harm — written for someone worried about another person. */
+/** The crisis card's heading and intro on a self_harm report — written for someone worried about another person. */
+export const WORRIED_ABOUT_SOMEONE_TITLE = "Worried about someone's safety?"
 export const WORRIED_ABOUT_SOMEONE_INTRO =
   'If they may be in immediate danger, call 911. 988 also helps people worried about someone else.'
 

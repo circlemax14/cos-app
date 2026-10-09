@@ -279,8 +279,10 @@ export default function ConversationScreen() {
   return (
     <AppWrapper>
       <View style={[styles.header, { borderColor: colors.border }]}>
+        {/* COS-1268 — named, not router.back(): in the Home Tabs navigator
+            GO_BACK lands on the first route (Home), never the inbox. */}
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => router.navigate('/Home/inbox' as never)}
           accessibilityRole="button"
           accessibilityLabel="Back to inbox"
           hitSlop={10}

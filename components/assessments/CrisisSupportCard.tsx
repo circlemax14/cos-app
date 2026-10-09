@@ -47,8 +47,15 @@ const ICON_FOR: Record<CrisisResource['kind'], keyof typeof MaterialIcons.glyphM
 export function CrisisSupportCard({
   /** Leading line. Varies by where this is shown; keep it short and plain. */
   intro = 'Support is available right now, any time of day.',
+  /**
+   * COS-1268 — the heading. The default speaks to the patient about themselves;
+   * a report about SOMEONE ELSE passes its own, because "you don't have to sit
+   * with this alone" misreads a worried bystander as the person at risk.
+   */
+  title = "You don't have to sit with this alone",
 }: {
   intro?: string
+  title?: string
 }): React.JSX.Element {
   const { settings, getScaledFontSize, getScaledFontWeight } = useAccessibility()
   const colors = Colors[settings.isDarkTheme ? 'dark' : 'light']
@@ -85,7 +92,7 @@ export function CrisisSupportCard({
             flex: 1,
           }}
         >
-          You don&apos;t have to sit with this alone
+          {title}
         </Text>
       </View>
 

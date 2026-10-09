@@ -24,6 +24,7 @@ import {
   MAX_REPORT_COMMENT,
   REPORT_REASONS,
   WORRIED_ABOUT_SOMEONE_INTRO,
+  WORRIED_ABOUT_SOMEONE_TITLE,
   alsoBlockToSend,
   reportConfirmation,
   safetyErrorText,
@@ -161,7 +162,9 @@ export function ReportSheet({
         </View>
 
         {/* Non-blocking: it sits in the flow and the report can still be sent. */}
-        {reason === 'self_harm' ? <CrisisSupportCard intro={WORRIED_ABOUT_SOMEONE_INTRO} /> : null}
+        {reason === 'self_harm' ? (
+          <CrisisSupportCard title={WORRIED_ABOUT_SOMEONE_TITLE} intro={WORRIED_ABOUT_SOMEONE_INTRO} />
+        ) : null}
 
         <Text style={[sub, { marginTop: Spacing.sm }]}>Anything else we should know? (optional)</Text>
         <TextInput

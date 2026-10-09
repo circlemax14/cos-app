@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 
 import {
   REPORT_REASONS,
+  WORRIED_ABOUT_SOMEONE_TITLE,
   alsoBlockToSend,
   blockedPersonName,
   isSocialSafetyOn,
@@ -66,7 +67,7 @@ test('the app ALWAYS sends alsoBlock — the server reads a missing one as false
   assert.match(sheet, /React\.useState\(true\)/, 'Also block is ticked by default');
   assert.match(sheet, /alsoBlock: alsoBlockToSend\(r, alsoBlock\)/);
   assert.match(sheet, /reason !== 'self_harm' \? \(\s*<Pressable/, 'the box is hidden for self_harm');
-  assert.match(sheet, /reason === 'self_harm' \? <CrisisSupportCard intro=\{WORRIED_ABOUT_SOMEONE_INTRO\} \/>/);
+  assert.match(sheet, /reason === 'self_harm' \? \(\s*<CrisisSupportCard /);
 });
 
 test('confirmation copy carries the server review window', () => {
@@ -102,12 +103,50 @@ test('a blocked row from an anonymous request never shows a name', () => {
   assert.equal(blockedPersonName({ displayName: 'Ann' }), 'Ann');
 });
 
-test('Blocked people: fetched with the flag off, shown off only when there is a block to undo', () => {
+test('Blocked people: shown when the flag is on OR there is a block to undo', () => {
   const panel = strip(read('components/social/SocialPanel.tsx'));
-  assert.match(panel, /queryFn: \(\) => fetchConnections\('blocked'\)/);
-  assert.match(panel, /enabled: canFind && showVisibility,/);
-  assert.match(panel, /\{showVisibility && canFind && \(safetyOn \|\| blocked\.length > 0\) && \(/);
-  assert.match(panel, /onPress=\{\(\) => unblock\.mutate\(item\.peerId\)\}/);
+  const comp = panel.slice(panel.indexOf('function BlockedPeople('));
+  assert.match(comp, /queryFn: \(\) => fetchConnections\('blocked'\)/);
+  assert.match(comp, /if \(!\(safetyOn \|\| blocked\.length > 0\)\) return null/);
+  assert.match(comp, /onPress=\{\(\) => unblock\.mutate\(item\.peerId\)\}/);
+});
+
+test('THE POINT: Unblock is reachable whatever the plan grants', () => {
+  const panel = strip(read('components/social/SocialPanel.tsx'));
+  const body = panel.slice(0, panel.indexOf('function UnreachableNotice('));
+  const mount = '<BlockedPeople colors={colors} fs={fs} fw={fw} actionTint={actionTint} errorColor={errorColor} />';
+  // find-people: in the eye dropdown, beside the findable switch.
+  assert.ok(body.includes(`{showVisibility && canFind && (\n        ${mount}`), 'eye-dropdown mount');
+  // No find-people (so no eye icon), requests only: under the mode row.
+  assert.ok(body.includes(`{!canFind && (\n        ${mount}`), 'no-find-people mount');
+  // Neither key: the invitations-only early return must carry it too.
+  const early = body.slice(body.indexOf('if (!canFind && !canRequests) {'));
+  assert.ok(early.slice(0, early.indexOf('</ScrollView>')).includes(mount), 'neither-key mount');
+});
+
+test('crisis card: a report gets its own heading; every other caller keeps the old one', () => {
+  const card = read('components/assessments/CrisisSupportCard.tsx');
+  assert.match(card, /title = "You don't have to sit with this alone",/, 'default heading unchanged');
+  assert.match(strip(card), /\{title\}/);
+  for (const f of ['app/Home/assessment-stepper.tsx', 'app/Home/assessment-detail.tsx']) {
+    const src = strip(read(f));
+    const use = src.slice(src.indexOf('<CrisisSupportCard'), src.indexOf('/>', src.indexOf('<CrisisSupportCard')));
+    assert.doesNotMatch(use, /title=/, `${f} must keep the default heading`);
+  }
+  assert.equal(WORRIED_ABOUT_SOMEONE_TITLE, "Worried about someone's safety?");
+  assert.match(
+    strip(read('components/social/ReportSheet.tsx')),
+    /<CrisisSupportCard title=\{WORRIED_ABOUT_SOMEONE_TITLE\} intro=\{WORRIED_ABOUT_SOMEONE_INTRO\} \/>/,
+  );
+});
+
+test('the back arrow goes to the inbox by name, not router.back() (TabRouter firstRoute = Home)', () => {
+  const screen = strip(read('app/Home/conversation.tsx'));
+  assert.doesNotMatch(screen, /router\.back\(\)/);
+  assert.match(
+    screen,
+    /onPress=\{\(\) => router\.navigate\('\/Home\/inbox' as never\)\}\s*accessibilityRole="button"\s*accessibilityLabel="Back to inbox"/,
+  );
 });
 
 // ── errors ───────────────────────────────────────────────────────────
