@@ -42,7 +42,8 @@ export interface DirectoryEntry {
   photoUrl: string | null;
 }
 
-export type ConnectionStatus = 'pending-out' | 'pending-in' | 'accepted' | 'declined';
+/** COS-1268 — 'blocked' is only ever MY row; the blocked person never holds one. */
+export type ConnectionStatus = 'pending-out' | 'pending-in' | 'accepted' | 'declined' | 'blocked';
 
 export interface Connection {
   /**
@@ -60,6 +61,11 @@ export interface Connection {
    * written when somebody turns discoverability on, so a brand-new invitee has none.
    */
   invitedEmail?: string;
+  /**
+   * COS-1268 — on a 'blocked' row made straight from an anonymous incoming
+   * request: you never saw their name, so the list must not show one now.
+   */
+  anonymous?: boolean;
   userId: string;
   peerId: string;
   status: ConnectionStatus;
@@ -233,6 +239,61 @@ export async function acceptConnection(requesterId: string): Promise<Connection>
 
 export async function declineConnection(requesterId: string): Promise<void> {
   await apiClient.post(`/v1/patients/me/social/connections/${requesterId}/decline`);
+}
+
+// ── block & report (COS-1268, cos-backend #536) ──────────────────────
+
+/**
+ * Block someone. To them it looks like an ordinary removal: an accepted
+ * connection is left, so the conversation is gone for both of you.
+ * 404 FEATURE_DISABLED when social_safety_enabled is off.
+ */
+export async function blockUser(userId: string): Promise<void> {
+  await apiClient.post('/v1/patients/me/social/blocks', { userId });
+}
+
+/** Unblock. Does NOT reconnect. Never flag-gated, so a block cannot be stranded. */
+export async function unblockUser(userId: string): Promise<void> {
+  await apiClient.delete(`/v1/patients/me/social/blocks/${encodeURIComponent(userId)}`);
+}
+
+/** Matches REPORT_REASONS in cos-backend user-report.service.ts. */
+export type ReportReason =
+  | 'harassment'
+  | 'spam'
+  | 'sexual_content'
+  | 'hate_or_threats'
+  | 'self_harm'
+  | 'other';
+
+export interface FiledReport {
+  ticketId: string;
+  /** CSH-XXXX-XXXX */
+  reference: string;
+  reason: ReportReason;
+  /** false when alsoBlock was not asked for, OR the block failed after the report was filed. */
+  blocked: boolean;
+  /** e.g. 'within 24 hours' — server config, shown verbatim. */
+  reviewWindowText: string;
+}
+
+/**
+ * Report a message (messageId) or, without one, the other person in this
+ * conversation. The server copies the words from its own store — no message
+ * text is ever sent from here.
+ *
+ * `alsoBlock` is REQUIRED here on purpose: the server reads a missing value as
+ * false, so the app's default (block, except for self_harm) must always be sent.
+ */
+export async function reportConversation(
+  conversationId: string,
+  input: { messageId?: string; reason: ReportReason; comment?: string; alsoBlock: boolean },
+): Promise<FiledReport> {
+  const res = await apiClient.post<{ data: FiledReport }>(
+    `/v1/patients/me/conversations/${encodeURIComponent(conversationId)}/reports`,
+    input,
+  );
+  return res.data.data;
 }
 
 // ── invite by email (COS-1231) ────────────────────────────────────────

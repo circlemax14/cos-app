@@ -18,6 +18,9 @@
  * No SVG, no Animated. KeyboardAvoidingView is the one addition, and it is
  * required: without it the composer sits under the keyboard on iOS and the
  * screen is unusable.
+ *
+ * COS-1268 adds Alert (the Block / Remove confirms) and nothing else: the ⋮
+ * menu is an inline View and Report is a mode of this screen, not an overlay.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -29,6 +32,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -38,12 +42,18 @@ import {
   fetchMessages,
   sendMessage,
   markConversationRead,
+  fetchMembers,
+  blockUser,
+  cancelConnection,
   type ConversationMessage,
 } from '@/services/api/conversations';
 import { Colors } from '@/constants/theme';
 import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUser } from '@/hooks/use-user';
+import { useFeatureFlags } from '@/hooks/use-feature-flags';
+import { isSocialSafetyOn, otherMemberId, safetyErrorText } from '@/lib/social-safety';
+import { ReportSheet } from '@/components/social/ReportSheet';
 
 /*
  * COS-1058 — required on every leaf route, and enforced by a test.
@@ -115,47 +125,153 @@ export default function ConversationScreen() {
     send.mutate(body);
   }, [draft, send]);
 
+  /*
+   * ─── COS-1268: BLOCK & REPORT ────────────────────────────────────────
+   *
+   * Gated on `=== true` from the flags response, never useIsFeatureFlagEnabled,
+   * which says true while loading. Flag off ⇒ no members fetch, no menu, no
+   * long-press: the screen renders exactly as before.
+   */
+  const { data: flags } = useFeatureFlags();
+  const safetyOn = isSocialSafetyOn(flags);
+  const membersQ = useQuery({
+    queryKey: ['conversation-members', conversationId],
+    queryFn: () => fetchMembers(conversationId),
+    enabled: safetyOn && conversationId.length > 0,
+    staleTime: 60_000,
+  });
+  /** Null until we know exactly one other person — then every safety action hides. */
+  const other = safetyOn ? otherMemberId(membersQ.data, me) : null;
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** null = the thread; { message: null } = reporting the person; else one message. */
+  const [reporting, setReporting] = useState<{ message: { messageId: string; body: string } | null } | null>(null);
+  const [safetyError, setSafetyError] = useState<string | null>(null);
+
+  // Tab screens stay mounted, so a half-open menu or report must not follow
+  // the patient into the next conversation they open.
+  useEffect(() => {
+    setMenuOpen(false);
+    setReporting(null);
+    setSafetyError(null);
+  }, [conversationId]);
+
+  /*
+   * After a block or a removal this conversation no longer exists for me. The
+   * inbox is NAMED: router.back() in a Tabs navigator goes to Home (firstRoute).
+   */
+  const leave = useCallback(() => {
+    setMenuOpen(false);
+    setReporting(null);
+    void qc.invalidateQueries({ queryKey: ['conversations'] });
+    void qc.invalidateQueries({ queryKey: ['connections'] });
+    router.navigate('/Home/inbox' as never);
+  }, [qc]);
+
+  const block = useMutation({
+    mutationFn: (userId: string) => blockUser(userId),
+    onSuccess: leave,
+    onError: (err) => setSafetyError(safetyErrorText(err)),
+  });
+  const remove = useMutation({
+    mutationFn: (userId: string) => cancelConnection(userId),
+    onSuccess: leave,
+    onError: (err) => setSafetyError(safetyErrorText(err)),
+  });
+
+  const openReport = useCallback((message: { messageId: string; body: string } | null) => {
+    setMenuOpen(false);
+    setSafetyError(null);
+    setReporting({ message });
+  }, []);
+
+  const confirmBlock = () => {
+    if (!other) return;
+    setMenuOpen(false);
+    Alert.alert(
+      'Block this person?',
+      "They won't be told. They won't be able to message you or find you. You can unblock them any time in Social settings (the eye icon on the Social tab).",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: () => block.mutate(other) },
+      ],
+    );
+  };
+
+  const confirmRemove = () => {
+    if (!other) return;
+    setMenuOpen(false);
+    Alert.alert(
+      'Remove this connection?',
+      'This conversation will close for both of you. Either of you can ask to connect again later.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => remove.mutate(other) },
+      ],
+    );
+  };
+
   const renderItem = useCallback(
     ({ item }: { item: ConversationMessage }) => {
       const mine = item.senderId === me;
+      const bubbleStyle = [
+        styles.bubble,
+        {
+          backgroundColor: mine ? (colors.tint as string) : (colors.card as string),
+          borderColor: colors.border,
+        },
+      ];
+      const content = (
+        <>
+          <Text
+            style={{
+              color: mine ? '#FFFFFF' : colors.text,
+              fontSize: getScaledFontSize(15),
+              lineHeight: getScaledFontSize(21),
+            }}
+          >
+            {item.body}
+          </Text>
+          <Text
+            style={{
+              color: mine ? 'rgba(255,255,255,0.75)' : colors.subtext,
+              fontSize: getScaledFontSize(10),
+              marginTop: 3,
+              textAlign: 'right',
+            }}
+          >
+            {new Date(item.createdAt).toLocaleTimeString(undefined, {
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </Text>
+        </>
+      );
+      // COS-1268 — only the other person's messages, and only with the flag on
+      // (`other` is null otherwise). Off, the bubble is the same plain View.
+      const reportable = other !== null && !mine;
+      const report = () => openReport({ messageId: item.messageId, body: item.body });
       return (
         <View style={[styles.bubbleRow, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
-          <View
-            style={[
-              styles.bubble,
-              {
-                backgroundColor: mine ? (colors.tint as string) : (colors.card as string),
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Text
-              style={{
-                color: mine ? '#FFFFFF' : colors.text,
-                fontSize: getScaledFontSize(15),
-                lineHeight: getScaledFontSize(21),
+          {reportable ? (
+            <Pressable
+              style={bubbleStyle}
+              onLongPress={report}
+              accessibilityHint="Long press to report this message"
+              accessibilityActions={[{ name: 'report', label: 'Report message' }]}
+              onAccessibilityAction={(e) => {
+                if (e.nativeEvent.actionName === 'report') report();
               }}
             >
-              {item.body}
-            </Text>
-            <Text
-              style={{
-                color: mine ? 'rgba(255,255,255,0.75)' : colors.subtext,
-                fontSize: getScaledFontSize(10),
-                marginTop: 3,
-                textAlign: 'right',
-              }}
-            >
-              {new Date(item.createdAt).toLocaleTimeString(undefined, {
-                hour: 'numeric',
-                minute: '2-digit',
-              })}
-            </Text>
-          </View>
+              {content}
+            </Pressable>
+          ) : (
+            <View style={bubbleStyle}>{content}</View>
+          )}
         </View>
       );
     },
-    [me, colors, getScaledFontSize],
+    [me, colors, getScaledFontSize, other, openReport],
   );
 
   const messages = messagesQ.data?.messages ?? [];
@@ -182,7 +298,53 @@ export default function ConversationScreen() {
         >
           Conversation
         </Text>
+        {other && !reporting && (
+          <Pressable
+            onPress={() => setMenuOpen((v) => !v)}
+            disabled={block.isPending || remove.isPending}
+            accessibilityRole="button"
+            accessibilityLabel="More options"
+            accessibilityState={{ expanded: menuOpen, busy: block.isPending || remove.isPending }}
+            hitSlop={10}
+            style={{ marginLeft: 'auto', padding: 4 }}
+          >
+            <MaterialIcons name="more-vert" size={getScaledFontSize(22)} color={colors.text} />
+          </Pressable>
+        )}
       </View>
+
+      {/* COS-1268 — the ⋮ menu, inline under the header like SocialPanel's
+          visibility dropdown: no Portal, no Modal, identical on both platforms. */}
+      {menuOpen && other && !reporting && (
+        <View style={[styles.menu, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          {(
+            [
+              { icon: 'flag', label: 'Report', onPress: () => openReport(null) },
+              { icon: 'block', label: 'Block', onPress: confirmBlock },
+              { icon: 'person-remove', label: 'Remove connection', onPress: confirmRemove },
+            ] as const
+          ).map((a) => (
+            <Pressable
+              key={a.label}
+              onPress={a.onPress}
+              accessibilityRole="menuitem"
+              accessibilityLabel={a.label}
+              style={styles.menuItem}
+            >
+              <MaterialIcons name={a.icon} size={getScaledFontSize(20)} color={colors.icon} />
+              <Text style={{ color: colors.text, fontSize: getScaledFontSize(15) }}>{a.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      {safetyError && !reporting && (
+        <Text
+          style={{ color: '#B91C1C', fontSize: getScaledFontSize(12), padding: Spacing.sm }}
+          accessibilityLiveRegion="polite"
+        >
+          {safetyError}
+        </Text>
+      )}
 
       {/* COS-1241 — 'height' on Android, as COS-1031b did for the other chat:
           with edgeToEdgeEnabled the window no longer resizes for the keyboard,
@@ -192,6 +354,17 @@ export default function ConversationScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
+        {/* COS-1268 — Report is a MODE: it takes the thread's place inside this
+            KeyboardAvoidingView, so its comment box is never under the keyboard. */}
+        {reporting ? (
+          <ReportSheet
+            conversationId={conversationId}
+            message={reporting.message}
+            onClose={() => setReporting(null)}
+            onBlocked={leave}
+          />
+        ) : (
+        <>
         <FlatList
           data={messages}
           keyExtractor={(m) => m.messageId}
@@ -258,6 +431,8 @@ export default function ConversationScreen() {
             <MaterialIcons name="send" size={getScaledFontSize(22)} color={colors.tint} />
           </Pressable>
         </View>
+        </>
+        )}
       </KeyboardAvoidingView>
     </AppWrapper>
   );
@@ -282,4 +457,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   empty: { alignItems: 'center', paddingVertical: 60, transform: [{ scaleY: -1 }] },
+  menu: { borderBottomWidth: 1, paddingHorizontal: Spacing.md },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 44 },
 });

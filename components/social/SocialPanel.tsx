@@ -64,6 +64,7 @@ import {
   searchDirectory,
   sendEmailInvite,
   setDiscoverability,
+  unblockUser,
   withdrawEmailInvite,
   type Connection,
   type DirectoryEntry,
@@ -85,6 +86,8 @@ import { consumeInviteSheetIntent } from '@/lib/social-nav'
 import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invite-copy'
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCanShowScreen } from '@/hooks/use-feature-permissions'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { blockedPersonName, isSocialSafetyOn, safetyErrorText } from '@/lib/social-safety'
 
 /** Matches MIN_QUERY_LENGTH on the server. Below this we do not even ask. */
 const MIN_QUERY = 2
@@ -414,6 +417,28 @@ export function SocialPanel(): React.JSX.Element | null {
     () => new Set((sentQ.data ?? []).map((c) => c.peerId)),
     [sentQ.data],
   )
+
+  /*
+   * COS-1268 — people I blocked, beside the switch that decides who can find me.
+   *
+   * Fetched only while that dropdown is open, and with the flag OFF too: the
+   * server keeps this list and Unblock available whatever the flag says, so
+   * turning Block & Report off can never strand a block. With the flag off the
+   * section renders only when there is something in it to undo.
+   */
+  const safetyOn = isSocialSafetyOn(useFeatureFlags().data)
+  const blockedQ = useQuery({
+    queryKey: ['connections', 'blocked'],
+    queryFn: () => fetchConnections('blocked'),
+    staleTime: 15_000,
+    enabled: canFind && showVisibility,
+  })
+  const blocked = blockedQ.data ?? []
+  const unblock = useMutation({
+    mutationFn: (peerId: string) => unblockUser(peerId),
+    // Settled, not success: a NOT_BLOCKED means the row is already gone.
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['connections', 'blocked'] }),
+  })
 
   const toggleDiscoverable = useMutation({
     mutationFn: (next: boolean) => setDiscoverability(next),
@@ -765,6 +790,70 @@ export function SocialPanel(): React.JSX.Element | null {
             disabled={visibilityQ.isLoading || toggleDiscoverable.isPending}
             accessibilityLabel="Let other people find me"
           />
+        </View>
+      )}
+
+      {/* COS-1268 — Blocked people. Flag off: only when there is a block to undo. */}
+      {showVisibility && canFind && (safetyOn || blocked.length > 0) && (
+        <View style={[styles.notice, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 0 }]}>
+          <Text
+            style={{ color: colors.text, fontSize: fs(14), fontWeight: fw(600) as TextStyle['fontWeight'] }}
+            accessibilityRole="header"
+          >
+            Blocked people
+          </Text>
+          {blockedQ.isLoading ? (
+            <ActivityIndicator style={{ marginTop: Spacing.sm }} color={colors.tint} />
+          ) : blockedQ.isError ? (
+            // Never "nobody" when we could not ask: an empty list is a claim.
+            <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+              We couldn&apos;t load your blocked list. Close and reopen this to try again.
+            </Text>
+          ) : blocked.length === 0 ? (
+            <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+              You haven&apos;t blocked anyone. People you block can&apos;t message you or find you,
+              and they aren&apos;t told.
+            </Text>
+          ) : (
+            <>
+              {blocked.map((item: Connection) => {
+                const busyRow = unblock.isPending && unblock.variables === item.peerId
+                const name = blockedPersonName(item)
+                return (
+                  <View key={`blocked-${item.peerId}`} style={[styles.row, { borderColor: colors.border }]}>
+                    <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.border }]}>
+                      <MaterialIcons name="block" size={fs(18)} color={colors.icon} />
+                    </View>
+                    <Text style={{ flex: 1, marginLeft: Spacing.sm, color: colors.text, fontSize: fs(15) }} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <Pressable
+                      onPress={() => unblock.mutate(item.peerId)}
+                      disabled={busyRow}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: busyRow, busy: busyRow }}
+                      accessibilityLabel={`Unblock ${name}`}
+                      style={[styles.actionBtn, { borderColor: colors.border, opacity: busyRow ? 0.5 : 1 }]}
+                    >
+                      {busyRow ? (
+                        <ActivityIndicator size="small" color={colors.subtext} />
+                      ) : (
+                        <Text style={{ color: actionTint, fontSize: fs(13), fontWeight: '600' }}>Unblock</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                )
+              })}
+              <Text style={{ color: colors.subtext, fontSize: fs(12), marginTop: 2, lineHeight: fs(17) }}>
+                Unblocking doesn&apos;t reconnect you. They aren&apos;t told either way.
+              </Text>
+            </>
+          )}
+          {unblock.isError ? (
+            <Text style={{ color: errorColor, fontSize: fs(12), marginTop: 4 }} accessibilityLiveRegion="polite">
+              {safetyErrorText(unblock.error)}
+            </Text>
+          ) : null}
         </View>
       )}
 
