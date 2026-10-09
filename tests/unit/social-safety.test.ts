@@ -14,6 +14,8 @@ import {
   alsoBlockToSend,
   blockedPersonName,
   isSocialSafetyOn,
+  MESSAGING_DISABLED_TEXT,
+  messagingDisabledText,
   otherMemberId,
   reportConfirmation,
   safetyErrorText,
@@ -70,11 +72,50 @@ test('the app ALWAYS sends alsoBlock — the server reads a missing one as false
   assert.match(sheet, /reason === 'self_harm' \? \(\s*<CrisisSupportCard /);
 });
 
-test('confirmation copy carries the server review window', () => {
+test('confirmation copy promises NO review time (Vishal, 2026-10-08)', () => {
   assert.equal(
-    reportConfirmation('within 24 hours'),
-    "We'll review this within 24 hours. We don't monitor conversations. In an emergency, call 911.",
+    reportConfirmation(true),
+    "Thanks — we've blocked them and our team will look into it. We don't monitor conversations. In an emergency, call 911.",
   );
+  // Not blocked (self_harm, unticked, or the block failed): never claims one.
+  assert.equal(
+    reportConfirmation(false),
+    "Thanks — our team will look into it. We don't monitor conversations. In an emergency, call 911.",
+  );
+  for (const blocked of [true, false]) assert.doesNotMatch(reportConfirmation(blocked), /review|hour|within/i);
+  // Driven by the SERVER's `blocked`, and no review-window field is read any more.
+  const sheet = strip(read('components/social/ReportSheet.tsx'));
+  assert.match(sheet, /reportConfirmation\(filed\.blocked\)/);
+  assert.doesNotMatch(read('services/api/conversations.ts'), /reviewWindowText/);
+});
+
+// ── messaging turned off by a report reviewer ────────────────────────
+
+test('MESSAGING_DISABLED reads as the support copy; anything else is left to the caller', () => {
+  assert.equal(
+    MESSAGING_DISABLED_TEXT,
+    'Messaging is turned off for your account. Contact support@circlesupporthealth.ai if you think this is a mistake.',
+  );
+  const off = { response: { status: 403, data: { code: 'MESSAGING_DISABLED' } } };
+  assert.equal(messagingDisabledText(off), MESSAGING_DISABLED_TEXT);
+  assert.equal(messagingDisabledText({ response: { status: 403, data: { code: 'NOT_A_MEMBER' } } }), null);
+  assert.equal(messagingDisabledText({ code: 'NETWORK_ERROR' }), null);
+  assert.equal(messagingDisabledText(undefined), null);
+});
+
+test('every way to reach someone shows it: send, connect (both screens), accept (both screens)', () => {
+  const convo = strip(read('app/Home/conversation.tsx'));
+  assert.match(convo, /setSendError\(messagingDisabledText\(err\) \?\? 'Not sent\./);
+  for (const file of ['app/Home/find-people.tsx', 'app/Home/connection-requests.tsx']) {
+    const src = strip(read(file));
+    assert.match(src, /onError: \(err\) => setNotice\(messagingDisabledText\(err\)\)/, file);
+    assert.match(src, /\{notice\}/, `${file} renders it`);
+  }
+  const panel = strip(read('components/social/SocialPanel.tsx'));
+  assert.equal(panel.match(/onError: \(err\) => setMessagingNotice\(messagingDisabledText\(err\)\)/g)?.length, 2);
+  assert.match(panel, /\{messagingNotice\}/);
+  // Invites already show the server's own message verbatim (wrapInviteError).
+  assert.match(read('services/api/conversations.ts'), /new Error\(res\.error \|\|/);
 });
 
 test('a report that blocked leaves the screen; one that did not stays', () => {

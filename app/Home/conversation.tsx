@@ -52,7 +52,7 @@ import { Spacing, Radii } from '@/constants/design-system';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useUser } from '@/hooks/use-user';
 import { useFeatureFlags } from '@/hooks/use-feature-flags';
-import { isSocialSafetyOn, otherMemberId, safetyErrorText } from '@/lib/social-safety';
+import { isSocialSafetyOn, messagingDisabledText, otherMemberId, safetyErrorText } from '@/lib/social-safety';
 import { ReportSheet } from '@/components/social/ReportSheet';
 
 /*
@@ -109,13 +109,17 @@ export default function ConversationScreen() {
       void qc.invalidateQueries({ queryKey: ['conversation-messages', conversationId] });
       void qc.invalidateQueries({ queryKey: ['conversations'] });
     },
-    onError: () => {
+    onError: (err) => {
       /*
        * The draft is deliberately NOT cleared on failure. The patient believes
        * they have said something; losing their words because the network
        * blinked is the worst outcome this screen can produce.
+       *
+       * COS-1268 — a reviewer can turn messaging off for an account; that is
+       * not a connection problem, so it says what it is. Not flag-gated: the
+       * restriction is the server's, whatever the app's flags say.
        */
-      setSendError('Not sent. Check your connection and try again.');
+      setSendError(messagingDisabledText(err) ?? 'Not sent. Check your connection and try again.');
     },
   });
 

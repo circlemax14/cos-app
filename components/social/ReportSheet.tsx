@@ -92,9 +92,9 @@ export function ReportSheet({
             Report sent
           </Text>
           <Text style={body}>{`Reference ${filed.reference}`}</Text>
-          <Text style={body}>{reportConfirmation(filed.reviewWindowText)}</Text>
+          <Text style={body}>{reportConfirmation(filed.blocked)}</Text>
           {filed.blocked ? (
-            <Text style={sub}>You&apos;ve blocked this person. They won&apos;t be told.</Text>
+            <Text style={sub}>They won&apos;t be told that you blocked them.</Text>
           ) : asked ? (
             <Text style={sub}>
               We couldn&apos;t block them just now. You can try again from the menu.

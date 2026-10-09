@@ -68,9 +68,27 @@ export function blockedPersonName(c: { displayName?: string; anonymous?: boolean
   return !c.anonymous && c.displayName ? c.displayName : 'Someone you blocked'
 }
 
-/** The confirmation line after a report. `reviewWindowText` is server copy, e.g. "within 24 hours". */
-export function reportConfirmation(reviewWindowText: string): string {
-  return `We'll review this ${reviewWindowText}. We don't monitor conversations. In an emergency, call 911.`
+/**
+ * The confirmation line after a report. Vishal, 2026-10-08: it must NOT
+ * promise a review time. `blocked` is the server's — true only when the block
+ * actually went through, so a failed block is never claimed.
+ */
+export function reportConfirmation(blocked: boolean): string {
+  return `Thanks — ${blocked ? "we've blocked them and " : ''}our team will look into it. We don't monitor conversations. In an emergency, call 911.`
+}
+
+/** COS-1268 — what someone sees when a report reviewer has turned their messaging off. */
+export const MESSAGING_DISABLED_TEXT =
+  'Messaging is turned off for your account. Contact support@circlesupporthealth.ai if you think this is a mistake.'
+
+/**
+ * The messaging-off copy when that is why `err` failed (403 MESSAGING_DISABLED
+ * from send, connect, accept or invite), else null so the caller keeps its own
+ * message for everything else.
+ */
+export function messagingDisabledText(err: unknown): string | null {
+  const code = (err as { response?: { data?: { code?: string } } } | null)?.response?.data?.code
+  return code === 'MESSAGING_DISABLED' ? MESSAGING_DISABLED_TEXT : null
 }
 
 /**

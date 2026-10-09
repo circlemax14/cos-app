@@ -273,8 +273,6 @@ export interface FiledReport {
   reason: ReportReason;
   /** false when alsoBlock was not asked for, OR the block failed after the report was filed. */
   blocked: boolean;
-  /** e.g. 'within 24 hours' — server config, shown verbatim. */
-  reviewWindowText: string;
 }
 
 /**

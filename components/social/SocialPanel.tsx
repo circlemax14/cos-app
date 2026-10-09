@@ -87,7 +87,7 @@ import { incomingRequestLine, incomingRequestReason } from '@/lib/received-invit
 import { useAccessibility } from '@/stores/accessibility-store'
 import { useCanShowScreen } from '@/hooks/use-feature-permissions'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { blockedPersonName, isSocialSafetyOn, safetyErrorText } from '@/lib/social-safety'
+import { blockedPersonName, isSocialSafetyOn, messagingDisabledText, safetyErrorText } from '@/lib/social-safety'
 
 /** Matches MIN_QUERY_LENGTH on the server. Below this we do not even ask. */
 const MIN_QUERY = 2
@@ -282,6 +282,9 @@ export function SocialPanel(): React.JSX.Element | null {
   /** Inline, under the field that caused it. Alert.alert renders a Modal. */
   const [inviteFieldError, setInviteFieldError] = React.useState<string | null>(null)
   const [inviteBanner, setInviteBanner] = React.useState<string | null>(null)
+  // COS-1268 — set only when connect/accept failed because a reviewer turned
+  // messaging off for this account (invites already show the server's copy).
+  const [messagingNotice, setMessagingNotice] = React.useState<string | null>(null)
   /** The invitation screen 3 is confirming. Held so it can name the address. */
   const [sentInvite, setSentInvite] = React.useState<Invite | null>(null)
 
@@ -426,7 +429,9 @@ export function SocialPanel(): React.JSX.Element | null {
 
   const connect = useMutation({
     mutationFn: (userId: string) => requestConnection(userId),
+    onError: (err) => setMessagingNotice(messagingDisabledText(err)),
     onSuccess: (_d, userId) => {
+      setMessagingNotice(null)
       setRequested((r) => ({ ...r, [userId]: true }))
       // So the Sent list and the button state agree without a reopen.
       void qc.invalidateQueries({ queryKey: ['connections', 'pending-out'] })
@@ -506,7 +511,11 @@ export function SocialPanel(): React.JSX.Element | null {
   }
   const accept = useMutation({
     mutationFn: (peerId: string) => acceptConnection(peerId),
-    onSuccess: refresh,
+    onError: (err) => setMessagingNotice(messagingDisabledText(err)),
+    onSuccess: () => {
+      setMessagingNotice(null)
+      refresh()
+    },
   })
   const decline = useMutation({
     mutationFn: (peerId: string) => declineConnection(peerId),
@@ -782,6 +791,20 @@ export function SocialPanel(): React.JSX.Element | null {
       {!canFind && (
         <BlockedPeople colors={colors} fs={fs} fw={fw} actionTint={actionTint} errorColor={errorColor} />
       )}
+
+      {messagingNotice ? (
+        // Same inline banner as the invite failure — Alert.alert renders a Modal.
+        <View style={[styles.banner, { borderColor: errorColor, backgroundColor: colors.card }]}>
+          <MaterialIcons name="error-outline" size={fs(18)} color={errorColor} />
+          <Text
+            style={{ color: errorColor, fontSize: fs(13), flex: 1, marginLeft: 8 }}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {messagingNotice}
+          </Text>
+        </View>
+      ) : null}
 
       {mode === 'find' && canFind ? (
         <>
