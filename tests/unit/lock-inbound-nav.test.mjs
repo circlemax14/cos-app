@@ -17,7 +17,9 @@ const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
 const notif = code(read('hooks/use-notifications.ts'))
-const intent = code(read('app/+native-intent.ts'))
+// MOB-01 — the decision moved to lib/deep-link-gate.ts (tested with real
+// URLs in deep-link-gate.test.ts); +native-intent only wires it up.
+const intent = code(read('lib/deep-link-gate.ts'))
 const layout = code(read('app/_layout.tsx'))
 const applock = code(read('hooks/use-app-lock.ts'))
 const lockScreen = code(read('app/(security)/lock-screen.tsx'))
@@ -41,7 +43,7 @@ test('BYPASS 2 — the catch-fallback push is gated too', () => {
 })
 
 test('BYPASS 3 — deep links go through redirectSystemPath and can be refused', () => {
-  assert.match(intent, /export async function redirectSystemPath/)
+  assert.match(code(read('app/+native-intent.ts')), /export function redirectSystemPath[\s\S]*decideInboundLink\(/)
   assert.match(intent, /return null/)
   assert.match(intent, /deferNavigation\(/)
 })
@@ -50,22 +52,22 @@ test('THE POINT: a cold start decides from STORAGE, not the in-memory flag', () 
   // On `initial: true` the lock flag is not yet authoritative — SecurityProvider
   // resolves it in an effect. Reading it there would wave every cold-start link
   // through, which is exactly the case someone holding the phone would use.
-  assert.match(intent, /isPinSetup\(\)/)
-  const coldBranch = intent.slice(intent.indexOf('if (initial)'), intent.indexOf('if (isAppLocked'))
-  assert.match(coldBranch, /await isPinSetup\(\)/)
+  assert.match(intent, /deps\.isPinSetup\(\)/)
+  const coldBranch = intent.slice(intent.indexOf('if (initial)'), intent.indexOf('if (deps.isAppLocked'))
+  assert.match(coldBranch, /await deps\.isPinSetup\(\)/)
 })
 
 test('THE POINT: no PIN means the link PASSES — deferring it would strand it', () => {
   // Nothing drains the queue when no lock screen ever mounts, so deferring
   // here would silently break deep links on every cold start. This is the
   // difference between a fix and a regression.
-  const coldBranch = intent.slice(intent.indexOf('if (initial)'), intent.indexOf('if (isAppLocked'))
+  const coldBranch = intent.slice(intent.indexOf('if (initial)'), intent.indexOf('if (deps.isAppLocked'))
   assert.match(coldBranch, /if \(!pinConfigured\) return path/)
 })
 
 test('an unreadable PIN state fails CLOSED', () => {
   // Deferring a link is recoverable; showing PHI is not.
-  const coldBranch = intent.slice(intent.indexOf('if (initial)'), intent.indexOf('if (isAppLocked'))
+  const coldBranch = intent.slice(intent.indexOf('if (initial)'), intent.indexOf('if (deps.isAppLocked'))
   assert.match(coldBranch, /pinConfigured = true/)
 })
 
