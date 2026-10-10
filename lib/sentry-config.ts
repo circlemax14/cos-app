@@ -122,13 +122,24 @@ export function stripQuery(url: string): string {
   return redactUrl(url.replace(/[?#][\s\S]*$/, ''));
 }
 
-/** Apply stripQuery to the url-ish keys of a crumb/span data bag, in place. */
+/**
+ * Apply stripQuery to the url-ish keys of a crumb/span data bag, in place.
+ * 'http.url' is the full href (query included) that the SDK's xhr/fetch
+ * instrumentation puts on every http.client span; 'url.full' is its OTel name.
+ */
 function stripUrlKeys(data: Record<string, unknown> | undefined): void {
   if (!data) return;
-  for (const k of ['url', 'to', 'from']) {
+  for (const k of ['url', 'to', 'from', 'http.url', 'url.full']) {
     const v = data[k];
     if (typeof v === 'string') data[k] = stripQuery(v);
   }
+}
+
+/** Span/trace data bag: drop the split-out query + fragment, strip the urls. */
+function scrubSpanData(data: Record<string, unknown> | undefined): void {
+  if (!data) return;
+  for (const k of ['http.query', 'http.fragment', 'url.query', 'url.fragment']) delete data[k];
+  stripUrlKeys(data);
 }
 
 /**
@@ -361,13 +372,13 @@ export function scrubTransaction(event: TransactionEvent, _hint?: EventHint): Tr
     event.request.url = stripQuery(event.request.url);
   }
   if (event.transaction) event.transaction = stripQuery(event.transaction);
+  // The root span's attributes are sent here, not in event.spans.
+  scrubSpanData(event.contexts?.trace?.data as Record<string, unknown> | undefined);
+  if (typeof event.contexts?.trace?.description === 'string') {
+    event.contexts.trace.description = redactUrl(event.contexts.trace.description.replace(/[?#]\S*/g, ''));
+  }
   for (const span of event.spans ?? []) {
-    const data = span.data as Record<string, unknown> | undefined;
-    if (data) {
-      delete data['http.query'];
-      delete data['http.fragment'];
-      stripUrlKeys(data);
-    }
+    scrubSpanData(span.data as Record<string, unknown> | undefined);
     if (typeof span.description === 'string') {
       span.description = redactUrl(span.description.replace(/[?#]\S*/g, ''));
     }

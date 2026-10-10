@@ -62,20 +62,41 @@ test('event.request.url loses its query too', () => {
   assert.equal(ev.request!.url, 'https://api.circlesupporthealth.ai/v1/patients/me/social/search');
 });
 
-test('transactions: span http.query / url / description are scrubbed', () => {
+// Shaped like what @sentry/browser tracing/request.js:255-262 (xhr) and
+// @sentry/core fetch.js:305-309 set on an http.client span: `url` is the
+// stripped url but `http.url` is the FULL href, query included.
+const spanData = () => ({
+  url: LAB,
+  'http.url': LAB,
+  'url.full': LAB,
+  'http.query': '?name=HIV%201%2F2%20Ab&code=7917-8',
+  'http.fragment': '#x',
+  'url.query': 'name=HIV',
+  'http.method': 'GET',
+});
+
+test('transactions: every span url attribute (incl. http.url) and description are scrubbed', () => {
   const tx = scrubTransaction({
     type: 'transaction',
     transaction: '/Home/labs',
-    spans: [
-      {
-        description: `GET ${LAB}`,
-        data: { 'http.query': '?name=HIV', 'http.fragment': '#x', url: LAB, 'http.method': 'GET' },
-      },
-    ],
+    spans: [{ description: `GET ${LAB}`, data: spanData() }],
   } as never);
   const s = JSON.stringify(tx);
   assert.ok(!s.includes('HIV') && !s.includes('7917-8'), s);
-  assert.equal((tx.spans as any)[0].data['http.method'], 'GET');
+  const d = (tx.spans as any)[0].data;
+  assert.equal(d['http.url'], 'https://api.circlesupporthealth.ai/v1/labs/explanation');
+  assert.equal(d['http.method'], 'GET');
+});
+
+test('transactions: the ROOT span (contexts.trace.data) is scrubbed too', () => {
+  const tx = scrubTransaction({
+    type: 'transaction',
+    transaction: 'GET /v1/labs/explanation',
+    contexts: { trace: { op: 'http.client', description: `GET ${LAB}`, data: spanData() } },
+  } as never);
+  const s = JSON.stringify(tx);
+  assert.ok(!s.includes('HIV') && !s.includes('7917-8'), s);
+  assert.equal((tx.contexts as any).trace.data['http.method'], 'GET');
 });
 
 test('init options wire beforeSendTransaction', () => {
