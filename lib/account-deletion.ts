@@ -24,20 +24,34 @@ export const ACCOUNT_DELETION_WEB_URL = 'https://circlesupporthealth.ai/delete-a
 /** Must match GRACE_WINDOW_DAYS in cos-backend account-deletion.service.ts. */
 export const DELETION_GRACE_DAYS = 30;
 
+/** Privacy Policy §7: Cal. Health & Safety Code § 123145 minimum. */
+export const HEALTH_RECORD_RETENTION_YEARS = 7;
+
+const SUPPORT_EMAIL = 'support@circlesupporthealth.ai';
+
 /**
- * True only when the server says the two load-bearing steps happened:
- * the users row carries scheduledPurgeAt (so the nightly purge will erase it)
- * and the Cognito user is disabled (so nobody can sign back in).
+ * What the server actually did, read from the flags (not the status code):
+ *
+ *  - 'confirmed': the users row carries scheduledPurgeAt (so the nightly purge
+ *    will erase it) AND the Cognito user is disabled (nobody can sign back in).
+ *  - 'requested': the row IS marked for purge, but disabling the sign-in failed.
+ *    The deletion will still happen (markUserSoftDeleted is idempotent and the
+ *    accountPurge lambda acts on the row), so telling the patient "NOT deleted"
+ *    would be false. Seen every time for test-pool accounts, whose Cognito pool
+ *    adminDisableCognitoUser does not target.
+ *  - 'failed': nothing durable happened (error, offline, row not marked).
  *
  * `body` is the raw axios `response.data` — `{ success, data: {...} }`.
  */
-export function isDeletionConfirmed(body: unknown): boolean {
-  if (!body || typeof body !== 'object') return false;
+export type DeletionOutcome = 'confirmed' | 'requested' | 'failed';
+
+export function deletionOutcome(body: unknown): DeletionOutcome {
+  if (!body || typeof body !== 'object') return 'failed';
   const env = body as { success?: unknown; data?: unknown };
-  if (env.success === false) return false;
+  if (env.success === false) return 'failed';
   const d = env.data as Record<string, unknown> | null | undefined;
-  if (!d || typeof d !== 'object') return false;
-  return d.deleted === true && d.userRowMarkedDeleted === true && d.cognitoDisabled === true;
+  if (!d || typeof d !== 'object' || d.deleted !== true || d.userRowMarkedDeleted !== true) return 'failed';
+  return d.cognitoDisabled === true ? 'confirmed' : 'requested';
 }
 
 export interface DeletionCopy {
@@ -47,24 +61,34 @@ export interface DeletionCopy {
   lastChanceBody: string;
   successTitle: string;
   successBody: string;
+  requestedTitle: string;
+  requestedBody: string;
   failureTitle: string;
   failureBody: string;
 }
 
 export function deletionCopy(platform: string): DeletionCopy {
   const store = platform === 'android' ? 'Google Play' : 'the App Store';
+  // Must say the same thing as Privacy Policy §7 and the public web page
+  // (cos-frontend src/pages/marketing/DeleteAccount.tsx): profile 30 days,
+  // health records at least 7 years, audit logs 6 years.
+  const retention =
+    `Your account profile is kept for ${DELETION_GRACE_DAYS} days so support can restore it, then deleted. ` +
+    `Health records the law requires us to keep are held encrypted for at least ${HEALTH_RECORD_RETENTION_YEARS} years, ` +
+    `and audit logs for 6 years, then deleted (Privacy Policy, section 7).`;
   return {
     confirmTitle: 'Delete account?',
     confirmBody:
-      `This closes your Circle Support Health account and signs you out everywhere. ` +
-      `For ${DELETION_GRACE_DAYS} days support can still restore it; after that it is permanently erased. ` +
-      `Health records we are required by law to keep are held encrypted for that period and then deleted (Privacy Policy, section 7). ` +
+      `This closes your Circle Support Health account and signs you out everywhere. ${retention} ` +
       `Deleting your account does not cancel a subscription bought through ${store} — cancel it there.`,
     lastChanceTitle: 'Last chance',
     lastChanceBody: 'Tap Delete to close your account. You will be signed out immediately.',
     successTitle: 'Account deleted',
-    successBody:
-      `Your account is closed and is scheduled to be permanently erased in ${DELETION_GRACE_DAYS} days. We're sorry to see you go.`,
+    successBody: `Your account is closed. ${retention} We're sorry to see you go.`,
+    requestedTitle: 'Deletion requested',
+    requestedBody:
+      `We've recorded your request, scheduled your account for deletion and signed you out on this device. ` +
+      `One step is still finishing on our side; if you need confirmation, email ${SUPPORT_EMAIL}. ${retention}`,
     failureTitle: 'Account not deleted',
     failureBody:
       `We could not confirm the deletion, so your account has NOT been deleted and you are still signed in. ` +

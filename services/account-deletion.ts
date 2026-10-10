@@ -7,14 +7,16 @@ import { Alert, Linking, Platform } from 'react-native';
 import { router } from 'expo-router';
 
 import { apiClient } from '@/lib/api-client';
-import { ACCOUNT_DELETION_WEB_URL, deletionCopy, isDeletionConfirmed } from '@/lib/account-deletion';
+import { ACCOUNT_DELETION_WEB_URL, deletionCopy, deletionOutcome, type DeletionOutcome } from '@/lib/account-deletion';
 import { queryClient } from '@/providers/QueryProvider';
 import { signOut } from '@/services/auth';
 
 /**
  * Two-step confirm, then DELETE /v1/auth/account. Success is announced only
- * when the server confirms it; otherwise the patient stays signed in and is
- * offered Retry or the web deletion page.
+ * when the server confirms it. If the row is marked for purge but the sign-in
+ * could not be disabled, the patient is told the deletion is REQUESTED (true:
+ * the purge will run) and signed out — never "NOT deleted". Otherwise the
+ * patient stays signed in and is offered Retry or the web deletion page.
  *
  * `setBusy(true)` fires when the network call starts; `setBusy(false)` only on
  * failure (on success the screen is replaced, and staying latched prevents a
@@ -25,23 +27,26 @@ export function confirmAndDeleteAccount(setBusy: (busy: boolean) => void): void 
 
   const run = async () => {
     setBusy(true);
-    let confirmed = false;
+    let outcome: DeletionOutcome = 'failed';
     try {
       const res = await apiClient.delete('/v1/auth/account');
-      confirmed = isDeletionConfirmed(res?.data);
+      outcome = deletionOutcome(res?.data);
     } catch {
-      confirmed = false;
+      outcome = 'failed';
     }
 
-    if (confirmed) {
+    if (outcome !== 'failed') {
       try {
         await signOut();
       } catch {
-        // Best-effort; the account is already disabled server-side.
+        // Best-effort; the account is already marked for purge server-side.
       }
       queryClient.clear();
       router.replace('/(auth)/sign-in' as never);
-      setTimeout(() => Alert.alert(copy.successTitle, copy.successBody), 400);
+      const [title, body] = outcome === 'confirmed'
+        ? [copy.successTitle, copy.successBody]
+        : [copy.requestedTitle, copy.requestedBody];
+      setTimeout(() => Alert.alert(title, body), 400);
       return;
     }
 

@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  isDeletionConfirmed,
+  deletionOutcome,
   deletionCopy,
   ACCOUNT_DELETION_WEB_URL,
 } from '../../lib/account-deletion.ts';
@@ -26,17 +26,22 @@ const ok = {
 };
 
 test('a fully confirmed response counts as deleted', () => {
-  assert.equal(isDeletionConfirmed(ok), true);
+  assert.equal(deletionOutcome(ok), 'confirmed');
 });
 
-test('a 200 whose deletion steps failed is NOT a deletion', () => {
-  assert.equal(isDeletionConfirmed({ ...ok, data: { ...ok.data, userRowMarkedDeleted: false } }), false);
-  assert.equal(isDeletionConfirmed({ ...ok, data: { ...ok.data, cognitoDisabled: false } }), false);
+test('a 200 whose users row was not marked is NOT a deletion', () => {
+  assert.equal(deletionOutcome({ ...ok, data: { ...ok.data, userRowMarkedDeleted: false } }), 'failed');
+  assert.equal(deletionOutcome({ ...ok, data: { ...ok.data, userRowMarkedDeleted: false, cognitoDisabled: false } }), 'failed');
+});
+
+test('row marked for purge but Cognito disable failed is REQUESTED, not "NOT deleted"', () => {
+  // e.g. every test-users-pool account: adminDisableCognitoUser targets the main pool only
+  assert.equal(deletionOutcome({ ...ok, data: { ...ok.data, cognitoDisabled: false } }), 'requested');
 });
 
 test('garbage / error envelopes are not a deletion', () => {
   for (const b of [undefined, null, '', {}, { success: true }, { success: false, data: ok.data }, { data: null }]) {
-    assert.equal(isDeletionConfirmed(b), false, JSON.stringify(b));
+    assert.equal(deletionOutcome(b), 'failed', JSON.stringify(b));
   }
 });
 
@@ -45,8 +50,16 @@ test('copy no longer promises an immediate, irreversible erase', () => {
     const c = deletionCopy(p);
     const all = Object.values(c).join(' ');
     assert.doesNotMatch(all, /cannot be undone/i);
-    assert.match(c.confirmBody, /30 days/);
-    assert.match(c.confirmBody, /section 7/);
+    // Must match Privacy Policy §7 / the public /delete-account page: a reader
+    // must never come away thinking health records go after 30 days.
+    assert.doesNotMatch(all, /permanently erased/i);
+    for (const body of [c.confirmBody, c.successBody, c.requestedBody]) {
+      assert.match(body, /profile is kept for 30 days/);
+      assert.match(body, /at least 7 years/);
+      assert.match(body, /audit logs for 6 years/);
+      assert.match(body, /section 7/);
+    }
+    assert.doesNotMatch(c.requestedBody, /NOT/);
     assert.match(c.failureBody, /NOT been deleted/);
     assert.match(c.failureBody, /circlesupporthealth\.ai\/delete-account/);
   }
@@ -55,10 +68,10 @@ test('copy no longer promises an immediate, irreversible erase', () => {
   assert.equal(ACCOUNT_DELETION_WEB_URL, 'https://circlesupporthealth.ai/delete-account');
 });
 
-test('the flow shows success only after isDeletionConfirmed, and never swallows into success', () => {
+test('the flow shows success only after deletionOutcome, and never swallows into success', () => {
   const svc = strip(read('services/account-deletion.ts'));
-  assert.match(svc, /isDeletionConfirmed\(/);
-  const ok = svc.indexOf('if (confirmed)');
+  assert.match(svc, /deletionOutcome\(/);
+  const ok = svc.indexOf("if (outcome !== 'failed')");
   assert.ok(ok > -1, 'success branch is conditional');
   assert.ok(svc.indexOf('successTitle') > ok, 'success alert sits inside the confirmed branch');
   assert.match(svc, /failureTitle/);
@@ -73,8 +86,16 @@ test('Profile uses the shared flow, with no private copy and no entitlement gate
   assert.ok(!p.includes("useCanRender('profile.sign-out')"), 'sign-out cannot be withheld by plan');
 });
 
-test('onboarding fasten-connect (the self-signup dead end) offers deletion', () => {
-  const f = strip(read('app/(onboarding)/fasten-connect.tsx'));
-  assert.match(f, /confirmAndDeleteAccount\(/);
-  assert.match(f, /Delete my account/);
+test('every onboarding dead end (fasten-connect, data-processing) offers deletion and sign-out', () => {
+  // data-processing: the gate sends every connected-but-not-ready patient here
+  // on each cold launch, and a failed export can stay failed.
+  for (const screen of ['app/(onboarding)/fasten-connect.tsx', 'app/(onboarding)/data-processing.tsx']) {
+    const f = strip(read(screen));
+    assert.match(f, /confirmAndDeleteAccount\(/, screen);
+    assert.match(f, /Delete my account/, screen);
+    assert.match(f, /signOut\(\)/, screen);
+  }
+  // Both buttons sit outside the pending/failed branches, so both states have them.
+  const dp = strip(read('app/(onboarding)/data-processing.tsx'));
+  assert.ok(dp.indexOf('Delete my account') > dp.lastIndexOf('We will notify you once'), 'after both branches');
 });
