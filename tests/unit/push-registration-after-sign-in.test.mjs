@@ -48,8 +48,10 @@ test('sign-out forgets this phone on the account, as the outgoing user (SCRUM-78
   const auth = strip(read('services/auth.ts'))
   const signOut = auth.slice(auth.indexOf('export async function signOut'))
   assert.match(signOut, /await unregisterPushToken\(asOutgoingUser\)/, 'signOut must unregister the push token')
-  // COS-1250: it runs after the local wipe, so it carries the token captured before it.
-  assert.match(signOut, /const token = await getAccessToken\(\);\s*const asOutgoingUser: AxiosRequestConfig = token \? \{ headers: \{ Authorization: `Bearer \$\{token\}` \} \} : \{\};/)
+  // COS-1250: it runs after the local wipe, so it carries the tokens captured before it
+  // (MOB-05: refreshed by outgoingBearer when the access token has expired).
+  assert.match(signOut, /const token = await getAccessToken\(\);\s*const refreshToken = await getRefreshToken\(\);/)
+  assert.match(signOut, /const bearer = await outgoingBearer\(token, refreshToken\);\s*const asOutgoingUser: AxiosRequestConfig = bearer \? \{ headers: \{ Authorization: `Bearer \$\{bearer\}` \} \} : \{\};/)
   const fn = auth.slice(auth.indexOf('async function unregisterPushToken'))
   assert.match(fn, /apiClient\.post\('\/v1\/notifications\/unregister-token', \{ token \}, asOutgoingUser\)/)
   assert.match(fn, /Promise\.race\(\[attempt, new Promise<void>\(\(resolve\) => setTimeout\(resolve, 3000\)\)\]\)/, 'capped so sign-out never hangs')
