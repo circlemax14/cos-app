@@ -90,6 +90,16 @@ test('COS-1251 Apple callback is swallowed in both forms', async () => {
   assert.equal(await decideInboundLink({ path: '/auth/apple?id_token=x', initial: false }, d), null);
 });
 
+test('the PHI-free privacy policy opens even while locked (Health Connect rationale)', async () => {
+  for (const initial of [true, false]) {
+    const { d, deferred } = deps({ pin: true, locked: true });
+    assert.equal(await decideInboundLink({ path: 'cos://privacy-policy', initial }, d), 'cos://privacy-policy');
+    assert.deepEqual(deferred, []);
+  }
+  const { d } = deps({ locked: true });
+  assert.equal(await decideInboundLink({ path: 'cos://privacy-policy/../Home/x', initial: false }, d), null);
+});
+
 test('+native-intent delegates to the tested function', () => {
   const src = readFileSync(new URL('../../app/+native-intent.ts', import.meta.url), 'utf8');
   assert.match(src, /decideInboundLink\(/);

@@ -50,6 +50,9 @@ export function toInAppPath(url: unknown): string | null {
   return '/' + rest.replace(/^\/+/, '');
 }
 
+/** Screens with no PHI that a deep link may open past the lock. */
+export const PUBLIC_PATHS: ReadonlySet<string> = new Set(['/privacy-policy']);
+
 export interface InboundDeps {
   isPinSetup: () => Promise<boolean>;
   isAppLocked: () => boolean;
@@ -69,6 +72,11 @@ export async function decideInboundLink(
   if (typeof path === 'string' && /^(?:cos:\/\/|\/)auth\/apple(?:[/?#]|$)/.test(path)) return null;
 
   const inApp = toInAppPath(path);
+
+  // Public, PHI-free screens open even while locked. GP-02: Health Connect's
+  // privacy-policy link arrives as cos://privacy-policy and must show the
+  // policy, not the PIN pad.
+  if (inApp !== null && PUBLIC_PATHS.has(inApp.replace(/[?#].*$/, ''))) return path;
 
   if (initial) {
     // Cold start: decide from STORAGE — the in-memory lock is not yet
