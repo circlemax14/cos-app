@@ -18,6 +18,7 @@ import {
 // and trends. The old inline FRIENDLY_NAME map lived here from
 // SCRUM-268; that copy was migrated verbatim into the shared helper.
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
+import { isModelWritten } from '@/lib/ai-summary-label'
 import { groupAssessmentsByDomain } from '@/lib/assessment-grouping'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { useHealthPlanAssignments } from '@/hooks/use-health-plan-assignments'
@@ -732,6 +733,11 @@ export function SelfAssessmentTrends({
               </Text>
             </Pressable>
           </>
+        ) : q.data && !isModelWritten(q.data) ? (
+          // AICS-3 — the fixed self-harm / no-range text is not AI; no AI caption.
+          <Text style={{ color: colors.text, fontSize: fontSize(14), lineHeight: fontSize(21) }}>
+            {q.data.summary}
+          </Text>
         ) : q.data ? (
           <View accessible accessibilityLabel={`${q.data.summary} Written by AI, not a diagnosis.`}>
             <Text style={{ color: colors.text, fontSize: fontSize(14), lineHeight: fontSize(21) }}>
