@@ -24,6 +24,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons'
 import { Colors } from '@/constants/theme'
 import { Spacing } from '@/constants/design-system'
 import { splitDomains } from '@/lib/health-trend-summary-format'
+import { isModelWritten } from '@/lib/ai-summary-label'
 
 export interface TrendSummaryState {
   summary: string
@@ -58,7 +59,9 @@ export function HealthTrendSummaryCard({
     )
   }
 
-  if (state.error || !state.summary) {
+  // The backend answers a failed generation with HTTP 200 and a fixed apology;
+  // show it as the failure it is (with Try again), never as AI findings.
+  if (state.error || !isModelWritten({ summary: state.summary })) {
     return (
       <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <Text style={{ color: colors.subtext, fontSize: fs(13), lineHeight: fs(19) }}>
@@ -115,8 +118,8 @@ export function HealthTrendSummaryCard({
       ))}
 
       <Text style={{ color: colors.subtext, fontSize: fs(11), fontStyle: 'italic', marginTop: Spacing.md }}>
-        Written from your own records. It is not medical advice, and it does not replace your
-        care team.
+        AI-generated from your own records. It is not medical advice, and it does not replace your
+        doctor or care team.
       </Text>
     </View>
   )

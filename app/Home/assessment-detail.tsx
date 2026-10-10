@@ -40,6 +40,7 @@ import { useAccessibility } from '@/stores/accessibility-store'
 import { getWarmerInstrumentLabel } from '@/lib/instrument-labels'
 import { CrisisSupportCard } from '@/components/assessments/CrisisSupportCard'
 import { HEAVY_SUBJECT_INTRO, isHeavySubject, shouldOfferSupportOnResult } from '@/lib/crisis-support'
+import { isModelWritten } from '@/lib/ai-summary-label'
 import { RETAKE_GATE_ROUTE } from '@/lib/notification-routing'
 import { TrendLineChart } from '@/components/health/TrendLineChart'
 import type { TrendDataPoint } from '@/services/api/types'
@@ -347,6 +348,21 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
                   >
                     {summaryQ.data.summary}
                   </Text>
+                  {/* AICS-3 — Apple 1.4.1 / 5.1.2(i): say a model wrote this and point to a clinician. Plain Text only (iOS 26.5 envelope).
+                      Model prose ONLY: the self-harm (PHQ-9 item 9) and no-range texts are fixed, human-written, and arrive with available: true. */}
+                  {isModelWritten(summaryQ.data) && (
+                    <Text
+                      style={{
+                        color: colors.subtext,
+                        fontSize: fs(11),
+                        fontStyle: 'italic',
+                        lineHeight: fs(16),
+                        marginTop: 10,
+                      }}
+                    >
+                      AI-generated from your answers. Informational only — not a diagnosis. Talk with your doctor or care team before making any health decisions.
+                    </Text>
+                  )}
                 </View>
               </>
             ) : summaryQ.isLoading ? (
