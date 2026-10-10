@@ -14,7 +14,7 @@ import {
   isBiometricEnabled,
   incrementFailedAttempts,
   resetFailedAttempts,
-  clearPinData,
+  getFailedAttempts,
 } from '@/services/pin-auth';
 import { useSecurity } from '@/stores/security-store';
 import { useAccessibility } from '@/stores/accessibility-store';
@@ -23,7 +23,7 @@ import { PRE_LOCK_ROUTE_KEY } from '@/hooks/use-app-lock';
 import { consumeDeferredNavigation } from '@/lib/locked-nav-queue';
 import { consumePendingSignIn, SignInReason, setAppLocked } from '@/lib/lock-gate';
 import { resolveUnlockAction, LOCAL_FIRST_UNLOCK } from '@/lib/unlock-decision';
-import { checkSession } from '@/services/auth';
+import { checkSession, signOut } from '@/services/auth';
 import { clearTokens } from '@/lib/auth-tokens';
 import { prefetchAfterAuth } from '@/services/auth-prefetch';
 
@@ -309,7 +309,38 @@ export default function LockScreen() {
     }
   };
 
+  /*
+   * MOB-04 / MOB-05 — the lockout is enforced by state, not by a button.
+   *
+   * It used to live in the Alert's onPress: force-quit at the alert and the PIN
+   * and tokens survived, and every relaunch got another real verifyPin() (a
+   * correct PIN still unlocked on attempt 6, 7, ...). And it only cleared the
+   * PIN + tokens — no PHI purge, no Cognito sign-out, no push unregister — so
+   * the next account in the same process could be served this patient's
+   * cached queries. Now: full signOut() FIRST, navigate, then the alert is
+   * purely informational.
+   */
+  const lockOut = async () => {
+    try {
+      await signOut();
+    } catch {
+      // signOut forgets the device state before any network call; never
+      // leave the user trapped on the lock screen over a cleanup error.
+    }
+    setIsLocked(false);
+    router.replace('/(auth)/sign-in' as never);
+    Alert.alert(
+      'Too Many Attempts',
+      'For your security you have been signed out. Please sign in again with your email and password.',
+    );
+  };
+
   const verifyAndUnlock = async (enteredPin: string) => {
+    // MOB-04 — refuse to test a PIN once the persisted budget is spent.
+    if ((await getFailedAttempts().catch(() => 0)) >= MAX_ATTEMPTS) {
+      await lockOut();
+      return;
+    }
     const valid = await verifyPin(enteredPin);
     if (valid) {
       await resetFailedAttempts();
@@ -318,35 +349,25 @@ export default function LockScreen() {
     } else {
       const attempts = await incrementFailedAttempts();
       const remaining = MAX_ATTEMPTS - attempts;
-      setAttemptsLeft(remaining);
+      setAttemptsLeft(Math.max(0, remaining));
       setError(true);
       setPin('');
 
       if (remaining <= 0) {
-        Alert.alert(
-          'Too Many Attempts',
-          'Please sign in again with your email and password.',
-          [
-            {
-              text: 'Sign In',
-              onPress: async () => {
-                // SCRUM-279 (build 44) security: also wipe the backend
-                // session tokens. Previously only PIN data was cleared,
-                // so the old access/refresh tokens stayed in SecureStore.
-                // If an attacker exhausted PIN attempts they could
-                // theoretically still call APIs with the stale token
-                // until expiry. Now we force a true fresh sign-in.
-                await clearPinData();
-                await clearTokens();
-                setIsLocked(false);
-                router.replace('/(auth)/sign-in' as never);
-              },
-            },
-          ],
-        );
+        await lockOut();
       }
     }
   };
+
+  // MOB-04 — show the real remaining budget after a relaunch, and finish a
+  // lockout that a force-quit interrupted.
+  useEffect(() => {
+    getFailedAttempts().then((n) => {
+      if (n >= MAX_ATTEMPTS) lockOut();
+      else setAttemptsLeft(MAX_ATTEMPTS - n);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDelete = () => {
     setError(false);
@@ -354,7 +375,7 @@ export default function LockScreen() {
   };
 
   // COS-376: recovery for a user who forgot their PIN and has no biometric
-  // fallback. Mirrors the proven 5-attempt escape (clearPinData + clearTokens +
+  // fallback. Mirrors the 5-attempt escape (full signOut() +
   // route to sign-in) but on demand, behind a confirm. Strictly MORE
   // restrictive than unlocking — it wipes the local PIN + session and forces a
   // full re-login (email OTP / Apple / Google), after which the user sets a new
@@ -370,8 +391,9 @@ export default function LockScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await clearPinData();
-              await clearTokens();
+              // MOB-05 — the full sign-out (PIN, Cognito, tokens, username,
+              // PHI purge, push unregister), not just PIN + tokens.
+              await signOut();
             } catch {
               // Even if a wipe step fails, still drop the lock + route to
               // sign-in so the user is never trapped.

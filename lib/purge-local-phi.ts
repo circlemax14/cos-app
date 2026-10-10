@@ -32,6 +32,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 
 import { clearCachedProfile } from '@/lib/cached-profile';
 import { clearCachedUserSummary } from '@/lib/cached-user-summary';
@@ -94,4 +95,22 @@ export async function purgeLocalPhi(): Promise<void> {
     /* non-fatal */
   }
   await purgePhiAsyncStorageKeys();
+  /*
+   * MOB-03 — local notifications are the outgoing account's data too.
+   * Plan-task and calendar reminders are scheduled up to 7 days ahead and only
+   * the NEXT signed-in user's reconcile used to cancel them, so after sign-out
+   * the previous patient's medication reminders kept firing on a shared phone.
+   * Every one of them belongs to the outgoing session; the next sign-in's
+   * reconcile reschedules its own.
+   */
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    /* non-fatal */
+  }
+  try {
+    await Notifications.dismissAllNotificationsAsync();
+  } catch {
+    /* non-fatal */
+  }
 }

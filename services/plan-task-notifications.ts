@@ -188,7 +188,10 @@ export async function reconcilePlanTaskNotifications(
       try {
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: task.title,
+            // MOB-03 — never the raw task title (e.g. a drug name) on the lock
+            // screen; matches backend composeBundleCopy for remote pushes.
+            // The patient sees the task itself once they open the app.
+            title: 'Care plan reminder',
             body: formatBody(task, minutesBefore),
             data: {
               tag: PLAN_TASK_TAG,
@@ -199,6 +202,10 @@ export async function reconcilePlanTaskNotifications(
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: new Date(fireAt),
+            // Android: the per-category channel, which is PRIVATE on the lock
+            // screen (lib/android-notification-channels.ts). Without it the
+            // schedule lands on Expo's fallback channel. Ignored on iOS.
+            channelId: categoryForPlanTask(task),
           },
         });
         scheduled += 1;
