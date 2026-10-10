@@ -13,6 +13,7 @@ import { useHabitsInPlanFlag } from '@/hooks/use-plan-habits';
 import { useUserPhoto } from '@/stores/user-photo-store';
 import { EntityIcon } from '@/components/icons';
 import { apiClient } from '@/lib/api-client';
+import { confirmAndDeleteAccount } from '@/services/account-deletion';
 import {
   getCachedUserSummary,
   updateCachedUserSummary,
@@ -133,8 +134,15 @@ export function ProfileContent({
   // plain `{cond && <X />}` — no wrappers, this file mounts on the drawer's
   // cold path (iOS 26 crash history).
   const canEditPersonalInfo = useCanRender('profile.edit-personal-info');
-  const canSignOut = useCanRender('profile.sign-out');
-  const canDeleteAccount = useCanRender('profile.delete-account');
+  /*
+   * Sign Out and Delete Account are deliberately NOT plan entitlements any more
+   * (MOB-09 / GP-04). Apple 5.1.1(v) and Google Play require in-app deletion
+   * for every account, and a patient on a shared device must always be able to
+   * sign out — a plan edit or a REVOKE override must not be able to hide them.
+   * The catalog keys profile.sign-out / profile.delete-account are now inert.
+   */
+  const canSignOut = true;
+  const canDeleteAccount = true;
   /*
    * COS-897 — the drawer row must obey the SAME entitlement the route enforcer
    * does. `apple-health.view` is what patient-capabilities maps to
@@ -771,7 +779,6 @@ export function ProfileContent({
 
       {showSignOut && (
         <View style={styles.footer}>
-          {/* profile.sign-out gates the BUTTON only — the confirm alert and signOut() handler are untouched. */}
           {canSignOut && (
             <Button
               mode="outlined"
@@ -824,72 +831,19 @@ export function ProfileContent({
           )}
 
           {/* SCRUM-319 — Apple Review 5.1.1(v): in-app account
-              deletion. Two-step confirm (alert → confirm modal)
-              prevents accidental taps. Backend call wipes Cognito +
-              all DynamoDB rows + queues FHIR purge; mobile clears
-              local state and routes to sign-in. */}
-          {/* profile.delete-account gates the BUTTON only — the two-step confirm and the delete handler are untouched, so a gate flip mid-flow cannot strand a half-deleted account. */}
+              deletion. Shared flow (services/account-deletion.ts) — two-step
+              confirm, success only when the server confirms it. */}
           {canDeleteAccount && (
             <Button
               mode="text"
               disabled={authBusy !== null}
               onPress={() => {
                 if (authBusy !== null) return;
-                Alert.alert(
-                  'Delete account?',
-                  "This permanently deletes your Circle Support Health account and all your data, including your records, plans, and trends. This cannot be undone. Are you absolutely sure?",
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete forever',
-                      style: 'destructive',
-                      onPress: () => {
-                        Alert.alert(
-                          'Last chance',
-                          "Tap Delete to permanently erase your account. You will be signed out immediately.",
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Delete',
-                              style: 'destructive',
-                              onPress: async () => {
-                                // Ken 2026-08-07 (#20) — same dead-air fix as
-                                // sign-out, and more important here: this
-                                // path makes a network round-trip first, so
-                                // the silent window was longer.
-                                setAuthBusy('delete');
-                                try {
-                                  await apiClient.delete('/v1/auth/account');
-                                } catch {
-                                  // Even if the network call fails (token
-                                  // expired, offline), continue with the
-                                  // local wipe — better to leave the user
-                                  // signed out than to keep PHI accessible.
-                                }
-                                try {
-                                  await signOut();
-                                } catch {
-                                  // Best-effort; proceed to local wipe.
-                                }
-                                queryClient.clear();
-                                router.replace('/(auth)/sign-in' as never);
-                                setTimeout(() => {
-                                  Alert.alert(
-                                    'Account deleted',
-                                    "Your account and data have been deleted. We're sorry to see you go.",
-                                  );
-                                }, 400);
-                              },
-                            },
-                          ],
-                        );
-                      },
-                    },
-                  ],
-                );
+                // Ken 2026-08-07 (#20) — busy state paints before the round-trip.
+                confirmAndDeleteAccount((busy) => setAuthBusy(busy ? 'delete' : null));
               }}
               style={[styles.signOutButton, { paddingVertical: getScaledFontSize(6), paddingHorizontal: getScaledFontSize(12), marginTop: 8 }]}
-              accessibilityLabel={authBusy === 'delete' ? 'Deleting account' : 'Permanently delete my account and all my data'}
+              accessibilityLabel={authBusy === 'delete' ? 'Deleting account' : 'Delete my account'}
               accessibilityRole="button"
               accessibilityState={{ disabled: authBusy !== null, busy: authBusy === 'delete' }}
               /* COS-1244 — see Sign Out above: this one drew NOTHING on Android. */
