@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import { AxiosError, type AxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cognitoSignOut } from '@/lib/cognito';
-import { storeTokens, clearTokens, hasStoredSession, getAccessToken } from '@/lib/auth-tokens';
+import { storeTokens, clearTokens, hasStoredSession, getAccessToken, writeSecure } from '@/lib/auth-tokens';
 import { clearPinData } from '@/services/pin-auth';
 import { apiClient } from '@/lib/api-client';
 import { setCachedProfile, clearCachedProfile } from '@/lib/cached-profile';
@@ -101,7 +101,7 @@ export async function signIn(
 
     const { accessToken, idToken, refreshToken } = loginRes.data.data;
     await storeTokens(accessToken, refreshToken, idToken);
-    await SecureStore.setItemAsync('cos_username', payload.username);
+    await writeSecure('cos_username', payload.username);
 
     const meRes = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me');
     await setCachedProfile(meRes.data.data);

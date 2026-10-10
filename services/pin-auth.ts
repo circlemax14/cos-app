@@ -1,7 +1,8 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-import { readSecureExpectingValue } from '@/lib/auth-tokens';
+import { readSecureExpectingValue, readSecureWithRetry, writeSecure } from '@/lib/auth-tokens';
+import { isKeychainLockedError } from '@/lib/keychain-locked';
 
 const PIN_HASH_KEY = 'cos_pin_hash';
 const BIOMETRIC_ENABLED_KEY = 'cos_biometric_enabled';
@@ -18,8 +19,8 @@ export async function hashPin(pin: string): Promise<string> {
 
 export async function storePin(pin: string): Promise<void> {
   const hash = await hashPin(pin);
-  await SecureStore.setItemAsync(PIN_HASH_KEY, hash);
-  await SecureStore.setItemAsync(PIN_SETUP_COMPLETE_KEY, 'true');
+  await writeSecure(PIN_HASH_KEY, hash);
+  await writeSecure(PIN_SETUP_COMPLETE_KEY, 'true');
   await resetFailedAttempts();
 }
 
@@ -40,6 +41,8 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export async function verifyPin(pin: string): Promise<boolean> {
+  // COS-1275: raw read on purpose — a read that fails must throw, never come
+  // back as a wrong PIN that counts toward the five-attempt sign-out.
   const storedHash = await SecureStore.getItemAsync(PIN_HASH_KEY);
   if (!storedHash) return false;
   const inputHash = await hashPin(pin);
@@ -72,19 +75,35 @@ export async function isPinSetup(): Promise<boolean> {
    * signed-in patient a false error screen on entry.
    */
   const result = await readSecureExpectingValue(PIN_SETUP_COMPLETE_KEY).catch(() => null);
-  return result === 'true';
+  if (result === 'true') return true;
+  /*
+   * COS-1275 — a locked device hides the flag; it does not remove it.
+   *
+   * Answering "no PIN" there is the dangerous direction: SecurityProvider then
+   * sets isLocked=false and disarms the app lock, and the splash routes a
+   * signed-in patient to setup-pin, where anyone holding the iPad can choose a
+   * new PIN. This key is only ever written as 'true', and a refused read means
+   * an item matched — so fail closed.
+   * ponytail: if iOS ever refuses a read for a key that is ABSENT, a signed-out
+   * device launched while locked opens on the lock screen; Forgot PIN recovers.
+   */
+  return SecureStore.getItemAsync(PIN_SETUP_COMPLETE_KEY).then(
+    (value) => value === 'true',
+    isKeychainLockedError,
+  );
 }
 
 export async function setBiometricEnabled(enabled: boolean): Promise<void> {
-  await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, enabled ? 'true' : 'false');
+  await writeSecure(BIOMETRIC_ENABLED_KEY, enabled ? 'true' : 'false');
 }
 
 export async function isBiometricEnabled(): Promise<boolean> {
-  const result = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
+  const result = await readSecureWithRetry(BIOMETRIC_ENABLED_KEY);
   return result === 'true';
 }
 
 export async function getFailedAttempts(): Promise<number> {
+  // COS-1275: raw read on purpose, like verifyPin — a failed read must not reset the count.
   const result = await SecureStore.getItemAsync(FAILED_ATTEMPTS_KEY);
   return result ? parseInt(result, 10) : 0;
 }
@@ -92,12 +111,12 @@ export async function getFailedAttempts(): Promise<number> {
 export async function incrementFailedAttempts(): Promise<number> {
   const current = await getFailedAttempts();
   const next = current + 1;
-  await SecureStore.setItemAsync(FAILED_ATTEMPTS_KEY, next.toString());
+  await writeSecure(FAILED_ATTEMPTS_KEY, next.toString());
   return next;
 }
 
 export async function resetFailedAttempts(): Promise<void> {
-  await SecureStore.setItemAsync(FAILED_ATTEMPTS_KEY, '0');
+  await writeSecure(FAILED_ATTEMPTS_KEY, '0');
 }
 
 export async function clearPinData(): Promise<void> {
@@ -108,7 +127,7 @@ export async function clearPinData(): Promise<void> {
 }
 
 export async function getLockTimeout(): Promise<number> {
-  const result = await SecureStore.getItemAsync(LOCK_TIMEOUT_KEY);
+  const result = await readSecureWithRetry(LOCK_TIMEOUT_KEY);
   // Default: lock IMMEDIATELY whenever the app leaves the foreground.
   // Healthcare app — minimize blast radius if the device is unlocked but
   // unattended. Users who want a grace period can set their own via
@@ -117,5 +136,5 @@ export async function getLockTimeout(): Promise<number> {
 }
 
 export async function setLockTimeout(ms: number): Promise<void> {
-  await SecureStore.setItemAsync(LOCK_TIMEOUT_KEY, ms.toString());
+  await writeSecure(LOCK_TIMEOUT_KEY, ms.toString());
 }
