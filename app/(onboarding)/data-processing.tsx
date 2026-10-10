@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { apiClient } from '@/lib/api-client';
+import { signOut } from '@/services/auth';
+import { confirmAndDeleteAccount } from '@/services/account-deletion';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 
@@ -38,6 +40,18 @@ export default function DataProcessingScreen() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [failed, setFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  /*
+   * APPLE-02 — the onboarding gate sends every connected-but-not-ready patient
+   * here on every cold launch, and a failed export can stay failed. Without
+   * these two buttons that patient can neither sign out nor reach Profile's
+   * deletion (Apple 5.1.1(v), Google Play account deletion).
+   */
+  const [deleting, setDeleting] = useState(false);
+
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+    router.replace('/(auth)/sign-in' as never);
+  }, []);
 
   const navigateToHome = useCallback(async () => {
     // Route through the splash gate so the one-time welcome screen gets a
@@ -157,6 +171,34 @@ export default function DataProcessingScreen() {
             </Text>
           </>
         )}
+
+        <Pressable
+          onPress={handleSignOut}
+          style={styles.textButton}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+        >
+          <Text style={{ color: colors.text, fontSize: getScaledFontSize(15), fontWeight: '600' }}>
+            Sign Out
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => { if (!deleting) confirmAndDeleteAccount(setDeleting); }}
+          disabled={deleting}
+          style={styles.textButton}
+          accessibilityRole="button"
+          accessibilityLabel="Delete my account"
+          accessibilityState={{ disabled: deleting, busy: deleting }}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color="#DC2626" />
+          ) : (
+            <Text style={{ color: '#DC2626', fontSize: getScaledFontSize(13), fontWeight: '500' }}>
+              Delete my account
+            </Text>
+          )}
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -197,5 +239,11 @@ const styles = StyleSheet.create({
   retryText: {
     color: 'white',
     fontWeight: '600',
+  },
+  textButton: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

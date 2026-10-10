@@ -16,6 +16,7 @@ import Animated, {
 
 import { apiClient } from '@/lib/api-client';
 import { signOut } from '@/services/auth';
+import { confirmAndDeleteAccount } from '@/services/account-deletion';
 import { Colors } from '@/constants/theme';
 import { useAccessibility } from '@/stores/accessibility-store';
 import { useFeaturePermissions } from '@/hooks/use-feature-permissions';
@@ -321,6 +322,13 @@ function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
     router.replace('/(auth)/sign-in' as never);
   };
 
+  /*
+   * APPLE-02 — a self-signup who has not connected a clinic is held here by
+   * the onboarding gate and never reaches Profile, so this screen must offer
+   * account deletion itself (Apple 5.1.1(v), Google Play account deletion).
+   */
+  const [deleting, setDeleting] = useState(false);
+
   const benefits: { icon: keyof typeof MaterialIcons.glyphMap; text: string }[] = [
     { icon: 'medical-services', text: 'See diagnoses, conditions, and visit notes' },
     { icon: 'medication', text: 'Track medications and refills in one place' },
@@ -477,6 +485,29 @@ function ConnectClinicPrompt({ onConnect }: ConnectClinicPromptProps) {
             Sign Out
           </Text>
         </Pressable>
+
+        <Pressable
+          onPress={() => { if (!deleting) confirmAndDeleteAccount(setDeleting); }}
+          disabled={deleting}
+          style={connectStyles.deleteLink}
+          accessibilityRole="button"
+          accessibilityLabel="Delete my account"
+          accessibilityState={{ disabled: deleting, busy: deleting }}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color="#DC2626" />
+          ) : (
+            <Text
+              style={{
+                color: '#DC2626',
+                fontSize: getScaledFontSize(13),
+                fontWeight: getScaledFontWeight(500) as any,
+              }}
+            >
+              Delete my account
+            </Text>
+          )}
+        </Pressable>
       </Animated.View>
     </View>
   );
@@ -569,6 +600,12 @@ const connectStyles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1.5,
     minHeight: 48,
+  },
+  deleteLink: {
+    alignSelf: 'center',
+    minHeight: 44,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
   },
 });
 
