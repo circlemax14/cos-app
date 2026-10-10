@@ -5,7 +5,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { PaperProvider } from 'react-native-paper';
+import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BadgeCelebrationProvider } from '@/components/celebrations/BadgeCelebrationProvider';
 import { Platform, View } from 'react-native';
@@ -259,7 +259,17 @@ function RootLayout() {
         <ProviderSelectionProvider>
           <SettingsProvider>
             <UserPhotoProvider>
-            <PaperProvider>
+            {/*
+              COS-1276 — theme pinned to light. Until now release bundles held
+              two copies of Paper (see babel.config.js), and the components on
+              the copy with no provider above them fell back to MD3LightTheme.
+              With one copy, every Paper component inherits THIS provider, which
+              would otherwise follow the phone's dark mode: dark Cards and
+              TextInputs under the app's own light palette. Light keeps what
+              those screens have always shown. Following the in-app dark toggle
+              (settings.isDarkTheme) is a separate ticket.
+            */}
+            <PaperProvider theme={MD3LightTheme}>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
                 <BadgeCelebrationProvider>
                 {/*
