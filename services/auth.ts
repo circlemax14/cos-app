@@ -4,7 +4,8 @@ import Constants from 'expo-constants';
 import { AxiosError, type AxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cognitoSignOut } from '@/lib/cognito';
-import { storeTokens, clearTokens, hasStoredSession, getAccessToken } from '@/lib/auth-tokens';
+import { storeTokens, clearTokens, hasStoredSession, getAccessToken, getRefreshToken } from '@/lib/auth-tokens';
+import { jwtExpiryMs } from '@/lib/jwt-expiry';
 import { clearPinData } from '@/services/pin-auth';
 import { apiClient } from '@/lib/api-client';
 import { setCachedProfile, clearCachedProfile } from '@/lib/cached-profile';
@@ -247,6 +248,35 @@ async function unregisterPushToken(asOutgoingUser: AxiosRequestConfig): Promise<
   await Promise.race([attempt, new Promise<void>((resolve) => setTimeout(resolve, 3000))]);
 }
 
+/**
+ * MOB-05 — a bearer the post-wipe cleanup calls can actually use.
+ *
+ * The lock screen (Forgot PIN, 5-attempt lockout) is normally reached after the
+ * app sat idle or was cold-launched, so the captured access token (1h) is
+ * usually expired. The tokens are already wiped by then, so the api-client's
+ * 401 → refresh path finds no refresh token and the push unregister failed
+ * silently — the phone stayed registered to the outgoing patient.
+ *
+ * So refresh with the refresh token captured BEFORE the wipe (backend
+ * /v1/auth/refresh takes Cognito and social tokens in the body; it is an auth
+ * endpoint, so its 401 never triggers forceSignOut). The new tokens are only
+ * held in memory for these calls and are never stored.
+ */
+async function outgoingBearer(access: string | null, refresh: string | null): Promise<string | null> {
+  const exp = access ? jwtExpiryMs(access) : null;
+  if (!refresh || (exp !== null && exp - Date.now() > 60_000)) return access;
+  try {
+    const res = await apiClient.post<{ data?: { accessToken?: string } }>(
+      '/v1/auth/refresh',
+      { refreshToken: refresh },
+      { timeout: 5000 },
+    );
+    return res.data?.data?.accessToken ?? access;
+  } catch {
+    return access;
+  }
+}
+
 export async function signOut(): Promise<void> {
   /*
    * COS-1250 — the phone forgets the account FIRST, before any network call.
@@ -263,10 +293,11 @@ export async function signOut(): Promise<void> {
    * The PIN goes before the tokens: dying between the two must leave a plain
    * signed-in phone, never a PIN with nothing behind it.
    *
-   * The network calls still need the session, so they carry its token.
+   * The network calls still need the session, so they carry its token —
+   * refreshed after the wipe if it has expired (outgoingBearer, MOB-05).
    */
   const token = await getAccessToken();
-  const asOutgoingUser: AxiosRequestConfig = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const refreshToken = await getRefreshToken();
 
   await clearPinData();
   cognitoSignOut();
@@ -284,6 +315,9 @@ export async function signOut(): Promise<void> {
   await purgeLocalPhi();
 
   // Best effort from here — the phone is already signed out.
+  const bearer = await outgoingBearer(token, refreshToken);
+  const asOutgoingUser: AxiosRequestConfig = bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : {};
+
   let outgoingSub: string | undefined
   try {
     const res = await apiClient.get<{ success: boolean; data: UserProfile }>('/v1/auth/me', asOutgoingUser)

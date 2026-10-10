@@ -32,6 +32,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 
 import { clearCachedProfile } from '@/lib/cached-profile';
 import { clearCachedUserSummary } from '@/lib/cached-user-summary';
@@ -43,11 +44,18 @@ import { queryClient } from '@/providers/QueryProvider';
  *  - 'doctor_data_<providerId>'        cached doctor lookups (who the user sees)
  *  - 'assessment-draft:<instrumentId>' in-flight PHQ-9 / PROMIS / etc. drafts
  *  - 'assessment_'                     defensive: legacy/alternate naming
+ *  - 'csh-vitals-recheck:<metric>:<day>' per-day dedupe for vitals-recheck
+ *                                      alerts. MUST go with the cancel below:
+ *                                      a surviving key makes the next sign-in's
+ *                                      reconcile think today's amber/red recheck
+ *                                      is already scheduled, so the alert is lost
+ *                                      for good. It also reveals a flagged reading.
  */
 export const PHI_KEY_PREFIXES = [
   'doctor_data_',
   'assessment-draft:',
   'assessment_',
+  'csh-vitals-recheck:',
 ] as const;
 
 /** Best-effort sweep of PHI-bearing AsyncStorage keys. Returns what it removed. */
@@ -94,4 +102,23 @@ export async function purgeLocalPhi(): Promise<void> {
     /* non-fatal */
   }
   await purgePhiAsyncStorageKeys();
+  /*
+   * MOB-03 — local notifications are the outgoing account's data too.
+   * Plan-task and calendar reminders are scheduled up to 7 days ahead and only
+   * the NEXT signed-in user's reconcile used to cancel them, so after sign-out
+   * the previous patient's medication reminders kept firing on a shared phone.
+   * Every one of them belongs to the outgoing session; the next sign-in's
+   * reconcile reschedules its own. For vitals-recheck that is only true because
+   * its per-day dedupe key is in PHI_KEY_PREFIXES above and so is swept too.
+   */
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    /* non-fatal */
+  }
+  try {
+    await Notifications.dismissAllNotificationsAsync();
+  } catch {
+    /* non-fatal */
+  }
 }
