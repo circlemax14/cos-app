@@ -347,6 +347,20 @@ export default function AssessmentDetailScreen(): React.JSX.Element {
                   >
                     {summaryQ.data.summary}
                   </Text>
+                  {/* AICS-3 — Apple 1.4.1 / 5.1.2(i): say a model wrote this and point to a clinician. Plain Text only (iOS 26.5 envelope). */}
+                  {summaryQ.data.available && (
+                    <Text
+                      style={{
+                        color: colors.subtext,
+                        fontSize: fs(11),
+                        fontStyle: 'italic',
+                        lineHeight: fs(16),
+                        marginTop: 10,
+                      }}
+                    >
+                      AI-generated from your answers. Informational only — not a diagnosis. Talk with your doctor or care team before making any health decisions.
+                    </Text>
+                  )}
                 </View>
               </>
             ) : summaryQ.isLoading ? (

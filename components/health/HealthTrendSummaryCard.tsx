@@ -115,8 +115,8 @@ export function HealthTrendSummaryCard({
       ))}
 
       <Text style={{ color: colors.subtext, fontSize: fs(11), fontStyle: 'italic', marginTop: Spacing.md }}>
-        Written from your own records. It is not medical advice, and it does not replace your
-        care team.
+        AI-generated from your own records. It is not medical advice, and it does not replace your
+        doctor or care team.
       </Text>
     </View>
   )
