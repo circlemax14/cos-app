@@ -148,6 +148,7 @@
       "./plugins/withAndroidIntentQueries",
       "react-native-health-connect",
       "./plugins/withHealthConnect",
+      "./plugins/withHealthConnectRationaleRoute",
       [
         "expo-build-properties",
         {

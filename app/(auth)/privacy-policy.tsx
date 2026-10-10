@@ -66,7 +66,9 @@ export default function PrivacyPolicyScreen() {
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border ?? '#e0e0e0' }]}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          // GP-02 — opened from Health Connect's link this is the first screen,
+          // with nothing to go back to; '/' runs the normal boot (and the lock).
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/' as never))}
           style={styles.backButton}
           accessibilityLabel="Go back"
           accessibilityRole="button"
