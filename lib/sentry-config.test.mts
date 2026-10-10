@@ -455,7 +455,8 @@ test('scrubBreadcrumb redacts UUIDs in navigation breadcrumb to/from/url', () =>
   const data = b.data as Record<string, string>;
   assert.equal(data.from, '/home', 'safe path preserved');
   assert.equal(data.to, '/patient-detail/:id', 'UUID replaced with :id');
-  assert.match(data.url, /\/care-gap\/:id\?email=:email$/);
+  // MOB-07 — the query string is now dropped entirely (it carried PHI).
+  assert.equal(data.url, '/care-gap/:id');
 });
 
 // ---------------------------------------------------------------------------
