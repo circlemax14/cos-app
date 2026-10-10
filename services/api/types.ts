@@ -704,6 +704,22 @@ export interface LabReport {
   results: LabResultValue[];
 }
 
+/**
+ * COS-1274 — GET /v1/labs/explanation. General information about a TEST,
+ * never about the patient's result. `typicalRange` is shown only when the lab
+ * printed no range of its own and the units match.
+ */
+export interface LabExplanation {
+  testName: string;
+  whatItMeasures: string;
+  whyItsDone: string;
+  ifHigher: string;
+  ifLower: string;
+  goodToKnow: string | null;
+  typicalRange: { unit: string; text: string } | null;
+  source: 'curated' | 'ai';
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 export interface ServiceDefinition {
   id: string;
