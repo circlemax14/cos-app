@@ -64,5 +64,21 @@ export function ScreenCaptureBridge(): null {
     }
   }, [blocked]);
 
+  useEffect(() => {
+    /*
+     * MOB-02 — iOS snapshots the window for the app switcher when the app
+     * resigns active, and the PIN lock only acts on RESUME, so the switcher
+     * showed the last PHI screen. This blurs the window on willResignActive.
+     *
+     * Deliberately independent of `blocked`: COS-1034 chose to allow
+     * SCREENSHOTS, which the plan key still controls; no decision covers the
+     * switcher snapshot, and it defeats the lock. iOS-only in the library —
+     * Android (and a binary without the native method) rejects, which is fine.
+     */
+    ScreenCapture.enableAppSwitcherProtectionAsync(0.9).catch(() => {
+      // Non-fatal — Android, or an older native module.
+    });
+  }, []);
+
   return null;
 }
