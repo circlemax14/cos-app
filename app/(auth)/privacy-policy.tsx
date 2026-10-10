@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text } from 'react-native-paper';
@@ -41,6 +42,18 @@ export default function PrivacyPolicyScreen() {
 
   const [content, setContent] = useState<PrivacyContent | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /*
+   * GP-02 — on a COLD Health Connect launch this is the ONLY screen mounted:
+   * the rewritten intent makes the initial URL cos://privacy-policy, so
+   * app/index.tsx (SplashGate, the only other hideAsync caller) never mounts,
+   * and _layout's preventAutoHideAsync would keep the native splash over this
+   * screen forever (Android's userControlledAutoHide makes expo-router's own
+   * auto-hide a no-op). A no-op when the splash is already down.
+   */
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   useEffect(() => {
     apiClient

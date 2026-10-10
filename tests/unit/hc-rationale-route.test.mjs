@@ -66,3 +66,14 @@ test('the policy screen has a way out when it is the first screen (no history)',
   const src = read('app/(auth)/privacy-policy.tsx')
   assert.match(src, /router\.canGoBack\(\) \? router\.back\(\) : router\.replace\('\/'/)
 })
+
+test('cold launch: the policy screen lifts the native splash itself (SplashGate never mounts)', () => {
+  // The rewritten intent makes the initial URL cos://privacy-policy, so expo-router
+  // mounts ONLY this route; app/index.tsx (the other hideAsync caller) never runs.
+  const src = read('app/(auth)/privacy-policy.tsx').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  assert.match(src, /import \* as SplashScreen from 'expo-splash-screen'/)
+  assert.match(src, /useEffect\(\(\) => \{\s*SplashScreen\.hideAsync\(\)\.catch\(\(\) => \{\}\);\s*\}, \[\]\)/)
+  // and the router really does resolve the rewritten URL to this route alone
+  const { extractExpoPathFromURL } = require('expo-router/build/fork/extractPathFromURL.js')
+  assert.equal(extractExpoPathFromURL([], 'cos://privacy-policy'), 'privacy-policy')
+})
