@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text } from 'react-native-paper';
@@ -42,6 +43,18 @@ export default function PrivacyPolicyScreen() {
   const [content, setContent] = useState<PrivacyContent | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /*
+   * GP-02 — on a COLD Health Connect launch this is the ONLY screen mounted:
+   * the rewritten intent makes the initial URL cos://privacy-policy, so
+   * app/index.tsx (SplashGate, the only other hideAsync caller) never mounts,
+   * and _layout's preventAutoHideAsync would keep the native splash over this
+   * screen forever (Android's userControlledAutoHide makes expo-router's own
+   * auto-hide a no-op). A no-op when the splash is already down.
+   */
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
   useEffect(() => {
     apiClient
       .get<{ success: boolean; data: PrivacyContent }>('/v1/content/privacy')
@@ -66,7 +79,9 @@ export default function PrivacyPolicyScreen() {
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border ?? '#e0e0e0' }]}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          // GP-02 — opened from Health Connect's link this is the first screen,
+          // with nothing to go back to; '/' runs the normal boot (and the lock).
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/' as never))}
           style={styles.backButton}
           accessibilityLabel="Go back"
           accessibilityRole="button"

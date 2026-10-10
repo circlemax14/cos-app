@@ -2,6 +2,8 @@ package ai.circlesupporthealth.csh
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 
 import com.facebook.react.ReactActivity
@@ -20,8 +22,30 @@ class MainActivity : ReactActivity() {
     // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
+    routeHealthConnectRationale(intent) // csh-hc-rationale
     super.onCreate(null)
   }
+
+  // @generated begin csh-hc-rationale (plugins/withHealthConnectRationaleRoute.js)
+  override fun onNewIntent(intent: Intent) {
+    routeHealthConnectRationale(intent)
+    super.onNewIntent(intent)
+  }
+
+  /**
+   * GP-02 — Health Connect's privacy-policy link arrives as a rationale action
+   * with no URI. Turn it into the cos://privacy-policy deep link.
+   */
+  private fun routeHealthConnectRationale(i: Intent?) {
+    if (i == null) return
+    val action = i.action ?: return
+    if (action == "androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" ||
+        action == "android.intent.action.VIEW_PERMISSION_USAGE") {
+      i.action = Intent.ACTION_VIEW
+      i.data = Uri.parse("cos://privacy-policy")
+    }
+  }
+  // @generated end csh-hc-rationale
 
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
