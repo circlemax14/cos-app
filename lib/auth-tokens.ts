@@ -1,5 +1,7 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { clearEntitlementCache } from './entitlement-cache';
+import { isKeychainLockedError } from './keychain-locked';
 import { clearScreenAccessCache } from './screen-access-cache';
 import { clearDeferredNavigation } from './locked-nav-queue';
 
@@ -55,7 +57,7 @@ let tokenGeneration = 0;
  * successful `null` means "no token". If every attempt throws we rethrow so
  * the caller can distinguish a real failure from an empty store.
  */
-async function readSecureWithRetry(key: string, attempts = 3): Promise<string | null> {
+export async function readSecureWithRetry(key: string, attempts = 3): Promise<string | null> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -67,7 +69,37 @@ async function readSecureWithRetry(key: string, attempts = 3): Promise<string | 
       await new Promise((resolve) => setTimeout(resolve, 150 * (i + 1)));
     }
   }
+  // COS-1275 — still locked: the device is locked, not empty. A plain null,
+  // which no reader caches (COS-890), so the next foreground read answers; and
+  // no throw, because fire-and-forget callers (SecurityProvider, the sync
+  // hooks, the AppState lock handler) turned it into unhandled rejections —
+  // Sentry COS-APP-4.
+  if (isKeychainLockedError(lastErr)) return null;
   throw lastErr;
+}
+
+/*
+ * COS-1275 — every SecureStore write goes through here.
+ *
+ * AFTER_FIRST_UNLOCK: a background launch on a locked device can read the
+ * item, once the device has been unlocked since boot. The default,
+ * WHEN_UNLOCKED, is what failed those reads. iOS only — Android has no such
+ * attribute (the constant is undefined there and the option is ignored).
+ *
+ * iOS keeps an existing item's accessibility on update — expo-secure-store's
+ * set() falls through to SecItemUpdate on a duplicate and changes only the
+ * data — so an item written before this change stays WHEN_UNLOCKED until it is
+ * deleted and added again. That happens on the first write of each key in a
+ * process; later writes are plain updates.
+ */
+const reprotected = new Set<string>();
+
+export async function writeSecure(key: string, value: string): Promise<void> {
+  if (Platform.OS === 'ios' && !reprotected.has(key)) {
+    reprotected.add(key);
+    await SecureStore.deleteItemAsync(key);
+  }
+  await SecureStore.setItemAsync(key, value, { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK });
 }
 
 /**
@@ -165,11 +197,12 @@ export async function storeTokens(
   cachedAccessToken = accessToken;
   cachedRefreshToken = refreshToken;
   cachedIdToken = idToken;
-  await Promise.all([
-    SecureStore.setItemAsync(KEYS.access, accessToken),
-    SecureStore.setItemAsync(KEYS.refresh, refreshToken),
-    SecureStore.setItemAsync(KEYS.id, idToken),
-  ]);
+  // One at a time (COS-1275): writeSecure may delete before it adds, and
+  // readSessionPresence reads the store directly — it must never see the
+  // access AND refresh token missing at the same moment.
+  await writeSecure(KEYS.refresh, refreshToken);
+  await writeSecure(KEYS.access, accessToken);
+  await writeSecure(KEYS.id, idToken);
   for (const listener of sessionStoredListeners) {
     try {
       listener();
