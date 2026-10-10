@@ -8,7 +8,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { decideInboundLink, toInAppPath } from '../../lib/deep-link-gate.ts';
+import { decideInboundLink, toInAppPath, isPublicLink } from '../../lib/deep-link-gate.ts';
+// The router's own URL → path function: the one router-store / useLinking run.
+import { extractExpoPathFromURL } from 'expo-router/build/fork/extractPathFromURL.js';
 
 const URLS = [
   'cos://Home/personal-info',
@@ -98,6 +100,38 @@ test('the PHI-free privacy policy opens even while locked (Health Connect ration
   }
   const { d } = deps({ locked: true });
   assert.equal(await decideInboundLink({ path: 'cos://privacy-policy/../Home/x', initial: false }, d), null);
+});
+
+// Review of f740d99: '/--/' anywhere in the URL (query, fragment, any scheme)
+// made the gate see '/privacy-policy' while the router opened Personal Info.
+const SMUGGLED = [
+  'cos://Home/personal-info?x=/--/privacy-policy',
+  'cos://Home/personal-info#/--/privacy-policy',
+  'https://circlesupporthealth.ai/Home/personal-info?x=/--/privacy-policy',
+  'cos://privacy-policy/../Home/personal-info',
+  'cos://Home/personal-info?/privacy-policy',
+];
+
+test('a PHI link dressed up as the privacy policy is NOT let past the lock (cold or warm)', async () => {
+  for (const u of SMUGGLED) {
+    // Ground truth: where the ROUTER would go.
+    assert.notEqual(extractExpoPathFromURL([], u).replace(/[?#].*$/, ''), 'privacy-policy', u);
+    assert.equal(isPublicLink(u), false, u);
+    for (const initial of [true, false]) {
+      const { d } = deps({ pin: true, locked: true });
+      assert.equal(await decideInboundLink({ path: u, initial }, d), null, `${u} initial=${initial}`);
+    }
+  }
+  // and the deferred route is the real target, not the policy
+  assert.equal(toInAppPath(SMUGGLED[0]), '/Home/personal-info?x=/--/privacy-policy');
+});
+
+test('isPublicLink agrees with the router on every genuine policy form', () => {
+  for (const u of ['cos://privacy-policy', 'cos:///privacy-policy', '/privacy-policy',
+    'https://circlesupporthealth.ai/privacy-policy', 'cos://privacy-policy?from=hc']) {
+    assert.equal(extractExpoPathFromURL([], u).replace(/[?#].*$/, ''), 'privacy-policy', u);
+    assert.equal(isPublicLink(u), true, u);
+  }
 });
 
 test('+native-intent delegates to the tested function', () => {

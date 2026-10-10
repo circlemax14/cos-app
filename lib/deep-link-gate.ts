@@ -13,6 +13,7 @@
  * Fix: reduce the URL to an in-app path FIRST, then apply the checks to that.
  * Anything we cannot reduce fails CLOSED whenever a lock could apply.
  */
+import { extractExpoPathFromURL } from 'expo-router/build/fork/extractPathFromURL.js';
 
 /**
  * The in-app path a URL points at, or null when it cannot be determined.
@@ -23,6 +24,9 @@
  *                                             expo-router's extractPathFromURL)
  *   'https://circlesupporthealth.ai/Home/x' → '/Home/x'
  *   'exp://192.168.0.2:8081/--/Home/x'     → '/Home/x'      (Expo dev URLs)
+ *
+ * Used to pick the route to DEFER (opened only after unlock). The decision to
+ * open a link past the lock does NOT use this — see isPublicLink.
  */
 export function toInAppPath(url: unknown): string | null {
   if (typeof url !== 'string') return null;
@@ -35,8 +39,13 @@ export function toInAppPath(url: unknown): string | null {
   const scheme = m[1].toLowerCase();
   let rest = m[2];
 
-  const dash = rest.indexOf('/--/');
-  if (dash > -1) return '/' + rest.slice(dash + 4);
+  // Expo Go's '/--/' marker: only for exp/exps, and only in the path part —
+  // never in a query or fragment ('cos://Home/x?y=/--/privacy-policy').
+  if (scheme === 'exp' || scheme === 'exps') {
+    const pathPart = rest.split(/[?#]/, 1)[0];
+    const dash = pathPart.indexOf('/--/');
+    if (dash > -1) return '/' + rest.slice(dash + 4);
+  }
 
   if (scheme === 'http' || scheme === 'https') {
     // Drop the authority; keep path + query + fragment.
@@ -52,6 +61,25 @@ export function toInAppPath(url: unknown): string | null {
 
 /** Screens with no PHI that a deep link may open past the lock. */
 export const PUBLIC_PATHS: ReadonlySet<string> = new Set(['/privacy-policy']);
+
+/**
+ * True when the ROUTER will open a public screen for this URL.
+ *
+ * Decided with expo-router's own URL → path function (the one router-store and
+ * useLinking call on the same URL), not with toInAppPath: a link may only skip
+ * the lock if the gate and the router agree on where it goes. A private parser
+ * here let 'cos://Home/personal-info?x=/--/privacy-policy' pass as the policy
+ * while the router opened Personal Info.
+ */
+export function isPublicLink(url: string): boolean {
+  let routed: string;
+  try {
+    routed = extractExpoPathFromURL([], url);
+  } catch {
+    return false;
+  }
+  return PUBLIC_PATHS.has('/' + routed.replace(/[?#].*$/, ''));
+}
 
 export interface InboundDeps {
   isPinSetup: () => Promise<boolean>;
@@ -71,12 +99,12 @@ export async function decideInboundLink(
   // not a screen: the sign-in that opened Apple's page is waiting for it.
   if (typeof path === 'string' && /^(?:cos:\/\/|\/)auth\/apple(?:[/?#]|$)/.test(path)) return null;
 
-  const inApp = toInAppPath(path);
-
   // Public, PHI-free screens open even while locked. GP-02: Health Connect's
   // privacy-policy link arrives as cos://privacy-policy and must show the
   // policy, not the PIN pad.
-  if (inApp !== null && PUBLIC_PATHS.has(inApp.replace(/[?#].*$/, ''))) return path;
+  if (typeof path === 'string' && isPublicLink(path)) return path;
+
+  const inApp = toInAppPath(path);
 
   if (initial) {
     // Cold start: decide from STORAGE — the in-memory lock is not yet
@@ -93,6 +121,15 @@ export async function decideInboundLink(
     return null;
   }
 
+  /*
+   * KNOWN GAP (not closed here; tracked with the unwired LockShield render
+   * gate): a PIN user who BACKGROUNDS the app and then taps a link. The lock
+   * flag only turns true in use-app-lock's AppState 'active' handler (or the
+   * idle timer), and Android onNewIntent / iOS openURL deliver the 'url' event
+   * BEFORE that, so this check still reads false, the link passes, and the PHI
+   * screen mounts until captureAndLock replaces it. This branch protects an app
+   * that is ALREADY on the lock screen.
+   */
   if (deps.isAppLocked()) {
     if (inApp) deps.deferNavigation(inApp);
     return null;
