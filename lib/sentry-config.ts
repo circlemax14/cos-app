@@ -37,7 +37,7 @@
  *
  * Security audit reference: PHI-LOGGING-003 (SCRUM-364).
  */
-import type { ErrorEvent, EventHint, Breadcrumb, BreadcrumbHint } from '@sentry/core';
+import type { ErrorEvent, EventHint, Breadcrumb, BreadcrumbHint, TransactionEvent } from '@sentry/core';
 
 /**
  * Field names that must NEVER make it into Sentry, even buried in extra
@@ -111,6 +111,27 @@ export function redactUrl(url: string): string {
 }
 
 /**
+ * MOB-07 — drop the query string + fragment, then redact ids.
+ *
+ * GET params are PHI here: /v1/labs/explanation?name=<lab test>,
+ * /v1/drug-label?name=<medication>, /v1/patients/me/social/search?q=<name>.
+ * axios bakes them into the XHR URL and Sentry's breadcrumbs integration
+ * records that URL verbatim. The path alone is enough for triage.
+ */
+export function stripQuery(url: string): string {
+  return redactUrl(url.replace(/[?#][\s\S]*$/, ''));
+}
+
+/** Apply stripQuery to the url-ish keys of a crumb/span data bag, in place. */
+function stripUrlKeys(data: Record<string, unknown> | undefined): void {
+  if (!data) return;
+  for (const k of ['url', 'to', 'from']) {
+    const v = data[k];
+    if (typeof v === 'string') data[k] = stripQuery(v);
+  }
+}
+
+/**
  * Apply free-form regex scrubs (email + SSN) to a string. Used everywhere
  * Sentry attaches raw text that an exception path could pull from — the
  * `Error.message` body, `event.message` for `captureMessage`, console
@@ -171,7 +192,7 @@ export function scrubEvent(event: ErrorEvent, _hint?: EventHint): ErrorEvent {
     delete event.request.query_string;
     delete event.request.headers;
     if (typeof event.request.url === 'string') {
-      event.request.url = redactUrl(event.request.url);
+      event.request.url = stripQuery(event.request.url);
     }
   }
 
@@ -253,10 +274,11 @@ export function scrubEvent(event: ErrorEvent, _hint?: EventHint): ErrorEvent {
   //    change the integration order. Re-scrub the tail attached to this
   //    event before it ships.
   if (event.breadcrumbs) {
-    event.breadcrumbs = event.breadcrumbs.map((b) => ({
-      ...b,
-      data: b.data ? (redactObject(b.data) as Record<string, unknown>) : b.data,
-    }));
+    event.breadcrumbs = event.breadcrumbs.map((b) => {
+      const data = b.data ? (redactObject(b.data) as Record<string, unknown>) : b.data;
+      stripUrlKeys(data); // MOB-07
+      return { ...b, data };
+    });
   }
 
   return event;
@@ -281,6 +303,9 @@ export function scrubBreadcrumb(
   // fetch / xhr — PHI-bearing route bodies and size hints.
   if (breadcrumb.category === 'fetch' || breadcrumb.category === 'xhr') {
     const url = (breadcrumb.data?.url as string | undefined) ?? '';
+    // MOB-07 — the query goes on EVERY route; PHI rides in GET params on
+    // routes outside PHI_URL_PATTERN (labs, drug-label, care-managers).
+    stripUrlKeys(breadcrumb.data);
     if (PHI_URL_PATTERN.test(url)) {
       if (breadcrumb.data) {
         // Mutate in place — Sentry expects the same crumb back, mutated.
@@ -315,13 +340,39 @@ export function scrubBreadcrumb(
     for (const k of ['to', 'from', 'url'] as const) {
       const v = breadcrumb.data[k];
       if (typeof v === 'string') {
-        breadcrumb.data[k] = redactUrl(v);
+        breadcrumb.data[k] = stripQuery(v);
       }
     }
     return breadcrumb;
   }
 
   return breadcrumb;
+}
+
+/**
+ * MOB-07 — beforeSendTransaction. http.client spans carry `http.query`,
+ * `url` and a `GET <full url>` description. cos-app starts no spans today
+ * (no navigation/interaction tracing), so this is defence in depth for the
+ * day tracing is switched on.
+ */
+export function scrubTransaction(event: TransactionEvent, _hint?: EventHint): TransactionEvent {
+  if (event.request && typeof event.request.url === 'string') {
+    delete event.request.query_string;
+    event.request.url = stripQuery(event.request.url);
+  }
+  if (event.transaction) event.transaction = stripQuery(event.transaction);
+  for (const span of event.spans ?? []) {
+    const data = span.data as Record<string, unknown> | undefined;
+    if (data) {
+      delete data['http.query'];
+      delete data['http.fragment'];
+      stripUrlKeys(data);
+    }
+    if (typeof span.description === 'string') {
+      span.description = redactUrl(span.description.replace(/[?#]\S*/g, ''));
+    }
+  }
+  return event;
 }
 
 /**
@@ -399,6 +450,8 @@ export function buildSentryInitOptions(
     beforeSend: scrubEvent,
     // First line of defence against PHI in fetch/xhr breadcrumbs.
     beforeBreadcrumb: scrubBreadcrumb,
+    // MOB-07 — spans carry the same query strings.
+    beforeSendTransaction: scrubTransaction,
     // Replay masking contract — pinned ON even though sampling is OFF,
     // so flipping the sample rate later is a one-line change that doesn't
     // need a separate PHI review.
