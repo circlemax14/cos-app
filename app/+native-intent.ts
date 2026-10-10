@@ -45,44 +45,21 @@
  * saying nothing is the honest instruction.
  */
 
+/*
+ * MOB-01 — the decision itself lives in lib/deep-link-gate.ts so it can be
+ * unit-tested with real URLs. expo-router 55 passes the RAW URL here
+ * (cos://Home/x, https://circlesupporthealth.ai/Home/x), not a '/' path; the
+ * old `!path.startsWith('/') → return path` early-out waved every real deep
+ * link past both lock checks.
+ */
+import { decideInboundLink } from '@/lib/deep-link-gate';
 import { isAppLocked } from '@/lib/lock-gate';
 import { deferNavigation } from '@/lib/locked-nav-queue';
 import { isPinSetup } from '@/services/pin-auth';
 
-export async function redirectSystemPath({
-  path,
-  initial,
-}: {
+export function redirectSystemPath(args: {
   path: string;
   initial: boolean;
 }): Promise<string | null> {
-  // Anything we cannot reason about is passed through untouched rather than
-  // guessed at — a malformed URL is expo-router's problem to reject, not ours
-  // to interpret.
-  // COS-1251 — Apple's answer on Android (cos://auth/apple?id_token=…). It is
-  // not a screen: the sign-in that opened Apple's page is waiting for it.
-  if (typeof path === 'string' && /^(?:cos:\/\/|\/)auth\/apple(?:[/?#]|$)/.test(path)) return null;
-  if (typeof path !== 'string' || !path.startsWith('/')) return path;
-
-  if (initial) {
-    // Read from storage, not the in-memory flag — see the cold-start note.
-    let pinConfigured = false;
-    try {
-      pinConfigured = await isPinSetup();
-    } catch {
-      // Cannot tell. Assume a PIN exists: deferring a link is recoverable
-      // (the user unlocks and lands on it), showing PHI is not.
-      pinConfigured = true;
-    }
-    if (!pinConfigured) return path;
-    deferNavigation(path);
-    return null;
-  }
-
-  if (isAppLocked()) {
-    deferNavigation(path);
-    return null;
-  }
-
-  return path;
+  return decideInboundLink(args, { isPinSetup, isAppLocked, deferNavigation });
 }

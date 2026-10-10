@@ -56,7 +56,7 @@ test('the Android button is behind its own backend flag', () => {
 })
 
 test("Apple's answer link is not treated as a screen", () => {
-  const src = read('app/+native-intent.ts')
+  const src = read('lib/deep-link-gate.ts') // MOB-01: decision moved out of app/+native-intent.ts
   const literal = src.match(/(\/\^\(\?:cos:.*?\$\)\/)\.test\(path\)\) return null/)
   assert.ok(literal, 'redirectSystemPath must return null for cos://auth/apple')
   const re = new RegExp(literal[1].slice(1, -1))
